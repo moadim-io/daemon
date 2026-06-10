@@ -4,10 +4,24 @@ use axum::{
     Json, Router,
 };
 use std::time::SystemTime;
+use utoipa::OpenApi;
 
-use crate::cron_jobs::{self, CronStore};
+use crate::cron_jobs::{self, CronJob, CreateRequest, CronStore, UpdateRequest};
 use crate::middleware as mw;
 use super::mcp::MoadimMcp;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        cron_jobs::create,
+        cron_jobs::list,
+        cron_jobs::get,
+        cron_jobs::update,
+        cron_jobs::delete,
+    ),
+    components(schemas(CronJob, CreateRequest, UpdateRequest))
+)]
+pub struct ApiDoc;
 
 fn now_secs() -> u64 {
     SystemTime::now()

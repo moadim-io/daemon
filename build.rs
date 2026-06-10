@@ -19,7 +19,7 @@ fn main() {
             "description": "REST API for managing cron jobs"
         },
         "servers": [
-            { "url": "http://127.0.0.1:8080", "description": "Local development" }
+            { "url": "http://127.0.0.1:5784", "description": "Local development" }
         ],
         "paths": {
             "/": {

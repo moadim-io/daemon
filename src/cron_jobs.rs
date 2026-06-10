@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct CronJob {
     pub id: String,
     pub schedule: String,
@@ -44,7 +44,7 @@ fn validate_cron(expr: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
     pub schedule: String,
     pub handler: String,
@@ -58,7 +58,7 @@ fn bool_true() -> bool {
     true
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
     pub schedule: Option<String>,
     pub handler: Option<String>,
@@ -128,6 +128,9 @@ pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
 
 // --- Axum HTTP handlers ---
 
+#[utoipa::path(post, path = "/cron-jobs",
+    request_body = CreateRequest,
+    responses((status = 201, body = CronJob), (status = 400, description = "Invalid cron expression")))]
 pub async fn create(
     State(store): State<CronStore>,
     Json(body): Json<CreateRequest>,
@@ -136,10 +139,15 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(job)))
 }
 
+#[utoipa::path(get, path = "/cron-jobs",
+    responses((status = 200, body = Vec<CronJob>)))]
 pub async fn list(State(store): State<CronStore>) -> Json<Vec<CronJob>> {
     Json(svc_list(&store))
 }
 
+#[utoipa::path(get, path = "/cron-jobs/{id}",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 200, body = CronJob), (status = 404, description = "Not found")))]
 pub async fn get(
     State(store): State<CronStore>,
     Path(id): Path<String>,
@@ -147,6 +155,10 @@ pub async fn get(
     Ok(Json(svc_get(&store, &id)?))
 }
 
+#[utoipa::path(patch, path = "/cron-jobs/{id}",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    request_body = UpdateRequest,
+    responses((status = 200, body = CronJob), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
 pub async fn update(
     State(store): State<CronStore>,
     Path(id): Path<String>,
@@ -155,6 +167,9 @@ pub async fn update(
     Ok(Json(svc_update(&store, &id, body)?))
 }
 
+#[utoipa::path(delete, path = "/cron-jobs/{id}",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 204, description = "Deleted"), (status = 404, description = "Not found")))]
 pub async fn delete(
     State(store): State<CronStore>,
     Path(id): Path<String>,

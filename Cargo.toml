@@ -5,6 +5,8 @@ members = ["ui"]
 name = "server"
 version = "0.0.1"
 edition = "2021"
+description = "Moadim.io MCP/REST server for managing cron jobs"
+license = "MIT"
 
 # Shared (native + WASM)
 [dependencies]

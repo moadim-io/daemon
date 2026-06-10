@@ -45,6 +45,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
     );
 
     let app = Router::new()
+        .route("/ui", get(|| async { axum::response::Html(include_str!("../ui/index.html")) }))
         .route("/", get(|| async { "Moadim server is running" }))
         .route(
             "/health",
@@ -71,9 +72,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
 
     let addr = "127.0.0.1:5784";
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("Server on http://{addr}");
-    println!("  REST  http://{addr}/");
-    println!("  MCP   http://{addr}/mcp");
+    crate::banner::print(addr);
     axum::serve(listener, app).await?;
     Ok(())
 }

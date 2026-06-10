@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MOADIM — Cron Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:           #050905;
+      --bg-2:         #0b130a;
+      --bg-3:         #111d10;
+      --border:       #19291a;
+      --border-hi:    #2a4229;
+      --text-ghost:   #2a4d28;
+      --text-dim:     #3e6e3a;
+      --text-mid:     #5f9e58;
+      --text:         #9fd494;
+      --text-hi:      #c5eabc;
+      --accent:       #4ade80;
+      --accent-dim:   #0d2919;
+      --red:          #f87171;
+      --red-dim:      #270f0f;
+      --amber:        #fbbf24;
+      --amber-dim:    #271b06;
+      --mono:         'Share Tech Mono', 'Courier New', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* scanlines */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent, transparent 2px,
+        rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* grain noise */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 128px 128px;
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* ── Header ── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 0 28px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-2);
+      position: sticky; top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      font-size: 17px;
+      letter-spacing: 0.3em;
+      color: var(--accent);
+    }
+
+    .logo-sub {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: var(--text-dim);
+    }
+
+    .header-right { display: flex; align-items: center; gap: 16px; }
+
+    /* ── Health ── */
+    .health {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      background: var(--bg-3);
+      font-size: 11px;
+    }
+
+    .health-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-ghost);
+      flex-shrink: 0;
+    }
+    .health-dot.ok    { background: var(--accent); animation: glow 2.4s ease-in-out infinite; }
+    .health-dot.error { background: var(--red); }
+
+    @keyframes glow {
+      0%,100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.5); }
+      50%      { box-shadow: 0 0 0 5px rgba(74,222,128,0); }
+    }
+
+    .health-status { color: var(--text-mid); letter-spacing: 0.06em; }
+    .health-uptime  { color: var(--text-ghost); }
+
+    /* ── Buttons ── */
+    .btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      padding: 6px 14px;
+      border: 1px solid;
+      cursor: pointer;
+      background: transparent;
+      transition: background 0.12s, color 0.12s;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary { border-color: var(--accent); color: var(--accent); }
+    .btn-primary:not(:disabled):hover { background: var(--accent); color: var(--bg); }
+
+    .btn-danger  { border-color: var(--red); color: var(--red); }
+    .btn-danger:not(:disabled):hover  { background: var(--red); color: var(--bg); }
+
+    .btn-ghost   { border-color: var(--border-hi); color: var(--text-mid); }
+    .btn-ghost:not(:disabled):hover   { border-color: var(--text-dim); color: var(--text); }
+
+    .btn-sm { padding: 4px 10px; }
+
+    .btn-refresh {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1;
+    }
+    .btn-refresh:hover { color: var(--accent); border-color: var(--border-hi); }
+    .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Main ── */
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 28px; }
+
+    /* ── Stats ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+
+    .stat-card {
+      border: 1px solid var(--border);
+      border-left-width: 3px;
+      background: var(--bg-2);
+      padding: 14px 18px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stat-card.all     { border-left-color: var(--border-hi); }
+    .stat-card.enabled { border-left-color: var(--accent); }
+    .stat-card.disabled{ border-left-color: var(--amber); }
+
+    .stat-label {
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .stat-val { font-size: 30px; color: var(--text-hi); line-height: 1.1; }
+    .stat-val.c-accent { color: var(--accent); }
+    .stat-val.c-amber  { color: var(--amber); }
+
+    /* ── Section header ── */
+    .section-hd {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .section-label {
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    /* ── Table ── */
+    .table-wrap {
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead th {
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-ghost);
+      text-align: left;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-3);
+      font-weight: 400;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.08s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover      { background: var(--bg-2); }
+
+    tbody td { padding: 11px 14px; vertical-align: middle; }
+
+    .cell-id {
+      font-size: 10px;
+      color: var(--text-ghost);
+      font-family: var(--mono);
+      letter-spacing: 0.03em;
+    }
+
+    .cell-schedule       { color: var(--text-hi); font-size: 12px; }
+    .cell-schedule-human { font-size: 10px; color: var(--text-mid); margin-top: 1px; }
+
+    .cell-handler { color: var(--accent); font-size: 12px; }
+
+    .cell-meta {
+      font-size: 10px;
+      color: var(--text-dim);
+      max-width: 130px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cell-time { font-size: 10px; color: var(--text-ghost); }
+
+    /* ── Toggle ── */
+    .toggle { position: relative; width: 34px; height: 18px; cursor: pointer; display: block; }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+
+    .toggle-track {
+      position: absolute; inset: 0;
+      border: 1px solid var(--border-hi);
+      background: var(--bg-3);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 12px; height: 12px;
+      background: var(--text-dim);
+      transition: transform 0.15s, background 0.15s;
+    }
+
+    .toggle input:checked + .toggle-track              { border-color: var(--accent); background: var(--accent-dim); }
+    .toggle input:checked + .toggle-track::after       { transform: translateX(16px); background: var(--accent); }
+
+    /* ── Row actions ── */
+    .row-actions { display: flex; gap: 4px; align-items: center; }
+
+    .act-btn {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      padding: 2px 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      background: transparent;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .act-btn.edit { color: var(--text-mid); border-color: var(--border); }
+    .act-btn.edit:hover { color: var(--text-hi); border-color: var(--border-hi); }
+    .act-btn.del  { color: var(--text-ghost); }
+    .act-btn.del:hover  { color: var(--red); border-color: var(--red-dim); }
+
+    /* ── Empty state ── */
+    .empty {
+      padding: 72px 40px;
+      text-align: center;
+      color: var(--text-ghost);
+    }
+    .empty-icon { font-size: 36px; margin-bottom: 14px; opacity: 0.4; }
+    .empty-msg  { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; }
+    .empty-sub  { font-size: 10px; color: var(--text-ghost); margin-top: 6px; opacity: 0.7; }
+
+    /* ── Modal ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(4, 8, 4, 0.87);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s;
+    }
+    .overlay.open { opacity: 1; pointer-events: all; }
+
+    .modal {
+      background: var(--bg-2);
+      border: 1px solid var(--border-hi);
+      width: 540px;
+      max-width: 92vw;
+      max-height: 88vh;
+      overflow-y: auto;
+      transform: translateY(10px);
+      transition: transform 0.18s;
+    }
+    .overlay.open .modal { transform: translateY(0); }
+
+    .modal-hd {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title {
+      font-size: 11px;
+      color: var(--text-hi);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .modal-x {
+      background: none; border: none;
+      color: var(--text-dim); cursor: pointer;
+      font-family: var(--mono); font-size: 15px;
+      line-height: 1; padding: 2px 4px;
+    }
+    .modal-x:hover { color: var(--text); }
+
+    .modal-body { padding: 18px; }
+    .modal-ft {
+      padding: 14px 18px;
+      border-top: 1px solid var(--border);
+      display: flex; gap: 8px; justify-content: flex-end;
+    }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 18px; }
+
+    .form-label {
+      display: block;
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 5px;
+    }
+    .form-required { color: var(--red); }
+
+    .form-input {
+      width: 100%;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 7px 11px;
+      outline: none;
+      transition: border-color 0.12s;
+    }
+    .form-input:focus         { border-color: var(--accent); }
+    .form-input.invalid       { border-color: var(--red); }
+    .form-input::placeholder  { color: var(--text-ghost); }
+    textarea.form-input       { resize: vertical; min-height: 90px; }
+
+    /* cron presets */
+    .cron-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+
+    .preset-btn {
+      font-family: var(--mono);
+      font-size: 9px;
+      padding: 2px 7px;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      background: transparent;
+      transition: all 0.1s;
+      letter-spacing: 0.04em;
+    }
+    .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* cron preview */
+    .cron-preview {
+      margin-top: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      border-left: 2px solid var(--border-hi);
+      color: var(--text-dim);
+      background: var(--bg-3);
+      min-height: 26px;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .cron-preview.ok    { border-left-color: var(--accent); color: var(--accent); }
+    .cron-preview.bad   { border-left-color: var(--red); color: var(--red); }
+
+    /* json error */
+    .field-err { font-size: 10px; color: var(--red); margin-top: 3px; }
+
+    /* enabled toggle row */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 11px;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+    }
+    .toggle-row-label {
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    /* ── Confirm dialog ── */
+    .confirm-dialog {
+      background: var(--bg-2);
+      border: 1px solid var(--red);
+      padding: 22px;
+      width: 350px;
+      max-width: 92vw;
+      transform: translateY(8px);
+      transition: transform 0.15s;
+    }
+    .overlay.open .confirm-dialog { transform: translateY(0); }
+
+    .confirm-title { font-size: 12px; color: var(--red); letter-spacing: 0.06em; margin-bottom: 8px; }
+    .confirm-msg   { font-size: 11px; color: var(--text-mid); line-height: 1.5; margin-bottom: 18px; }
+    .confirm-acts  { display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ── Toast ── */
+    .toast-wrap {
+      position: fixed; bottom: 22px; right: 22px;
+      z-index: 500;
+      display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+    }
+
+    .toast {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 9px 14px;
+      border: 1px solid;
+      max-width: 300px;
+      animation: toast-in 0.18s ease-out;
+      letter-spacing: 0.03em;
+    }
+    .toast.ok  { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .toast.err { border-color: var(--red);    color: var(--red);    background: var(--red-dim); }
+    @keyframes toast-in { from { opacity:0; transform: translateX(12px); } to { opacity:1; transform:none; } }
+
+    /* ── Loader ── */
+    .spinner {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border: 1px solid var(--text-ghost);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.55s linear infinite;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar       { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border-hi); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    MOADIM
+    <span class="logo-sub">/ CRON CONTROL</span>
+  </div>
+  <div class="header-right">
+    <div class="health" id="healthEl">
+      <div class="health-dot" id="healthDot"></div>
+      <span class="health-status" id="healthStatus">CONNECTING</span>
+      <span class="health-uptime" id="healthUptime"></span>
+    </div>
+    <button class="btn-refresh" id="refreshBtn" title="Refresh" onclick="refresh()">↻</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats">
+    <div class="stat-card all">
+      <div class="stat-label">TOTAL JOBS</div>
+      <div class="stat-val" id="statTotal">—</div>
+    </div>
+    <div class="stat-card enabled">
+      <div class="stat-label">ENABLED</div>
+      <div class="stat-val c-accent" id="statEnabled">—</div>
+    </div>
+    <div class="stat-card disabled">
+      <div class="stat-label">DISABLED</div>
+      <div class="stat-val c-amber" id="statDisabled">—</div>
+    </div>
+  </div>
+
+  <div class="section-hd">
+    <div class="section-label">SCHEDULED JOBS</div>
+    <button class="btn btn-primary btn-sm" onclick="openCreate()">+ NEW JOB</button>
+  </div>
+
+  <div class="table-wrap" id="tableWrap">
+    <div class="empty">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ── Job Modal ── -->
+<div class="overlay" id="jobOverlay">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title" id="modalTitle">NEW JOB</div>
+      <button class="modal-x" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-group">
+        <label class="form-label" for="fSchedule">SCHEDULE <span class="form-required">*</span></label>
+        <input class="form-input" id="fSchedule" type="text"
+               placeholder="sec min hour dom month dow year"
+               autocomplete="off" spellcheck="false"
+               oninput="onCronInput()">
+        <div class="cron-presets">
+          <button class="preset-btn" onclick="setPreset('@daily')">@daily</button>
+          <button class="preset-btn" onclick="setPreset('@hourly')">@hourly</button>
+          <button class="preset-btn" onclick="setPreset('@weekly')">@weekly</button>
+          <button class="preset-btn" onclick="setPreset('@monthly')">@monthly</button>
+          <button class="preset-btn" onclick="setPreset('0 0 9 * * 1-5 *')">weekdays 9am</button>
+          <button class="preset-btn" onclick="setPreset('0 */15 * * * * *')">every 15min</button>
+          <button class="preset-btn" onclick="setPreset('0 0 * * * * *')">every hour</button>
+          <button class="preset-btn" onclick="setPreset('0 0 0 1 * * *')">monthly</button>
+        </div>
+        <div class="cron-preview" id="cronPreview">— enter a cron expression —</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="fHandler">HANDLER <span class="form-required">*</span></label>
+        <input class="form-input" id="fHandler" type="text"
+               placeholder="send-report"
+               autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="fMeta">METADATA <span style="color:var(--text-ghost)">(JSON)</span></label>
+        <textarea class="form-input" id="fMeta"
+                  placeholder='{"recipient": "team@example.com"}'
+                  oninput="onMetaInput()"></textarea>
+        <div class="field-err" id="metaErr"></div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:0">
+        <div class="toggle-row">
+          <span class="toggle-row-label">ENABLED</span>
+          <label class="toggle">
+            <input type="checkbox" id="fEnabled" checked>
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">CANCEL</button>
+      <button class="btn btn-primary btn-sm" id="saveBtn" onclick="saveJob()">CREATE JOB</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm Overlay ── -->
+<div class="overlay" id="confirmOverlay">
+  <div class="confirm-dialog">
+    <div class="confirm-title">⚠ DELETE JOB</div>
+    <div class="confirm-msg" id="confirmMsg"></div>
+    <div class="confirm-acts">
+      <button class="btn btn-ghost btn-sm" onclick="closeConfirm()">CANCEL</button>
+      <button class="btn btn-danger btn-sm" id="confirmOk">DELETE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toasts ── -->
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let jobs = [];
+let editId = null;
+
+// ── API ───────────────────────────────────────────────────────────────────
+const api = {
+  async req(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(path, opts);
+    if (r.status === 204) return null;
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  },
+  get:    (p)    => api.req('GET',    p),
+  post:   (p, b) => api.req('POST',   p, b),
+  put:    (p, b) => api.req('PUT',    p, b),
+  delete: (p)    => api.req('DELETE', p),
+};
+
+// ── Cron Parser ────────────────────────────────────────────────────────────
+const MONTHS_FULL = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+const DOW_FULL    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+function parseCron(expr) {
+  if (!expr || !expr.trim()) return { ok: false, text: '— enter a cron expression —' };
+  const s = expr.trim();
+  const specials = {
+    '@yearly':   'Yearly — January 1st at midnight',
+    '@annually': 'Yearly — January 1st at midnight',
+    '@monthly':  'Monthly — 1st at midnight',
+    '@weekly':   'Weekly — every Sunday at midnight',
+    '@daily':    'Daily — at midnight',
+    '@midnight': 'Daily — at midnight',
+    '@hourly':   'Every hour — at minute 0',
+  };
+  if (specials[s.toLowerCase()]) return { ok: true, text: specials[s.toLowerCase()] };
+
+  const p = s.split(/\s+/);
+  // Layout: 5=min hour dom month dow | 6=sec min hour dom month dow | 7=sec min hour dom month dow year
+  let sec, min, hour, dom, month, dow;
+  if      (p.length === 5) { [min, hour, dom, month, dow] = p; sec = '0'; }
+  else if (p.length === 6) { [sec, min, hour, dom, month, dow] = p; }
+  else if (p.length === 7) { [sec, min, hour, dom, month, dow] = p; }
+  else return { ok: false, text: `Invalid: expected 5–7 fields, got ${p.length}` };
+
+  try {
+    const time = descTime(sec, min, hour);
+    const date = descDate(dom, month, dow);
+    return { ok: true, text: `${date} — ${time}` };
+  } catch(_) {
+    return { ok: false, text: 'Cannot parse expression' };
+  }
+}
+
+function descTime(sec, min, hour) {
+  if (min === '*' && hour === '*') {
+    if (sec === '*') return 'every second';
+    if (sec && sec.startsWith('*/')) return `every ${sec.slice(2)}s`;
+    return 'every minute';
+  }
+  if (hour === '*') {
+    if (min.startsWith('*/')) return `every ${min.slice(2)} minutes`;
+    return `minute ${min} of every hour`;
+  }
+  if (hour.startsWith('*/')) return `every ${hour.slice(2)} hours`;
+  const h = parseInt(hour), m = parseInt(min);
+  if (!isNaN(h) && !isNaN(m)) {
+    const ap = h >= 12 ? 'PM' : 'AM';
+    const dh = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${dh}:${String(m).padStart(2,'0')} ${ap}`;
+  }
+  return `${min}:${hour}`;
+}
+
+function descDate(dom, month, dow) {
+  if (dom === '*' && month === '*' && dow === '*') return 'Every day';
+  const parts = [];
+  if (dow !== '*') {
+    const MAP = {'0':'Sunday','1':'Monday','2':'Tuesday','3':'Wednesday',
+                 '4':'Thursday','5':'Friday','6':'Saturday','7':'Sunday'};
+    const NAMED = { '1-5':'Weekdays', '0-6':'Daily', '1-7':'Daily', '6-7':'Weekends', '0-5':'Sun–Fri' };
+    if (NAMED[dow]) parts.push(NAMED[dow]);
+    else if (dow.includes(',')) parts.push(dow.split(',').map(d => MAP[d] || d).join(', '));
+    else if (dow.includes('-')) { const [a,b] = dow.split('-'); parts.push(`${MAP[a]||a}–${MAP[b]||b}`); }
+    else parts.push(MAP[dow] || `day-of-week ${dow}`);
+  }
+  if (dom !== '*') {
+    if (dom.startsWith('*/')) parts.push(`every ${dom.slice(2)} days`);
+    else { const n = parseInt(dom); parts.push(isNaN(n) ? `dom ${dom}` : `the ${ord(n)}`); }
+  }
+  if (month !== '*') {
+    if (month.startsWith('*/')) parts.push(`every ${month.slice(2)} months`);
+    else { const m = parseInt(month); parts.push(!isNaN(m) && m >= 1 && m <= 12 ? MONTHS_FULL[m-1] : `month ${month}`); }
+  }
+  return parts.length ? parts.join(', ') : 'Every day';
+}
+
+function ord(n) {
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
+}
+
+// ── Time Formatting ────────────────────────────────────────────────────────
+function reltime(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - ts * 1000;
+  if (diff < 60000)     return 'just now';
+  if (diff < 3600000)   return `${Math.floor(diff/60000)}m ago`;
+  if (diff < 86400000)  return `${Math.floor(diff/3600000)}h ago`;
+  return new Date(ts*1000).toLocaleDateString('en-US', {month:'short', day:'numeric'});
+}
+
+function uptime(secs) {
+  if (secs == null) return '';
+  if (secs < 60)   return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs/60)}m`;
+  return `${Math.floor(secs/3600)}h ${Math.floor((secs%3600)/60)}m`;
+}
+
+function metaPreview(meta) {
+  if (meta == null || meta === '') return '—';
+  if (typeof meta === 'object') {
+    const k = Object.keys(meta);
+    if (k.length === 0) return '{}';
+    if (k.length === 1) return `{${k[0]}}`;
+    return `{${k.length} keys}`;
+  }
+  return String(meta).slice(0, 24);
+}
+
+// ── Escape ─────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderTable() {
+  const total    = jobs.length;
+  const enabled  = jobs.filter(j => j.enabled).length;
+  const disabled = total - enabled;
+
+  document.getElementById('statTotal').textContent   = total;
+  document.getElementById('statEnabled').textContent  = enabled;
+  document.getElementById('statDisabled').textContent = disabled;
+
+  const wrap = document.getElementById('tableWrap');
+
+  if (total === 0) {
+    wrap.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⧗</div>
+        <div class="empty-msg">NO JOBS SCHEDULED</div>
+        <div class="empty-sub">press + NEW JOB to create one</div>
+      </div>`;
+    return;
+  }
+
+  const rows = jobs.map(job => {
+    const p = parseCron(job.schedule);
+    return `
+      <tr>
+        <td><span class="cell-id" title="${esc(job.id)}">${esc(job.id.slice(0,8))}…</span></td>
+        <td>
+          <div class="cell-schedule">${esc(job.schedule)}</div>
+          <div class="cell-schedule-human">${esc(p.text)}</div>
+        </td>
+        <td><span class="cell-handler">${esc(job.handler)}</span></td>
+        <td><span class="cell-meta" title="${esc(JSON.stringify(job.metadata))}">${esc(metaPreview(job.metadata))}</span></td>
+        <td>
+          <label class="toggle" title="${job.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}">
+            <input type="checkbox" ${job.enabled ? 'checked' : ''} onchange="toggleJob('${esc(job.id)}', this.checked)">
+            <div class="toggle-track"></div>
+          </label>
+        </td>
+        <td><span class="cell-time">${reltime(job.updated_at)}</span></td>
+        <td>
+          <div class="row-actions">
+            <button class="act-btn edit" onclick="openEdit('${esc(job.id)}')">EDIT</button>
+            <button class="act-btn del"  onclick="askDelete('${esc(job.id)}', '${esc(job.handler)}')">✕</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>SCHEDULE</th><th>HANDLER</th>
+          <th>METADATA</th><th>ENABLED</th><th>UPDATED</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Data ───────────────────────────────────────────────────────────────────
+async function loadJobs() {
+  try {
+    jobs = await api.get('/cron-jobs');
+    renderTable();
+  } catch(e) {
+    toast(`Failed to load jobs: ${e.message}`, 'err');
+  }
+}
+
+async function pollHealth() {
+  try {
+    const d = await api.get('/health');
+    document.getElementById('healthDot').className    = `health-dot ${d.running ? 'ok' : 'error'}`;
+    document.getElementById('healthStatus').textContent = d.status.toUpperCase();
+    document.getElementById('healthUptime').textContent = d.uptime_secs != null ? `/ UP ${uptime(d.uptime_secs)}` : '';
+  } catch(_) {
+    document.getElementById('healthDot').className    = 'health-dot error';
+    document.getElementById('healthStatus').textContent = 'OFFLINE';
+    document.getElementById('healthUptime').textContent = '';
+  }
+}
+
+function refresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  Promise.all([loadJobs(), pollHealth()]).finally(() => btn.classList.remove('spinning'));
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+function openCreate() {
+  editId = null;
+  document.getElementById('modalTitle').textContent = 'NEW JOB';
+  document.getElementById('saveBtn').textContent    = 'CREATE JOB';
+  clearForm();
+  document.getElementById('jobOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('fSchedule').focus(), 180);
+}
+
+function openEdit(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  editId = id;
+  document.getElementById('modalTitle').textContent = 'EDIT JOB';
+  document.getElementById('saveBtn').textContent    = 'SAVE CHANGES';
+  document.getElementById('fSchedule').value = job.schedule;
+  document.getElementById('fHandler').value  = job.handler;
+  document.getElementById('fEnabled').checked = job.enabled;
+  document.getElementById('fMeta').value =
+    job.metadata != null ? JSON.stringify(job.metadata, null, 2) : '';
+  document.getElementById('metaErr').textContent = '';
+  document.getElementById('fMeta').classList.remove('invalid');
+  onCronInput();
+  document.getElementById('jobOverlay').classList.add('open');
+}
+
+function clearForm() {
+  document.getElementById('fSchedule').value = '';
+  document.getElementById('fHandler').value  = '';
+  document.getElementById('fMeta').value     = '';
+  document.getElementById('fEnabled').checked = true;
+  document.getElementById('metaErr').textContent = '';
+  document.getElementById('fMeta').classList.remove('invalid');
+  const prev = document.getElementById('cronPreview');
+  prev.textContent = '— enter a cron expression —';
+  prev.className = 'cron-preview';
+}
+
+function closeModal() {
+  document.getElementById('jobOverlay').classList.remove('open');
+  editId = null;
+}
+
+// ── Cron input ─────────────────────────────────────────────────────────────
+function onCronInput() {
+  const val  = document.getElementById('fSchedule').value;
+  const res  = parseCron(val);
+  const prev = document.getElementById('cronPreview');
+  prev.textContent = res.text;
+  prev.className   = 'cron-preview' + (val.trim() === '' ? '' : res.ok ? ' ok' : ' bad');
+}
+
+function setPreset(v) {
+  document.getElementById('fSchedule').value = v;
+  onCronInput();
+}
+
+// ── Metadata input ──────────────────────────────────────────────────────────
+function onMetaInput() {
+  const ta  = document.getElementById('fMeta');
+  const err = document.getElementById('metaErr');
+  const val = ta.value.trim();
+  if (!val) { ta.classList.remove('invalid'); err.textContent = ''; return; }
+  try { JSON.parse(val); ta.classList.remove('invalid'); err.textContent = ''; }
+  catch(e) { ta.classList.add('invalid'); err.textContent = '↳ ' + e.message; }
+}
+
+// ── Save ───────────────────────────────────────────────────────────────────
+async function saveJob() {
+  const schedule = document.getElementById('fSchedule').value.trim();
+  const handler  = document.getElementById('fHandler').value.trim();
+  const metaRaw  = document.getElementById('fMeta').value.trim();
+  const enabled  = document.getElementById('fEnabled').checked;
+
+  if (!schedule) { toast('Schedule is required', 'err'); return; }
+  if (!handler)  { toast('Handler is required',  'err'); return; }
+
+  let metadata = null;
+  if (metaRaw) {
+    try { metadata = JSON.parse(metaRaw); }
+    catch(_) { toast('Invalid JSON in metadata', 'err'); return; }
+  }
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled     = true;
+  btn.textContent  = '…';
+
+  try {
+    if (editId) {
+      await api.put(`/cron-jobs/${editId}`, { schedule, handler, metadata, enabled });
+      toast('Job updated', 'ok');
+    } else {
+      await api.post('/cron-jobs', { schedule, handler, metadata, enabled });
+      toast('Job created', 'ok');
+    }
+    closeModal();
+    await loadJobs();
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editId ? 'SAVE CHANGES' : 'CREATE JOB';
+  }
+}
+
+// ── Toggle ─────────────────────────────────────────────────────────────────
+async function toggleJob(id, enabled) {
+  try {
+    await api.put(`/cron-jobs/${id}`, { enabled });
+    const job = jobs.find(j => j.id === id);
+    if (job) job.enabled = enabled;
+    renderTable();
+    toast(enabled ? 'Job enabled' : 'Job disabled', 'ok');
+  } catch(e) {
+    toast(`Toggle failed: ${e.message}`, 'err');
+    await loadJobs();
+  }
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+function askDelete(id, handler) {
+  document.getElementById('confirmMsg').textContent =
+    `Delete the job running "${handler}"? This cannot be undone.`;
+  const ok = document.getElementById('confirmOk');
+  ok.onclick = async () => { closeConfirm(); await doDelete(id); };
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmOverlay').classList.remove('open');
+}
+
+async function doDelete(id) {
+  try {
+    await api.delete(`/cron-jobs/${id}`);
+    toast('Job deleted', 'ok');
+    await loadJobs();
+  } catch(e) {
+    toast(`Delete failed: ${e.message}`, 'err');
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity 0.25s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 260);
+  }, 3000);
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('confirmOverlay').classList.contains('open')) closeConfirm();
+  else if (document.getElementById('jobOverlay').classList.contains('open')) closeModal();
+});
+
+document.getElementById('jobOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('jobOverlay')) closeModal();
+});
+document.getElementById('confirmOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('confirmOverlay')) closeConfirm();
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+pollHealth();
+loadJobs();
+setInterval(pollHealth, 30000);
+</script>
+</body>
+</html>

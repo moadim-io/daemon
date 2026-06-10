@@ -1,4 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
+mod banner;
+#[cfg(not(target_arch = "wasm32"))]
 mod cron_jobs;
 #[cfg(not(target_arch = "wasm32"))]
 mod error;

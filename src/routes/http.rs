@@ -5,10 +5,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use std::time::SystemTime;
 use utoipa::OpenApi;
 
 use crate::cron_jobs::{self, AppState, CronJob, CronJobResponse, CreateRequest, CronStore, UpdateRequest, new_registry};
+use crate::util::now_secs;
 use crate::middleware as mw;
 use super::mcp::MoadimMcp;
 
@@ -33,14 +33,6 @@ pub struct ApiDoc;
     responses((status = 200, body = Vec<CronJob>)))]
 pub async fn list_system_cron_jobs() -> Json<Vec<CronJob>> {
     Json(crate::system_cron::read_all())
-}
-
-/// Return current Unix time in whole seconds.
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 /// Build the router, bind to `127.0.0.1:5784`, and serve until shutdown.

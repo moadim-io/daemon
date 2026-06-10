@@ -7,9 +7,9 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::time::SystemTime;
 
-use crate::cron_jobs::{self, CronJobResponse, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
+use crate::cron_jobs::{self, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
+use crate::util::now_secs;
 
 /// MCP server handler that exposes cron-job management as MCP tools.
 #[derive(Clone)]
@@ -38,11 +38,6 @@ struct IdInput {
     id: String,
 }
 
-/// Schema override that marks `metadata` as a free-form JSON object.
-fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({"type": "object", "additionalProperties": true})
-}
-
 /// Input for the `update_cron_job` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateInput {
@@ -53,18 +48,10 @@ struct UpdateInput {
     /// New handler identifier, or `None` to keep the existing value.
     handler: Option<String>,
     /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "metadata_schema")]
+    #[schemars(schema_with = "crate::util::metadata_schema")]
     metadata: Option<serde_json::Value>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
-}
-
-/// Return current Unix time in whole seconds.
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -123,11 +110,7 @@ impl MoadimMcp {
     /// Return all managed cron jobs as a JSON array sorted by creation time.
     #[tool(description = "List all managed cron jobs")]
     fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let jobs: Vec<CronJobResponse> = cron_jobs::svc_list(&self.store)
-            .into_iter()
-            .map(|j| CronJobResponse::from_job(j, &self.handlers))
-            .collect();
-        Ok(ok(jobs))
+        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
     }
 
     /// Return read-only system cron jobs discovered from crontab and `/etc/cron.d`.
@@ -142,8 +125,8 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_get(&self.store, &id) {
-            Ok(job) => ok(CronJobResponse::from_job(job, &self.handlers)),
+        Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }
@@ -154,8 +137,8 @@ impl MoadimMcp {
         &self,
         Parameters(req): Parameters<CreateRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_create(&self.store, req) {
-            Ok(job) => ok(job),
+        Ok(match cron_jobs::svc_create(&self.store, &self.handlers, req) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }
@@ -172,8 +155,8 @@ impl MoadimMcp {
             metadata: input.metadata,
             enabled: input.enabled,
         };
-        Ok(match cron_jobs::svc_update(&self.store, &input.id, req) {
-            Ok(job) => ok(job),
+        Ok(match cron_jobs::svc_update(&self.store, &self.handlers, &input.id, req) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }
@@ -184,8 +167,8 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_delete(&self.store, &id) {
-            Ok(()) => ok(serde_json::json!({"deleted": id})),
+        Ok(match cron_jobs::svc_delete(&self.store, &self.handlers, &id) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }

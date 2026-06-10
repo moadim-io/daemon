@@ -9,7 +9,7 @@ mod error;
 #[cfg(not(target_arch = "wasm32"))]
 mod fs_location;
 #[cfg(not(target_arch = "wasm32"))]
-mod middleware;
+mod middlewares;
 #[cfg(not(target_arch = "wasm32"))]
 mod routes;
 #[cfg(not(target_arch = "wasm32"))]

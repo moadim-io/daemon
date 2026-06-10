@@ -755,13 +755,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             })
             .unwrap_or_default()
     });
-    let enabled = use_state(|| {
-        props
-            .editing
-            .as_ref()
-            .map(|j| j.enabled)
-            .unwrap_or(true)
-    });
+    let enabled = use_state(|| props.editing.as_ref().map(|j| j.enabled).unwrap_or(true));
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
 
@@ -769,7 +763,11 @@ pub fn job_modal(props: &JobModalProps) -> Html {
 
     let is_edit = props.editing.is_some();
     let title = if is_edit { "EDIT JOB" } else { "NEW JOB" };
-    let save_label = if is_edit { "SAVE CHANGES" } else { "CREATE JOB" };
+    let save_label = if is_edit {
+        "SAVE CHANGES"
+    } else {
+        "CREATE JOB"
+    };
 
     let on_schedule = {
         let schedule = schedule.clone();
@@ -1056,7 +1054,13 @@ fn describe_cron(expr: &str) -> (bool, String) {
         format!("every {n} hours")
     } else if let (Ok(h), Ok(m)) = (hour.parse::<u32>(), min.parse::<u32>()) {
         let ap = if h >= 12 { "PM" } else { "AM" };
-        let dh = if h == 0 { 12 } else if h > 12 { h - 12 } else { h };
+        let dh = if h == 0 {
+            12
+        } else if h > 12 {
+            h - 12
+        } else {
+            h
+        };
         format!("{dh}:{m:02} {ap}")
     } else {
         format!("{hour}:{min}")

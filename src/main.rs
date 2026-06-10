@@ -11,9 +11,9 @@ mod fs_location;
 #[cfg(not(target_arch = "wasm32"))]
 mod middlewares;
 #[cfg(not(target_arch = "wasm32"))]
-mod routes;
-#[cfg(not(target_arch = "wasm32"))]
 mod paths;
+#[cfg(not(target_arch = "wasm32"))]
+mod routes;
 #[cfg(not(target_arch = "wasm32"))]
 mod storage;
 #[cfg(not(target_arch = "wasm32"))]

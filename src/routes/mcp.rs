@@ -8,7 +8,7 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::cron_jobs::{self, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
+use crate::cron_jobs::{self, CreateRequest, CronStore, HandlerRegistry, UpdateRequest};
 use crate::utils::time::now_secs;
 
 /// MCP server handler that exposes cron-job management as MCP tools.
@@ -114,7 +114,9 @@ impl MoadimMcp {
     }
 
     /// Return read-only system cron jobs discovered from crontab and `/etc/cron.d`.
-    #[tool(description = "List read-only system cron jobs from crontab and /etc/cron.d (not managed by this server)")]
+    #[tool(
+        description = "List read-only system cron jobs from crontab and /etc/cron.d (not managed by this server)"
+    )]
     fn list_system_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(crate::system_cron::read_all()))
     }
@@ -137,10 +139,12 @@ impl MoadimMcp {
         &self,
         Parameters(req): Parameters<CreateRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_create(&self.store, &self.handlers, req) {
-            Ok(resp) => ok(resp),
-            Err(e) => err(e),
-        })
+        Ok(
+            match cron_jobs::svc_create(&self.store, &self.handlers, req) {
+                Ok(resp) => ok(resp),
+                Err(e) => err(e),
+            },
+        )
     }
 
     /// Apply provided fields to an existing cron job, returning the updated record.
@@ -155,10 +159,12 @@ impl MoadimMcp {
             metadata: input.metadata,
             enabled: input.enabled,
         };
-        Ok(match cron_jobs::svc_update(&self.store, &self.handlers, &input.id, req) {
-            Ok(resp) => ok(resp),
-            Err(e) => err(e),
-        })
+        Ok(
+            match cron_jobs::svc_update(&self.store, &self.handlers, &input.id, req) {
+                Ok(resp) => ok(resp),
+                Err(e) => err(e),
+            },
+        )
     }
 
     /// Remove the cron job with the given UUID from the store.
@@ -167,10 +173,12 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_delete(&self.store, &self.handlers, &id) {
-            Ok(resp) => ok(resp),
-            Err(e) => err(e),
-        })
+        Ok(
+            match cron_jobs::svc_delete(&self.store, &self.handlers, &id) {
+                Ok(resp) => ok(resp),
+                Err(e) => err(e),
+            },
+        )
     }
 
     /// Manually trigger a cron job immediately, recording the trigger time.

@@ -12,6 +12,7 @@ async_graphql::scalar!(JSON);
 // --- Output types ---
 
 #[derive(SimpleObject)]
+#[graphql(name = "CronJob")]
 struct GqlCronJob {
     id: String,
     schedule: String,
@@ -39,6 +40,7 @@ impl From<CronJob> for GqlCronJob {
 }
 
 #[derive(SimpleObject)]
+#[graphql(name = "CronJobResponse")]
 struct GqlCronJobResponse {
     id: String,
     schedule: String,
@@ -68,6 +70,7 @@ impl From<CronJobResponse> for GqlCronJobResponse {
 }
 
 #[derive(SimpleObject)]
+#[graphql(name = "Health")]
 struct GqlHealth {
     status: String,
     uptime_secs: u64,

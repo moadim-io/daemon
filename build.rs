@@ -3,6 +3,7 @@ mod build;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/routes/http.rs");
+    println!("cargo:rerun-if-changed=src/routes/graphql.rs");
     println!("cargo:rerun-if-changed=src/cron_jobs.rs");
     println!("cargo:rerun-if-changed=src/system_cron.rs");
     println!("cargo:rerun-if-changed=build.rs");

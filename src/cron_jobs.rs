@@ -36,6 +36,8 @@ pub struct CronJob {
     pub created_at: u64,
     /// Unix timestamp (seconds) when the job was last updated.
     pub updated_at: u64,
+    /// Unix timestamp (seconds) when the job was last manually triggered, if ever.
+    pub last_triggered_at: Option<u64>,
 }
 
 /// A [`CronJob`] enriched with a flag indicating whether its handler is registered.
@@ -108,6 +110,8 @@ struct JobToml {
     created_at: Option<u64>,
     /// Unix last-updated timestamp.
     updated_at: Option<u64>,
+    /// Unix timestamp of last manual trigger.
+    last_triggered_at: Option<u64>,
     /// Arbitrary metadata key/value pairs.
     #[serde(default)]
     metadata: toml::Table,
@@ -144,12 +148,13 @@ fn json_to_toml_table(val: &serde_json::Value) -> toml::Table {
 fn load_job_from_dir(id: &str) -> Option<CronJob> {
     let base = read_job_toml(&job_toml_path(id))?;
     let local = read_job_toml(&job_local_toml_path(id));
-    let (schedule, handler, enabled, created_at, updated_at, mut meta) = (
+    let (schedule, handler, enabled, created_at, updated_at, last_triggered_at, mut meta) = (
         local.as_ref().and_then(|l| l.schedule.clone()).or(base.schedule)?,
         local.as_ref().and_then(|l| l.handler.clone()).or(base.handler)?,
         local.as_ref().and_then(|l| l.enabled).or(base.enabled).unwrap_or(true),
         local.as_ref().and_then(|l| l.created_at).or(base.created_at).unwrap_or(0),
         local.as_ref().and_then(|l| l.updated_at).or(base.updated_at).unwrap_or(0),
+        local.as_ref().and_then(|l| l.last_triggered_at).or(base.last_triggered_at),
         base.metadata,
     );
     if let Some(local_meta) = local.as_ref().map(|l| &l.metadata) {
@@ -165,6 +170,7 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
         source: "managed".to_string(),
         created_at,
         updated_at,
+        last_triggered_at,
         metadata: metadata_to_json(&meta),
     })
 }
@@ -185,6 +191,7 @@ fn write_job(job: &CronJob) -> std::io::Result<()> {
         enabled: Some(job.enabled),
         created_at: Some(job.created_at),
         updated_at: Some(job.updated_at),
+        last_triggered_at: job.last_triggered_at,
         metadata: json_to_toml_table(&job.metadata),
     };
     let text = toml::to_string_pretty(&toml_job)
@@ -307,6 +314,7 @@ pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppE
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
+        last_triggered_at: None,
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
     store.lock().unwrap().insert(job.id.clone(), job.clone());
@@ -344,6 +352,17 @@ pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
     store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
     Ok(())
+}
+
+/// Record a manual trigger for `id`, updating `last_triggered_at` in-store and on disk.
+pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
+    let mut lock = store.lock().unwrap();
+    let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    job.last_triggered_at = Some(now_secs());
+    let job = job.clone();
+    drop(lock);
+    write_job(&job).map_err(|_| AppError::Internal)?;
+    Ok(job)
 }
 
 // --- Axum HTTP handlers ---
@@ -405,6 +424,17 @@ pub async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// `POST /cron-jobs/{id}/trigger` — manually trigger a cron job outside its schedule.
+#[utoipa::path(post, path = "/cron-jobs/{id}/trigger",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 200, body = CronJob), (status = 404, description = "Not found")))]
+pub async fn trigger(
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<Json<CronJob>, AppError> {
+    Ok(Json(svc_trigger(&store, &id)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,6 +466,7 @@ mod tests {
             source: "managed".to_string(),
             created_at: 1000,
             updated_at: 1000,
+            last_triggered_at: None,
         };
         let json = serde_json::to_string(&job).unwrap();
         assert!(json.contains("\"id\":\"abc\""));
@@ -467,6 +498,7 @@ mod tests {
             source: "managed".to_string(),
             created_at: 0,
             updated_at: 0,
+            last_triggered_at: None,
         };
         store.lock().unwrap().insert(job.id.clone(), job);
         // Remove from in-memory store directly (skip fs in unit test)
@@ -486,6 +518,7 @@ mod tests {
             source: "managed".to_string(),
             created_at: 0,
             updated_at: 0,
+            last_triggered_at: None,
         };
         store.lock().unwrap().insert(job.id.clone(), job);
         {

@@ -17,6 +17,8 @@ pub struct CronJob {
     pub enabled: bool,
     pub created_at: u64,
     pub updated_at: u64,
+    #[serde(default)]
+    pub last_triggered_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
@@ -210,6 +212,17 @@ async fn api_delete(id: &str) -> Result<(), String> {
     }
 }
 
+async fn api_trigger(id: &str) -> Result<CronJob, String> {
+    let resp = Request::post(&format!("/cron-jobs/{id}/trigger"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<CronJob>().await.map_err(|e| e.to_string())
+}
+
 // ─── Root component ───────────────────────────────────────────────────────────
 
 #[function_component(App)]
@@ -279,6 +292,28 @@ pub fn app() -> Html {
         let state = state.clone();
         Callback::from(move |(id, handler): (String, String)| {
             state.dispatch(AppAction::OpenConfirmDelete { id, handler });
+        })
+    };
+
+    let on_trigger = {
+        let state = state.clone();
+        Callback::from(move |id: String| {
+            let state = state.clone();
+            spawn_local(async move {
+                match api_trigger(&id).await {
+                    Ok(job) => {
+                        state.dispatch(AppAction::UpsertJob(job));
+                        state.dispatch(AppAction::AddToast {
+                            msg: "Job triggered".into(),
+                            kind: ToastKind::Ok,
+                        });
+                    }
+                    Err(e) => state.dispatch(AppAction::AddToast {
+                        msg: format!("Trigger failed: {e}"),
+                        kind: ToastKind::Err,
+                    }),
+                }
+            })
         })
     };
 
@@ -422,6 +457,7 @@ pub fn app() -> Html {
                     on_edit={on_edit}
                     on_delete={on_ask_delete}
                     on_toggle={on_toggle}
+                    on_trigger={on_trigger}
                 />
             </main>
             {
@@ -547,6 +583,7 @@ pub struct JobTableProps {
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
+    pub on_trigger: Callback<String>,
 }
 
 #[function_component(JobTable)]
@@ -592,6 +629,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
+                            on_trigger={props.on_trigger.clone()}
                         />
                     }) }
                 </tbody>
@@ -608,6 +646,7 @@ pub struct JobRowProps {
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
+    pub on_trigger: Callback<String>,
 }
 
 #[function_component(JobRow)]
@@ -635,6 +674,15 @@ pub fn job_row(props: &JobRowProps) -> Html {
         let enabled = job.enabled;
         Callback::from(move |_: Event| cb.emit((id.clone(), !enabled)))
     };
+    let on_trigger = {
+        let cb = props.on_trigger.clone();
+        let id = job.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+
+    let last_run = job.last_triggered_at
+        .map(|t| format!("↻ {}", reltime(t)))
+        .unwrap_or_default();
 
     let _ = cron_ok; // used only for styling if desired later
     html! {
@@ -652,9 +700,15 @@ pub fn job_row(props: &JobRowProps) -> Html {
                     <div class="toggle-track"></div>
                 </label>
             </td>
-            <td><span class="cell-time">{updated}</span></td>
+            <td>
+                <div class="cell-time">{updated}</div>
+                if !last_run.is_empty() {
+                    <div class="cell-triggered">{last_run}</div>
+                }
+            </td>
             <td>
                 <div class="row-actions">
+                    <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
                     <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
                 </div>

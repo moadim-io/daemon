@@ -141,6 +141,7 @@ fn parse_line(line: &str, source: &str, has_user_field: bool) -> Option<CronJob>
         source: source.to_string(),
         created_at: 0,
         updated_at: 0,
+        last_triggered_at: None,
     })
 }
 

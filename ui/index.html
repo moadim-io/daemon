@@ -107,10 +107,13 @@
 
     .row-actions { display: flex; gap: 4px; align-items: center; }
     .act-btn { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; padding: 2px 8px; border: 1px solid transparent; cursor: pointer; background: transparent; transition: color 0.1s, border-color 0.1s; }
+    .act-btn.run  { color: var(--text-ghost); }
+    .act-btn.run:hover  { color: var(--accent); border-color: var(--accent-dim); }
     .act-btn.edit { color: var(--text-mid); border-color: var(--border); }
     .act-btn.edit:hover { color: var(--text-hi); border-color: var(--border-hi); }
     .act-btn.del  { color: var(--text-ghost); }
     .act-btn.del:hover  { color: var(--red); border-color: var(--red-dim); }
+    .cell-triggered { font-size: 10px; color: var(--text-ghost); margin-top: 2px; }
 
     .empty { padding: 72px 40px; text-align: center; color: var(--text-ghost); }
     .empty-icon { font-size: 36px; margin-bottom: 14px; opacity: 0.4; }

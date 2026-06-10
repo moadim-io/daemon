@@ -21,6 +21,7 @@ use super::mcp::MoadimMcp;
         cron_jobs::get,
         cron_jobs::update,
         cron_jobs::delete,
+        cron_jobs::trigger,
         list_system_cron_jobs,
     ),
     components(schemas(CronJob, CronJobResponse, CreateRequest, UpdateRequest))
@@ -86,6 +87,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
                 .patch(cron_jobs::update)
                 .delete(cron_jobs::delete),
         )
+        .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
         .layer(middleware::from_fn(mw::fs_location))

@@ -166,12 +166,16 @@
     /* ── Stats ── */
     .stats {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 10px;
       margin-bottom: 36px;
     }
 
-    @media (max-width: 700px) {
+    @media (max-width: 800px) {
+      .stats { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 520px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
     }
 
@@ -182,10 +186,11 @@
       padding: 14px 18px;
       display: flex; flex-direction: column; gap: 4px;
     }
-    .stat-card.all     { border-left-color: var(--border-hi); }
-    .stat-card.enabled { border-left-color: var(--accent); }
-    .stat-card.disabled{ border-left-color: var(--amber); }
-    .stat-card.system  { border-left-color: #7c8fc9; }
+    .stat-card.all      { border-left-color: var(--border-hi); }
+    .stat-card.enabled  { border-left-color: var(--accent); }
+    .stat-card.disabled { border-left-color: var(--amber); }
+    .stat-card.unreg    { border-left-color: var(--red); }
+    .stat-card.system   { border-left-color: #7c8fc9; }
 
     .stat-label {
       font-size: 9px;
@@ -250,7 +255,15 @@
     .cell-schedule       { color: var(--text-hi); font-size: 12px; }
     .cell-schedule-human { font-size: 10px; color: var(--text-mid); margin-top: 1px; }
 
-    .cell-handler { color: var(--accent); font-size: 12px; }
+    .cell-handler { color: var(--accent); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+
+    .handler-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .handler-dot.ok   { background: var(--accent); box-shadow: 0 0 4px rgba(74,222,128,0.5); }
+    .handler-dot.warn { background: var(--amber); }
 
     .cell-meta {
       font-size: 10px;
@@ -552,6 +565,10 @@
       <div class="stat-label">DISABLED</div>
       <div class="stat-val c-amber" id="statDisabled">—</div>
     </div>
+    <div class="stat-card unreg">
+      <div class="stat-label">UNREGISTERED</div>
+      <div class="stat-val" style="color:var(--red)" id="statUnreg">—</div>
+    </div>
     <div class="stat-card system">
       <div class="stat-label">SYSTEM</div>
       <div class="stat-val" id="statSystem" style="color:#7c8fc9">—</div>
@@ -805,13 +822,15 @@ function esc(s) {
 
 // ── Render ─────────────────────────────────────────────────────────────────
 function renderTable() {
-  const total    = jobs.length;
-  const enabled  = jobs.filter(j => j.enabled).length;
-  const disabled = total - enabled;
+  const total      = jobs.length;
+  const enabled    = jobs.filter(j => j.enabled).length;
+  const disabled   = total - enabled;
+  const unregistered = jobs.filter(j => !j.handler_registered).length;
 
-  document.getElementById('statTotal').textContent   = total;
-  document.getElementById('statEnabled').textContent  = enabled;
-  document.getElementById('statDisabled').textContent = disabled;
+  document.getElementById('statTotal').textContent      = total;
+  document.getElementById('statEnabled').textContent    = enabled;
+  document.getElementById('statDisabled').textContent   = disabled;
+  document.getElementById('statUnreg').textContent      = unregistered;
 
   const wrap = document.getElementById('tableWrap');
 
@@ -834,7 +853,11 @@ function renderTable() {
           <div class="cell-schedule">${esc(job.schedule)}</div>
           <div class="cell-schedule-human">${esc(p.text)}</div>
         </td>
-        <td><span class="cell-handler">${esc(job.handler)}</span></td>
+        <td>
+          <span class="cell-handler" title="${job.handler_registered ? 'Handler registered' : 'Handler not registered'}">
+            <span class="handler-dot ${job.handler_registered ? 'ok' : 'warn'}"></span>${esc(job.handler)}
+          </span>
+        </td>
         <td><span class="cell-meta" title="${esc(JSON.stringify(job.metadata))}">${esc(metaPreview(job.metadata))}</span></td>
         <td>
           <label class="toggle" title="${job.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}">

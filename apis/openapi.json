@@ -66,7 +66,7 @@
             "type": "string"
           },
           "source": {
-            "description": "\"managed\" for jobs owned by this server; \"system:*\" for read-only system cron entries",
+            "description": "\"managed\" for server-owned jobs; \"system:*\" for read-only system cron entries",
             "example": "managed",
             "type": "string"
           },
@@ -406,7 +406,7 @@
     },
     "/system-cron-jobs": {
       "get": {
-        "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). These jobs are not managed by this server and cannot be created, updated, or deleted through this API.",
+        "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). Not managed by this server — cannot be created, updated, or deleted.",
         "operationId": "listSystemCronJobs",
         "responses": {
           "200": {

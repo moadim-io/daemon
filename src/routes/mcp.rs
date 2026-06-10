@@ -7,11 +7,12 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::time::SystemTime;
 
-use crate::cron_jobs::{self, CronStore, CreateRequest, UpdateRequest};
+use crate::cron_jobs::{self, CronJobResponse, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
 
 #[derive(Clone)]
 pub struct MoadimMcp {
     store: CronStore,
+    handlers: HandlerRegistry,
     uptime_start: u64,
     tool_router: ToolRouter<MoadimMcp>,
 }
@@ -26,11 +27,16 @@ struct IdInput {
     id: String,
 }
 
+fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({"type": "object", "additionalProperties": true})
+}
+
 #[derive(Deserialize, JsonSchema)]
 struct UpdateInput {
     id: String,
     schedule: Option<String>,
     handler: Option<String>,
+    #[schemars(schema_with = "metadata_schema")]
     metadata: Option<serde_json::Value>,
     enabled: Option<bool>,
 }
@@ -54,9 +60,10 @@ fn err(msg: impl std::fmt::Display) -> CallToolResult {
 
 #[tool_router(server_handler)]
 impl MoadimMcp {
-    pub fn new(store: CronStore, uptime_start: u64) -> Self {
+    pub fn new(store: CronStore, handlers: HandlerRegistry, uptime_start: u64) -> Self {
         Self {
             store,
+            handlers,
             uptime_start,
             tool_router: Self::tool_router(),
         }
@@ -84,7 +91,11 @@ impl MoadimMcp {
 
     #[tool(description = "List all managed cron jobs")]
     fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(cron_jobs::svc_list(&self.store)))
+        let jobs: Vec<CronJobResponse> = cron_jobs::svc_list(&self.store)
+            .into_iter()
+            .map(|j| CronJobResponse::from_job(j, &self.handlers))
+            .collect();
+        Ok(ok(jobs))
     }
 
     #[tool(description = "List read-only system cron jobs from crontab and /etc/cron.d (not managed by this server)")]
@@ -98,7 +109,7 @@ impl MoadimMcp {
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match cron_jobs::svc_get(&self.store, &id) {
-            Ok(job) => ok(job),
+            Ok(job) => ok(CronJobResponse::from_job(job, &self.handlers)),
             Err(e) => err(e),
         })
     }

@@ -6,7 +6,7 @@ use axum::{
 use std::time::SystemTime;
 use utoipa::OpenApi;
 
-use crate::cron_jobs::{self, CronJob, CreateRequest, CronStore, UpdateRequest};
+use crate::cron_jobs::{self, AppState, CronJob, CronJobResponse, CreateRequest, CronStore, UpdateRequest, new_registry};
 use crate::middleware as mw;
 use super::mcp::MoadimMcp;
 
@@ -20,7 +20,7 @@ use super::mcp::MoadimMcp;
         cron_jobs::delete,
         list_system_cron_jobs,
     ),
-    components(schemas(CronJob, CreateRequest, UpdateRequest))
+    components(schemas(CronJob, CronJobResponse, CreateRequest, UpdateRequest))
 )]
 pub struct ApiDoc;
 
@@ -38,6 +38,7 @@ fn now_secs() -> u64 {
 }
 
 pub async fn run(store: CronStore) -> anyhow::Result<()> {
+    let app_state = AppState { store: store.clone(), handlers: new_registry() };
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
@@ -45,8 +46,9 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
     let uptime_start = now_secs();
 
     let mcp_store = store.clone();
+    let mcp_handlers = app_state.handlers.clone();
     let mcp_service = StreamableHttpService::new(
-        move || Ok(MoadimMcp::new(mcp_store.clone(), uptime_start)),
+        move || Ok(MoadimMcp::new(mcp_store.clone(), mcp_handlers.clone(), uptime_start)),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default(),
     );
@@ -76,7 +78,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
         .layer(middleware::from_fn(mw::logger))
-        .with_state(store);
+        .with_state(app_state);
 
     let addr = "127.0.0.1:5784";
     let listener = tokio::net::TcpListener::bind(addr).await?;

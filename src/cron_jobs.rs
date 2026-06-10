@@ -6,7 +6,7 @@ use axum::{
 use cron::Schedule;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -27,10 +27,41 @@ pub struct CronJob {
     pub updated_at: u64,
 }
 
+#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
+pub struct CronJobResponse {
+    #[serde(flatten)]
+    pub job: CronJob,
+    pub handler_registered: bool,
+}
+
+impl CronJobResponse {
+    pub fn from_job(job: CronJob, handlers: &HashSet<String>) -> Self {
+        let handler_registered = handlers.contains(&job.handler);
+        Self { job, handler_registered }
+    }
+}
+
 pub type CronStore = Arc<Mutex<HashMap<String, CronJob>>>;
+pub type HandlerRegistry = Arc<HashSet<String>>;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub store: CronStore,
+    pub handlers: HandlerRegistry,
+}
+
+impl axum::extract::FromRef<AppState> for CronStore {
+    fn from_ref(state: &AppState) -> Self {
+        state.store.clone()
+    }
+}
 
 pub fn new_store() -> CronStore {
     Arc::new(Mutex::new(HashMap::new()))
+}
+
+pub fn new_registry() -> HandlerRegistry {
+    Arc::new(HashSet::new())
 }
 
 fn now_secs() -> u64 {
@@ -51,6 +82,7 @@ pub struct CreateRequest {
     pub schedule: String,
     pub handler: String,
     #[serde(default)]
+    #[schemars(schema_with = "metadata_schema")]
     pub metadata: serde_json::Value,
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -60,10 +92,15 @@ fn bool_true() -> bool {
     true
 }
 
+fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({"type": "object", "additionalProperties": true})
+}
+
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
     pub schedule: Option<String>,
     pub handler: Option<String>,
+    #[schemars(schema_with = "metadata_schema")]
     pub metadata: Option<serde_json::Value>,
     pub enabled: Option<bool>,
 }
@@ -143,19 +180,21 @@ pub async fn create(
 }
 
 #[utoipa::path(get, path = "/cron-jobs",
-    responses((status = 200, body = Vec<CronJob>)))]
-pub async fn list(State(store): State<CronStore>) -> Json<Vec<CronJob>> {
-    Json(svc_list(&store))
+    responses((status = 200, body = Vec<CronJobResponse>)))]
+pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
+    let jobs = svc_list(&state.store);
+    Json(jobs.into_iter().map(|j| CronJobResponse::from_job(j, &state.handlers)).collect())
 }
 
 #[utoipa::path(get, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
-    responses((status = 200, body = CronJob), (status = 404, description = "Not found")))]
+    responses((status = 200, body = CronJobResponse), (status = 404, description = "Not found")))]
 pub async fn get(
-    State(store): State<CronStore>,
+    State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<CronJob>, AppError> {
-    Ok(Json(svc_get(&store, &id)?))
+) -> Result<Json<CronJobResponse>, AppError> {
+    let job = svc_get(&state.store, &id)?;
+    Ok(Json(CronJobResponse::from_job(job, &state.handlers)))
 }
 
 #[utoipa::path(patch, path = "/cron-jobs/{id}",

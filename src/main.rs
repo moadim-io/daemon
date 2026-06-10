@@ -24,6 +24,6 @@ fn main() {
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let store = cron_jobs::new_store();
+    let store = cron_jobs::load_store();
     routes::http::run(store).await
 }

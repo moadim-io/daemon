@@ -206,11 +206,11 @@ pub fn svc_update(store: &CronStore, handlers: &HandlerRegistry, id: &str, req: 
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
-/// Remove the job with `id` from the store, returning `NotFound` if absent.
-pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
-    store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+/// Remove the job with `id` from the store, returning the deleted job or `NotFound`.
+pub fn svc_delete(store: &CronStore, handlers: &HandlerRegistry, id: &str) -> Result<CronJobResponse, AppError> {
+    let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
-    Ok(())
+    Ok(CronJobResponse::from_job(job, handlers))
 }
 
 // --- Axum HTTP handlers ---
@@ -260,13 +260,12 @@ pub async fn update(
 /// `DELETE /cron-jobs/{id}` — delete a cron job by UUID.
 #[utoipa::path(delete, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
-    responses((status = 204, description = "Deleted"), (status = 404, description = "Not found")))]
+    responses((status = 200, body = CronJobResponse), (status = 404, description = "Not found")))]
 pub async fn delete(
-    State(store): State<CronStore>,
+    State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<StatusCode, AppError> {
-    svc_delete(&store, &id)?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Json<CronJobResponse>, AppError> {
+    Ok(Json(svc_delete(&state.store, &state.handlers, &id)?))
 }
 
 #[cfg(test)]

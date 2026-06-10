@@ -180,8 +180,8 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_delete(&self.store, &id) {
-            Ok(()) => ok(serde_json::json!({"deleted": id})),
+        Ok(match cron_jobs::svc_delete(&self.store, &self.handlers, &id) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }

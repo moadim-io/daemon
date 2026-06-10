@@ -1,3 +1,4 @@
+#![deny(warnings)]
 //! Moadim server library. Exports the WASM interface when compiled for `wasm32`.
 
 /// WASM bindings for browser-side use.

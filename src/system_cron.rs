@@ -1,3 +1,5 @@
+//! Read-only discovery of system cron jobs from crontab and `/etc/cron.d`.
+
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -5,6 +7,7 @@ use std::process::Command;
 
 use crate::cron_jobs::CronJob;
 
+/// Return all system cron jobs found across user crontab and `/etc/cron*` paths.
 pub fn read_all() -> Vec<CronJob> {
     let mut jobs = Vec::new();
     jobs.extend(read_user_crontab());
@@ -13,6 +16,7 @@ pub fn read_all() -> Vec<CronJob> {
     jobs
 }
 
+/// Parse jobs from `crontab -l` output of the current user.
 fn read_user_crontab() -> Vec<CronJob> {
     let output = match Command::new("crontab").arg("-l").output() {
         Ok(o) if o.status.success() => o,
@@ -22,6 +26,7 @@ fn read_user_crontab() -> Vec<CronJob> {
     parse_text(&text, "system:user-crontab", false)
 }
 
+/// Parse jobs from `/etc/crontab` if it exists.
 fn read_etc_crontab() -> Vec<CronJob> {
     let path = Path::new("/etc/crontab");
     if !path.exists() {
@@ -33,6 +38,7 @@ fn read_etc_crontab() -> Vec<CronJob> {
     }
 }
 
+/// Parse jobs from all files under `/etc/cron.d/`.
 fn read_cron_d() -> Vec<CronJob> {
     let dir = Path::new("/etc/cron.d");
     if !dir.is_dir() {
@@ -61,6 +67,7 @@ fn read_cron_d() -> Vec<CronJob> {
     jobs
 }
 
+/// Produce a deterministic ID from `(source, schedule, command)` so system jobs have stable IDs across reads.
 fn stable_id(source: &str, schedule: &str, command: &str) -> String {
     let mut h = DefaultHasher::new();
     source.hash(&mut h);
@@ -69,6 +76,7 @@ fn stable_id(source: &str, schedule: &str, command: &str) -> String {
     format!("sys-{:016x}", h.finish())
 }
 
+/// Return `true` if `line` looks like a shell variable assignment (`KEY=value`).
 fn is_env_var_line(line: &str) -> bool {
     if let Some(eq_pos) = line.find('=') {
         let key = &line[..eq_pos];
@@ -78,12 +86,14 @@ fn is_env_var_line(line: &str) -> bool {
     }
 }
 
+/// Parse every line in `text` into cron jobs, skipping blanks and comments.
 fn parse_text(text: &str, source: &str, has_user_field: bool) -> Vec<CronJob> {
     text.lines()
         .filter_map(|line| parse_line(line, source, has_user_field))
         .collect()
 }
 
+/// Parse a single crontab line into a [`CronJob`], returning `None` for non-job lines.
 fn parse_line(line: &str, source: &str, has_user_field: bool) -> Option<CronJob> {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') || is_env_var_line(line) {

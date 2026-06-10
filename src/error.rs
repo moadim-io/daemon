@@ -1,3 +1,5 @@
+//! Application error type mapped to HTTP status codes.
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -5,11 +7,16 @@ use axum::{
 };
 use std::fmt;
 
+/// Application-level error that converts to an HTTP response.
 #[derive(Debug)]
 pub enum AppError {
+    /// 500 Internal Server Error.
     Internal,
+    /// 400 Bad Request with a human-readable description.
     BadRequest(String),
+    /// 404 Not Found.
     NotFound,
+    /// 409 Conflict with a human-readable description.
     Conflict(String),
 }
 
@@ -36,4 +43,5 @@ impl IntoResponse for AppError {
     }
 }
 
+/// Convenience alias for `Result<T, AppError>`.
 pub type AppResult<T> = Result<T, AppError>;

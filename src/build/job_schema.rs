@@ -1,7 +1,10 @@
+//! Generates `schemas/job.schema.json` and `schemas/job.example.toml`.
+
 use serde_json::{json, to_string_pretty};
 use std::fs;
 use std::path::Path;
 
+/// Write the job JSON Schema and an example TOML file into `<manifest_dir>/schemas/`.
 pub fn generate(manifest_dir: &str) {
     let schema_dir = Path::new(manifest_dir).join("schemas");
     fs::create_dir_all(&schema_dir).expect("failed to create schemas/");

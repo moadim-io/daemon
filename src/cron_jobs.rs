@@ -1,3 +1,5 @@
+//! Cron job data model, service functions, and Axum HTTP handlers.
+
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -14,39 +16,56 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
+/// A persisted cron job with scheduling and metadata.
 #[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct CronJob {
+    /// Unique identifier (UUID v4).
     pub id: String,
+    /// Cron expression defining when the job runs.
     pub schedule: String,
+    /// Identifier for the handler that processes the job.
     pub handler: String,
+    /// Arbitrary JSON metadata attached to the job.
     pub metadata: serde_json::Value,
+    /// Whether the job is active.
     pub enabled: bool,
-    /// "managed" for jobs owned by this server; "system:*" for read-only system cron entries.
+    /// `"managed"` for jobs owned by this server; `"system:*"` for read-only system cron entries.
     pub source: String,
+    /// Unix timestamp (seconds) when the job was created.
     pub created_at: u64,
+    /// Unix timestamp (seconds) when the job was last updated.
     pub updated_at: u64,
 }
 
+/// A [`CronJob`] enriched with a flag indicating whether its handler is registered.
 #[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct CronJobResponse {
+    /// The underlying cron job.
     #[serde(flatten)]
     pub job: CronJob,
+    /// `true` if the job's handler appears in the server's handler registry.
     pub handler_registered: bool,
 }
 
 impl CronJobResponse {
+    /// Build a response from `job`, checking `handlers` for registration status.
     pub fn from_job(job: CronJob, handlers: &HashSet<String>) -> Self {
         let handler_registered = handlers.contains(&job.handler);
         Self { job, handler_registered }
     }
 }
 
+/// Thread-safe shared store of cron jobs keyed by ID.
 pub type CronStore = Arc<Mutex<HashMap<String, CronJob>>>;
+/// Thread-safe set of registered handler identifiers.
 pub type HandlerRegistry = Arc<HashSet<String>>;
 
+/// Combined Axum application state holding the job store and handler registry.
 #[derive(Clone)]
 pub struct AppState {
+    /// Shared cron job store.
     pub store: CronStore,
+    /// Registered handler identifiers.
     pub handlers: HandlerRegistry,
 }
 
@@ -56,14 +75,17 @@ impl axum::extract::FromRef<AppState> for CronStore {
     }
 }
 
+/// Create an empty [`CronStore`].
 pub fn new_store() -> CronStore {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
+/// Create an empty [`HandlerRegistry`].
 pub fn new_registry() -> HandlerRegistry {
     Arc::new(HashSet::new())
 }
 
+/// Return current Unix time in whole seconds.
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -71,42 +93,56 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
+/// Parse `expr` as a cron expression, returning `BadRequest` on failure.
 fn validate_cron(expr: &str) -> Result<(), AppError> {
     Schedule::from_str(expr)
         .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
     Ok(())
 }
 
+/// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
+    /// Cron expression for the new job.
     pub schedule: String,
+    /// Handler identifier to invoke when the schedule fires.
     pub handler: String,
+    /// Optional metadata (defaults to null).
     #[serde(default)]
     #[schemars(schema_with = "metadata_schema")]
     pub metadata: serde_json::Value,
+    /// Whether to create the job in an enabled state (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
 }
 
+/// Serde default for boolean fields that should default to `true`.
 fn bool_true() -> bool {
     true
 }
 
+/// Schema override that marks `metadata` as a free-form JSON object.
 fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({"type": "object", "additionalProperties": true})
 }
 
+/// Request body for partially updating an existing cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
+    /// New cron expression, or `None` to keep the existing value.
     pub schedule: Option<String>,
+    /// New handler identifier, or `None` to keep the existing value.
     pub handler: Option<String>,
+    /// New metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "metadata_schema")]
     pub metadata: Option<serde_json::Value>,
+    /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
 }
 
 // --- Service layer (no HTTP types) ---
 
+/// Return all jobs sorted by creation time (oldest first).
 pub fn svc_list(store: &CronStore) -> Vec<CronJob> {
     let lock = store.lock().unwrap();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
@@ -114,10 +150,12 @@ pub fn svc_list(store: &CronStore) -> Vec<CronJob> {
     jobs
 }
 
+/// Look up a job by `id`, returning `NotFound` if it does not exist.
 pub fn svc_get(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     store.lock().unwrap().get(id).cloned().ok_or(AppError::NotFound)
 }
 
+/// Validate `req`, assign a UUID, persist, and return the new job.
 pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppError> {
     validate_cron(&req.schedule)?;
     let now = now_secs();
@@ -135,6 +173,7 @@ pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppE
     Ok(job)
 }
 
+/// Apply non-`None` fields from `req` to the job identified by `id`.
 pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<CronJob, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
@@ -157,6 +196,7 @@ pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<Cro
     Ok(job.clone())
 }
 
+/// Remove the job with `id` from the store, returning `NotFound` if absent.
 pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
     store
         .lock()
@@ -168,6 +208,7 @@ pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
 
 // --- Axum HTTP handlers ---
 
+/// `POST /cron-jobs` — create a new cron job.
 #[utoipa::path(post, path = "/cron-jobs",
     request_body = CreateRequest,
     responses((status = 201, body = CronJob), (status = 400, description = "Invalid cron expression")))]
@@ -179,6 +220,7 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(job)))
 }
 
+/// `GET /cron-jobs` — list all cron jobs sorted by creation time.
 #[utoipa::path(get, path = "/cron-jobs",
     responses((status = 200, body = Vec<CronJobResponse>)))]
 pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
@@ -186,6 +228,7 @@ pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
     Json(jobs.into_iter().map(|j| CronJobResponse::from_job(j, &state.handlers)).collect())
 }
 
+/// `GET /cron-jobs/{id}` — retrieve a single cron job by UUID.
 #[utoipa::path(get, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
     responses((status = 200, body = CronJobResponse), (status = 404, description = "Not found")))]
@@ -197,6 +240,7 @@ pub async fn get(
     Ok(Json(CronJobResponse::from_job(job, &state.handlers)))
 }
 
+/// `PATCH /cron-jobs/{id}` — partially update a cron job.
 #[utoipa::path(patch, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
     request_body = UpdateRequest,
@@ -209,6 +253,7 @@ pub async fn update(
     Ok(Json(svc_update(&store, &id, body)?))
 }
 
+/// `DELETE /cron-jobs/{id}` — delete a cron job by UUID.
 #[utoipa::path(delete, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
     responses((status = 204, description = "Deleted"), (status = 404, description = "Not found")))]

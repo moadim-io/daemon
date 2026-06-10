@@ -1,3 +1,5 @@
+//! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
+
 #[cfg(not(target_arch = "wasm32"))]
 mod banner;
 #[cfg(not(target_arch = "wasm32"))]

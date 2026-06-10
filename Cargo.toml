@@ -30,5 +30,9 @@ path = "src/main.rs"
 [build-dependencies]
 serde_json = "1"
 
+[lints.rust]
+missing_docs = "deny"
+
 [lints.clippy]
 all = "deny"
+missing_docs_in_private_items = "deny"

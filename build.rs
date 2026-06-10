@@ -1,3 +1,5 @@
+//! Build script: generates `apis/openapi.json` and `schemas/job.schema.json`.
+
 #[path = "src/build/mod.rs"]
 mod build;
 

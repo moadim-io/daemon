@@ -1,7 +1,10 @@
+//! Generates `apis/openapi.json` from a hand-authored JSON literal.
+
 use serde_json::{json, to_string_pretty};
 use std::fs;
 use std::path::Path;
 
+/// Write the OpenAPI 3.0 spec to `<manifest_dir>/apis/openapi.json`.
 pub fn generate(manifest_dir: &str) {
     let out_path = Path::new(manifest_dir).join("apis/openapi.json");
 

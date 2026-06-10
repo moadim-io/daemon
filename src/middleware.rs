@@ -1,6 +1,9 @@
+//! Axum middleware layers shared across routes.
+
 use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 
+/// Log each request method, path, response status, and elapsed time.
 pub async fn logger(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();

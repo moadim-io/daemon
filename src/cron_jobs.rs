@@ -46,13 +46,16 @@ pub struct CronJobResponse {
     pub job: CronJob,
     /// `true` if the job's handler appears in the server's handler registry.
     pub handler_registered: bool,
+    /// Absolute path to the job's `job.toml` file on disk.
+    pub file_path: String,
 }
 
 impl CronJobResponse {
     /// Build a response from `job`, checking `handlers` for registration status.
     pub fn from_job(job: CronJob, handlers: &HashSet<String>) -> Self {
         let handler_registered = handlers.contains(&job.handler);
-        Self { job, handler_registered }
+        let file_path = job_toml_path(&job.id).to_string_lossy().into_owned();
+        Self { job, handler_registered, file_path }
     }
 }
 
@@ -282,20 +285,22 @@ pub struct UpdateRequest {
 // --- Service layer (no HTTP types) ---
 
 /// Return all jobs sorted by creation time (oldest first).
-pub fn svc_list(store: &CronStore) -> Vec<CronJob> {
+pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobResponse> {
     let lock = store.lock().unwrap();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
     jobs.sort_by_key(|j| j.created_at);
-    jobs
+    drop(lock);
+    jobs.into_iter().map(|j| CronJobResponse::from_job(j, handlers)).collect()
 }
 
 /// Look up a job by `id`, returning `NotFound` if it does not exist.
-pub fn svc_get(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
-    store.lock().unwrap().get(id).cloned().ok_or(AppError::NotFound)
+pub fn svc_get(store: &CronStore, handlers: &HandlerRegistry, id: &str) -> Result<CronJobResponse, AppError> {
+    let job = store.lock().unwrap().get(id).cloned().ok_or(AppError::NotFound)?;
+    Ok(CronJobResponse::from_job(job, handlers))
 }
 
 /// Validate `req`, assign a UUID, persist, and return the new job.
-pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppError> {
+pub fn svc_create(store: &CronStore, handlers: &HandlerRegistry, req: CreateRequest) -> Result<CronJobResponse, AppError> {
     validate_cron(&req.schedule)?;
     let now = now_secs();
     let job = CronJob {
@@ -310,11 +315,11 @@ pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppE
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
     store.lock().unwrap().insert(job.id.clone(), job.clone());
-    Ok(job)
+    Ok(CronJobResponse::from_job(job, handlers))
 }
 
 /// Apply non-`None` fields from `req` to the job identified by `id`.
-pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<CronJob, AppError> {
+pub fn svc_update(store: &CronStore, handlers: &HandlerRegistry, id: &str, req: UpdateRequest) -> Result<CronJobResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
@@ -336,7 +341,7 @@ pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<Cro
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
-    Ok(job)
+    Ok(CronJobResponse::from_job(job, handlers))
 }
 
 /// Remove the job with `id` from the store, returning `NotFound` if absent.
@@ -351,21 +356,19 @@ pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
 /// `POST /cron-jobs` — create a new cron job.
 #[utoipa::path(post, path = "/cron-jobs",
     request_body = CreateRequest,
-    responses((status = 201, body = CronJob), (status = 400, description = "Invalid cron expression")))]
+    responses((status = 201, body = CronJobResponse), (status = 400, description = "Invalid cron expression")))]
 pub async fn create(
-    State(store): State<CronStore>,
+    State(state): State<AppState>,
     Json(body): Json<CreateRequest>,
-) -> Result<(StatusCode, Json<CronJob>), AppError> {
-    let job = svc_create(&store, body)?;
-    Ok((StatusCode::CREATED, Json(job)))
+) -> Result<(StatusCode, Json<CronJobResponse>), AppError> {
+    Ok((StatusCode::CREATED, Json(svc_create(&state.store, &state.handlers, body)?)))
 }
 
 /// `GET /cron-jobs` — list all cron jobs sorted by creation time.
 #[utoipa::path(get, path = "/cron-jobs",
     responses((status = 200, body = Vec<CronJobResponse>)))]
 pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
-    let jobs = svc_list(&state.store);
-    Json(jobs.into_iter().map(|j| CronJobResponse::from_job(j, &state.handlers)).collect())
+    Json(svc_list(&state.store, &state.handlers))
 }
 
 /// `GET /cron-jobs/{id}` — retrieve a single cron job by UUID.
@@ -376,21 +379,20 @@ pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<CronJobResponse>, AppError> {
-    let job = svc_get(&state.store, &id)?;
-    Ok(Json(CronJobResponse::from_job(job, &state.handlers)))
+    Ok(Json(svc_get(&state.store, &state.handlers, &id)?))
 }
 
 /// `PATCH /cron-jobs/{id}` — partially update a cron job.
 #[utoipa::path(patch, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
     request_body = UpdateRequest,
-    responses((status = 200, body = CronJob), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
+    responses((status = 200, body = CronJobResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
 pub async fn update(
-    State(store): State<CronStore>,
+    State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateRequest>,
-) -> Result<Json<CronJob>, AppError> {
-    Ok(Json(svc_update(&store, &id, body)?))
+) -> Result<Json<CronJobResponse>, AppError> {
+    Ok(Json(svc_update(&state.store, &state.handlers, &id, body)?))
 }
 
 /// `DELETE /cron-jobs/{id}` — delete a cron job by UUID.

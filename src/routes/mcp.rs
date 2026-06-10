@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::time::SystemTime;
 
-use crate::cron_jobs::{self, CronJobResponse, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
+use crate::cron_jobs::{self, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
 
 /// MCP server handler that exposes cron-job management as MCP tools.
 #[derive(Clone)]
@@ -123,11 +123,7 @@ impl MoadimMcp {
     /// Return all managed cron jobs as a JSON array sorted by creation time.
     #[tool(description = "List all managed cron jobs")]
     fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let jobs: Vec<CronJobResponse> = cron_jobs::svc_list(&self.store)
-            .into_iter()
-            .map(|j| CronJobResponse::from_job(j, &self.handlers))
-            .collect();
-        Ok(ok(jobs))
+        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
     }
 
     /// Return read-only system cron jobs discovered from crontab and `/etc/cron.d`.
@@ -142,8 +138,8 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_get(&self.store, &id) {
-            Ok(job) => ok(CronJobResponse::from_job(job, &self.handlers)),
+        Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }
@@ -154,8 +150,8 @@ impl MoadimMcp {
         &self,
         Parameters(req): Parameters<CreateRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_create(&self.store, req) {
-            Ok(job) => ok(job),
+        Ok(match cron_jobs::svc_create(&self.store, &self.handlers, req) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }
@@ -172,8 +168,8 @@ impl MoadimMcp {
             metadata: input.metadata,
             enabled: input.enabled,
         };
-        Ok(match cron_jobs::svc_update(&self.store, &input.id, req) {
-            Ok(job) => ok(job),
+        Ok(match cron_jobs::svc_update(&self.store, &self.handlers, &input.id, req) {
+            Ok(resp) => ok(resp),
             Err(e) => err(e),
         })
     }

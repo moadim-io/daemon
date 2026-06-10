@@ -1,6 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod server;
 
+#[cfg(target_arch = "wasm32")]
 mod wasm;
 
 #[cfg(target_arch = "wasm32")]

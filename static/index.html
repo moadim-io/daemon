@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moadim Server Client</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+            background: #0d1117; color: #c9d1d9; padding: 2rem;
+            max-width: 720px; margin: 0 auto;
+        }
+        h1 { color: #58a6ff; margin-bottom: 0.5rem; }
+        .subtitle { color: #8b949e; margin-bottom: 2rem; font-size: 0.9rem; }
+        .card {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;
+        }
+        .card h2 { color: #79c0ff; font-size: 1rem; margin-bottom: 0.75rem; }
+        .card label { display: block; color: #8b949e; font-size: 0.85rem; margin-bottom: 0.3rem; }
+        .card input, .card textarea {
+            width: 100%; padding: 0.5rem; background: #0d1117;
+            border: 1px solid #30363d; border-radius: 4px;
+            color: #c9d1d9; font-family: monospace; font-size: 0.9rem;
+        }
+        .card textarea { resize: vertical; min-height: 60px; }
+        button {
+            background: #238636; color: white; border: none;
+            padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;
+            font-size: 0.85rem; margin-top: 0.5rem; margin-right: 0.5rem;
+        }
+        button:hover { background: #2ea043; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        pre {
+            background: #0d1117; border: 1px solid #30363d;
+            border-radius: 4px; padding: 0.75rem; margin-top: 0.75rem;
+            font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap;
+            word-break: break-word; color: #7ee787;
+        }
+        pre.error { color: #f85149; }
+        .status { font-size: 0.8rem; color: #8b949e; margin-top: 0.5rem; }
+    </style>
+</head>
+<body>
+    <h1>Moadim Server Client</h1>
+    <p class="subtitle">WASM-powered browser client for the moadim server</p>
+
+    <div class="card">
+        <h2>Health Check</h2>
+        <button id="btn-health" onclick="doHealth()">GET /health</button>
+        <pre id="out-health">Click to query...</pre>
+    </div>
+
+    <div class="card">
+        <h2>Server Info</h2>
+        <button id="btn-info" onclick="doInfo()">GET /info</button>
+        <pre id="out-info">Click to query...</pre>
+    </div>
+
+    <div class="card">
+        <h2>Echo</h2>
+        <label for="echo-input">Message to echo:</label>
+        <textarea id="echo-input" placeholder="Hello from the browser!"></textarea>
+        <button id="btn-echo" onclick="doEcho()">POST /echo</button>
+        <pre id="out-echo">Click to send...</pre>
+    </div>
+
+    <div class="card">
+        <h2>WASM Utilities</h2>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+            <input id="util-input" placeholder="Enter text..." style="flex:1;padding:0.5rem;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-family:monospace;">
+        </div>
+        <button onclick="doChecksum()">Checksum</button>
+        <button onclick="doReverse()">Reverse</button>
+        <button onclick="doUppercase()">Uppercase</button>
+        <pre id="out-util">Run a utility...</pre>
+    </div>
+
+    <script>
+        async function fetchJSON(endpoint) {
+            const out = document.getElementById('out-' + endpoint.split('/').pop());
+            try {
+                out.className = '';
+                out.textContent = 'Loading...';
+                const resp = await fetch(endpoint);
+                const data = await resp.json();
+                out.textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                out.className = 'error';
+                out.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function doHealth() {
+            const out = document.getElementById('out-health');
+            out.className = '';
+            out.textContent = 'Loading...';
+            try {
+                const resp = await fetch('/health');
+                const data = await resp.json();
+                out.textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                out.className = 'error';
+                out.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function doInfo() {
+            const out = document.getElementById('out-info');
+            out.className = '';
+            out.textContent = 'Loading...';
+            try {
+                const resp = await fetch('/info');
+                const data = await resp.json();
+                out.textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                out.className = 'error';
+                out.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function doEcho() {
+            const out = document.getElementById('out-echo');
+            const msg = document.getElementById('echo-input').value;
+            out.className = '';
+            out.textContent = 'Sending...';
+            try {
+                const resp = await fetch('/echo', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                const data = await resp.json();
+                out.textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                out.className = 'error';
+                out.textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function doChecksum() {
+            const input = document.getElementById('util-input').value;
+            // Simple hash
+            let hash = 5381;
+            for (let i = 0; i < input.length; i++) {
+                hash = ((hash << 5) + hash) + input.charCodeAt(i);
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            document.getElementById('out-util').textContent =
+                'djb2: ' + hash.toString(16).padStart(8, '0');
+        }
+
+        function doReverse() {
+            const input = document.getElementById('util-input').value;
+            document.getElementById('out-util').textContent = 'Reversed: ' + input.split('').reverse().join('');
+        }
+
+        function doUppercase() {
+            const input = document.getElementById('util-input').value;
+            document.getElementById('out-util').textContent = 'Upper: ' + input.toUpperCase();
+        }
+    </script>
+</body>
+</html>

@@ -3,13 +3,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
-#[derive(Serialize)]
-pub struct HealthResponse {
-    pub status: &'static str,
-    pub uptime_secs: u64,
-    pub running: bool,
-}
-
+/// Server application state shared across handlers.
 pub struct AppState {
     pub uptime_start: u64,
     pub running: AtomicBool,
@@ -33,7 +27,21 @@ impl Default for AppState {
     }
 }
 
-async fn health(state: web::Data<AppState>) -> impl Responder {
+/// Health status payload.
+#[derive(Serialize)]
+pub struct HealthResponse {
+    pub status: &'static str,
+    pub uptime_secs: u64,
+    pub running: bool,
+}
+
+/// GET / — index page.
+pub async fn index() -> impl Responder {
+    HttpResponse::Ok().body("Moadim server is running")
+}
+
+/// GET /health — health check with uptime tracking.
+pub async fn health(state: web::Data<AppState>) -> impl Responder {
     let secs = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -47,10 +55,32 @@ async fn health(state: web::Data<AppState>) -> impl Responder {
     })
 }
 
-async fn index() -> impl Responder {
-    HttpResponse::Ok().body("Server is running")
+/// POST /echo — echoes the request body back with a timestamp.
+pub async fn echo(body: web::Bytes) -> Result<impl Responder, actix_web::error::Error> {
+    #[derive(serde::Deserialize)]
+    struct EchoRequest {
+        message: String,
+    }
+
+    #[derive(Serialize)]
+    struct EchoResponse {
+        message: String,
+        timestamp: u64,
+    }
+
+    let parsed: EchoRequest = serde_json::from_slice(&body)
+        .map_err(|e| actix_web::error::ErrorBadRequest(e.to_string()))?;
+
+    Ok(HttpResponse::Ok().json(EchoResponse {
+        message: parsed.message,
+        timestamp: SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    }))
 }
 
+/// Start the HTTP server on 127.0.0.1:8080.
 pub async fn run() -> std::io::Result<()> {
     let addr = "127.0.0.1:8080";
     let state = web::Data::new(AppState::new());
@@ -62,6 +92,7 @@ pub async fn run() -> std::io::Result<()> {
             .app_data(state.clone())
             .route("/", web::get().to(index))
             .route("/health", web::get().to(health))
+            .route("/echo", web::post().to(echo))
     })
     .bind(addr)?
     .run()

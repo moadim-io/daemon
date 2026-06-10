@@ -1,3 +1,9 @@
+//! REST HTTP transport (actix-web, port 8080).
+//!
+//! Exposes every capability as a JSON endpoint. All handlers are thin wrappers
+//! that call [`crate::cron_jobs`] service functions and map results to HTTP
+//! status codes.
+
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -5,6 +11,7 @@ use std::time::SystemTime;
 
 use crate::cron_jobs::{self, CronStore};
 
+/// Shared server state injected into every request via `web::Data`.
 pub struct AppState {
     pub uptime_start: u64,
     pub running: AtomicBool,
@@ -29,16 +36,19 @@ impl Default for AppState {
 }
 
 #[derive(Serialize)]
+/// Response body for `GET /health`.
 pub struct HealthResponse {
     pub status: &'static str,
     pub uptime_secs: u64,
     pub running: bool,
 }
 
+/// `GET /` — liveness check.
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().body("Moadim server is running")
 }
 
+/// `GET /health` — returns status, uptime in seconds, and running flag.
 pub async fn health(state: web::Data<AppState>) -> impl Responder {
     let secs = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -53,6 +63,7 @@ pub async fn health(state: web::Data<AppState>) -> impl Responder {
     })
 }
 
+/// `POST /echo` — echoes `{"message":"..."}` back with a server timestamp.
 pub async fn echo(body: web::Bytes) -> Result<impl Responder, actix_web::error::Error> {
     #[derive(serde::Deserialize)]
     struct EchoRequest {
@@ -77,6 +88,7 @@ pub async fn echo(body: web::Bytes) -> Result<impl Responder, actix_web::error::
     }))
 }
 
+/// Bind and run the HTTP server on `127.0.0.1:8080`.
 pub async fn run(store: CronStore) -> std::io::Result<()> {
     let addr = "127.0.0.1:8080";
     let state = web::Data::new(AppState::new());

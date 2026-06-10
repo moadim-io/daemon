@@ -26,11 +26,16 @@ struct IdInput {
     id: String,
 }
 
+fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({"type": "object", "additionalProperties": true})
+}
+
 #[derive(Deserialize, JsonSchema)]
 struct UpdateInput {
     id: String,
     schedule: Option<String>,
     handler: Option<String>,
+    #[schemars(schema_with = "metadata_schema")]
     metadata: Option<serde_json::Value>,
     enabled: Option<bool>,
 }

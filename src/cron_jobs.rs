@@ -49,6 +49,7 @@ pub struct CreateRequest {
     pub schedule: String,
     pub handler: String,
     #[serde(default)]
+    #[schemars(schema_with = "metadata_schema")]
     pub metadata: serde_json::Value,
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -58,10 +59,15 @@ fn bool_true() -> bool {
     true
 }
 
+fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({"type": "object", "additionalProperties": true})
+}
+
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
     pub schedule: Option<String>,
     pub handler: Option<String>,
+    #[schemars(schema_with = "metadata_schema")]
     pub metadata: Option<serde_json::Value>,
     pub enabled: Option<bool>,
 }

@@ -14,6 +14,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry
         uses: actions/cache@v5
@@ -24,6 +26,13 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install trunk
+        run: cargo install --locked trunk
+
+      - name: Build UI
+        run: cargo check
+        # Runs build.rs with trunk available → inlines Yew UI → writes ui/prebuilt.html
 
       - name: Verify tag matches Cargo.toml version
         run: |

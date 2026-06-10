@@ -7,23 +7,29 @@ use std::path::{Path, PathBuf};
 pub fn build(manifest_dir: &str) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output = Path::new(&out_dir).join("index.html");
-
+    let prebuilt = Path::new(manifest_dir).join("ui/prebuilt.html");
     let ui_dir = Path::new(manifest_dir).join("ui");
-    let should_build = true;
 
-    if should_build && ui_dir.exists() {
+    if ui_dir.exists() {
         emit_rerun_triggers(&ui_dir);
         if run_trunk(&ui_dir) {
             let dist = ui_dir.join("dist");
             if dist.exists() {
                 inline_into_html(&dist, &output);
+                // Write alongside sources so cargo publish --allow-dirty picks it up.
+                std::fs::copy(&output, &prebuilt).ok();
                 return;
             }
         }
-        println!("cargo:warning=trunk build failed or produced no dist; using legacy HTML");
     }
 
-    // No Trunk build: write placeholder directing dev to build the Yew UI
+    // Trunk unavailable — use prebuilt bundled in the crate (cargo install path).
+    if prebuilt.exists() {
+        std::fs::copy(&prebuilt, &output).expect("failed to copy prebuilt UI");
+        return;
+    }
+
+    println!("cargo:warning=trunk not found and no prebuilt UI; showing placeholder");
     std::fs::write(&output, PLACEHOLDER_HTML).expect("failed to write placeholder HTML");
 }
 

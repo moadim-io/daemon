@@ -7,6 +7,8 @@ mod cron_jobs;
 #[cfg(not(target_arch = "wasm32"))]
 mod error;
 #[cfg(not(target_arch = "wasm32"))]
+mod fs_location;
+#[cfg(not(target_arch = "wasm32"))]
 mod middleware;
 #[cfg(not(target_arch = "wasm32"))]
 mod routes;

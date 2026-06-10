@@ -94,18 +94,13 @@ impl MoadimMcp {
     /// Return server health status, uptime, and filesystem locations.
     #[tool(description = "Get server health, uptime, and filesystem locations")]
     fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let server_root = std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().into_owned());
-        let server_exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()));
+        let loc = crate::fs_location::FsLocation::current();
         Ok(ok(serde_json::json!({
             "status": "ok",
             "uptime_secs": now_secs() - self.uptime_start,
             "running": true,
-            "server_root": server_root,
-            "server_exe_dir": server_exe_dir,
+            "server_root": loc.server_root,
+            "server_exe_dir": loc.server_exe_dir,
         })))
     }
 

@@ -21,16 +21,15 @@ pub async fn logger(req: Request, next: Next) -> Response {
 
 pub async fn fs_location(req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Ok(val) = HeaderValue::from_str(&cwd.to_string_lossy()) {
+    let loc = crate::fs_location::FsLocation::current();
+    if let Some(root) = loc.server_root {
+        if let Ok(val) = HeaderValue::from_str(&root) {
             res.headers_mut().insert("x-server-root", val);
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            if let Ok(val) = HeaderValue::from_str(&dir.to_string_lossy()) {
-                res.headers_mut().insert("x-server-exe-dir", val);
-            }
+    if let Some(exe_dir) = loc.server_exe_dir {
+        if let Ok(val) = HeaderValue::from_str(&exe_dir) {
+            res.headers_mut().insert("x-server-exe-dir", val);
         }
     }
     res

@@ -18,10 +18,17 @@ use super::mcp::MoadimMcp;
         cron_jobs::get,
         cron_jobs::update,
         cron_jobs::delete,
+        list_system_cron_jobs,
     ),
     components(schemas(CronJob, CreateRequest, UpdateRequest))
 )]
 pub struct ApiDoc;
+
+#[utoipa::path(get, path = "/system-cron-jobs",
+    responses((status = 200, body = Vec<CronJob>)))]
+pub async fn list_system_cron_jobs() -> Json<Vec<CronJob>> {
+    Json(crate::system_cron::read_all())
+}
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -66,6 +73,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
                 .patch(cron_jobs::update)
                 .delete(cron_jobs::delete),
         )
+        .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
         .layer(middleware::from_fn(mw::logger))
         .with_state(store);

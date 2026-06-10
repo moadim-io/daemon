@@ -58,12 +58,16 @@
             "type": "string"
           },
           "id": {
-            "format": "uuid",
             "type": "string"
           },
           "metadata": {},
           "schedule": {
             "example": "@hourly",
+            "type": "string"
+          },
+          "source": {
+            "description": "\"managed\" for jobs owned by this server; \"system:*\" for read-only system cron entries",
+            "example": "managed",
             "type": "string"
           },
           "updated_at": {
@@ -78,6 +82,7 @@
           "handler",
           "metadata",
           "enabled",
+          "source",
           "created_at",
           "updated_at"
         ],
@@ -397,6 +402,28 @@
           }
         },
         "summary": "Health check"
+      }
+    },
+    "/system-cron-jobs": {
+      "get": {
+        "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). These jobs are not managed by this server and cannot be created, updated, or deleted through this API.",
+        "operationId": "listSystemCronJobs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CronJob"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Array of read-only system cron jobs"
+          }
+        },
+        "summary": "List read-only system cron jobs"
       }
     }
   },

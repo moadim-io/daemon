@@ -6,6 +6,7 @@ use std::path::Path;
 fn main() {
     println!("cargo:rerun-if-changed=src/routes/http.rs");
     println!("cargo:rerun-if-changed=src/cron_jobs.rs");
+    println!("cargo:rerun-if-changed=src/system_cron.rs");
     println!("cargo:rerun-if-changed=build.rs");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -121,6 +122,26 @@ fn main() {
                     }
                 }
             },
+            "/system-cron-jobs": {
+                "get": {
+                    "summary": "List read-only system cron jobs",
+                    "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). These jobs are not managed by this server and cannot be created, updated, or deleted through this API.",
+                    "operationId": "listSystemCronJobs",
+                    "responses": {
+                        "200": {
+                            "description": "Array of read-only system cron jobs",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": { "$ref": "#/components/schemas/CronJob" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "/cron-jobs/{id}": {
                 "parameters": [
                     {
@@ -231,13 +252,18 @@ fn main() {
                 },
                 "CronJob": {
                     "type": "object",
-                    "required": ["id", "schedule", "handler", "metadata", "enabled", "created_at", "updated_at"],
+                    "required": ["id", "schedule", "handler", "metadata", "enabled", "source", "created_at", "updated_at"],
                     "properties": {
-                        "id": { "type": "string", "format": "uuid" },
+                        "id": { "type": "string" },
                         "schedule": { "type": "string", "example": "@hourly" },
                         "handler": { "type": "string" },
                         "metadata": { },
                         "enabled": { "type": "boolean" },
+                        "source": {
+                            "type": "string",
+                            "description": "\"managed\" for jobs owned by this server; \"system:*\" for read-only system cron entries",
+                            "example": "managed"
+                        },
                         "created_at": { "type": "integer", "format": "int64", "minimum": 0 },
                         "updated_at": { "type": "integer", "format": "int64", "minimum": 0 }
                     }

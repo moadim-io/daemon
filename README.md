@@ -1,11 +1,12 @@
 # moadim-server
 
-Rust server that exposes the same functionality over two protocols simultaneously:
+Rust server that exposes the same functionality over three protocols simultaneously:
 
 - **REST** (`http://localhost:5784/`) — standard HTTP API for browsers, CLI tools, and services
+- **GraphQL** (`http://localhost:5784/graphql`) — typed query and mutation API with interactive playground
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
-Both run on the same port.
+All three run on the same port.
 
 ## Features
 
@@ -135,6 +136,102 @@ cargo run
 
 Starts on `http://127.0.0.1:5784`. REST and MCP share the same port.  
 The server reads `~/.config/moadim/jobs/` on startup and watches for changes.
+
+## GraphQL
+
+Endpoint: `http://localhost:5784/graphql`
+
+- `GET /graphql` — interactive GraphiQL playground (open in browser)
+- `POST /graphql` — execute queries and mutations
+
+### Schema
+
+```graphql
+scalar JSON   # arbitrary JSON value (objects, arrays, primitives)
+
+type CronJob {
+  id:         String!
+  schedule:   String!
+  handler:    String!
+  metadata:   JSON!
+  enabled:    Boolean!
+  source:     String!
+  createdAt:  Int!
+  updatedAt:  Int!
+}
+
+type CronJobResponse {
+  # all CronJob fields, plus:
+  handlerRegistered: Boolean!
+}
+
+type Health {
+  status:     String!
+  uptimeSecs: Int!
+  running:    Boolean!
+}
+
+type Query {
+  cronJobs:       [CronJobResponse!]!
+  cronJob(id: String!): CronJobResponse
+  systemCronJobs: [CronJob!]!
+  health:         Health!
+}
+
+type Mutation {
+  createCronJob(input: CreateCronJobInput!): CronJob!
+  updateCronJob(id: String!, input: UpdateCronJobInput!): CronJob!
+  deleteCronJob(id: String!): String!   # returns the deleted job ID
+}
+
+input CreateCronJobInput {
+  schedule: String!
+  handler:  String!
+  metadata: JSON
+  enabled:  Boolean   # default: true
+}
+
+input UpdateCronJobInput {
+  schedule: String
+  handler:  String
+  metadata: JSON
+  enabled:  Boolean
+}
+```
+
+### Example queries
+
+```graphql
+# list all jobs with handler registration status
+query {
+  cronJobs {
+    id schedule handler enabled handlerRegistered
+  }
+}
+
+# create a job
+mutation {
+  createCronJob(input: {
+    schedule: "0 30 9 * * 1-5 *"
+    handler:  "send-report"
+    metadata: { recipient: "team@example.com" }
+  }) {
+    id schedule
+  }
+}
+
+# disable a job
+mutation {
+  updateCronJob(id: "...", input: { enabled: false }) {
+    id enabled
+  }
+}
+
+# delete a job
+mutation {
+  deleteCronJob(id: "...")
+}
+```
 
 ## MCP usage
 

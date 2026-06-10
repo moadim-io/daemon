@@ -1,13 +1,14 @@
 use axum::{
     middleware,
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use std::time::SystemTime;
 use utoipa::OpenApi;
 
 use crate::cron_jobs::{self, AppState, CronJob, CronJobResponse, CreateRequest, CronStore, UpdateRequest, new_registry};
 use crate::middleware as mw;
+use super::graphql as gql;
 use super::mcp::MoadimMcp;
 
 #[derive(OpenApi)]
@@ -44,6 +45,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
     };
 
     let uptime_start = now_secs();
+    let schema = gql::build_schema(app_state.clone(), uptime_start);
 
     let mcp_store = store.clone();
     let mcp_handlers = app_state.handlers.clone();
@@ -76,7 +78,9 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
                 .delete(cron_jobs::delete),
         )
         .route("/system-cron-jobs", get(list_system_cron_jobs))
+        .route("/graphql", get(gql::playground).post(gql::handler))
         .nest_service("/mcp", mcp_service)
+        .layer(Extension(schema))
         .layer(middleware::from_fn(mw::logger))
         .with_state(app_state);
 

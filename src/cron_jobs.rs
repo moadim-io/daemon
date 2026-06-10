@@ -21,6 +21,8 @@ pub struct CronJob {
     pub handler: String,
     pub metadata: serde_json::Value,
     pub enabled: bool,
+    /// "managed" for jobs owned by this server; "system:*" for read-only system cron entries.
+    pub source: String,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -125,6 +127,7 @@ pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppE
         handler: req.handler,
         metadata: req.metadata,
         enabled: req.enabled,
+        source: "managed".to_string(),
         created_at: now,
         updated_at: now,
     };
@@ -241,6 +244,7 @@ mod tests {
             handler: "my-handler".to_string(),
             metadata: serde_json::json!({}),
             enabled: true,
+            source: "managed".to_string(),
             created_at: 1000,
             updated_at: 1000,
         };

@@ -115,6 +115,26 @@ pub fn generate(manifest_dir: &str) {
                     }
                 }
             },
+            "/system-cron-jobs": {
+                "get": {
+                    "summary": "List read-only system cron jobs",
+                    "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). Not managed by this server — cannot be created, updated, or deleted.",
+                    "operationId": "listSystemCronJobs",
+                    "responses": {
+                        "200": {
+                            "description": "Array of read-only system cron jobs",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": { "$ref": "#/components/schemas/CronJob" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "/cron-jobs/{id}": {
                 "parameters": [
                     {
@@ -225,13 +245,18 @@ pub fn generate(manifest_dir: &str) {
                 },
                 "CronJob": {
                     "type": "object",
-                    "required": ["id", "schedule", "handler", "metadata", "enabled", "created_at", "updated_at"],
+                    "required": ["id", "schedule", "handler", "metadata", "enabled", "source", "created_at", "updated_at"],
                     "properties": {
-                        "id": { "type": "string", "format": "uuid" },
+                        "id": { "type": "string" },
                         "schedule": { "type": "string", "example": "@hourly" },
                         "handler": { "type": "string" },
                         "metadata": { },
                         "enabled": { "type": "boolean" },
+                        "source": {
+                            "type": "string",
+                            "description": "\"managed\" for server-owned jobs; \"system:*\" for read-only system cron entries",
+                            "example": "managed"
+                        },
                         "created_at": { "type": "integer", "format": "int64", "minimum": 0 },
                         "updated_at": { "type": "integer", "format": "int64", "minimum": 0 }
                     }

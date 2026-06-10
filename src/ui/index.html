@@ -166,9 +166,17 @@
     /* ── Stats ── */
     .stats {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 10px;
       margin-bottom: 36px;
+    }
+
+    @media (max-width: 800px) {
+      .stats { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 520px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
     }
 
     .stat-card {
@@ -182,6 +190,7 @@
     .stat-card.enabled  { border-left-color: var(--accent); }
     .stat-card.disabled { border-left-color: var(--amber); }
     .stat-card.unreg    { border-left-color: var(--red); }
+    .stat-card.system   { border-left-color: #7c8fc9; }
 
     .stat-label {
       font-size: 9px;
@@ -493,6 +502,31 @@
       animation: spin 0.55s linear infinite;
     }
 
+    /* ── System section ── */
+    .system-section { margin-top: 48px; }
+
+    .badge-readonly {
+      display: inline-block;
+      font-size: 8px;
+      letter-spacing: 0.16em;
+      padding: 2px 6px;
+      border: 1px solid #3a4a7a;
+      color: #7c8fc9;
+      background: #0c1020;
+      vertical-align: middle;
+      margin-left: 8px;
+      text-transform: uppercase;
+    }
+
+    .sys-source {
+      font-size: 9px;
+      color: #7c8fc9;
+      letter-spacing: 0.06em;
+    }
+
+    tbody tr.sys-row { opacity: 0.85; }
+    tbody tr.sys-row:hover { background: #0c1420; }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar       { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -520,7 +554,7 @@
 <main>
   <div class="stats">
     <div class="stat-card all">
-      <div class="stat-label">TOTAL JOBS</div>
+      <div class="stat-label">MANAGED</div>
       <div class="stat-val" id="statTotal">—</div>
     </div>
     <div class="stat-card enabled">
@@ -535,6 +569,10 @@
       <div class="stat-label">UNREGISTERED</div>
       <div class="stat-val" style="color:var(--red)" id="statUnreg">—</div>
     </div>
+    <div class="stat-card system">
+      <div class="stat-label">SYSTEM</div>
+      <div class="stat-val" id="statSystem" style="color:#7c8fc9">—</div>
+    </div>
   </div>
 
   <div class="section-hd">
@@ -545,6 +583,20 @@
   <div class="table-wrap" id="tableWrap">
     <div class="empty">
       <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="system-section">
+    <div class="section-hd">
+      <div class="section-label">
+        SYSTEM CRON JOBS
+        <span class="badge-readonly">READ ONLY</span>
+      </div>
+    </div>
+    <div class="table-wrap" id="sysTableWrap">
+      <div class="empty">
+        <div class="spinner"></div>
+      </div>
     </div>
   </div>
 </main>
@@ -628,6 +680,7 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 let jobs = [];
+let systemJobs = [];
 let editId = null;
 
 // ── API ───────────────────────────────────────────────────────────────────
@@ -834,6 +887,47 @@ function renderTable() {
     </table>`;
 }
 
+function renderSystemTable() {
+  document.getElementById('statSystem').textContent = systemJobs.length;
+
+  const wrap = document.getElementById('sysTableWrap');
+
+  if (systemJobs.length === 0) {
+    wrap.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon" style="opacity:0.3">⊘</div>
+        <div class="empty-msg">NO SYSTEM JOBS FOUND</div>
+        <div class="empty-sub">crontab and /etc/cron.d returned nothing</div>
+      </div>`;
+    return;
+  }
+
+  const rows = systemJobs.map(job => {
+    const p = parseCron(job.schedule);
+    const sourceLabel = job.source ? job.source.replace('system:', '') : 'system';
+    return `
+      <tr class="sys-row">
+        <td><span class="cell-id" title="${esc(job.id)}">${esc(job.id.slice(0,12))}…</span></td>
+        <td>
+          <div class="cell-schedule">${esc(job.schedule)}</div>
+          <div class="cell-schedule-human">${esc(p.text)}</div>
+        </td>
+        <td><span class="cell-handler">${esc(job.handler)}</span></td>
+        <td><span class="sys-source">${esc(sourceLabel)}</span></td>
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>SCHEDULE</th><th>COMMAND</th><th>SOURCE</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 // ── Data ───────────────────────────────────────────────────────────────────
 async function loadJobs() {
   try {
@@ -841,6 +935,20 @@ async function loadJobs() {
     renderTable();
   } catch(e) {
     toast(`Failed to load jobs: ${e.message}`, 'err');
+  }
+}
+
+async function loadSystemJobs() {
+  try {
+    systemJobs = await api.get('/system-cron-jobs');
+    renderSystemTable();
+  } catch(e) {
+    document.getElementById('statSystem').textContent = '?';
+    document.getElementById('sysTableWrap').innerHTML = `
+      <div class="empty">
+        <div class="empty-msg" style="color:var(--red)">FAILED TO LOAD</div>
+        <div class="empty-sub">${esc(e.message)}</div>
+      </div>`;
   }
 }
 
@@ -860,7 +968,7 @@ async function pollHealth() {
 function refresh() {
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
-  Promise.all([loadJobs(), pollHealth()]).finally(() => btn.classList.remove('spinning'));
+  Promise.all([loadJobs(), loadSystemJobs(), pollHealth()]).finally(() => btn.classList.remove('spinning'));
 }
 
 // ── Modal ──────────────────────────────────────────────────────────────────
@@ -1036,6 +1144,7 @@ document.getElementById('confirmOverlay').addEventListener('click', e => {
 // ── Init ───────────────────────────────────────────────────────────────────
 pollHealth();
 loadJobs();
+loadSystemJobs();
 setInterval(pollHealth, 30000);
 </script>
 </body>

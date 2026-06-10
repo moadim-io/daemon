@@ -89,13 +89,18 @@ impl MoadimMcp {
         })))
     }
 
-    #[tool(description = "List all cron jobs")]
+    #[tool(description = "List all managed cron jobs")]
     fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let jobs: Vec<CronJobResponse> = cron_jobs::svc_list(&self.store)
             .into_iter()
             .map(|j| CronJobResponse::from_job(j, &self.handlers))
             .collect();
         Ok(ok(jobs))
+    }
+
+    #[tool(description = "List read-only system cron jobs from crontab and /etc/cron.d (not managed by this server)")]
+    fn list_system_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(crate::system_cron::read_all()))
     }
 
     #[tool(description = "Get a cron job by ID")]

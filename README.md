@@ -3,7 +3,7 @@
 Rust server that exposes the same functionality over two protocols simultaneously:
 
 - **REST** (`http://localhost:8080`) — standard HTTP API for browsers, CLI tools, and services
-- **MCP** (`http://localhost:8081/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
+- **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
 ## Features
 
@@ -133,6 +133,23 @@ cargo run
 
 Starts on `http://127.0.0.1:8080`. The browser client is served from `/`.  
 The server reads `~/.config/moadim/jobs/` on startup and watches for changes.
+
+## MCP usage
+
+The server exposes an MCP endpoint at `http://localhost:5784/mcp`. Connect any MCP-compatible client.
+
+### Claude Code
+
+```sh
+claude mcp add --transport http moadim http://localhost:5784/mcp
+```
+
+### Any MCP client
+
+```
+transport: streamable-http
+url:       http://localhost:5784/mcp
+```
 
 ## API
 

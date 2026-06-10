@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::paths::job_toml_path;
 use crate::storage::{remove_job_dir, write_job};
-use crate::util::now_secs;
+use crate::utils::time::now_secs;
 
 /// A persisted cron job with scheduling and metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -106,7 +106,7 @@ pub struct CreateRequest {
     pub handler: String,
     /// Optional metadata (defaults to null).
     #[serde(default)]
-    #[schemars(schema_with = "crate::util::metadata_schema")]
+    #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: serde_json::Value,
     /// Whether to create the job in an enabled state (defaults to `true`).
     #[serde(default = "bool_true")]
@@ -126,7 +126,7 @@ pub struct UpdateRequest {
     /// New handler identifier, or `None` to keep the existing value.
     pub handler: Option<String>,
     /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "crate::util::metadata_schema")]
+    #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: Option<serde_json::Value>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,

@@ -8,7 +8,7 @@ use axum::{
 use utoipa::OpenApi;
 
 use crate::cron_jobs::{self, AppState, CronJob, CronJobResponse, CreateRequest, CronStore, UpdateRequest, new_registry};
-use crate::util::now_secs;
+use crate::utils::time::now_secs;
 use crate::middlewares;
 use super::mcp::MoadimMcp;
 

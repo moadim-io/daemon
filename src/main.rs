@@ -19,7 +19,7 @@ mod storage;
 #[cfg(not(target_arch = "wasm32"))]
 mod system_cron;
 #[cfg(not(target_arch = "wasm32"))]
-mod util;
+mod utils;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;

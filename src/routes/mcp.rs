@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::cron_jobs::{self, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
-use crate::util::now_secs;
+use crate::utils::time::now_secs;
 
 /// MCP server handler that exposes cron-job management as MCP tools.
 #[derive(Clone)]
@@ -48,7 +48,7 @@ struct UpdateInput {
     /// New handler identifier, or `None` to keep the existing value.
     handler: Option<String>,
     /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "crate::util::metadata_schema")]
+    #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     metadata: Option<serde_json::Value>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,

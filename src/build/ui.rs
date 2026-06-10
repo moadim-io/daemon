@@ -2,21 +2,14 @@ use std::path::{Path, PathBuf};
 
 /// Build the Yew UI and write a self-contained `index.html` to `$OUT_DIR`.
 ///
-/// Set `MOADIM_BUILD_UI=1` to enable (skipped by default so normal `cargo
-/// build` stays fast). The server embeds the output via:
-///
-/// ```rust
-/// include_str!(concat!(env!("OUT_DIR"), "/index.html"))
-/// ```
-///
-/// If trunk is absent or the build is skipped, a placeholder is written.
-/// Install trunk with: `cargo install trunk`
+/// Runs on every `cargo build`. If trunk is absent the build falls back to
+/// a placeholder. Install trunk with: `cargo install trunk`
 pub fn build(manifest_dir: &str) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output = Path::new(&out_dir).join("index.html");
 
     let ui_dir = Path::new(manifest_dir).join("ui");
-    let should_build = std::env::var("MOADIM_BUILD_UI").map_or(false, |v| v == "1" || v == "true");
+    let should_build = true;
 
     if should_build && ui_dir.exists() {
         emit_rerun_triggers(&ui_dir);
@@ -121,7 +114,7 @@ globalThis.fetch=(u,...a)=>String(u).endsWith('.wasm')
   ?Promise.resolve(new Response(__wasm,{{headers:{{'Content-Type':'application/wasm'}}}}))
   :__fetch(u,...a);
 {js}
-await init();
+await __wbg_init();
 </script>"#
     );
 

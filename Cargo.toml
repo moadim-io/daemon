@@ -2,7 +2,7 @@
 members = ["ui"]
 
 [package]
-name = "server"
+name = "moadim"
 version = "0.0.1"
 edition = "2021"
 description = "Moadim.io MCP/REST server for managing cron jobs"

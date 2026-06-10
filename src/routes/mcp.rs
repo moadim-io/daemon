@@ -95,13 +95,17 @@ impl MoadimMcp {
     #[tool(description = "Get server health, uptime, and filesystem locations")]
     fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let loc = crate::fs_location::FsLocation::current();
-        Ok(ok(serde_json::json!({
+        let mut val = serde_json::json!({
             "status": "ok",
             "uptime_secs": now_secs() - self.uptime_start,
             "running": true,
-            "server_root": loc.server_root,
-            "server_exe_dir": loc.server_exe_dir,
-        })))
+        });
+        if let (Some(obj), Ok(serde_json::Value::Object(loc_map))) =
+            (val.as_object_mut(), serde_json::to_value(&loc))
+        {
+            obj.extend(loc_map);
+        }
+        Ok(ok(val))
     }
 
     /// Echo `message` back together with the current server timestamp.

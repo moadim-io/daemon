@@ -1,3 +1,4 @@
+#[derive(serde::Serialize)]
 pub struct FsLocation {
     pub server_root: Option<String>,
     pub server_exe_dir: Option<String>,

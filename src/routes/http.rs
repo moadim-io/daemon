@@ -60,7 +60,12 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
     );
 
     let app = Router::new()
-        .route("/ui", get(|| async { axum::response::Html(include_str!("../ui/index.html")) }))
+        .route(
+            "/ui",
+            get(|| async {
+                axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
+            }),
+        )
         .route("/", get(|| async { "Moadim server is running" }))
         .route(
             "/health",
@@ -83,6 +88,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
         )
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
+        .layer(middleware::from_fn(mw::fs_location))
         .layer(middleware::from_fn(mw::logger))
         .with_state(app_state);
 

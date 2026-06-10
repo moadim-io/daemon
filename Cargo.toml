@@ -1,4 +1,5 @@
 [workspace]
+members = ["ui"]
 
 [package]
 name = "server"

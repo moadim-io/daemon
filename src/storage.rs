@@ -131,3 +131,17 @@ pub fn load_store() -> CronStore {
     }
     Arc::new(Mutex::new(jobs))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_roundtrip() {
+        let val = serde_json::json!({"key": "value", "num": 42});
+        let table = json_to_toml_table(&val);
+        let back = metadata_to_json(&table);
+        assert_eq!(back["key"], "value");
+        assert_eq!(back["num"], 42);
+    }
+}

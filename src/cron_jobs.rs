@@ -18,7 +18,7 @@ use crate::error::AppError;
 use crate::storage::{remove_job_dir, write_job};
 
 /// A persisted cron job with scheduling and metadata.
-#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CronJob {
     /// Unique identifier (UUID v4).
     pub id: String,

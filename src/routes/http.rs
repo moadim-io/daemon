@@ -60,7 +60,12 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
     );
 
     let app = Router::new()
-        .route("/ui", get(|| async { axum::response::Html(include_str!("../ui/index.html")) }))
+        .route(
+            "/ui",
+            get(|| async {
+                axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
+            }),
+        )
         .route("/", get(|| async { "Moadim server is running" }))
         .route(
             "/health",

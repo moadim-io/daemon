@@ -1,0 +1,32 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      block-no-verify:
+        specifier: ^1.2.0
+        version: 1.2.0
+
+packages:
+
+  '@polyhook/sdk@0.1.4':
+    resolution: {integrity: sha512-RPA+oybxDEohRCsNfa1htt1yGRpVG0pbqvv+lqSVi0d4HMvuJo1PC+Ql57X0E0TwmX1wngLhLufcvf0q/Wiw8A==}
+    engines: {node: '>=18'}
+
+  block-no-verify@1.2.0:
+    resolution: {integrity: sha512-5NoMB1bcBQgRoacpYLEKBUUV9ymx2rS851GIyyhEA0rZtc9YqiwzYsoxBrH1g8wdmPAKFSih60Mi1CNIMxBqSg==}
+    engines: {node: '>=20.0.0'}
+    hasBin: true
+
+snapshots:
+
+  '@polyhook/sdk@0.1.4': {}
+
+  block-no-verify@1.2.0:
+    dependencies:
+      '@polyhook/sdk': 0.1.4

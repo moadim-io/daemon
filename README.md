@@ -2,6 +2,7 @@
 
 Rust server that exposes the same functionality over two protocols simultaneously:
 
+- **UI** (`http://localhost:5784/ui`) — browser dashboard for managing jobs
 - **REST** (`http://localhost:5784/`) — standard HTTP API for browsers, CLI tools, and services
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 

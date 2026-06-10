@@ -1,9 +1,3 @@
-//! MCP transport (rmcp streamable-HTTP, port 5784).
-//!
-//! Exposes every capability as an MCP tool so AI agents can call them
-//! directly. All tools delegate to [`crate::cron_jobs`] service functions
-//! and serialise results as JSON text content.
-
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content},
@@ -15,8 +9,6 @@ use std::time::SystemTime;
 
 use crate::cron_jobs::{self, CronStore, CreateRequest, UpdateRequest};
 
-/// MCP server handler. One instance is created per MCP session by the
-/// `StreamableHttpService` factory.
 #[derive(Clone)]
 pub struct MoadimMcp {
     store: CronStore,
@@ -144,27 +136,4 @@ impl MoadimMcp {
             Err(e) => err(e),
         })
     }
-}
-
-/// Bind and run the MCP streamable-HTTP server on `127.0.0.1:5784`.
-///
-/// Each incoming MCP session gets a fresh [`MoadimMcp`] instance sharing
-/// the same [`CronStore`].
-pub async fn run(store: CronStore) -> anyhow::Result<()> {
-    use rmcp::transport::streamable_http_server::{
-        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
-    };
-
-    let uptime_start = now_secs();
-    let service = StreamableHttpService::new(
-        move || Ok(MoadimMcp::new(store.clone(), uptime_start)),
-        LocalSessionManager::default().into(),
-        StreamableHttpServerConfig::default(),
-    );
-
-    let router = axum::Router::new().nest_service("/mcp", service);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:5784").await?;
-    println!("MCP  server on http://127.0.0.1:5784/mcp");
-    axum::serve(listener, router).await?;
-    Ok(())
 }

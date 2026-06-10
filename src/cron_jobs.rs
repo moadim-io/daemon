@@ -1,4 +1,8 @@
-use actix_web::{web, HttpResponse, Responder};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use cron::Schedule;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -8,9 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppError;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct CronJob {
     pub id: String,
     pub schedule: String,
@@ -34,7 +38,7 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-pub fn validate_cron(expr: &str) -> Result<(), AppError> {
+fn validate_cron(expr: &str) -> Result<(), AppError> {
     Schedule::from_str(expr)
         .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
     Ok(())
@@ -62,7 +66,18 @@ pub struct UpdateRequest {
     pub enabled: Option<bool>,
 }
 
-// Service layer — shared by HTTP handlers and MCP tools
+// --- Service layer (no HTTP types) ---
+
+pub fn svc_list(store: &CronStore) -> Vec<CronJob> {
+    let lock = store.lock().unwrap();
+    let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
+    jobs.sort_by_key(|j| j.created_at);
+    jobs
+}
+
+pub fn svc_get(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
+    store.lock().unwrap().get(id).cloned().ok_or(AppError::NotFound)
+}
 
 pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppError> {
     validate_cron(&req.schedule)?;
@@ -78,18 +93,6 @@ pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppE
     };
     store.lock().unwrap().insert(job.id.clone(), job.clone());
     Ok(job)
-}
-
-pub fn svc_list(store: &CronStore) -> Vec<CronJob> {
-    let lock = store.lock().unwrap();
-    let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
-    jobs.sort_by_key(|j| j.created_at);
-    jobs
-}
-
-pub fn svc_get(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
-    let lock = store.lock().unwrap();
-    lock.get(id).cloned().ok_or(AppError::NotFound)
 }
 
 pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<CronJob, AppError> {
@@ -115,47 +118,49 @@ pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<Cro
 }
 
 pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
-    let mut lock = store.lock().unwrap();
-    lock.remove(id).ok_or(AppError::NotFound).map(|_| ())
+    store
+        .lock()
+        .unwrap()
+        .remove(id)
+        .ok_or(AppError::NotFound)
+        .map(|_| ())
 }
 
-// HTTP handlers
+// --- Axum HTTP handlers ---
 
 pub async fn create(
-    store: web::Data<CronStore>,
-    body: web::Json<CreateRequest>,
-) -> AppResult<impl Responder> {
-    let job = svc_create(&store, body.into_inner())?;
-    Ok(HttpResponse::Created().json(job))
+    State(store): State<CronStore>,
+    Json(body): Json<CreateRequest>,
+) -> Result<(StatusCode, Json<CronJob>), AppError> {
+    let job = svc_create(&store, body)?;
+    Ok((StatusCode::CREATED, Json(job)))
 }
 
-pub async fn list(store: web::Data<CronStore>) -> impl Responder {
-    HttpResponse::Ok().json(svc_list(&store))
+pub async fn list(State(store): State<CronStore>) -> Json<Vec<CronJob>> {
+    Json(svc_list(&store))
 }
 
 pub async fn get(
-    store: web::Data<CronStore>,
-    path: web::Path<String>,
-) -> AppResult<impl Responder> {
-    let job = svc_get(&store, &path.into_inner())?;
-    Ok(HttpResponse::Ok().json(job))
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<Json<CronJob>, AppError> {
+    Ok(Json(svc_get(&store, &id)?))
 }
 
 pub async fn update(
-    store: web::Data<CronStore>,
-    path: web::Path<String>,
-    body: web::Json<UpdateRequest>,
-) -> AppResult<impl Responder> {
-    let job = svc_update(&store, &path.into_inner(), body.into_inner())?;
-    Ok(HttpResponse::Ok().json(job))
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateRequest>,
+) -> Result<Json<CronJob>, AppError> {
+    Ok(Json(svc_update(&store, &id, body)?))
 }
 
 pub async fn delete(
-    store: web::Data<CronStore>,
-    path: web::Path<String>,
-) -> AppResult<impl Responder> {
-    svc_delete(&store, &path.into_inner())?;
-    Ok(HttpResponse::NoContent().finish())
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    svc_delete(&store, &id)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
@@ -207,7 +212,8 @@ mod tests {
             enabled: true,
         };
         let job = svc_create(&store, req).unwrap();
-        assert_eq!(svc_get(&store, &job.id).unwrap().handler, "h");
+        let fetched = svc_get(&store, &job.id).unwrap();
+        assert_eq!(fetched.id, job.id);
     }
 
     #[test]
@@ -222,5 +228,29 @@ mod tests {
         let job = svc_create(&store, req).unwrap();
         svc_delete(&store, &job.id).unwrap();
         assert!(svc_get(&store, &job.id).is_err());
+    }
+
+    #[test]
+    fn svc_update_enabled_override() {
+        let store = new_store();
+        let req = CreateRequest {
+            schedule: "@daily".to_string(),
+            handler: "h".to_string(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        };
+        let job = svc_create(&store, req).unwrap();
+        let updated = svc_update(
+            &store,
+            &job.id,
+            UpdateRequest {
+                schedule: None,
+                handler: None,
+                metadata: None,
+                enabled: Some(false),
+            },
+        )
+        .unwrap();
+        assert!(!updated.enabled);
     }
 }

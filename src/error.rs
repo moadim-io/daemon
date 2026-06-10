@@ -1,4 +1,8 @@
-use actix_web::http::StatusCode;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use std::fmt;
 
 #[derive(Debug)]
@@ -20,19 +24,15 @@ impl fmt::Display for AppError {
     }
 }
 
-impl actix_web::error::ResponseError for AppError {
-    fn status_code(&self) -> StatusCode {
-        match self {
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let status = match &self {
             AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
-        }
-    }
-
-    fn error_response(&self) -> actix_web::HttpResponse {
-        let body = serde_json::json!({ "error": self.to_string() });
-        actix_web::HttpResponse::build(self.status_code()).json(body)
+        };
+        (status, Json(serde_json::json!({ "error": self.to_string() }))).into_response()
     }
 }
 

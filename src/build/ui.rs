@@ -16,8 +16,7 @@ pub fn build(manifest_dir: &str) {
     let output = Path::new(&out_dir).join("index.html");
 
     let ui_dir = Path::new(manifest_dir).join("ui");
-    let should_build =
-        std::env::var("MOADIM_BUILD_UI").map_or(false, |v| v == "1" || v == "true");
+    let should_build = std::env::var("MOADIM_BUILD_UI").map_or(false, |v| v == "1" || v == "true");
 
     if should_build && ui_dir.exists() {
         emit_rerun_triggers(&ui_dir);
@@ -41,10 +40,7 @@ pub fn build(manifest_dir: &str) {
 }
 
 fn emit_rerun_triggers(ui_dir: &Path) {
-    println!(
-        "cargo:rerun-if-changed={}",
-        ui_dir.join("src").display()
-    );
+    println!("cargo:rerun-if-changed={}", ui_dir.join("src").display());
     println!(
         "cargo:rerun-if-changed={}",
         ui_dir.join("index.html").display()
@@ -145,10 +141,7 @@ await init();
 fn find_dist_assets(dist: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
     let mut js_path = None;
     let mut wasm_path = None;
-    for entry in std::fs::read_dir(dist)
-        .expect("dist dir missing")
-        .flatten()
-    {
+    for entry in std::fs::read_dir(dist).expect("dist dir missing").flatten() {
         let p = entry.path();
         let name = p.file_name().unwrap_or_default().to_string_lossy();
         if name.ends_with(".js") && name != "index.html" {
@@ -190,8 +183,7 @@ fn assemble_html(html: &str, inline_script: &str, js_file: &str, wasm_file: &str
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
-    const TABLE: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
     for chunk in bytes.chunks(3) {
         let n = match chunk.len() {

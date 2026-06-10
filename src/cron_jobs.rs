@@ -58,7 +58,11 @@ impl CronJobResponse {
     pub fn from_job(job: CronJob, handlers: &HashSet<String>) -> Self {
         let handler_registered = handlers.contains(&job.handler);
         let file_path = job_toml_path(&job.id).to_string_lossy().into_owned();
-        Self { job, handler_registered, file_path }
+        Self {
+            job,
+            handler_registered,
+            file_path,
+        }
     }
 }
 
@@ -142,17 +146,32 @@ pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobRes
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
     jobs.sort_by_key(|j| j.created_at);
     drop(lock);
-    jobs.into_iter().map(|j| CronJobResponse::from_job(j, handlers)).collect()
+    jobs.into_iter()
+        .map(|j| CronJobResponse::from_job(j, handlers))
+        .collect()
 }
 
 /// Look up a job by `id`, returning `NotFound` if it does not exist.
-pub fn svc_get(store: &CronStore, handlers: &HandlerRegistry, id: &str) -> Result<CronJobResponse, AppError> {
-    let job = store.lock().unwrap().get(id).cloned().ok_or(AppError::NotFound)?;
+pub fn svc_get(
+    store: &CronStore,
+    handlers: &HandlerRegistry,
+    id: &str,
+) -> Result<CronJobResponse, AppError> {
+    let job = store
+        .lock()
+        .unwrap()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
 /// Validate `req`, assign a UUID, persist, and return the new job.
-pub fn svc_create(store: &CronStore, handlers: &HandlerRegistry, req: CreateRequest) -> Result<CronJobResponse, AppError> {
+pub fn svc_create(
+    store: &CronStore,
+    handlers: &HandlerRegistry,
+    req: CreateRequest,
+) -> Result<CronJobResponse, AppError> {
     validate_cron(&req.schedule)?;
     let now = now_secs();
     let job = CronJob {
@@ -172,7 +191,12 @@ pub fn svc_create(store: &CronStore, handlers: &HandlerRegistry, req: CreateRequ
 }
 
 /// Apply non-`None` fields from `req` to the job identified by `id`.
-pub fn svc_update(store: &CronStore, handlers: &HandlerRegistry, id: &str, req: UpdateRequest) -> Result<CronJobResponse, AppError> {
+pub fn svc_update(
+    store: &CronStore,
+    handlers: &HandlerRegistry,
+    id: &str,
+    req: UpdateRequest,
+) -> Result<CronJobResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
@@ -198,7 +222,11 @@ pub fn svc_update(store: &CronStore, handlers: &HandlerRegistry, id: &str, req: 
 }
 
 /// Remove the job with `id` from the store, returning the deleted job or `NotFound`.
-pub fn svc_delete(store: &CronStore, handlers: &HandlerRegistry, id: &str) -> Result<CronJobResponse, AppError> {
+pub fn svc_delete(
+    store: &CronStore,
+    handlers: &HandlerRegistry,
+    id: &str,
+) -> Result<CronJobResponse, AppError> {
     let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
     Ok(CronJobResponse::from_job(job, handlers))
@@ -225,7 +253,10 @@ pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateRequest>,
 ) -> Result<(StatusCode, Json<CronJobResponse>), AppError> {
-    Ok((StatusCode::CREATED, Json(svc_create(&state.store, &state.handlers, body)?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(svc_create(&state.store, &state.handlers, body)?),
+    ))
 }
 
 /// `GET /cron-jobs` — list all cron jobs sorted by creation time.

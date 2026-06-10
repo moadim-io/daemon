@@ -60,12 +60,33 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
     let base = read_job_toml(&job_toml_path(id))?;
     let local = read_job_toml(&job_local_toml_path(id));
     let (schedule, handler, enabled, created_at, updated_at, last_triggered_at, mut meta) = (
-        local.as_ref().and_then(|l| l.schedule.clone()).or(base.schedule)?,
-        local.as_ref().and_then(|l| l.handler.clone()).or(base.handler)?,
-        local.as_ref().and_then(|l| l.enabled).or(base.enabled).unwrap_or(true),
-        local.as_ref().and_then(|l| l.created_at).or(base.created_at).unwrap_or(0),
-        local.as_ref().and_then(|l| l.updated_at).or(base.updated_at).unwrap_or(0),
-        local.as_ref().and_then(|l| l.last_triggered_at).or(base.last_triggered_at),
+        local
+            .as_ref()
+            .and_then(|l| l.schedule.clone())
+            .or(base.schedule)?,
+        local
+            .as_ref()
+            .and_then(|l| l.handler.clone())
+            .or(base.handler)?,
+        local
+            .as_ref()
+            .and_then(|l| l.enabled)
+            .or(base.enabled)
+            .unwrap_or(true),
+        local
+            .as_ref()
+            .and_then(|l| l.created_at)
+            .or(base.created_at)
+            .unwrap_or(0),
+        local
+            .as_ref()
+            .and_then(|l| l.updated_at)
+            .or(base.updated_at)
+            .unwrap_or(0),
+        local
+            .as_ref()
+            .and_then(|l| l.last_triggered_at)
+            .or(base.last_triggered_at),
         base.metadata,
     );
     if let Some(local_meta) = local.as_ref().map(|l| &l.metadata) {

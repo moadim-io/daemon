@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "Cron job configuration",
+  "properties": {
+    "enabled": {
+      "default": true,
+      "description": "Whether this job is active",
+      "type": "boolean"
+    },
+    "handler": {
+      "description": "Handler identifier invoked when the schedule fires",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Arbitrary key-value data passed to the handler",
+      "type": "object"
+    },
+    "schedule": {
+      "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or 7-field syntax (sec min hour dom month dow year).",
+      "examples": [
+        "@hourly",
+        "@daily",
+        "0 30 9 * * 1-5 *"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schedule",
+    "handler"
+  ],
+  "title": "Job",
+  "type": "object"
+}

@@ -179,7 +179,9 @@ impl MoadimMcp {
     }
 
     /// Manually trigger a cron job immediately, recording the trigger time.
-    #[tool(description = "Manually trigger a cron job outside its schedule, recording last_triggered_at")]
+    #[tool(
+        description = "Manually trigger a cron job outside its schedule, recording last_triggered_at"
+    )]
     fn trigger_cron_job(
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
@@ -190,3 +192,7 @@ impl MoadimMcp {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod mcp_tests;

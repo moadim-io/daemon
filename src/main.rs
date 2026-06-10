@@ -7,18 +7,25 @@ mod banner;
 mod cron_jobs;
 #[cfg(not(target_arch = "wasm32"))]
 mod error;
+/// Server filesystem location helpers.
 #[cfg(not(target_arch = "wasm32"))]
 mod fs_location;
+/// Axum middleware stack.
 #[cfg(not(target_arch = "wasm32"))]
 mod middlewares;
+/// Filesystem path builders for the jobs directory.
 #[cfg(not(target_arch = "wasm32"))]
 mod paths;
+/// HTTP and MCP route definitions.
 #[cfg(not(target_arch = "wasm32"))]
 mod routes;
+/// TOML-backed job persistence.
 #[cfg(not(target_arch = "wasm32"))]
 mod storage;
+/// System crontab discovery.
 #[cfg(not(target_arch = "wasm32"))]
 mod system_cron;
+/// Shared utility functions.
 #[cfg(not(target_arch = "wasm32"))]
 mod utils;
 

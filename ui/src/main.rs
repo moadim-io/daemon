@@ -680,7 +680,8 @@ pub fn job_row(props: &JobRowProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
 
-    let last_run = job.last_triggered_at
+    let last_run = job
+        .last_triggered_at
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 

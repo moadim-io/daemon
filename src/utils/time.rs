@@ -7,3 +7,7 @@ pub fn now_secs() -> u64 {
         .unwrap()
         .as_secs()
 }
+
+#[cfg(test)]
+#[path = "time_tests.rs"]
+mod time_tests;

@@ -101,3 +101,7 @@ async fn echo(body: axum::body::Bytes) -> Result<Json<serde_json::Value>, axum::
         "timestamp": now_secs(),
     })))
 }
+
+#[cfg(test)]
+#[path = "http_tests.rs"]
+mod http_tests;

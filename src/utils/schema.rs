@@ -2,3 +2,7 @@
 pub fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({"type": "object", "additionalProperties": true})
 }
+
+#[cfg(test)]
+#[path = "schema_tests.rs"]
+mod schema_tests;

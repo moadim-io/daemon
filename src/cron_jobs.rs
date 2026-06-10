@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse, Responder};
 use cron::Schedule;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -33,13 +34,13 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn validate_cron(expr: &str) -> Result<(), AppError> {
+pub fn validate_cron(expr: &str) -> Result<(), AppError> {
     Schedule::from_str(expr)
         .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct CreateRequest {
     pub schedule: String,
     pub handler: String,
@@ -53,7 +54,7 @@ fn bool_true() -> bool {
     true
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct UpdateRequest {
     pub schedule: Option<String>,
     pub handler: Option<String>,
@@ -61,91 +62,105 @@ pub struct UpdateRequest {
     pub enabled: Option<bool>,
 }
 
-/// POST /cron-jobs
-pub async fn create(
-    store: web::Data<CronStore>,
-    body: web::Json<CreateRequest>,
-) -> AppResult<impl Responder> {
-    validate_cron(&body.schedule)?;
+// Service layer — shared by HTTP handlers and MCP tools
+
+pub fn svc_create(store: &CronStore, req: CreateRequest) -> Result<CronJob, AppError> {
+    validate_cron(&req.schedule)?;
     let now = now_secs();
     let job = CronJob {
         id: Uuid::new_v4().to_string(),
-        schedule: body.schedule.clone(),
-        handler: body.handler.clone(),
-        metadata: body.metadata.clone(),
-        enabled: body.enabled,
+        schedule: req.schedule,
+        handler: req.handler,
+        metadata: req.metadata,
+        enabled: req.enabled,
         created_at: now,
         updated_at: now,
     };
     store.lock().unwrap().insert(job.id.clone(), job.clone());
+    Ok(job)
+}
+
+pub fn svc_list(store: &CronStore) -> Vec<CronJob> {
+    let lock = store.lock().unwrap();
+    let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
+    jobs.sort_by_key(|j| j.created_at);
+    jobs
+}
+
+pub fn svc_get(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
+    let lock = store.lock().unwrap();
+    lock.get(id).cloned().ok_or(AppError::NotFound)
+}
+
+pub fn svc_update(store: &CronStore, id: &str, req: UpdateRequest) -> Result<CronJob, AppError> {
+    if let Some(ref sched) = req.schedule {
+        validate_cron(sched)?;
+    }
+    let mut lock = store.lock().unwrap();
+    let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    if let Some(s) = req.schedule {
+        job.schedule = s;
+    }
+    if let Some(h) = req.handler {
+        job.handler = h;
+    }
+    if let Some(m) = req.metadata {
+        job.metadata = m;
+    }
+    if let Some(e) = req.enabled {
+        job.enabled = e;
+    }
+    job.updated_at = now_secs();
+    Ok(job.clone())
+}
+
+pub fn svc_delete(store: &CronStore, id: &str) -> Result<(), AppError> {
+    let mut lock = store.lock().unwrap();
+    lock.remove(id).ok_or(AppError::NotFound).map(|_| ())
+}
+
+// HTTP handlers
+
+pub async fn create(
+    store: web::Data<CronStore>,
+    body: web::Json<CreateRequest>,
+) -> AppResult<impl Responder> {
+    let job = svc_create(&store, body.into_inner())?;
     Ok(HttpResponse::Created().json(job))
 }
 
-/// GET /cron-jobs
 pub async fn list(store: web::Data<CronStore>) -> impl Responder {
-    let lock = store.lock().unwrap();
-    let mut jobs: Vec<&CronJob> = lock.values().collect();
-    jobs.sort_by_key(|j| j.created_at);
-    HttpResponse::Ok().json(jobs)
+    HttpResponse::Ok().json(svc_list(&store))
 }
 
-/// GET /cron-jobs/{id}
 pub async fn get(
     store: web::Data<CronStore>,
     path: web::Path<String>,
 ) -> AppResult<impl Responder> {
-    let id = path.into_inner();
-    let lock = store.lock().unwrap();
-    let job = lock.get(&id).ok_or(AppError::NotFound)?;
+    let job = svc_get(&store, &path.into_inner())?;
     Ok(HttpResponse::Ok().json(job))
 }
 
-/// PUT /cron-jobs/{id} and PATCH /cron-jobs/{id}
 pub async fn update(
     store: web::Data<CronStore>,
     path: web::Path<String>,
     body: web::Json<UpdateRequest>,
 ) -> AppResult<impl Responder> {
-    if let Some(ref sched) = body.schedule {
-        validate_cron(sched)?;
-    }
-    let id = path.into_inner();
-    let mut lock = store.lock().unwrap();
-    let job = lock.get_mut(&id).ok_or(AppError::NotFound)?;
-    if let Some(ref s) = body.schedule {
-        job.schedule = s.clone();
-    }
-    if let Some(ref h) = body.handler {
-        job.handler = h.clone();
-    }
-    if let Some(ref m) = body.metadata {
-        job.metadata = m.clone();
-    }
-    if let Some(e) = body.enabled {
-        job.enabled = e;
-    }
-    job.updated_at = now_secs();
-    Ok(HttpResponse::Ok().json(job.clone()))
+    let job = svc_update(&store, &path.into_inner(), body.into_inner())?;
+    Ok(HttpResponse::Ok().json(job))
 }
 
-/// DELETE /cron-jobs/{id}
 pub async fn delete(
     store: web::Data<CronStore>,
     path: web::Path<String>,
 ) -> AppResult<impl Responder> {
-    let id = path.into_inner();
-    let mut lock = store.lock().unwrap();
-    lock.remove(&id).ok_or(AppError::NotFound)?;
+    svc_delete(&store, &path.into_inner())?;
     Ok(HttpResponse::NoContent().finish())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_store() -> web::Data<CronStore> {
-        web::Data::new(new_store())
-    }
 
     #[test]
     fn validate_cron_accepts_valid() {
@@ -183,18 +198,29 @@ mod tests {
     }
 
     #[test]
-    fn store_insert_and_get() {
+    fn svc_create_and_get() {
         let store = new_store();
-        let job = CronJob {
-            id: "x".to_string(),
+        let req = CreateRequest {
             schedule: "@hourly".to_string(),
             handler: "h".to_string(),
             metadata: serde_json::Value::Null,
             enabled: true,
-            created_at: 0,
-            updated_at: 0,
         };
-        store.lock().unwrap().insert("x".to_string(), job);
-        assert!(store.lock().unwrap().contains_key("x"));
+        let job = svc_create(&store, req).unwrap();
+        assert_eq!(svc_get(&store, &job.id).unwrap().handler, "h");
+    }
+
+    #[test]
+    fn svc_delete_removes_job() {
+        let store = new_store();
+        let req = CreateRequest {
+            schedule: "@daily".to_string(),
+            handler: "h".to_string(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        };
+        let job = svc_create(&store, req).unwrap();
+        svc_delete(&store, &job.id).unwrap();
+        assert!(svc_get(&store, &job.id).is_err());
     }
 }

@@ -3,9 +3,8 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
-use crate::cron_jobs;
+use crate::cron_jobs::{self, CronStore};
 
-/// Server application state shared across handlers.
 pub struct AppState {
     pub uptime_start: u64,
     pub running: AtomicBool,
@@ -29,7 +28,6 @@ impl Default for AppState {
     }
 }
 
-/// Health status payload.
 #[derive(Serialize)]
 pub struct HealthResponse {
     pub status: &'static str,
@@ -37,12 +35,10 @@ pub struct HealthResponse {
     pub running: bool,
 }
 
-/// GET / — index page.
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().body("Moadim server is running")
 }
 
-/// GET /health — health check with uptime tracking.
 pub async fn health(state: web::Data<AppState>) -> impl Responder {
     let secs = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -57,7 +53,6 @@ pub async fn health(state: web::Data<AppState>) -> impl Responder {
     })
 }
 
-/// POST /echo — echoes the request body back with a timestamp.
 pub async fn echo(body: web::Bytes) -> Result<impl Responder, actix_web::error::Error> {
     #[derive(serde::Deserialize)]
     struct EchoRequest {
@@ -82,13 +77,12 @@ pub async fn echo(body: web::Bytes) -> Result<impl Responder, actix_web::error::
     }))
 }
 
-/// Start the HTTP server on 127.0.0.1:8080.
-pub async fn run() -> std::io::Result<()> {
+pub async fn run(store: CronStore) -> std::io::Result<()> {
     let addr = "127.0.0.1:8080";
     let state = web::Data::new(AppState::new());
-    let cron_store = web::Data::new(cron_jobs::new_store());
+    let cron_store = web::Data::new(store);
 
-    println!("Starting server on http://{}", addr);
+    println!("HTTP server on http://{addr}");
 
     HttpServer::new(move || {
         App::new()

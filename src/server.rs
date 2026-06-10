@@ -3,6 +3,8 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
+use crate::cron_jobs;
+
 /// Server application state shared across handlers.
 pub struct AppState {
     pub uptime_start: u64,
@@ -84,15 +86,23 @@ pub async fn echo(body: web::Bytes) -> Result<impl Responder, actix_web::error::
 pub async fn run() -> std::io::Result<()> {
     let addr = "127.0.0.1:8080";
     let state = web::Data::new(AppState::new());
+    let cron_store = web::Data::new(cron_jobs::new_store());
 
     println!("Starting server on http://{}", addr);
 
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            .app_data(cron_store.clone())
             .route("/", web::get().to(index))
             .route("/health", web::get().to(health))
             .route("/echo", web::post().to(echo))
+            .route("/cron-jobs", web::post().to(cron_jobs::create))
+            .route("/cron-jobs", web::get().to(cron_jobs::list))
+            .route("/cron-jobs/{id}", web::get().to(cron_jobs::get))
+            .route("/cron-jobs/{id}", web::put().to(cron_jobs::update))
+            .route("/cron-jobs/{id}", web::patch().to(cron_jobs::update))
+            .route("/cron-jobs/{id}", web::delete().to(cron_jobs::delete))
     })
     .bind(addr)?
     .run()

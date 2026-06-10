@@ -83,6 +83,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
         )
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
+        .layer(middleware::from_fn(mw::fs_location))
         .layer(middleware::from_fn(mw::logger))
         .with_state(app_state);
 

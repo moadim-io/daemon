@@ -151,8 +151,8 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
     );
 
     let router = axum::Router::new().nest_service("/mcp", service);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8081").await?;
-    println!("MCP  server on http://127.0.0.1:8081/mcp");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:5784").await?;
+    println!("MCP  server on http://127.0.0.1:5784/mcp");
     axum::serve(listener, router).await?;
     Ok(())
 }

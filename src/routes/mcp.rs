@@ -7,9 +7,9 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::time::SystemTime;
 
 use crate::cron_jobs::{self, CronStore, HandlerRegistry, CreateRequest, UpdateRequest};
+use crate::util::{metadata_schema, now_secs};
 
 /// MCP server handler that exposes cron-job management as MCP tools.
 #[derive(Clone)]
@@ -38,11 +38,6 @@ struct IdInput {
     id: String,
 }
 
-/// Schema override that marks `metadata` as a free-form JSON object.
-fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({"type": "object", "additionalProperties": true})
-}
-
 /// Input for the `update_cron_job` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateInput {
@@ -53,18 +48,10 @@ struct UpdateInput {
     /// New handler identifier, or `None` to keep the existing value.
     handler: Option<String>,
     /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "metadata_schema")]
+    #[schemars(schema_with = "crate::util::metadata_schema")]
     metadata: Option<serde_json::Value>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
-}
-
-/// Return current Unix time in whole seconds.
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.

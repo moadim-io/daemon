@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::storage::{remove_job_dir, write_job};
+use crate::util::{metadata_schema, now_secs};
 
 /// A persisted cron job with scheduling and metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -89,14 +89,6 @@ pub fn new_registry() -> HandlerRegistry {
     Arc::new(HashSet::new())
 }
 
-/// Return current Unix time in whole seconds.
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
-
 /// Parse `expr` as a cron expression, returning `BadRequest` on failure.
 fn validate_cron(expr: &str) -> Result<(), AppError> {
     Schedule::from_str(expr)
@@ -113,7 +105,7 @@ pub struct CreateRequest {
     pub handler: String,
     /// Optional metadata (defaults to null).
     #[serde(default)]
-    #[schemars(schema_with = "metadata_schema")]
+    #[schemars(schema_with = "crate::util::metadata_schema")]
     pub metadata: serde_json::Value,
     /// Whether to create the job in an enabled state (defaults to `true`).
     #[serde(default = "bool_true")]
@@ -125,11 +117,6 @@ fn bool_true() -> bool {
     true
 }
 
-/// Schema override that marks `metadata` as a free-form JSON object.
-fn metadata_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({"type": "object", "additionalProperties": true})
-}
-
 /// Request body for partially updating an existing cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
@@ -138,7 +125,7 @@ pub struct UpdateRequest {
     /// New handler identifier, or `None` to keep the existing value.
     pub handler: Option<String>,
     /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "metadata_schema")]
+    #[schemars(schema_with = "crate::util::metadata_schema")]
     pub metadata: Option<serde_json::Value>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,

@@ -1,4 +1,63 @@
 #!/usr/bin/env sh
 set -e
+
+# ── 1. Test-file convention ────────────────────────────────────────────────────
+# Tests must live in *_tests.rs files, not inline #[cfg(test)] blocks.
+# A colocated reference is fine: `#[cfg(test)] mod foo_tests;` (semicolon).
+# Inline blocks have the form `#[cfg(test)] mod foo {` (opening brace).
+echo "Checking test-file convention (tests must be in *_tests.rs files)..."
+fail=0
+
+check_file() {
+  file="$1"
+  prev_was_cfg_test=0
+  while IFS= read -r line; do
+    case "$line" in
+      *'#[cfg(test)]'*)
+        prev_was_cfg_test=1
+        continue
+        ;;
+    esac
+    if [ "$prev_was_cfg_test" = "1" ]; then
+      case "$line" in
+        *'mod '*'{'*)
+          echo "  FAIL: $file: inline test block found (use *_tests.rs instead)"
+          return 1
+          ;;
+      esac
+      prev_was_cfg_test=0
+    fi
+  done < "$file"
+  return 0
+}
+
+for f in $(find src -name '*.rs' | grep -v '_tests\.rs$'); do
+  if ! check_file "$f"; then
+    fail=1
+  fi
+done
+
+if [ "$fail" = "1" ]; then
+  echo "Test-convention check FAILED. Move inline test blocks to *_tests.rs siblings."
+  exit 1
+fi
+echo "Test-convention check passed."
+
+# ── 2. Format ─────────────────────────────────────────────────────────────────
 cargo fmt --check
+
+# ── 3. Lint ───────────────────────────────────────────────────────────────────
 cargo clippy
+
+# ── 4. Coverage ───────────────────────────────────────────────────────────────
+# Requires: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
+if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
+  echo ""
+  echo "cargo-llvm-cov is not installed. Run:"
+  echo "  cargo install cargo-llvm-cov"
+  echo "  rustup component add llvm-tools-preview"
+  exit 1
+fi
+
+echo "Running coverage (97% line coverage required, excluding main.rs)..."
+cargo llvm-cov --fail-under-lines 97 --ignore-filename-regex 'src/main\.rs'

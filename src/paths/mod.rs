@@ -30,3 +30,17 @@ pub fn job_local_toml_path(id: &str) -> PathBuf {
 pub fn job_gitignore_path(id: &str) -> PathBuf {
     job_dir(id).join(".gitignore")
 }
+
+/// Returns the path to `{jobs_dir}/{id}/job.log`.
+pub fn job_log_path(id: &str) -> PathBuf {
+    job_dir(id).join("job.log")
+}
+
+/// Returns the path to `~/.config/moadim/handlers/`.
+pub fn handlers_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+        .join("handlers")
+}

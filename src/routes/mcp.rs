@@ -178,14 +178,17 @@ impl MoadimMcp {
         )
     }
 
-    /// Manually trigger a cron job immediately, recording the trigger time.
-    #[tool(description = "Manually trigger a cron job outside its schedule, recording last_triggered_at")]
+    /// Manually trigger a cron job immediately, running its handler and recording the trigger time.
+    #[tool(description = "Manually trigger a cron job outside its schedule: runs its handler now and records last_triggered_at")]
     fn trigger_cron_job(
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match cron_jobs::svc_trigger(&self.store, &id) {
-            Ok(job) => ok(job),
+            Ok(job) => {
+                tokio::spawn(crate::runner::run_job(job.clone()));
+                ok(job)
+            }
             Err(e) => err(e),
         })
     }

@@ -79,6 +79,8 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
         .layer(middleware::from_fn(middlewares::logger::logger))
         .with_state(app_state);
 
+    crate::runner::spawn_scheduler(store.clone());
+
     let addr = "127.0.0.1:5784";
     let listener = tokio::net::TcpListener::bind(addr).await?;
     crate::banner::print(addr);

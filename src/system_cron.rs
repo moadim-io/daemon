@@ -2,7 +2,6 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
 use std::process::Command;
 
 use crate::cron_jobs::CronJob;
@@ -16,34 +15,26 @@ pub fn read_all() -> Vec<CronJob> {
     jobs
 }
 
-/// Parse jobs from `crontab -l` output of the current user.
-fn read_user_crontab() -> Vec<CronJob> {
-    let output = match Command::new("crontab").arg("-l").output() {
-        Ok(o) if o.status.success() => o,
-        _ => return vec![],
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    parse_text(&text, "system:user-crontab", false)
+/// Parse bytes from a crontab command's stdout into cron jobs.
+fn parse_crontab_output(stdout: &[u8], source: &str) -> Vec<CronJob> {
+    let text = String::from_utf8_lossy(stdout);
+    parse_text(&text, source, false)
 }
 
-/// Parse jobs from `/etc/crontab` if it exists.
-fn read_etc_crontab() -> Vec<CronJob> {
-    let path = Path::new("/etc/crontab");
-    if !path.exists() {
-        return vec![];
-    }
+/// Read a crontab-format file at `path` and return parsed jobs, or empty on error.
+fn read_crontab_from_path(
+    path: &std::path::Path,
+    source: &str,
+    has_user_field: bool,
+) -> Vec<CronJob> {
     match std::fs::read_to_string(path) {
-        Ok(text) => parse_text(&text, "system:etc-crontab", true),
+        Ok(text) => parse_text(&text, source, has_user_field),
         Err(_) => vec![],
     }
 }
 
-/// Parse jobs from all files under `/etc/cron.d/`.
-fn read_cron_d() -> Vec<CronJob> {
-    let dir = Path::new("/etc/cron.d");
-    if !dir.is_dir() {
-        return vec![];
-    }
+/// Scan all files in `dir` as cron.d-style entries, returning parsed jobs.
+fn read_cron_d_from_dir(dir: &std::path::Path) -> Vec<CronJob> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return vec![],
@@ -65,6 +56,29 @@ fn read_cron_d() -> Vec<CronJob> {
         }
     }
     jobs
+}
+
+/// Parse jobs from `crontab -l` output of the current user.
+fn read_user_crontab() -> Vec<CronJob> {
+    let output = match Command::new("crontab").arg("-l").output() {
+        Ok(o) if o.status.success() => o,
+        _ => return vec![],
+    };
+    parse_crontab_output(&output.stdout, "system:user-crontab")
+}
+
+/// Parse jobs from `/etc/crontab` if it exists.
+fn read_etc_crontab() -> Vec<CronJob> {
+    read_crontab_from_path(
+        std::path::Path::new("/etc/crontab"),
+        "system:etc-crontab",
+        true,
+    )
+}
+
+/// Parse jobs from all files under `/etc/cron.d/`.
+fn read_cron_d() -> Vec<CronJob> {
+    read_cron_d_from_dir(std::path::Path::new("/etc/cron.d"))
 }
 
 /// Produce a deterministic ID from `(source, schedule, command)` so system jobs have stable IDs across reads.

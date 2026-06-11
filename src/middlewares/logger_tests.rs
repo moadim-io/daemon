@@ -13,6 +13,7 @@ use super::logger;
 
 #[tokio::test]
 async fn logger_passes_200_response_through() {
+    log::set_max_level(log::LevelFilter::Trace);
     let app = Router::new()
         .route("/", get(|| async { "ok" }))
         .layer(middleware::from_fn(logger));

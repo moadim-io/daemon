@@ -101,3 +101,56 @@ fn parsed_job_has_managed_false_source_field_propagated() {
     assert!(job.enabled);
     assert_eq!(job.created_at, 0);
 }
+
+#[test]
+fn parse_crontab_output_parses_bytes() {
+    let jobs = parse_crontab_output(b"30 9 * * 1-5 /bin/backup\n", "src");
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].schedule, "30 9 * * 1-5");
+}
+
+#[test]
+fn read_crontab_from_path_reads_valid_file() {
+    let dir = std::env::temp_dir();
+    let path = dir.join("test-crontab-coverage");
+    std::fs::write(&path, "30 9 * * 1-5 /bin/backup\n").unwrap();
+    let jobs = read_crontab_from_path(&path, "test", false);
+    assert_eq!(jobs.len(), 1);
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn read_crontab_from_path_missing_file_returns_empty() {
+    let jobs = read_crontab_from_path(
+        std::path::Path::new("/nonexistent-crontab-9999"),
+        "t",
+        false,
+    );
+    assert!(jobs.is_empty());
+}
+
+#[test]
+fn read_cron_d_from_dir_reads_cron_files() {
+    let dir = std::env::temp_dir().join("test-cron-d-coverage");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("my-job"), "* * * * * root /bin/cmd\n").unwrap();
+    let jobs = read_cron_d_from_dir(&dir);
+    assert!(!jobs.is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn read_cron_d_from_dir_missing_returns_empty() {
+    let jobs = read_cron_d_from_dir(std::path::Path::new("/nonexistent-cron-d-9999"));
+    assert!(jobs.is_empty());
+}
+
+#[test]
+fn read_cron_d_from_dir_skips_subdirectories() {
+    let dir = std::env::temp_dir().join("test-cron-d-subdir-coverage");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(dir.join("subdir")).unwrap();
+    let jobs = read_cron_d_from_dir(&dir);
+    assert!(jobs.is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

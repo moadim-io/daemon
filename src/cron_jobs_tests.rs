@@ -202,3 +202,121 @@ fn cron_job_response_file_path_contains_id() {
 fn bool_true_default() {
     assert!(bool_true());
 }
+
+#[test]
+fn svc_create_adds_to_store_and_disk() {
+    let store = new_store();
+    let req = CreateRequest {
+        schedule: "@daily".into(),
+        handler: "cov-handler".into(),
+        metadata: serde_json::Value::Null,
+        enabled: true,
+    };
+    let resp = svc_create(&store, &new_registry(), req).unwrap();
+    assert!(!resp.job.id.is_empty());
+    assert_eq!(resp.job.handler, "cov-handler");
+    assert!(store.lock().unwrap().contains_key(&resp.job.id));
+    assert!(crate::paths::job_toml_path(&resp.job.id).exists());
+    crate::storage::remove_job_dir(&resp.job.id).unwrap();
+}
+
+#[test]
+fn svc_create_invalid_cron_returns_err() {
+    let store = new_store();
+    let req = CreateRequest {
+        schedule: "not-a-cron".into(),
+        handler: "h".into(),
+        metadata: serde_json::Value::Null,
+        enabled: true,
+    };
+    assert!(svc_create(&store, &new_registry(), req).is_err());
+}
+
+#[test]
+fn svc_update_changes_all_fields() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "old".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let req = UpdateRequest {
+        schedule: Some("@weekly".into()),
+        handler: Some("new".into()),
+        metadata: Some(serde_json::json!({"k": "v"})),
+        enabled: Some(false),
+    };
+    let updated = svc_update(&store, &new_registry(), &id, req).unwrap();
+    assert_eq!(updated.job.schedule, "@weekly");
+    assert_eq!(updated.job.handler, "new");
+    assert!(!updated.job.enabled);
+
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
+fn svc_delete_removes_from_store_and_disk() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "h".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+    let dir = crate::paths::job_dir(&id);
+    assert!(dir.exists());
+
+    svc_delete(&store, &new_registry(), &id).unwrap();
+    assert!(!dir.exists());
+    assert!(!store.lock().unwrap().contains_key(&id));
+}
+
+#[test]
+fn svc_trigger_persists_last_triggered_at() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "h".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+    assert!(created.job.last_triggered_at.is_none());
+
+    let triggered = svc_trigger(&store, &id).unwrap();
+    assert!(triggered.last_triggered_at.is_some());
+
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
+fn from_ref_extracts_store_from_app_state() {
+    use axum::extract::FromRef;
+    let store = new_store();
+    let state = AppState {
+        store: store.clone(),
+        handlers: new_registry(),
+    };
+    let extracted = CronStore::from_ref(&state);
+    // Same underlying Arc allocation
+    assert!(std::sync::Arc::ptr_eq(&extracted, &store));
+}

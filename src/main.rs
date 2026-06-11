@@ -41,5 +41,6 @@ fn main() {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let store = storage::load_store();
-    routes::http::run(store).await
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:5784").await?;
+    routes::http::run_with_listener(store, listener).await
 }

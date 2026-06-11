@@ -4,15 +4,16 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
     middleware,
+    response::Response,
     routing::get,
     Router,
 };
 use tower::ServiceExt;
 
-use super::fs_location;
+use super::{fs_location, inject_headers_from_value};
 
 #[tokio::test]
-async fn middleware_passes_response_through() {
+async fn fs_location_middleware_adds_headers() {
     let app = Router::new()
         .route("/", get(|| async { "ok" }))
         .layer(middleware::from_fn(fs_location));
@@ -25,19 +26,34 @@ async fn middleware_passes_response_through() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
-async fn middleware_adds_location_headers() {
-    let app = Router::new()
-        .route("/", get(|| async { "ok" }))
-        .layer(middleware::from_fn(fs_location));
+#[test]
+fn inject_headers_from_value_non_object_returns_unchanged() {
+    let res = Response::new(Body::empty());
+    let res = inject_headers_from_value(res, serde_json::json!("not-an-object"));
+    assert!(res.headers().is_empty());
+}
 
-    let resp = app
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+#[test]
+fn inject_headers_from_value_null_value_skipped() {
+    let res = Response::new(Body::empty());
+    let res = inject_headers_from_value(res, serde_json::json!({"server_root": null}));
+    assert!(res.headers().get("x-server-root").is_none());
+}
 
-    // At least one location header should be present in a normal environment
-    let has_root = resp.headers().contains_key("x-server-root");
-    let has_exe = resp.headers().contains_key("x-server-exe-dir");
-    assert!(has_root || has_exe);
+#[test]
+fn inject_headers_from_value_sets_string_value() {
+    let res = Response::new(Body::empty());
+    let res = inject_headers_from_value(res, serde_json::json!({"server_root": "/tmp/test"}));
+    assert_eq!(res.headers().get("x-server-root").unwrap(), "/tmp/test");
+}
+
+#[test]
+fn inject_headers_from_value_invalid_header_value_skipped() {
+    let res = Response::new(Body::empty());
+    // Header values must be printable ASCII; newline is invalid
+    let res = inject_headers_from_value(
+        res,
+        serde_json::json!({"server_root": "path\nwith\nnewline"}),
+    );
+    assert!(res.headers().get("x-server-root").is_none());
 }

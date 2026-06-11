@@ -1,16 +1,14 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::mcp::MoadimMcp;
+use crate::cron_jobs::{self, new_registry, AppState, CronJob, CronStore};
+use crate::middlewares;
+use crate::utils::time::now_secs;
 use axum::{
     middleware,
     routing::{get, post},
     Json, Router,
 };
-use super::mcp::MoadimMcp;
-use crate::cron_jobs::{
-    self, new_registry, AppState, CronJob, CronStore,
-};
-use crate::middlewares;
-use crate::utils::time::now_secs;
 
 /// `GET /system-cron-jobs` — list read-only system cron jobs discovered from the host.
 #[utoipa::path(get, path = "/system-cron-jobs",
@@ -80,17 +78,18 @@ pub(crate) fn build_app(store: CronStore) -> Router {
         .with_state(app_state)
 }
 
-/// Serve the application on `listener` until shutdown.
-///
-/// Called from `main` after the listener is bound.
-pub async fn run_with_listener(
+/// Serve the application on `listener`, shutting down when `shutdown` resolves.
+pub async fn run_with_listener_until(
     store: CronStore,
     listener: tokio::net::TcpListener,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let addr = listener.local_addr()?.to_string();
     let app = build_app(store);
     crate::banner::print(&addr);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await?;
     Ok(())
 }
 

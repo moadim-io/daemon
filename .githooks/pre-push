@@ -59,5 +59,5 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Running coverage (97% line coverage required, excluding main.rs)..."
-cargo llvm-cov --fail-under-lines 97 --ignore-filename-regex 'src/main\.rs'
+echo "Running coverage (100% line coverage required, excluding main.rs)..."
+cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'

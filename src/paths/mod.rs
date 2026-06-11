@@ -4,8 +4,12 @@ use std::path::PathBuf;
 
 /// Returns the path to `~/.config/moadim/jobs/`.
 pub fn jobs_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+    jobs_dir_from_home(dirs::home_dir())
+}
+
+/// Returns the jobs directory under `home`, or `.` if `home` is `None`.
+pub(crate) fn jobs_dir_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
         .join(".config")
         .join("moadim")
         .join("jobs")

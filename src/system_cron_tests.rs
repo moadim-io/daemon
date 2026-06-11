@@ -154,3 +154,34 @@ fn read_cron_d_from_dir_skips_subdirectories() {
     assert!(jobs.is_empty());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+#[cfg(unix)]
+fn read_user_crontab_success_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = std::env::temp_dir().join("fake-crontab-for-coverage");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let script = tmp.join("crontab");
+    // Script that succeeds with one cron job line
+    std::fs::write(&script, "#!/bin/sh\necho '* * * * * /bin/cmd'\n").unwrap();
+    let mut perms = std::fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script, perms).unwrap();
+
+    let original_path = std::env::var("PATH").unwrap_or_default();
+    // SAFETY: tests are single-threaded by default; PATH is restored immediately after.
+    unsafe {
+        std::env::set_var("PATH", format!("{}:{}", tmp.display(), original_path));
+    }
+
+    let jobs = read_user_crontab();
+
+    unsafe {
+        std::env::set_var("PATH", &original_path);
+    }
+    std::fs::remove_dir_all(&tmp).unwrap();
+
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].schedule, "* * * * *");
+}

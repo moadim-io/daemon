@@ -21,6 +21,7 @@ web-sys = { version = "0.3", features = ["console"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = "1"
 axum = "0.8"
+chrono = "0.4"
 cron = "0.12"
 dirs = "5"
 toml = "0.8"

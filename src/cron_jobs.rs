@@ -310,7 +310,9 @@ pub async fn trigger(
     State(store): State<CronStore>,
     Path(id): Path<String>,
 ) -> Result<Json<CronJob>, AppError> {
-    Ok(Json(svc_trigger(&store, &id)?))
+    let job = svc_trigger(&store, &id)?;
+    tokio::spawn(crate::runner::run_job(job.clone()));
+    Ok(Json(job))
 }
 
 #[cfg(test)]

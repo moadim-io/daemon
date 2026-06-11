@@ -16,6 +16,8 @@ mod paths;
 #[cfg(not(target_arch = "wasm32"))]
 mod routes;
 #[cfg(not(target_arch = "wasm32"))]
+mod runner;
+#[cfg(not(target_arch = "wasm32"))]
 mod storage;
 #[cfg(not(target_arch = "wasm32"))]
 mod system_cron;

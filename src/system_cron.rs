@@ -2,7 +2,6 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
 use std::process::Command;
 
 use crate::cron_jobs::CronJob;
@@ -16,34 +15,26 @@ pub fn read_all() -> Vec<CronJob> {
     jobs
 }
 
-/// Parse jobs from `crontab -l` output of the current user.
-fn read_user_crontab() -> Vec<CronJob> {
-    let output = match Command::new("crontab").arg("-l").output() {
-        Ok(o) if o.status.success() => o,
-        _ => return vec![],
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    parse_text(&text, "system:user-crontab", false)
+/// Parse bytes from a crontab command's stdout into cron jobs.
+fn parse_crontab_output(stdout: &[u8], source: &str) -> Vec<CronJob> {
+    let text = String::from_utf8_lossy(stdout);
+    parse_text(&text, source, false)
 }
 
-/// Parse jobs from `/etc/crontab` if it exists.
-fn read_etc_crontab() -> Vec<CronJob> {
-    let path = Path::new("/etc/crontab");
-    if !path.exists() {
-        return vec![];
-    }
+/// Read a crontab-format file at `path` and return parsed jobs, or empty on error.
+fn read_crontab_from_path(
+    path: &std::path::Path,
+    source: &str,
+    has_user_field: bool,
+) -> Vec<CronJob> {
     match std::fs::read_to_string(path) {
-        Ok(text) => parse_text(&text, "system:etc-crontab", true),
+        Ok(text) => parse_text(&text, source, has_user_field),
         Err(_) => vec![],
     }
 }
 
-/// Parse jobs from all files under `/etc/cron.d/`.
-fn read_cron_d() -> Vec<CronJob> {
-    let dir = Path::new("/etc/cron.d");
-    if !dir.is_dir() {
-        return vec![];
-    }
+/// Scan all files in `dir` as cron.d-style entries, returning parsed jobs.
+fn read_cron_d_from_dir(dir: &std::path::Path) -> Vec<CronJob> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return vec![],
@@ -65,6 +56,29 @@ fn read_cron_d() -> Vec<CronJob> {
         }
     }
     jobs
+}
+
+/// Parse jobs from `crontab -l` output of the current user.
+fn read_user_crontab() -> Vec<CronJob> {
+    let output = match Command::new("crontab").arg("-l").output() {
+        Ok(o) if o.status.success() => o,
+        _ => return vec![],
+    };
+    parse_crontab_output(&output.stdout, "system:user-crontab")
+}
+
+/// Parse jobs from `/etc/crontab` if it exists.
+fn read_etc_crontab() -> Vec<CronJob> {
+    read_crontab_from_path(
+        std::path::Path::new("/etc/crontab"),
+        "system:etc-crontab",
+        true,
+    )
+}
+
+/// Parse jobs from all files under `/etc/cron.d/`.
+fn read_cron_d() -> Vec<CronJob> {
+    read_cron_d_from_dir(std::path::Path::new("/etc/cron.d"))
 }
 
 /// Produce a deterministic ID from `(source, schedule, command)` so system jobs have stable IDs across reads.
@@ -146,60 +160,5 @@ fn parse_line(line: &str, source: &str, has_user_field: bool) -> Option<CronJob>
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_standard_line() {
-        let job = parse_line("30 9 * * 1-5 /usr/bin/backup.sh", "test", false).unwrap();
-        assert_eq!(job.schedule, "30 9 * * 1-5");
-        assert_eq!(job.handler, "/usr/bin/backup.sh");
-        assert_eq!(job.source, "test");
-    }
-
-    #[test]
-    fn parses_at_syntax() {
-        let job = parse_line("@daily /usr/bin/cleanup.sh", "test", false).unwrap();
-        assert_eq!(job.schedule, "@daily");
-        assert_eq!(job.handler, "/usr/bin/cleanup.sh");
-    }
-
-    #[test]
-    fn parses_etc_crontab_with_user() {
-        let job = parse_line("* * * * * root /usr/sbin/ntpdate", "etc", true).unwrap();
-        assert_eq!(job.schedule, "* * * * *");
-        assert_eq!(job.handler, "/usr/sbin/ntpdate");
-    }
-
-    #[test]
-    fn parses_at_syntax_with_user() {
-        let job = parse_line("@reboot root /usr/sbin/cron-startup", "etc", true).unwrap();
-        assert_eq!(job.schedule, "@reboot");
-        assert_eq!(job.handler, "/usr/sbin/cron-startup");
-    }
-
-    #[test]
-    fn skips_comments() {
-        assert!(parse_line("# this is a comment", "test", false).is_none());
-    }
-
-    #[test]
-    fn skips_env_vars() {
-        assert!(parse_line("MAILTO=\"\"", "test", false).is_none());
-        assert!(parse_line("PATH=/usr/bin:/usr/sbin", "test", false).is_none());
-    }
-
-    #[test]
-    fn skips_blank_lines() {
-        assert!(parse_line("   ", "test", false).is_none());
-        assert!(parse_line("", "test", false).is_none());
-    }
-
-    #[test]
-    fn stable_id_is_deterministic() {
-        let id1 = stable_id("system:user-crontab", "@daily", "/usr/bin/backup.sh");
-        let id2 = stable_id("system:user-crontab", "@daily", "/usr/bin/backup.sh");
-        assert_eq!(id1, id2);
-        assert!(id1.starts_with("sys-"));
-    }
-}
+#[path = "system_cron_tests.rs"]
+mod system_cron_tests;

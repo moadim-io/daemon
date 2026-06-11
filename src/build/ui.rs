@@ -13,6 +13,7 @@ pub fn build(manifest_dir: &str) {
     // is part of the `moadim` package and is included in the tarball.
     let prebuilt = Path::new(manifest_dir).join("prebuilt.html");
     let ui_dir = Path::new(manifest_dir).join("ui");
+    let should_build = std::env::var("MOADIM_BUILD_UI").is_ok_and(|v| v == "1" || v == "true");
 
     if ui_dir.exists() {
         emit_rerun_triggers(&ui_dir);
@@ -38,6 +39,7 @@ pub fn build(manifest_dir: &str) {
     std::fs::write(&output, PLACEHOLDER_HTML).expect("failed to write placeholder HTML");
 }
 
+/// Emit `cargo:rerun-if-changed` directives for all UI source files.
 fn emit_rerun_triggers(ui_dir: &Path) {
     println!("cargo:rerun-if-changed={}", ui_dir.join("src").display());
     println!(
@@ -137,6 +139,7 @@ await __wbg_init();
     std::fs::write(output, final_html).expect("failed to write inlined index.html");
 }
 
+/// Locate the `.js` and `.wasm` files in trunk's `dist/` directory.
 fn find_dist_assets(dist: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
     let mut js_path = None;
     let mut wasm_path = None;
@@ -181,9 +184,10 @@ fn assemble_html(html: &str, inline_script: &str, js_file: &str, wasm_file: &str
     stripped.replace("</body>", &format!("{inline_script}\n</body>"))
 }
 
+/// Encode `bytes` as standard base64.
 fn base64_encode(bytes: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let n = match chunk.len() {
             3 => (chunk[0] as usize) << 16 | (chunk[1] as usize) << 8 | chunk[2] as usize,
@@ -207,6 +211,7 @@ fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
+/// Minimal HTML page shown when the Yew UI has not been compiled.
 const PLACEHOLDER_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>MOADIM</title></head>

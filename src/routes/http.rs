@@ -19,18 +19,18 @@ pub async fn list_system_cron_jobs() -> Json<Vec<CronJob>> {
     Json(crate::system_cron::read_all())
 }
 
-/// Build the router, bind to `127.0.0.1:5784`, and serve until shutdown.
-pub async fn run(store: CronStore) -> anyhow::Result<()> {
-    let app_state = AppState {
-        store: store.clone(),
-        handlers: new_registry(),
-    };
+/// Build the Axum router with all routes, middleware, and state wired up.
+pub(crate) fn build_app(store: CronStore) -> Router {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
 
-    let uptime_start = now_secs();
+    let app_state = AppState {
+        store: store.clone(),
+        handlers: new_registry(),
+    };
 
+    let uptime_start = now_secs();
     let mcp_store = store.clone();
     let mcp_handlers = app_state.handlers.clone();
     let mcp_service = StreamableHttpService::new(
@@ -45,7 +45,7 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
         StreamableHttpServerConfig::default(),
     );
 
-    let app = Router::new()
+    Router::new()
         .route(
             "/ui",
             get(|| async {
@@ -77,11 +77,19 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
         .nest_service("/mcp", mcp_service)
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
-        .with_state(app_state);
+        .with_state(app_state)
+}
 
-    let addr = "127.0.0.1:5784";
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    crate::banner::print(addr);
+/// Serve the application on `listener` until shutdown.
+///
+/// Called from `main` after the listener is bound.
+pub async fn run_with_listener(
+    store: CronStore,
+    listener: tokio::net::TcpListener,
+) -> anyhow::Result<()> {
+    let addr = listener.local_addr()?.to_string();
+    let app = build_app(store);
+    crate::banner::print(&addr);
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -101,3 +109,7 @@ async fn echo(body: axum::body::Bytes) -> Result<Json<serde_json::Value>, axum::
         "timestamp": now_secs(),
     })))
 }
+
+#[cfg(test)]
+#[path = "http_tests.rs"]
+mod http_tests;

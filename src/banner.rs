@@ -7,3 +7,7 @@ pub fn print(addr: &str) {
     println!("  MCP   http://{addr}/mcp");
     println!("  UI    http://{addr}/ui");
 }
+
+#[cfg(test)]
+#[path = "banner_tests.rs"]
+mod banner_tests;

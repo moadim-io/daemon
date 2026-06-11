@@ -126,8 +126,7 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
         last_triggered_at: job.last_triggered_at,
         metadata: json_to_toml_table(&job.metadata),
     };
-    let text = toml::to_string_pretty(&toml_job)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let text = toml::to_string_pretty(&toml_job).map_err(std::io::Error::other)?;
     std::fs::write(job_toml_path(&job.id), text)?;
     Ok(())
 }
@@ -159,15 +158,5 @@ pub fn load_store() -> CronStore {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn metadata_roundtrip() {
-        let val = serde_json::json!({"key": "value", "num": 42});
-        let table = json_to_toml_table(&val);
-        let back = metadata_to_json(&table);
-        assert_eq!(back["key"], "value");
-        assert_eq!(back["num"], 42);
-    }
-}
+#[path = "storage_tests.rs"]
+mod storage_tests;

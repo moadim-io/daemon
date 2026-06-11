@@ -43,3 +43,6 @@ impl IntoResponse for AppError {
     }
 }
 
+#[cfg(test)]
+#[path = "error_tests.rs"]
+mod error_tests;

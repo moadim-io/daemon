@@ -1,5 +1,6 @@
 use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 
+/// Inject server filesystem location into response headers.
 pub async fn fs_location(req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
     let loc = crate::fs_location::FsLocation::current();
@@ -18,3 +19,7 @@ pub async fn fs_location(req: Request, next: Next) -> Response {
     }
     res
 }
+
+#[cfg(test)]
+#[path = "fs_location_tests.rs"]
+mod fs_location_tests;

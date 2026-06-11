@@ -1,10 +1,14 @@
+/// Server filesystem location, injected into response headers.
 #[derive(serde::Serialize)]
 pub struct FsLocation {
+    /// Absolute path of the server's working directory.
     pub server_root: Option<String>,
+    /// Absolute path of the directory containing the server executable.
     pub server_exe_dir: Option<String>,
 }
 
 impl FsLocation {
+    /// Capture the current working directory and executable directory.
     pub fn current() -> Self {
         Self {
             server_root: std::env::current_dir()
@@ -16,3 +20,7 @@ impl FsLocation {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "fs_location_tests.rs"]
+mod fs_location_tests;

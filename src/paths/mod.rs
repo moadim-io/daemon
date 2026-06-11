@@ -30,3 +30,6 @@ pub fn job_local_toml_path(id: &str) -> PathBuf {
 pub fn job_gitignore_path(id: &str) -> PathBuf {
     job_dir(id).join(".gitignore")
 }
+
+#[cfg(test)]
+mod mod_tests;

@@ -31,16 +31,21 @@ jobs:
 
       - name: Build UI
         run: cargo check
-        # Runs build.rs fresh (no target cache) → trunk inlines Yew UI → writes ui/prebuilt.html
+        # Runs build.rs fresh (no target cache) → trunk inlines Yew UI → writes prebuilt.html
+        # at the package root (not ui/): ui/ is a separate workspace member and
+        # cargo publish strips it from the moadim tarball.
 
       - name: Verify prebuilt UI was generated
-        run: test -s ui/prebuilt.html || (echo "ui/prebuilt.html missing or empty" && exit 1)
+        run: test -s prebuilt.html || (echo "prebuilt.html missing or empty" && exit 1)
+
+      - name: Verify prebuilt UI ships in the published tarball
+        run: cargo package --list --allow-dirty | grep -qx prebuilt.html || (echo "prebuilt.html not in package tarball" && exit 1)
 
       - name: Commit prebuilt UI so cargo publish includes it
         run: |
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add ui/prebuilt.html
+          git add prebuilt.html
           git commit -m "ci: bundle prebuilt UI"
 
       - name: Verify tag matches Cargo.toml version

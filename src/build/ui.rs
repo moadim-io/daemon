@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 pub fn build(manifest_dir: &str) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output = Path::new(&out_dir).join("index.html");
-    let prebuilt = Path::new(manifest_dir).join("ui/prebuilt.html");
+    // Prebuilt lives at the package root — NOT under `ui/`. `ui/` is a separate
+    // workspace member, so `cargo publish` strips everything beneath it; a
+    // prebuilt stored there never ships in the published crate. The root path
+    // is part of the `moadim` package and is included in the tarball.
+    let prebuilt = Path::new(manifest_dir).join("prebuilt.html");
     let ui_dir = Path::new(manifest_dir).join("ui");
 
     if ui_dir.exists() {
@@ -16,7 +20,8 @@ pub fn build(manifest_dir: &str) {
             let dist = ui_dir.join("dist");
             if dist.exists() {
                 inline_into_html(&dist, &output);
-                // Write alongside sources so cargo publish --allow-dirty picks it up.
+                // Write to the package root so CI can commit it and
+                // `cargo publish` ships it for the `cargo install` path.
                 std::fs::copy(&output, &prebuilt).ok();
                 return;
             }
@@ -205,5 +210,5 @@ fn base64_encode(bytes: &[u8]) -> String {
 const PLACEHOLDER_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>MOADIM</title></head>
-<body><p>UI not built. Run: MOADIM_BUILD_UI=1 cargo build</p></body>
+<body><p>UI not built. Install trunk (`cargo install trunk`) and rebuild from source, or reinstall a release that bundles the prebuilt UI.</p></body>
 </html>"#;

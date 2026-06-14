@@ -11,7 +11,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1"
 axum = "0.8"
-cron = "0.12"
+croner = "3"
 dirs = "5"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }

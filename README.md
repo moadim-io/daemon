@@ -179,8 +179,10 @@ The server exposes an MCP endpoint at `http://localhost:5784/mcp`. Connect any M
 
 ### Claude Code
 
+Add moadim at **user scope** so it's available across all your projects. moadim is a global daemon (one local server, one crontab) — there's no per-project state, so project scope would only force you to re-add it in every repo.
+
 ```sh
-claude mcp add --transport http moadim http://localhost:5784/mcp
+claude mcp add --scope user --transport http moadim http://localhost:5784/mcp
 ```
 
 ### Any MCP client

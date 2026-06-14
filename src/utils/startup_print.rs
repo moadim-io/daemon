@@ -6,6 +6,7 @@ pub fn print(addr: &str) {
     println!("  REST  http://{addr}/");
     println!("  MCP   http://{addr}/mcp");
     println!("  UI    http://{addr}/ui");
+    println!("  Docs  http://{addr}/docs");
 }
 
 #[cfg(test)]

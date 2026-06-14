@@ -311,8 +311,40 @@ pub async fn trigger(
     Path(id): Path<String>,
 ) -> Result<Json<CronJob>, AppError> {
     let job = svc_trigger(&store, &id)?;
-    tokio::spawn(crate::runner::run_job(job.clone()));
+    tokio::spawn(crate::runner::run_job(
+        job.clone(),
+        crate::runs::RunTrigger::Manual,
+    ));
     Ok(Json(job))
+}
+
+/// `GET /cron-jobs/{id}/runs` — list execution history for a job, most-recent first.
+#[utoipa::path(get, path = "/cron-jobs/{id}/runs",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 200, body = Vec<crate::runs::RunRecord>), (status = 404, description = "Not found")))]
+pub async fn list_runs(
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<crate::runs::RunRecord>>, AppError> {
+    if !store.lock().unwrap().contains_key(&id) {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(crate::runs::load_runs(&id)))
+}
+
+/// `GET /cron-jobs/{id}/log` — return the raw `job.log` contents for a job.
+#[utoipa::path(get, path = "/cron-jobs/{id}/log",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 200, description = "Log file content as {content: string}"), (status = 404, description = "Not found")))]
+pub async fn get_log(
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !store.lock().unwrap().contains_key(&id) {
+        return Err(AppError::NotFound);
+    }
+    let content = std::fs::read_to_string(crate::paths::job_log_path(&id)).unwrap_or_default();
+    Ok(Json(serde_json::json!({ "content": content })))
 }
 
 #[cfg(test)]
@@ -393,6 +425,11 @@ mod tests {
             let mut lock = store.lock().unwrap();
             lock.get_mut("test-id").unwrap().enabled = false;
         }
-        assert!(!svc_get(&store, &new_registry(), "test-id").unwrap().job.enabled);
+        assert!(
+            !svc_get(&store, &new_registry(), "test-id")
+                .unwrap()
+                .job
+                .enabled
+        );
     }
 }

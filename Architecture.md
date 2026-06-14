@@ -213,18 +213,20 @@ crontab block:
 # Managed by moadim — routines (agent tmux sessions)
 <sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.txt $WB/; \
   tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
-  tmux pipe-pane -o -t … "cat >> $WB/agent.log"; \
-  tmux send-keys -t … -l '<send_keys>'; tmux send-keys -t … Enter   # moadim-routine:<id>
+  tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
 # END MOADIM-ROUTINES
 ```
 
 OS cron runs that line directly: it makes a fresh empty workbench under `~/.moadim/workbenches/`,
-launches the agent **interactively** (no `-p`) in a detached tmux session rooted there, captures output
-via `pipe-pane`, and delivers the prompt via `send-keys`. The agent decides whether to clone the listed
-repositories. `POST /routines/{id}/trigger` runs the identical command via `sh -c`.
+launches the agent **interactively** (no `-p`) in a detached tmux session rooted there, and captures
+output via `pipe-pane`. The prompt reaches the agent as a process **argument** (the `{prompt}`
+placeholder expands to `"$(cat prompt.txt)"`), so there is no keystroke-injection readiness race. The
+agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
+identical command via `sh -c`.
 
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
-(`command`, `args`, `send_keys`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`).
+(`command`, `args`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`,
+`{prompt}` → `"$(cat prompt.txt)"`).
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 

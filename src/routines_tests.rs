@@ -61,6 +61,10 @@ fn substitute_replaces_placeholders() {
         substitute("read {prompt_file} in {workbench}", ".", "prompt.txt"),
         "read prompt.txt in ."
     );
+    assert_eq!(
+        substitute("claude {prompt}", ".", "prompt.txt"),
+        r#"claude "$(cat prompt.txt)""#
+    );
 }
 
 #[test]
@@ -74,15 +78,19 @@ fn build_routine_command_contains_expected_pieces() {
     let r = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
-        args: vec!["--dangerously-skip-permissions".to_string()],
-        send_keys: None,
+        args: vec![
+            "--dangerously-skip-permissions".to_string(),
+            "{prompt}".to_string(),
+        ],
+        setup: None,
     };
     let cmd = build_routine_command(&r, &agent);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
-    assert!(cmd.contains("'claude --dangerously-skip-permissions'"));
+    // prompt passed as a process argument via command substitution, no send-keys
+    assert!(cmd.contains(r#""$(cat prompt.txt)""#));
+    assert!(!cmd.contains("send-keys"));
+    assert!(!cmd.contains("capture-pane"));
     assert!(cmd.contains("tmux pipe-pane"));
-    assert!(cmd.contains("tmux send-keys -t \"$SESS\" -l"));
-    assert!(cmd.contains(DEFAULT_SEND_KEYS));
     assert!(cmd.contains("SLUG='my-routine'"));
     // single line — no newlines
     assert!(!cmd.contains('\n'));
@@ -94,11 +102,27 @@ fn build_routine_command_substitutes_arg_placeholders() {
     let agent = AgentCommand {
         command: "codex".to_string(),
         args: vec!["exec".to_string(), "{prompt_file}".to_string()],
-        send_keys: Some("go {workbench}".to_string()),
+        setup: None,
     };
     let cmd = build_routine_command(&r, &agent);
     assert!(cmd.contains("'codex exec prompt.txt'"));
-    assert!(cmd.contains("-l 'go .'"));
+}
+
+#[test]
+fn build_routine_command_inserts_setup_before_launch() {
+    let r = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        setup: Some("seed-trust \"$WB\"".to_string()),
+    };
+    let cmd = build_routine_command(&r, &agent);
+    let setup_at = cmd.find("seed-trust").expect("setup present");
+    let launch_at = cmd.find("tmux new-session").expect("launch present");
+    // setup runs before the agent launches
+    assert!(setup_at < launch_at);
+    // inserted verbatim (not shell-quoted), $WB left for the runtime shell to expand
+    assert!(cmd.contains("seed-trust \"$WB\""));
 }
 
 #[test]

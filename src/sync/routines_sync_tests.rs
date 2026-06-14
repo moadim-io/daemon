@@ -31,7 +31,7 @@ fn format_routine_line_has_schedule_command_and_tag() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
-        send_keys: None,
+        setup: None,
     };
     let line = format_routine_line(&r, &agent);
     assert!(line.starts_with("30 9 * * 1-5 "));

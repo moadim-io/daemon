@@ -153,12 +153,15 @@ pub struct UpdateRoutineRequest {
 pub struct AgentCommand {
     /// Executable to run (e.g. `"claude"`).
     pub command: String,
-    /// Arguments passed to the executable (supports `{workbench}` / `{prompt_file}` placeholders).
+    /// Arguments passed to the executable. Supports `{workbench}`, `{prompt_file}`, and `{prompt}`
+    /// placeholders; `{prompt}` inlines the composed prompt as a single shell-quoted argument.
     #[serde(default)]
     pub args: Vec<String>,
-    /// Text sent into the live tmux pane after launch, or `None` for the default.
+    /// Optional shell command run in the workbench *before* the agent launches, inserted verbatim
+    /// into the cron line. Runs with the shell vars `$WB` (absolute workbench path) and `$SESS`
+    /// (tmux session name) in scope — e.g. to pre-seed per-directory editor trust state.
     #[serde(default)]
-    pub send_keys: Option<String>,
+    pub setup: Option<String>,
 }
 
 /// Load the agent command for `name`, returning `None` if the config is missing or invalid.
@@ -211,10 +214,14 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
     s
 }
 
-/// Substitute `{workbench}` and `{prompt_file}` placeholders in `s`.
+/// Substitute `{workbench}`, `{prompt_file}`, and `{prompt}` placeholders in `s`.
+///
+/// `{prompt}` expands to a shell command substitution that reads `prompt.txt` from the agent's
+/// cwd (the workbench), so the full prompt is passed as a single argument to the agent process.
 fn substitute(s: &str, workbench: &str, prompt_file: &str) -> String {
     s.replace("{workbench}", workbench)
         .replace("{prompt_file}", prompt_file)
+        .replace("{prompt}", r#""$(cat prompt.txt)""#)
 }
 
 /// Wrap `s` in single quotes for safe inclusion in a POSIX shell command.
@@ -231,13 +238,12 @@ fn shell_quote(s: &str) -> String {
     out
 }
 
-/// Default text sent into the pane when an agent config omits `send_keys`.
-const DEFAULT_SEND_KEYS: &str = "read prompt.txt in this directory and do what it says";
-
 /// Build the single-line shell command that creates a workbench and launches the agent in tmux.
 ///
-/// The agent's cwd is the workbench (via `tmux -c`), so `{prompt_file}` resolves to `prompt.txt`
-/// and `{workbench}` to `.`. The command is `;`-joined (no newlines) so it fits one crontab line.
+/// The agent's cwd is the workbench (via `tmux -c`), so `{prompt_file}` resolves to `prompt.txt`,
+/// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
+/// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
+/// command is `;`-joined (no newlines) so it fits one crontab line.
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&routine.id)
@@ -253,31 +259,23 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     }
     let invocation = invocation.join(" ");
 
-    let send_keys = agent
-        .send_keys
-        .clone()
-        .unwrap_or_else(|| DEFAULT_SEND_KEYS.to_string());
-    let send_keys = substitute(&send_keys, workbench_ref, prompt_file_ref);
-
-    let stmts = [
+    let mut stmts = vec![
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
         format!(r#"cp {} "$WB/prompt.txt""#, shell_quote(&prompt_path)),
-        format!(
-            r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
-            shell_quote(&invocation)
-        ),
-        r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string(),
-        "sleep 1".to_string(),
-        format!(
-            r#"tmux send-keys -t "$SESS" -l {}"#,
-            shell_quote(&send_keys)
-        ),
-        r#"tmux send-keys -t "$SESS" Enter"#.to_string(),
     ];
+    if let Some(setup) = &agent.setup {
+        // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
+        stmts.push(setup.clone());
+    }
+    stmts.push(format!(
+        r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
+        shell_quote(&invocation)
+    ));
+    stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.join("; ")
 }
 

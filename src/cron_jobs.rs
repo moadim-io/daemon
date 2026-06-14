@@ -107,6 +107,8 @@ pub struct AppState {
     pub store: CronStore,
     /// Registered handler identifiers.
     pub handlers: HandlerRegistry,
+    /// Unix timestamp (seconds) when the server started.
+    pub uptime_start: u64,
 }
 
 impl axum::extract::FromRef<AppState> for CronStore {
@@ -348,6 +350,19 @@ pub async fn update(
     Json(body): Json<UpdateRequest>,
 ) -> Result<Json<CronJobResponse>, AppError> {
     Ok(Json(svc_update(&state.store, &state.handlers, &id, body)?))
+}
+
+/// `PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).
+#[utoipa::path(put, path = "/cron-jobs/{id}",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    request_body = UpdateRequest,
+    responses((status = 200, body = CronJobResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
+pub async fn replace(
+    state: State<AppState>,
+    path: Path<String>,
+    body: Json<UpdateRequest>,
+) -> Result<Json<CronJobResponse>, AppError> {
+    update(state, path, body).await
 }
 
 /// `DELETE /cron-jobs/{id}` — delete a cron job by UUID.

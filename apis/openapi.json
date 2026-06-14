@@ -1,241 +1,76 @@
 {
-  "components": {
-    "responses": {
-      "BadRequest": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            }
-          }
-        },
-        "description": "Bad request"
-      },
-      "NotFound": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            }
-          }
-        },
-        "description": "Resource not found"
-      }
-    },
-    "schemas": {
-      "CreateCronJobRequest": {
-        "properties": {
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "handler": {
-            "type": "string"
-          },
-          "metadata": {},
-          "schedule": {
-            "example": "30 9 * * 1-5",
-            "type": "string"
-          }
-        },
-        "required": [
-          "schedule",
-          "handler"
-        ],
-        "type": "object"
-      },
-      "CronJob": {
-        "properties": {
-          "created_at": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "handler": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "metadata": {},
-          "schedule": {
-            "example": "@hourly",
-            "type": "string"
-          },
-          "source": {
-            "description": "\"managed\" for server-owned jobs; \"system:*\" for read-only system cron entries",
-            "example": "managed",
-            "type": "string"
-          },
-          "source_type": {
-            "$ref": "#/components/schemas/CronJobSourceType"
-          },
-          "updated_at": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "schedule",
-          "handler",
-          "metadata",
-          "enabled",
-          "source",
-          "source_type",
-          "created_at",
-          "updated_at"
-        ],
-        "type": "object"
-      },
-      "CronJobSourceType": {
-        "description": "Whether the job is owned by this server or discovered from the host OS",
-        "enum": [
-          "managed",
-          "system"
-        ],
-        "type": "string"
-      },
-      "EchoRequest": {
-        "properties": {
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "EchoResponse": {
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "timestamp": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "message",
-          "timestamp"
-        ],
-        "type": "object"
-      },
-      "ErrorResponse": {
-        "properties": {
-          "error": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "error"
-        ],
-        "type": "object"
-      },
-      "HealthResponse": {
-        "properties": {
-          "running": {
-            "type": "boolean"
-          },
-          "status": {
-            "example": "ok",
-            "type": "string"
-          },
-          "uptime_secs": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "status",
-          "uptime_secs",
-          "running"
-        ],
-        "type": "object"
-      },
-      "UpdateCronJobRequest": {
-        "properties": {
-          "enabled": {
-            "nullable": true,
-            "type": "boolean"
-          },
-          "handler": {
-            "nullable": true,
-            "type": "string"
-          },
-          "metadata": {
-            "nullable": true
-          },
-          "schedule": {
-            "nullable": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      }
-    }
-  },
+  "openapi": "3.1.0",
   "info": {
-    "description": "REST API for managing cron jobs",
     "title": "Moadim Server API",
+    "description": "REST API for managing cron jobs",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
     "version": "0.1.0"
   },
-  "openapi": "3.0.3",
+  "servers": [
+    {
+      "url": "http://127.0.0.1:5784",
+      "description": "Local development"
+    }
+  ],
   "paths": {
     "/": {
       "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /` — liveness check.",
         "operationId": "index",
         "responses": {
           "200": {
+            "description": "Server is running",
             "content": {
               "text/plain": {
                 "schema": {
-                  "example": "Moadim server is running",
                   "type": "string"
                 }
               }
-            },
-            "description": "Server is running"
+            }
           }
-        },
-        "summary": "Liveness check"
+        }
       }
     },
     "/cron-jobs": {
       "get": {
-        "operationId": "listCronJobs",
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`GET /cron-jobs` — list all cron jobs sorted by creation time.",
+        "operationId": "list",
         "responses": {
           "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/CronJob"
-                  },
-                  "type": "array"
+                    "$ref": "#/components/schemas/CronJobResponse"
+                  }
                 }
               }
-            },
-            "description": "Array of cron jobs sorted by creation time"
+            }
           }
-        },
-        "summary": "List all cron jobs"
+        }
       },
       "post": {
-        "operationId": "createCronJob",
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`POST /cron-jobs` — create a new cron job.",
+        "operationId": "create",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateCronJobRequest"
+                "$ref": "#/components/schemas/CreateRequest"
               }
             }
           },
@@ -243,104 +78,77 @@
         },
         "responses": {
           "201": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CronJob"
+                  "$ref": "#/components/schemas/CronJobResponse"
                 }
               }
-            },
-            "description": "Created cron job"
+            }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "Invalid cron expression"
           }
-        },
-        "summary": "Create a cron job"
+        }
       }
     },
     "/cron-jobs/{id}": {
-      "delete": {
-        "operationId": "deleteCronJob",
-        "responses": {
-          "204": {
-            "description": "Deleted"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        },
-        "summary": "Delete a cron job"
-      },
       "get": {
-        "operationId": "getCronJob",
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`GET /cron-jobs/{id}` — retrieve a single cron job by UUID.",
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CronJob"
+                  "$ref": "#/components/schemas/CronJobResponse"
                 }
               }
-            },
-            "description": "Cron job"
+            }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        },
-        "summary": "Get a cron job by ID"
-      },
-      "parameters": [
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "format": "uuid",
-            "type": "string"
+            "description": "Not found"
           }
         }
-      ],
-      "patch": {
-        "operationId": "updateCronJobPatch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCronJobRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJob"
-                }
-              }
-            },
-            "description": "Updated cron job"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        },
-        "summary": "Update a cron job (partial)"
       },
       "put": {
-        "operationId": "updateCronJobPut",
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).",
+        "operationId": "replace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateCronJobRequest"
+                "$ref": "#/components/schemas/UpdateRequest"
               }
             }
           },
@@ -348,27 +156,144 @@
         },
         "responses": {
           "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`DELETE /cron-jobs/{id}` — delete a cron job by UUID.",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronJobResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`PATCH /cron-jobs/{id}` — partially update a cron job.",
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/cron-jobs/{id}/trigger": {
+      "post": {
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`POST /cron-jobs/{id}/trigger` — manually trigger a cron job outside its schedule.",
+        "operationId": "trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CronJob"
                 }
               }
-            },
-            "description": "Updated cron job"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
+            }
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "description": "Not found"
           }
-        },
-        "summary": "Update a cron job (full)"
+        }
       }
     },
     "/echo": {
       "post": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`POST /echo` — parse a JSON body and return the message with a server timestamp.",
         "operationId": "echo",
         "requestBody": {
           "content": {
@@ -382,45 +307,258 @@
         },
         "responses": {
           "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EchoResponse"
                 }
               }
-            },
-            "description": "Echoed message with timestamp"
+            }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "Invalid body"
           }
-        },
-        "summary": "Echo a message back with server timestamp"
+        }
       }
     },
     "/health": {
       "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /health` — health check with uptime.",
         "operationId": "health",
         "responses": {
           "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
                 }
               }
-            },
-            "description": "Health status"
+            }
           }
-        },
-        "summary": "Health check"
+        }
       }
     }
   },
-  "servers": [
-    {
-      "description": "Local development",
-      "url": "http://127.0.0.1:5784"
+  "components": {
+    "schemas": {
+      "CreateRequest": {
+        "type": "object",
+        "description": "Request body for creating a new cron job.",
+        "required": [
+          "schedule",
+          "handler"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether to create the job in an enabled state (defaults to `true`)."
+          },
+          "handler": {
+            "type": "string",
+            "description": "Handler identifier to invoke when the schedule fires."
+          },
+          "metadata": {
+            "description": "Optional metadata (defaults to null)."
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression for the new job."
+          }
+        }
+      },
+      "CronJob": {
+        "type": "object",
+        "description": "A persisted cron job with scheduling and metadata.",
+        "required": [
+          "id",
+          "schedule",
+          "handler",
+          "metadata",
+          "enabled",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the job was created.",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the job is active."
+          },
+          "handler": {
+            "type": "string",
+            "description": "Identifier for the handler that processes the job."
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique identifier (UUID v4)."
+          },
+          "last_triggered_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.",
+            "minimum": 0
+          },
+          "metadata": {
+            "description": "Arbitrary JSON metadata attached to the job."
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression defining when the job runs."
+          },
+          "source": {
+            "type": "string",
+            "description": "`\"managed\"` for jobs owned by this server; `\"system:*\"` for read-only system cron entries."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the job was last updated.",
+            "minimum": 0
+          }
+        }
+      },
+      "CronJobResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CronJob",
+            "description": "The underlying cron job."
+          },
+          {
+            "type": "object",
+            "required": [
+              "source_type",
+              "handler_registered",
+              "file_path"
+            ],
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Absolute path to the job's `job.toml` file on disk."
+              },
+              "handler_registered": {
+                "type": "boolean",
+                "description": "`true` if the job's handler appears in the server's handler registry."
+              },
+              "schedule_description": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Human-readable description of the schedule (e.g. `\"At 09:30, Monday through Friday\"`).\n`null` for expressions that cannot be parsed into a description (e.g. `@reboot`)."
+              },
+              "source_type": {
+                "$ref": "#/components/schemas/CronJobSourceType",
+                "description": "Whether the job is owned by this server or the host OS."
+              }
+            }
+          }
+        ],
+        "description": "A [`CronJob`] enriched with a flag indicating whether its handler is registered."
+      },
+      "CronJobSourceType": {
+        "type": "string",
+        "description": "Whether a cron job is owned by this server or discovered from the OS.",
+        "enum": [
+          "managed",
+          "system"
+        ]
+      },
+      "EchoRequest": {
+        "type": "object",
+        "description": "Request body for `POST /echo`.",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "EchoResponse": {
+        "type": "object",
+        "description": "Response body for `POST /echo`.",
+        "required": [
+          "message",
+          "timestamp"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "description": "Response body for `GET /health`.",
+        "required": [
+          "status",
+          "uptime_secs",
+          "running"
+        ],
+        "properties": {
+          "running": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "uptime_secs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "UpdateRequest": {
+        "type": "object",
+        "description": "Request body for partially updating an existing cron job.",
+        "properties": {
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "handler": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New handler identifier, or `None` to keep the existing value."
+          },
+          "metadata": {
+            "description": "New metadata, or `None` to keep the existing value."
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New cron expression, or `None` to keep the existing value."
+          }
+        }
+      }
     }
-  ]
+  }
 }

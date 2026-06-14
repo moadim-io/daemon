@@ -5,11 +5,10 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use cron::Schedule;
+use croner::Cron;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -141,19 +140,11 @@ fn normalize_schedule(expr: &str) -> String {
 /// Parse `expr` as a cron expression, returning `BadRequest` on failure.
 ///
 /// Accepts standard 5-field (`min hour dom month dow`) and `@keyword` formats.
-/// The `cron` crate requires 7-field internally; 5-field input is normalized before validation.
+/// 7-field expressions are first normalized to 5-field via [`normalize_schedule`].
 fn validate_cron(expr: &str) -> Result<(), AppError> {
-    let s = expr.trim();
-    let normalized = if s.starts_with('@') {
-        s.to_string()
-    } else {
-        let fields: Vec<&str> = s.split_ascii_whitespace().collect();
-        match fields.len() {
-            5 => format!("0 {} *", fields.join(" ")),
-            _ => s.to_string(),
-        }
-    };
-    Schedule::from_str(&normalized)
+    let normalized = normalize_schedule(expr.trim());
+    normalized
+        .parse::<Cron>()
         .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
     Ok(())
 }

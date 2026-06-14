@@ -24,6 +24,21 @@ async fn build_app_serves_root() {
 }
 
 #[tokio::test]
+async fn build_app_serves_agents() {
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(Request::builder().uri("/agents").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let agents: Vec<String> = serde_json::from_slice(&bytes).unwrap();
+    assert!(!agents.is_empty(), "agents list should never be empty");
+}
+
+#[tokio::test]
 async fn build_app_serves_health() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app

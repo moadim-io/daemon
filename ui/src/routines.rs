@@ -8,10 +8,14 @@ use std::rc::Rc;
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen_futures::spawn_local;
-use web_sys::HtmlInputElement;
+use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
 use crate::{describe_cron_live, reltime, ToastKind};
+
+/// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
+/// `DEFAULT_AGENT_CONFIGS`.
+pub const AVAILABLE_AGENTS: &[&str] = &["claude", "codex"];
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
@@ -85,6 +89,16 @@ async fn api_list() -> Result<Vec<Routine>, String> {
         .await
         .map_err(|e| e.to_string())?
         .json::<Vec<Routine>>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn api_agents() -> Result<Vec<String>, String> {
+    Request::get("/agents")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<Vec<String>>()
         .await
         .map_err(|e| e.to_string())
 }
@@ -720,6 +734,22 @@ pub fn routine_form(props: &FormProps) -> Html {
             .map(|r| r.agent.clone())
             .unwrap_or_else(|| "claude".to_string())
     });
+    // Agent options fetched from `GET /agents`; seed with the built-in list so the select is never
+    // empty before the request resolves or if it fails.
+    let agents = use_state(|| AVAILABLE_AGENTS.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    {
+        let agents = agents.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(list) = api_agents().await {
+                    if !list.is_empty() {
+                        agents.set(list);
+                    }
+                }
+            });
+            || ()
+        });
+    }
     let prompt = use_state(|| editing.as_ref().map(|r| r.prompt.clone()).unwrap_or_default());
     let repos_raw = use_state(|| {
         editing
@@ -748,9 +778,9 @@ pub fn routine_form(props: &FormProps) -> Html {
     };
     let on_agent = {
         let agent = agent.clone();
-        Callback::from(move |e: InputEvent| {
-            let i: HtmlInputElement = e.target_unchecked_into();
-            agent.set(i.value());
+        Callback::from(move |e: Event| {
+            let s: HtmlSelectElement = e.target_unchecked_into();
+            agent.set(s.value());
         })
     };
     let on_prompt = {
@@ -856,8 +886,11 @@ pub fn routine_form(props: &FormProps) -> Html {
             </div>
             <div class="form-group">
                 <label class="form-label">{"AGENT "}<span class="form-required">{"*"}</span></label>
-                <input class="form-input" type="text" placeholder="claude"
-                    value={(*agent).clone()} oninput={on_agent} autocomplete="off" spellcheck="false" />
+                <select class="form-input" onchange={on_agent}>
+                    { for agents.iter().map(|name| html! {
+                        <option value={name.clone()} selected={*agent == *name}>{name.clone()}</option>
+                    }) }
+                </select>
             </div>
             <div class="form-group">
                 <label class="form-label">{"PROMPT "}<span class="form-required">{"*"}</span></label>

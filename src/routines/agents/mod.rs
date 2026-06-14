@@ -41,6 +41,41 @@ const DEFAULT_AGENT_CONFIGS: &[(&str, &str)] = &[
     (codex::NAME, codex::CONFIG),
 ];
 
+/// Registry keys of the built-in agents, in declaration order.
+fn builtin_agent_names() -> Vec<String> {
+    DEFAULT_AGENT_CONFIGS.iter().map(|(n, _)| n.to_string()).collect()
+}
+
+/// Names of all agents the daemon can launch: the `<name>.toml` stems under
+/// `~/.config/moadim/agents/`, sorted alphabetically.
+///
+/// Falls back to the built-in defaults when the directory is unreadable (e.g. before startup
+/// seeding), so the list is never empty.
+pub fn available_agents() -> Vec<String> {
+    available_agents_in(&agents_dir())
+}
+
+/// List agent names from `dir`. See [`available_agents`].
+pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return builtin_agent_names();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            (path.extension()? == "toml")
+                .then(|| path.file_stem()?.to_str().map(str::to_string))
+                .flatten()
+        })
+        .collect();
+    if names.is_empty() {
+        return builtin_agent_names();
+    }
+    names.sort();
+    names
+}
+
 /// Write any missing built-in agent configs into `~/.config/moadim/agents/`.
 ///
 /// Existing files are never overwritten, so user edits are preserved. Best-effort: directory or

@@ -18,6 +18,7 @@
         crate::cron_jobs::trigger,
         crate::cron_jobs::get_logs,
         crate::routines::list,
+        crate::routines::list_agents,
         crate::routines::create,
         crate::routines::get,
         crate::routines::replace,
@@ -51,5 +52,23 @@ impl ApiDoc {
     pub fn to_json() -> String {
         use utoipa::OpenApi as _;
         serde_json::to_string_pretty(&Self::openapi()).unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ApiDoc;
+
+    /// Keep the committed `apis/openapi.json` in sync with the path decorators. On drift this
+    /// rewrites the file (so `cargo test` regenerates it) and then fails so the change is committed.
+    #[test]
+    fn committed_spec_is_current() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/apis/openapi.json");
+        let generated = ApiDoc::to_json();
+        let committed = std::fs::read_to_string(path).unwrap_or_default();
+        if committed != generated {
+            std::fs::write(path, &generated).unwrap();
+            panic!("apis/openapi.json was stale — regenerated; re-run tests and commit the change");
+        }
     }
 }

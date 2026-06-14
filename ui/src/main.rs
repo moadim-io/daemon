@@ -957,7 +957,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
             let metadata = if meta_raw.trim().is_empty() {
                 Json::Null
             } else {
-                serde_json::from_str(&*meta_raw).unwrap_or(Json::Null)
+                serde_json::from_str(&meta_raw).unwrap_or(Json::Null)
             };
             saving.set(true);
             cb.emit(CreateRequest {
@@ -1180,7 +1180,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             let metadata = if meta_raw.trim().is_empty() {
                 Json::Null
             } else {
-                serde_json::from_str(&*meta_raw).unwrap_or(Json::Null)
+                serde_json::from_str(&meta_raw).unwrap_or(Json::Null)
             };
             saving.set(true);
             cb.emit(CreateRequest {

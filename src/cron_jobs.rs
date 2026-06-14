@@ -233,7 +233,7 @@ pub fn svc_create(
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
     store.lock().unwrap().insert(job.id.clone(), job.clone());
-    if let Err(e) = crate::cron_sync::sync_to_crontab(store) {
+    if let Err(e) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after create failed: {e}");
     }
     Ok(CronJobResponse::from_job(job, handlers))
@@ -267,7 +267,7 @@ pub fn svc_update(
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
-    if let Err(e) = crate::cron_sync::sync_to_crontab(store) {
+    if let Err(e) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after update failed: {e}");
     }
     Ok(CronJobResponse::from_job(job, handlers))
@@ -281,7 +281,7 @@ pub fn svc_delete(
 ) -> Result<CronJobResponse, AppError> {
     let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
-    if let Err(e) = crate::cron_sync::sync_to_crontab(store) {
+    if let Err(e) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after delete failed: {e}");
     }
     Ok(CronJobResponse::from_job(job, handlers))

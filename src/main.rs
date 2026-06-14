@@ -3,7 +3,8 @@
 
 mod banner;
 mod cron_jobs;
-mod cron_sync;
+/// Bidirectional sync between managed jobs and the OS crontab.
+mod sync;
 mod error;
 /// Server filesystem location helpers.
 mod filesystem;

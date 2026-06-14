@@ -66,3 +66,10 @@ fn handlers_dir_from_home_none_falls_back_to_dot() {
     assert!(dir.ends_with(".config/moadim/handlers"));
     assert!(dir.starts_with("."));
 }
+
+#[test]
+fn job_log_path_filename() {
+    let p = super::job_log_path("abc");
+    assert_eq!(p.file_name().unwrap().to_str().unwrap(), "job.local.log");
+    assert!(p.to_string_lossy().contains("abc"));
+}

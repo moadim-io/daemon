@@ -15,6 +15,7 @@
         crate::cron_jobs::update,
         crate::cron_jobs::delete,
         crate::cron_jobs::trigger,
+        crate::cron_jobs::get_logs,
     ),
     components(schemas(
         crate::cron_jobs::CronJob,

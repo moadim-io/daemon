@@ -48,5 +48,10 @@ pub fn job_gitignore_path(id: &str) -> PathBuf {
     job_dir(id).join(".gitignore")
 }
 
+/// Returns the path to `{jobs_dir}/{id}/job.local.log`.
+pub fn job_log_path(id: &str) -> PathBuf {
+    job_dir(id).join("job.local.log")
+}
+
 #[cfg(test)]
 mod mod_tests;

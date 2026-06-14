@@ -387,6 +387,31 @@ pub async fn trigger(
     Ok(Json(svc_trigger(&store, &id)?))
 }
 
+/// Return the log file path for job `id`, or `NotFound` if no such job exists.
+pub fn svc_logs_path(store: &CronStore, id: &str) -> Result<std::path::PathBuf, AppError> {
+    if !store.lock().unwrap().contains_key(id) {
+        return Err(AppError::NotFound);
+    }
+    Ok(crate::paths::job_log_path(id))
+}
+
+/// `GET /cron-jobs/{id}/logs` — return the contents of the job's log file as plain text.
+#[utoipa::path(get, path = "/cron-jobs/{id}/logs",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 200, description = "Log file contents as plain text"), (status = 404, description = "Not found")))]
+pub async fn get_logs(
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<String, AppError> {
+    let log_path = svc_logs_path(&store, &id)?;
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+    tokio::fs::read_to_string(&log_path)
+        .await
+        .map_err(|_| AppError::Internal)
+}
+
 #[cfg(test)]
 #[path = "cron_jobs_tests.rs"]
 mod cron_jobs_tests;

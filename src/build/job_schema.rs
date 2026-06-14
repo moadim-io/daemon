@@ -4,36 +4,35 @@ use serde_json::{json, to_string_pretty};
 use std::fs;
 use std::path::Path;
 
-/// Write the job JSON Schema and an example TOML file into `<manifest_dir>/schemas/`.
+/// Write the cron job JSON Schema into `<manifest_dir>/schemas/`.
 pub fn generate(manifest_dir: &str) {
     let schema_dir = Path::new(manifest_dir).join("schemas");
     fs::create_dir_all(&schema_dir).expect("failed to create schemas/");
 
     let job_schema = json!({
         "$schema": "https://json-schema.org/draft-07/schema#",
-        "title": "Job",
-        "description": "Cron job configuration",
+        "title": "CronJob",
+        "description": "A cron entry in the user crontab managed by moadim",
         "type": "object",
-        "required": ["schedule", "handler"],
+        "required": ["id", "schedule", "command", "source"],
         "properties": {
+            "id": {
+                "type": "string",
+                "description": "Stable identifier (UUID for managed entries, deterministic hash for system entries)"
+            },
             "schedule": {
                 "type": "string",
-                "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or 7-field syntax (sec min hour dom month dow year).",
-                "examples": ["@hourly", "@daily", "0 30 9 * * 1-5 *"]
+                "description": "5-field cron expression or @keyword",
+                "examples": ["@hourly", "@daily", "30 9 * * 1-5"]
             },
-            "handler": {
+            "command": {
                 "type": "string",
-                "description": "Handler identifier invoked when the schedule fires"
+                "description": "The command the OS executes"
             },
-            "metadata": {
-                "type": "object",
-                "description": "Arbitrary key-value data passed to the handler",
-                "additionalProperties": true
-            },
-            "enabled": {
-                "type": "boolean",
-                "description": "Whether this job is active",
-                "default": true
+            "source": {
+                "type": "string",
+                "description": "\"managed\" for entries owned by moadim; \"system\" for pre-existing entries",
+                "enum": ["managed", "system"]
             }
         },
         "additionalProperties": false
@@ -44,17 +43,4 @@ pub fn generate(manifest_dir: &str) {
         to_string_pretty(&job_schema).expect("failed to serialize job schema"),
     )
     .expect("failed to write schemas/job.schema.json");
-
-    let example_toml = concat!(
-        "#:schema ./job.schema.json\n",
-        "\n",
-        "schedule = \"0 30 9 * * 1-5 *\"\n",
-        "handler  = \"my-handler\"\n",
-        "enabled  = true\n",
-        "\n",
-        "[metadata]\n",
-        "# key = \"value\"\n",
-    );
-    fs::write(schema_dir.join("job.example.toml"), example_toml)
-        .expect("failed to write schemas/job.example.toml");
 }

@@ -1,396 +1,408 @@
-//! Cron job data model, service functions, and Axum HTTP handlers.
+//! Cron job model and service functions that proxy the OS user crontab.
+//!
+//! Managed entries are tagged with a `# moadim-id: <uuid>` comment on the
+//! line immediately preceding their crontab entry. Untagged entries are
+//! exposed read-only with `source = "system"`.
 
 use axum::{
-    extract::{Path, State},
+    extract::Path,
     http::StatusCode,
     Json,
 };
-use cron::Schedule;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::io::Write;
+use std::process::{Command, Stdio};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::paths::job_toml_path;
-use crate::storage::{remove_job_dir, write_job};
-use crate::utils::time::now_secs;
 
-/// A persisted cron job with scheduling and metadata.
+const MOADIM_TAG: &str = "# moadim-id:";
+
+/// A cron entry from the user crontab.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CronJob {
-    /// Unique identifier (UUID v4).
+    /// Stable identifier. UUID for managed entries; deterministic hash for system entries.
     pub id: String,
-    /// Cron expression defining when the job runs.
+    /// Cron schedule expression (5-field or `@keyword`).
     pub schedule: String,
-    /// Identifier for the handler that processes the job.
-    pub handler: String,
-    /// Arbitrary JSON metadata attached to the job.
-    pub metadata: serde_json::Value,
-    /// Whether the job is active.
-    pub enabled: bool,
-    /// `"managed"` for jobs owned by this server; `"system:*"` for read-only system cron entries.
+    /// The command the OS executes.
+    pub command: String,
+    /// `"managed"` for entries owned by this server; `"system"` for pre-existing entries.
     pub source: String,
-    /// Unix timestamp (seconds) when the job was created.
-    pub created_at: u64,
-    /// Unix timestamp (seconds) when the job was last updated.
-    pub updated_at: u64,
-    /// Unix timestamp (seconds) when the job was last manually triggered, if ever.
-    pub last_triggered_at: Option<u64>,
-}
-
-/// A [`CronJob`] enriched with a flag indicating whether its handler is registered.
-#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
-pub struct CronJobResponse {
-    /// The underlying cron job.
-    #[serde(flatten)]
-    pub job: CronJob,
-    /// `true` if the job's handler appears in the server's handler registry.
-    pub handler_registered: bool,
-    /// Absolute path to the job's `job.toml` file on disk.
-    pub file_path: String,
-}
-
-impl CronJobResponse {
-    /// Build a response from `job`, checking `handlers` for registration status.
-    pub fn from_job(job: CronJob, handlers: &HashSet<String>) -> Self {
-        let handler_registered = handlers.contains(&job.handler);
-        let file_path = job_toml_path(&job.id).to_string_lossy().into_owned();
-        Self {
-            job,
-            handler_registered,
-            file_path,
-        }
-    }
-}
-
-/// Thread-safe shared store of cron jobs keyed by ID.
-pub type CronStore = Arc<Mutex<HashMap<String, CronJob>>>;
-/// Thread-safe set of registered handler identifiers.
-pub type HandlerRegistry = Arc<HashSet<String>>;
-
-/// Combined Axum application state holding the job store and handler registry.
-#[derive(Clone)]
-pub struct AppState {
-    /// Shared cron job store.
-    pub store: CronStore,
-    /// Registered handler identifiers.
-    pub handlers: HandlerRegistry,
-}
-
-impl axum::extract::FromRef<AppState> for CronStore {
-    fn from_ref(state: &AppState) -> Self {
-        state.store.clone()
-    }
-}
-
-/// Create an empty [`CronStore`].
-#[cfg(test)]
-pub fn new_store() -> CronStore {
-    Arc::new(Mutex::new(HashMap::new()))
-}
-
-/// Create an empty [`HandlerRegistry`].
-pub fn new_registry() -> HandlerRegistry {
-    Arc::new(HashSet::new())
-}
-
-/// Parse `expr` as a cron expression, returning `BadRequest` on failure.
-fn validate_cron(expr: &str) -> Result<(), AppError> {
-    Schedule::from_str(expr)
-        .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
-    Ok(())
 }
 
 /// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
-    /// Cron expression for the new job.
+    /// 5-field cron expression (`min hour dom month dow`) or `@keyword` (`@daily`, `@hourly`, etc.).
     pub schedule: String,
-    /// Handler identifier to invoke when the schedule fires.
-    pub handler: String,
-    /// Optional metadata (defaults to null).
-    #[serde(default)]
-    #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
-    pub metadata: serde_json::Value,
-    /// Whether to create the job in an enabled state (defaults to `true`).
-    #[serde(default = "bool_true")]
-    pub enabled: bool,
+    /// The command the OS will execute.
+    pub command: String,
 }
 
-/// Serde default for boolean fields that should default to `true`.
-fn bool_true() -> bool {
-    true
-}
-
-/// Request body for partially updating an existing cron job.
+/// Request body for partially updating an existing managed cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
-    /// New cron expression, or `None` to keep the existing value.
+    /// New schedule, or `None` to keep existing.
     pub schedule: Option<String>,
-    /// New handler identifier, or `None` to keep the existing value.
-    pub handler: Option<String>,
-    /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
-    pub metadata: Option<serde_json::Value>,
-    /// New enabled state, or `None` to keep the existing value.
-    pub enabled: Option<bool>,
+    /// New command, or `None` to keep existing.
+    pub command: Option<String>,
 }
 
-// --- Service layer (no HTTP types) ---
+// --- Crontab I/O ---
 
-/// Return all jobs sorted by creation time (oldest first).
-pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobResponse> {
-    let lock = store.lock().unwrap();
-    let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
-    jobs.sort_by_key(|j| j.created_at);
-    drop(lock);
-    jobs.into_iter()
-        .map(|j| CronJobResponse::from_job(j, handlers))
-        .collect()
+fn read_crontab() -> Result<String, AppError> {
+    let out = Command::new("crontab")
+        .arg("-l")
+        .output()
+        .map_err(|_| AppError::Internal)?;
+    // "no crontab for user" exits non-zero with message on stderr; stdout is empty
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Look up a job by `id`, returning `NotFound` if it does not exist.
-pub fn svc_get(
-    store: &CronStore,
-    handlers: &HandlerRegistry,
-    id: &str,
-) -> Result<CronJobResponse, AppError> {
-    let job = store
-        .lock()
+fn write_crontab(content: &str) -> Result<(), AppError> {
+    let mut child = Command::new("crontab")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|_| AppError::Internal)?;
+    child
+        .stdin
+        .as_mut()
         .unwrap()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    Ok(CronJobResponse::from_job(job, handlers))
+        .write_all(content.as_bytes())
+        .map_err(|_| AppError::Internal)?;
+    child.wait().map_err(|_| AppError::Internal)?;
+    Ok(())
 }
 
-/// Validate `req`, assign a UUID, persist, and return the new job.
-pub fn svc_create(
-    store: &CronStore,
-    handlers: &HandlerRegistry,
-    req: CreateRequest,
-) -> Result<CronJobResponse, AppError> {
-    validate_cron(&req.schedule)?;
-    let now = now_secs();
-    let job = CronJob {
-        id: Uuid::new_v4().to_string(),
+// --- Parsing ---
+
+fn is_env_var(line: &str) -> bool {
+    if let Some(eq) = line.find('=') {
+        let key = &line[..eq];
+        !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    } else {
+        false
+    }
+}
+
+fn parse_cron_line(line: &str) -> Option<(String, String)> {
+    if let Some(rest) = line.strip_prefix('@') {
+        let kw_end = rest
+            .find(|c: char| c.is_ascii_whitespace())
+            .unwrap_or(rest.len());
+        let keyword = &rest[..kw_end];
+        let command = rest[kw_end..].trim_start();
+        if command.is_empty() {
+            return None;
+        }
+        Some((format!("@{}", keyword), command.to_string()))
+    } else {
+        let tokens: Vec<&str> = line.split_ascii_whitespace().collect();
+        if tokens.len() < 6 {
+            return None;
+        }
+        let schedule = tokens[..5].join(" ");
+        let command = tokens[5..].join(" ");
+        Some((schedule, command))
+    }
+}
+
+fn stable_id(schedule: &str, command: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    schedule.hash(&mut h);
+    command.hash(&mut h);
+    format!("sys-{:016x}", h.finish())
+}
+
+fn parse_crontab(text: &str) -> Vec<CronJob> {
+    let mut jobs = Vec::new();
+    let mut pending_id: Option<String> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if let Some(id_part) = trimmed.strip_prefix(MOADIM_TAG) {
+            pending_id = Some(id_part.trim().to_string());
+            continue;
+        }
+
+        if trimmed.is_empty() || trimmed.starts_with('#') || is_env_var(trimmed) {
+            pending_id = None;
+            continue;
+        }
+
+        if let Some((schedule, command)) = parse_cron_line(trimmed) {
+            let (id, source) = match pending_id.take() {
+                Some(mid) => (mid, "managed".to_string()),
+                None => (stable_id(&schedule, &command), "system".to_string()),
+            };
+            jobs.push(CronJob {
+                id,
+                schedule,
+                command,
+                source,
+            });
+        } else {
+            pending_id = None;
+        }
+    }
+    jobs
+}
+
+fn validate_schedule(expr: &str) -> Result<(), AppError> {
+    let e = expr.trim();
+    if e.starts_with('@') || e.split_ascii_whitespace().count() == 5 {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(
+        "invalid cron expression: expected 5 fields or @keyword".to_string(),
+    ))
+}
+
+// --- Service layer ---
+
+/// Return all cron jobs from the user crontab (managed + system).
+pub fn svc_list() -> Result<Vec<CronJob>, AppError> {
+    Ok(parse_crontab(&read_crontab()?))
+}
+
+/// Look up a single job by ID.
+pub fn svc_get(id: &str) -> Result<CronJob, AppError> {
+    svc_list()?
+        .into_iter()
+        .find(|j| j.id == id)
+        .ok_or(AppError::NotFound)
+}
+
+/// Append a new managed entry to the user crontab.
+pub fn svc_create(req: CreateRequest) -> Result<CronJob, AppError> {
+    validate_schedule(&req.schedule)?;
+    let id = Uuid::new_v4().to_string();
+    let mut text = read_crontab()?;
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(&format!(
+        "{} {}\n{} {}\n",
+        MOADIM_TAG, id, req.schedule, req.command
+    ));
+    write_crontab(&text)?;
+    Ok(CronJob {
+        id,
         schedule: req.schedule,
-        handler: req.handler,
-        metadata: req.metadata,
-        enabled: req.enabled,
+        command: req.command,
         source: "managed".to_string(),
-        created_at: now,
-        updated_at: now,
-        last_triggered_at: None,
-    };
-    write_job(&job).map_err(|_| AppError::Internal)?;
-    store.lock().unwrap().insert(job.id.clone(), job.clone());
-    Ok(CronJobResponse::from_job(job, handlers))
+    })
 }
 
-/// Apply non-`None` fields from `req` to the job identified by `id`.
-pub fn svc_update(
-    store: &CronStore,
-    handlers: &HandlerRegistry,
-    id: &str,
-    req: UpdateRequest,
-) -> Result<CronJobResponse, AppError> {
-    if let Some(ref sched) = req.schedule {
-        validate_cron(sched)?;
+/// Update schedule and/or command of a managed entry in place.
+pub fn svc_update(id: &str, req: UpdateRequest) -> Result<CronJob, AppError> {
+    if let Some(ref s) = req.schedule {
+        validate_schedule(s)?;
     }
-    let mut lock = store.lock().unwrap();
-    let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    if let Some(s) = req.schedule {
-        job.schedule = s;
+    let text = read_crontab()?;
+    let tag = format!("{} {}", MOADIM_TAG, id);
+    let lines: Vec<&str> = text.lines().collect();
+    let pos = lines
+        .iter()
+        .position(|l| l.trim() == tag.trim())
+        .ok_or(AppError::NotFound)?;
+    if pos + 1 >= lines.len() {
+        return Err(AppError::NotFound);
     }
-    if let Some(h) = req.handler {
-        job.handler = h;
-    }
-    if let Some(m) = req.metadata {
-        job.metadata = m;
-    }
-    if let Some(e) = req.enabled {
-        job.enabled = e;
-    }
-    job.updated_at = now_secs();
-    let job = job.clone();
-    drop(lock);
-    write_job(&job).map_err(|_| AppError::Internal)?;
-    Ok(CronJobResponse::from_job(job, handlers))
+    let old_cron = lines[pos + 1];
+    let (old_schedule, old_command) =
+        parse_cron_line(old_cron.trim()).ok_or(AppError::NotFound)?;
+    let new_schedule = req.schedule.unwrap_or(old_schedule);
+    let new_command = req.command.unwrap_or(old_command);
+    let new_cron_line = format!("{} {}", new_schedule, new_command);
+    let new_lines: Vec<&str> = lines.clone();
+    // replace only the cron line; the tag line stays
+    let new_cron_owned = new_cron_line.clone();
+    let mut result_lines: Vec<String> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            if i == pos + 1 {
+                new_cron_owned.clone()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    result_lines.push(String::new()); // trailing newline
+    write_crontab(&result_lines.join("\n"))?;
+    drop(new_lines);
+    Ok(CronJob {
+        id: id.to_string(),
+        schedule: new_schedule,
+        command: new_command,
+        source: "managed".to_string(),
+    })
 }
 
-/// Remove the job with `id` from the store, returning the deleted job or `NotFound`.
-pub fn svc_delete(
-    store: &CronStore,
-    handlers: &HandlerRegistry,
-    id: &str,
-) -> Result<CronJobResponse, AppError> {
-    let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
-    remove_job_dir(id).map_err(|_| AppError::Internal)?;
-    Ok(CronJobResponse::from_job(job, handlers))
-}
-
-/// Record a manual trigger for `id`, updating `last_triggered_at` in-store and on disk.
-pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
-    let mut lock = store.lock().unwrap();
-    let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    job.last_triggered_at = Some(now_secs());
-    let job = job.clone();
-    drop(lock);
-    write_job(&job).map_err(|_| AppError::Internal)?;
-    Ok(job)
+/// Remove a managed entry (tag line + cron line) from the user crontab.
+pub fn svc_delete(id: &str) -> Result<CronJob, AppError> {
+    let text = read_crontab()?;
+    let tag = format!("{} {}", MOADIM_TAG, id);
+    let lines: Vec<&str> = text.lines().collect();
+    let pos = lines
+        .iter()
+        .position(|l| l.trim() == tag.trim())
+        .ok_or(AppError::NotFound)?;
+    if pos + 1 >= lines.len() {
+        return Err(AppError::NotFound);
+    }
+    let (schedule, command) =
+        parse_cron_line(lines[pos + 1].trim()).ok_or(AppError::NotFound)?;
+    let new_lines: Vec<String> = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != pos && *i != pos + 1)
+        .map(|(_, l)| l.to_string())
+        .collect();
+    let mut out = new_lines.join("\n");
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    write_crontab(&out)?;
+    Ok(CronJob {
+        id: id.to_string(),
+        schedule,
+        command,
+        source: "managed".to_string(),
+    })
 }
 
 // --- Axum HTTP handlers ---
 
-/// `POST /cron-jobs` — create a new cron job.
+/// `GET /cron-jobs` — list all cron jobs (managed and system).
+#[utoipa::path(get, path = "/cron-jobs",
+    responses((status = 200, body = Vec<CronJob>)))]
+pub async fn list() -> Result<Json<Vec<CronJob>>, AppError> {
+    Ok(Json(svc_list()?))
+}
+
+/// `POST /cron-jobs` — add a new managed cron job.
 #[utoipa::path(post, path = "/cron-jobs",
     request_body = CreateRequest,
-    responses((status = 201, body = CronJobResponse), (status = 400, description = "Invalid cron expression")))]
+    responses((status = 201, body = CronJob), (status = 400, description = "Invalid schedule")))]
 pub async fn create(
-    State(state): State<AppState>,
     Json(body): Json<CreateRequest>,
-) -> Result<(StatusCode, Json<CronJobResponse>), AppError> {
-    Ok((
-        StatusCode::CREATED,
-        Json(svc_create(&state.store, &state.handlers, body)?),
-    ))
+) -> Result<(StatusCode, Json<CronJob>), AppError> {
+    Ok((StatusCode::CREATED, Json(svc_create(body)?)))
 }
 
-/// `GET /cron-jobs` — list all cron jobs sorted by creation time.
-#[utoipa::path(get, path = "/cron-jobs",
-    responses((status = 200, body = Vec<CronJobResponse>)))]
-pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
-    Json(svc_list(&state.store, &state.handlers))
-}
-
-/// `GET /cron-jobs/{id}` — retrieve a single cron job by UUID.
+/// `GET /cron-jobs/{id}` — retrieve a single cron job by ID.
 #[utoipa::path(get, path = "/cron-jobs/{id}",
-    params(("id" = String, Path, description = "Cron job UUID")),
-    responses((status = 200, body = CronJobResponse), (status = 404, description = "Not found")))]
-pub async fn get(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<CronJobResponse>, AppError> {
-    Ok(Json(svc_get(&state.store, &state.handlers, &id)?))
+    params(("id" = String, Path, description = "Cron job ID")),
+    responses((status = 200, body = CronJob), (status = 404, description = "Not found")))]
+pub async fn get(Path(id): Path<String>) -> Result<Json<CronJob>, AppError> {
+    Ok(Json(svc_get(&id)?))
 }
 
-/// `PATCH /cron-jobs/{id}` — partially update a cron job.
+/// `PATCH /cron-jobs/{id}` — partially update a managed cron job.
 #[utoipa::path(patch, path = "/cron-jobs/{id}",
-    params(("id" = String, Path, description = "Cron job UUID")),
+    params(("id" = String, Path, description = "Cron job ID")),
     request_body = UpdateRequest,
-    responses((status = 200, body = CronJobResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
+    responses((status = 200, body = CronJob), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
 pub async fn update(
-    State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateRequest>,
-) -> Result<Json<CronJobResponse>, AppError> {
-    Ok(Json(svc_update(&state.store, &state.handlers, &id, body)?))
-}
-
-/// `DELETE /cron-jobs/{id}` — delete a cron job by UUID.
-#[utoipa::path(delete, path = "/cron-jobs/{id}",
-    params(("id" = String, Path, description = "Cron job UUID")),
-    responses((status = 200, body = CronJobResponse), (status = 404, description = "Not found")))]
-pub async fn delete(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<CronJobResponse>, AppError> {
-    Ok(Json(svc_delete(&state.store, &state.handlers, &id)?))
-}
-
-/// `POST /cron-jobs/{id}/trigger` — manually trigger a cron job outside its schedule.
-#[utoipa::path(post, path = "/cron-jobs/{id}/trigger",
-    params(("id" = String, Path, description = "Cron job UUID")),
-    responses((status = 200, body = CronJob), (status = 404, description = "Not found")))]
-pub async fn trigger(
-    State(store): State<CronStore>,
-    Path(id): Path<String>,
 ) -> Result<Json<CronJob>, AppError> {
-    Ok(Json(svc_trigger(&store, &id)?))
+    Ok(Json(svc_update(&id, body)?))
+}
+
+/// `DELETE /cron-jobs/{id}` — remove a managed cron job.
+#[utoipa::path(delete, path = "/cron-jobs/{id}",
+    params(("id" = String, Path, description = "Cron job ID")),
+    responses((status = 200, body = CronJob), (status = 404, description = "Not found")))]
+pub async fn delete(Path(id): Path<String>) -> Result<Json<CronJob>, AppError> {
+    Ok(Json(svc_delete(&id)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_store_with(id: &str) -> CronStore {
-        let store = new_store();
-        let job = CronJob {
-            id: id.to_string(),
-            schedule: "@daily".to_string(),
-            handler: "h".to_string(),
-            metadata: serde_json::Value::Null,
-            enabled: true,
-            source: "managed".to_string(),
-            created_at: 0,
-            updated_at: 0,
-            last_triggered_at: None,
-        };
-        store.lock().unwrap().insert(id.to_string(), job);
-        store
+    #[test]
+    fn validate_schedule_accepts_five_field() {
+        assert!(validate_schedule("30 9 * * 1-5").is_ok());
+        assert!(validate_schedule("* * * * *").is_ok());
     }
 
     #[test]
-    fn validate_cron_accepts_valid() {
-        assert!(validate_cron("0 30 9 * * 1-5 *").is_ok());
-        assert!(validate_cron("@daily").is_ok());
+    fn validate_schedule_accepts_at_keywords() {
+        assert!(validate_schedule("@daily").is_ok());
+        assert!(validate_schedule("@hourly").is_ok());
+        assert!(validate_schedule("@reboot").is_ok());
     }
 
     #[test]
-    fn validate_cron_rejects_invalid() {
-        assert!(validate_cron("not a cron").is_err());
-        assert!(validate_cron("99 99 99 99 99").is_err());
+    fn validate_schedule_rejects_six_field() {
+        assert!(validate_schedule("0 30 9 * * 1-5").is_err());
+        assert!(validate_schedule("not a cron").is_err());
     }
 
     #[test]
-    fn cron_job_serializes() {
-        let job = CronJob {
-            id: "abc".to_string(),
-            schedule: "0 * * * * * *".to_string(),
-            handler: "my-handler".to_string(),
-            metadata: serde_json::json!({}),
-            enabled: true,
-            source: "managed".to_string(),
-            created_at: 1000,
-            updated_at: 1000,
-            last_triggered_at: None,
-        };
-        let json = serde_json::to_string(&job).unwrap();
-        assert!(json.contains("\"id\":\"abc\""));
-        assert!(json.contains("\"enabled\":true"));
+    fn parse_managed_entry() {
+        let text = "# moadim-id: abc-123\n30 9 * * 1-5 /usr/bin/backup.sh\n";
+        let jobs = parse_crontab(text);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, "abc-123");
+        assert_eq!(jobs[0].schedule, "30 9 * * 1-5");
+        assert_eq!(jobs[0].command, "/usr/bin/backup.sh");
+        assert_eq!(jobs[0].source, "managed");
     }
 
     #[test]
-    fn create_request_defaults_enabled_true() {
-        let json = r#"{"schedule":"@daily","handler":"h"}"#;
-        let req: CreateRequest = serde_json::from_str(json).unwrap();
-        assert!(req.enabled);
+    fn parse_system_entry() {
+        let text = "* * * * * /usr/bin/ping google.com\n";
+        let jobs = parse_crontab(text);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].source, "system");
+        assert!(jobs[0].id.starts_with("sys-"));
     }
 
     #[test]
-    fn svc_get_returns_not_found() {
-        assert!(svc_get(&new_store(), &new_registry(), "missing").is_err());
+    fn parse_at_keyword_managed() {
+        let text = "# moadim-id: xyz\n@daily /usr/bin/cleanup.sh\n";
+        let jobs = parse_crontab(text);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].schedule, "@daily");
+        assert_eq!(jobs[0].source, "managed");
     }
 
     #[test]
-    fn svc_delete_removes_from_store() {
-        let store = make_store_with("test-id");
-        // remove directly from store (skip fs in unit test)
-        store.lock().unwrap().remove("test-id");
-        assert!(svc_get(&store, &new_registry(), "test-id").is_err());
+    fn parse_mixed_entries() {
+        let text = concat!(
+            "# moadim-id: aaa\n",
+            "0 1 * * * /managed-cmd\n",
+            "30 9 * * * /system-cmd\n",
+        );
+        let jobs = parse_crontab(text);
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].source, "managed");
+        assert_eq!(jobs[1].source, "system");
     }
 
     #[test]
-    fn svc_update_enabled_override() {
-        let store = make_store_with("test-id");
-        {
-            let mut lock = store.lock().unwrap();
-            lock.get_mut("test-id").unwrap().enabled = false;
-        }
-        assert!(!svc_get(&store, &new_registry(), "test-id").unwrap().job.enabled);
+    fn parse_skips_blanks_and_comments() {
+        let text = "# a comment\n\nMAILTO=\"\"\n* * * * * /cmd\n";
+        let jobs = parse_crontab(text);
+        assert_eq!(jobs.len(), 1);
+    }
+
+    #[test]
+    fn stable_id_is_deterministic() {
+        let a = stable_id("* * * * *", "/cmd");
+        let b = stable_id("* * * * *", "/cmd");
+        assert_eq!(a, b);
+        assert!(a.starts_with("sys-"));
     }
 }

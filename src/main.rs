@@ -12,13 +12,7 @@ mod fs_location;
 #[cfg(not(target_arch = "wasm32"))]
 mod middlewares;
 #[cfg(not(target_arch = "wasm32"))]
-mod paths;
-#[cfg(not(target_arch = "wasm32"))]
 mod routes;
-#[cfg(not(target_arch = "wasm32"))]
-mod storage;
-#[cfg(not(target_arch = "wasm32"))]
-mod system_cron;
 #[cfg(not(target_arch = "wasm32"))]
 mod utils;
 
@@ -33,6 +27,5 @@ fn main() {
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let store = storage::load_store();
-    routes::http::run(store).await
+    routes::http::run().await
 }

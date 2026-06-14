@@ -13,7 +13,7 @@ pub fn generate(manifest_dir: &str) {
         "info": {
             "title": "Moadim Server API",
             "version": "0.1.0",
-            "description": "REST API for managing cron jobs"
+            "description": "REST API for managing the user crontab"
         },
         "servers": [
             { "url": "http://127.0.0.1:5784", "description": "Local development" }
@@ -79,10 +79,11 @@ pub fn generate(manifest_dir: &str) {
             "/cron-jobs": {
                 "get": {
                     "summary": "List all cron jobs",
+                    "description": "Returns all entries from the user crontab. Managed entries (created by moadim) have source=\"managed\"; pre-existing entries have source=\"system\".",
                     "operationId": "listCronJobs",
                     "responses": {
                         "200": {
-                            "description": "Array of cron jobs sorted by creation time",
+                            "description": "Array of cron jobs",
                             "content": {
                                 "application/json": {
                                     "schema": {
@@ -95,7 +96,8 @@ pub fn generate(manifest_dir: &str) {
                     }
                 },
                 "post": {
-                    "summary": "Create a cron job",
+                    "summary": "Add a managed cron job",
+                    "description": "Appends a new entry to the user crontab tagged with a moadim ID comment.",
                     "operationId": "createCronJob",
                     "requestBody": {
                         "required": true,
@@ -118,33 +120,13 @@ pub fn generate(manifest_dir: &str) {
                     }
                 }
             },
-            "/system-cron-jobs": {
-                "get": {
-                    "summary": "List read-only system cron jobs",
-                    "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). Not managed by this server — cannot be created, updated, or deleted.",
-                    "operationId": "listSystemCronJobs",
-                    "responses": {
-                        "200": {
-                            "description": "Array of read-only system cron jobs",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": { "$ref": "#/components/schemas/CronJob" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
             "/cron-jobs/{id}": {
                 "parameters": [
                     {
                         "name": "id",
                         "in": "path",
                         "required": true,
-                        "schema": { "type": "string", "format": "uuid" }
+                        "schema": { "type": "string" }
                     }
                 ],
                 "get": {
@@ -163,7 +145,7 @@ pub fn generate(manifest_dir: &str) {
                     }
                 },
                 "put": {
-                    "summary": "Update a cron job (full)",
+                    "summary": "Update a managed cron job (full)",
                     "operationId": "updateCronJobPut",
                     "requestBody": {
                         "required": true,
@@ -187,7 +169,7 @@ pub fn generate(manifest_dir: &str) {
                     }
                 },
                 "patch": {
-                    "summary": "Update a cron job (partial)",
+                    "summary": "Update a managed cron job (partial)",
                     "operationId": "updateCronJobPatch",
                     "requestBody": {
                         "required": true,
@@ -211,10 +193,18 @@ pub fn generate(manifest_dir: &str) {
                     }
                 },
                 "delete": {
-                    "summary": "Delete a cron job",
+                    "summary": "Remove a managed cron job",
+                    "description": "Removes the moadim tag comment and cron entry from the user crontab. Only managed entries can be deleted.",
                     "operationId": "deleteCronJob",
                     "responses": {
-                        "204": { "description": "Deleted" },
+                        "200": {
+                            "description": "Deleted cron job",
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/CronJob" }
+                                }
+                            }
+                        },
                         "404": { "$ref": "#/components/responses/NotFound" }
                     }
                 }
@@ -248,39 +238,31 @@ pub fn generate(manifest_dir: &str) {
                 },
                 "CronJob": {
                     "type": "object",
-                    "required": ["id", "schedule", "handler", "metadata", "enabled", "source", "created_at", "updated_at"],
+                    "required": ["id", "schedule", "command", "source"],
                     "properties": {
                         "id": { "type": "string" },
-                        "schedule": { "type": "string", "example": "@hourly" },
-                        "handler": { "type": "string" },
-                        "metadata": { },
-                        "enabled": { "type": "boolean" },
+                        "schedule": { "type": "string", "example": "@daily" },
+                        "command": { "type": "string", "example": "/usr/bin/backup.sh" },
                         "source": {
                             "type": "string",
-                            "description": "\"managed\" for server-owned jobs; \"system:*\" for read-only system cron entries",
-                            "example": "managed"
-                        },
-                        "created_at": { "type": "integer", "format": "int64", "minimum": 0 },
-                        "updated_at": { "type": "integer", "format": "int64", "minimum": 0 }
+                            "enum": ["managed", "system"],
+                            "description": "\"managed\" for moadim-owned entries; \"system\" for pre-existing entries"
+                        }
                     }
                 },
                 "CreateCronJobRequest": {
                     "type": "object",
-                    "required": ["schedule", "handler"],
+                    "required": ["schedule", "command"],
                     "properties": {
-                        "schedule": { "type": "string", "example": "0 30 9 * * 1-5 *" },
-                        "handler": { "type": "string" },
-                        "metadata": { },
-                        "enabled": { "type": "boolean", "default": true }
+                        "schedule": { "type": "string", "example": "30 9 * * 1-5" },
+                        "command": { "type": "string", "example": "/usr/bin/backup.sh" }
                     }
                 },
                 "UpdateCronJobRequest": {
                     "type": "object",
                     "properties": {
                         "schedule": { "type": "string", "nullable": true },
-                        "handler": { "type": "string", "nullable": true },
-                        "metadata": { "nullable": true },
-                        "enabled": { "type": "boolean", "nullable": true }
+                        "command": { "type": "string", "nullable": true }
                     }
                 },
                 "ErrorResponse": {
@@ -313,5 +295,8 @@ pub fn generate(manifest_dir: &str) {
     });
 
     let json = to_string_pretty(&spec).expect("failed to serialize OpenAPI spec");
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).expect("failed to create apis/");
+    }
     fs::write(&out_path, json).expect("failed to write apis/openapi.json");
 }

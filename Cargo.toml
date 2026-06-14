@@ -7,6 +7,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Moadim.io MCP/REST server for managing cron jobs"
 license = "MIT"
+repository = "https://github.com/moadim-io/server"
+homepage = "https://moadim.io"
 
 # Shared (native + WASM)
 [dependencies]
@@ -21,9 +23,7 @@ web-sys = { version = "0.3", features = ["console"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = "1"
 axum = "0.8"
-cron = "0.12"
 dirs = "5"
-toml = "0.8"
 rmcp = { version = "1.7.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 schemars = "1"
 tokio = { version = "1", features = ["full"] }

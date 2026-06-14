@@ -25,66 +25,48 @@
     "schemas": {
       "CreateCronJobRequest": {
         "properties": {
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "handler": {
+          "command": {
+            "example": "/usr/bin/backup.sh",
             "type": "string"
           },
-          "metadata": {},
           "schedule": {
-            "example": "0 30 9 * * 1-5 *",
+            "example": "30 9 * * 1-5",
             "type": "string"
           }
         },
         "required": [
           "schedule",
-          "handler"
+          "command"
         ],
         "type": "object"
       },
       "CronJob": {
         "properties": {
-          "created_at": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "handler": {
+          "command": {
+            "example": "/usr/bin/backup.sh",
             "type": "string"
           },
           "id": {
             "type": "string"
           },
-          "metadata": {},
           "schedule": {
-            "example": "@hourly",
+            "example": "@daily",
             "type": "string"
           },
           "source": {
-            "description": "\"managed\" for server-owned jobs; \"system:*\" for read-only system cron entries",
-            "example": "managed",
+            "description": "\"managed\" for moadim-owned entries; \"system\" for pre-existing entries",
+            "enum": [
+              "managed",
+              "system"
+            ],
             "type": "string"
-          },
-          "updated_at": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
           "id",
           "schedule",
-          "handler",
-          "metadata",
-          "enabled",
-          "source",
-          "created_at",
-          "updated_at"
+          "command",
+          "source"
         ],
         "type": "object"
       },
@@ -151,16 +133,9 @@
       },
       "UpdateCronJobRequest": {
         "properties": {
-          "enabled": {
-            "nullable": true,
-            "type": "boolean"
-          },
-          "handler": {
+          "command": {
             "nullable": true,
             "type": "string"
-          },
-          "metadata": {
-            "nullable": true
           },
           "schedule": {
             "nullable": true,
@@ -172,7 +147,7 @@
     }
   },
   "info": {
-    "description": "REST API for managing cron jobs",
+    "description": "REST API for managing the user crontab",
     "title": "Moadim Server API",
     "version": "0.1.0"
   },
@@ -199,6 +174,7 @@
     },
     "/cron-jobs": {
       "get": {
+        "description": "Returns all entries from the user crontab. Managed entries (created by moadim) have source=\"managed\"; pre-existing entries have source=\"system\".",
         "operationId": "listCronJobs",
         "responses": {
           "200": {
@@ -212,12 +188,13 @@
                 }
               }
             },
-            "description": "Array of cron jobs sorted by creation time"
+            "description": "Array of cron jobs"
           }
         },
         "summary": "List all cron jobs"
       },
       "post": {
+        "description": "Appends a new entry to the user crontab tagged with a moadim ID comment.",
         "operationId": "createCronJob",
         "requestBody": {
           "content": {
@@ -244,21 +221,29 @@
             "$ref": "#/components/responses/BadRequest"
           }
         },
-        "summary": "Create a cron job"
+        "summary": "Add a managed cron job"
       }
     },
     "/cron-jobs/{id}": {
       "delete": {
+        "description": "Removes the moadim tag comment and cron entry from the user crontab. Only managed entries can be deleted.",
         "operationId": "deleteCronJob",
         "responses": {
-          "204": {
-            "description": "Deleted"
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronJob"
+                }
+              }
+            },
+            "description": "Deleted cron job"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
           }
         },
-        "summary": "Delete a cron job"
+        "summary": "Remove a managed cron job"
       },
       "get": {
         "operationId": "getCronJob",
@@ -285,7 +270,6 @@
           "name": "id",
           "required": true,
           "schema": {
-            "format": "uuid",
             "type": "string"
           }
         }
@@ -320,7 +304,7 @@
             "$ref": "#/components/responses/NotFound"
           }
         },
-        "summary": "Update a cron job (partial)"
+        "summary": "Update a managed cron job (partial)"
       },
       "put": {
         "operationId": "updateCronJobPut",
@@ -352,7 +336,7 @@
             "$ref": "#/components/responses/NotFound"
           }
         },
-        "summary": "Update a cron job (full)"
+        "summary": "Update a managed cron job (full)"
       }
     },
     "/echo": {
@@ -402,28 +386,6 @@
           }
         },
         "summary": "Health check"
-      }
-    },
-    "/system-cron-jobs": {
-      "get": {
-        "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). Not managed by this server — cannot be created, updated, or deleted.",
-        "operationId": "listSystemCronJobs",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CronJob"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Array of read-only system cron jobs"
-          }
-        },
-        "summary": "List read-only system cron jobs"
       }
     }
   },

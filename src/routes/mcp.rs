@@ -8,16 +8,12 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::cron_jobs::{self, CreateRequest, CronStore, HandlerRegistry, UpdateRequest};
+use crate::cron_jobs::{self, CreateRequest, UpdateRequest};
 use crate::utils::time::now_secs;
 
 /// MCP server handler that exposes cron-job management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
-    /// Shared cron job store.
-    store: CronStore,
-    /// Registered handler identifiers used to annotate job responses.
-    handlers: HandlerRegistry,
     /// Unix timestamp (seconds) recorded at server startup.
     uptime_start: u64,
 }
@@ -32,24 +28,19 @@ struct EchoInput {
 /// Input for tools that operate on a single job by ID.
 #[derive(Deserialize, JsonSchema)]
 struct IdInput {
-    /// UUID of the target cron job.
+    /// ID of the target cron job.
     id: String,
 }
 
 /// Input for the `update_cron_job` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateInput {
-    /// UUID of the cron job to update.
+    /// ID of the cron job to update.
     id: String,
-    /// New cron expression, or `None` to keep the existing value.
+    /// New cron schedule, or `None` to keep existing.
     schedule: Option<String>,
-    /// New handler identifier, or `None` to keep the existing value.
-    handler: Option<String>,
-    /// New metadata, or `None` to keep the existing value.
-    #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
-    metadata: Option<serde_json::Value>,
-    /// New enabled state, or `None` to keep the existing value.
-    enabled: Option<bool>,
+    /// New command, or `None` to keep existing.
+    command: Option<String>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -66,13 +57,9 @@ fn err(msg: impl std::fmt::Display) -> CallToolResult {
 
 #[tool_router(server_handler)]
 impl MoadimMcp {
-    /// Create a new `MoadimMcp` handler connected to the given store and handler registry.
-    pub fn new(store: CronStore, handlers: HandlerRegistry, uptime_start: u64) -> Self {
-        Self {
-            store,
-            handlers,
-            uptime_start,
-        }
+    /// Create a new `MoadimMcp` handler.
+    pub fn new(uptime_start: u64) -> Self {
+        Self { uptime_start }
     }
 
     /// Return server health status, uptime, and filesystem locations.
@@ -104,87 +91,62 @@ impl MoadimMcp {
         })))
     }
 
-    /// Return all managed cron jobs as a JSON array sorted by creation time.
-    #[tool(description = "List all managed cron jobs")]
+    /// Return all cron jobs from the user crontab (managed and system entries).
+    #[tool(description = "List all cron jobs from the user crontab")]
     fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
+        Ok(match cron_jobs::svc_list() {
+            Ok(jobs) => ok(jobs),
+            Err(e) => err(e),
+        })
     }
 
-    /// Return read-only system cron jobs discovered from crontab and `/etc/cron.d`.
-    #[tool(
-        description = "List read-only system cron jobs from crontab and /etc/cron.d (not managed by this server)"
-    )]
-    fn list_system_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(crate::system_cron::read_all()))
-    }
-
-    /// Return the cron job matching the given UUID.
+    /// Return the cron job matching the given ID.
     #[tool(description = "Get a cron job by ID")]
     fn get_cron_job(
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
-            Ok(resp) => ok(resp),
+        Ok(match cron_jobs::svc_get(&id) {
+            Ok(job) => ok(job),
             Err(e) => err(e),
         })
     }
 
-    /// Validate and persist a new cron job, returning the created record.
-    #[tool(description = "Create a new cron job")]
+    /// Add a new managed cron job to the user crontab.
+    #[tool(description = "Add a new managed cron job to the user crontab")]
     fn create_cron_job(
         &self,
         Parameters(req): Parameters<CreateRequest>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(
-            match cron_jobs::svc_create(&self.store, &self.handlers, req) {
-                Ok(resp) => ok(resp),
-                Err(e) => err(e),
-            },
-        )
+        Ok(match cron_jobs::svc_create(req) {
+            Ok(job) => ok(job),
+            Err(e) => err(e),
+        })
     }
 
-    /// Apply provided fields to an existing cron job, returning the updated record.
-    #[tool(description = "Update fields of an existing cron job")]
+    /// Update schedule and/or command of an existing managed cron job.
+    #[tool(description = "Update an existing managed cron job")]
     fn update_cron_job(
         &self,
         Parameters(input): Parameters<UpdateInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let req = UpdateRequest {
             schedule: input.schedule,
-            handler: input.handler,
-            metadata: input.metadata,
-            enabled: input.enabled,
+            command: input.command,
         };
-        Ok(
-            match cron_jobs::svc_update(&self.store, &self.handlers, &input.id, req) {
-                Ok(resp) => ok(resp),
-                Err(e) => err(e),
-            },
-        )
+        Ok(match cron_jobs::svc_update(&input.id, req) {
+            Ok(job) => ok(job),
+            Err(e) => err(e),
+        })
     }
 
-    /// Remove the cron job with the given UUID from the store.
-    #[tool(description = "Delete a cron job by ID")]
+    /// Remove a managed cron job from the user crontab.
+    #[tool(description = "Remove a managed cron job from the user crontab")]
     fn delete_cron_job(
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(
-            match cron_jobs::svc_delete(&self.store, &self.handlers, &id) {
-                Ok(resp) => ok(resp),
-                Err(e) => err(e),
-            },
-        )
-    }
-
-    /// Manually trigger a cron job immediately, recording the trigger time.
-    #[tool(description = "Manually trigger a cron job outside its schedule, recording last_triggered_at")]
-    fn trigger_cron_job(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_trigger(&self.store, &id) {
+        Ok(match cron_jobs::svc_delete(&id) {
             Ok(job) => ok(job),
             Err(e) => err(e),
         })

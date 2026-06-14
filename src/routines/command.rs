@@ -57,15 +57,46 @@ pub(crate) fn substitute(s: &str, workbench: &str, prompt_file: &str) -> String 
         .replace("{prompt}", r#""$(cat prompt.txt)""#)
 }
 
-/// The daemon's `PATH`, baked into crontab lines so cron's minimal `PATH` does not hide agent tools.
+/// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
+fn bin_dir(bin: &str) -> Option<String> {
+    let path = std::env::var("PATH").ok()?;
+    path.split(':')
+        .filter(|d| !d.is_empty())
+        .find(|d| std::path::Path::new(d).join(bin).is_file())
+        .map(str::to_string)
+}
+
+/// A short `PATH` for cron, since cron's default (`/usr/bin:/bin`) hides homebrew/npm-installed
+/// tools like `tmux` and the agent binary.
 ///
-/// Falls back to a sensible superset (homebrew + `~/.local/bin` + the cron default) if `PATH` is
-/// unset, so tmux/claude still resolve on a typical macOS/Homebrew install.
-fn daemon_path() -> String {
-    std::env::var("PATH").unwrap_or_else(|_| {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        format!("/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin")
-    })
+/// Baking the daemon's full inherited `PATH` is not viable: it can exceed cron's per-line length
+/// limit (~1000 chars) and silently disable the job. Instead this resolves just the dirs holding
+/// `tmux` and the agent `command`, then appends common tool locations and the cron defaults,
+/// deduplicated and order-preserving — short enough to stay well under the limit.
+fn cron_path(agent_command: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let mut dirs: Vec<String> = Vec::new();
+    for bin in ["tmux", agent_command] {
+        if let Some(d) = bin_dir(bin) {
+            dirs.push(d);
+        }
+    }
+    for d in [
+        format!("{home}/.local/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        format!("{home}/.cargo/bin"),
+        format!("{home}/.bun/bin"),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/sbin".to_string(),
+    ] {
+        dirs.push(d);
+    }
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| seen.insert(d.clone()));
+    dirs.join(":")
 }
 
 /// Wrap `s` in single quotes for safe inclusion in a POSIX shell command.
@@ -107,7 +138,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // cron runs with a minimal PATH (/usr/bin:/bin) that omits tmux/claude/npm dirs. Bake the
         // daemon's own PATH into the line so the agent tools resolve the same way they do for a
         // manual trigger (which inherits the daemon's environment).
-        format!("export PATH={}", shell_quote(&daemon_path())),
+        format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),

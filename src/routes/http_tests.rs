@@ -280,6 +280,97 @@ async fn echo_rejects_missing_message_field() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
+// ── logs endpoint ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn router_get_logs_nonexistent_returns_404() {
+    let resp = build_app(new_store())
+        .oneshot(
+            Request::builder()
+                .uri("/cron-jobs/no-such-id/logs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn router_get_logs_existing_returns_empty_when_no_file() {
+    let store = new_store();
+    let resp = build_app(store.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/cron-jobs")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"schedule":"@daily","handler":"log-h"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let resp = build_app(store.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/cron-jobs/{id}/logs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&body[..], b"");
+
+    let _ = build_app(store).oneshot(
+        Request::builder().method("DELETE").uri(format!("/cron-jobs/{id}")).body(Body::empty()).unwrap(),
+    ).await.unwrap();
+}
+
+#[tokio::test]
+async fn router_get_logs_returns_file_content() {
+    let store = new_store();
+    let resp = build_app(store.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/cron-jobs")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"schedule":"@daily","handler":"log-h2"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let log_path = crate::paths::job_log_path(&id);
+    tokio::fs::write(&log_path, "line1\nline2\n").await.unwrap();
+
+    let resp = build_app(store.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/cron-jobs/{id}/logs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&body[..], b"line1\nline2\n");
+
+    let _ = build_app(store).oneshot(
+        Request::builder().method("DELETE").uri(format!("/cron-jobs/{id}")).body(Body::empty()).unwrap(),
+    ).await.unwrap();
+}
+
 // ── run_with_listener integration test (real TCP) ────────────────────────────
 
 #[tokio::test]

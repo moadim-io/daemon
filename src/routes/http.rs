@@ -22,6 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
         crate::cron_jobs::update,
         crate::cron_jobs::delete,
         crate::cron_jobs::trigger,
+        crate::cron_jobs::get_logs,
     ),
     components(schemas(
         CronJob,
@@ -87,6 +88,7 @@ pub(crate) fn build_app(store: CronStore) -> Router {
                 .delete(cron_jobs::delete),
         )
         .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
+        .route("/cron-jobs/{id}/logs", get(cron_jobs::get_logs))
         .nest_service("/mcp", mcp_service)
         .merge(SwaggerUi::new("/docs").url("/docs/openapi.json", ApiDoc::openapi()))
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))

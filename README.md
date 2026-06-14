@@ -44,10 +44,10 @@ moadim
 │   ├── daily-report/
 │   │   ├── job.toml        # tracked — commit this
 │   │   ├── job.local.toml  # untracked — local overrides (secrets, machine-specific config)
-│   │   └── job.log         # untracked — runtime log
+│   │   └── job.local.log         # untracked — runtime log
 │   ├── cleanup-temp/
 │   │   ├── job.toml
-│   │   └── job.log
+│   │   └── job.local.log
 │   └── sync-calendar/
 │       ├── job.toml
 │       └── job.local.toml
@@ -153,9 +153,9 @@ api_key = "sk-..."        # secret — never commit
 recipient = "me@local"    # overrides job.toml recipient
 ```
 
-### `job.log`
+### `job.local.log`
 
-Append-only log written by the server on each run. Never committed.
+Append-only log written by the server on each run. Gitignored via `*.local.*`. Readable in the UI via the LOGS button or `GET /cron-jobs/{id}/logs`.
 
 ```
 2026-06-11T09:30:00Z [daily-report] run started

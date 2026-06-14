@@ -113,6 +113,7 @@ Both are cloned into `AppState` (REST) and `MoadimMcp` (MCP). Every write acquir
 | `svc_update` | Partial-updates fields, bumps `updated_at`, rewrites TOML |
 | `svc_delete` | Removes from store, deletes job directory |
 | `svc_trigger` | Records `last_triggered_at = now`, rewrites TOML |
+| `svc_logs_path` | Checks job exists, returns path to `job.local.log` |
 
 Both the HTTP handlers and MCP tools call these directly — there is no duplication of logic between the two transports.
 
@@ -120,26 +121,7 @@ Both the HTTP handlers and MCP tools call these directly — there is no duplica
 
 ## REST API
 
-Router built in `src/routes/http.rs::build_app`:
-
-```
-GET  /                    liveness string
-GET  /health              JSON: {status, uptime_secs, running}
-POST /echo                echo {message} → {message, timestamp}
-GET  /ui                  embedded Yew UI (inlined HTML)
-
-GET  /cron-jobs           svc_list
-POST /cron-jobs           svc_create
-GET  /cron-jobs/{id}      svc_get
-PUT  /cron-jobs/{id}      svc_update  (same handler as PATCH)
-PATCH /cron-jobs/{id}     svc_update
-DELETE /cron-jobs/{id}    svc_delete
-POST /cron-jobs/{id}/trigger  svc_trigger
-
-GET  /system-cron-jobs    system_cron::read_all() — read-only, no store involvement
-
-/mcp/*                    nested StreamableHttpService (MCP)
-```
+Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
 Middleware stack (outermost first): `logger` → `fs_location`.
 
@@ -194,7 +176,7 @@ Invalid or missing `job.toml` → directory silently skipped.
     ├── job.toml         schedule, handler, enabled, timestamps, [metadata]
     ├── job.local.toml   same schema, overrides job.toml (gitignored)
     ├── .gitignore       auto-created: *.local.* and *.log
-    └── job.log          runtime log (gitignored)
+    └── job.local.log    runtime log (gitignored)
 ```
 
 Cron expression uses standard 5-field syntax (`min hour dom month dow`). The `cron` crate requires 7 fields internally; `normalize_cron` pads 5-field input to 7 before validation.

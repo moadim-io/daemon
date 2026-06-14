@@ -7,7 +7,6 @@ fn main() {
     println!("cargo:rerun-if-changed=src/routes/http.rs");
     println!("cargo:rerun-if-changed=src/cron_jobs.rs");
     println!("cargo:rerun-if-changed=src/system_cron.rs");
-    println!("cargo:rerun-if-changed=ui/index.html");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=schemas/job.schema.json");
 

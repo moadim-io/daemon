@@ -44,16 +44,6 @@ async fn build_app_serves_health() {
     assert_eq!(json["running"], true);
 }
 
-#[tokio::test]
-async fn build_app_serves_ui() {
-    let app = build_app(new_store());
-    let resp = app
-        .oneshot(Request::builder().uri("/ui").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-}
-
 // ── cron-jobs CRUD lifecycle (covers all HTTP handlers + FromRef) ─────────────
 
 #[tokio::test]

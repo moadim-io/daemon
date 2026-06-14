@@ -1,3 +1,4 @@
+use croner::Cron;
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,9 @@ pub struct CronJob {
     pub updated_at: u64,
     #[serde(default)]
     pub last_triggered_at: Option<u64>,
+    /// Human-readable schedule description supplied by the server (e.g. "At 09:30, Monday through Friday").
+    #[serde(default)]
+    pub schedule_description: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
@@ -685,7 +689,11 @@ pub struct JobRowProps {
 pub fn job_row(props: &JobRowProps) -> Html {
     let job = &props.job;
     let id_short = format!("{}…", &job.id[..8.min(job.id.len())]);
-    let (cron_ok, cron_text) = describe_cron(&job.schedule);
+    let cron_text = job
+        .schedule_description
+        .as_deref()
+        .unwrap_or("—")
+        .to_string();
     let meta = meta_preview(&job.metadata);
     let updated = reltime(job.updated_at);
 
@@ -717,7 +725,6 @@ pub fn job_row(props: &JobRowProps) -> Html {
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 
-    let _ = cron_ok; // used only for styling if desired later
     html! {
         <tr>
             <td><span class="cell-id" title={job.id.clone()}>{id_short}</span></td>
@@ -990,7 +997,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
 
-    let (cron_ok, cron_text) = describe_cron(&schedule);
+    let (cron_ok, cron_text) = describe_cron_live(&schedule);
 
     let on_schedule = {
         let schedule = schedule.clone();
@@ -1234,61 +1241,26 @@ pub fn toast_stack(props: &ToastStackProps) -> Html {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 /// Returns (is_valid, human description) for a cron expression.
-fn describe_cron(expr: &str) -> (bool, String) {
+fn describe_cron_live(expr: &str) -> (bool, String) {
     let s = expr.trim();
     if s.is_empty() {
         return (false, "— enter a cron expression —".into());
     }
-    let specials = [
-        ("@yearly", "Yearly — January 1st at midnight"),
-        ("@annually", "Yearly — January 1st at midnight"),
-        ("@monthly", "Monthly — 1st at midnight"),
-        ("@weekly", "Weekly — every Sunday at midnight"),
-        ("@daily", "Daily — at midnight"),
-        ("@midnight", "Daily — at midnight"),
-        ("@hourly", "Every hour — at minute 0"),
-    ];
-    for (key, desc) in specials {
-        if s.eq_ignore_ascii_case(key) {
-            return (true, desc.into());
-        }
-    }
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.len() < 5 || parts.len() > 7 {
-        return (
-            false,
-            format!("Invalid: expected 5–7 fields, got {}", parts.len()),
-        );
-    }
-    // Basic positional description (sec min hour dom month dow [year])
-    let (min, hour) = match parts.len() {
-        5 => (parts[0], parts[1]),
-        _ => (parts[1], parts[2]),
-    };
-    let time_desc = if hour == "*" && min == "*" {
-        "every minute".into()
-    } else if hour == "*" {
-        if let Some(n) = min.strip_prefix("*/") {
-            format!("every {n} minutes")
-        } else {
-            format!("minute {min} of every hour")
-        }
-    } else if let Some(n) = hour.strip_prefix("*/") {
-        format!("every {n} hours")
-    } else if let (Ok(h), Ok(m)) = (hour.parse::<u32>(), min.parse::<u32>()) {
-        let ap = if h >= 12 { "PM" } else { "AM" };
-        let dh = if h == 0 {
-            12
-        } else if h > 12 {
-            h - 12
-        } else {
-            h
-        };
-        format!("{dh}:{m:02} {ap}")
+    // Normalize 7-field (sec min hour dom month dow year) to 5-field, matching server behaviour.
+    let normalized = if s.starts_with('@') {
+        s.to_string()
     } else {
-        format!("{hour}:{min}")
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        if parts.len() == 7 {
+            parts[1..6].join(" ")
+        } else {
+            s.to_string()
+        }
     };
-    (true, time_desc)
+    match normalized.parse::<Cron>() {
+        Ok(cron) => (true, cron.describe()),
+        Err(_) => (false, "Invalid cron expression".into()),
+    }
 }
 
 fn meta_preview(v: &Json) -> String {

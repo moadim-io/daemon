@@ -1100,7 +1100,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "console_log",
  "cron",
  "dirs",
  "log",
@@ -1113,8 +1112,6 @@ dependencies = [
  "tower",
  "utoipa",
  "uuid",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]

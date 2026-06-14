@@ -109,13 +109,6 @@ fn trigger_cron_job_not_found_is_error() {
 }
 
 #[test]
-fn list_system_cron_jobs_returns_success() {
-    let handler = make_handler();
-    let result = handler.list_system_cron_jobs().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn create_cron_job_tool_invalid_cron_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let store = crate::cron_jobs::new_store();

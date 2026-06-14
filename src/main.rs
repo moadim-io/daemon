@@ -16,8 +16,6 @@ mod paths;
 mod routes;
 /// TOML-backed job persistence.
 mod storage;
-/// System crontab discovery.
-mod system_cron;
 /// Shared utility functions.
 mod utils;
 

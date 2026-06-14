@@ -8,7 +8,7 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{build_app, echo, list_system_cron_jobs, run_with_listener_until};
+use super::{build_app, echo, run_with_listener_until};
 use crate::cron_jobs::new_store;
 
 // ── build_app / router smoke tests ───────────────────────────────────────────
@@ -278,14 +278,6 @@ async fn echo_rejects_missing_message_field() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-// ── list_system_cron_jobs handler ─────────────────────────────────────────────
-
-#[tokio::test]
-async fn list_system_cron_jobs_returns_json_array() {
-    let result = list_system_cron_jobs().await;
-    let _ = result;
 }
 
 // ── run_with_listener integration test (real TCP) ────────────────────────────

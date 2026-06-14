@@ -110,14 +110,6 @@ impl MoadimMcp {
         Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
     }
 
-    /// Return read-only system cron jobs discovered from crontab and `/etc/cron.d`.
-    #[tool(
-        description = "List read-only system cron jobs from crontab and /etc/cron.d (not managed by this server)"
-    )]
-    fn list_system_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(crate::system_cron::read_all()))
-    }
-
     /// Return the cron job matching the given UUID.
     #[tool(description = "Get a cron job by ID")]
     fn get_cron_job(

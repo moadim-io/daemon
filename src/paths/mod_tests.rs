@@ -45,3 +45,10 @@ fn job_dir_is_child_of_jobs_dir() {
     let child = job_dir("xyz");
     assert_eq!(child.parent().unwrap(), base);
 }
+
+#[test]
+fn jobs_dir_from_home_none_falls_back_to_dot() {
+    let dir = super::jobs_dir_from_home(None);
+    assert!(dir.ends_with(".config/moadim/jobs"));
+    assert!(dir.starts_with("."));
+}

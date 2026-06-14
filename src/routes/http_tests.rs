@@ -8,7 +8,7 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{build_app, echo, list_system_cron_jobs, run_with_listener};
+use super::{build_app, echo, list_system_cron_jobs, run_with_listener_until};
 use crate::cron_jobs::new_store;
 
 // ── build_app / router smoke tests ───────────────────────────────────────────
@@ -298,7 +298,11 @@ async fn run_with_listener_serves_over_tcp() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 
-    let handle = tokio::spawn(run_with_listener(store, listener));
+    let handle = tokio::spawn(run_with_listener_until(
+        store,
+        listener,
+        std::future::pending(),
+    ));
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
@@ -314,4 +318,32 @@ async fn run_with_listener_serves_over_tcp() {
     assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
 
     handle.abort();
+}
+
+#[tokio::test]
+async fn run_with_listener_until_exits_on_immediate_shutdown() {
+    let store = new_store();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let result = run_with_listener_until(store, listener, async {}).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn mcp_endpoint_triggers_factory() {
+    let app = build_app(new_store());
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#;
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header(CONTENT_TYPE, "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .header("host", "localhost")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(resp.status().as_u16() < 500);
 }

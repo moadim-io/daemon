@@ -46,4 +46,3 @@ fn into_response_not_found_is_404() {
         StatusCode::NOT_FOUND
     );
 }
-

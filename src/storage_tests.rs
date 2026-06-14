@@ -160,3 +160,9 @@ fn load_store_skips_non_directory_entries() {
 
     std::fs::remove_file(&fake).unwrap();
 }
+
+#[test]
+fn load_store_from_dir_missing_dir_returns_empty_store() {
+    let store = load_store_from_dir(std::path::Path::new("/nonexistent-jobs-dir-99999"));
+    assert!(store.lock().unwrap().is_empty());
+}

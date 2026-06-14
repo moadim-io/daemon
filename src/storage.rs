@@ -142,9 +142,13 @@ pub fn remove_job_dir(id: &str) -> std::io::Result<()> {
 
 /// Scan `~/.config/moadim/jobs/` and load all valid managed jobs into a new store.
 pub fn load_store() -> CronStore {
-    let dir = jobs_dir();
+    load_store_from_dir(&jobs_dir())
+}
+
+/// Scan `dir` and load all valid managed jobs into a new store.
+pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> CronStore {
     let mut jobs = HashMap::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let id = entry.file_name().to_string_lossy().to_string();

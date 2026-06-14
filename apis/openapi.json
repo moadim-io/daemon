@@ -37,6 +37,30 @@
         }
       }
     },
+    "/agents": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /agents` — list the agent registry keys a routine may target.",
+        "operationId": "list_agents",
+        "responses": {
+          "200": {
+            "description": "Available agent names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cron-jobs": {
       "get": {
         "tags": [

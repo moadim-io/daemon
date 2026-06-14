@@ -102,6 +102,13 @@ pub type CronStore = Arc<Mutex<HashMap<String, CronJob>>>;
 /// Thread-safe set of registered handler identifiers.
 pub type HandlerRegistry = Arc<HashSet<String>>;
 
+/// Shared signal that asks the running server to shut down gracefully.
+///
+/// The `/shutdown` route calls [`tokio::sync::Notify::notify_one`] on this; the serving loop awaits
+/// it and begins a graceful shutdown. A stored permit means notifying before the loop registers its
+/// waiter is safe (the later `notified()` returns immediately).
+pub type ShutdownSignal = Arc<tokio::sync::Notify>;
+
 /// Combined Axum application state holding the job store and handler registry.
 #[derive(Clone)]
 pub struct AppState {
@@ -113,6 +120,8 @@ pub struct AppState {
     pub routines: crate::routines::RoutineStore,
     /// Unix timestamp (seconds) when the server started.
     pub uptime_start: u64,
+    /// Fired by the `/shutdown` route to ask the server to stop.
+    pub shutdown: ShutdownSignal,
 }
 
 impl axum::extract::FromRef<AppState> for CronStore {

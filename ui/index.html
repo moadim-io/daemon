@@ -162,6 +162,21 @@
     .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .btn-stop {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      line-height: 1;
+    }
+    .btn-stop:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+    .btn-stop:disabled { opacity: 0.4; cursor: not-allowed; }
+
     /* ── Tabs ── */
     .tabs {
       max-width: 1100px;

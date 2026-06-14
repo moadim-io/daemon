@@ -599,6 +599,60 @@ async fn run_with_listener_serves_over_tcp() {
 }
 
 #[tokio::test]
+async fn build_app_shutdown_route_acknowledges() {
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/shutdown")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["status"], "shutting down");
+}
+
+#[tokio::test]
+async fn shutdown_route_stops_the_serving_loop() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let handle = tokio::spawn(run_with_listener_until(
+        new_store(),
+        crate::routines::new_store(),
+        listener,
+        std::future::pending(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    stream
+        .write_all(b"POST /shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut buf = vec![0u8; 512];
+    let n = stream.read(&mut buf).await.unwrap();
+    assert!(
+        String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200"),
+        "shutdown should be acknowledged"
+    );
+
+    let joined = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
+    assert!(joined.is_ok(), "server did not shut down after /shutdown");
+    assert!(joined.unwrap().unwrap().is_ok());
+}
+
+#[tokio::test]
 async fn run_with_listener_until_exits_on_immediate_shutdown() {
     let store = new_store();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

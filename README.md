@@ -1,4 +1,4 @@
-# moadim-server
+# moadim
 
 Rust server that exposes cron job management over three interfaces simultaneously:
 
@@ -136,12 +136,12 @@ recipient = "team@example.com"
 timezone  = "Asia/Jerusalem"
 ```
 
-| Field        | Type   | Required | Description |
-|--------------|--------|----------|-------------|
+| Field        | Type   | Required | Description                                                            |
+| ------------ | ------ | -------- | ---------------------------------------------------------------------- |
 | `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@daily`, `@hourly`, etc. |
-| `handler`    | string | yes      | Script name in `handlers/` (without extension) |
-| `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting. |
-| `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars. |
+| `handler`    | string | yes      | Script name in `handlers/` (without extension)                         |
+| `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.             |
+| `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars.          |
 
 ### `job.local.toml`
 
@@ -190,6 +190,7 @@ press the **STOP** button in the UI header, run `moadim stop`, or send
 the foreground.)
 
 Starts on `http://127.0.0.1:5784`. On startup the server:
+
 1. Loads all jobs from `~/.config/moadim/jobs/`.
 2. Reads your crontab and applies any changes made to the moadim block while the server was stopped.
 3. Writes all enabled managed jobs back into the crontab block.

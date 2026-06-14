@@ -648,6 +648,7 @@ async fn shutdown_route_stops_the_serving_loop() {
     ));
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
+    // Hit /shutdown; the serving future should then resolve on its own.
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .unwrap();
@@ -662,6 +663,7 @@ async fn shutdown_route_stops_the_serving_loop() {
         "shutdown should be acknowledged"
     );
 
+    // The server task must finish without being aborted.
     let joined = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
     assert!(joined.is_ok(), "server did not shut down after /shutdown");
     assert!(joined.unwrap().unwrap().is_ok());

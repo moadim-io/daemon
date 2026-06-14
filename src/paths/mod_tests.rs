@@ -52,3 +52,17 @@ fn jobs_dir_from_home_none_falls_back_to_dot() {
     assert!(dir.ends_with(".config/moadim/jobs"));
     assert!(dir.starts_with("."));
 }
+
+#[test]
+fn handlers_dir_contains_moadim_and_ends_with_handlers() {
+    let p = handlers_dir().to_string_lossy().into_owned();
+    assert!(p.contains("moadim"), "expected 'moadim' in {p}");
+    assert!(p.ends_with("handlers"), "expected path to end with 'handlers': {p}");
+}
+
+#[test]
+fn handlers_dir_from_home_none_falls_back_to_dot() {
+    let dir = super::handlers_dir_from_home(None);
+    assert!(dir.ends_with(".config/moadim/handlers"));
+    assert!(dir.starts_with("."));
+}

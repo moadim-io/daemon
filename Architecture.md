@@ -121,28 +121,7 @@ Both the HTTP handlers and MCP tools call these directly — there is no duplica
 
 ## REST API
 
-Router built in `src/routes/http.rs::build_app`:
-
-```
-GET  /                    liveness string
-GET  /health              JSON: {status, uptime_secs, running}
-POST /echo                echo {message} → {message, timestamp}
-GET  /ui                  embedded Yew UI (inlined HTML)
-
-GET  /cron-jobs           svc_list
-POST /cron-jobs           svc_create
-GET  /cron-jobs/{id}      svc_get
-PUT  /cron-jobs/{id}      svc_update  (same handler as PATCH)
-PATCH /cron-jobs/{id}     svc_update
-DELETE /cron-jobs/{id}    svc_delete
-POST /cron-jobs/{id}/trigger  svc_trigger
-
-GET  /cron-jobs/{id}/logs read job.local.log for that job (empty string if file absent)
-
-GET  /system-cron-jobs    system_cron::read_all() — read-only, no store involvement
-
-/mcp/*                    nested StreamableHttpService (MCP)
-```
+Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
 Middleware stack (outermost first): `logger` → `fs_location`.
 

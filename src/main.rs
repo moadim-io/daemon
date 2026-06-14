@@ -28,6 +28,12 @@ async fn main() -> anyhow::Result<()> {
     routines::ensure_default_agents();
     let store = storage::load_store();
     let routines = routine_storage::load_store();
+    // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
+    // by an earlier run before agent configs existed) would never be regenerated until the next
+    // create/update/delete, leaving scheduled routines silently un-fired.
+    if let Err(e) = sync::routines::sync_routines_to_crontab(&routines) {
+        log::warn!("startup crontab sync failed: {e}");
+    }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:5784").await?;
     routes::http::run_with_listener_until(store, routines, listener, std::future::pending()).await
 }

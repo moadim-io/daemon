@@ -57,6 +57,17 @@ pub(crate) fn substitute(s: &str, workbench: &str, prompt_file: &str) -> String 
         .replace("{prompt}", r#""$(cat prompt.txt)""#)
 }
 
+/// The daemon's `PATH`, baked into crontab lines so cron's minimal `PATH` does not hide agent tools.
+///
+/// Falls back to a sensible superset (homebrew + `~/.local/bin` + the cron default) if `PATH` is
+/// unset, so tmux/claude still resolve on a typical macOS/Homebrew install.
+fn daemon_path() -> String {
+    std::env::var("PATH").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        format!("/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin")
+    })
+}
+
 /// Wrap `s` in single quotes for safe inclusion in a POSIX shell command.
 pub(crate) fn shell_quote(s: &str) -> String {
     let mut out = String::from("'");
@@ -93,6 +104,10 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![
+        // cron runs with a minimal PATH (/usr/bin:/bin) that omits tmux/claude/npm dirs. Bake the
+        // daemon's own PATH into the line so the agent tools resolve the same way they do for a
+        // manual trigger (which inherits the daemon's environment).
+        format!("export PATH={}", shell_quote(&daemon_path())),
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),

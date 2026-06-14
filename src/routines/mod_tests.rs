@@ -86,6 +86,8 @@ fn build_routine_command_contains_expected_pieces() {
     };
     let cmd = build_routine_command(&r, &agent);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
+    // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
+    assert!(cmd.contains("export PATH="));
     // prompt passed as a process argument via command substitution, no send-keys
     assert!(cmd.contains(r#""$(cat prompt.txt)""#));
     assert!(!cmd.contains("send-keys"));

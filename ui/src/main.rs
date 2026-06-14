@@ -63,10 +63,16 @@ pub struct Toast {
     pub kind: ToastKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Page {
+    #[default]
+    List,
+    NewJob,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
     None,
-    Create,
     Edit(String),
     ConfirmDelete { id: String, handler: String },
 }
@@ -77,6 +83,7 @@ pub struct AppState {
     pub health: Health,
     pub health_ok: bool,
     pub loading: bool,
+    pub page: Page,
     pub modal: Modal,
     pub toasts: Vec<Toast>,
     pub next_toast: u32,
@@ -89,6 +96,7 @@ impl Default for AppState {
             health: Health::default(),
             health_ok: false,
             loading: true,
+            page: Page::List,
             modal: Modal::None,
             toasts: vec![],
             next_toast: 0,
@@ -99,7 +107,8 @@ impl Default for AppState {
 pub enum AppAction {
     JobsLoaded(Vec<CronJob>),
     HealthLoaded { health: Health, ok: bool },
-    OpenCreate,
+    GoToCreate,
+    GoToList,
     OpenEdit(String),
     OpenConfirmDelete { id: String, handler: String },
     CloseModal,
@@ -123,7 +132,8 @@ impl Reducible for AppState {
                 s.health = health;
                 s.health_ok = ok;
             }
-            AppAction::OpenCreate => s.modal = Modal::Create,
+            AppAction::GoToCreate => s.page = Page::NewJob,
+            AppAction::GoToList => s.page = Page::List,
             AppAction::OpenEdit(id) => s.modal = Modal::Edit(id),
             AppAction::OpenConfirmDelete { id, handler } => {
                 s.modal = Modal::ConfirmDelete { id, handler };
@@ -280,7 +290,35 @@ pub fn app() -> Html {
 
     let on_new = {
         let state = state.clone();
-        Callback::from(move |_: MouseEvent| state.dispatch(AppAction::OpenCreate))
+        Callback::from(move |_: MouseEvent| state.dispatch(AppAction::GoToCreate))
+    };
+
+    let on_cancel_create = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(AppAction::GoToList))
+    };
+
+    let on_create = {
+        let state = state.clone();
+        Callback::from(move |req: CreateRequest| {
+            let state = state.clone();
+            spawn_local(async move {
+                match api_create(&req).await {
+                    Ok(job) => {
+                        state.dispatch(AppAction::UpsertJob(job));
+                        state.dispatch(AppAction::GoToList);
+                        state.dispatch(AppAction::AddToast {
+                            msg: "Job created".into(),
+                            kind: ToastKind::Ok,
+                        });
+                    }
+                    Err(e) => state.dispatch(AppAction::AddToast {
+                        msg: format!("Create failed: {e}"),
+                        kind: ToastKind::Err,
+                    }),
+                }
+            })
+        })
     };
 
     let on_edit = {
@@ -352,7 +390,6 @@ pub fn app() -> Html {
         Callback::from(move |_: ()| state.dispatch(AppAction::CloseModal))
     };
 
-    // Snapshot modal at render time so on_save sees the right mode
     let current_modal = state.modal.clone();
     let on_save = {
         let state = state.clone();
@@ -360,43 +397,27 @@ pub fn app() -> Html {
             let state = state.clone();
             let modal = current_modal.clone();
             spawn_local(async move {
-                match &modal {
-                    Modal::Edit(id) => {
-                        let upd = UpdateRequest {
-                            schedule: Some(req.schedule),
-                            handler: Some(req.handler),
-                            metadata: Some(req.metadata),
-                            enabled: Some(req.enabled),
-                        };
-                        match api_update(id, &upd).await {
-                            Ok(job) => {
-                                state.dispatch(AppAction::UpsertJob(job));
-                                state.dispatch(AppAction::CloseModal);
-                                state.dispatch(AppAction::AddToast {
-                                    msg: "Job updated".into(),
-                                    kind: ToastKind::Ok,
-                                });
-                            }
-                            Err(e) => state.dispatch(AppAction::AddToast {
-                                msg: format!("Update failed: {e}"),
-                                kind: ToastKind::Err,
-                            }),
-                        }
-                    }
-                    _ => match api_create(&req).await {
+                if let Modal::Edit(id) = &modal {
+                    let upd = UpdateRequest {
+                        schedule: Some(req.schedule),
+                        handler: Some(req.handler),
+                        metadata: Some(req.metadata),
+                        enabled: Some(req.enabled),
+                    };
+                    match api_update(id, &upd).await {
                         Ok(job) => {
                             state.dispatch(AppAction::UpsertJob(job));
                             state.dispatch(AppAction::CloseModal);
                             state.dispatch(AppAction::AddToast {
-                                msg: "Job created".into(),
+                                msg: "Job updated".into(),
                                 kind: ToastKind::Ok,
                             });
                         }
                         Err(e) => state.dispatch(AppAction::AddToast {
-                            msg: format!("Create failed: {e}"),
+                            msg: format!("Update failed: {e}"),
                             kind: ToastKind::Err,
                         }),
-                    },
+                    }
                 }
             })
         })
@@ -434,6 +455,7 @@ pub fn app() -> Html {
     let health = state.health.clone();
     let health_ok = state.health_ok;
     let loading = state.loading;
+    let page = state.page.clone();
     let modal = state.modal.clone();
     let toasts = state.toasts.clone();
 
@@ -445,24 +467,34 @@ pub fn app() -> Html {
     html! {
         <>
             <Header health={health} ok={health_ok} on_refresh={on_refresh} />
-            <main>
-                <StatsBar jobs={jobs.clone()} />
-                <div class="section-hd">
-                    <div class="section-label">{"SCHEDULED JOBS"}</div>
-                    <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
-                </div>
-                <JobTable
-                    jobs={jobs}
-                    loading={loading}
-                    on_edit={on_edit}
-                    on_delete={on_ask_delete}
-                    on_toggle={on_toggle}
-                    on_trigger={on_trigger}
-                />
-            </main>
+            {
+                if page == Page::NewJob {
+                    html! {
+                        <CreatePage on_cancel={on_cancel_create} on_save={on_create} />
+                    }
+                } else {
+                    html! {
+                        <main>
+                            <StatsBar jobs={jobs.clone()} />
+                            <div class="section-hd">
+                                <div class="section-label">{"SCHEDULED JOBS"}</div>
+                                <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
+                            </div>
+                            <JobTable
+                                jobs={jobs}
+                                loading={loading}
+                                on_edit={on_edit}
+                                on_delete={on_ask_delete}
+                                on_toggle={on_toggle}
+                                on_trigger={on_trigger}
+                            />
+                        </main>
+                    }
+                }
+            }
             {
                 match &modal {
-                    Modal::Create | Modal::Edit(_) => html! {
+                    Modal::Edit(_) => html! {
                         <JobModal
                             editing={edit_job}
                             on_close={on_close.clone()}
@@ -718,7 +750,205 @@ pub fn job_row(props: &JobRowProps) -> Html {
     }
 }
 
-// ─── Job modal ────────────────────────────────────────────────────────────────
+// ─── Create page ──────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct CreatePageProps {
+    pub on_cancel: Callback<()>,
+    pub on_save: Callback<CreateRequest>,
+}
+
+#[function_component(CreatePage)]
+pub fn create_page(props: &CreatePageProps) -> Html {
+    let schedule = use_state(String::new);
+    let handler = use_state(String::new);
+    let meta_raw = use_state(String::new);
+    let enabled = use_state(|| true);
+    let meta_err = use_state(String::new);
+    let saving = use_state(|| false);
+
+    let (cron_ok, cron_text) = describe_cron(&schedule);
+
+    let on_schedule = {
+        let schedule = schedule.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            schedule.set(input.value());
+        })
+    };
+    let on_handler = {
+        let handler = handler.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            handler.set(input.value());
+        })
+    };
+    let on_meta = {
+        let meta_raw = meta_raw.clone();
+        let meta_err = meta_err.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            let val = input.value();
+            if val.trim().is_empty() {
+                meta_err.set(String::new());
+            } else if let Err(err) = serde_json::from_str::<Json>(&val) {
+                meta_err.set(format!("↳ {err}"));
+            } else {
+                meta_err.set(String::new());
+            }
+            meta_raw.set(val);
+        })
+    };
+    let on_enabled = {
+        let enabled = enabled.clone();
+        Callback::from(move |e: Event| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            enabled.set(input.checked());
+        })
+    };
+
+    let set_preset = |val: &'static str| {
+        let schedule = schedule.clone();
+        Callback::from(move |_: MouseEvent| schedule.set(val.to_string()))
+    };
+
+    let on_cancel_click = {
+        let cb = props.on_cancel.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_save_click = {
+        let schedule = schedule.clone();
+        let handler = handler.clone();
+        let meta_raw = meta_raw.clone();
+        let meta_err = meta_err.clone();
+        let enabled = enabled.clone();
+        let saving = saving.clone();
+        let cb = props.on_save.clone();
+        Callback::from(move |_: MouseEvent| {
+            if !meta_err.is_empty() {
+                return;
+            }
+            let metadata = if meta_raw.trim().is_empty() {
+                Json::Null
+            } else {
+                serde_json::from_str(&*meta_raw).unwrap_or(Json::Null)
+            };
+            saving.set(true);
+            cb.emit(CreateRequest {
+                schedule: (*schedule).clone(),
+                handler: (*handler).clone(),
+                metadata,
+                enabled: *enabled,
+            });
+        })
+    };
+
+    let preview_class = if schedule.is_empty() {
+        "cron-preview"
+    } else if cron_ok {
+        "cron-preview ok"
+    } else {
+        "cron-preview bad"
+    };
+
+    let meta_class = if !meta_err.is_empty() {
+        "form-input invalid"
+    } else {
+        "form-input"
+    };
+
+    html! {
+        <main class="create-page">
+            <div class="page-hd">
+                <button class="btn btn-ghost btn-sm" onclick={on_cancel_click.clone()}>{"← BACK"}</button>
+                <div class="page-title">{"NEW JOB"}</div>
+            </div>
+            <div class="page-card">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">
+                            {"SCHEDULE "}
+                            <span class="form-required">{"*"}</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            type="text"
+                            placeholder="sec min hour dom month dow year"
+                            value={(*schedule).clone()}
+                            oninput={on_schedule}
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                        <div class="cron-presets">
+                            { for [
+                                ("@daily", "@daily"), ("@hourly", "@hourly"),
+                                ("@weekly", "@weekly"), ("@monthly", "@monthly"),
+                                ("0 0 9 * * 1-5 *", "weekdays 9am"),
+                                ("0 */15 * * * * *", "every 15min"),
+                                ("0 0 * * * * *", "every hour"),
+                                ("0 0 0 1 * * *", "monthly"),
+                            ].iter().map(|(val, label)| html! {
+                                <button class="preset-btn" onclick={set_preset(val)}>{*label}</button>
+                            }) }
+                        </div>
+                        <div class={preview_class}>{cron_text}</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            {"HANDLER "}
+                            <span class="form-required">{"*"}</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            type="text"
+                            placeholder="send-report"
+                            value={(*handler).clone()}
+                            oninput={on_handler}
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            {"METADATA "}
+                            <span style="color:var(--text-ghost)">{"(JSON)"}</span>
+                        </label>
+                        <textarea
+                            class={meta_class}
+                            placeholder={r#"{"recipient": "team@example.com"}"#}
+                            value={(*meta_raw).clone()}
+                            oninput={on_meta}
+                        />
+                        if !meta_err.is_empty() {
+                            <div class="field-err">{(*meta_err).clone()}</div>
+                        }
+                    </div>
+                    <div class="form-group" style="margin-bottom:0">
+                        <div class="toggle-row">
+                            <span class="toggle-row-label">{"ENABLED"}</span>
+                            <label class="toggle">
+                                <input type="checkbox" checked={*enabled} onchange={on_enabled} />
+                                <div class="toggle-track"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-ft">
+                    <button class="btn btn-ghost btn-sm" onclick={on_cancel_click}>{"CANCEL"}</button>
+                    <button
+                        class="btn btn-primary btn-sm"
+                        onclick={on_save_click}
+                        disabled={*saving}
+                    >
+                        { if *saving { "…" } else { "CREATE JOB" } }
+                    </button>
+                </div>
+            </div>
+        </main>
+    }
+}
+
+// ─── Job modal (edit only) ────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
 pub struct JobModalProps {
@@ -761,14 +991,6 @@ pub fn job_modal(props: &JobModalProps) -> Html {
     let saving = use_state(|| false);
 
     let (cron_ok, cron_text) = describe_cron(&schedule);
-
-    let is_edit = props.editing.is_some();
-    let title = if is_edit { "EDIT JOB" } else { "NEW JOB" };
-    let save_label = if is_edit {
-        "SAVE CHANGES"
-    } else {
-        "CREATE JOB"
-    };
 
     let on_schedule = {
         let schedule = schedule.clone();
@@ -862,7 +1084,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
         <div class="overlay">
             <div class="modal">
                 <div class="modal-hd">
-                    <div class="modal-title">{title}</div>
+                    <div class="modal-title">{"EDIT JOB"}</div>
                     <button class="modal-x" onclick={on_close_click.clone()}>{"✕"}</button>
                 </div>
                 <div class="modal-body">
@@ -941,7 +1163,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                         onclick={on_save_click}
                         disabled={*saving}
                     >
-                        { if *saving { "…" } else { save_label } }
+                        { if *saving { "…" } else { "SAVE CHANGES" } }
                     </button>
                 </div>
             </div>

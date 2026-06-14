@@ -5,16 +5,21 @@
 //! ```text
 //! # BEGIN MOADIM-ROUTINES
 //! # Managed by moadim — routines (agent tmux sessions)
-//! * * * * * TS=$(date +\%s); ...; tmux new-session ... # moadim-routine:<id>
+//! * * * * * /bin/sh '/…/routines/<id>/run.sh' # moadim-routine:<id>
 //! # END MOADIM-ROUTINES
 //! ```
 //!
-//! Each line is the full self-contained command produced by [`crate::routines::build_routine_command`]
-//! prefixed with the schedule and tagged with the routine id. Reverse sync is not implemented —
-//! routines are managed only through the API.
+//! Each routine's full launch command is written to a per-routine `run.sh` script; the crontab line
+//! is just `<schedule> /bin/sh '<run.sh>' # moadim-routine:<id>`. Inlining the whole command (which
+//! includes a long per-agent `setup` step) pushed lines past cron's ~1000-char per-line limit, which
+//! cron silently drops. Reverse sync is not implemented — routines are managed only through the API.
 
+use std::io;
+use std::os::unix::fs::PermissionsExt;
+
+use crate::paths::routine_script_path;
 use crate::routines::{
-    build_routine_command, load_agent_command, AgentCommand, Routine, RoutineStore,
+    build_routine_command, load_agent_command, shell_quote, AgentCommand, Routine, RoutineStore,
 };
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 
@@ -25,16 +30,43 @@ const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
-/// Escape `%` as `\%` so cron does not interpret it as a newline in the command.
-fn escape_percent(s: &str) -> String {
-    s.replace('%', "\\%")
+/// Write the routine's launch command to its `run.sh` script and return the path.
+///
+/// The script holds the full self-contained command from [`build_routine_command`], so the crontab
+/// line that calls it stays short regardless of how long the command is.
+fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
+    let path = routine_script_path(&routine.id);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let command = build_routine_command(routine, agent);
+    std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    Ok(path)
 }
 
-/// Format a single routine as a crontab line: `<schedule> <command> # moadim-routine:<id>`.
-pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> String {
+/// Format a single routine as a crontab line that invokes its `run.sh`:
+/// `<schedule> /bin/sh '<run.sh>' # moadim-routine:<id>`.
+///
+/// Returns `None` (after a warning) if the script cannot be written.
+pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Option<String> {
+    let script = match write_routine_script(routine, agent) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!(
+                "routine sync: failed to write run.sh for routine {:?}: {e}; skipping",
+                routine.id
+            );
+            return None;
+        }
+    };
     let schedule = to_os_schedule(&routine.schedule);
-    let command = escape_percent(&build_routine_command(routine, agent));
-    format!("{} {} # moadim-routine:{}", schedule, command, routine.id)
+    Some(format!(
+        "{} /bin/sh {} # moadim-routine:{}",
+        schedule,
+        shell_quote(&script.to_string_lossy()),
+        routine.id
+    ))
 }
 
 /// Build the full routines block from the enabled managed routines in `store`.
@@ -53,7 +85,7 @@ fn build_block(store: &RoutineStore) -> String {
     let lines: Vec<String> = routines
         .iter()
         .filter_map(|r| match load_agent_command(&r.agent) {
-            Some(agent) => Some(format_routine_line(r, &agent)),
+            Some(agent) => format_routine_line(r, &agent),
             None => {
                 log::warn!(
                     "routine sync: agent config not found for routine {:?} (agent {:?}); skipping",

@@ -20,25 +20,25 @@ fn make_routine(id: &str, agent: &str) -> Routine {
 }
 
 #[test]
-fn escape_percent_escapes_all() {
-    assert_eq!(escape_percent("a%b%c"), "a\\%b\\%c");
-    assert_eq!(escape_percent("no percent"), "no percent");
-}
-
-#[test]
-fn format_routine_line_has_schedule_command_and_tag() {
+fn format_routine_line_invokes_script_with_schedule_and_tag() {
     let r = make_routine("fid", "claude");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
     };
-    let line = format_routine_line(&r, &agent);
+    let line = format_routine_line(&r, &agent).unwrap();
     assert!(line.starts_with("30 9 * * 1-5 "));
-    assert!(line.contains("tmux new-session"));
-    assert!(line.contains("date +\\%s")); // percent escaped for cron
+    // crontab line just runs the generated script — keeps it well under cron's length limit
+    assert!(line.contains("/bin/sh "));
+    assert!(line.contains("/fid/run.sh"));
     assert!(line.ends_with("# moadim-routine:fid"));
     assert!(!line.contains('\n'));
+    // the long launch command lives in the script, not the crontab line
+    let script = std::fs::read_to_string(crate::paths::routine_script_path("fid")).unwrap();
+    assert!(script.starts_with("#!/bin/sh\n"));
+    assert!(script.contains("tmux new-session"));
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir("fid"));
 }
 
 #[test]
@@ -88,7 +88,8 @@ fn build_block_includes_routine_with_agent_config() {
         .insert("inc".into(), make_routine("inc", agent_name));
     let block = build_block(&store);
     assert!(block.contains("# moadim-routine:inc"));
-    assert!(block.contains("tmux new-session"));
+    assert!(block.contains("/inc/run.sh"));
 
     std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir("inc"));
 }

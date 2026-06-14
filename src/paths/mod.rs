@@ -88,6 +88,11 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
     routine_dir(id).join(".gitignore")
 }
 
+/// Returns the path to `{routines_dir}/{id}/run.sh`, the generated launch script invoked by cron.
+pub fn routine_script_path(id: &str) -> PathBuf {
+    routine_dir(id).join("run.sh")
+}
+
 // ─── Agent registry ──────────────────────────────────────────────────────────
 
 /// Returns the path to `~/.config/moadim/agents/`.

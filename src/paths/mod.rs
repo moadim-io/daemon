@@ -1,4 +1,4 @@
-//! Path builders for the moadim jobs directory layout.
+//! Path builders for the moadim jobs and handlers directory layout.
 
 use std::path::PathBuf;
 
@@ -13,6 +13,19 @@ pub(crate) fn jobs_dir_from_home(home: Option<PathBuf>) -> PathBuf {
         .join(".config")
         .join("moadim")
         .join("jobs")
+}
+
+/// Returns the path to `~/.config/moadim/handlers/`.
+pub fn handlers_dir() -> PathBuf {
+    handlers_dir_from_home(dirs::home_dir())
+}
+
+/// Returns the handlers directory under `home`, or `.` if `home` is `None`.
+pub(crate) fn handlers_dir_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+        .join("handlers")
 }
 
 /// Returns the path to `{jobs_dir}/{id}/`.

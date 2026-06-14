@@ -1,37 +1,69 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::mcp::MoadimMcp;
-use crate::cron_jobs::{self, new_registry, AppState, CronJob, CronJobResponse, CronStore, CreateRequest, UpdateRequest};
+use crate::cron_jobs::{self, new_registry, AppState, CronStore};
 use crate::middlewares;
 use crate::utils::time::now_secs;
 use axum::{
+    extract::State,
     middleware,
     routing::{get, post},
     Json, Router,
 };
-use utoipa::OpenApi;
+use serde::{Deserialize, Serialize};
 use utoipa_swagger_ui::SwaggerUi;
 
-/// OpenAPI document aggregating all REST API paths and schemas.
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        crate::cron_jobs::create,
-        crate::cron_jobs::list,
-        crate::cron_jobs::get,
-        crate::cron_jobs::update,
-        crate::cron_jobs::delete,
-        crate::cron_jobs::trigger,
-    ),
-    components(schemas(
-        CronJob,
-        CronJobResponse,
-        CreateRequest,
-        UpdateRequest,
-    )),
-    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
-)]
-struct ApiDoc;
+/// Response body for `GET /health`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
+    pub status: String,
+    pub uptime_secs: u64,
+    pub running: bool,
+}
+
+/// Request body for `POST /echo`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct EchoRequest {
+    pub message: String,
+}
+
+/// Response body for `POST /echo`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct EchoResponse {
+    pub message: String,
+    pub timestamp: u64,
+}
+
+/// `GET /` — liveness check.
+#[utoipa::path(get, path = "/",
+    responses((status = 200, description = "Server is running", body = str)))]
+pub async fn index() -> &'static str {
+    "Moadim server is running"
+}
+
+/// `GET /health` — health check with uptime.
+#[utoipa::path(get, path = "/health",
+    responses((status = 200, body = HealthResponse)))]
+pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        uptime_secs: now_secs() - state.uptime_start,
+        running: true,
+    })
+}
+
+/// `POST /echo` — parse a JSON body and return the message with a server timestamp.
+#[utoipa::path(post, path = "/echo",
+    request_body = EchoRequest,
+    responses((status = 200, body = EchoResponse), (status = 400, description = "Invalid body")))]
+pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::http::StatusCode> {
+    let parsed: EchoRequest =
+        serde_json::from_slice(&body).map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
+    Ok(Json(EchoResponse {
+        message: parsed.message,
+        timestamp: now_secs(),
+    }))
+}
 
 /// Build the Axum router with all routes, middleware, and state wired up.
 pub(crate) fn build_app(store: CronStore) -> Router {
@@ -42,11 +74,12 @@ pub(crate) fn build_app(store: CronStore) -> Router {
     let app_state = AppState {
         store: store.clone(),
         handlers: new_registry(),
+        uptime_start: now_secs(),
     };
 
-    let uptime_start = now_secs();
     let mcp_store = store.clone();
     let mcp_handlers = app_state.handlers.clone();
+    let uptime_start = app_state.uptime_start;
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(MoadimMcp::new(
@@ -66,29 +99,23 @@ pub(crate) fn build_app(store: CronStore) -> Router {
                 axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
             }),
         )
-        .route("/", get(|| async { "Moadim server is running" }))
-        .route(
-            "/health",
-            get(move || async move {
-                Json(serde_json::json!({
-                    "status": "ok",
-                    "uptime_secs": now_secs() - uptime_start,
-                    "running": true,
-                }))
-            }),
-        )
+        .route("/", get(index))
+        .route("/health", get(health))
         .route("/echo", post(echo))
         .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(
             "/cron-jobs/{id}",
             get(cron_jobs::get)
-                .put(cron_jobs::update)
+                .put(cron_jobs::replace)
                 .patch(cron_jobs::update)
                 .delete(cron_jobs::delete),
         )
         .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
         .nest_service("/mcp", mcp_service)
-        .merge(SwaggerUi::new("/docs").url("/docs/openapi.json", ApiDoc::openapi()))
+        .merge({
+            use utoipa::OpenApi as _;
+            SwaggerUi::new("/docs").url("/docs/openapi.json", crate::openapi::ApiDoc::openapi())
+        })
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         .with_state(app_state)
@@ -101,28 +128,16 @@ pub async fn run_with_listener_until(
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let addr = listener.local_addr()?.to_string();
+    let spec_path = concat!(env!("CARGO_MANIFEST_DIR"), "/apis/openapi.json");
+    if let Err(e) = std::fs::write(spec_path, crate::openapi::ApiDoc::to_json()) {
+        log::warn!("could not write openapi spec: {e}");
+    }
     let app = build_app(store);
     crate::utils::startup_print::print(&addr);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
-}
-
-/// `POST /echo` — parse a JSON body and return the message with a server timestamp.
-async fn echo(body: axum::body::Bytes) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
-    #[derive(serde::Deserialize)]
-    struct EchoRequest {
-        message: String,
-    }
-
-    let parsed: EchoRequest =
-        serde_json::from_slice(&body).map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
-
-    Ok(Json(serde_json::json!({
-        "message": parsed.message,
-        "timestamp": now_secs(),
-    })))
 }
 
 #[cfg(test)]

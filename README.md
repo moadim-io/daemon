@@ -26,6 +26,10 @@ Then run:
 moadim
 ```
 
+This starts the server **in the background** and returns control to your shell.
+Stop it later with `moadim stop` (or the STOP button in the UI). To run it
+attached to your terminal instead, use `moadim --interactive`.
+
 ## Features
 
 - Jobs created via REST or MCP are written into your OS crontab automatically
@@ -164,9 +168,26 @@ Append-only log written by the server on each run. Gitignored via `*.local.*`. R
 
 ## Running
 
+Moadim runs as a local daemon. By default it starts **in the background**:
+
 ```sh
-cargo run
+moadim                 # start detached, print the PID, return to the shell
+moadim --interactive   # run in the foreground, attached to the terminal (Ctrl-C to stop)
+moadim status          # report whether a server is running
+moadim stop            # ask a running server to stop
 ```
+
+| Command            | Mode          | Behaviour |
+|--------------------|---------------|-----------|
+| `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
+| `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
+| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. |
+| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. |
+
+Because the default mode is detached, you stop the server **from the client**:
+press the **STOP** button in the UI header, run `moadim stop`, or send
+`POST /shutdown`. (During development, `cargo run -- --interactive` keeps it in
+the foreground.)
 
 Starts on `http://127.0.0.1:5784`. On startup the server:
 1. Loads all jobs from `~/.config/moadim/jobs/`.
@@ -179,8 +200,10 @@ The server exposes an MCP endpoint at `http://localhost:5784/mcp`. Connect any M
 
 ### Claude Code
 
+Add moadim at **user scope** so it's available across all your projects. moadim is a global daemon (one local server, one crontab) — there's no per-project state, so project scope would only force you to re-add it in every repo.
+
 ```sh
-claude mcp add --transport http moadim http://localhost:5784/mcp
+claude mcp add --scope user --transport http moadim http://localhost:5784/mcp
 ```
 
 ### Any MCP client

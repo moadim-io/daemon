@@ -649,6 +649,28 @@
           }
         }
       }
+    },
+    "/shutdown": {
+      "post": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`POST /shutdown` — ask the server to stop gracefully.",
+        "description": "Used by the UI \"STOP\" button (and the `moadim stop` command) to kill a backgrounded server that\nhas no controlling terminal. The response is sent before the graceful shutdown completes.",
+        "operationId": "shutdown",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShutdownResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1006,6 +1028,19 @@
           }
         ],
         "description": "A [`Routine`] enriched with derived, non-persisted fields for API responses."
+      },
+      "ShutdownResponse": {
+        "type": "object",
+        "description": "Response body for `POST /shutdown`.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Acknowledgement status (always `\"shutting down\"`)."
+          }
+        }
       },
       "UpdateRequest": {
         "type": "object",

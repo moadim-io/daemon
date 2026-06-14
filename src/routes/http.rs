@@ -1,10 +1,11 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::mcp::MoadimMcp;
-use crate::cron_jobs::{self, new_registry, AppState, CronStore};
+use crate::cron_jobs::{self, new_registry, AppState, CronStore, ShutdownSignal};
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
+use std::sync::Arc;
 use axum::{
     extract::State,
     middleware,
@@ -59,6 +60,27 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     })
 }
 
+/// Response body for `POST /shutdown`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ShutdownResponse {
+    /// Acknowledgement status (always `"shutting down"`).
+    pub status: String,
+}
+
+/// `POST /shutdown` — ask the server to stop gracefully.
+///
+/// Used by the UI "STOP" button (and the `moadim stop` command) to kill a backgrounded server that
+/// has no controlling terminal. The response is sent before the graceful shutdown completes.
+#[utoipa::path(post, path = "/shutdown",
+    responses((status = 200, body = ShutdownResponse)))]
+pub async fn shutdown(State(state): State<AppState>) -> Json<ShutdownResponse> {
+    log::info!("shutdown requested via API");
+    state.shutdown.notify_one();
+    Json(ShutdownResponse {
+        status: "shutting down".to_string(),
+    })
+}
+
 /// `POST /echo` — parse a JSON body and return the message with a server timestamp.
 #[utoipa::path(post, path = "/echo",
     request_body = EchoRequest,
@@ -73,7 +95,20 @@ pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::h
 }
 
 /// Build the Axum router with all routes, middleware, and state wired up.
+///
+/// The shutdown signal is created internally; callers that need to trigger shutdown out of band
+/// (the serving loop) should use [`build_app_with_shutdown`].
+#[cfg(test)]
 pub(crate) fn build_app(store: CronStore, routines: RoutineStore) -> Router {
+    build_app_with_shutdown(store, routines, Arc::new(tokio::sync::Notify::new()))
+}
+
+/// Build the Axum router, wiring `shutdown` into the app state so the `/shutdown` route can fire it.
+pub(crate) fn build_app_with_shutdown(
+    store: CronStore,
+    routines: RoutineStore,
+    shutdown_signal: ShutdownSignal,
+) -> Router {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
@@ -83,6 +118,7 @@ pub(crate) fn build_app(store: CronStore, routines: RoutineStore) -> Router {
         handlers: new_registry(),
         routines: routines.clone(),
         uptime_start: now_secs(),
+        shutdown: shutdown_signal,
     };
 
     let mcp_store = store.clone();
@@ -111,6 +147,7 @@ pub(crate) fn build_app(store: CronStore, routines: RoutineStore) -> Router {
         )
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/shutdown", post(shutdown))
         .route("/echo", post(echo))
         .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(
@@ -154,10 +191,19 @@ pub async fn run_with_listener_until(
     if let Err(e) = std::fs::write(spec_path, crate::openapi::ApiDoc::to_json()) {
         log::warn!("could not write openapi spec: {e}");
     }
-    let app = build_app(store, routines);
+    let signal: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
+    let app = build_app_with_shutdown(store, routines, signal.clone());
     crate::utils::startup_print::print(&addr);
+    // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
+    // the `/shutdown` route fires `signal` (the UI "STOP" button / `moadim stop`).
+    let combined = async move {
+        tokio::select! {
+            _ = shutdown => {}
+            _ = signal.notified() => {}
+        }
+    };
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
+        .with_graceful_shutdown(combined)
         .await?;
     Ok(())
 }

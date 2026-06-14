@@ -259,6 +259,18 @@ async fn api_trigger(id: &str) -> Result<CronJob, String> {
     resp.json::<CronJob>().await.map_err(|e| e.to_string())
 }
 
+async fn api_shutdown() -> Result<(), String> {
+    let resp = Request::post("/shutdown")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
+}
+
 async fn api_get_logs(id: &str) -> Result<String, String> {
     let resp = Request::get(&format!("/cron-jobs/{id}/logs"))
         .send()
@@ -321,6 +333,35 @@ pub fn app() -> Html {
                     }),
                 }
                 poll_health(state).await;
+            });
+        })
+    };
+
+    let on_stop = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| {
+            let state = state.clone();
+            spawn_local(async move {
+                match api_shutdown().await {
+                    Ok(()) => {
+                        state.dispatch(AppAction::HealthLoaded {
+                            health: Health {
+                                status: "stopping".into(),
+                                running: false,
+                                uptime_secs: None,
+                            },
+                            ok: false,
+                        });
+                        state.dispatch(AppAction::AddToast {
+                            msg: "Server stopping…".into(),
+                            kind: ToastKind::Ok,
+                        });
+                    }
+                    Err(e) => state.dispatch(AppAction::AddToast {
+                        msg: format!("Stop failed: {e}"),
+                        kind: ToastKind::Err,
+                    }),
+                }
             });
         })
     };
@@ -585,7 +626,7 @@ pub fn app() -> Html {
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} />
+            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} />
             <TabNav active={tab} on_tab={on_tab} />
             {
                 match tab {
@@ -655,6 +696,7 @@ pub struct HeaderProps {
     pub health: Health,
     pub ok: bool,
     pub on_refresh: Callback<MouseEvent>,
+    pub on_stop: Callback<MouseEvent>,
 }
 
 #[function_component(Header)]
@@ -684,6 +726,7 @@ pub fn header(props: &HeaderProps) -> Html {
                     <span class="health-uptime">{uptime}</span>
                 </div>
                 <button class="btn-refresh" title="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
+                <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
             </div>
         </header>
     }

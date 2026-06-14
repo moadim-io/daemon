@@ -294,7 +294,8 @@ pub fn svc_delete(
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
-/// Record a manual trigger for `id`, updating `last_triggered_at` in-store and on disk.
+/// Record a manual trigger for `id`, updating `last_triggered_at` in-store and on disk,
+/// then spawn the handler script from the handlers directory if it exists.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let mut lock = store.lock().unwrap();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
@@ -302,6 +303,14 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
+    let handler_path = crate::paths::handlers_dir().join(&job.handler);
+    if handler_path.exists() {
+        if let Err(e) = std::process::Command::new(&handler_path).spawn() {
+            log::warn!("trigger: failed to spawn handler {:?}: {e}", handler_path);
+        }
+    } else {
+        log::warn!("trigger: handler script not found at {:?}", handler_path);
+    }
     Ok(job)
 }
 

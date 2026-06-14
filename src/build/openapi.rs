@@ -268,7 +268,7 @@ pub fn generate(manifest_dir: &str) {
                     "type": "object",
                     "required": ["schedule", "handler"],
                     "properties": {
-                        "schedule": { "type": "string", "example": "0 30 9 * * 1-5 *" },
+                        "schedule": { "type": "string", "example": "30 9 * * 1-5" },
                         "handler": { "type": "string" },
                         "metadata": { },
                         "enabled": { "type": "boolean", "default": true }

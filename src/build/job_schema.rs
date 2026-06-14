@@ -18,8 +18,8 @@ pub fn generate(manifest_dir: &str) {
         "properties": {
             "schedule": {
                 "type": "string",
-                "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or 7-field syntax (sec min hour dom month dow year).",
-                "examples": ["@hourly", "@daily", "0 30 9 * * 1-5 *"]
+                "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or standard 5-field syntax (min hour dom month dow).",
+                "examples": ["@hourly", "@daily", "30 9 * * 1-5"]
             },
             "handler": {
                 "type": "string",
@@ -48,7 +48,7 @@ pub fn generate(manifest_dir: &str) {
     let example_toml = concat!(
         "#:schema ./job.schema.json\n",
         "\n",
-        "schedule = \"0 30 9 * * 1-5 *\"\n",
+        "schedule = \"30 9 * * 1-5\"\n",
         "handler  = \"my-handler\"\n",
         "enabled  = true\n",
         "\n",

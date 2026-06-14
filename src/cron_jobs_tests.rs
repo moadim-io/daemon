@@ -24,8 +24,10 @@ fn make_store_with(id: &str) -> CronStore {
 
 #[test]
 fn validate_cron_accepts_valid() {
-    assert!(validate_cron("0 30 9 * * 1-5 *").is_ok());
+    assert!(validate_cron("30 9 * * 1-5").is_ok());
     assert!(validate_cron("@daily").is_ok());
+    // legacy 7-field is still accepted
+    assert!(validate_cron("0 30 9 * * 1-5 *").is_ok());
 }
 
 #[test]

@@ -118,26 +118,6 @@ pub fn generate(manifest_dir: &str) {
                     }
                 }
             },
-            "/system-cron-jobs": {
-                "get": {
-                    "summary": "List read-only system cron jobs",
-                    "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). Not managed by this server — cannot be created, updated, or deleted.",
-                    "operationId": "listSystemCronJobs",
-                    "responses": {
-                        "200": {
-                            "description": "Array of read-only system cron jobs",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": { "$ref": "#/components/schemas/CronJob" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
             "/cron-jobs/{id}": {
                 "parameters": [
                     {

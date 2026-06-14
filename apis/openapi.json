@@ -415,28 +415,6 @@
         },
         "summary": "Health check"
       }
-    },
-    "/system-cron-jobs": {
-      "get": {
-        "description": "Returns cron jobs discovered from the host system (crontab -l, /etc/crontab, /etc/cron.d/*). Not managed by this server — cannot be created, updated, or deleted.",
-        "operationId": "listSystemCronJobs",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CronJob"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Array of read-only system cron jobs"
-          }
-        },
-        "summary": "List read-only system cron jobs"
-      }
     }
   },
   "servers": [

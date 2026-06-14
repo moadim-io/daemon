@@ -3,6 +3,5 @@
 //! Business logic lives in [`crate::cron_jobs`]. Modules here translate
 //! between protocol representations and the service-layer functions.
 
-pub mod cron_jobs;
 pub mod http;
 pub mod mcp;

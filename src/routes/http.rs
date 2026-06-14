@@ -1,8 +1,7 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::mcp::MoadimMcp;
-use super::cron_jobs as jobs;
-use crate::cron_jobs::{new_registry, AppState, CronJob, CronStore};
+use crate::cron_jobs::{self, new_registry, AppState, CronJob, CronStore};
 use crate::middlewares;
 use crate::utils::time::now_secs;
 use axum::{
@@ -120,15 +119,15 @@ pub(crate) fn build_app(store: CronStore) -> Router {
         .route("/", get(index))
         .route("/health", get(health))
         .route("/echo", post(echo))
-        .route("/cron-jobs", get(jobs::list).post(jobs::create))
+        .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(
             "/cron-jobs/{id}",
-            get(jobs::get)
-                .put(jobs::replace)
-                .patch(jobs::update)
-                .delete(jobs::delete),
+            get(cron_jobs::get)
+                .put(cron_jobs::replace)
+                .patch(cron_jobs::update)
+                .delete(cron_jobs::delete),
         )
-        .route("/cron-jobs/{id}/trigger", post(jobs::trigger))
+        .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
         .merge(

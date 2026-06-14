@@ -1078,6 +1078,12 @@ pub fn toast_stack(props: &ToastStackProps) -> Html {
 
 // ─── Log modal ────────────────────────────────────────────────────────────────
 
+#[derive(Clone, PartialEq)]
+enum LogTab {
+    Runs,
+    Log,
+}
+
 #[derive(Properties, PartialEq)]
 pub struct LogModalProps {
     pub job_id: String,
@@ -1086,20 +1092,21 @@ pub struct LogModalProps {
 
 #[function_component(LogModal)]
 pub fn log_modal(props: &LogModalProps) -> Html {
+    let tab = use_state(|| LogTab::Runs);
     let runs: UseStateHandle<Option<Vec<RunRecord>>> = use_state(|| None);
+    let log_content: UseStateHandle<Option<String>> = use_state(|| None);
     let loading = use_state(|| true);
     let expanded: UseStateHandle<Option<String>> = use_state(|| None);
 
     {
         let runs = runs.clone();
+        let log_content = log_content.clone();
         let loading = loading.clone();
         let id = props.job_id.clone();
         use_effect_with(id.clone(), move |_| {
             spawn_local(async move {
-                match api_get_runs(&id).await {
-                    Ok(data) => runs.set(Some(data)),
-                    Err(_) => runs.set(Some(vec![])),
-                }
+                runs.set(Some(api_get_runs(&id).await.unwrap_or_default()));
+                log_content.set(Some(api_get_log(&id).await.unwrap_or_default()));
                 loading.set(false);
             });
         });
@@ -1109,9 +1116,43 @@ pub fn log_modal(props: &LogModalProps) -> Html {
         let cb = props.on_close.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
+    let on_tab_runs = {
+        let tab = tab.clone();
+        Callback::from(move |_: MouseEvent| tab.set(LogTab::Runs))
+    };
+    let on_tab_log = {
+        let tab = tab.clone();
+        Callback::from(move |_: MouseEvent| tab.set(LogTab::Log))
+    };
 
     let short_id = format!("{}…", &props.job_id[..8.min(props.job_id.len())]);
-    let title = format!("JOB RUNS / {short_id}");
+    let title = format!("LOGS / {short_id}");
+
+    let runs_cls = if *tab == LogTab::Runs {
+        "tab-btn active"
+    } else {
+        "tab-btn"
+    };
+    let log_cls = if *tab == LogTab::Log {
+        "tab-btn active"
+    } else {
+        "tab-btn"
+    };
+
+    let log_tab_html = {
+        let content = log_content.as_deref().unwrap_or("").to_string();
+        if content.is_empty() {
+            html! {
+                <div class="empty">
+                    <div class="empty-icon">{"📄"}</div>
+                    <div class="empty-msg">{"LOG EMPTY"}</div>
+                    <div class="empty-sub">{"no runs recorded yet"}</div>
+                </div>
+            }
+        } else {
+            html! { <pre class="job-log">{content}</pre> }
+        }
+    };
 
     html! {
         <div class="overlay">
@@ -1120,90 +1161,98 @@ pub fn log_modal(props: &LogModalProps) -> Html {
                     <div class="modal-title">{title}</div>
                     <button class="modal-x" onclick={on_close_click}>{"✕"}</button>
                 </div>
+                <div class="modal-tabs">
+                    <button class={runs_cls} onclick={on_tab_runs}>{"RUNS"}</button>
+                    <button class={log_cls} onclick={on_tab_log}>{"LOG"}</button>
+                </div>
                 <div class="modal-body log-modal-body">
                     if *loading {
                         <div class="empty"><div class="spinner"></div></div>
-                    } else if runs.as_deref().map(|r| r.is_empty()).unwrap_or(true) {
-                        <div class="empty">
-                            <div class="empty-icon">{"⧗"}</div>
-                            <div class="empty-msg">{"NO RUNS YET"}</div>
-                            <div class="empty-sub">{"trigger the job to record a run"}</div>
-                        </div>
-                    } else {
-                        <table class="runs-table">
-                            <thead>
-                                <tr>
-                                    <th>{"#"}</th>
-                                    <th>{"STARTED"}</th>
-                                    <th>{"DURATION"}</th>
-                                    <th>{"EXIT"}</th>
-                                    <th>{"TRIGGER"}</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                { for runs.as_deref().unwrap_or(&[]).iter().enumerate().map(|(i, run)| {
-                                    let run = run.clone();
-                                    let expanded = expanded.clone();
-                                    let is_expanded = expanded.as_deref() == Some(&run.id);
-                                    let run_id = run.id.clone();
-                                    let on_toggle = {
+                    } else if *tab == LogTab::Runs {
+                        if runs.as_deref().map(|r| r.is_empty()).unwrap_or(true) {
+                            <div class="empty">
+                                <div class="empty-icon">{"⧗"}</div>
+                                <div class="empty-msg">{"NO RUNS YET"}</div>
+                                <div class="empty-sub">{"trigger the job to record a run"}</div>
+                            </div>
+                        } else {
+                            <table class="runs-table">
+                                <thead>
+                                    <tr>
+                                        <th>{"#"}</th>
+                                        <th>{"STARTED"}</th>
+                                        <th>{"DURATION"}</th>
+                                        <th>{"EXIT"}</th>
+                                        <th>{"TRIGGER"}</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    { for runs.as_deref().unwrap_or(&[]).iter().enumerate().map(|(i, run)| {
+                                        let run = run.clone();
                                         let expanded = expanded.clone();
-                                        let id = run_id.clone();
-                                        Callback::from(move |_: MouseEvent| {
-                                            if expanded.as_deref() == Some(&id) {
-                                                expanded.set(None);
-                                            } else {
-                                                expanded.set(Some(id.clone()));
-                                            }
-                                        })
-                                    };
-                                    let exit_badge = match run.exit_code {
-                                        Some(0) => html! { <span class="badge ok">{"OK"}</span> },
-                                        Some(code) => html! { <span class="badge err">{format!("EXIT {code}")}</span> },
-                                        None => html! { <span class="badge warn">{"FAILED"}</span> },
-                                    };
-                                    let dur = if run.duration_ms < 1000 {
-                                        format!("{}ms", run.duration_ms)
-                                    } else {
-                                        format!("{:.1}s", run.duration_ms as f64 / 1000.0)
-                                    };
-                                    html! {
-                                        <>
-                                            <tr key={run_id.clone()}>
-                                                <td class="run-idx">{i + 1}</td>
-                                                <td class="run-time">{reltime(run.started_at)}</td>
-                                                <td class="run-dur">{dur}</td>
-                                                <td>{exit_badge}</td>
-                                                <td class="run-trigger">{&run.trigger}</td>
-                                                <td>
-                                                    <button class="act-btn logs" onclick={on_toggle}>
-                                                        { if is_expanded { "▲" } else { "▼" } }
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                            if is_expanded {
-                                                <tr class="run-detail" key={format!("{run_id}-detail")}>
-                                                    <td colspan="6">
-                                                        if !run.stdout.is_empty() {
-                                                            <div class="run-stream-label">{"STDOUT"}</div>
-                                                            <pre class="run-stream">{&run.stdout}</pre>
-                                                        }
-                                                        if !run.stderr.is_empty() {
-                                                            <div class="run-stream-label">{"STDERR"}</div>
-                                                            <pre class="run-stream stderr">{&run.stderr}</pre>
-                                                        }
-                                                        if run.stdout.is_empty() && run.stderr.is_empty() {
-                                                            <div class="run-stream-label">{"(no output)"}</div>
-                                                        }
+                                        let is_expanded = expanded.as_deref() == Some(&run.id);
+                                        let run_id = run.id.clone();
+                                        let on_toggle = {
+                                            let expanded = expanded.clone();
+                                            let id = run_id.clone();
+                                            Callback::from(move |_: MouseEvent| {
+                                                if expanded.as_deref() == Some(&id) {
+                                                    expanded.set(None);
+                                                } else {
+                                                    expanded.set(Some(id.clone()));
+                                                }
+                                            })
+                                        };
+                                        let exit_badge = match run.exit_code {
+                                            Some(0) => html! { <span class="badge ok">{"OK"}</span> },
+                                            Some(code) => html! { <span class="badge err">{format!("EXIT {code}")}</span> },
+                                            None => html! { <span class="badge warn">{"FAILED"}</span> },
+                                        };
+                                        let dur = if run.duration_ms < 1000 {
+                                            format!("{}ms", run.duration_ms)
+                                        } else {
+                                            format!("{:.1}s", run.duration_ms as f64 / 1000.0)
+                                        };
+                                        html! {
+                                            <>
+                                                <tr key={run_id.clone()}>
+                                                    <td class="run-idx">{i + 1}</td>
+                                                    <td class="run-time">{reltime(run.started_at)}</td>
+                                                    <td class="run-dur">{dur}</td>
+                                                    <td>{exit_badge}</td>
+                                                    <td class="run-trigger">{&run.trigger}</td>
+                                                    <td>
+                                                        <button class="act-btn logs" onclick={on_toggle}>
+                                                            { if is_expanded { "▲" } else { "▼" } }
+                                                        </button>
                                                     </td>
                                                 </tr>
-                                            }
-                                        </>
-                                    }
-                                }) }
-                            </tbody>
-                        </table>
+                                                if is_expanded {
+                                                    <tr class="run-detail" key={format!("{run_id}-detail")}>
+                                                        <td colspan="6">
+                                                            if !run.stdout.is_empty() {
+                                                                <div class="run-stream-label">{"STDOUT"}</div>
+                                                                <pre class="run-stream">{&run.stdout}</pre>
+                                                            }
+                                                            if !run.stderr.is_empty() {
+                                                                <div class="run-stream-label">{"STDERR"}</div>
+                                                                <pre class="run-stream stderr">{&run.stderr}</pre>
+                                                            }
+                                                            if run.stdout.is_empty() && run.stderr.is_empty() {
+                                                                <div class="run-stream-label">{"(no output)"}</div>
+                                                            }
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </>
+                                        }
+                                    }) }
+                                </tbody>
+                            </table>
+                        }
+                    } else {
+                        {log_tab_html}
                     }
                 </div>
             </div>

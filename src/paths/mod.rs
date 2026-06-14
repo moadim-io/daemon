@@ -113,6 +113,30 @@ pub fn agent_toml_path(name: &str) -> PathBuf {
     agents_dir().join(format!("{name}.toml"))
 }
 
+// ─── Daemon runtime files ────────────────────────────────────────────────────
+
+/// Returns the path to `~/.config/moadim/`.
+pub fn config_dir() -> PathBuf {
+    config_dir_from_home(dirs::home_dir())
+}
+
+/// Returns the moadim config directory under `home`, or `.` if `home` is `None`.
+pub(crate) fn config_dir_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+}
+
+/// Returns the path to `~/.config/moadim/moadim.pid`, where the running server records its PID.
+pub fn pid_file() -> PathBuf {
+    config_dir().join("moadim.pid")
+}
+
+/// Returns the path to `~/.config/moadim/daemon.log`, where a backgrounded server writes its output.
+pub fn daemon_log_file() -> PathBuf {
+    config_dir().join("daemon.log")
+}
+
 // ─── Workbenches ─────────────────────────────────────────────────────────────
 
 /// Returns the path to `~/.moadim/`.

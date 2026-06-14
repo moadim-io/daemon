@@ -1,6 +1,6 @@
 #:schema ./job.schema.json
 
-schedule = "0 30 9 * * 1-5 *"
+schedule = "30 9 * * 1-5"
 handler  = "my-handler"
 enabled  = true
 

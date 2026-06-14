@@ -1,12 +1,12 @@
 # moadim-server
 
-Rust server that exposes the same functionality over two protocols simultaneously:
+Rust server that exposes cron job management over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/ui`) — browser dashboard for managing jobs
 - **REST** (`http://localhost:5784/`) — standard HTTP API for browsers, CLI tools, and services
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
-Both run on the same port.
+All three share the same port. Jobs created through any interface are automatically synced to the OS crontab so they actually run on schedule.
 
 ## Installation
 
@@ -28,11 +28,13 @@ moadim
 
 ## Features
 
-- Same cron-job, health, and echo logic reachable via REST and MCP
-- Cron-job declarations live in `~/.config/moadim/jobs/` — git-trackable, diff-friendly
+- Jobs created via REST or MCP are written into your OS crontab automatically
+- Edit the crontab directly and moadim picks up the changes within 30 s
+- Job declarations live in `~/.config/moadim/jobs/` — git-trackable, diff-friendly
 - Handlers are executable scripts in `~/.config/moadim/handlers/` — any language, also git-trackable
-- API interfaces auto-generated at build time into `apis/`
-- Static browser client served from `static/index.html`
+- `job.local.toml` per job for secrets and machine-specific overrides that stay off-git
+- Same REST and MCP interface — no logic duplication between protocols
+- API spec auto-generated at build time into `apis/`
 
 ## Directory layout
 
@@ -55,9 +57,27 @@ moadim
     └── sync-calendar.sh
 ```
 
+## Crontab sync
+
+Moadim owns a single block inside your crontab. Everything outside that block is untouched.
+
+```
+# BEGIN MOADIM
+# Managed by moadim — manual edits to this block sync back automatically
+30 9 * * 1-5 /home/user/.config/moadim/handlers/send-report # moadim:uuid
+0 0 * * 0 /home/user/.config/moadim/handlers/cleanup-temp # moadim:uuid
+# END MOADIM
+```
+
+**Forward sync (moadim → crontab):** any time you create, update, or delete a job via the UI, REST, or MCP, the crontab block is rewritten immediately. Disabled jobs are excluded from the block.
+
+**Reverse sync (crontab → moadim):** on startup and every 30 seconds, moadim reads the block and applies any changes back into its store and TOML files. This means you can edit the crontab directly — change a schedule, swap a handler — and moadim will pick it up without a restart.
+
+**Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot`) are also accepted.
+
 ## Handlers
 
-Handlers are executable scripts under `~/.config/moadim/handlers/`. The server resolves the `handler` field in `job.toml` to a file in that directory and execs it on each run.
+Handlers are executable scripts under `~/.config/moadim/handlers/`. The `handler` field in `job.toml` is the filename without extension.
 
 ```
 handlers/send-report.sh      ← handler = "send-report"
@@ -94,7 +114,7 @@ git commit -m "initial jobs and handlers"
 
 Each job is a folder under `~/.config/moadim/jobs/`. The folder name is the job ID.
 
-Each job folder contains an auto-generated `.gitignore` that excludes `*.local.*` and `*.log` files — no manual ignore setup needed.
+Each job folder contains an auto-generated `.gitignore` that excludes `*.local.*` and `*.log` files — no manual setup needed.
 
 ### `job.toml`
 
@@ -103,9 +123,9 @@ Tracked configuration — schedule, handler, and shared metadata.
 ```toml
 # ~/.config/moadim/jobs/daily-report/job.toml
 
-schedule = "0 30 9 * * 1-5 *"   # cron expression (seconds field required)
-handler  = "send-report"         # filename in ~/.config/moadim/handlers/ (no extension)
-enabled  = true                  # omit to default to true
+schedule = "30 9 * * 1-5"   # cron expression (min hour dom month dow)
+handler  = "send-report"     # filename in ~/.config/moadim/handlers/ (no extension)
+enabled  = true              # omit to default to true
 
 [metadata]
 recipient = "team@example.com"
@@ -114,26 +134,24 @@ timezone  = "Asia/Jerusalem"
 
 | Field        | Type   | Required | Description |
 |--------------|--------|----------|-------------|
-| `schedule`   | string | yes      | Cron expression. Supports `@daily`, `@hourly`, etc. |
+| `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@daily`, `@hourly`, etc. |
 | `handler`    | string | yes      | Script name in `handlers/` (without extension) |
-| `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting |
-| `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars |
+| `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting. |
+| `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars. |
 
 ### `job.local.toml`
 
-Untracked overrides — machine-specific values, secrets, or anything that should not be committed. Loaded after `job.toml`; local values win on conflict.
+Untracked overrides — machine-specific values or secrets that should not be committed. Loaded after `job.toml`; local values win on any conflict.
 
 ```toml
 # ~/.config/moadim/jobs/daily-report/job.local.toml
 
-enabled = false           # overrides job.toml enabled = true → job is disabled
+enabled = false           # overrides job.toml enabled = true → job is paused locally
 
 [metadata]
 api_key = "sk-..."        # secret — never commit
 recipient = "me@local"    # overrides job.toml recipient
 ```
-
-Any field valid in `job.toml` can be overridden. If both files set `enabled`, the local file wins.
 
 ### `job.log`
 
@@ -146,14 +164,14 @@ Append-only log written by the server on each run. Never committed.
 
 ## Running
 
-### Native server
-
 ```sh
 cargo run
 ```
 
-Starts on `http://127.0.0.1:5784`. REST and MCP share the same port.  
-The server reads `~/.config/moadim/jobs/` on startup and watches for changes.
+Starts on `http://127.0.0.1:5784`. On startup the server:
+1. Loads all jobs from `~/.config/moadim/jobs/`.
+2. Reads your crontab and applies any changes made to the moadim block while the server was stopped.
+3. Writes all enabled managed jobs back into the crontab block.
 
 ## MCP usage
 

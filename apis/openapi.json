@@ -34,7 +34,7 @@
           },
           "metadata": {},
           "schedule": {
-            "example": "0 30 9 * * 1-5 *",
+            "example": "30 9 * * 1-5",
             "type": "string"
           }
         },

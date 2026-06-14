@@ -18,11 +18,11 @@
       "type": "object"
     },
     "schedule": {
-      "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or 7-field syntax (sec min hour dom month dow year).",
+      "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or standard 5-field syntax (min hour dom month dow).",
       "examples": [
         "@hourly",
         "@daily",
-        "0 30 9 * * 1-5 *"
+        "30 9 * * 1-5"
       ],
       "type": "string"
     }

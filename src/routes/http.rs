@@ -1,16 +1,14 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::mcp::MoadimMcp;
+use crate::cron_jobs::{self, new_registry, AppState, CronJob, CronStore};
+use crate::middlewares;
+use crate::utils::time::now_secs;
 use axum::{
     middleware,
     routing::{get, post},
     Json, Router,
 };
-use super::mcp::MoadimMcp;
-use crate::cron_jobs::{
-    self, new_registry, AppState, CronJob, CronStore,
-};
-use crate::middlewares;
-use crate::utils::time::now_secs;
 
 /// `GET /system-cron-jobs` — list read-only system cron jobs discovered from the host.
 #[utoipa::path(get, path = "/system-cron-jobs",
@@ -73,6 +71,8 @@ pub async fn run(store: CronStore) -> anyhow::Result<()> {
                 .delete(cron_jobs::delete),
         )
         .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
+        .route("/cron-jobs/{id}/runs", get(cron_jobs::list_runs))
+        .route("/cron-jobs/{id}/log", get(cron_jobs::get_log))
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))

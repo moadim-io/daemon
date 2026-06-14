@@ -5,8 +5,9 @@
 //! evaluates every enabled managed job's cron expression against the local
 //! clock and invokes [`run_job`] when a schedule fires. [`run_job`] resolves
 //! the job's handler to an executable under `~/.config/moadim/handlers/`,
-//! passes job metadata as `MOADIM_*` environment variables, runs it, and
-//! appends a start/finish record to the job's `job.log`.
+//! passes job metadata as `MOADIM_*` environment variables, runs it,
+//! appends a start/finish record to `job.log`, and persists a structured
+//! [`RunRecord`] to `runs.jsonl`.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -18,6 +19,8 @@ use cron::Schedule;
 
 use crate::cron_jobs::{CronJob, CronStore};
 use crate::paths::{handlers_dir, job_log_path};
+use crate::runs::{append_run, RunRecord, RunTrigger};
+use crate::utils::time::now_secs;
 
 /// How often the scheduler wakes to check for due jobs.
 const TICK: Duration = Duration::from_secs(1);
@@ -55,7 +58,7 @@ pub fn spawn_scheduler(store: CronStore) {
             };
 
             for job in due {
-                tokio::spawn(run_job(job));
+                tokio::spawn(run_job(job, RunTrigger::Scheduled));
             }
 
             last = now;
@@ -67,24 +70,36 @@ pub fn spawn_scheduler(store: CronStore) {
 ///
 /// Resolves the handler name to an executable under [`handlers_dir`], injects
 /// `MOADIM_*` environment variables derived from the job's id, handler,
-/// schedule, and metadata, then executes it. A start line and a finish line
-/// (with status and elapsed seconds) are appended to the job's `job.log`.
-/// Missing handlers and spawn failures are recorded in the log rather than
-/// propagated, since this runs detached from any request.
-pub async fn run_job(job: CronJob) {
+/// schedule, and metadata, then executes it. A start/finish line is appended
+/// to `job.log` and a structured [`RunRecord`] is persisted to `runs.jsonl`.
+/// Missing handlers and spawn failures are recorded rather than propagated,
+/// since this runs detached from any request.
+pub async fn run_job(job: CronJob, trigger: RunTrigger) {
     append_log(&job.id, &format!("[{}] run started", job.handler));
+
+    let started_at = now_secs();
+    let clock = Instant::now();
 
     let handler_path = match resolve_handler(&job.handler) {
         Some(p) => p,
         None => {
-            append_log(
-                &job.id,
-                &format!(
-                    "[{}] run failed: handler not found in {}",
-                    job.handler,
-                    handlers_dir().display()
-                ),
+            let msg = format!(
+                "[{}] run failed: handler not found in {}",
+                job.handler,
+                handlers_dir().display()
             );
+            append_log(&job.id, &msg);
+            let elapsed = clock.elapsed();
+            append_run(&RunRecord::new(
+                &job.id,
+                started_at,
+                started_at + elapsed.as_secs(),
+                elapsed.as_millis() as u64,
+                None,
+                vec![],
+                msg.into_bytes(),
+                trigger,
+            ));
             return;
         }
     };
@@ -97,31 +112,64 @@ pub async fn run_job(job: CronJob) {
         cmd.env(key, value);
     }
 
-    let started = Instant::now();
     let result = cmd.output().await;
-    let elapsed = started.elapsed().as_secs_f64();
+    let elapsed = clock.elapsed();
+    let finished_at = started_at + elapsed.as_secs();
+    let duration_ms = elapsed.as_millis() as u64;
+    let elapsed_secs = elapsed.as_secs_f64();
 
     match result {
         Ok(output) if output.status.success() => {
             append_log(
                 &job.id,
-                &format!("[{}] run finished OK ({:.1}s)", job.handler, elapsed),
+                &format!("[{}] run finished OK ({:.1}s)", job.handler, elapsed_secs),
             );
+            append_run(&RunRecord::new(
+                &job.id,
+                started_at,
+                finished_at,
+                duration_ms,
+                output.status.code(),
+                output.stdout,
+                output.stderr,
+                trigger,
+            ));
         }
         Ok(output) => {
             append_log(
                 &job.id,
                 &format!(
                     "[{}] run finished with status {} ({:.1}s)",
-                    job.handler, output.status, elapsed
+                    job.handler, output.status, elapsed_secs
                 ),
             );
+            append_run(&RunRecord::new(
+                &job.id,
+                started_at,
+                finished_at,
+                duration_ms,
+                output.status.code(),
+                output.stdout,
+                output.stderr,
+                trigger,
+            ));
         }
         Err(e) => {
-            append_log(
-                &job.id,
-                &format!("[{}] run failed to spawn: {} ({:.1}s)", job.handler, e, elapsed),
+            let msg = format!(
+                "[{}] run failed to spawn: {} ({:.1}s)",
+                job.handler, e, elapsed_secs
             );
+            append_log(&job.id, &msg);
+            append_run(&RunRecord::new(
+                &job.id,
+                started_at,
+                finished_at,
+                duration_ms,
+                None,
+                vec![],
+                msg.into_bytes(),
+                trigger,
+            ));
         }
     }
 }
@@ -181,7 +229,11 @@ fn append_log(id: &str, message: &str) {
     let line = format!("{stamp} {message}\n");
 
     let path = job_log_path(id);
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         let _ = file.write_all(line.as_bytes());
     }
 }
@@ -200,7 +252,10 @@ mod tests {
             "nested": {"k": "v"}
         });
         let env = metadata_env(&meta);
-        assert_eq!(env.get("MOADIM_RECIPIENT").map(String::as_str), Some("team@example.com"));
+        assert_eq!(
+            env.get("MOADIM_RECIPIENT").map(String::as_str),
+            Some("team@example.com")
+        );
         assert_eq!(env.get("MOADIM_RETRIES").map(String::as_str), Some("3"));
         assert_eq!(env.get("MOADIM_ACTIVE").map(String::as_str), Some("true"));
         assert!(!env.contains_key("MOADIM_TAGS"));
@@ -218,8 +273,9 @@ mod tests {
     }
 
     /// End-to-end: `run_job` resolves the handler, passes `MOADIM_*` env, runs
-    /// the process, and appends a success line to `job.log`. Drives a temp HOME
-    /// so it touches no real config. Unix-only (uses a shell handler).
+    /// the process, appends a success line to `job.log`, and persists a `RunRecord`
+    /// to `runs.jsonl`. Drives a temp HOME so it touches no real config.
+    /// Unix-only (uses a shell handler).
     #[cfg(unix)]
     #[tokio::test]
     async fn run_job_executes_handler_with_env_and_logs() {
@@ -228,7 +284,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("moadim-runtest-{}", std::process::id()));
         let handlers = base.join(".config/moadim/handlers");
         std::fs::create_dir_all(&handlers).unwrap();
-        // Pre-create the job dir so job.log has somewhere to land.
+        // Pre-create the job dir so job.log / runs.jsonl have somewhere to land.
         std::fs::create_dir_all(base.join(".config/moadim/jobs/job-1")).unwrap();
 
         let marker = base.join("marker.out");
@@ -259,15 +315,26 @@ mod tests {
             updated_at: 0,
             last_triggered_at: None,
         };
-        run_job(job).await;
+        run_job(job, RunTrigger::Scheduled).await;
 
         let out = std::fs::read_to_string(&marker).expect("handler should have written marker");
-        assert!(out.contains("who=scheduler"), "MOADIM_WHO not passed: {out}");
+        assert!(
+            out.contains("who=scheduler"),
+            "MOADIM_WHO not passed: {out}"
+        );
         assert!(out.contains("id=job-1"), "MOADIM_JOB_ID not passed: {out}");
 
         let log = std::fs::read_to_string(base.join(".config/moadim/jobs/job-1/job.log")).unwrap();
         assert!(log.contains("run started"), "missing start line: {log}");
-        assert!(log.contains("run finished OK"), "missing finish line: {log}");
+        assert!(
+            log.contains("run finished OK"),
+            "missing finish line: {log}"
+        );
+
+        let runs = crate::runs::load_runs("job-1");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].exit_code, Some(0));
+        assert_eq!(runs[0].trigger, RunTrigger::Scheduled);
 
         let _ = std::fs::remove_dir_all(&base);
     }

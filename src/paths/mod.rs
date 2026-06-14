@@ -36,6 +36,11 @@ pub fn job_log_path(id: &str) -> PathBuf {
     job_dir(id).join("job.log")
 }
 
+/// Returns the path to `{jobs_dir}/{id}/runs.jsonl`.
+pub fn job_runs_path(id: &str) -> PathBuf {
+    job_dir(id).join("runs.jsonl")
+}
+
 /// Returns the path to `~/.config/moadim/handlers/`.
 pub fn handlers_dir() -> PathBuf {
     dirs::home_dir()

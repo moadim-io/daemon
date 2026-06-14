@@ -179,17 +179,54 @@ impl MoadimMcp {
     }
 
     /// Manually trigger a cron job immediately, running its handler and recording the trigger time.
-    #[tool(description = "Manually trigger a cron job outside its schedule: runs its handler now and records last_triggered_at")]
+    #[tool(
+        description = "Manually trigger a cron job outside its schedule: runs its handler now and records last_triggered_at"
+    )]
     fn trigger_cron_job(
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match cron_jobs::svc_trigger(&self.store, &id) {
             Ok(job) => {
-                tokio::spawn(crate::runner::run_job(job.clone()));
+                tokio::spawn(crate::runner::run_job(
+                    job.clone(),
+                    crate::runs::RunTrigger::Manual,
+                ));
                 ok(job)
             }
             Err(e) => err(e),
+        })
+    }
+
+    /// Return run history for a job (up to 100 most-recent runs, newest first).
+    #[tool(
+        description = "List execution history for a cron job (most-recent 100 runs, newest first)"
+    )]
+    fn get_job_runs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
+            Err(e) => err(e),
+            Ok(_) => ok(crate::runs::load_runs(&id)),
+        })
+    }
+
+    /// Return the raw `job.log` file contents for a job.
+    #[tool(
+        description = "Get the raw log file for a cron job (append-only, one line per run start/finish)"
+    )]
+    fn get_job_log(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
+            Err(e) => err(e),
+            Ok(_) => {
+                let content =
+                    std::fs::read_to_string(crate::paths::job_log_path(&id)).unwrap_or_default();
+                ok(serde_json::json!({ "content": content }))
+            }
         })
     }
 }

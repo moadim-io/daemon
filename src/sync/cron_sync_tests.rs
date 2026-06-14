@@ -206,7 +206,10 @@ fn replace_block_replaces_existing() {
     let block = "# BEGIN MOADIM\nnew line # moadim:new\n# END MOADIM";
     let result = replace_block(crontab, block);
     assert!(result.contains("new line"), "new line missing: {result}");
-    assert!(!result.contains("old line"), "old line still present: {result}");
+    assert!(
+        !result.contains("old line"),
+        "old line still present: {result}"
+    );
     assert!(result.contains("before"), "before missing: {result}");
     assert!(result.contains("after"), "after missing: {result}");
 }
@@ -225,8 +228,14 @@ fn replace_block_handles_malformed_missing_end() {
     let crontab = "pre\n# BEGIN MOADIM\norphan line\n";
     let block = "# BEGIN MOADIM\n# hdr\n# END MOADIM";
     let result = replace_block(crontab, block);
-    assert!(result.contains("# END MOADIM"), "end marker missing: {result}");
-    assert!(!result.contains("orphan"), "orphan line still present: {result}");
+    assert!(
+        result.contains("# END MOADIM"),
+        "end marker missing: {result}"
+    );
+    assert!(
+        !result.contains("orphan"),
+        "orphan line still present: {result}"
+    );
     assert!(result.contains("pre"), "pre-content missing: {result}");
 }
 

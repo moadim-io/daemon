@@ -15,7 +15,7 @@ use crate::cron_jobs::new_store;
 
 #[tokio::test]
 async fn build_app_serves_root() {
-    let app = build_app(new_store());
+    let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
@@ -25,7 +25,7 @@ async fn build_app_serves_root() {
 
 #[tokio::test]
 async fn build_app_serves_health() {
-    let app = build_app(new_store());
+    let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
         .oneshot(
             Request::builder()
@@ -46,7 +46,7 @@ async fn build_app_serves_health() {
 
 #[tokio::test]
 async fn build_app_serves_ui() {
-    let app = build_app(new_store());
+    let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
         .oneshot(Request::builder().uri("/ui").body(Body::empty()).unwrap())
         .await
@@ -61,7 +61,7 @@ async fn router_cron_job_full_lifecycle() {
     let store = new_store();
 
     // POST /cron-jobs → 201
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -80,7 +80,7 @@ async fn router_cron_job_full_lifecycle() {
     let id = created["id"].as_str().unwrap().to_string();
 
     // GET /cron-jobs → 200 (list)
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri("/cron-jobs")
@@ -92,7 +92,7 @@ async fn router_cron_job_full_lifecycle() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // GET /cron-jobs/{id} → 200
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri(format!("/cron-jobs/{id}"))
@@ -104,7 +104,7 @@ async fn router_cron_job_full_lifecycle() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // PATCH /cron-jobs/{id} → 200
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("PATCH")
@@ -118,7 +118,7 @@ async fn router_cron_job_full_lifecycle() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // POST /cron-jobs/{id}/trigger → 200  (exercises FromRef<AppState> for CronStore)
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -131,7 +131,7 @@ async fn router_cron_job_full_lifecycle() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // DELETE /cron-jobs/{id} → 200
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("DELETE")
@@ -147,7 +147,7 @@ async fn router_cron_job_full_lifecycle() {
 
 #[tokio::test]
 async fn router_create_invalid_cron_returns_400() {
-    let resp = build_app(new_store())
+    let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -163,7 +163,7 @@ async fn router_create_invalid_cron_returns_400() {
 
 #[tokio::test]
 async fn router_get_nonexistent_returns_404() {
-    let resp = build_app(new_store())
+    let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri("/cron-jobs/no-such-id")
@@ -177,7 +177,7 @@ async fn router_get_nonexistent_returns_404() {
 
 #[tokio::test]
 async fn router_patch_nonexistent_returns_404() {
-    let resp = build_app(new_store())
+    let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("PATCH")
@@ -193,7 +193,7 @@ async fn router_patch_nonexistent_returns_404() {
 
 #[tokio::test]
 async fn router_delete_nonexistent_returns_404() {
-    let resp = build_app(new_store())
+    let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("DELETE")
@@ -208,7 +208,7 @@ async fn router_delete_nonexistent_returns_404() {
 
 #[tokio::test]
 async fn router_trigger_nonexistent_returns_404() {
-    let resp = build_app(new_store())
+    let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -284,7 +284,7 @@ async fn echo_rejects_missing_message_field() {
 
 #[tokio::test]
 async fn router_get_logs_nonexistent_returns_404() {
-    let resp = build_app(new_store())
+    let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri("/cron-jobs/no-such-id/logs")
@@ -299,7 +299,7 @@ async fn router_get_logs_nonexistent_returns_404() {
 #[tokio::test]
 async fn router_get_logs_existing_returns_empty_when_no_file() {
     let store = new_store();
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -310,11 +310,13 @@ async fn router_get_logs_existing_returns_empty_when_no_file() {
         )
         .await
         .unwrap();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let id = created["id"].as_str().unwrap().to_string();
 
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri(format!("/cron-jobs/{id}/logs"))
@@ -324,18 +326,27 @@ async fn router_get_logs_existing_returns_empty_when_no_file() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(&body[..], b"");
 
-    let _ = build_app(store).oneshot(
-        Request::builder().method("DELETE").uri(format!("/cron-jobs/{id}")).body(Body::empty()).unwrap(),
-    ).await.unwrap();
+    let _ = build_app(store, crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/cron-jobs/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn router_get_logs_returns_file_content() {
     let store = new_store();
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -346,14 +357,16 @@ async fn router_get_logs_returns_file_content() {
         )
         .await
         .unwrap();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let id = created["id"].as_str().unwrap().to_string();
 
     let log_path = crate::paths::job_log_path(&id);
     tokio::fs::write(&log_path, "line1\nline2\n").await.unwrap();
 
-    let resp = build_app(store.clone())
+    let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri(format!("/cron-jobs/{id}/logs"))
@@ -363,12 +376,193 @@ async fn router_get_logs_returns_file_content() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(&body[..], b"line1\nline2\n");
 
-    let _ = build_app(store).oneshot(
-        Request::builder().method("DELETE").uri(format!("/cron-jobs/{id}")).body(Body::empty()).unwrap(),
-    ).await.unwrap();
+    let _ = build_app(store, crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/cron-jobs/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+}
+
+// ── routines CRUD lifecycle (covers all routine HTTP handlers) ────────────────
+
+#[tokio::test]
+async fn router_routine_full_lifecycle() {
+    let store = new_store();
+    let routines = crate::routines::new_store();
+
+    let body = r#"{"schedule":"@daily","title":"Http Routine","agent":"http-test-agent-x","prompt":"p","repositories":[{"repository":"r","branch":"main"}]}"#;
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/routines")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // GET list
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/routines")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // GET one
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/routines/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // PATCH
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/routines/{id}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"title":"Patched"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // PUT (replace)
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/routines/{id}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"prompt":"replaced"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // trigger (agent has no config → records trigger, no spawn)
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/routines/{id}/trigger"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // logs (empty)
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/routines/{id}/logs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // DELETE
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/routines/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(!crate::paths::routine_dir(&id).exists());
+}
+
+#[tokio::test]
+async fn router_routine_create_invalid_cron_400() {
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/routines")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"schedule":"bad","title":"t","agent":"a","prompt":"p"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn router_routine_not_found_paths() {
+    for (method, suffix) in [
+        ("GET", ""),
+        ("DELETE", ""),
+        ("POST", "/trigger"),
+        ("GET", "/logs"),
+    ] {
+        let resp = build_app(new_store(), crate::routines::new_store())
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(format!("/routines/no-such{suffix}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{method} {suffix}");
+    }
+
+    // PATCH nonexistent
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/routines/no-such")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"title":"x"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 // ── run_with_listener integration test (real TCP) ────────────────────────────
@@ -383,6 +577,7 @@ async fn run_with_listener_serves_over_tcp() {
 
     let handle = tokio::spawn(run_with_listener_until(
         store,
+        crate::routines::new_store(),
         listener,
         std::future::pending(),
     ));
@@ -407,13 +602,14 @@ async fn run_with_listener_serves_over_tcp() {
 async fn run_with_listener_until_exits_on_immediate_shutdown() {
     let store = new_store();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let result = run_with_listener_until(store, listener, async {}).await;
+    let result =
+        run_with_listener_until(store, crate::routines::new_store(), listener, async {}).await;
     assert!(result.is_ok());
 }
 
 #[tokio::test]
 async fn mcp_endpoint_triggers_factory() {
-    let app = build_app(new_store());
+    let app = build_app(new_store(), crate::routines::new_store());
     let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#;
     let resp = app
         .oneshot(

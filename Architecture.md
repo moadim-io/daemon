@@ -196,6 +196,42 @@ Handles both standard 5-field syntax and `@keyword` shortcuts. IDs are determini
 
 ---
 
+## Routines — agent-driven jobs (`src/routines.rs`)
+
+A **routine** is a second kind of scheduled job whose payload is an AI agent (claude code, codex, …)
+instead of a handler script. It carries `agent`, `prompt`, `repositories` (`{ repository, branch }`),
+and a `title`. Routines are a separate type with their own store (`RoutineStore`), REST endpoints
+(`/routines`), MCP tools (`create_routine`, …), and crontab block — they do not share `CronJob`.
+
+When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
+time moadim composes `prompt.txt` (a repositories-as-context preamble + the prompt) into
+`~/.config/moadim/routines/<id>/`, then writes a single self-contained shell command into a dedicated
+crontab block:
+
+```
+# BEGIN MOADIM-ROUTINES
+# Managed by moadim — routines (agent tmux sessions)
+<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.txt $WB/; \
+  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
+  tmux pipe-pane -o -t … "cat >> $WB/agent.log"; \
+  tmux send-keys -t … -l '<send_keys>'; tmux send-keys -t … Enter   # moadim-routine:<id>
+# END MOADIM-ROUTINES
+```
+
+OS cron runs that line directly: it makes a fresh empty workbench under `~/.moadim/workbenches/`,
+launches the agent **interactively** (no `-p`) in a detached tmux session rooted there, captures output
+via `pipe-pane`, and delivers the prompt via `send-keys`. The agent decides whether to clone the listed
+repositories. `POST /routines/{id}/trigger` runs the identical command via `sh -c`.
+
+The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
+(`command`, `args`, `send_keys`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`).
+The resolved values are baked into the crontab line at sync time, so editing an agent config requires
+re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
+
+Modules: `src/routines.rs` (model + service + command builder + handlers), `src/routine_storage.rs`
+(`routine.toml` + `prompt.txt` persistence), `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
+Reverse sync (crontab → store) is not implemented for routines.
+
 ## Error handling (`src/error.rs`)
 
 ```rust

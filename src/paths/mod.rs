@@ -53,5 +53,77 @@ pub fn job_log_path(id: &str) -> PathBuf {
     job_dir(id).join("job.local.log")
 }
 
+// ─── Routines ────────────────────────────────────────────────────────────────
+
+/// Returns the path to `~/.config/moadim/routines/`.
+pub fn routines_dir() -> PathBuf {
+    routines_dir_from_home(dirs::home_dir())
+}
+
+/// Returns the routines directory under `home`, or `.` if `home` is `None`.
+pub(crate) fn routines_dir_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+        .join("routines")
+}
+
+/// Returns the path to `{routines_dir}/{id}/`.
+pub fn routine_dir(id: &str) -> PathBuf {
+    routines_dir().join(id)
+}
+
+/// Returns the path to `{routines_dir}/{id}/routine.toml`.
+pub fn routine_toml_path(id: &str) -> PathBuf {
+    routine_dir(id).join("routine.toml")
+}
+
+/// Returns the path to `{routines_dir}/{id}/prompt.txt`.
+pub fn routine_prompt_path(id: &str) -> PathBuf {
+    routine_dir(id).join("prompt.txt")
+}
+
+/// Returns the path to `{routines_dir}/{id}/.gitignore`.
+pub fn routine_gitignore_path(id: &str) -> PathBuf {
+    routine_dir(id).join(".gitignore")
+}
+
+// ─── Agent registry ──────────────────────────────────────────────────────────
+
+/// Returns the path to `~/.config/moadim/agents/`.
+pub fn agents_dir() -> PathBuf {
+    agents_dir_from_home(dirs::home_dir())
+}
+
+/// Returns the agents directory under `home`, or `.` if `home` is `None`.
+pub(crate) fn agents_dir_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+        .join("agents")
+}
+
+/// Returns the path to `~/.config/moadim/agents/{name}.toml`.
+pub fn agent_toml_path(name: &str) -> PathBuf {
+    agents_dir().join(format!("{name}.toml"))
+}
+
+// ─── Workbenches ─────────────────────────────────────────────────────────────
+
+/// Returns the path to `~/.moadim/`.
+pub fn moadim_home() -> PathBuf {
+    moadim_home_from_home(dirs::home_dir())
+}
+
+/// Returns the moadim home directory under `home`, or `.` if `home` is `None`.
+pub(crate) fn moadim_home_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from(".")).join(".moadim")
+}
+
+/// Returns the path to `~/.moadim/workbenches/`.
+pub fn workbenches_dir() -> PathBuf {
+    moadim_home().join("workbenches")
+}
+
 #[cfg(test)]
 mod mod_tests;

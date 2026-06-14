@@ -324,6 +324,7 @@ fn from_ref_extracts_store_from_app_state() {
     let state = AppState {
         store: store.clone(),
         handlers: new_registry(),
+        routines: crate::routines::new_store(),
         uptime_start: 0,
     };
     let extracted = CronStore::from_ref(&state);

@@ -3,6 +3,7 @@
 use super::mcp::MoadimMcp;
 use crate::cron_jobs::{self, new_registry, AppState, CronStore};
 use crate::middlewares;
+use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
 use axum::{
     extract::State,
@@ -16,21 +17,27 @@ use utoipa_swagger_ui::SwaggerUi;
 /// Response body for `GET /health`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
+    /// Health status string (always `"ok"` when reachable).
     pub status: String,
+    /// Seconds elapsed since the server started.
     pub uptime_secs: u64,
+    /// Whether the server is running.
     pub running: bool,
 }
 
 /// Request body for `POST /echo`.
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct EchoRequest {
+    /// Message to echo back.
     pub message: String,
 }
 
 /// Response body for `POST /echo`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct EchoResponse {
+    /// The echoed message.
     pub message: String,
+    /// Server timestamp (Unix seconds) when the echo was produced.
     pub timestamp: u64,
 }
 
@@ -66,7 +73,7 @@ pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::h
 }
 
 /// Build the Axum router with all routes, middleware, and state wired up.
-pub(crate) fn build_app(store: CronStore) -> Router {
+pub(crate) fn build_app(store: CronStore, routines: RoutineStore) -> Router {
     use rmcp::transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
@@ -74,17 +81,20 @@ pub(crate) fn build_app(store: CronStore) -> Router {
     let app_state = AppState {
         store: store.clone(),
         handlers: new_registry(),
+        routines: routines.clone(),
         uptime_start: now_secs(),
     };
 
     let mcp_store = store.clone();
     let mcp_handlers = app_state.handlers.clone();
+    let mcp_routines = routines.clone();
     let uptime_start = app_state.uptime_start;
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(MoadimMcp::new(
                 mcp_store.clone(),
                 mcp_handlers.clone(),
+                mcp_routines.clone(),
                 uptime_start,
             ))
         },
@@ -112,6 +122,16 @@ pub(crate) fn build_app(store: CronStore) -> Router {
         )
         .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
         .route("/cron-jobs/{id}/logs", get(cron_jobs::get_logs))
+        .route("/routines", get(routines::list).post(routines::create))
+        .route(
+            "/routines/{id}",
+            get(routines::get)
+                .put(routines::replace)
+                .patch(routines::update)
+                .delete(routines::delete),
+        )
+        .route("/routines/{id}/trigger", post(routines::trigger))
+        .route("/routines/{id}/logs", get(routines::get_logs))
         .nest_service("/mcp", mcp_service)
         .merge({
             use utoipa::OpenApi as _;
@@ -125,6 +145,7 @@ pub(crate) fn build_app(store: CronStore) -> Router {
 /// Serve the application on `listener`, shutting down when `shutdown` resolves.
 pub async fn run_with_listener_until(
     store: CronStore,
+    routines: RoutineStore,
     listener: tokio::net::TcpListener,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
@@ -133,7 +154,7 @@ pub async fn run_with_listener_until(
     if let Err(e) = std::fs::write(spec_path, crate::openapi::ApiDoc::to_json()) {
         log::warn!("could not write openapi spec: {e}");
     }
-    let app = build_app(store);
+    let app = build_app(store, routines);
     crate::utils::startup_print::print(&addr);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)

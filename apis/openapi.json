@@ -253,6 +253,34 @@
         }
       }
     },
+    "/cron-jobs/{id}/logs": {
+      "get": {
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`GET /cron-jobs/{id}/logs` — return the contents of the job's log file as plain text.",
+        "operationId": "get_logs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/cron-jobs/{id}/trigger": {
       "post": {
         "tags": [
@@ -342,6 +370,285 @@
           }
         }
       }
+    },
+    "/routines": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines` — list all routines sorted by creation time.",
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoutineResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines` — create a new routine.",
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cron expression"
+          }
+        }
+      }
+    },
+    "/routines/{id}": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}` — retrieve a single routine by UUID.",
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).",
+        "operationId": "replace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`DELETE /routines/{id}` — delete a routine by UUID.",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`PATCH /routines/{id}` — partially update a routine.",
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/logs": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.",
+        "operationId": "get_logs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/trigger": {
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/{id}/trigger` — manually run a routine outside its schedule.",
+        "operationId": "trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Routine"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -368,6 +675,45 @@
           "schedule": {
             "type": "string",
             "description": "Cron expression for the new job."
+          }
+        }
+      },
+      "CreateRoutineRequest": {
+        "type": "object",
+        "description": "Request body for creating a new routine.",
+        "required": [
+          "schedule",
+          "title",
+          "agent",
+          "prompt"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Agent registry key to launch."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether to create the routine enabled (defaults to `true`)."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Task prompt."
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Repository"
+            },
+            "description": "Repositories to list as context (defaults to empty)."
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression for the new routine."
+          },
+          "title": {
+            "type": "string",
+            "description": "Human name for the routine."
           }
         }
       },
@@ -485,7 +831,8 @@
         ],
         "properties": {
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "Message to echo back."
           }
         }
       },
@@ -498,11 +845,13 @@
         ],
         "properties": {
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "The echoed message."
           },
           "timestamp": {
             "type": "integer",
             "format": "int64",
+            "description": "Server timestamp (Unix seconds) when the echo was produced.",
             "minimum": 0
           }
         }
@@ -517,17 +866,146 @@
         ],
         "properties": {
           "running": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the server is running."
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "description": "Health status string (always `\"ok\"` when reachable)."
           },
           "uptime_secs": {
             "type": "integer",
             "format": "int64",
+            "description": "Seconds elapsed since the server started.",
             "minimum": 0
           }
         }
+      },
+      "Repository": {
+        "type": "object",
+        "description": "A git repository made available to a routine's agent as prompt context (not cloned by moadim).",
+        "required": [
+          "repository"
+        ],
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Branch to use, or `None` for the remote default branch."
+          },
+          "repository": {
+            "type": "string",
+            "description": "Git remote URL."
+          }
+        }
+      },
+      "Routine": {
+        "type": "object",
+        "description": "A persisted routine: a scheduled AI-agent task.",
+        "required": [
+          "id",
+          "schedule",
+          "title",
+          "agent",
+          "prompt",
+          "enabled",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Agent registry key (e.g. `\"claude\"`) resolved from `~/.config/moadim/agents/`."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the routine was created.",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the routine is active."
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique identifier (UUID v4)."
+          },
+          "last_triggered_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.",
+            "minimum": 0
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The task prompt handed to the agent."
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Repository"
+            },
+            "description": "Repositories listed in the prompt as context."
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression defining when the routine runs."
+          },
+          "source": {
+            "type": "string",
+            "description": "`\"managed\"` for routines owned by this server."
+          },
+          "title": {
+            "type": "string",
+            "description": "Human name; slugified to name the workbench and tmux session."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the routine was last updated.",
+            "minimum": 0
+          }
+        }
+      },
+      "RoutineResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Routine",
+            "description": "The underlying routine."
+          },
+          {
+            "type": "object",
+            "required": [
+              "agent_registered",
+              "file_path"
+            ],
+            "properties": {
+              "agent_registered": {
+                "type": "boolean",
+                "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`."
+              },
+              "file_path": {
+                "type": "string",
+                "description": "Absolute path to the routine's `routine.toml` file on disk."
+              },
+              "schedule_description": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Human-readable description of the schedule, or `null` if it cannot be parsed."
+              }
+            }
+          }
+        ],
+        "description": "A [`Routine`] enriched with derived, non-persisted fields for API responses."
       },
       "UpdateRequest": {
         "type": "object",
@@ -556,6 +1034,57 @@
               "null"
             ],
             "description": "New cron expression, or `None` to keep the existing value."
+          }
+        }
+      },
+      "UpdateRoutineRequest": {
+        "type": "object",
+        "description": "Request body for partially updating an existing routine.",
+        "properties": {
+          "agent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New agent key, or `None` to keep the existing value."
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "prompt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New prompt, or `None` to keep the existing value."
+          },
+          "repositories": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Repository"
+            },
+            "description": "New repositories list, or `None` to keep the existing value."
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New cron expression, or `None` to keep the existing value."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New title, or `None` to keep the existing value."
           }
         }
       }

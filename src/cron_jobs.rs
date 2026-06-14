@@ -18,7 +18,9 @@ use crate::storage::{remove_job_dir, write_job};
 use crate::utils::time::now_secs;
 
 /// Whether a cron job is owned by this server or discovered from the OS.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CronJobSourceType {
     /// Created and managed by this server.
@@ -107,6 +109,8 @@ pub struct AppState {
     pub store: CronStore,
     /// Registered handler identifiers.
     pub handlers: HandlerRegistry,
+    /// Shared routine (agent-driven job) store.
+    pub routines: crate::routines::RoutineStore,
     /// Unix timestamp (seconds) when the server started.
     pub uptime_start: u64,
 }
@@ -114,6 +118,12 @@ pub struct AppState {
 impl axum::extract::FromRef<AppState> for CronStore {
     fn from_ref(state: &AppState) -> Self {
         state.store.clone()
+    }
+}
+
+impl axum::extract::FromRef<AppState> for crate::routines::RoutineStore {
+    fn from_ref(state: &AppState) -> Self {
+        state.routines.clone()
     }
 }
 
@@ -132,7 +142,7 @@ pub fn new_registry() -> HandlerRegistry {
 ///
 /// Strips the seconds (field 0) and year (field 6) from any 7-field expression.
 /// `@keyword` schedules and already-5-field expressions are returned unchanged.
-fn normalize_schedule(expr: &str) -> String {
+pub(crate) fn normalize_schedule(expr: &str) -> String {
     let s = expr.trim();
     if s.starts_with('@') {
         return s.to_string();
@@ -148,7 +158,7 @@ fn normalize_schedule(expr: &str) -> String {
 ///
 /// Accepts standard 5-field (`min hour dom month dow`) and `@keyword` formats.
 /// 7-field expressions are first normalized to 5-field via [`normalize_schedule`].
-fn validate_cron(expr: &str) -> Result<(), AppError> {
+pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     let normalized = normalize_schedule(expr.trim());
     normalized
         .parse::<Cron>()

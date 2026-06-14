@@ -27,6 +27,9 @@ use crate::paths::handlers_dir;
 use crate::storage::write_job;
 use crate::utils::time::now_secs;
 
+/// Crontab block for routines (agent-driven tmux jobs).
+pub mod routines;
+
 /// Delimiter marking the start of the moadim-owned crontab block.
 const BLOCK_BEGIN: &str = "# BEGIN MOADIM";
 /// Delimiter marking the end of the moadim-owned crontab block.
@@ -118,13 +121,9 @@ pub(crate) fn resolve_handler_path(handler: &str, dir: &Path) -> PathBuf {
 pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
     let p = Path::new(command.trim());
     let stem = if let Ok(rel) = p.strip_prefix(dir) {
-        rel.file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
+        rel.file_stem().and_then(|s| s.to_str()).map(str::to_string)
     } else {
-        p.file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
+        p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
     };
     stem.unwrap_or_else(|| command.trim().to_string())
 }
@@ -199,26 +198,36 @@ fn build_block(store: &CronStore) -> String {
     };
     jobs.sort_by_key(|j| j.created_at);
 
-    let lines: Vec<String> = jobs
-        .iter()
-        .map(|j| format_crontab_line(j, &dir))
-        .collect();
+    let lines: Vec<String> = jobs.iter().map(|j| format_crontab_line(j, &dir)).collect();
 
     if lines.is_empty() {
         format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}")
     } else {
-        format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{}\n{BLOCK_END}", lines.join("\n"))
+        format!(
+            "{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{}\n{BLOCK_END}",
+            lines.join("\n")
+        )
     }
 }
 
-/// Replace (or insert) the moadim block inside `crontab` text.
+/// Replace (or insert) the moadim handler block inside `crontab` text.
 pub(crate) fn replace_block(crontab: &str, block: &str) -> String {
-    let begin_pos = crontab.find(BLOCK_BEGIN);
-    let end_pos = crontab.find(BLOCK_END);
+    replace_block_with(crontab, block, BLOCK_BEGIN, BLOCK_END)
+}
+
+/// Replace (or insert) a delimited block (`begin_marker`..`end_marker`) inside `crontab` text.
+pub(crate) fn replace_block_with(
+    crontab: &str,
+    block: &str,
+    begin_marker: &str,
+    end_marker: &str,
+) -> String {
+    let begin_pos = crontab.find(begin_marker);
+    let end_pos = crontab.find(end_marker);
 
     match (begin_pos, end_pos) {
         (Some(begin), Some(end)) if begin < end => {
-            let after = end + BLOCK_END.len();
+            let after = end + end_marker.len();
             let mut result = crontab[..begin].to_string();
             result.push_str(block);
             result.push('\n');

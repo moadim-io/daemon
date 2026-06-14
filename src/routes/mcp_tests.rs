@@ -5,7 +5,7 @@ use crate::cron_jobs::{new_registry, new_store};
 use super::*;
 
 fn make_handler() -> MoadimMcp {
-    MoadimMcp::new(new_store(), new_registry(), 0)
+    MoadimMcp::new(new_store(), new_registry(), crate::routines::new_store(), 0)
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn trigger_cron_job_not_found_is_error() {
 fn create_cron_job_tool_invalid_cron_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let store = crate::cron_jobs::new_store();
-    let handler = MoadimMcp::new(store, new_registry(), 0);
+    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
     let req = crate::cron_jobs::CreateRequest {
         schedule: "not-a-cron".into(),
         handler: "h".into(),
@@ -126,7 +126,12 @@ fn create_cron_job_tool_invalid_cron_is_error() {
 #[test]
 fn update_cron_job_tool_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
-    let handler = MoadimMcp::new(crate::cron_jobs::new_store(), new_registry(), 0);
+    let handler = MoadimMcp::new(
+        crate::cron_jobs::new_store(),
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+    );
     let result = handler
         .update_cron_job(Parameters(UpdateInput {
             id: "no-such".into(),
@@ -155,7 +160,7 @@ fn delete_cron_job_tool_success() {
     )
     .unwrap();
     let id = created.job.id.clone();
-    let handler = MoadimMcp::new(store, new_registry(), 0);
+    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
     let result = handler.delete_cron_job(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
 }
@@ -176,7 +181,7 @@ fn trigger_cron_job_tool_success() {
     )
     .unwrap();
     let id = created.job.id.clone();
-    let handler = MoadimMcp::new(store, new_registry(), 0);
+    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
     let result = handler
         .trigger_cron_job(Parameters(IdInput { id: id.clone() }))
         .unwrap();
@@ -188,7 +193,7 @@ fn trigger_cron_job_tool_success() {
 fn create_cron_job_tool_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let store = crate::cron_jobs::new_store();
-    let handler = MoadimMcp::new(store, new_registry(), 0);
+    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
     let req = crate::cron_jobs::CreateRequest {
         schedule: "@daily".into(),
         handler: "mcp-handler".into(),
@@ -223,7 +228,7 @@ fn get_cron_job_tool_success() {
         last_triggered_at: None,
     };
     store.lock().unwrap().insert("get-test-id".into(), job);
-    let handler = MoadimMcp::new(store, new_registry(), 0);
+    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
     let result = handler
         .get_cron_job(Parameters(IdInput {
             id: "get-test-id".into(),
@@ -236,7 +241,12 @@ fn get_cron_job_tool_success() {
 fn update_cron_job_tool_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let store = crate::cron_jobs::new_store();
-    let handler = MoadimMcp::new(store.clone(), new_registry(), 0);
+    let handler = MoadimMcp::new(
+        store.clone(),
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+    );
     // Create a job first
     let created = crate::cron_jobs::svc_create(
         &store,
@@ -263,4 +273,141 @@ fn update_cron_job_tool_success() {
     assert!(!result.is_error.unwrap_or(false));
 
     crate::storage::remove_job_dir(&id).unwrap();
+}
+
+// ── routine tools ──────────────────────────────────────────────────────────────
+
+fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
+    crate::routines::CreateRoutineRequest {
+        schedule: "@daily".into(),
+        title: "Mcp Routine".into(),
+        agent: "mcp-routine-agent-x".into(),
+        prompt: "p".into(),
+        repositories: vec![],
+        enabled: true,
+    }
+}
+
+#[test]
+fn list_routines_empty() {
+    let handler = make_handler();
+    let result = handler.list_routines().unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn get_routine_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .get_routine(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn create_routine_tool_invalid_cron_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let mut req = make_create_routine_req();
+    req.schedule = "not-a-cron".into();
+    let result = handler.create_routine(Parameters(req)).unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn create_get_update_trigger_delete_routine_success() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(new_store(), new_registry(), routines.clone(), 0);
+
+    // create
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // get
+    let result = handler
+        .get_routine(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+
+    // update
+    let result = handler
+        .update_routine(Parameters(UpdateRoutineInput {
+            id: id.clone(),
+            schedule: None,
+            title: Some("Renamed".into()),
+            agent: None,
+            prompt: None,
+            repositories: None,
+            enabled: Some(false),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+
+    // trigger (no agent config → records, no spawn)
+    let result = handler
+        .trigger_routine(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+
+    // delete
+    let result = handler
+        .delete_routine(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn update_routine_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .update_routine(Parameters(UpdateRoutineInput {
+            id: "no-such".into(),
+            schedule: None,
+            title: Some("x".into()),
+            agent: None,
+            prompt: None,
+            repositories: None,
+            enabled: None,
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn delete_routine_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .delete_routine(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn trigger_routine_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .trigger_routine(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
 }

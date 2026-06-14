@@ -1,7 +1,7 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::mcp::MoadimMcp;
-use crate::cron_jobs::{self, new_registry, AppState, CronJob, CronStore};
+use crate::cron_jobs::{self, new_registry, AppState, CronJob, CronJobResponse, CronStore, CreateRequest, UpdateRequest};
 use crate::middlewares;
 use crate::utils::time::now_secs;
 use axum::{
@@ -9,6 +9,30 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
+/// OpenAPI document aggregating all REST API paths and schemas.
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        crate::cron_jobs::create,
+        crate::cron_jobs::list,
+        crate::cron_jobs::get,
+        crate::cron_jobs::update,
+        crate::cron_jobs::delete,
+        crate::cron_jobs::trigger,
+        list_system_cron_jobs,
+    ),
+    components(schemas(
+        CronJob,
+        CronJobResponse,
+        CreateRequest,
+        UpdateRequest,
+    )),
+    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
+)]
+struct ApiDoc;
 
 /// `GET /system-cron-jobs` — list read-only system cron jobs discovered from the host.
 #[utoipa::path(get, path = "/system-cron-jobs",
@@ -73,6 +97,7 @@ pub(crate) fn build_app(store: CronStore) -> Router {
         .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
         .route("/system-cron-jobs", get(list_system_cron_jobs))
         .nest_service("/mcp", mcp_service)
+        .merge(SwaggerUi::new("/docs").url("/docs/openapi.json", ApiDoc::openapi()))
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         .with_state(app_state)

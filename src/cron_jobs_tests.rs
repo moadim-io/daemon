@@ -329,3 +329,18 @@ fn from_ref_extracts_store_from_app_state() {
     // Same underlying Arc allocation
     assert!(std::sync::Arc::ptr_eq(&extracted, &store));
 }
+
+#[test]
+fn schedule_description_present_for_valid_expression() {
+    let resp = CronJobResponse::from_job(make_job("x"), &new_registry());
+    // make_job uses "@daily"
+    assert!(resp.schedule_description.is_some());
+}
+
+#[test]
+fn schedule_description_none_for_unparseable_expression() {
+    let mut job = make_job("x");
+    job.schedule = "@reboot".to_string();
+    let resp = CronJobResponse::from_job(job, &new_registry());
+    assert!(resp.schedule_description.is_none());
+}

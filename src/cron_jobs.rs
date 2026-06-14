@@ -73,6 +73,9 @@ pub struct CronJobResponse {
     pub handler_registered: bool,
     /// Absolute path to the job's `job.toml` file on disk.
     pub file_path: String,
+    /// Human-readable description of the schedule (e.g. `"At 09:30, Monday through Friday"`).
+    /// `null` for expressions that cannot be parsed into a description (e.g. `@reboot`).
+    pub schedule_description: Option<String>,
 }
 
 impl CronJobResponse {
@@ -81,11 +84,13 @@ impl CronJobResponse {
         let source_type = CronJobSourceType::from_source(&job.source);
         let handler_registered = handlers.contains(&job.handler);
         let file_path = job_toml_path(&job.id).to_string_lossy().into_owned();
+        let schedule_description = job.schedule.parse::<Cron>().ok().map(|c| c.describe());
         Self {
             job,
             source_type,
             handler_registered,
             file_path,
+            schedule_description,
         }
     }
 }

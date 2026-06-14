@@ -9,5 +9,5 @@ pub fn print(addr: &str) {
 }
 
 #[cfg(test)]
-#[path = "banner_tests.rs"]
-mod banner_tests;
+#[path = "startup_print_tests.rs"]
+mod startup_print_tests;

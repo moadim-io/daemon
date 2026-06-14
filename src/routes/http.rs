@@ -102,7 +102,7 @@ pub async fn run_with_listener_until(
 ) -> anyhow::Result<()> {
     let addr = listener.local_addr()?.to_string();
     let app = build_app(store);
-    crate::banner::print(&addr);
+    crate::utils::startup_print::print(&addr);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown)
         .await?;

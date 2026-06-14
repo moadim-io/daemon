@@ -1,7 +1,6 @@
 #![deny(warnings)]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
-mod banner;
 mod cron_jobs;
 /// Bidirectional sync between managed jobs and the OS crontab.
 mod sync;

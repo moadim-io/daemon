@@ -50,7 +50,10 @@ fn unknown_arg_falls_back_to_help() {
 #[test]
 fn parses_http_status_code() {
     assert_eq!(parse_status_code("HTTP/1.1 200 OK\r\n\r\n"), Some(200));
-    assert_eq!(parse_status_code("HTTP/1.1 503 Service Unavailable"), Some(503));
+    assert_eq!(
+        parse_status_code("HTTP/1.1 503 Service Unavailable"),
+        Some(503)
+    );
 }
 
 #[test]

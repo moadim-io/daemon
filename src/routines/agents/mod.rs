@@ -43,7 +43,10 @@ const DEFAULT_AGENT_CONFIGS: &[(&str, &str)] = &[
 
 /// Registry keys of the built-in agents, in declaration order.
 fn builtin_agent_names() -> Vec<String> {
-    DEFAULT_AGENT_CONFIGS.iter().map(|(n, _)| n.to_string()).collect()
+    DEFAULT_AGENT_CONFIGS
+        .iter()
+        .map(|(n, _)| n.to_string())
+        .collect()
 }
 
 /// Names of all agents the daemon can launch: the `<name>.toml` stems under

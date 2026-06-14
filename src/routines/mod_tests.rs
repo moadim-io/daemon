@@ -89,7 +89,11 @@ fn build_routine_command_contains_expected_pieces() {
     // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
     assert!(cmd.contains("export PATH="));
     // stay well under cron's per-line length limit (~1000 chars) — a full inherited PATH blew past it
-    assert!(cmd.len() < 1000, "crontab line too long: {} chars", cmd.len());
+    assert!(
+        cmd.len() < 1000,
+        "crontab line too long: {} chars",
+        cmd.len()
+    );
     // prompt passed as a process argument via command substitution, no send-keys
     assert!(cmd.contains(r#""$(cat prompt.txt)""#));
     assert!(!cmd.contains("send-keys"));
@@ -145,7 +149,8 @@ fn ensure_default_agents_writes_parsable_configs() {
     assert!(setup.contains("disabledMcpjsonServers"));
 
     // codex default parses and passes the prompt file as an argument
-    let codex: AgentCommand = toml::from_str(&std::fs::read_to_string(dir.join("codex.toml")).unwrap()).unwrap();
+    let codex: AgentCommand =
+        toml::from_str(&std::fs::read_to_string(dir.join("codex.toml")).unwrap()).unwrap();
     assert_eq!(codex.command, "codex");
     assert!(codex.args.contains(&"{prompt_file}".to_string()));
 
@@ -181,7 +186,10 @@ fn available_agents_lists_sorted_toml_stems() {
     // non-toml files are ignored
     std::fs::write(dir.join("notes.txt"), "ignore me").unwrap();
 
-    assert_eq!(available_agents_in(&dir), vec!["alpha".to_string(), "zeta".to_string()]);
+    assert_eq!(
+        available_agents_in(&dir),
+        vec!["alpha".to_string(), "zeta".to_string()]
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -191,7 +199,10 @@ fn available_agents_falls_back_to_builtins_when_missing() {
     let dir = std::env::temp_dir().join("moadim-agents-missing-test");
     let _ = std::fs::remove_dir_all(&dir);
     // directory does not exist → built-in defaults
-    assert_eq!(available_agents_in(&dir), vec!["claude".to_string(), "codex".to_string()]);
+    assert_eq!(
+        available_agents_in(&dir),
+        vec!["claude".to_string(), "codex".to_string()]
+    );
 }
 
 #[test]

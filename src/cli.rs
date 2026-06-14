@@ -182,18 +182,16 @@ fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
     // A failed read after a clean shutdown can still yield the status line we already received.
     let _ = stream.read_to_string(&mut resp);
     parse_status_code(&resp).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "no HTTP status line in response")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "no HTTP status line in response",
+        )
     })
 }
 
 /// Extract the numeric status code from an HTTP response's status line (e.g. `HTTP/1.1 200 OK`).
 fn parse_status_code(resp: &str) -> Option<u16> {
-    resp.lines()
-        .next()?
-        .split_whitespace()
-        .nth(1)?
-        .parse()
-        .ok()
+    resp.lines().next()?.split_whitespace().nth(1)?.parse().ok()
 }
 
 /// Spawn a detached copy of this binary running the server in the foreground, returning its PID.

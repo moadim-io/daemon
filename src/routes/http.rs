@@ -5,7 +5,6 @@ use crate::cron_jobs::{self, new_registry, AppState, CronStore, ShutdownSignal};
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
-use std::sync::Arc;
 use axum::{
     extract::State,
     middleware,
@@ -13,6 +12,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use utoipa_swagger_ui::SwaggerUi;
 
 /// Response body for `GET /health`.

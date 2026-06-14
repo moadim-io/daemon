@@ -11,7 +11,9 @@ use crate::error::AppError;
 use super::model::{
     CreateRoutineRequest, Routine, RoutineResponse, RoutineStore, UpdateRoutineRequest,
 };
-use super::service::{svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger, svc_update};
+use super::service::{
+    svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger, svc_update,
+};
 
 /// `POST /routines` — create a new routine.
 #[utoipa::path(post, path = "/routines",

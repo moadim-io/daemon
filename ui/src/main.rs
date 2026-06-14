@@ -7,6 +7,9 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+mod routines;
+use routines::RoutinesPage;
+
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,6 +78,14 @@ pub enum Page {
     Logs(String),
 }
 
+/// Top-level navigation tab.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Tab {
+    #[default]
+    Jobs,
+    Routines,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
     None,
@@ -88,6 +99,7 @@ pub struct AppState {
     pub health: Health,
     pub health_ok: bool,
     pub loading: bool,
+    pub tab: Tab,
     pub page: Page,
     pub modal: Modal,
     pub toasts: Vec<Toast>,
@@ -101,6 +113,7 @@ impl Default for AppState {
             health: Health::default(),
             health_ok: false,
             loading: true,
+            tab: Tab::Jobs,
             page: Page::List,
             modal: Modal::None,
             toasts: vec![],
@@ -110,6 +123,7 @@ impl Default for AppState {
 }
 
 pub enum AppAction {
+    SwitchTab(Tab),
     JobsLoaded(Vec<CronJob>),
     HealthLoaded { health: Health, ok: bool },
     GoToCreate,
@@ -130,6 +144,11 @@ impl Reducible for AppState {
     fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
         let mut s = (*self).clone();
         match action {
+            AppAction::SwitchTab(tab) => {
+                s.tab = tab;
+                s.page = Page::List;
+                s.modal = Modal::None;
+            }
             AppAction::JobsLoaded(jobs) => {
                 s.jobs = jobs;
                 s.loading = false;
@@ -479,10 +498,23 @@ pub fn app() -> Html {
         Callback::from(move |id: u32| state.dispatch(AppAction::DismissToast(id)))
     };
 
+    let on_tab = {
+        let state = state.clone();
+        Callback::from(move |tab: Tab| state.dispatch(AppAction::SwitchTab(tab)))
+    };
+
+    let on_routine_toast = {
+        let state = state.clone();
+        Callback::from(move |(msg, kind): (String, ToastKind)| {
+            state.dispatch(AppAction::AddToast { msg, kind })
+        })
+    };
+
     let jobs = state.jobs.clone();
     let health = state.health.clone();
     let health_ok = state.health_ok;
     let loading = state.loading;
+    let tab = state.tab;
     let page = state.page.clone();
     let modal = state.modal.clone();
     let toasts = state.toasts.clone();
@@ -492,9 +524,8 @@ pub fn app() -> Html {
         _ => None,
     };
 
-    html! {
+    let jobs_body = html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} />
             {
                 match page {
                     Page::NewJob => html! {
@@ -549,8 +580,54 @@ pub fn app() -> Html {
                     Modal::None => html! {},
                 }
             }
+        </>
+    };
+
+    html! {
+        <>
+            <Header health={health} ok={health_ok} on_refresh={on_refresh} />
+            <TabNav active={tab} on_tab={on_tab} />
+            {
+                match tab {
+                    Tab::Jobs => jobs_body,
+                    Tab::Routines => html! {
+                        <RoutinesPage on_toast={on_routine_toast} />
+                    },
+                }
+            }
             <ToastStack toasts={toasts} on_dismiss={on_dismiss_toast} />
         </>
+    }
+}
+
+// ─── Tab nav ──────────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct TabNavProps {
+    pub active: Tab,
+    pub on_tab: Callback<Tab>,
+}
+
+#[function_component(TabNav)]
+pub fn tab_nav(props: &TabNavProps) -> Html {
+    let mk = |tab: Tab, label: &'static str| {
+        let cb = props.on_tab.clone();
+        let cls = if props.active == tab {
+            "tab-btn active"
+        } else {
+            "tab-btn"
+        };
+        html! {
+            <button class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(tab))}>
+                { label }
+            </button>
+        }
+    };
+    html! {
+        <nav class="tabs">
+            { mk(Tab::Jobs, "CRON JOBS") }
+            { mk(Tab::Routines, "ROUTINES") }
+        </nav>
     }
 }
 
@@ -880,7 +957,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
             let metadata = if meta_raw.trim().is_empty() {
                 Json::Null
             } else {
-                serde_json::from_str(&*meta_raw).unwrap_or(Json::Null)
+                serde_json::from_str(&meta_raw).unwrap_or(Json::Null)
             };
             saving.set(true);
             cb.emit(CreateRequest {
@@ -1103,7 +1180,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             let metadata = if meta_raw.trim().is_empty() {
                 Json::Null
             } else {
-                serde_json::from_str(&*meta_raw).unwrap_or(Json::Null)
+                serde_json::from_str(&meta_raw).unwrap_or(Json::Null)
             };
             saving.set(true);
             cb.emit(CreateRequest {
@@ -1382,7 +1459,7 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 /// Returns (is_valid, human description) for a cron expression.
-fn describe_cron_live(expr: &str) -> (bool, String) {
+pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
     let s = expr.trim();
     if s.is_empty() {
         return (false, "— enter a cron expression —".into());
@@ -1420,7 +1497,7 @@ fn meta_preview(v: &Json) -> String {
     }
 }
 
-fn reltime(ts: u64) -> String {
+pub(crate) fn reltime(ts: u64) -> String {
     if ts == 0 {
         return "—".into();
     }

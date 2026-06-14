@@ -162,6 +162,33 @@
     .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Tabs ── */
+    .tabs {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 28px;
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 12px 18px;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+    }
+    .tab-btn:hover  { color: var(--text-mid); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     /* ── Main ── */
     main { max-width: 1100px; margin: 0 auto; padding: 32px 28px; }
 

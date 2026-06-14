@@ -126,6 +126,48 @@ fn build_routine_command_inserts_setup_before_launch() {
 }
 
 #[test]
+fn ensure_default_agents_writes_parsable_configs() {
+    let dir = std::env::temp_dir().join("moadim-agents-defaults-test");
+    let _ = std::fs::remove_dir_all(&dir);
+    ensure_default_agents_in(&dir);
+
+    // claude default parses and carries the unattended-launch setup seed
+    let claude_text = std::fs::read_to_string(dir.join("claude.toml")).unwrap();
+    let claude: AgentCommand = toml::from_str(&claude_text).unwrap();
+    assert_eq!(claude.command, "claude");
+    assert!(claude.args.contains(&"{prompt}".to_string()));
+    let setup = claude.setup.expect("claude default has a setup step");
+    assert!(setup.contains("hasTrustDialogAccepted"));
+    assert!(setup.contains("disabledMcpjsonServers"));
+
+    // codex default parses and passes the prompt file as an argument
+    let codex: AgentCommand = toml::from_str(&std::fs::read_to_string(dir.join("codex.toml")).unwrap()).unwrap();
+    assert_eq!(codex.command, "codex");
+    assert!(codex.args.contains(&"{prompt_file}".to_string()));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ensure_default_agents_does_not_overwrite_existing() {
+    let dir = std::env::temp_dir().join("moadim-agents-preserve-test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("claude.toml"), "command = \"mine\"\nargs = []\n").unwrap();
+
+    ensure_default_agents_in(&dir);
+
+    // user file untouched, codex default still seeded
+    assert_eq!(
+        std::fs::read_to_string(dir.join("claude.toml")).unwrap(),
+        "command = \"mine\"\nargs = []\n"
+    );
+    assert!(dir.join("codex.toml").exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn routine_response_schedule_description() {
     let resp = RoutineResponse::from_routine(make_routine("x"));
     assert!(resp.schedule_description.is_some());
@@ -294,7 +336,7 @@ fn svc_trigger_with_agent_config_spawns() {
     r.title = title.into();
     r.agent = agent_name.into();
     store.lock().unwrap().insert("trig-cfg".into(), r.clone());
-    write_routine(&r).unwrap();
+    crate::routine_storage::write_routine(&r).unwrap();
 
     let triggered = svc_trigger(&store, "trig-cfg").unwrap();
     assert!(triggered.last_triggered_at.is_some());

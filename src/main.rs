@@ -25,6 +25,7 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    routines::ensure_default_agents();
     let store = storage::load_store();
     let routines = routine_storage::load_store();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:5784").await?;

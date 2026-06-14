@@ -3,7 +3,7 @@ use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Resp
 /// Inject server filesystem location into response headers.
 pub async fn fs_location(req: Request, next: Next) -> Response {
     let res = next.run(req).await;
-    let loc = crate::fs_location::FsLocation::current();
+    let loc = crate::filesystem::FsLocation::current();
     let val = serde_json::to_value(&loc).unwrap_or_default();
     inject_headers_from_value(res, val)
 }

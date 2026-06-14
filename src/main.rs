@@ -6,7 +6,7 @@ mod cron_jobs;
 mod cron_sync;
 mod error;
 /// Server filesystem location helpers.
-mod fs_location;
+mod filesystem;
 /// Axum middleware stack.
 mod middlewares;
 /// Filesystem path builders for the jobs directory.

@@ -78,7 +78,7 @@ impl MoadimMcp {
     /// Return server health status, uptime, and filesystem locations.
     #[tool(description = "Get server health, uptime, and filesystem locations")]
     fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let loc = crate::fs_location::FsLocation::current();
+        let loc = crate::filesystem::FsLocation::current();
         let mut val = serde_json::json!({
             "status": "ok",
             "uptime_secs": now_secs() - self.uptime_start,

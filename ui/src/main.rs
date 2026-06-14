@@ -48,6 +48,20 @@ pub struct UpdateRequest {
     pub enabled: Option<bool>,
 }
 
+/// A single job execution record (mirrors `RunRecord` on the server).
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RunRecord {
+    pub id: String,
+    pub job_id: String,
+    pub started_at: u64,
+    pub finished_at: u64,
+    pub duration_ms: u64,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub trigger: String,
+}
+
 // ─── App state ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,7 +82,12 @@ pub enum Modal {
     None,
     Create,
     Edit(String),
-    ConfirmDelete { id: String, handler: String },
+    ConfirmDelete {
+        id: String,
+        handler: String,
+    },
+    /// Show run history (and log) for a job.
+    Logs(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,6 +121,7 @@ pub enum AppAction {
     OpenCreate,
     OpenEdit(String),
     OpenConfirmDelete { id: String, handler: String },
+    OpenLogs(String),
     CloseModal,
     UpsertJob(CronJob),
     RemoveJob(String),
@@ -128,6 +148,7 @@ impl Reducible for AppState {
             AppAction::OpenConfirmDelete { id, handler } => {
                 s.modal = Modal::ConfirmDelete { id, handler };
             }
+            AppAction::OpenLogs(id) => s.modal = Modal::Logs(id),
             AppAction::CloseModal => s.modal = Modal::None,
             AppAction::UpsertJob(job) => {
                 if let Some(i) = s.jobs.iter().position(|j| j.id == job.id) {
@@ -223,6 +244,31 @@ async fn api_trigger(id: &str) -> Result<CronJob, String> {
     resp.json::<CronJob>().await.map_err(|e| e.to_string())
 }
 
+async fn api_get_runs(id: &str) -> Result<Vec<RunRecord>, String> {
+    Request::get(&format!("/cron-jobs/{id}/runs"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<Vec<RunRecord>>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn api_get_log(id: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct LogResp {
+        content: String,
+    }
+    Request::get(&format!("/cron-jobs/{id}/log"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<LogResp>()
+        .await
+        .map(|r| r.content)
+        .map_err(|e| e.to_string())
+}
+
 // ─── Root component ───────────────────────────────────────────────────────────
 
 #[function_component(App)]
@@ -293,6 +339,11 @@ pub fn app() -> Html {
         Callback::from(move |(id, handler): (String, String)| {
             state.dispatch(AppAction::OpenConfirmDelete { id, handler });
         })
+    };
+
+    let on_logs = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(AppAction::OpenLogs(id)))
     };
 
     let on_trigger = {
@@ -458,6 +509,7 @@ pub fn app() -> Html {
                     on_delete={on_ask_delete}
                     on_toggle={on_toggle}
                     on_trigger={on_trigger}
+                    on_logs={on_logs}
                 />
             </main>
             {
@@ -475,6 +527,12 @@ pub fn app() -> Html {
                             handler={handler.clone()}
                             on_cancel={on_close}
                             on_confirm={on_confirm_delete}
+                        />
+                    },
+                    Modal::Logs(id) => html! {
+                        <LogModal
+                            job_id={id.clone()}
+                            on_close={on_close}
                         />
                     },
                     Modal::None => html! {},
@@ -584,6 +642,7 @@ pub struct JobTableProps {
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
+    pub on_logs: Callback<String>,
 }
 
 #[function_component(JobTable)]
@@ -630,6 +689,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
+                            on_logs={props.on_logs.clone()}
                         />
                     }) }
                 </tbody>
@@ -647,6 +707,7 @@ pub struct JobRowProps {
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
+    pub on_logs: Callback<String>,
 }
 
 #[function_component(JobRow)]
@@ -679,8 +740,14 @@ pub fn job_row(props: &JobRowProps) -> Html {
         let id = job.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
+    let on_logs = {
+        let cb = props.on_logs.clone();
+        let id = job.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
 
-    let last_run = job.last_triggered_at
+    let last_run = job
+        .last_triggered_at
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 
@@ -709,6 +776,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
             <td>
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn logs" title="View logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
                     <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
                 </div>
@@ -1004,6 +1072,141 @@ pub fn toast_stack(props: &ToastStackProps) -> Html {
                     <div class={cls} key={t.id}>{t.msg.clone()}</div>
                 }
             }) }
+        </div>
+    }
+}
+
+// ─── Log modal ────────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct LogModalProps {
+    pub job_id: String,
+    pub on_close: Callback<()>,
+}
+
+#[function_component(LogModal)]
+pub fn log_modal(props: &LogModalProps) -> Html {
+    let runs: UseStateHandle<Option<Vec<RunRecord>>> = use_state(|| None);
+    let loading = use_state(|| true);
+    let expanded: UseStateHandle<Option<String>> = use_state(|| None);
+
+    {
+        let runs = runs.clone();
+        let loading = loading.clone();
+        let id = props.job_id.clone();
+        use_effect_with(id.clone(), move |_| {
+            spawn_local(async move {
+                match api_get_runs(&id).await {
+                    Ok(data) => runs.set(Some(data)),
+                    Err(_) => runs.set(Some(vec![])),
+                }
+                loading.set(false);
+            });
+        });
+    }
+
+    let on_close_click = {
+        let cb = props.on_close.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
+    let short_id = format!("{}…", &props.job_id[..8.min(props.job_id.len())]);
+    let title = format!("JOB RUNS / {short_id}");
+
+    html! {
+        <div class="overlay">
+            <div class="modal modal-lg">
+                <div class="modal-hd">
+                    <div class="modal-title">{title}</div>
+                    <button class="modal-x" onclick={on_close_click}>{"✕"}</button>
+                </div>
+                <div class="modal-body log-modal-body">
+                    if *loading {
+                        <div class="empty"><div class="spinner"></div></div>
+                    } else if runs.as_deref().map(|r| r.is_empty()).unwrap_or(true) {
+                        <div class="empty">
+                            <div class="empty-icon">{"⧗"}</div>
+                            <div class="empty-msg">{"NO RUNS YET"}</div>
+                            <div class="empty-sub">{"trigger the job to record a run"}</div>
+                        </div>
+                    } else {
+                        <table class="runs-table">
+                            <thead>
+                                <tr>
+                                    <th>{"#"}</th>
+                                    <th>{"STARTED"}</th>
+                                    <th>{"DURATION"}</th>
+                                    <th>{"EXIT"}</th>
+                                    <th>{"TRIGGER"}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                { for runs.as_deref().unwrap_or(&[]).iter().enumerate().map(|(i, run)| {
+                                    let run = run.clone();
+                                    let expanded = expanded.clone();
+                                    let is_expanded = expanded.as_deref() == Some(&run.id);
+                                    let run_id = run.id.clone();
+                                    let on_toggle = {
+                                        let expanded = expanded.clone();
+                                        let id = run_id.clone();
+                                        Callback::from(move |_: MouseEvent| {
+                                            if expanded.as_deref() == Some(&id) {
+                                                expanded.set(None);
+                                            } else {
+                                                expanded.set(Some(id.clone()));
+                                            }
+                                        })
+                                    };
+                                    let exit_badge = match run.exit_code {
+                                        Some(0) => html! { <span class="badge ok">{"OK"}</span> },
+                                        Some(code) => html! { <span class="badge err">{format!("EXIT {code}")}</span> },
+                                        None => html! { <span class="badge warn">{"FAILED"}</span> },
+                                    };
+                                    let dur = if run.duration_ms < 1000 {
+                                        format!("{}ms", run.duration_ms)
+                                    } else {
+                                        format!("{:.1}s", run.duration_ms as f64 / 1000.0)
+                                    };
+                                    html! {
+                                        <>
+                                            <tr key={run_id.clone()}>
+                                                <td class="run-idx">{i + 1}</td>
+                                                <td class="run-time">{reltime(run.started_at)}</td>
+                                                <td class="run-dur">{dur}</td>
+                                                <td>{exit_badge}</td>
+                                                <td class="run-trigger">{&run.trigger}</td>
+                                                <td>
+                                                    <button class="act-btn logs" onclick={on_toggle}>
+                                                        { if is_expanded { "▲" } else { "▼" } }
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            if is_expanded {
+                                                <tr class="run-detail" key={format!("{run_id}-detail")}>
+                                                    <td colspan="6">
+                                                        if !run.stdout.is_empty() {
+                                                            <div class="run-stream-label">{"STDOUT"}</div>
+                                                            <pre class="run-stream">{&run.stdout}</pre>
+                                                        }
+                                                        if !run.stderr.is_empty() {
+                                                            <div class="run-stream-label">{"STDERR"}</div>
+                                                            <pre class="run-stream stderr">{&run.stderr}</pre>
+                                                        }
+                                                        if run.stdout.is_empty() && run.stderr.is_empty() {
+                                                            <div class="run-stream-label">{"(no output)"}</div>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </>
+                                    }
+                                }) }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
         </div>
     }
 }

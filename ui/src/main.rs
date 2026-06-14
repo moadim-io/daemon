@@ -1207,7 +1207,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
     };
 
     html! {
-        <div class="overlay">
+        <div class="overlay open">
             <div class="modal">
                 <div class="modal-hd">
                     <div class="modal-title">{"EDIT JOB"}</div>
@@ -1320,7 +1320,7 @@ pub fn confirm_dialog(props: &ConfirmProps) -> Html {
     };
 
     html! {
-        <div class="overlay">
+        <div class="overlay open">
             <div class="confirm-dialog">
                 <div class="confirm-title">{"⚠ DELETE JOB"}</div>
                 <div class="confirm-msg">

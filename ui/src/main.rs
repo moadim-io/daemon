@@ -72,6 +72,7 @@ pub enum Page {
     #[default]
     List,
     NewJob,
+    Logs(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +114,7 @@ pub enum AppAction {
     HealthLoaded { health: Health, ok: bool },
     GoToCreate,
     GoToList,
+    GoToLogs(String),
     OpenEdit(String),
     OpenConfirmDelete { id: String, handler: String },
     CloseModal,
@@ -138,6 +140,7 @@ impl Reducible for AppState {
             }
             AppAction::GoToCreate => s.page = Page::NewJob,
             AppAction::GoToList => s.page = Page::List,
+            AppAction::GoToLogs(id) => s.page = Page::Logs(id),
             AppAction::OpenEdit(id) => s.modal = Modal::Edit(id),
             AppAction::OpenConfirmDelete { id, handler } => {
                 s.modal = Modal::ConfirmDelete { id, handler };
@@ -237,6 +240,17 @@ async fn api_trigger(id: &str) -> Result<CronJob, String> {
     resp.json::<CronJob>().await.map_err(|e| e.to_string())
 }
 
+async fn api_get_logs(id: &str) -> Result<String, String> {
+    let resp = Request::get(&format!("/cron-jobs/{id}/logs"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| e.to_string())
+}
+
 // ─── Root component ───────────────────────────────────────────────────────────
 
 #[function_component(App)]
@@ -323,6 +337,16 @@ pub fn app() -> Html {
                 }
             })
         })
+    };
+
+    let on_logs = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(AppAction::GoToLogs(id)))
+    };
+
+    let on_back_from_logs = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(AppAction::GoToList))
     };
 
     let on_edit = {
@@ -472,12 +496,20 @@ pub fn app() -> Html {
         <>
             <Header health={health} ok={health_ok} on_refresh={on_refresh} />
             {
-                if page == Page::NewJob {
-                    html! {
+                match page {
+                    Page::NewJob => html! {
                         <CreatePage on_cancel={on_cancel_create} on_save={on_create} />
-                    }
-                } else {
-                    html! {
+                    },
+                    Page::Logs(id) => {
+                        let handler = jobs.iter()
+                            .find(|j| j.id == id)
+                            .map(|j| j.handler.clone())
+                            .unwrap_or_default();
+                        html! {
+                            <LogsPage job_id={id} handler={handler} on_back={on_back_from_logs} />
+                        }
+                    },
+                    Page::List => html! {
                         <main>
                             <StatsBar jobs={jobs.clone()} />
                             <div class="section-hd">
@@ -491,9 +523,10 @@ pub fn app() -> Html {
                                 on_delete={on_ask_delete}
                                 on_toggle={on_toggle}
                                 on_trigger={on_trigger}
+                                on_logs={on_logs}
                             />
                         </main>
-                    }
+                    },
                 }
             }
             {
@@ -620,6 +653,7 @@ pub struct JobTableProps {
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
+    pub on_logs: Callback<String>,
 }
 
 #[function_component(JobTable)]
@@ -666,6 +700,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
+                            on_logs={props.on_logs.clone()}
                         />
                     }) }
                 </tbody>
@@ -683,6 +718,7 @@ pub struct JobRowProps {
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
+    pub on_logs: Callback<String>,
 }
 
 #[function_component(JobRow)]
@@ -719,6 +755,11 @@ pub fn job_row(props: &JobRowProps) -> Html {
         let id = job.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
+    let on_logs = {
+        let cb = props.on_logs.clone();
+        let id = job.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
 
     let last_run = job
         .last_triggered_at
@@ -749,6 +790,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
             <td>
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
                     <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
                 </div>
@@ -774,7 +816,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
 
-    let (cron_ok, cron_text) = describe_cron(&schedule);
+    let (cron_ok, cron_text) = describe_cron_live(&schedule);
 
     let on_schedule = {
         let schedule = schedule.clone();
@@ -1235,6 +1277,105 @@ pub fn toast_stack(props: &ToastStackProps) -> Html {
                 }
             }) }
         </div>
+    }
+}
+
+// ─── Logs page ────────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct LogsPageProps {
+    pub job_id: String,
+    pub handler: String,
+    pub on_back: Callback<()>,
+}
+
+#[function_component(LogsPage)]
+pub fn logs_page(props: &LogsPageProps) -> Html {
+    let content: UseStateHandle<Option<String>> = use_state(|| None);
+    let loading = use_state(|| true);
+    let err: UseStateHandle<Option<String>> = use_state(|| None);
+
+    {
+        let id = props.job_id.clone();
+        let content = content.clone();
+        let loading = loading.clone();
+        let err = err.clone();
+        use_effect_with(id.clone(), move |id| {
+            let id = id.clone();
+            let content = content.clone();
+            let loading = loading.clone();
+            let err = err.clone();
+            spawn_local(async move {
+                match api_get_logs(&id).await {
+                    Ok(text) => {
+                        content.set(Some(text));
+                        err.set(None);
+                    }
+                    Err(e) => err.set(Some(e)),
+                }
+                loading.set(false);
+            });
+        });
+    }
+
+    let on_back = {
+        let cb = props.on_back.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
+    let on_refresh = {
+        let id = props.job_id.clone();
+        let content = content.clone();
+        let loading = loading.clone();
+        let err = err.clone();
+        Callback::from(move |_: MouseEvent| {
+            let id = id.clone();
+            let content = content.clone();
+            let loading = loading.clone();
+            let err = err.clone();
+            loading.set(true);
+            spawn_local(async move {
+                match api_get_logs(&id).await {
+                    Ok(text) => {
+                        content.set(Some(text));
+                        err.set(None);
+                    }
+                    Err(e) => err.set(Some(e)),
+                }
+                loading.set(false);
+            });
+        })
+    };
+
+    let is_loading = *loading;
+    let err_msg = (*err).clone();
+    let log_text = (*content).clone();
+
+    let body = if is_loading {
+        html! { <div class="empty"><div class="spinner"></div></div> }
+    } else if let Some(e) = err_msg {
+        html! { <div class="logs-error">{format!("Error: {e}")}</div> }
+    } else if let Some(text) = log_text {
+        if text.is_empty() {
+            html! { <div class="logs-empty">{"— no logs yet —"}</div> }
+        } else {
+            html! { <pre class="logs-content">{text}</pre> }
+        }
+    } else {
+        html! {}
+    };
+
+    html! {
+        <main class="logs-page">
+            <div class="page-hd">
+                <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
+                <div class="page-title">{format!("LOGS / {}", props.handler)}</div>
+                <button class="btn-refresh" title="Refresh" onclick={on_refresh}>{"↻"}</button>
+            </div>
+            <div class="logs-wrap">
+                {body}
+            </div>
+        </main>
     }
 }
 

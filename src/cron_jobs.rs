@@ -18,6 +18,27 @@ use crate::paths::job_toml_path;
 use crate::storage::{remove_job_dir, write_job};
 use crate::utils::time::now_secs;
 
+/// Whether a cron job is owned by this server or discovered from the OS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CronJobSourceType {
+    /// Created and managed by this server.
+    Managed,
+    /// Read-only entry discovered from the host OS crontab.
+    System,
+}
+
+impl CronJobSourceType {
+    /// Derive from the raw `source` string stored on a [`CronJob`].
+    pub fn from_source(source: &str) -> Self {
+        if source == "managed" {
+            Self::Managed
+        } else {
+            Self::System
+        }
+    }
+}
+
 /// A persisted cron job with scheduling and metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CronJob {
@@ -47,6 +68,8 @@ pub struct CronJobResponse {
     /// The underlying cron job.
     #[serde(flatten)]
     pub job: CronJob,
+    /// Whether the job is owned by this server or the host OS.
+    pub source_type: CronJobSourceType,
     /// `true` if the job's handler appears in the server's handler registry.
     pub handler_registered: bool,
     /// Absolute path to the job's `job.toml` file on disk.
@@ -56,10 +79,12 @@ pub struct CronJobResponse {
 impl CronJobResponse {
     /// Build a response from `job`, checking `handlers` for registration status.
     pub fn from_job(job: CronJob, handlers: &HashSet<String>) -> Self {
+        let source_type = CronJobSourceType::from_source(&job.source);
         let handler_registered = handlers.contains(&job.handler);
         let file_path = job_toml_path(&job.id).to_string_lossy().into_owned();
         Self {
             job,
+            source_type,
             handler_registered,
             file_path,
         }
@@ -97,9 +122,38 @@ pub fn new_registry() -> HandlerRegistry {
     Arc::new(HashSet::new())
 }
 
+/// Normalize `expr` to 5-field OS cron format for consistent storage.
+///
+/// Strips the seconds (field 0) and year (field 6) from any 7-field expression.
+/// `@keyword` schedules and already-5-field expressions are returned unchanged.
+fn normalize_schedule(expr: &str) -> String {
+    let s = expr.trim();
+    if s.starts_with('@') {
+        return s.to_string();
+    }
+    let fields: Vec<&str> = s.split_ascii_whitespace().collect();
+    match fields.len() {
+        7 => fields[1..6].join(" "),
+        _ => s.to_string(),
+    }
+}
+
 /// Parse `expr` as a cron expression, returning `BadRequest` on failure.
+///
+/// Accepts standard 5-field (`min hour dom month dow`) and `@keyword` formats.
+/// The `cron` crate requires 7-field internally; 5-field input is normalized before validation.
 fn validate_cron(expr: &str) -> Result<(), AppError> {
-    Schedule::from_str(expr)
+    let s = expr.trim();
+    let normalized = if s.starts_with('@') {
+        s.to_string()
+    } else {
+        let fields: Vec<&str> = s.split_ascii_whitespace().collect();
+        match fields.len() {
+            5 => format!("0 {} *", fields.join(" ")),
+            _ => s.to_string(),
+        }
+    };
+    Schedule::from_str(&normalized)
         .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
     Ok(())
 }
@@ -177,7 +231,7 @@ pub fn svc_create(
     let now = now_secs();
     let job = CronJob {
         id: Uuid::new_v4().to_string(),
-        schedule: req.schedule,
+        schedule: normalize_schedule(&req.schedule),
         handler: req.handler,
         metadata: req.metadata,
         enabled: req.enabled,
@@ -188,6 +242,9 @@ pub fn svc_create(
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
     store.lock().unwrap().insert(job.id.clone(), job.clone());
+    if let Err(e) = crate::cron_sync::sync_to_crontab(store) {
+        log::warn!("crontab sync after create failed: {e}");
+    }
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
@@ -204,7 +261,7 @@ pub fn svc_update(
     let mut lock = store.lock().unwrap();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(s) = req.schedule {
-        job.schedule = s;
+        job.schedule = normalize_schedule(&s);
     }
     if let Some(h) = req.handler {
         job.handler = h;
@@ -219,6 +276,9 @@ pub fn svc_update(
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
+    if let Err(e) = crate::cron_sync::sync_to_crontab(store) {
+        log::warn!("crontab sync after update failed: {e}");
+    }
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
@@ -230,6 +290,9 @@ pub fn svc_delete(
 ) -> Result<CronJobResponse, AppError> {
     let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
+    if let Err(e) = crate::cron_sync::sync_to_crontab(store) {
+        log::warn!("crontab sync after delete failed: {e}");
+    }
     Ok(CronJobResponse::from_job(job, handlers))
 }
 

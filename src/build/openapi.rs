@@ -246,9 +246,14 @@ pub fn generate(manifest_dir: &str) {
                         "timestamp": { "type": "integer", "format": "int64", "minimum": 0 }
                     }
                 },
+                "CronJobSourceType": {
+                    "type": "string",
+                    "description": "Whether the job is owned by this server or discovered from the host OS",
+                    "enum": ["managed", "system"]
+                },
                 "CronJob": {
                     "type": "object",
-                    "required": ["id", "schedule", "handler", "metadata", "enabled", "source", "created_at", "updated_at"],
+                    "required": ["id", "schedule", "handler", "metadata", "enabled", "source", "source_type", "created_at", "updated_at"],
                     "properties": {
                         "id": { "type": "string" },
                         "schedule": { "type": "string", "example": "@hourly" },
@@ -260,6 +265,7 @@ pub fn generate(manifest_dir: &str) {
                             "description": "\"managed\" for server-owned jobs; \"system:*\" for read-only system cron entries",
                             "example": "managed"
                         },
+                        "source_type": { "$ref": "#/components/schemas/CronJobSourceType" },
                         "created_at": { "type": "integer", "format": "int64", "minimum": 0 },
                         "updated_at": { "type": "integer", "format": "int64", "minimum": 0 }
                     }

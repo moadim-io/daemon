@@ -70,6 +70,9 @@
             "example": "managed",
             "type": "string"
           },
+          "source_type": {
+            "$ref": "#/components/schemas/CronJobSourceType"
+          },
           "updated_at": {
             "format": "int64",
             "minimum": 0,
@@ -83,10 +86,19 @@
           "metadata",
           "enabled",
           "source",
+          "source_type",
           "created_at",
           "updated_at"
         ],
         "type": "object"
+      },
+      "CronJobSourceType": {
+        "description": "Whether the job is owned by this server or discovered from the host OS",
+        "enum": [
+          "managed",
+          "system"
+        ],
+        "type": "string"
       },
       "EchoRequest": {
         "properties": {

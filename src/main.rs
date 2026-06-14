@@ -9,6 +9,8 @@ mod error;
 mod fs_location;
 /// Axum middleware stack.
 mod middlewares;
+/// OpenAPI spec generated from utoipa path decorators.
+mod openapi;
 /// Filesystem path builders for the jobs directory.
 mod paths;
 /// HTTP and MCP route definitions.

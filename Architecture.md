@@ -197,7 +197,7 @@ Invalid or missing `job.toml` → directory silently skipped.
     └── job.log          runtime log (gitignored)
 ```
 
-Cron expression uses 7-field syntax (`sec min hour dom month dow year`) via the `cron` crate.
+Cron expression uses standard 5-field syntax (`min hour dom month dow`). The `cron` crate requires 7 fields internally; `normalize_cron` pads 5-field input to 7 before validation.
 
 ---
 

@@ -31,6 +31,13 @@ fn validate_cron_accepts_valid() {
 }
 
 #[test]
+fn validate_cron_accepts_5_field() {
+    assert!(validate_cron("0 9 * * *").is_ok());
+    assert!(validate_cron("30 9 * * 1-5").is_ok());
+    assert!(validate_cron("*/15 * * * *").is_ok());
+}
+
+#[test]
 fn validate_cron_rejects_invalid() {
     assert!(validate_cron("not a cron").is_err());
     assert!(validate_cron("99 99 99 99 99").is_err());

@@ -1,8 +1,10 @@
 # moadim
 
+> **Loop engineering, on a schedule.** Stop prompting your agents — design the loop that prompts them.
+>
 > **Cron jobs that run while you sleep.** One port. Three interfaces. Zero drift.
 >
-> _Set it. Schedule it. Forget it — moadim never does._
+> _Set the loop. Forget the keyboard. moadim fires the prompt so you don't have to._
 
 Rust server that exposes cron job management over three interfaces simultaneously:
 
@@ -35,6 +37,8 @@ Stop it later with `moadim stop` (or the STOP button in the UI). To run it
 attached to your terminal instead, use `moadim --interactive`.
 
 ## Features
+
+> _Close the loop. Skip the keyboard. Loop engineering, shipped as a daemon._
 
 - Jobs created via REST or MCP are written into your OS crontab automatically
 - Edit the crontab directly and moadim picks up the changes within 30 s
@@ -202,6 +206,8 @@ Starts on `http://127.0.0.1:5784`. On startup the server:
 3. Writes all enabled managed jobs back into the crontab block.
 
 ## MCP usage
+
+> _This is where the loop closes: your agent reads, schedules, and re-fires its own jobs. Loop engineering with a daemon in the middle._
 
 The server exposes an MCP endpoint at `http://localhost:5784/mcp`. Connect any MCP-compatible client.
 

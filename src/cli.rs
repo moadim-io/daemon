@@ -138,8 +138,19 @@ pub fn write_pid_file() -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    ensure_config_gitignore();
     std::fs::write(&path, std::process::id().to_string())?;
     Ok(())
+}
+
+/// Write a `.gitignore` into the config dir so generated runtime files (`*.pid`, `*.log`)
+/// stay out of version control when users track `~/.config/moadim` in a dotfiles repo.
+/// Best-effort: failure to write it is not fatal to starting the daemon.
+fn ensure_config_gitignore() {
+    let gitignore = crate::paths::config_gitignore_path();
+    if !gitignore.exists() {
+        let _ = std::fs::write(&gitignore, "*.pid\n*.log\n");
+    }
 }
 
 /// Remove the pid file. Best-effort: a missing file is not an error.

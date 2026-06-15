@@ -154,3 +154,10 @@ fn workbenches_dir_under_moadim_home() {
     assert!(p.ends_with("workbenches"));
     assert_eq!(p.parent().unwrap(), moadim_home());
 }
+
+#[test]
+fn config_gitignore_path_in_config_dir() {
+    let p = config_gitignore_path();
+    assert_eq!(p.file_name().unwrap().to_str().unwrap(), ".gitignore");
+    assert_eq!(p.parent().unwrap(), config_dir());
+}

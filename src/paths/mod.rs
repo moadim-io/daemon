@@ -137,6 +137,12 @@ pub fn daemon_log_file() -> PathBuf {
     config_dir().join("daemon.log")
 }
 
+/// Returns the path to `~/.config/moadim/.gitignore`, used to keep generated runtime
+/// files (`*.pid`, `*.log`) out of version control when the config dir is tracked.
+pub fn config_gitignore_path() -> PathBuf {
+    config_dir().join(".gitignore")
+}
+
 // ─── Workbenches ─────────────────────────────────────────────────────────────
 
 /// Returns the path to `~/.moadim/`.

@@ -1046,7 +1046,14 @@
                   "string",
                   "null"
                 ],
-                "description": "Human-readable description of the schedule, or `null` if it cannot be parsed."
+                "description": "Human-readable description of the schedule, including the timezone the\ncron expression is interpreted in, or `null` if it cannot be parsed."
+              },
+              "timezone": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "IANA name of the local timezone the schedule is interpreted in (e.g.\n`\"Asia/Jerusalem\"`), or `null` if it cannot be determined. Cron\nexpressions are evaluated in this timezone, **not** UTC."
               }
             }
           }

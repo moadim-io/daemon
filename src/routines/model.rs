@@ -57,8 +57,22 @@ pub struct RoutineResponse {
     pub agent_registered: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
-    /// Human-readable description of the schedule, or `null` if it cannot be parsed.
+    /// Human-readable description of the schedule, including the timezone the
+    /// cron expression is interpreted in, or `null` if it cannot be parsed.
     pub schedule_description: Option<String>,
+    /// IANA name of the local timezone the schedule is interpreted in (e.g.
+    /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
+    /// expressions are evaluated in this timezone, **not** UTC.
+    pub timezone: Option<String>,
+}
+
+/// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
+///
+/// Managed schedules run via the local `crontab`, which interprets cron
+/// expressions in this timezone — not UTC. Returns `None` if it can't be
+/// determined.
+pub fn local_timezone() -> Option<String> {
+    iana_time_zone::get_timezone().ok()
 }
 
 impl RoutineResponse {
@@ -68,12 +82,20 @@ impl RoutineResponse {
         let file_path = routine_toml_path(&slugify(&routine.title))
             .to_string_lossy()
             .into_owned();
-        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|c| c.describe());
+        let timezone = local_timezone();
+        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|c| {
+            let desc = c.describe();
+            match &timezone {
+                Some(tz) => format!("{desc} ({tz})"),
+                None => desc,
+            }
+        });
         Self {
             routine,
             agent_registered,
             file_path,
             schedule_description,
+            timezone,
         }
     }
 }

@@ -231,7 +231,9 @@ impl MoadimMcp {
     }
 
     /// Validate and persist a new routine, returning the created record.
-    #[tool(description = "Create a new routine (agent-driven job)")]
+    #[tool(
+        description = "Create a new routine (agent-driven job). The `schedule` cron expression is interpreted in the local system timezone of the host running the daemon, NOT UTC. The response includes a `timezone` field and a `schedule_description` annotated with that timezone — verify them to confirm the firing time."
+    )]
     fn create_routine(
         &self,
         Parameters(req): Parameters<CreateRoutineRequest>,
@@ -243,7 +245,9 @@ impl MoadimMcp {
     }
 
     /// Apply provided fields to an existing routine, returning the updated record.
-    #[tool(description = "Update fields of an existing routine")]
+    #[tool(
+        description = "Update fields of an existing routine. The `schedule` cron expression is interpreted in the local system timezone of the host running the daemon, NOT UTC. The response includes a `timezone` field and a `schedule_description` annotated with that timezone — verify them to confirm the firing time."
+    )]
     fn update_routine(
         &self,
         Parameters(input): Parameters<UpdateRoutineInput>,

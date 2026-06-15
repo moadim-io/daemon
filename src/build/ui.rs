@@ -13,7 +13,6 @@ pub fn build(manifest_dir: &str) {
     // is part of the `moadim` package and is included in the tarball.
     let prebuilt = Path::new(manifest_dir).join("prebuilt.html");
     let ui_dir = Path::new(manifest_dir).join("ui");
-    let should_build = std::env::var("MOADIM_BUILD_UI").is_ok_and(|v| v == "1" || v == "true");
 
     if ui_dir.exists() {
         emit_rerun_triggers(&ui_dir);

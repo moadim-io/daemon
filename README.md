@@ -1,5 +1,9 @@
 # moadim
 
+> **Cron jobs that run while you sleep.** One port. Three interfaces. Zero drift.
+>
+> _Set it. Schedule it. Forget it — moadim never does._
+
 Rust server that exposes cron job management over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/ui`) — browser dashboard for managing jobs
@@ -62,6 +66,8 @@ attached to your terminal instead, use `moadim --interactive`.
 ```
 
 ## Crontab sync
+
+> _Two-way sync, zero surprises. Your crontab, your rules — we just keep them honest._
 
 Moadim owns a single block inside your crontab. Everything outside that block is untouched.
 

@@ -1,5 +1,9 @@
 # Moadim Architecture
 
+> _One port to rule them all. Three protocols, one source of truth._
+>
+> _No moadim in the loop when it counts — the OS does the heavy lifting._
+
 Moadim is a Rust daemon that manages cron jobs and exposes them over two protocols simultaneously — REST and MCP — on a single port (`127.0.0.1:5784`). It also serves an embedded browser UI compiled from a Yew/WASM workspace member.
 
 ---

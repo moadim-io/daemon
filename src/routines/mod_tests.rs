@@ -222,6 +222,23 @@ fn routine_response_schedule_description_none_for_reboot() {
 }
 
 #[test]
+fn routine_response_schedule_description_includes_timezone() {
+    let resp = RoutineResponse::from_routine(make_routine("x"));
+    // When the local timezone resolves, the description is suffixed with it
+    // (e.g. "... (Asia/Jerusalem)") and the dedicated field is populated.
+    if let Some(tz) = &resp.timezone {
+        let desc = resp
+            .schedule_description
+            .as_ref()
+            .expect("parseable schedule should have a description");
+        assert!(
+            desc.ends_with(&format!("({tz})")),
+            "schedule_description {desc:?} should end with the timezone ({tz})"
+        );
+    }
+}
+
+#[test]
 fn svc_get_not_found() {
     assert!(svc_get(&new_store(), "missing").is_err());
 }

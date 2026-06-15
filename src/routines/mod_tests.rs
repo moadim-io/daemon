@@ -209,7 +209,8 @@ fn available_agents_falls_back_to_builtins_when_missing() {
 fn routine_response_schedule_description() {
     let resp = RoutineResponse::from_routine(make_routine("x"));
     assert!(resp.schedule_description.is_some());
-    assert!(resp.file_path.contains("x"));
+    // file_path is based on the slugified title ("My Routine" → "my-routine")
+    assert!(resp.file_path.contains("my-routine"));
 }
 
 #[test]
@@ -274,8 +275,9 @@ fn svc_create_update_delete_lifecycle() {
     )
     .unwrap();
     let id = created.routine.id.clone();
-    assert!(crate::paths::routine_toml_path(&id).exists());
-    assert!(crate::paths::routine_prompt_path(&id).exists());
+    // folder is slug of the title, not the UUID
+    assert!(crate::paths::routine_toml_path("cov-routine").exists());
+    assert!(crate::paths::routine_prompt_path("cov-routine").exists());
 
     let updated = svc_update(
         &store,
@@ -299,7 +301,8 @@ fn svc_create_update_delete_lifecycle() {
     assert!(!updated.routine.enabled);
 
     svc_delete(&store, &id).unwrap();
-    assert!(!crate::paths::routine_dir(&id).exists());
+    // after rename to "Renamed" and delete, the slug dir is gone
+    assert!(!crate::paths::routine_dir("renamed").exists());
 }
 
 #[test]
@@ -352,7 +355,8 @@ fn svc_trigger_records_time_without_agent_config() {
     store.lock().unwrap().insert("trig-id".into(), r);
     let triggered = svc_trigger(&store, "trig-id").unwrap();
     assert!(triggered.last_triggered_at.is_some());
-    crate::routine_storage::remove_routine_dir("trig-id").unwrap();
+    // folder is slug of "My Routine"
+    crate::routine_storage::remove_routine_dir("my-routine").unwrap();
 }
 
 #[test]
@@ -382,7 +386,8 @@ fn svc_trigger_with_agent_config_spawns() {
     // Let the fire-and-forget shell create its workbench, then clean everything up.
     std::thread::sleep(std::time::Duration::from_millis(150));
     std::fs::remove_file(&cfg).unwrap();
-    crate::routine_storage::remove_routine_dir("trig-cfg").unwrap();
+    // folder is slug of title "Trigger Cov Title ZZZ"
+    crate::routine_storage::remove_routine_dir("trigger-cov-title-zzz").unwrap();
     let prefix = format!("{}-", slugify(title));
     if let Ok(entries) = std::fs::read_dir(crate::paths::workbenches_dir()) {
         for e in entries.flatten() {

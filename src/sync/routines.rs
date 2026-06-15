@@ -5,7 +5,7 @@
 //! ```text
 //! # BEGIN MOADIM-ROUTINES
 //! # Managed by moadim — routines (agent tmux sessions)
-//! * * * * * /bin/sh '/…/routines/<id>/run.sh' # moadim-routine:<id>
+//! * * * * * /bin/sh '/…/routines/<slug>/run.sh' # moadim-routine:<id>
 //! # END MOADIM-ROUTINES
 //! ```
 //!
@@ -19,7 +19,8 @@ use std::os::unix::fs::PermissionsExt;
 
 use crate::paths::routine_script_path;
 use crate::routines::{
-    build_routine_command, load_agent_command, shell_quote, AgentCommand, Routine, RoutineStore,
+    build_routine_command, load_agent_command, shell_quote, slugify, AgentCommand, Routine,
+    RoutineStore,
 };
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 
@@ -35,7 +36,7 @@ const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux session
 /// The script holds the full self-contained command from [`build_routine_command`], so the crontab
 /// line that calls it stays short regardless of how long the command is.
 fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
-    let path = routine_script_path(&routine.id);
+    let path = routine_script_path(&slugify(&routine.title));
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

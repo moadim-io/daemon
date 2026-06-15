@@ -8,11 +8,13 @@ use serde::{Deserialize, Serialize};
 use crate::paths::{
     routine_dir, routine_gitignore_path, routine_prompt_path, routine_toml_path, routines_dir,
 };
-use crate::routines::{compose_prompt, Repository, Routine, RoutineStore};
+use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 
 /// TOML representation of a routine on disk.
 #[derive(Debug, Deserialize, Serialize)]
 struct RoutineToml {
+    /// UUID that uniquely identifies this routine (stable across renames).
+    id: Option<String>,
     /// Cron expression.
     schedule: Option<String>,
     /// Human name.
@@ -40,13 +42,18 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Load a routine from `{routines_dir}/{id}/routine.toml`.
-fn load_routine_from_dir(id: &str) -> Option<Routine> {
-    let t = read_routine_toml(&routine_toml_path(id))?;
+/// Load a routine from `{routines_dir}/{dir_name}/routine.toml`.
+///
+/// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
+/// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
+fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
+    let t = read_routine_toml(&routine_toml_path(dir_name))?;
+    let title = t.title?;
+    let id = t.id.unwrap_or_else(|| dir_name.to_string());
     Some(Routine {
-        id: id.to_string(),
+        id,
         schedule: t.schedule?,
-        title: t.title?,
+        title,
         agent: t.agent?,
         prompt: t.prompt.unwrap_or_default(),
         repositories: t.repositories,
@@ -59,16 +66,21 @@ fn load_routine_from_dir(id: &str) -> Option<Routine> {
 }
 
 /// Write `routine` to disk: `routine.toml`, the composed `prompt.md`, and `.gitignore` if absent.
+///
+/// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
+/// stored inside `routine.toml` so it survives a rename.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
-    let dir = routine_dir(&routine.id);
+    let slug = slugify(&routine.title);
+    let dir = routine_dir(&slug);
     std::fs::create_dir_all(&dir)?;
 
-    let gitignore = routine_gitignore_path(&routine.id);
+    let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {
         std::fs::write(&gitignore, "*.local.*\n*.log\n")?;
     }
 
     let toml_routine = RoutineToml {
+        id: Some(routine.id.clone()),
         schedule: Some(routine.schedule.clone()),
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
@@ -80,14 +92,14 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         last_triggered_at: routine.last_triggered_at,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
-    std::fs::write(routine_toml_path(&routine.id), text)?;
-    std::fs::write(routine_prompt_path(&routine.id), compose_prompt(routine))?;
+    std::fs::write(routine_toml_path(&slug), text)?;
+    std::fs::write(routine_prompt_path(&slug), compose_prompt(routine))?;
     Ok(())
 }
 
-/// Remove the directory for routine `id`, doing nothing if it does not exist.
-pub fn remove_routine_dir(id: &str) -> std::io::Result<()> {
-    let dir = routine_dir(id);
+/// Remove the directory for a routine identified by its slug, doing nothing if it does not exist.
+pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
+    let dir = routine_dir(slug);
     if dir.exists() {
         std::fs::remove_dir_all(dir)?;
     }
@@ -130,9 +142,9 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                let id = entry.file_name().to_string_lossy().to_string();
-                if let Some(routine) = load_routine_from_dir(&id) {
-                    routines.insert(id, routine);
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                if let Some(routine) = load_routine_from_dir(&dir_name) {
+                    routines.insert(routine.id.clone(), routine);
                 }
             }
         }

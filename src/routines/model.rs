@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::paths::{agent_toml_path, routine_toml_path};
+use super::command::slugify;
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -64,7 +65,7 @@ impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
         let agent_registered = agent_toml_path(&routine.agent).exists();
-        let file_path = routine_toml_path(&routine.id)
+        let file_path = routine_toml_path(&slugify(&routine.title))
             .to_string_lossy()
             .into_owned();
         let schedule_description = routine.schedule.parse::<Cron>().ok().map(|c| c.describe());

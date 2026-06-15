@@ -43,6 +43,15 @@ pub fn svc_create(
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    let slug = slugify(&req.title);
+    {
+        let lock = store.lock().unwrap();
+        if lock.values().any(|r| slugify(&r.title) == slug) {
+            return Err(AppError::Conflict(format!(
+                "a routine with the name \"{slug}\" already exists"
+            )));
+        }
+    }
     let now = now_secs();
     let routine = Routine {
         id: Uuid::new_v4().to_string(),
@@ -78,7 +87,17 @@ pub fn svc_update(
         validate_cron(sched)?;
     }
     let mut lock = store.lock().unwrap();
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
+    // Check slug conflict before mutating.
+    if let Some(ref new_title) = req.title {
+        let new_slug = slugify(new_title);
+        if new_slug != old_slug && lock.values().any(|r| r.id != id && slugify(&r.title) == new_slug) {
+            return Err(AppError::Conflict(format!(
+                "a routine with the name \"{new_slug}\" already exists"
+            )));
+        }
+    }
+    let routine = lock.get_mut(id).unwrap();
     if let Some(s) = req.schedule {
         routine.schedule = normalize_schedule(&s);
     }
@@ -100,7 +119,11 @@ pub fn svc_update(
     routine.updated_at = now_secs();
     let routine = routine.clone();
     drop(lock);
+    let new_slug = slugify(&routine.title);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
+    if new_slug != old_slug {
+        remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
+    }
     if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine update failed: {e}");
     }
@@ -110,7 +133,7 @@ pub fn svc_update(
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
-    remove_routine_dir(id).map_err(|_| AppError::Internal)?;
+    remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
     if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {e}");
     }

@@ -760,6 +760,15 @@
           "title": {
             "type": "string",
             "description": "Human name for the routine."
+          },
+          "ttl_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Workbench retention in seconds for finished runs; `None` uses [`DEFAULT_TTL_SECS`].",
+            "minimum": 0
           }
         }
       },
@@ -1012,6 +1021,15 @@
             "type": "string",
             "description": "Human name; slugified to name the workbench and tmux session."
           },
+          "ttl_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\n`None` falls back to [`DEFAULT_TTL_SECS`]. Sessions still running are never reaped.",
+            "minimum": 0
+          },
           "updated_at": {
             "type": "integer",
             "format": "int64",
@@ -1151,6 +1169,15 @@
               "null"
             ],
             "description": "New title, or `None` to keep the existing value."
+          },
+          "ttl_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "New workbench TTL (seconds), or `None` to keep the existing value.",
+            "minimum": 0
           }
         }
       }

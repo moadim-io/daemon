@@ -6,5 +6,6 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 
 - Add a way to see all the routines in the UI as a calendar view
 - Add spell check for pre commit
-- Add TTL for triggered routines, so they don't stay in the system forever
 - Add validation dialog before shutdown
+- Surface and edit a routine's workbench TTL (`ttl_secs`) in the UI
+- Add an endpoint/CLI to trigger workbench cleanup on demand (not only the hourly sweep)

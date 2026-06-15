@@ -193,6 +193,21 @@ pub async fn run_with_listener_until(
         log::warn!("could not write openapi spec: {e}");
     }
     let signal: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
+    // Periodically reap finished, expired run workbenches so triggered routines do not accumulate
+    // forever (see `routines::cleanup`). The first tick fires immediately, sweeping leftovers from
+    // before this process started.
+    let cleanup_store = routines.clone();
+    let cleanup_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::routines::CLEANUP_INTERVAL);
+        loop {
+            tick.tick().await;
+            let store = cleanup_store.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                crate::routines::cleanup_expired_workbenches(&store)
+            })
+            .await;
+        }
+    });
     let app = build_app_with_shutdown(store, routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
@@ -206,6 +221,7 @@ pub async fn run_with_listener_until(
     axum::serve(listener, app)
         .with_graceful_shutdown(combined)
         .await?;
+    cleanup_task.abort();
     Ok(())
 }
 

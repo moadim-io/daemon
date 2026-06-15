@@ -65,6 +65,7 @@ pub fn svc_create(
         created_at: now,
         updated_at: now,
         last_triggered_at: None,
+        ttl_secs: req.ttl_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -119,6 +120,9 @@ pub fn svc_update(
     }
     if let Some(e) = req.enabled {
         routine.enabled = e;
+    }
+    if let Some(ttl) = req.ttl_secs {
+        routine.ttl_secs = Some(ttl);
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();

@@ -18,6 +18,7 @@ fn make_routine(id: &str) -> Routine {
         created_at: 0,
         updated_at: 0,
         last_triggered_at: None,
+        ttl_secs: None,
     }
 }
 
@@ -272,6 +273,7 @@ fn svc_create_invalid_cron_rejected() {
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
+        ttl_secs: None,
     };
     assert!(svc_create(&store, req).is_err());
 }
@@ -288,6 +290,7 @@ fn svc_create_update_delete_lifecycle() {
             prompt: "p".into(),
             repositories: vec![],
             enabled: true,
+            ttl_secs: None,
         },
     )
     .unwrap();
@@ -309,6 +312,7 @@ fn svc_create_update_delete_lifecycle() {
                 branch: None,
             }]),
             enabled: Some(false),
+            ttl_secs: None,
         },
     )
     .unwrap();
@@ -331,6 +335,7 @@ fn svc_update_not_found() {
         prompt: None,
         repositories: None,
         enabled: None,
+        ttl_secs: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -349,6 +354,7 @@ fn svc_update_invalid_cron_rejected() {
         prompt: None,
         repositories: None,
         enabled: None,
+        ttl_secs: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

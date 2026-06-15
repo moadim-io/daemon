@@ -19,6 +19,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         created_at: 5,
         updated_at: 6,
         last_triggered_at: None,
+        ttl_secs: None,
     }
 }
 

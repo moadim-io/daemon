@@ -34,6 +34,9 @@ struct RoutineToml {
     updated_at: Option<u64>,
     /// Unix timestamp of last manual trigger.
     last_triggered_at: Option<u64>,
+    /// Workbench retention in seconds for finished runs; absent means the daemon default.
+    #[serde(default)]
+    ttl_secs: Option<u64>,
 }
 
 /// Parse a routine TOML file at `path`, returning `None` on any error.
@@ -62,6 +65,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         created_at: t.created_at.unwrap_or(0),
         updated_at: t.updated_at.unwrap_or(0),
         last_triggered_at: t.last_triggered_at,
+        ttl_secs: t.ttl_secs,
     })
 }
 
@@ -90,6 +94,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         created_at: Some(routine.created_at),
         updated_at: Some(routine.updated_at),
         last_triggered_at: routine.last_triggered_at,
+        ttl_secs: routine.ttl_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     std::fs::write(routine_toml_path(&slug), text)?;

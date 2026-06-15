@@ -720,7 +720,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression for the new job."
+            "description": "Cron expression for the new job. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
           }
         }
       },
@@ -755,7 +755,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression for the new routine."
+            "description": "Cron expression for the new routine. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
           },
           "title": {
             "type": "string",
@@ -809,7 +809,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression defining when the job runs."
+            "description": "Cron expression defining when the job runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
           },
           "source": {
             "type": "string",
@@ -1002,7 +1002,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression defining when the routine runs."
+            "description": "Cron expression defining when the routine runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
           },
           "source": {
             "type": "string",
@@ -1092,7 +1092,7 @@
               "string",
               "null"
             ],
-            "description": "New cron expression, or `None` to keep the existing value."
+            "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
           }
         }
       },
@@ -1136,7 +1136,7 @@
               "string",
               "null"
             ],
-            "description": "New cron expression, or `None` to keep the existing value."
+            "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
           },
           "title": {
             "type": [

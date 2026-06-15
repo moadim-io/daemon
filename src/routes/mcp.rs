@@ -74,6 +74,8 @@ struct UpdateRoutineInput {
     repositories: Option<Vec<crate::routines::Repository>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
+    /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
+    ttl_secs: Option<u64>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -265,6 +267,7 @@ impl MoadimMcp {
             prompt: input.prompt,
             repositories: input.repositories,
             enabled: input.enabled,
+            ttl_secs: input.ttl_secs,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),

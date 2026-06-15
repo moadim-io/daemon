@@ -285,6 +285,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
+        ttl_secs: None,
     }
 }
 
@@ -353,6 +354,7 @@ fn create_get_update_trigger_delete_routine_success() {
             prompt: None,
             repositories: None,
             enabled: Some(false),
+            ttl_secs: None,
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
@@ -383,6 +385,7 @@ fn update_routine_tool_not_found_is_error() {
             prompt: None,
             repositories: None,
             enabled: None,
+            ttl_secs: None,
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));

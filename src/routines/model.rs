@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::paths::{agent_toml_path, routine_toml_path};
 use super::command::slugify;
+use crate::paths::{agent_toml_path, routine_toml_path};
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -46,6 +46,20 @@ pub struct Routine {
     pub updated_at: u64,
     /// Unix timestamp (seconds) when the routine was last manually triggered, if ever.
     pub last_triggered_at: Option<u64>,
+    /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
+    /// `None` falls back to [`DEFAULT_TTL_SECS`]. Sessions still running are never reaped.
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
+}
+
+/// Default retention for a finished run's workbench when a routine sets no explicit `ttl_secs`.
+pub const DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
+
+impl Routine {
+    /// Retention for this routine's finished workbenches: its `ttl_secs` or [`DEFAULT_TTL_SECS`].
+    pub fn effective_ttl_secs(&self) -> u64 {
+        self.ttl_secs.unwrap_or(DEFAULT_TTL_SECS)
+    }
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -111,6 +125,9 @@ pub struct CreateRoutineRequest {
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
+    /// Workbench retention in seconds for finished runs; `None` uses [`DEFAULT_TTL_SECS`].
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -129,4 +146,6 @@ pub struct UpdateRoutineRequest {
     pub repositories: Option<Vec<Repository>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
+    /// New workbench TTL (seconds), or `None` to keep the existing value.
+    pub ttl_secs: Option<u64>,
 }

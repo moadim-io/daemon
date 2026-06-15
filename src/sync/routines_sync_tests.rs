@@ -16,6 +16,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         created_at: 0,
         updated_at: 0,
         last_triggered_at: None,
+        ttl_secs: None,
     }
 }
 

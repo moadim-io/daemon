@@ -10,15 +10,18 @@
 //! - [`agents`] — the agent registry and built-in default agent configs.
 //! - [`command`] — prompt composition and the single-line launch command builder.
 //! - [`service`] — store-mutating service functions (list/get/create/update/delete/trigger/logs).
+//! - [`cleanup`] — auto-removal of finished, expired run workbenches (per-routine TTL).
 //! - [`handlers`] — the Axum HTTP handlers.
 
 mod agents;
+mod cleanup;
 mod command;
 mod handlers;
 mod model;
 mod service;
 
 pub use agents::*;
+pub use cleanup::*;
 pub use handlers::*;
 pub use model::*;
 pub use service::*;

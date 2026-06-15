@@ -89,7 +89,7 @@ Moadim owns a single block inside your crontab. Everything outside that block is
 
 **Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot`) are also accepted.
 
-**Timezone:** schedules run through the OS crontab, so cron times are interpreted in the **host's local system timezone**, not UTC. When asking an agent to schedule something "at 11:00", it must use local time directly — do not apply a UTC offset.
+**Timezone:** because jobs run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
 
 ## Handlers
 

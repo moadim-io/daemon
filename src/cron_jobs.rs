@@ -45,8 +45,8 @@ impl CronJobSourceType {
 pub struct CronJob {
     /// Unique identifier (UUID v4).
     pub id: String,
-    /// Cron expression defining when the job runs. Times are interpreted in the
-    /// host's local system timezone, not UTC.
+    /// Cron expression defining when the job runs, evaluated in the host's local
+    /// system timezone (the OS crontab timezone), not UTC.
     pub schedule: String,
     /// Identifier for the handler that processes the job.
     pub handler: String,
@@ -179,8 +179,8 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
 /// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
-    /// Cron expression for the new job. Times are interpreted in the host's
-    /// local system timezone, not UTC.
+    /// Cron expression for the new job. Evaluated in the host's local system
+    /// timezone (the OS crontab timezone), not UTC.
     pub schedule: String,
     /// Handler identifier to invoke when the schedule fires.
     pub handler: String,
@@ -201,8 +201,8 @@ fn bool_true() -> bool {
 /// Request body for partially updating an existing cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
-    /// New cron expression, or `None` to keep the existing value. Times are
-    /// interpreted in the host's local system timezone, not UTC.
+    /// New cron expression, or `None` to keep the existing value. Evaluated in the
+    /// host's local system timezone (the OS crontab timezone), not UTC.
     pub schedule: Option<String>,
     /// New handler identifier, or `None` to keep the existing value.
     pub handler: Option<String>,

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::command::slugify;
 use crate::paths::{agent_toml_path, routine_toml_path};
+use super::command::slugify;
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -24,8 +24,8 @@ pub struct Repository {
 pub struct Routine {
     /// Unique identifier (UUID v4).
     pub id: String,
-    /// Cron expression defining when the routine runs. Times are interpreted in
-    /// the host's local system timezone, not UTC.
+    /// Cron expression defining when the routine runs, evaluated in the host's local
+    /// system timezone (the OS crontab timezone), not UTC.
     pub schedule: String,
     /// Human name; slugified to name the workbench and tmux session.
     pub title: String,
@@ -96,8 +96,8 @@ pub(crate) fn bool_true() -> bool {
 /// Request body for creating a new routine.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRoutineRequest {
-    /// Cron expression for the new routine. Times are interpreted in the host's
-    /// local system timezone, not UTC.
+    /// Cron expression for the new routine. Evaluated in the host's local system
+    /// timezone (the OS crontab timezone), not UTC.
     pub schedule: String,
     /// Human name for the routine.
     pub title: String,
@@ -116,8 +116,8 @@ pub struct CreateRoutineRequest {
 /// Request body for partially updating an existing routine.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRoutineRequest {
-    /// New cron expression, or `None` to keep the existing value. Times are
-    /// interpreted in the host's local system timezone, not UTC.
+    /// New cron expression, or `None` to keep the existing value. Evaluated in the
+    /// host's local system timezone (the OS crontab timezone), not UTC.
     pub schedule: Option<String>,
     /// New title, or `None` to keep the existing value.
     pub title: Option<String>,

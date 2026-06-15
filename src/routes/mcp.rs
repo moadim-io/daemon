@@ -44,8 +44,8 @@ struct IdInput {
 struct UpdateInput {
     /// UUID of the cron job to update.
     id: String,
-    /// New cron expression, or `None` to keep the existing value. Times are
-    /// interpreted in the host's local system timezone, not UTC.
+    /// New cron expression, or `None` to keep the existing value. Evaluated in the
+    /// host's local system timezone (the OS crontab timezone), not UTC.
     schedule: Option<String>,
     /// New handler identifier, or `None` to keep the existing value.
     handler: Option<String>,
@@ -61,8 +61,8 @@ struct UpdateInput {
 struct UpdateRoutineInput {
     /// UUID of the routine to update.
     id: String,
-    /// New cron expression, or `None` to keep the existing value. Times are
-    /// interpreted in the host's local system timezone, not UTC.
+    /// New cron expression, or `None` to keep the existing value. Evaluated in the
+    /// host's local system timezone (the OS crontab timezone), not UTC.
     schedule: Option<String>,
     /// New title, or `None` to keep the existing value.
     title: Option<String>,
@@ -154,7 +154,7 @@ impl MoadimMcp {
 
     /// Validate and persist a new cron job, returning the created record.
     #[tool(
-        description = "Create a new cron job. The schedule cron expression is interpreted in the host's local system timezone, not UTC."
+        description = "Create a new cron job. The schedule cron expression is evaluated in the host's local system timezone (the OS crontab timezone), not UTC."
     )]
     fn create_cron_job(
         &self,
@@ -170,7 +170,7 @@ impl MoadimMcp {
 
     /// Apply provided fields to an existing cron job, returning the updated record.
     #[tool(
-        description = "Update fields of an existing cron job. The schedule cron expression is interpreted in the host's local system timezone, not UTC."
+        description = "Update fields of an existing cron job. A new schedule cron expression is evaluated in the host's local system timezone (the OS crontab timezone), not UTC."
     )]
     fn update_cron_job(
         &self,
@@ -238,7 +238,7 @@ impl MoadimMcp {
 
     /// Validate and persist a new routine, returning the created record.
     #[tool(
-        description = "Create a new routine (agent-driven job). The schedule cron expression is interpreted in the host's local system timezone, not UTC."
+        description = "Create a new routine (agent-driven job). The schedule cron expression is evaluated in the host's local system timezone (the OS crontab timezone), not UTC."
     )]
     fn create_routine(
         &self,
@@ -252,7 +252,7 @@ impl MoadimMcp {
 
     /// Apply provided fields to an existing routine, returning the updated record.
     #[tool(
-        description = "Update fields of an existing routine. The schedule cron expression is interpreted in the host's local system timezone, not UTC."
+        description = "Update fields of an existing routine. A new schedule cron expression is evaluated in the host's local system timezone (the OS crontab timezone), not UTC."
     )]
     fn update_routine(
         &self,

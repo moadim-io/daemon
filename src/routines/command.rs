@@ -29,7 +29,7 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
-/// Compose the `prompt.txt` body: a repositories-as-context preamble followed by the prompt.
+/// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
 pub(crate) fn compose_prompt(routine: &Routine) -> String {
     let mut s = String::from("# Workbench\n");
     s.push_str(
@@ -49,12 +49,12 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
 
 /// Substitute `{workbench}`, `{prompt_file}`, and `{prompt}` placeholders in `s`.
 ///
-/// `{prompt}` expands to a shell command substitution that reads `prompt.txt` from the agent's
+/// `{prompt}` expands to a shell command substitution that reads `prompt.md` from the agent's
 /// cwd (the workbench), so the full prompt is passed as a single argument to the agent process.
 pub(crate) fn substitute(s: &str, workbench: &str, prompt_file: &str) -> String {
     s.replace("{workbench}", workbench)
         .replace("{prompt_file}", prompt_file)
-        .replace("{prompt}", r#""$(cat prompt.txt)""#)
+        .replace("{prompt}", r#""$(cat prompt.md)""#)
 }
 
 /// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
@@ -115,7 +115,7 @@ pub(crate) fn shell_quote(s: &str) -> String {
 
 /// Build the single-line shell command that creates a workbench and launches the agent in tmux.
 ///
-/// The agent's cwd is the workbench (via `tmux -c`), so `{prompt_file}` resolves to `prompt.txt`,
+/// The agent's cwd is the workbench (via `tmux -c`), so `{prompt_file}` resolves to `prompt.md`,
 /// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
@@ -125,7 +125,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         .to_string_lossy()
         .into_owned();
 
-    let prompt_file_ref = "prompt.txt";
+    let prompt_file_ref = "prompt.md";
     let workbench_ref = ".";
 
     let mut invocation = vec![agent.command.clone()];
@@ -144,7 +144,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
-        format!(r#"cp {} "$WB/prompt.txt""#, shell_quote(&prompt_path)),
+        format!(r#"cp {} "$WB/prompt.md""#, shell_quote(&prompt_path)),
     ];
     if let Some(setup) = &agent.setup {
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.

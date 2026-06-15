@@ -58,12 +58,12 @@ fn compose_prompt_repo_without_branch() {
 #[test]
 fn substitute_replaces_placeholders() {
     assert_eq!(
-        substitute("read {prompt_file} in {workbench}", ".", "prompt.txt"),
-        "read prompt.txt in ."
+        substitute("read {prompt_file} in {workbench}", ".", "prompt.md"),
+        "read prompt.md in ."
     );
     assert_eq!(
-        substitute("claude {prompt}", ".", "prompt.txt"),
-        r#"claude "$(cat prompt.txt)""#
+        substitute("claude {prompt}", ".", "prompt.md"),
+        r#"claude "$(cat prompt.md)""#
     );
 }
 
@@ -95,7 +95,7 @@ fn build_routine_command_contains_expected_pieces() {
         cmd.len()
     );
     // prompt passed as a process argument via command substitution, no send-keys
-    assert!(cmd.contains(r#""$(cat prompt.txt)""#));
+    assert!(cmd.contains(r#""$(cat prompt.md)""#));
     assert!(!cmd.contains("send-keys"));
     assert!(!cmd.contains("capture-pane"));
     assert!(cmd.contains("tmux pipe-pane"));
@@ -113,7 +113,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
         setup: None,
     };
     let cmd = build_routine_command(&r, &agent);
-    assert!(cmd.contains("'codex exec prompt.txt'"));
+    assert!(cmd.contains("'codex exec prompt.md'"));
 }
 
 #[test]

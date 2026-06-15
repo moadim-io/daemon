@@ -106,7 +106,7 @@ fn routine_toml_path_filename() {
 #[test]
 fn routine_prompt_path_filename() {
     let p = routine_prompt_path("abc");
-    assert_eq!(p.file_name().unwrap().to_str().unwrap(), "prompt.txt");
+    assert_eq!(p.file_name().unwrap().to_str().unwrap(), "prompt.md");
     assert!(p.to_string_lossy().contains("abc"));
 }
 

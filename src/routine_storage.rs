@@ -1,4 +1,4 @@
-//! TOML-backed persistence for routines, plus the composed `prompt.txt` sidecar file.
+//! TOML-backed persistence for routines, plus the composed `prompt.md` sidecar file.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -58,7 +58,7 @@ fn load_routine_from_dir(id: &str) -> Option<Routine> {
     })
 }
 
-/// Write `routine` to disk: `routine.toml`, the composed `prompt.txt`, and `.gitignore` if absent.
+/// Write `routine` to disk: `routine.toml`, the composed `prompt.md`, and `.gitignore` if absent.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let dir = routine_dir(&routine.id);
     std::fs::create_dir_all(&dir)?;
@@ -92,6 +92,31 @@ pub fn remove_routine_dir(id: &str) -> std::io::Result<()> {
         std::fs::remove_dir_all(dir)?;
     }
     Ok(())
+}
+
+/// Rename any `prompt.txt` sidecar to `prompt.md` in every routine directory.
+///
+/// Call once at startup before syncing the crontab. Routines written by older daemon versions have
+/// `prompt.txt` on disk; the new `run.sh` references `prompt.md`, so the first cron trigger would
+/// fail the `cp` step if this migration has not run.
+pub fn migrate_prompt_files() {
+    let dir = routines_dir();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let old = entry.path().join("prompt.txt");
+        let new = entry.path().join("prompt.md");
+        if old.exists() && !new.exists() {
+            if let Err(e) = std::fs::rename(&old, &new) {
+                log::warn!("migrate_prompt_files: failed to rename {:?}: {e}", old);
+            }
+        }
+    }
 }
 
 /// Scan `~/.config/moadim/routines/` and load all valid routines into a new store.

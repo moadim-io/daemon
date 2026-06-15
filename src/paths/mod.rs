@@ -78,9 +78,9 @@ pub fn routine_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.toml")
 }
 
-/// Returns the path to `{routines_dir}/{id}/prompt.txt`.
+/// Returns the path to `{routines_dir}/{id}/prompt.md`.
 pub fn routine_prompt_path(id: &str) -> PathBuf {
-    routine_dir(id).join("prompt.txt")
+    routine_dir(id).join("prompt.md")
 }
 
 /// Returns the path to `{routines_dir}/{id}/.gitignore`.

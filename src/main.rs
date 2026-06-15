@@ -49,6 +49,9 @@ async fn run_server() -> anyhow::Result<()> {
     routines::ensure_default_agents();
     let store = storage::load_store();
     let routines = routine_storage::load_store();
+    // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the
+    // first cron trigger after upgrade would fail on the cp step.
+    routine_storage::migrate_prompt_files();
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
     // create/update/delete, leaving scheduled routines silently un-fired.

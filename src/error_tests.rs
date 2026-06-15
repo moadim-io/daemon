@@ -24,6 +24,14 @@ fn display_not_found() {
 }
 
 #[test]
+fn display_conflict() {
+    assert_eq!(
+        AppError::Conflict("duplicate".into()).to_string(),
+        "conflict: duplicate"
+    );
+}
+
+#[test]
 fn into_response_internal_is_500() {
     assert_eq!(
         AppError::Internal.into_response().status(),
@@ -44,5 +52,13 @@ fn into_response_not_found_is_404() {
     assert_eq!(
         AppError::NotFound.into_response().status(),
         StatusCode::NOT_FOUND
+    );
+}
+
+#[test]
+fn into_response_conflict_is_409() {
+    assert_eq!(
+        AppError::Conflict("x".into()).into_response().status(),
+        StatusCode::CONFLICT
     );
 }

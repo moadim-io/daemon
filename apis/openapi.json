@@ -720,7 +720,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression for the new job."
+            "description": "Cron expression for the new job. Times are interpreted in the host's\nlocal system timezone, not UTC."
           }
         }
       },
@@ -755,7 +755,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression for the new routine."
+            "description": "Cron expression for the new routine. Times are interpreted in the host's\nlocal system timezone, not UTC."
           },
           "title": {
             "type": "string",
@@ -809,7 +809,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression defining when the job runs."
+            "description": "Cron expression defining when the job runs. Times are interpreted in the\nhost's local system timezone, not UTC."
           },
           "source": {
             "type": "string",
@@ -1002,7 +1002,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression defining when the routine runs."
+            "description": "Cron expression defining when the routine runs. Times are interpreted in\nthe host's local system timezone, not UTC."
           },
           "source": {
             "type": "string",
@@ -1092,7 +1092,7 @@
               "string",
               "null"
             ],
-            "description": "New cron expression, or `None` to keep the existing value."
+            "description": "New cron expression, or `None` to keep the existing value. Times are\ninterpreted in the host's local system timezone, not UTC."
           }
         }
       },
@@ -1136,7 +1136,7 @@
               "string",
               "null"
             ],
-            "description": "New cron expression, or `None` to keep the existing value."
+            "description": "New cron expression, or `None` to keep the existing value. Times are\ninterpreted in the host's local system timezone, not UTC."
           },
           "title": {
             "type": [

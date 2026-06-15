@@ -89,6 +89,8 @@ Moadim owns a single block inside your crontab. Everything outside that block is
 
 **Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot`) are also accepted.
 
+**Timezone:** schedules run through the OS crontab, so cron times are interpreted in the **host's local system timezone**, not UTC. When asking an agent to schedule something "at 11:00", it must use local time directly — do not apply a UTC offset.
+
 ## Handlers
 
 Handlers are executable scripts under `~/.config/moadim/handlers/`. The `handler` field in `job.toml` is the filename without extension.

@@ -21,8 +21,5 @@ web-sys = { version = "0.3", features = ["HtmlInputElement", "HtmlSelectElement"
 log = "0.4"
 console_log = "1"
 
-[profile.release]
-opt-level = "z"
-
 [lints.clippy]
 all = "deny"

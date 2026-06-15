@@ -121,9 +121,7 @@ pub(crate) fn shell_quote(s: &str) -> String {
 /// command is `;`-joined (no newlines) so it fits one crontab line.
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
-    let prompt_path = routine_prompt_path(&slug)
-        .to_string_lossy()
-        .into_owned();
+    let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
 
     let prompt_file_ref = "prompt.md";
     let workbench_ref = ".";

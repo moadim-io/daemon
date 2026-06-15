@@ -4,26 +4,46 @@
 
 | Tool | Purpose |
 | --- | --- |
-| [Rust stable](https://rustup.rs/) | Native build |
-| `wasm32-unknown-unknown` target | WASM build (`rustup target add wasm32-unknown-unknown`) |
-| [wasm-pack](https://rustwasm.github.io/wasm-pack/) | Package WASM for the browser |
+| [Rust stable](https://rustup.rs/) | Build the daemon |
+| [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
+| `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
+
+The `wasm32` target and Trunk are only needed when working on the browser UI
+(`ui/`). The daemon itself is a native binary and builds without them.
 
 ## Setup
 
 ```sh
-git clone https://github.com/moadim-io/server
-cd server
+git clone https://github.com/moadim-io/daemon
+cd daemon
 cargo build
-rustup target add wasm32-unknown-unknown
 ```
 
-Run tests before any commit:
+Run the checks the pre-push hook enforces before any push:
 
 ```sh
-cargo test
-cargo clippy -- -D warnings
 cargo fmt --check
+cargo clippy
+cargo test
 ```
+
+Enable the bundled git hooks once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+## Architecture at a glance
+
+The daemon (`src/`) is an [Axum](https://github.com/tokio-rs/axum) server that
+exposes the same cron-job functionality over three interfaces on one port:
+
+- **REST** — handlers in `src/routes/http.rs`
+- **MCP** — handlers in `src/routes/mcp.rs`
+- **UI** — a separate Yew/WASM crate in `ui/`, embedded at build time
+
+Jobs are persisted to the OS crontab so they run on schedule. See
+[`Architecture.md`](Architecture.md) for the full picture.
 
 ## Tests
 
@@ -31,55 +51,52 @@ cargo fmt --check
 cargo test
 ```
 
+Tests must live in `*_tests.rs` sibling files, **not** inline
+`#[cfg(test)] mod foo { … }` blocks — the pre-push hook rejects inline blocks.
+A colocated module reference is fine:
+
+```rust
+#[cfg(test)]
+mod cron_jobs_tests; // semicolon, points at cron_jobs_tests.rs
+```
+
+The pre-push hook also requires 100% line coverage (excluding `main.rs`) via
+[`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov):
+
+```sh
+cargo install cargo-llvm-cov
+rustup component add llvm-tools-preview
+cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
+```
+
 ## Workflow
 
-1. Branch from `main` — name it `feat/...`, `fix/...`, or `chore/...`.
+1. Branch from `main` — name it `feat/...`, `fix/...`, `chore/...`, or `docs/...`.
 2. Keep commits focused; one logical change per commit.
 3. Open a PR against `main`; fill in what changed and why.
 
 ## Code conventions
 
-- `#[cfg(not(target_arch = "wasm32"))]` gates all native-only code.
-- `#[cfg(target_arch = "wasm32")]` gates all WASM-only code.
-- New routes go in `handlers.rs`; register them in `server.rs`.
-- `apis/` is auto-generated at build time — never edit files there directly.
-- New WASM exports go in `wasm.rs`; prefix with `wasm_`.
-- Error variants belong in `error.rs`; use `AppResult<T>` in handlers.
-- No `unwrap()` in handler paths — propagate errors via `AppResult`.
+- New REST routes go in `src/routes/http.rs`; register them in the router
+  builder there (the `.route(...)` chain). New MCP tools go in
+  `src/routes/mcp.rs`.
+- Error variants belong in `src/error.rs` (`AppError`); fallible handlers
+  return `Result<_, AppError>`, which converts to the right HTTP status.
+- No `unwrap()` in handler paths — propagate errors via `AppError`.
+- `apis/openapi.json` and `schemas/job.schema.json` are generated at build time
+  — never edit them by hand.
 
 ## Adding a cron-job field
 
-1. Add to `CronJob` struct in `cron_jobs.rs`.
-2. Add an `Option<T>` field to `UpdateRequest`.
-3. Apply the update in the `update` handler and reflect the change in crontab.
-4. Add a unit test in the `#[cfg(test)]` block.
+1. Add the field to the `CronJob` struct in `src/cron_jobs.rs`.
+2. Add a matching `Option<T>` field to `UpdateRequest`.
+3. Apply the update in the `update` handler and reflect the change in the
+   crontab sync.
+4. Add a unit test in the `cron_jobs_tests.rs` sibling file.
 
-Cron entries are persisted in the OS crontab — use `crontab -e` / `crontab -l` to inspect state during development. The server must be able to invoke `crontab` on the host.
-
-## WASM build
-
-```sh
-wasm-pack build --target web
-```
-
-Output lands in `pkg/`. Load `pkg/server.js` in a browser module script.
-
-## WASM exports
-
-| Function | Signature | Description |
-| --- | --- | --- |
-| `wasm_init()` | `() → void` | Initialize logging; call once on load |
-| `wasm_query_health()` | `() → Promise<string>` | `GET /health` → JSON string |
-| `wasm_echo(msg)` | `(string) → Promise<string>` | `POST /echo` → JSON string |
-| `wasm_get_info()` | `() → Promise<string>` | `GET /info` → JSON string |
-| `wasm_mode()` | `() → string` | Returns `"wasm"` |
-| `wasm_checksum(s)` | `(string) → string` | djb2 hash as 8-char hex |
-| `wasm_reverse(s)` | `(string) → string` | Unicode-aware reversal |
-| `wasm_uppercase(s)` | `(string) → string` | Uppercase via Rust stdlib |
-
-## WASM conventions
-
-Keep WASM exports pure or async-fetch only. No native-only deps (`actix-web`, `tokio`, `uuid`) may appear in `wasm.rs`.
+Cron entries are persisted in the OS crontab — use `crontab -e` / `crontab -l`
+to inspect state during development. The daemon must be able to invoke
+`crontab` on the host.
 
 ## Commit messages
 
@@ -87,8 +104,8 @@ Conventional Commits: `type(scope): subject`.
 
 ```text
 feat(cron): add pause/resume endpoint
-fix(wasm): handle missing window gracefully
-chore: bump actix-web to 4.5
+fix(sync): handle missing crontab gracefully
+docs: correct contributor setup steps
 ```
 
 Types: `feat`, `fix`, `chore`, `refactor`, `test`, `docs`.

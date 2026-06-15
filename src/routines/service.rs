@@ -91,7 +91,11 @@ pub fn svc_update(
     // Check slug conflict before mutating.
     if let Some(ref new_title) = req.title {
         let new_slug = slugify(new_title);
-        if new_slug != old_slug && lock.values().any(|r| r.id != id && slugify(&r.title) == new_slug) {
+        if new_slug != old_slug
+            && lock
+                .values()
+                .any(|r| r.id != id && slugify(&r.title) == new_slug)
+        {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{new_slug}\" already exists"
             )));

@@ -69,7 +69,11 @@ fn build_block_skips_routine_with_missing_agent_config() {
     let store = new_store();
     store.lock().unwrap().insert(
         "m".into(),
-        make_routine("m", "Missing Agent Sync Routine", "definitely-missing-agent-zzz"),
+        make_routine(
+            "m",
+            "Missing Agent Sync Routine",
+            "definitely-missing-agent-zzz",
+        ),
     );
     let block = build_block(&store);
     // Missing agent config → routine skipped, block stays empty.

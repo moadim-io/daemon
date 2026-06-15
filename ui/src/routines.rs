@@ -361,7 +361,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                 match api_update(&id, &req).await {
                     Ok(r) => {
                         state.dispatch(RAction::Upsert(r));
-                        ok(if enabled { "Routine enabled" } else { "Routine disabled" });
+                        ok(if enabled {
+                            "Routine enabled"
+                        } else {
+                            "Routine disabled"
+                        });
                     }
                     Err(e) => toast.emit((format!("Toggle failed: {e}"), ToastKind::Err)),
                 }
@@ -499,7 +503,11 @@ pub fn routine_stats(props: &StatsProps) -> Html {
     let total = props.routines.len();
     let enabled = props.routines.iter().filter(|r| r.enabled).count();
     let disabled = total - enabled;
-    let unreg = props.routines.iter().filter(|r| !r.agent_registered).count();
+    let unreg = props
+        .routines
+        .iter()
+        .filter(|r| !r.agent_registered)
+        .count();
 
     html! {
         <div class="stats">
@@ -726,8 +734,18 @@ pub fn routine_form(props: &FormProps) -> Html {
     let editing = props.editing.clone();
     let is_edit = editing.is_some();
 
-    let title = use_state(|| editing.as_ref().map(|r| r.title.clone()).unwrap_or_default());
-    let schedule = use_state(|| editing.as_ref().map(|r| r.schedule.clone()).unwrap_or_default());
+    let title = use_state(|| {
+        editing
+            .as_ref()
+            .map(|r| r.title.clone())
+            .unwrap_or_default()
+    });
+    let schedule = use_state(|| {
+        editing
+            .as_ref()
+            .map(|r| r.schedule.clone())
+            .unwrap_or_default()
+    });
     let agent = use_state(|| {
         editing
             .as_ref()
@@ -736,7 +754,12 @@ pub fn routine_form(props: &FormProps) -> Html {
     });
     // Agent options fetched from `GET /agents`; seed with the built-in list so the select is never
     // empty before the request resolves or if it fails.
-    let agents = use_state(|| AVAILABLE_AGENTS.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    let agents = use_state(|| {
+        AVAILABLE_AGENTS
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    });
     {
         let agents = agents.clone();
         use_effect_with((), move |_| {
@@ -750,7 +773,12 @@ pub fn routine_form(props: &FormProps) -> Html {
             || ()
         });
     }
-    let prompt = use_state(|| editing.as_ref().map(|r| r.prompt.clone()).unwrap_or_default());
+    let prompt = use_state(|| {
+        editing
+            .as_ref()
+            .map(|r| r.prompt.clone())
+            .unwrap_or_default()
+    });
     let repos_raw = use_state(|| {
         editing
             .as_ref()

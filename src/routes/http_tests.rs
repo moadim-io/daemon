@@ -27,7 +27,12 @@ async fn build_app_serves_root() {
 async fn build_app_serves_agents() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
-        .oneshot(Request::builder().uri("/agents").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/agents")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);

@@ -60,3 +60,47 @@ fn materialize_assigns_unique_ids() {
     let spec = &DEFAULT_ROUTINES[0];
     assert_ne!(materialize(spec, 0).id, materialize(spec, 0).id);
 }
+
+#[test]
+fn reconcile_returns_none_when_up_to_date() {
+    let spec = &DEFAULT_ROUTINES[0];
+    let cur = materialize(spec, 100);
+    assert!(reconcile(spec, &cur, 200).is_none());
+}
+
+#[test]
+fn reconcile_preserves_disabled_toggle() {
+    let spec = &DEFAULT_ROUTINES[0];
+    // User turned the default off and an old prompt is on disk: it must be refreshed but stay off.
+    let mut cur = materialize(spec, 100);
+    cur.enabled = false;
+    cur.prompt = "stale prompt".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("drifted routine should be rewritten");
+    assert!(
+        !updated.enabled,
+        "must not re-enable a user-disabled default"
+    );
+    assert_eq!(updated.prompt, spec.prompt, "prompt should be refreshed");
+}
+
+#[test]
+fn reconcile_refreshes_content_but_keeps_identity() {
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.schedule = "0 0 * * *".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("schedule drift should be rewritten");
+    assert_eq!(updated.schedule, normalize_schedule(spec.schedule));
+    // Identity and history are carried over; only updated_at advances.
+    assert_eq!(updated.id, cur.id);
+    assert_eq!(updated.created_at, cur.created_at);
+    assert_eq!(updated.updated_at, 200);
+}
+
+#[test]
+fn reconcile_keeps_enabled_default_enabled() {
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.prompt = "stale".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("drift should be rewritten");
+    assert!(updated.enabled);
+}

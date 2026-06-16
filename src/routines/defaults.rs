@@ -1,26 +1,27 @@
-//! Built-in default routines, seeded on startup when absent.
+//! Built-in default routines, seeded and kept current on startup.
 //!
-//! Mirrors [`super::ensure_default_agents`]: on startup the daemon writes any built-in routine whose
-//! on-disk `routine.toml` is missing, then inserts it into the in-memory store so the crontab sync
-//! schedules it. A routine already present on disk is never overwritten, so user edits are
-//! preserved.
+//! Mirrors [`super::ensure_default_agents`]: on startup the daemon ensures every built-in routine
+//! exists, then inserts it into the in-memory store so the crontab sync schedules it.
 //!
-//! Re-seeding keys on the absence of the slug's `routine.toml`, so a default deleted while the
-//! daemon is stopped is recreated on the next start. Suppressing re-add after an explicit delete
-//! (e.g. a "removed defaults" marker) is tracked as a follow-up.
+//! The daemon **owns** the content of its defaults — schedule, agent, and prompt are refreshed from
+//! the built-in spec on every start, so improvements ship on upgrade. The one field the daemon never
+//! overrides is [`Routine::enabled`]: a new default is created enabled, but if the user has toggled
+//! an existing default off it stays off across restarts.
+//!
+//! A default that is absent from the store (never seeded, or deleted while the daemon was stopped)
+//! is (re)created enabled. Suppressing re-add after an explicit delete (e.g. a "removed defaults"
+//! marker) is tracked as a follow-up.
 
 use uuid::Uuid;
 
 use crate::cron_jobs::normalize_schedule;
-use crate::paths::routine_toml_path;
 use crate::routine_storage::write_routine;
 use crate::utils::time::now_secs;
 
 use super::command::slugify;
 use super::model::{Routine, RoutineStore};
 
-/// A built-in routine specification, materialized into a [`Routine`] when its `routine.toml` is
-/// absent.
+/// A built-in routine specification: the daemon-owned content reconciled onto disk each startup.
 struct DefaultRoutine {
     /// Human name; slugified to name the routine directory, workbench, and tmux session.
     title: &'static str,
@@ -45,7 +46,7 @@ Steps:
 Report which versions you found and whether an update was performed.
 ";
 
-/// Built-in default routines, written on startup if the slug's `routine.toml` does not exist.
+/// Built-in default routines, reconciled onto disk on every startup.
 const DEFAULT_ROUTINES: &[DefaultRoutine] = &[DefaultRoutine {
     title: "Update moadim cargo package",
     // Daily at 09:00 local time.
@@ -74,20 +75,64 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
     }
 }
 
-/// Seed any missing built-in routines into `store` and onto disk.
+/// Reconcile an existing default `cur` against its built-in `spec`, preserving the user's choices.
 ///
-/// For each [`DEFAULT_ROUTINES`] entry whose slug has no `routine.toml`, this assigns a UUID,
-/// persists it (`routine.toml` + `prompt.md` + `.gitignore`), and inserts it into `store` so the
+/// Returns `Some(updated)` when a daemon-owned field (schedule, agent, prompt, or the empty
+/// repositories list) drifted from the spec and the routine must be rewritten, or `None` when `cur`
+/// already matches and no write is needed. The user-owned [`Routine::enabled`] toggle is always
+/// carried over from `cur` — so a default the user turned off stays off — as are its `id`,
+/// `created_at`, and `last_triggered_at`.
+fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> {
+    let schedule = normalize_schedule(spec.schedule);
+    let up_to_date = cur.schedule == schedule
+        && cur.agent == spec.agent
+        && cur.prompt == spec.prompt
+        && cur.repositories.is_empty();
+    if up_to_date {
+        return None;
+    }
+    Some(Routine {
+        id: cur.id.clone(),
+        schedule,
+        title: spec.title.to_string(),
+        agent: spec.agent.to_string(),
+        prompt: spec.prompt.to_string(),
+        repositories: Vec::new(),
+        // Never override the user's enable/disable choice on an existing default.
+        enabled: cur.enabled,
+        source: "managed".to_string(),
+        created_at: cur.created_at,
+        updated_at: now,
+        last_triggered_at: cur.last_triggered_at,
+        ttl_secs: cur.ttl_secs,
+    })
+}
+
+/// Ensure every built-in default routine exists and matches its spec, then schedule it.
+///
+/// For each [`DEFAULT_ROUTINES`] entry: if a routine with the same slug is already in `store`, it is
+/// refreshed via [`reconcile`] (daemon-owned content updated, the user's `enabled` toggle preserved)
+/// and only rewritten when it drifted; otherwise a fresh enabled routine is created. Persists each
+/// affected routine (`routine.toml` + `prompt.md` + `.gitignore`) and inserts it into `store` so the
 /// subsequent crontab sync schedules it. Best-effort: a write failure is logged and skipped rather
 /// than aborting startup. Call once at startup after [`crate::routine_storage::load_store`] and
 /// before the crontab sync.
 pub fn ensure_default_routines(store: &RoutineStore) {
     for spec in DEFAULT_ROUTINES {
         let slug = slugify(spec.title);
-        if routine_toml_path(&slug).exists() {
-            continue;
-        }
-        let routine = materialize(spec, now_secs());
+        let existing = store
+            .lock()
+            .unwrap()
+            .values()
+            .find(|r| slugify(&r.title) == slug)
+            .cloned();
+        let routine = match existing {
+            Some(cur) => match reconcile(spec, &cur, now_secs()) {
+                Some(updated) => updated,
+                None => continue,
+            },
+            None => materialize(spec, now_secs()),
+        };
         if let Err(e) = write_routine(&routine) {
             log::warn!(
                 "ensure_default_routines: failed to write {:?}: {e}; skipping",

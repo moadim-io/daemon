@@ -1,0 +1,30 @@
+name: Spell check
+
+# Gate every PR (and pushes to main) on the `typos` spell checker so prose and
+# source typos are caught even when contributors haven't installed the local
+# pre-commit hook. Uses the same typos.toml config as the hook, so CI and local
+# runs stay in lockstep.
+#
+# The action is pinned to a tagged release (not `@master`) so the gate is
+# reproducible — a new typos dictionary entry can't turn a green PR red without
+# a visible version bump here. The weekly scheduled run keeps the gate exercised
+# against `main` so dependency drift surfaces on its own cadence, not inside an
+# unrelated PR.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays at 06:00 UTC — keep the spell-check gate current against main.
+    - cron: "0 6 * * 1"
+
+jobs:
+  typos:
+    name: typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Spell check with typos
+        uses: crate-ci/typos@v1.47.2

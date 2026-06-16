@@ -5,7 +5,7 @@
 //! the workbench (prompt, logs, cloned repos) lingers forever. This module reaps those leftovers: a
 //! workbench is removed once its run has *finished* (no live tmux session) **and** it is older than
 //! the owning routine's [`Routine::effective_ttl_secs`]. Still-running sessions are never touched,
-//! and orphaned workbenches (routine since deleted) fall back to [`DEFAULT_TTL_SECS`].
+//! and orphaned workbenches (routine since deleted) fall back to `MAX_TTL_SECS`.
 
 use std::path::Path;
 use std::time::Duration;
@@ -17,7 +17,6 @@ use super::model::RoutineStore;
 
 mod snapshot;
 mod ttl;
-pub use ttl::DEFAULT_TTL_SECS;
 
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);

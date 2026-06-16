@@ -12,7 +12,7 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Link the routines calendar UI to the new `GET /routines.ics` feed: add a "SUBSCRIBE" button that copies the feed URL, plus a per-routine `?routine=<id>` filter on the endpoint
 - Fold the host's local timezone into the `.ics` feed as a `VTIMEZONE` block with `DTSTART;TZID=` local times, so subscribers see fire times in the routine's own zone instead of only UTC
 - Auto-stamp the release version/date into CHANGELOG.md from the `chore(release)` step so the `## [Unreleased]` section rolls over on tag
-- Add a CI check that fails a PR when it changes `src/` or `ui/` but leaves `## [Unreleased]` in CHANGELOG.md empty
+- Add a CI check that the topmost `## [x.y.z]` heading in CHANGELOG.md matches `Cargo.toml`'s version on tag pushes, so a release tag can't ship with a stale changelog version
 - Have a commands folder for all the cli commands, we want to work with colocation of files
 - Dismiss any open UI modal/dialog (edit, delete-confirm, shutdown-confirm) with the Esc key
 - Show server uptime as a humanized duration (e.g. "2h 14m") next to the health badge in the header

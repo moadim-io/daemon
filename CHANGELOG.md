@@ -18,6 +18,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   subscribing in external calendars.
 - `--json` flag for `moadim status` and `moadim cleanup` so their output can be
   consumed by scripts.
+- CI `Changelog` workflow that fails a PR touching `src/` or `ui/` when
+  CHANGELOG.md is not updated, bypassable with a `skip-changelog` label.
 
 ### Fixed
 

@@ -1,0 +1,40 @@
+name: Changelog
+
+# Require a CHANGELOG.md update on any PR that touches `src/` or `ui/`, so
+# user-facing or behavioral changes are documented as they land ("Today's
+# TODO, tomorrow's changelog"). Docs-, CI-, and test-only PRs are exempt — the
+# gate only fires when product code under src/ or ui/ changes. Add the
+# `skip-changelog` label to a PR to bypass the check for deliberately
+# undocumented src/ui changes.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  changelog:
+    name: unreleased-entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect src/ or ui/ changes
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'ui/**'
+
+      - name: Require a CHANGELOG entry when src/ or ui/ changed
+        if: steps.filter.outputs.code == 'true'
+        uses: dangoslen/changelog-enforcer@8b5e9dc3121363bb7c0115f8533404d92af382de # v3.7.0
+        with:
+          changeLogPath: CHANGELOG.md
+          skipLabels: skip-changelog
+          missingUpdateErrorMessage: >-
+            PR changes src/ or ui/ but CHANGELOG.md was not updated. Add a bullet
+            under '## [Unreleased]', or apply the 'skip-changelog' label.

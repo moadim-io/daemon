@@ -143,6 +143,22 @@ pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
 }
 
+// ─── System prompts ──────────────────────────────────────────────────────────
+
+/// Returns the path to `~/.config/moadim/user_prompt.md`, where the user writes a persistent
+/// system prompt injected into every agent workbench `CLAUDE.md` alongside the moadim prompt.
+pub fn user_prompt_path() -> PathBuf {
+    user_prompt_path_from_home(dirs::home_dir())
+}
+
+/// Returns the user prompt path under `home`, or `.` if `home` is `None`.
+pub(crate) fn user_prompt_path_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+        .join("user_prompt.md")
+}
+
 // ─── Workbenches ─────────────────────────────────────────────────────────────
 
 /// Returns the path to `~/.moadim/`.

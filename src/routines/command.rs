@@ -113,6 +113,40 @@ pub(crate) fn shell_quote(s: &str) -> String {
     out
 }
 
+/// Moadim-managed preamble written to every workbench `CLAUDE.md`.
+///
+/// Uses `\n` as literal two-character sequences (not real newlines) so the text can be embedded
+/// in a single crontab line and passed to `printf '%b'`, which re-expands them into newlines at
+/// run time. The run date and timezone are appended dynamically by the shell.
+const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
+    \\n\
+    > This section is managed by the moadim daemon. Do not edit it.\\n\
+    \\n\
+    You are running inside a moadim-managed agent session. \
+    Complete the task described in `prompt.md` and exit when done.";
+
+/// Shell statements that write `CLAUDE.md` into `$WB` with two layers:
+///
+/// 1. **Moadim prompt** — daemon-managed preamble plus a run-time date stamp.
+/// 2. **User prompt** — contents of `~/.config/moadim/user_prompt.md`, appended if the file exists.
+///
+/// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
+/// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
+pub(crate) fn system_prompt_stmts(user_prompt_path: &str) -> Vec<String> {
+    let header = shell_quote(MOADIM_SYSTEM_PROMPT);
+    let uq = shell_quote(user_prompt_path);
+    vec![
+        format!(
+            r#"printf '%b\n\n**Run date**: %s\n**Timezone**: %s\n' {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            header
+        ),
+        format!(
+            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> "$WB/CLAUDE.md" || true"#,
+            uq = uq
+        ),
+    ]
+}
+
 /// Build the single-line shell command that creates a workbench and launches the agent in tmux.
 ///
 /// The agent's cwd is the workbench (via `tmux -c`), so `{prompt_file}` resolves to `prompt.md`,
@@ -142,8 +176,13 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
-        format!(r#"cp {} "$WB/prompt.md""#, shell_quote(&prompt_path)),
     ];
+    stmts.extend(system_prompt_stmts(
+        &crate::paths::user_prompt_path().to_string_lossy(),
+    ));
+    stmts.extend([
+        format!(r#"cp {} "$WB/prompt.md""#, shell_quote(&prompt_path)),
+    ]);
     if let Some(setup) = &agent.setup {
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
         stmts.push(setup.clone());

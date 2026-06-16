@@ -47,6 +47,9 @@ pub struct Routine {
     pub updated_at: u64,
     #[serde(default)]
     pub last_triggered_at: Option<u64>,
+    /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
+    #[serde(default)]
+    pub ttl_secs: Option<u64>,
     // Derived (absent on the bare Routine returned by /trigger — default to safe values).
     #[serde(default)]
     pub agent_registered: bool,
@@ -64,6 +67,8 @@ pub struct CreateRoutineRequest {
     pub prompt: String,
     pub repositories: Vec<Repository>,
     pub enabled: bool,
+    /// Workbench retention (seconds); `None` lets the server apply its default.
+    pub ttl_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -80,6 +85,8 @@ pub struct UpdateRoutineRequest {
     pub repositories: Option<Vec<Repository>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_secs: Option<u64>,
 }
 
 // ─── API layer ────────────────────────────────────────────────────────────────
@@ -409,6 +416,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         prompt: Some(req.prompt),
                         repositories: Some(req.repositories),
                         enabled: Some(req.enabled),
+                        ttl_secs: req.ttl_secs,
                     };
                     match api_update(id, &upd).await {
                         Ok(r) => {
@@ -797,6 +805,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <th>{"SCHEDULE"}</th>
                         <th>{"AGENT"}</th>
                         <th>{"REPOS"}</th>
+                        <th>{"TTL"}</th>
                         <th>{"ENABLED"}</th>
                         <th>{"UPDATED"}</th>
                         <th></th>
@@ -897,6 +906,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 </span>
             </td>
             <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
+            <td><span class="cell-meta" title="workbench retention for finished runs">{ format_ttl(r.ttl_secs) }</span></td>
             <td>
                 <label class="toggle">
                     <input type="checkbox" checked={r.enabled} onchange={on_toggle} />
@@ -952,6 +962,30 @@ fn text_to_repos(text: &str) -> Vec<Repository> {
             Some(Repository { repository, branch })
         })
         .collect()
+}
+
+/// Parse a TTL textarea value into seconds. Blank/whitespace → `None` (use the server default);
+/// a valid non-negative integer → `Some(secs)`; anything else → `None`.
+fn parse_ttl(raw: &str) -> Option<u64> {
+    let t = raw.trim();
+    if t.is_empty() {
+        None
+    } else {
+        t.parse::<u64>().ok()
+    }
+}
+
+/// Render a routine's TTL for display: `None` shows the server default, otherwise a compact
+/// duration (`7d`, `12h`, `30m`, `45s`).
+fn format_ttl(ttl_secs: Option<u64>) -> String {
+    match ttl_secs {
+        None => "default".to_string(),
+        Some(0) => "0s".to_string(),
+        Some(s) if s % 86_400 == 0 => format!("{}d", s / 86_400),
+        Some(s) if s % 3_600 == 0 => format!("{}h", s / 3_600),
+        Some(s) if s % 60 == 0 => format!("{}m", s / 60),
+        Some(s) => format!("{s}s"),
+    }
 }
 
 #[function_component(RoutineForm)]
@@ -1011,6 +1045,14 @@ pub fn routine_form(props: &FormProps) -> Html {
             .unwrap_or_default()
     });
     let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
+    // Blank means "use the server default"; otherwise the workbench TTL in seconds.
+    let ttl_raw = use_state(|| {
+        editing
+            .as_ref()
+            .and_then(|r| r.ttl_secs)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    });
     let saving = use_state(|| false);
 
     let (cron_ok, cron_text) = describe_cron_live(&schedule);
@@ -1057,6 +1099,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             enabled.set(i.checked());
         })
     };
+    let on_ttl = {
+        let ttl_raw = ttl_raw.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            ttl_raw.set(i.value());
+        })
+    };
 
     let set_preset = |val: &'static str| {
         let schedule = schedule.clone();
@@ -1080,6 +1129,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let prompt = prompt.clone();
         let repos_raw = repos_raw.clone();
         let enabled = enabled.clone();
+        let ttl_raw = ttl_raw.clone();
         let saving = saving.clone();
         let cb = props.on_save.clone();
         Callback::from(move |_: MouseEvent| {
@@ -1094,6 +1144,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 prompt: (*prompt).clone(),
                 repositories: text_to_repos(&repos_raw),
                 enabled: *enabled,
+                ttl_secs: parse_ttl(&ttl_raw),
             });
         })
     };
@@ -1157,6 +1208,14 @@ pub fn routine_form(props: &FormProps) -> Html {
                 </label>
                 <textarea class="form-input" placeholder={"https://github.com/org/repo main"}
                     value={(*repos_raw).clone()} oninput={on_repos} />
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    {"WORKBENCH TTL "}
+                    <span style="color:var(--text-ghost)">{"(seconds; blank = server default)"}</span>
+                </label>
+                <input class="form-input" type="number" min="0" placeholder="604800"
+                    value={(*ttl_raw).clone()} oninput={on_ttl} autocomplete="off" spellcheck="false" />
             </div>
             <div class="form-group" style="margin-bottom:0">
                 <div class="toggle-row">

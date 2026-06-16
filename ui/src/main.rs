@@ -91,6 +91,7 @@ pub enum Modal {
     None,
     Edit(String),
     ConfirmDelete { id: String, handler: String },
+    ConfirmShutdown,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +132,7 @@ pub enum AppAction {
     GoToLogs(String),
     OpenEdit(String),
     OpenConfirmDelete { id: String, handler: String },
+    OpenConfirmShutdown,
     CloseModal,
     UpsertJob(CronJob),
     RemoveJob(String),
@@ -164,6 +166,7 @@ impl Reducible for AppState {
             AppAction::OpenConfirmDelete { id, handler } => {
                 s.modal = Modal::ConfirmDelete { id, handler };
             }
+            AppAction::OpenConfirmShutdown => s.modal = Modal::ConfirmShutdown,
             AppAction::CloseModal => s.modal = Modal::None,
             AppAction::UpsertJob(job) => {
                 if let Some(i) = s.jobs.iter().position(|j| j.id == job.id) {
@@ -337,10 +340,18 @@ pub fn app() -> Html {
         })
     };
 
+    // The STOP button only opens a confirmation dialog; the server is not asked
+    // to stop until the user confirms (see `on_confirm_shutdown`).
     let on_stop = {
         let state = state.clone();
-        Callback::from(move |_: MouseEvent| {
+        Callback::from(move |_: MouseEvent| state.dispatch(AppAction::OpenConfirmShutdown))
+    };
+
+    let on_confirm_shutdown = {
+        let state = state.clone();
+        Callback::from(move |_: ()| {
             let state = state.clone();
+            state.dispatch(AppAction::CloseModal);
             spawn_local(async move {
                 match api_shutdown().await {
                     Ok(()) => {
@@ -614,10 +625,13 @@ pub fn app() -> Html {
                         <ConfirmDialog
                             job_id={id.clone()}
                             handler={handler.clone()}
-                            on_cancel={on_close}
+                            on_cancel={on_close.clone()}
                             on_confirm={on_confirm_delete}
                         />
                     },
+                    // Shutdown is global (the STOP button lives in the always-visible
+                    // header), so its dialog is rendered at the top level, not here.
+                    Modal::ConfirmShutdown => html! {},
                     Modal::None => html! {},
                 }
             }
@@ -634,6 +648,20 @@ pub fn app() -> Html {
                     Tab::Routines => html! {
                         <RoutinesPage on_toast={on_routine_toast} />
                     },
+                }
+            }
+            // Global shutdown confirmation — rendered here (not inside a tab) so it
+            // appears no matter which tab is active when STOP is pressed.
+            {
+                if modal == Modal::ConfirmShutdown {
+                    html! {
+                        <ShutdownDialog
+                            on_cancel={on_close}
+                            on_confirm={on_confirm_shutdown}
+                        />
+                    }
+                } else {
+                    html! {}
                 }
             }
             <ToastStack toasts={toasts} on_dismiss={on_dismiss_toast} />
@@ -1372,6 +1400,41 @@ pub fn confirm_dialog(props: &ConfirmProps) -> Html {
                 <div class="confirm-acts">
                     <button class="btn btn-ghost btn-sm" onclick={on_cancel}>{"CANCEL"}</button>
                     <button class="btn btn-danger btn-sm" onclick={on_confirm}>{"DELETE"}</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ─── Shutdown confirm dialog ──────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct ShutdownProps {
+    pub on_cancel: Callback<()>,
+    pub on_confirm: Callback<()>,
+}
+
+#[function_component(ShutdownDialog)]
+pub fn shutdown_dialog(props: &ShutdownProps) -> Html {
+    let on_cancel = {
+        let cb = props.on_cancel.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_confirm = {
+        let cb = props.on_confirm.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
+    html! {
+        <div class="overlay open">
+            <div class="confirm-dialog">
+                <div class="confirm-title">{"⏻ STOP SERVER"}</div>
+                <div class="confirm-msg">
+                    { "Stop the moadim server? Scheduled jobs and routines will not run until it is started again." }
+                </div>
+                <div class="confirm-acts">
+                    <button class="btn btn-ghost btn-sm" onclick={on_cancel}>{"CANCEL"}</button>
+                    <button class="btn btn-danger btn-sm" onclick={on_confirm}>{"STOP SERVER"}</button>
                 </div>
             </div>
         </div>

@@ -710,7 +710,9 @@ async fn shutdown_route_stops_the_serving_loop() {
         .await
         .unwrap();
     stream
-        .write_all(b"POST /api/v1/shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .write_all(
+            b"POST /api/v1/shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
         .await
         .unwrap();
     let mut buf = vec![0u8; 512];

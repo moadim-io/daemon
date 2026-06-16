@@ -3,6 +3,7 @@
 //! Self-contained like [`crate::routines::RoutinesPage`]: owns its own reducer state and talks to
 //! the `/cron-jobs` API. Toasts bubble up to the shell via the `on_toast` callback.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gloo_net::http::Request;
@@ -139,6 +140,19 @@ pub enum CModal {
     None,
     Edit(String),
     ConfirmDelete { id: String, handler: String },
+    ConfirmBulkDelete { count: usize },
+}
+
+/// How a row-selection click should mutate the selection set, derived from the
+/// modifier keys held during the click.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SelectKind {
+    /// Plain click — select only this item, clearing the rest.
+    Only,
+    /// Cmd/Ctrl+click — toggle this item in/out of the selection.
+    Toggle,
+    /// Shift+click — select the contiguous range from the anchor to this item.
+    Range,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -147,6 +161,10 @@ pub struct CState {
     pub loading: bool,
     pub page: CPage,
     pub modal: CModal,
+    /// IDs of currently selected jobs (multiselect).
+    pub selected: HashSet<String>,
+    /// Anchor row for `Shift`+click range selection.
+    pub select_anchor: Option<String>,
 }
 
 impl Default for CState {
@@ -156,6 +174,8 @@ impl Default for CState {
             loading: true,
             page: CPage::List,
             modal: CModal::None,
+            selected: HashSet::new(),
+            select_anchor: None,
         }
     }
 }
@@ -166,10 +186,22 @@ pub enum CAction {
     GoToList,
     GoToLogs(String),
     OpenEdit(String),
-    OpenConfirmDelete { id: String, handler: String },
+    OpenConfirmDelete {
+        id: String,
+        handler: String,
+    },
+    OpenConfirmBulkDelete,
     CloseModal,
     Upsert(CronJob),
     Remove(String),
+    RemoveMany(Vec<String>),
+    /// Apply a selection click to the job with this id, interpreted per `kind`.
+    SelectJob {
+        id: String,
+        kind: SelectKind,
+    },
+    SelectAll,
+    ClearSelection,
 }
 
 impl Reducible for CState {
@@ -179,6 +211,14 @@ impl Reducible for CState {
         let mut s = (*self).clone();
         match action {
             CAction::Loaded(jobs) => {
+                // Drop selections for jobs that no longer exist after a reload.
+                let ids: HashSet<&String> = jobs.iter().map(|j| &j.id).collect();
+                s.selected.retain(|id| ids.contains(id));
+                if let Some(a) = &s.select_anchor {
+                    if !ids.contains(a) {
+                        s.select_anchor = None;
+                    }
+                }
                 s.jobs = jobs;
                 s.loading = false;
             }
@@ -189,6 +229,11 @@ impl Reducible for CState {
             CAction::OpenConfirmDelete { id, handler } => {
                 s.modal = CModal::ConfirmDelete { id, handler }
             }
+            CAction::OpenConfirmBulkDelete => {
+                s.modal = CModal::ConfirmBulkDelete {
+                    count: s.selected.len(),
+                }
+            }
             CAction::CloseModal => s.modal = CModal::None,
             CAction::Upsert(job) => {
                 if let Some(i) = s.jobs.iter().position(|j| j.id == job.id) {
@@ -197,7 +242,59 @@ impl Reducible for CState {
                     s.jobs.push(job);
                 }
             }
-            CAction::Remove(id) => s.jobs.retain(|j| j.id != id),
+            CAction::Remove(id) => {
+                s.jobs.retain(|j| j.id != id);
+                s.selected.remove(&id);
+                if s.select_anchor.as_ref() == Some(&id) {
+                    s.select_anchor = None;
+                }
+            }
+            CAction::RemoveMany(ids) => {
+                let drop: HashSet<&String> = ids.iter().collect();
+                s.jobs.retain(|j| !drop.contains(&j.id));
+                s.selected.retain(|id| !drop.contains(id));
+                if let Some(a) = &s.select_anchor {
+                    if drop.contains(a) {
+                        s.select_anchor = None;
+                    }
+                }
+            }
+            CAction::SelectJob { id, kind } => match kind {
+                SelectKind::Only => {
+                    s.selected.clear();
+                    s.selected.insert(id.clone());
+                    s.select_anchor = Some(id);
+                }
+                SelectKind::Toggle => {
+                    if !s.selected.remove(&id) {
+                        s.selected.insert(id.clone());
+                    }
+                    s.select_anchor = Some(id);
+                }
+                SelectKind::Range => {
+                    let anchor = s.select_anchor.clone().unwrap_or_else(|| id.clone());
+                    let pos = |target: &str| s.jobs.iter().position(|j| j.id == target);
+                    match (pos(&anchor), pos(&id)) {
+                        (Some(a), Some(b)) => {
+                            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                            for job in &s.jobs[lo..=hi] {
+                                s.selected.insert(job.id.clone());
+                            }
+                        }
+                        _ => {
+                            s.selected.insert(id.clone());
+                        }
+                    }
+                    // Anchor stays put so further Shift+clicks re-anchor from it.
+                }
+            },
+            CAction::SelectAll => {
+                s.selected = s.jobs.iter().map(|j| j.id.clone()).collect();
+            }
+            CAction::ClearSelection => {
+                s.selected.clear();
+                s.select_anchor = None;
+            }
         }
         s.into()
     }
@@ -322,7 +419,11 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                 match api_update(&id, &req).await {
                     Ok(job) => {
                         state.dispatch(CAction::Upsert(job));
-                        ok(if enabled { "Job enabled" } else { "Job disabled" });
+                        ok(if enabled {
+                            "Job enabled"
+                        } else {
+                            "Job disabled"
+                        });
                     }
                     Err(e) => toast.emit((format!("Toggle failed: {e}"), ToastKind::Err)),
                 }
@@ -382,10 +483,115 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         })
     };
 
+    // ── Multiselect ──
+    let on_select = {
+        let state = state.clone();
+        Callback::from(move |(id, kind): (String, SelectKind)| {
+            state.dispatch(CAction::SelectJob { id, kind })
+        })
+    };
+
+    // Header checkbox toggles between "all selected" and "none selected".
+    let on_select_all = {
+        let state = state.clone();
+        Callback::from(move |_: ()| {
+            if state.selected.len() == state.jobs.len() && !state.jobs.is_empty() {
+                state.dispatch(CAction::ClearSelection);
+            } else {
+                state.dispatch(CAction::SelectAll);
+            }
+        })
+    };
+
+    let on_clear_selection = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(CAction::ClearSelection))
+    };
+
+    // Bulk enable/disable: update each selected job, surface one summary toast.
+    let bulk_set_enabled = {
+        let state = state.clone();
+        let toast = toast.clone();
+        move |enabled: bool| {
+            let state = state.clone();
+            let toast = toast.clone();
+            let ids: Vec<String> = state.selected.iter().cloned().collect();
+            if ids.is_empty() {
+                return;
+            }
+            spawn_local(async move {
+                let mut ok = 0usize;
+                let mut failed = 0usize;
+                for id in ids {
+                    let req = UpdateRequest {
+                        enabled: Some(enabled),
+                        ..Default::default()
+                    };
+                    match api_update(&id, &req).await {
+                        Ok(job) => {
+                            state.dispatch(CAction::Upsert(job));
+                            ok += 1;
+                        }
+                        Err(_) => failed += 1,
+                    }
+                }
+                let verb = if enabled { "enabled" } else { "disabled" };
+                if failed == 0 {
+                    toast.emit((format!("{ok} job(s) {verb}"), ToastKind::Ok));
+                } else {
+                    toast.emit((format!("{ok} {verb}, {failed} failed"), ToastKind::Err));
+                }
+            });
+        }
+    };
+
+    let on_bulk_enable = {
+        let f = bulk_set_enabled.clone();
+        Callback::from(move |_: ()| f(true))
+    };
+    let on_bulk_disable = {
+        let f = bulk_set_enabled.clone();
+        Callback::from(move |_: ()| f(false))
+    };
+
+    let on_bulk_delete = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(CAction::OpenConfirmBulkDelete))
+    };
+
+    let on_confirm_bulk_delete = {
+        let state = state.clone();
+        let toast = toast.clone();
+        Callback::from(move |_: ()| {
+            let state = state.clone();
+            let toast = toast.clone();
+            let ids: Vec<String> = state.selected.iter().cloned().collect();
+            state.dispatch(CAction::CloseModal);
+            spawn_local(async move {
+                let mut deleted = Vec::new();
+                let mut failed = 0usize;
+                for id in ids {
+                    match api_delete(&id).await {
+                        Ok(()) => deleted.push(id),
+                        Err(_) => failed += 1,
+                    }
+                }
+                let n = deleted.len();
+                state.dispatch(CAction::RemoveMany(deleted));
+                if failed == 0 {
+                    toast.emit((format!("{n} job(s) deleted"), ToastKind::Ok));
+                } else {
+                    toast.emit((format!("{n} deleted, {failed} failed"), ToastKind::Err));
+                }
+            });
+        })
+    };
+
     let jobs = state.jobs.clone();
     let loading = state.loading;
     let page = state.page.clone();
     let modal = state.modal.clone();
+    let selected = state.selected.clone();
 
     let edit_job = match &modal {
         CModal::Edit(id) => jobs.iter().find(|j| j.id == *id).cloned(),
@@ -415,14 +621,24 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                 <div class="section-label">{"SCHEDULED JOBS"}</div>
                                 <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
                             </div>
+                            <BulkBar
+                                count={selected.len()}
+                                on_enable={on_bulk_enable}
+                                on_disable={on_bulk_disable}
+                                on_delete={on_bulk_delete}
+                                on_clear={on_clear_selection}
+                            />
                             <JobTable
                                 jobs={jobs}
                                 loading={loading}
+                                selected={selected}
                                 on_edit={on_edit}
                                 on_delete={on_ask_delete}
                                 on_toggle={on_toggle}
                                 on_trigger={on_trigger}
                                 on_logs={on_logs}
+                                on_select={on_select}
+                                on_select_all={on_select_all}
                             />
                         </main>
                     },
@@ -441,8 +657,15 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                         <ConfirmDialog
                             job_id={id.clone()}
                             handler={handler.clone()}
-                            on_cancel={on_close}
+                            on_cancel={on_close.clone()}
                             on_confirm={on_confirm_delete}
+                        />
+                    },
+                    CModal::ConfirmBulkDelete { count } => html! {
+                        <BulkDeleteDialog
+                            count={*count}
+                            on_cancel={on_close}
+                            on_confirm={on_confirm_bulk_delete}
                         />
                     },
                     CModal::None => html! {},
@@ -489,11 +712,14 @@ pub fn stats_bar(props: &StatsProps) -> Html {
 pub struct JobTableProps {
     pub jobs: Vec<CronJob>,
     pub loading: bool,
+    pub selected: HashSet<String>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_select: Callback<(String, SelectKind)>,
+    pub on_select_all: Callback<()>,
 }
 
 #[function_component(JobTable)]
@@ -517,11 +743,27 @@ pub fn job_table(props: &JobTableProps) -> Html {
         };
     }
 
+    let all_selected = !props.jobs.is_empty() && props.selected.len() == props.jobs.len();
+    let on_select_all = {
+        let cb = props.on_select_all.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
     html! {
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
+                        <th class="th-select">
+                            <input
+                                type="checkbox"
+                                class="row-check"
+                                title="Select all"
+                                aria-label="Select all jobs"
+                                checked={all_selected}
+                                onclick={on_select_all}
+                            />
+                        </th>
                         <th>{"ID"}</th>
                         <th>{"SCHEDULE"}</th>
                         <th>{"HANDLER"}</th>
@@ -536,11 +778,13 @@ pub fn job_table(props: &JobTableProps) -> Html {
                         <JobRow
                             key={job.id.clone()}
                             job={job.clone()}
+                            selected={props.selected.contains(&job.id)}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
                             on_logs={props.on_logs.clone()}
+                            on_select={props.on_select.clone()}
                         />
                     }) }
                 </tbody>
@@ -554,11 +798,13 @@ pub fn job_table(props: &JobTableProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct JobRowProps {
     pub job: CronJob,
+    pub selected: bool,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_select: Callback<(String, SelectKind)>,
 }
 
 #[function_component(JobRow)]
@@ -600,14 +846,39 @@ pub fn job_row(props: &JobRowProps) -> Html {
         let id = job.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
+    let on_select = {
+        let cb = props.on_select.clone();
+        let id = job.id.clone();
+        Callback::from(move |e: MouseEvent| {
+            let kind = if e.shift_key() {
+                SelectKind::Range
+            } else if e.ctrl_key() || e.meta_key() {
+                SelectKind::Toggle
+            } else {
+                SelectKind::Only
+            };
+            cb.emit((id.clone(), kind));
+        })
+    };
 
     let last_run = job
         .last_triggered_at
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 
+    let row_class = if props.selected { "row-selected" } else { "" };
+
     html! {
-        <tr>
+        <tr class={row_class}>
+            <td class="td-select">
+                <input
+                    type="checkbox"
+                    class="row-check"
+                    aria-label="Select job"
+                    checked={props.selected}
+                    onclick={on_select}
+                />
+            </td>
             <td><span class="cell-id" title={job.id.clone()}>{id_short}</span></td>
             <td>
                 <div class="cell-schedule">{&job.schedule}</div>
@@ -1088,6 +1359,74 @@ pub fn confirm_dialog(props: &ConfirmProps) -> Html {
                 <div class="confirm-title">{"⚠ DELETE JOB"}</div>
                 <div class="confirm-msg">
                     { format!("Delete the job running \"{}\"? This cannot be undone.", props.handler) }
+                </div>
+                <div class="confirm-acts">
+                    <button class="btn btn-ghost btn-sm" onclick={on_cancel}>{"CANCEL"}</button>
+                    <button class="btn btn-danger btn-sm" onclick={on_confirm}>{"DELETE"}</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ─── Bulk action bar ──────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct BulkBarProps {
+    pub count: usize,
+    pub on_enable: Callback<()>,
+    pub on_disable: Callback<()>,
+    pub on_delete: Callback<()>,
+    pub on_clear: Callback<()>,
+}
+
+#[function_component(BulkBar)]
+pub fn bulk_bar(props: &BulkBarProps) -> Html {
+    // Hidden entirely until at least one row is selected.
+    if props.count == 0 {
+        return html! {};
+    }
+    let mk = |cb: Callback<()>| Callback::from(move |_: MouseEvent| cb.emit(()));
+
+    html! {
+        <div class="bulk-bar">
+            <span class="bulk-count">{ format!("{} SELECTED", props.count) }</span>
+            <div class="bulk-acts">
+                <button class="btn btn-ghost btn-sm" onclick={mk(props.on_enable.clone())}>{"ENABLE"}</button>
+                <button class="btn btn-ghost btn-sm" onclick={mk(props.on_disable.clone())}>{"DISABLE"}</button>
+                <button class="btn btn-danger btn-sm" onclick={mk(props.on_delete.clone())}>{"DELETE"}</button>
+                <button class="btn btn-ghost btn-sm" onclick={mk(props.on_clear.clone())}>{"CLEAR"}</button>
+            </div>
+        </div>
+    }
+}
+
+// ─── Bulk delete confirm dialog ───────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct BulkDeleteProps {
+    pub count: usize,
+    pub on_cancel: Callback<()>,
+    pub on_confirm: Callback<()>,
+}
+
+#[function_component(BulkDeleteDialog)]
+pub fn bulk_delete_dialog(props: &BulkDeleteProps) -> Html {
+    let on_cancel = {
+        let cb = props.on_cancel.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_confirm = {
+        let cb = props.on_confirm.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
+    html! {
+        <div class="overlay open">
+            <div class="confirm-dialog">
+                <div class="confirm-title">{"⚠ DELETE JOBS"}</div>
+                <div class="confirm-msg">
+                    { format!("Delete {} selected job(s)? This cannot be undone.", props.count) }
                 </div>
                 <div class="confirm-acts">
                     <button class="btn btn-ghost btn-sm" onclick={on_cancel}>{"CANCEL"}</button>

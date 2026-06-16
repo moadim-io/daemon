@@ -10,4 +10,5 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Surface and edit a routine's workbench TTL (`ttl_secs`) in the UI
 - Add change log
 - Add a "CLEANUP NOW" button in the UI that calls `POST /routines/cleanup` and shows the removed count
-- Add a `moadim cleanup` CLI subcommand that POSTs `/routines/cleanup` to a running daemon and prints how many workbenches were reaped
+- Add a `--json` flag to `moadim status`/`cleanup` so the CLI output can be consumed by scripts
+- Add a `moadim restart` CLI subcommand that stops a running daemon (if any) and starts a fresh background instance

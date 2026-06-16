@@ -29,6 +29,8 @@ pub enum Command {
     Stop,
     /// Report whether a server is currently running.
     Status,
+    /// Ask a running server to reap finished, expired routine run workbenches now.
+    Cleanup,
     /// Print usage help.
     Help,
     /// Print the binary version.
@@ -45,6 +47,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         None => Command::Background,
         Some("stop") => Command::Stop,
         Some("status") => Command::Status,
+        Some("cleanup") => Command::Cleanup,
         Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
@@ -70,6 +73,7 @@ pub fn print_help() {
          COMMANDS:\n\
          \x20   stop                   stop a running background server\n\
          \x20   status                 show whether a server is running\n\
+         \x20   cleanup                reap finished, expired routine workbenches now\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
@@ -110,6 +114,28 @@ pub fn stop() -> anyhow::Result<()> {
             Ok(())
         }
         Ok(status) => {
+            anyhow::bail!("unexpected response from server: HTTP {status}");
+        }
+        Err(_) => {
+            println!("moadim is not running");
+            Ok(())
+        }
+    }
+}
+
+/// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
+///
+/// Runs the same sweep as the hourly background task instead of waiting for the next tick, via the
+/// `/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no server is up.
+pub fn cleanup() -> anyhow::Result<()> {
+    match http_request_with_body("POST", "/routines/cleanup") {
+        Ok((200, body)) => {
+            let removed = parse_removed_count(&body).unwrap_or(0);
+            let plural = if removed == 1 { "" } else { "es" };
+            println!("cleanup removed {removed} workbench{plural}");
+            Ok(())
+        }
+        Ok((status, _)) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
         }
         Err(_) => {
@@ -179,6 +205,11 @@ fn is_running() -> bool {
 
 /// Send a minimal HTTP/1.1 request to the local server and return the response status code.
 fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
+    http_request_with_body(method, path).map(|(status, _)| status)
+}
+
+/// Send a minimal HTTP/1.1 request and return the response status code together with its body.
+fn http_request_with_body(method: &str, path: &str) -> std::io::Result<(u16, String)> {
     let addr: SocketAddr = BIND_ADDR
         .parse()
         .expect("BIND_ADDR is a valid socket address");
@@ -192,17 +223,32 @@ fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
     let mut resp = String::new();
     // A failed read after a clean shutdown can still yield the status line we already received.
     let _ = stream.read_to_string(&mut resp);
-    parse_status_code(&resp).ok_or_else(|| {
+    let status = parse_status_code(&resp).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "no HTTP status line in response",
         )
-    })
+    })?;
+    Ok((status, parse_body(&resp)))
 }
 
 /// Extract the numeric status code from an HTTP response's status line (e.g. `HTTP/1.1 200 OK`).
 fn parse_status_code(resp: &str) -> Option<u16> {
     resp.lines().next()?.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// Return the body of a raw HTTP response — everything after the blank line that ends the headers.
+fn parse_body(resp: &str) -> String {
+    resp.split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_string())
+        .unwrap_or_default()
+}
+
+/// Extract the `removed` count from a [`CleanupResponse`](crate::routines::CleanupResponse) JSON
+/// body (`{"removed": N}`).
+fn parse_removed_count(body: &str) -> Option<usize> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value.get("removed")?.as_u64().map(|n| n as usize)
 }
 
 /// Spawn a detached copy of this binary running the server in the foreground, returning its PID.

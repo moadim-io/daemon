@@ -73,7 +73,9 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 1. Branch from `main` — name it `feat/...`, `fix/...`, `chore/...`, or `docs/...`.
 2. Keep commits focused; one logical change per commit.
-3. Open a PR against `main`; fill in what changed and why.
+3. Note user-facing changes under `## [Unreleased]` in
+   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format).
+4. Open a PR against `main`; fill in what changed and why.
 
 ## Code conventions
 

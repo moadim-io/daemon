@@ -85,14 +85,15 @@ pub fn print_version() {
 
 /// Start the server as a detached background process and return immediately.
 ///
-/// Refuses to start a second instance if one is already responding on [`BIND_ADDR`].
+/// If a server is already responding on [`BIND_ADDR`], it is stopped and replaced with a fresh
+/// process so each launch yields a clean instance.
 pub fn run_background() -> anyhow::Result<()> {
     if is_running() {
         let pid = read_pid_file()
             .map(|p| format!(" (pid {p})"))
             .unwrap_or_default();
-        println!("moadim is already running{pid} at http://{BIND_ADDR}");
-        return Ok(());
+        println!("moadim is already running{pid}; stopping it to start a fresh instance");
+        crate::restart::stop_running_and_wait()?;
     }
     let pid = spawn_detached()?;
     println!("moadim started in the background (pid {pid}) at http://{BIND_ADDR}");
@@ -159,7 +160,7 @@ pub fn clear_pid_file() {
 }
 
 /// Read the PID recorded in the pid file, if present and parseable.
-fn read_pid_file() -> Option<u32> {
+pub(crate) fn read_pid_file() -> Option<u32> {
     std::fs::read_to_string(crate::paths::pid_file())
         .ok()?
         .trim()
@@ -173,12 +174,12 @@ fn paths_daemon_log() -> String {
 }
 
 /// Returns `true` if a server answers `GET /health` on [`BIND_ADDR`].
-fn is_running() -> bool {
+pub(crate) fn is_running() -> bool {
     matches!(http_request("GET", "/health"), Ok(200))
 }
 
 /// Send a minimal HTTP/1.1 request to the local server and return the response status code.
-fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
+pub(crate) fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
     let addr: SocketAddr = BIND_ADDR
         .parse()
         .expect("BIND_ADDR is a valid socket address");

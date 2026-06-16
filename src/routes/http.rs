@@ -42,11 +42,11 @@ pub struct EchoResponse {
     pub timestamp: u64,
 }
 
-/// `GET /` — liveness check.
+/// `GET /` — serve the web client (single-page UI).
 #[utoipa::path(get, path = "/",
-    responses((status = 200, description = "Server is running", body = str)))]
-pub async fn index() -> &'static str {
-    "Moadim server is running"
+    responses((status = 200, description = "Web client HTML", body = str)))]
+pub async fn index() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
 }
 
 /// `GET /health` — health check with uptime.
@@ -139,13 +139,12 @@ pub(crate) fn build_app_with_shutdown(
     );
 
     Router::new()
+        .route("/", get(index))
+        // Back-compat: the UI used to live at `/ui`; redirect old links to the root.
         .route(
             "/ui",
-            get(|| async {
-                axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
-            }),
+            get(|| async { axum::response::Redirect::permanent("/") }),
         )
-        .route("/", get(index))
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
         .route("/echo", post(echo))

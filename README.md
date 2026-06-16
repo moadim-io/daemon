@@ -8,7 +8,7 @@
 
 Rust server that exposes cron job management over three interfaces simultaneously:
 
-- **UI** (`http://localhost:5784/ui`) — browser dashboard for managing jobs
+- **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs
 - **REST** (`http://localhost:5784/`) — standard HTTP API for browsers, CLI tools, and services
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 

@@ -65,13 +65,26 @@ async fn build_app_serves_health() {
 }
 
 #[tokio::test]
-async fn build_app_serves_ui() {
+async fn build_app_serves_ui_at_root() {
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ctype = resp.headers().get(CONTENT_TYPE).unwrap();
+    assert!(ctype.to_str().unwrap().starts_with("text/html"));
+}
+
+#[tokio::test]
+async fn build_app_redirects_ui_to_root() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
         .oneshot(Request::builder().uri("/ui").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(resp.headers().get("location").unwrap(), "/");
 }
 
 // ── cron-jobs CRUD lifecycle (covers all HTTP handlers + FromRef) ─────────────

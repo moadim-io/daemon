@@ -18,6 +18,20 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
+/// Process exit code emitted by `status`/`cleanup` when no server is running, so callers can branch
+/// on `$?` without parsing stdout. The success case (server reachable) exits `0`.
+pub const EXIT_NOT_RUNNING: i32 = 3;
+
+/// Map a server-liveness flag to the script-friendly process exit code: `0` when a server is
+/// reachable, [`EXIT_NOT_RUNNING`] when it is not.
+fn liveness_exit_code(running: bool) -> i32 {
+    if running {
+        0
+    } else {
+        EXIT_NOT_RUNNING
+    }
+}
+
 /// The action the user asked for on the command line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -93,6 +107,8 @@ pub fn print_help() {
          \x20   version, -V            show the version\n\
          \n\
          Pass --json to `status`/`cleanup` for a single-line machine-readable object.\n\
+         `status`/`cleanup` exit 0 when a server is running and 3 when none is, so scripts can\n\
+         branch on $? without parsing stdout.\n\
          \n\
          Once running, manage the server from the web client at http://{BIND_ADDR}\n\
          (the STOP button) or with `moadim stop`."
@@ -191,7 +207,10 @@ pub fn stop() -> anyhow::Result<()> {
 /// `/api/v1/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no
 /// server is up. With `json`, emits a single machine-readable object instead so the result can be
 /// piped into scripts.
-pub fn cleanup(json: bool) -> anyhow::Result<()> {
+///
+/// Returns the process exit code to surface: `0` when the server handled the sweep, and
+/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
+pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
             let removed = parse_removed_count(&body).unwrap_or(0);
@@ -201,7 +220,7 @@ pub fn cleanup(json: bool) -> anyhow::Result<()> {
                 let plural = if removed == 1 { "" } else { "es" };
                 println!("cleanup removed {removed} workbench{plural}");
             }
-            Ok(())
+            Ok(liveness_exit_code(true))
         }
         Ok((status, _)) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
@@ -212,19 +231,22 @@ pub fn cleanup(json: bool) -> anyhow::Result<()> {
             } else {
                 println!("moadim is not running");
             }
-            Ok(())
+            Ok(liveness_exit_code(false))
         }
     }
 }
 
 /// Report whether a server is running, with its PID when known. With `json`, emits a single
 /// machine-readable object instead of the human-readable line.
-pub fn status(json: bool) -> anyhow::Result<()> {
+///
+/// Returns the process exit code to surface: `0` when a server is reachable, and
+/// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout.
+pub fn status(json: bool) -> anyhow::Result<i32> {
     let running = is_running();
     let pid = read_pid_file();
     if json {
         println!("{}", status_json(running, pid));
-        return Ok(());
+        return Ok(liveness_exit_code(running));
     }
     if running {
         let pid_suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
@@ -232,7 +254,7 @@ pub fn status(json: bool) -> anyhow::Result<()> {
     } else {
         println!("moadim is not running");
     }
-    Ok(())
+    Ok(liveness_exit_code(running))
 }
 
 /// Render the `status` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`.

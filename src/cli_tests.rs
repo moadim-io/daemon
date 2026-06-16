@@ -88,6 +88,14 @@ fn cleanup_json_reports_removed_and_running() {
 }
 
 #[test]
+fn liveness_exit_code_maps_running_to_codes() {
+    // A reachable server exits 0; a missing one exits the documented EXIT_NOT_RUNNING.
+    assert_eq!(liveness_exit_code(true), 0);
+    assert_eq!(liveness_exit_code(false), EXIT_NOT_RUNNING);
+    assert_eq!(EXIT_NOT_RUNNING, 3);
+}
+
+#[test]
 fn restart_command() {
     assert_eq!(parse(argv(&["restart"])), Command::Restart);
 }

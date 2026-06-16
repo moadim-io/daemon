@@ -20,7 +20,8 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
 - Enrich `moadim status --json` with the server's liveness details from `GET /health` (e.g. `uptime_secs`) so a single call returns running-state + age, not just the local PID
-- Give `moadim status`/`cleanup` a script-friendly exit-code contract (e.g. exit 3 when no server is running) so callers can branch on `$?` without parsing stdout, and document it in the README CLI table
+- Give `moadim stop` the same script-friendly exit-code contract as `status`/`cleanup` (exit 3 when no server was running to stop, 0 when a running server was asked to shut down) and document it in the README CLI table
+- Add a `moadim status --wait[=SECS]` flag that polls `GET /health` until the server is reachable (or the timeout elapses), exiting 0 on success and the existing exit-3 on timeout, so scripts can block on startup instead of sleeping
 - Add a `moadim restart --interactive` (or `-i`) flavor that restarts the daemon in the foreground attached to the terminal instead of detached, mirroring `moadim -i`
 - Have `moadim restart` print the old PID it stopped and the new PID it started (e.g. "restarted: pid 123 -> 456") so scripts/logs can see the process actually rotated
 - Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast

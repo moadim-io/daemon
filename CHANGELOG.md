@@ -15,6 +15,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 - `moadim restart` CLI subcommand that stops a running daemon (if any) and
   starts a fresh detached background instance.
+- Script-friendly exit-code contract for `moadim status` and `moadim cleanup`:
+  they exit `0` when a server is running and `3` when none is, so callers can
+  branch on `$?` without parsing stdout.
 - Multiselect in the web UI cron-jobs table: select rows via click /
   `Shift`+click range / `Cmd`/`Ctrl`+click toggle, a select-all checkbox, and a
   bulk-action bar to enable, disable, or delete the selected jobs at once.

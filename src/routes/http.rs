@@ -161,6 +161,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/cron-jobs/{id}/logs", get(cron_jobs::get_logs))
         .route("/agents", get(routines::list_agents))
         .route("/routines", get(routines::list).post(routines::create))
+        .route("/routines/cleanup", post(routines::cleanup))
         .route(
             "/routines/{id}",
             get(routines::get)

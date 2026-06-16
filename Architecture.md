@@ -228,6 +228,11 @@ placeholder expands to `"$(cat prompt.txt)"`), so there is no keystroke-injectio
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
 
+Finished run workbenches are reaped automatically by an hourly background sweep
+(`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool
+`cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
+need not wait for the next tick. Live tmux sessions are never touched.
+
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`,
 `{prompt}` → `"$(cat prompt.txt)"`).

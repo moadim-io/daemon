@@ -25,6 +25,7 @@
         crate::routines::update,
         crate::routines::delete,
         crate::routines::trigger,
+        crate::routines::cleanup,
         crate::routines::get_logs,
     ),
     components(schemas(
@@ -38,6 +39,7 @@
         crate::routines::RoutineResponse,
         crate::routines::CreateRoutineRequest,
         crate::routines::UpdateRoutineRequest,
+        crate::routines::CleanupResponse,
         crate::routes::http::HealthResponse,
         crate::routes::http::ShutdownResponse,
         crate::routes::http::EchoRequest,

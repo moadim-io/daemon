@@ -300,6 +300,14 @@ impl MoadimMcp {
             Err(e) => err(e),
         })
     }
+
+    /// Reap finished, expired run workbenches immediately, returning how many were removed.
+    #[tool(
+        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed."
+    )]
+    fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(routines::svc_cleanup(&self.routines)))
+    }
 }
 
 #[cfg(test)]

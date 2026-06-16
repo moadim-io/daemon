@@ -241,6 +241,26 @@ async fn router_trigger_nonexistent_returns_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn router_routines_cleanup_returns_removed_count() {
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/routines/cleanup")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(val["removed"].is_u64());
+}
+
 // ── echo handler ──────────────────────────────────────────────────────────────
 
 #[tokio::test]

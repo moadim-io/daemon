@@ -9,9 +9,11 @@ use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
 use super::agents::load_agent_command;
+use super::cleanup::cleanup_expired_workbenches;
 use super::command::{build_routine_command, slugify};
 use super::model::{
-    CreateRoutineRequest, Routine, RoutineResponse, RoutineStore, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
+    UpdateRoutineRequest,
 };
 
 /// Return all routines sorted by creation time (oldest first).
@@ -170,6 +172,16 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
         ),
     }
     Ok(routine)
+}
+
+/// Reap finished, expired run workbenches immediately, returning how many were removed.
+///
+/// Runs the same sweep as the hourly background task ([`cleanup_expired_workbenches`]) but on
+/// demand, so callers need not wait for the next tick. Still-running sessions are never touched.
+pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
+    CleanupResponse {
+        removed: cleanup_expired_workbenches(store),
+    }
 }
 
 /// Return the contents of the newest workbench `agent.log` for routine `id`.

@@ -2,12 +2,14 @@
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, StatusCode},
+    response::IntoResponse,
     Json,
 };
 
 use crate::error::AppError;
 
+use super::ical::svc_ical;
 use super::model::{
     CreateRoutineRequest, Routine, RoutineResponse, RoutineStore, UpdateRoutineRequest,
 };
@@ -97,6 +99,19 @@ pub async fn trigger(
     Path(id): Path<String>,
 ) -> Result<Json<Routine>, AppError> {
     Ok(Json(svc_trigger(&store, &id)?))
+}
+
+/// `GET /routines.ics` — iCalendar feed of every enabled routine's upcoming fire times.
+///
+/// Returns a `text/calendar` body suitable for subscribing to in an external calendar
+/// (Google Calendar, Apple Calendar, …) so upcoming runs show up alongside other events.
+#[utoipa::path(get, path = "/routines.ics",
+    responses((status = 200, description = "iCalendar (text/calendar) feed of upcoming routine fire times")))]
+pub async fn ical_feed(State(store): State<RoutineStore>) -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
+        svc_ical(&store),
+    )
 }
 
 /// `GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.

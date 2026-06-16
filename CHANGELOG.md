@@ -14,6 +14,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ### Added
 
 - This changelog.
+- `GET /routines.ics` iCalendar feed of upcoming routine fire times for
+  subscribing in external calendars.
 
 ## [0.7.0] - 2026-06-16
 

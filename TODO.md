@@ -8,7 +8,8 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a `cargo xtask spellcheck` (or `make spell`) wrapper that installs and runs `typos` so contributors don't need to know the tool name
 - Add an endpoint/CLI to trigger workbench cleanup on demand (not only the hourly sweep)
 - Add a day-detail popover to the routines calendar: clicking a day lists each fire time (HH:MM) with its routine, and a "run now" shortcut per routine
-- Add an iCal (`.ics`) export endpoint for routine schedules so upcoming fire times can be subscribed to in external calendars
+- Link the routines calendar UI to the new `GET /routines.ics` feed: add a "SUBSCRIBE" button that copies the feed URL, plus a per-routine `?routine=<id>` filter on the endpoint
+- Fold the host's local timezone into the `.ics` feed as a `VTIMEZONE` block with `DTSTART;TZID=` local times, so subscribers see fire times in the routine's own zone instead of only UTC
 - Auto-stamp the release version/date into CHANGELOG.md from the `chore(release)` step so the `## [Unreleased]` section rolls over on tag
 - Add a CI check that fails a PR when it changes `src/` or `ui/` but leaves `## [Unreleased]` in CHANGELOG.md empty
 - Have a commands folder for all the cli commands, we want to work with colocation of files

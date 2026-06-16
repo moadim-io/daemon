@@ -26,6 +26,7 @@
         crate::routines::delete,
         crate::routines::trigger,
         crate::routines::get_logs,
+        crate::routines::ical_feed,
     ),
     components(schemas(
         crate::cron_jobs::CronJob,

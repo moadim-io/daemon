@@ -15,3 +15,4 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Have a commands folder for all the cli commands, we want to work with colocation of files
 - Dismiss any open UI modal/dialog (edit, delete-confirm, shutdown-confirm) with the Esc key
 - Show server uptime as a humanized duration (e.g. "2h 14m") next to the health badge in the header
+- Have better daemon logging, with timestamps and log levels

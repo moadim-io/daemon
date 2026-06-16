@@ -180,10 +180,16 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
     ));
-    stmts.extend([format!(
-        r#"cp {} "$WB/prompt.md""#,
-        shell_quote(&prompt_path)
-    )]);
+    stmts.extend([
+        // Fail-fast if the routine's source prompt is missing. The statements are `;`-joined, so a
+        // bare `cp` failure would be ignored and the agent would launch with an empty
+        // `"$(cat prompt.md)"` argument — a blank, task-less session. Abort instead, recording the
+        // reason in the workbench's agent.log (already created via mkdir) and on stderr.
+        format!(
+            r#"cp {src} "$WB/prompt.md" || {{ echo "moadim: missing routine prompt {src}; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
+            src = shell_quote(&prompt_path)
+        ),
+    ]);
     if let Some(setup) = &agent.setup {
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
         stmts.push(setup.clone());

@@ -150,6 +150,31 @@ fn build_routine_command_writes_claude_md() {
 }
 
 #[test]
+fn build_routine_command_aborts_when_prompt_missing() {
+    let r = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        setup: None,
+    };
+    let cmd = build_routine_command(&r, &agent);
+    // The cp of the routine's source prompt must fail-fast: a missing source aborts the launch
+    // instead of starting the agent with an empty "$(cat prompt.md)" argument (a task-less session).
+    let cp_at = cmd.find("cp ").expect("cp in cmd");
+    let abort_at = cmd[cp_at..]
+        .find("exit 1")
+        .map(|o| cp_at + o)
+        .expect("cp should be guarded by an abort");
+    let launch_at = cmd.find("tmux new-session").expect("launch present");
+    assert!(
+        abort_at < launch_at,
+        "cp abort guard must precede the agent launch"
+    );
+    // failure reason is recorded in the workbench agent.log
+    assert!(cmd[cp_at..].contains(r#""$WB/agent.log""#));
+}
+
+#[test]
 fn build_routine_command_inserts_setup_before_launch() {
     let r = make_routine("rid");
     let agent = AgentCommand {

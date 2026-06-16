@@ -466,6 +466,27 @@
         }
       }
     },
+    "/routines/cleanup": {
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/cleanup` — reap finished, expired run workbenches on demand.",
+        "operationId": "cleanup",
+        "responses": {
+          "200": {
+            "description": "Number of workbenches removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/routines/{id}": {
       "get": {
         "tags": [
@@ -714,6 +735,20 @@
   },
   "components": {
     "schemas": {
+      "CleanupResponse": {
+        "type": "object",
+        "description": "Result of an on-demand workbench cleanup sweep.",
+        "required": [
+          "removed"
+        ],
+        "properties": {
+          "removed": {
+            "type": "integer",
+            "description": "Number of finished, expired run workbenches removed by this sweep.",
+            "minimum": 0
+          }
+        }
+      },
       "CreateRequest": {
         "type": "object",
         "description": "Request body for creating a new cron job.",

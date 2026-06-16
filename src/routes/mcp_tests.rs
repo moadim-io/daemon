@@ -373,6 +373,19 @@ fn create_get_update_trigger_delete_routine_success() {
 }
 
 #[test]
+fn cleanup_workbenches_tool_returns_removed_count() {
+    let handler = make_handler();
+    let result = handler.cleanup_workbenches().unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let json_str = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+    assert!(val["removed"].is_u64());
+}
+
+#[test]
 fn update_routine_tool_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();

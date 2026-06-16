@@ -115,6 +115,13 @@ impl RoutineResponse {
     }
 }
 
+/// Result of an on-demand workbench cleanup sweep.
+#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
+pub struct CleanupResponse {
+    /// Number of finished, expired run workbenches removed by this sweep.
+    pub removed: usize,
+}
+
 /// Thread-safe shared store of routines keyed by ID.
 pub type RoutineStore = Arc<Mutex<HashMap<String, Routine>>>;
 

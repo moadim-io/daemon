@@ -179,12 +179,20 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
 /// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
-    /// Cron expression for the new job. Evaluated in the host's local system
-    /// timezone (the OS crontab timezone), not UTC.
+    /// Cron expression for the new job. Accepts standard 5-field syntax
+    /// (`min hour dom month dow`) or an `@keyword` (`@hourly`, `@daily`,
+    /// `@weekly`, `@monthly`); a 7-field expression is normalized to 5 fields.
+    /// Evaluated in the host's local system timezone (the OS crontab timezone),
+    /// not UTC. Example: `"30 9 * * 1-5"`.
     pub schedule: String,
-    /// Handler identifier to invoke when the schedule fires.
+    /// Name of the handler script to run when the schedule fires. The script
+    /// must live in `~/.config/moadim/handlers/`. The name may be given with or
+    /// without a file extension: resolution tries an exact filename match first,
+    /// then appends the common script extensions `.sh`, `.py`, `.js`, `.rb`,
+    /// `.pl`, `.bash`, `.zsh` (e.g. `"send-report"` matches `send-report.sh`).
     pub handler: String,
-    /// Optional metadata (defaults to null).
+    /// Optional arbitrary JSON metadata stored alongside the job (defaults to
+    /// null). Example: `{"report": "weekly"}`.
     #[serde(default)]
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: serde_json::Value,
@@ -201,12 +209,17 @@ fn bool_true() -> bool {
 /// Request body for partially updating an existing cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRequest {
-    /// New cron expression, or `None` to keep the existing value. Evaluated in the
-    /// host's local system timezone (the OS crontab timezone), not UTC.
+    /// New cron expression, or `None` to keep the existing value. Accepts
+    /// standard 5-field syntax (`min hour dom month dow`) or an `@keyword`
+    /// (`@hourly`, `@daily`, `@weekly`, `@monthly`); a 7-field expression is
+    /// normalized to 5 fields. Evaluated in the host's local system timezone
+    /// (the OS crontab timezone), not UTC. Example: `"30 9 * * 1-5"`.
     pub schedule: Option<String>,
-    /// New handler identifier, or `None` to keep the existing value.
+    /// New handler script name, or `None` to keep the existing value. The script
+    /// must live in `~/.config/moadim/handlers/` and may be given with or without
+    /// a file extension (e.g. `"send-report"` matches `send-report.sh`).
     pub handler: Option<String>,
-    /// New metadata, or `None` to keep the existing value.
+    /// New arbitrary JSON metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: Option<serde_json::Value>,
     /// New enabled state, or `None` to keep the existing value.

@@ -23,11 +23,12 @@ pub fn generate(manifest_dir: &str) {
             },
             "handler": {
                 "type": "string",
-                "description": "Handler identifier invoked when the schedule fires"
+                "description": "Name of the handler script in ~/.config/moadim/handlers/ to run when the schedule fires. May be given with or without a file extension: resolution tries an exact match first, then appends .sh, .py, .js, .rb, .pl, .bash, .zsh (e.g. \"send-report\" matches send-report.sh).",
+                "examples": ["send-report", "backup.sh"]
             },
             "metadata": {
                 "type": "object",
-                "description": "Arbitrary key-value data passed to the handler",
+                "description": "Arbitrary JSON key-value data stored alongside the job",
                 "additionalProperties": true
             },
             "enabled": {

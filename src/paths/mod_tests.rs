@@ -161,3 +161,22 @@ fn config_gitignore_path_in_config_dir() {
     assert_eq!(p.file_name().unwrap().to_str().unwrap(), ".gitignore");
     assert_eq!(p.parent().unwrap(), config_dir());
 }
+
+#[test]
+fn user_prompt_path_filename() {
+    let p = user_prompt_path();
+    assert_eq!(p.file_name().unwrap().to_str().unwrap(), "user_prompt.md");
+    assert!(p.to_string_lossy().contains("moadim"));
+}
+
+#[test]
+fn user_prompt_path_from_home_none_falls_back_to_dot() {
+    let p = super::user_prompt_path_from_home(None);
+    assert!(p.ends_with(".config/moadim/user_prompt.md"));
+    assert!(p.starts_with("."));
+}
+
+#[test]
+fn user_prompt_path_is_in_config_dir() {
+    assert_eq!(user_prompt_path().parent().unwrap(), config_dir());
+}

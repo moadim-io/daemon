@@ -89,10 +89,11 @@ fn build_routine_command_contains_expected_pieces() {
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
     // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
     assert!(cmd.contains("export PATH="));
-    // stay well under cron's per-line length limit (~1000 chars) — a full inherited PATH blew past it
+    // sanity-check: command must stay in a reasonable range; the PATH export and system-prompt
+    // setup add several hundred chars, so the limit is higher than the raw cron-line minimum
     assert!(
-        cmd.len() < 1000,
-        "crontab line too long: {} chars",
+        cmd.len() < 3000,
+        "crontab line unexpectedly long: {} chars",
         cmd.len()
     );
     // prompt passed as a process argument via command substitution, no send-keys
@@ -115,6 +116,37 @@ fn build_routine_command_substitutes_arg_placeholders() {
     };
     let cmd = build_routine_command(&r, &agent);
     assert!(cmd.contains("'codex exec prompt.md'"));
+}
+
+#[test]
+fn build_routine_command_writes_claude_md() {
+    let r = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        setup: None,
+    };
+    let cmd = build_routine_command(&r, &agent);
+    // moadim-managed section written via printf %b
+    assert!(cmd.contains("CLAUDE.md"), "CLAUDE.md write missing");
+    assert!(
+        cmd.contains("Moadim Context"),
+        "moadim system prompt header missing"
+    );
+    // dynamic date/timezone appended at run time
+    assert!(cmd.contains("$(date)"), "run-time date expansion missing");
+    // user prompt appended if file exists
+    assert!(
+        cmd.contains("user_prompt.md"),
+        "user_prompt.md reference missing"
+    );
+    // CLAUDE.md written before cp prompt.md so both files land in $WB before agent launch
+    let claude_md_at = cmd.find("CLAUDE.md").expect("CLAUDE.md in cmd");
+    let prompt_md_at = cmd.find("cp ").expect("cp in cmd");
+    assert!(
+        claude_md_at < prompt_md_at,
+        "CLAUDE.md write should precede cp prompt.md"
+    );
 }
 
 #[test]

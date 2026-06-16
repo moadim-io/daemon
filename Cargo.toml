@@ -50,3 +50,5 @@ missing_docs = "deny"
 [lints.clippy]
 all = "deny"
 missing_docs_in_private_items = "deny"
+# Reject single-character identifiers (threshold 1, the lint default).
+min_ident_chars = "deny"

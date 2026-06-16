@@ -42,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Cleanup => cli::cleanup(),
         cli::Command::Stop => cli::stop(),
         cli::Command::Background => cli::run_background(),
+        cli::Command::Restart => cli::restart(),
         cli::Command::Foreground => run_server().await,
     }
 }

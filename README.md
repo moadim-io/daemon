@@ -187,6 +187,7 @@ moadim                 # start detached, print the PID, return to the shell
 moadim --interactive   # run in the foreground, attached to the terminal (Ctrl-C to stop)
 moadim status          # report whether a server is running
 moadim cleanup         # reap finished, expired routine workbenches now
+moadim restart         # stop a running server (if any) and start a fresh one
 moadim stop            # ask a running server to stop
 ```
 
@@ -194,6 +195,7 @@ moadim stop            # ask a running server to stop
 |--------------------|---------------|-----------|
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
+| `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. |
 | `moadim cleanup`   | —             | Sends `POST /routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). |

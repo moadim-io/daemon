@@ -16,6 +16,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - This changelog.
 - `GET /routines.ics` iCalendar feed of upcoming routine fire times for
   subscribing in external calendars.
+- `moadim restart` CLI subcommand that stops a running daemon (if any) and
+  starts a fresh detached background instance.
 
 ## [0.7.0] - 2026-06-16
 

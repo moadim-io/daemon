@@ -38,6 +38,11 @@ fn cleanup_command() {
 }
 
 #[test]
+fn restart_command() {
+    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+}
+
+#[test]
 fn help_and_version_flags() {
     for flag in ["-h", "--help", "help"] {
         assert_eq!(parse(argv(&[flag])), Command::Help, "flag {flag}");

@@ -25,6 +25,8 @@ pub enum Command {
     Foreground,
     /// Spawn the server as a detached background process, then exit (the default, non-interactive).
     Background,
+    /// Stop a running background server (if any) and start a fresh detached instance.
+    Restart,
     /// Ask a running background server to stop.
     Stop,
     /// Report whether a server is currently running.
@@ -45,6 +47,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
         None => Command::Background,
+        Some("restart") => Command::Restart,
         Some("stop") => Command::Stop,
         Some("status") => Command::Status,
         Some("cleanup") => Command::Cleanup,
@@ -71,6 +74,7 @@ pub fn print_help() {
          \x20   -b, --background       start the server detached in the background (explicit default)\n\
          \n\
          COMMANDS:\n\
+         \x20   restart                stop a running server (if any) and start a fresh background one\n\
          \x20   stop                   stop a running background server\n\
          \x20   status                 show whether a server is running\n\
          \x20   cleanup                reap finished, expired routine workbenches now\n\
@@ -99,8 +103,33 @@ pub fn run_background() -> anyhow::Result<()> {
         println!("moadim is already running{pid}; stopping it to start a fresh instance");
         crate::restart::stop_running_and_wait()?;
     }
+    start_detached_and_report("started")
+}
+
+/// Stop a running background server (if any) and start a fresh detached instance.
+///
+/// Unlike [`run_background`], which restarts only as a side effect of being asked to start while
+/// one is already up, this is the explicit "give me a clean process now" command: it stops the
+/// running server when present, otherwise just starts one.
+pub fn restart() -> anyhow::Result<()> {
+    if is_running() {
+        let pid = read_pid_file()
+            .map(|p| format!(" (pid {p})"))
+            .unwrap_or_default();
+        println!("moadim is running{pid}; stopping it");
+        crate::restart::stop_running_and_wait()?;
+    } else {
+        println!("moadim is not running; starting a fresh instance");
+    }
+    start_detached_and_report("restarted")
+}
+
+/// Spawn a detached server process and print where to reach and manage it.
+///
+/// `verb` describes how the process came to be ("started" / "restarted") for the first line.
+fn start_detached_and_report(verb: &str) -> anyhow::Result<()> {
     let pid = spawn_detached()?;
-    println!("moadim started in the background (pid {pid}) at http://{BIND_ADDR}");
+    println!("moadim {verb} in the background (pid {pid}) at http://{BIND_ADDR}");
     println!("  UI    http://{BIND_ADDR}");
     println!("  stop  moadim stop   (or use the STOP button in the UI)");
     println!("  logs  {}", paths_daemon_log());

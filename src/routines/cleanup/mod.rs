@@ -13,8 +13,11 @@ use std::time::Duration;
 use crate::paths::workbenches_dir;
 use crate::utils::time::now_secs;
 
-use super::command::slugify;
-use super::model::{RoutineStore, DEFAULT_TTL_SECS};
+use super::model::RoutineStore;
+
+mod snapshot;
+mod ttl;
+pub use ttl::DEFAULT_TTL_SECS;
 
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -100,14 +103,8 @@ fn reap_dir(
 /// Returns the number of workbenches removed. Safe to call repeatedly; it only ever touches
 /// directories whose run has ended.
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
-    // Snapshot slug -> ttl so the store lock is not held across filesystem and tmux calls.
-    let ttls: std::collections::HashMap<String, u64> = {
-        let lock = store.lock().unwrap();
-        lock.values()
-            .map(|r| (slugify(&r.title), r.effective_ttl_secs()))
-            .collect()
-    };
-    let ttl_for = |slug: &str| ttls.get(slug).copied().unwrap_or(DEFAULT_TTL_SECS);
+    let ttls = snapshot::snapshot_ttls(store);
+    let ttl_for = |slug: &str| snapshot::ttl_for(&ttls, slug);
     reap_dir(
         &workbenches_dir(),
         now_secs(),

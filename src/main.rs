@@ -59,6 +59,10 @@ async fn run_server() -> anyhow::Result<()> {
     // store reflects the canonical dirs the crontab sync and run.sh `cp prompt.md` both target.
     routine_storage::migrate_routine_dirs();
     let routines = routine_storage::load_store();
+    // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
+    // fresh install ships with them, and a default deleted while stopped is restored. Existing
+    // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
+    routines::ensure_default_routines(&routines);
     // The crontab sync writes only run.sh; re-persist so every routine also has its routine.toml +
     // prompt.md sidecar in the slug dir, healing dirs left with run.sh but no prompt (otherwise the
     // cron `cp prompt.md` fails and the agent launches with an empty prompt).

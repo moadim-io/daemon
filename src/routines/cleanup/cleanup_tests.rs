@@ -1,6 +1,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 use super::*;
+use super::ttl::MAX_TTL_SECS;
 
 #[test]
 fn parse_workbench_name_splits_slug_and_timestamp() {
@@ -83,11 +84,10 @@ fn reap_dir_uses_per_slug_ttl() {
     std::fs::remove_dir_all(&base).unwrap();
 }
 
-#[test]
-fn effective_ttl_falls_back_to_default() {
-    let mut r = super::super::model::Routine {
+fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
+    super::super::model::Routine {
         id: "x".into(),
-        schedule: "@daily".into(),
+        schedule: schedule.into(),
         title: "t".into(),
         agent: "claude".into(),
         prompt: "p".into(),
@@ -97,9 +97,48 @@ fn effective_ttl_falls_back_to_default() {
         created_at: 0,
         updated_at: 0,
         last_triggered_at: None,
-        ttl_secs: None,
-    };
-    assert_eq!(r.effective_ttl_secs(), DEFAULT_TTL_SECS);
-    r.ttl_secs = Some(42);
-    assert_eq!(r.effective_ttl_secs(), 42);
+        ttl_secs,
+    }
+}
+
+#[test]
+fn effective_ttl_caps_at_max_for_long_intervals() {
+    // Daily interval (24h) is well above the 1h cap, so retention is the cap.
+    assert_eq!(
+        routine_with("@daily", None).effective_ttl_secs(),
+        MAX_TTL_SECS
+    );
+}
+
+#[test]
+fn effective_ttl_follows_sub_hour_cron_interval() {
+    // Every 10 minutes -> retention is the 600s interval, below the cap.
+    assert_eq!(
+        routine_with("*/10 * * * *", None).effective_ttl_secs(),
+        10 * 60
+    );
+}
+
+#[test]
+fn effective_ttl_explicit_only_lowers() {
+    // An explicit ttl_secs below the cap wins.
+    assert_eq!(routine_with("@daily", Some(42)).effective_ttl_secs(), 42);
+    // An explicit ttl_secs above the cap is clamped down to it.
+    assert_eq!(
+        routine_with("@daily", Some(u64::MAX)).effective_ttl_secs(),
+        MAX_TTL_SECS
+    );
+    // It cannot raise retention above the smaller cron interval either.
+    assert_eq!(
+        routine_with("*/10 * * * *", Some(u64::MAX)).effective_ttl_secs(),
+        10 * 60
+    );
+}
+
+#[test]
+fn effective_ttl_falls_back_to_cap_for_unparseable_schedule() {
+    assert_eq!(
+        routine_with("@reboot", None).effective_ttl_secs(),
+        MAX_TTL_SECS
+    );
 }

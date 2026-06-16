@@ -1395,6 +1395,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "axum",
+ "chrono",
  "croner",
  "dirs",
  "iana-time-zone",

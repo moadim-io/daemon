@@ -702,3 +702,46 @@ async fn mcp_endpoint_triggers_factory() {
         .unwrap();
     assert!(resp.status().as_u16() < 500);
 }
+
+#[tokio::test]
+async fn router_serves_routines_ical_feed() {
+    let routines = crate::routines::new_store();
+    routines.lock().unwrap().insert(
+        "r1".to_string(),
+        crate::routines::Routine {
+            id: "r1".to_string(),
+            schedule: "@daily".to_string(),
+            title: "My Routine".to_string(),
+            agent: "claude".to_string(),
+            prompt: "do the thing".to_string(),
+            repositories: vec![],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_triggered_at: None,
+            ttl_secs: None,
+        },
+    );
+    let resp = build_app(new_store(), routines)
+        .oneshot(
+            Request::builder()
+                .uri("/routines.ics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        "text/calendar; charset=utf-8"
+    );
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(body.starts_with("BEGIN:VCALENDAR"));
+    assert!(body.contains("BEGIN:VEVENT"));
+    assert!(body.contains("SUMMARY:My Routine"));
+}

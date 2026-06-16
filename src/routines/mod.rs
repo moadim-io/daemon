@@ -11,12 +11,14 @@
 //! - [`command`] — prompt composition and the single-line launch command builder.
 //! - [`service`] — store-mutating service functions (list/get/create/update/delete/trigger/logs).
 //! - [`cleanup`] — auto-removal of finished, expired run workbenches (per-routine TTL).
+//! - [`ical`] — iCalendar (`.ics`) export of upcoming routine fire times.
 //! - [`handlers`] — the Axum HTTP handlers.
 
 mod agents;
 mod cleanup;
 mod command;
 mod handlers;
+mod ical;
 mod model;
 mod service;
 

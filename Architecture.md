@@ -228,6 +228,10 @@ placeholder expands to `"$(cat prompt.txt)"`), so there is no keystroke-injectio
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
 
+`GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
+times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
+instants so external calendars can subscribe without an embedded `VTIMEZONE`. See `src/routines/ical.rs`.
+
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`,
 `{prompt}` → `"$(cat prompt.txt)"`).

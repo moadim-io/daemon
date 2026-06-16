@@ -162,6 +162,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/agents", get(routines::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
+        .route("/routines/cleanup", post(routines::cleanup))
         .route(
             "/routines/{id}",
             get(routines::get)

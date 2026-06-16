@@ -11,10 +11,11 @@ use crate::error::AppError;
 
 use super::ical::svc_ical;
 use super::model::{
-    CreateRoutineRequest, Routine, RoutineResponse, RoutineStore, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
+    UpdateRoutineRequest,
 };
 use super::service::{
-    svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger, svc_update,
+    svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger, svc_update,
 };
 
 /// `POST /routines` — create a new routine.
@@ -112,6 +113,13 @@ pub async fn ical_feed(State(store): State<RoutineStore>) -> impl IntoResponse {
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
         svc_ical(&store),
     )
+}
+
+/// `POST /routines/cleanup` — reap finished, expired run workbenches on demand.
+#[utoipa::path(post, path = "/routines/cleanup",
+    responses((status = 200, body = CleanupResponse, description = "Number of workbenches removed")))]
+pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse> {
+    Json(svc_cleanup(&store))
 }
 
 /// `GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.

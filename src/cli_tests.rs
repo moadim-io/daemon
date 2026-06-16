@@ -33,6 +33,11 @@ fn stop_and_status_commands() {
 }
 
 #[test]
+fn cleanup_command() {
+    assert_eq!(parse(argv(&["cleanup"])), Command::Cleanup);
+}
+
+#[test]
 fn help_and_version_flags() {
     for flag in ["-h", "--help", "help"] {
         assert_eq!(parse(argv(&[flag])), Command::Help, "flag {flag}");
@@ -60,4 +65,28 @@ fn parses_http_status_code() {
 fn rejects_malformed_status_line() {
     assert_eq!(parse_status_code(""), None);
     assert_eq!(parse_status_code("garbage"), None);
+}
+
+#[test]
+fn extracts_body_after_headers() {
+    let resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"removed\":3}";
+    assert_eq!(parse_body(resp), "{\"removed\":3}");
+}
+
+#[test]
+fn body_is_empty_without_header_separator() {
+    assert_eq!(parse_body("HTTP/1.1 200 OK"), "");
+}
+
+#[test]
+fn parses_removed_count_from_cleanup_body() {
+    assert_eq!(parse_removed_count("{\"removed\":0}"), Some(0));
+    assert_eq!(parse_removed_count("{\"removed\":7}"), Some(7));
+}
+
+#[test]
+fn rejects_non_cleanup_body() {
+    assert_eq!(parse_removed_count(""), None);
+    assert_eq!(parse_removed_count("not json"), None);
+    assert_eq!(parse_removed_count("{\"other\":1}"), None);
 }

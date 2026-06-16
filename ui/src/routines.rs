@@ -71,6 +71,12 @@ pub struct CreateRoutineRequest {
     pub ttl_secs: Option<u64>,
 }
 
+/// Result of `POST /routines/cleanup` (mirrors the server `CleanupResponse`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct CleanupResponse {
+    pub removed: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct UpdateRoutineRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,6 +164,20 @@ async fn api_trigger(id: &str) -> Result<Routine, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.json::<Routine>().await.map_err(|e| e.to_string())
+}
+
+async fn api_cleanup() -> Result<usize, String> {
+    let resp = Request::post("/routines/cleanup")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<CleanupResponse>()
+        .await
+        .map(|r| r.removed)
+        .map_err(|e| e.to_string())
 }
 
 async fn api_logs(id: &str) -> Result<String, String> {
@@ -349,6 +369,24 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         })
     };
 
+    let on_cleanup = {
+        let toast = toast.clone();
+        let ok = ok_toast.clone();
+        Callback::from(move |_: MouseEvent| {
+            let toast = toast.clone();
+            let ok = ok.clone();
+            spawn_local(async move {
+                match api_cleanup().await {
+                    Ok(n) => ok(&format!(
+                        "Cleanup removed {n} workbench{}",
+                        if n == 1 { "" } else { "es" }
+                    )),
+                    Err(e) => toast.emit((format!("Cleanup failed: {e}"), ToastKind::Err)),
+                }
+            })
+        })
+    };
+
     let on_trigger = {
         let state = state.clone();
         let toast = toast.clone();
@@ -484,6 +522,8 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 <div class="section-label">{"SCHEDULED ROUTINES"}</div>
                                 <div class="section-acts">
                                     <ViewToggle view={view} on_set_view={on_set_view} />
+                                    <button class="btn btn-ghost btn-sm" onclick={on_cleanup}
+                                        title="Reap finished, expired run workbenches now">{"CLEANUP NOW"}</button>
                                     <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW ROUTINE"}</button>
                                 </div>
                             </div>

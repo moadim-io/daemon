@@ -21,3 +21,4 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a `moadim restart` CLI subcommand that stops a running daemon (if any) and starts a fresh background instance
 - Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast
 - Auto-refresh the routine LOGS view (or show a removed badge) after a CLEANUP NOW sweep so stale run output isn't shown for reaped workbenches
+- Add the option to filter routines by repositories in the ui

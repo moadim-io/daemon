@@ -11,6 +11,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim restart` CLI subcommand that stops a running daemon (if any) and
+  starts a fresh detached background instance.
+
 ## [0.8.0] - 2026-06-16
 
 ### Added

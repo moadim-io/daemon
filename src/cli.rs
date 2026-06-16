@@ -1,8 +1,8 @@
 //! Command-line interface: run-mode selection and background-process lifecycle.
 //!
 //! The `moadim` binary runs an HTTP/MCP/UI server. By default it starts that server **detached in
-//! the background** and returns control to the shell — you then manage it from the client (the
-//! `/ui` "STOP" button) or with `moadim stop`. Pass `--interactive` to run it in the foreground
+//! the background** and returns control to the shell — you then manage it from the client (the web
+//! UI "STOP" button at the root URL) or with `moadim stop`. Pass `--interactive` to run it in the foreground
 //! attached to the terminal instead (Ctrl-C to stop).
 
 use std::io::{Read as _, Write as _};
@@ -77,7 +77,7 @@ pub fn print_help() {
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
-         Once running, manage the server from the web client at http://{BIND_ADDR}/ui\n\
+         Once running, manage the server from the web client at http://{BIND_ADDR}\n\
          (the STOP button) or with `moadim stop`."
     );
 }
@@ -101,7 +101,7 @@ pub fn run_background() -> anyhow::Result<()> {
     }
     let pid = spawn_detached()?;
     println!("moadim started in the background (pid {pid}) at http://{BIND_ADDR}");
-    println!("  UI    http://{BIND_ADDR}/ui");
+    println!("  UI    http://{BIND_ADDR}");
     println!("  stop  moadim stop   (or use the STOP button in the UI)");
     println!("  logs  {}", paths_daemon_log());
     Ok(())

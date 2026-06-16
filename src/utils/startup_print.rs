@@ -3,9 +3,8 @@
 /// Print server addresses to stdout.
 pub fn print(addr: &str) {
     println!("Server on http://{addr}");
-    println!("  REST  http://{addr}/");
+    println!("  UI    http://{addr}/");
     println!("  MCP   http://{addr}/mcp");
-    println!("  UI    http://{addr}/ui");
     println!("  Docs  http://{addr}/docs");
 }
 

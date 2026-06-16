@@ -21,11 +21,11 @@
         "tags": [
           "crate::routes::http"
         ],
-        "summary": "`GET /` — liveness check.",
+        "summary": "`GET /` — serve the web client (single-page UI).",
         "operationId": "index",
         "responses": {
           "200": {
-            "description": "Server is running",
+            "description": "Web client HTML",
             "content": {
               "text/plain": {
                 "schema": {

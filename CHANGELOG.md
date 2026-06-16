@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Routines created before the UUID→slug storage-directory change launched their
+  agent with an empty prompt: their `routine.toml`/`prompt.md` stayed in the
+  legacy `{id}/` dir while the crontab sync wrote `run.sh` into a fresh `{slug}/`
+  dir, so the cron `cp prompt.md` read an empty dir. Startup now migrates legacy
+  UUID-named routine dirs to the slug layout and re-persists every routine's
+  `routine.toml` + `prompt.md` sidecar, healing dirs left with only `run.sh`. The
+  generated `run.sh` also now aborts (and logs to the workbench `agent.log`) when
+  the source prompt is missing instead of launching a task-less agent session.
+
 ### Added
 
 - `moadim restart` CLI subcommand that stops a running daemon (if any) and

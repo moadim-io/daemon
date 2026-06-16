@@ -136,6 +136,66 @@ pub fn migrate_prompt_files() {
     }
 }
 
+/// Migrate legacy UUID-named routine directories to the current slug-based layout.
+///
+/// Early daemon versions stored each routine under `{routines_dir}/{id}/` (the UUID). The current
+/// layout uses `{routines_dir}/{slugify(title)}/`. After an upgrade the legacy dir still holds the
+/// real `routine.toml` + `prompt.md`, while the crontab sync creates a *fresh* slug dir containing
+/// only `run.sh` — so the cron `cp prompt.md` reads an empty dir and the agent launches task-less.
+///
+/// For every on-disk routine whose directory name does not already equal its slug, this re-persists
+/// it into the slug dir (preserving any `run.sh` already there) and removes the stale legacy dir.
+/// Idempotent: routines already in their slug dir are skipped. Call once at startup before
+/// `load_store` so the in-memory store reflects the canonical layout.
+pub fn migrate_routine_dirs() {
+    let dir = routines_dir();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        let Some(routine) = load_routine_from_dir(&dir_name) else {
+            // A dir without a parsable routine.toml (e.g. a sync-created dir holding only run.sh)
+            // carries no routine to migrate; the routine it shadows is healed from its own dir.
+            continue;
+        };
+        let slug = slugify(&routine.title);
+        if slug == dir_name {
+            continue;
+        }
+        if let Err(e) = write_routine(&routine) {
+            log::warn!("migrate_routine_dirs: failed to write {slug:?}: {e}; leaving legacy dir");
+            continue;
+        }
+        if let Err(e) = remove_routine_dir(&dir_name) {
+            log::warn!("migrate_routine_dirs: failed to remove legacy dir {dir_name:?}: {e}");
+        }
+    }
+}
+
+/// Re-persist every loaded routine to disk, recreating `routine.toml`, `prompt.md`, and `.gitignore`
+/// in its canonical slug directory.
+///
+/// The crontab sync writes only `run.sh`; nothing else rewrites the prompt sidecar on startup. So a
+/// slug dir that ends up with `run.sh` but no `prompt.md` (e.g. after the UUID→slug migration, or if
+/// the sidecar was lost) would fail the cron `cp prompt.md`. Re-persisting from the in-memory store
+/// heals those dirs. Idempotent; safe to call on every startup after [`load_store`].
+pub fn repersist_routines(store: &RoutineStore) {
+    let routines: Vec<Routine> = store.lock().unwrap().values().cloned().collect();
+    for r in &routines {
+        if let Err(e) = write_routine(r) {
+            log::warn!(
+                "repersist_routines: failed to write routine {:?}: {e}",
+                r.id
+            );
+        }
+    }
+}
+
 /// Scan `~/.config/moadim/routines/` and load all valid routines into a new store.
 pub fn load_store() -> RoutineStore {
     load_store_from_dir(&routines_dir())

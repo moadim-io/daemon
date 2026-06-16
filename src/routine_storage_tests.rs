@@ -87,3 +87,51 @@ fn load_store_from_dir_missing_dir_empty() {
 fn remove_routine_dir_noop_when_absent() {
     remove_routine_dir("rs-never-created-zzz").unwrap();
 }
+
+#[test]
+fn migrate_routine_dirs_moves_legacy_uuid_dir_to_slug() {
+    let id = "rs-legacy-uuid-1234";
+    let title = "Rs Legacy Migrate Routine";
+    let slug = slugify(title);
+    let legacy_dir = crate::paths::routine_dir(id);
+    std::fs::create_dir_all(&legacy_dir).unwrap();
+    // Legacy layout: routine.toml + prompt.md live under the UUID-named dir.
+    let toml = format!(
+        "id = \"{id}\"\nschedule = \"@daily\"\ntitle = \"{title}\"\nagent = \"claude\"\nprompt = \"task\"\nenabled = true\n"
+    );
+    std::fs::write(legacy_dir.join("routine.toml"), toml).unwrap();
+    std::fs::write(legacy_dir.join("prompt.md"), "legacy prompt").unwrap();
+
+    migrate_routine_dirs();
+
+    // Legacy dir removed; canonical slug dir now holds toml + prompt.
+    assert!(!legacy_dir.exists(), "legacy UUID dir should be removed");
+    assert!(crate::paths::routine_toml_path(&slug).exists());
+    assert!(crate::paths::routine_prompt_path(&slug).exists());
+    let loaded = load_routine_from_dir(&slug).unwrap();
+    assert_eq!(loaded.id, id, "UUID id preserved across the dir migration");
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn repersist_routines_recreates_missing_prompt_sidecar() {
+    let id = "rs-repersist-id";
+    let title = "Rs Repersist Routine";
+    let slug = slugify(title);
+    write_routine(&make_routine(id, title)).unwrap();
+    // Simulate the sync-only state: prompt.md gone, only run.sh-style dir remains.
+    std::fs::remove_file(crate::paths::routine_prompt_path(&slug)).unwrap();
+    assert!(!crate::paths::routine_prompt_path(&slug).exists());
+
+    let mut map = HashMap::new();
+    map.insert(id.to_string(), make_routine(id, title));
+    let store = Arc::new(Mutex::new(map));
+    repersist_routines(&store);
+
+    assert!(
+        crate::paths::routine_prompt_path(&slug).exists(),
+        "repersist should recreate the prompt sidecar"
+    );
+    remove_routine_dir(&slug).unwrap();
+}

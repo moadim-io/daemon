@@ -231,3 +231,8 @@ url:       http://localhost:5784/mcp
 ## API
 
 Full interface definitions are auto-generated at build time — see the [`apis/`](apis/) folder.
+
+## Changelog
+
+Release history lives in [`CHANGELOG.md`](CHANGELOG.md), following the
+[Keep a Changelog](https://keepachangelog.com/) format.

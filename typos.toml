@@ -1,0 +1,17 @@
+# Configuration for the `typos` spell checker run by the pre-commit hook.
+# See https://github.com/crate-ci/typos for the full schema.
+
+[files]
+# Generated, vendored, or lock artifacts — not hand-written prose/code, so
+# they produce only false positives.
+extend-exclude = [
+  "prebuilt.html",
+  "Cargo.lock",
+  "pnpm-lock.yaml",
+  "apis/openapi.json",
+  "schemas/",
+]
+
+[default.extend-words]
+# Intentional spelling used in the codebase; keep it as-is.
+unparseable = "unparseable"

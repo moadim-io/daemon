@@ -27,10 +27,11 @@ pub enum Command {
     Background,
     /// Ask a running background server to stop.
     Stop,
-    /// Report whether a server is currently running.
-    Status,
-    /// Ask a running server to reap finished, expired routine run workbenches now.
-    Cleanup,
+    /// Report whether a server is currently running. `json` requests machine-readable output.
+    Status { json: bool },
+    /// Ask a running server to reap finished, expired routine run workbenches now. `json` requests
+    /// machine-readable output.
+    Cleanup { json: bool },
     /// Print usage help.
     Help,
     /// Print the binary version.
@@ -46,14 +47,24 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     match args.first().map(String::as_str) {
         None => Command::Background,
         Some("stop") => Command::Stop,
-        Some("status") => Command::Status,
-        Some("cleanup") => Command::Cleanup,
+        Some("status") => Command::Status {
+            json: wants_json(&args[1..]),
+        },
+        Some("cleanup") => Command::Cleanup {
+            json: wants_json(&args[1..]),
+        },
         Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
         Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
         Some(_) => Command::Help,
     }
+}
+
+/// Whether a `--json` flag appears among a command's trailing arguments, requesting
+/// machine-readable output for `status`/`cleanup`.
+fn wants_json(rest: &[String]) -> bool {
+    rest.iter().any(|arg| arg == "--json")
 }
 
 /// Print usage help to stdout.
@@ -72,10 +83,12 @@ pub fn print_help() {
          \n\
          COMMANDS:\n\
          \x20   stop                   stop a running background server\n\
-         \x20   status                 show whether a server is running\n\
-         \x20   cleanup                reap finished, expired routine workbenches now\n\
+         \x20   status [--json]        show whether a server is running\n\
+         \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
+         \n\
+         Pass --json to `status`/`cleanup` for a single-line machine-readable object.\n\
          \n\
          Once running, manage the server from the web client at http://{BIND_ADDR}\n\
          (the STOP button) or with `moadim stop`."
@@ -127,36 +140,72 @@ pub fn stop() -> anyhow::Result<()> {
 /// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
 ///
 /// Runs the same sweep as the hourly background task instead of waiting for the next tick, via the
-/// `/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no server is up.
-pub fn cleanup() -> anyhow::Result<()> {
+/// `/api/v1/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no
+/// server is up. With `json`, emits a single machine-readable object instead so the result can be
+/// piped into scripts.
+pub fn cleanup(json: bool) -> anyhow::Result<()> {
     match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
             let removed = parse_removed_count(&body).unwrap_or(0);
-            let plural = if removed == 1 { "" } else { "es" };
-            println!("cleanup removed {removed} workbench{plural}");
+            if json {
+                println!("{}", cleanup_json(removed, true));
+            } else {
+                let plural = if removed == 1 { "" } else { "es" };
+                println!("cleanup removed {removed} workbench{plural}");
+            }
             Ok(())
         }
         Ok((status, _)) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
         }
         Err(_) => {
-            println!("moadim is not running");
+            if json {
+                println!("{}", cleanup_json(0, false));
+            } else {
+                println!("moadim is not running");
+            }
             Ok(())
         }
     }
 }
 
-/// Report whether a server is running, with its PID when known.
-pub fn status() -> anyhow::Result<()> {
-    if is_running() {
-        let pid = read_pid_file()
-            .map(|p| format!(" (pid {p})"))
-            .unwrap_or_default();
-        println!("moadim is running{pid} at http://{BIND_ADDR}");
+/// Report whether a server is running, with its PID when known. With `json`, emits a single
+/// machine-readable object instead of the human-readable line.
+pub fn status(json: bool) -> anyhow::Result<()> {
+    let running = is_running();
+    let pid = read_pid_file();
+    if json {
+        println!("{}", status_json(running, pid));
+        return Ok(());
+    }
+    if running {
+        let pid_suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+        println!("moadim is running{pid_suffix} at http://{BIND_ADDR}");
     } else {
         println!("moadim is not running");
     }
     Ok(())
+}
+
+/// Render the `status` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`.
+/// `pid` is `null` when no pid file is present (or the server is down).
+fn status_json(running: bool, pid: Option<u32>) -> String {
+    serde_json::json!({
+        "running": running,
+        "pid": pid,
+        "address": BIND_ADDR,
+    })
+    .to_string()
+}
+
+/// Render the `cleanup` result as a one-line JSON object: `{"running":bool,"removed":N}`. `removed`
+/// is `0` when the server is not running (`running:false`).
+fn cleanup_json(removed: usize, running: bool) -> String {
+    serde_json::json!({
+        "running": running,
+        "removed": removed,
+    })
+    .to_string()
 }
 
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.

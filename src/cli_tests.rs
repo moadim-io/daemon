@@ -29,12 +29,62 @@ fn background_flags_select_background() {
 #[test]
 fn stop_and_status_commands() {
     assert_eq!(parse(argv(&["stop"])), Command::Stop);
-    assert_eq!(parse(argv(&["status"])), Command::Status);
+    assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
 }
 
 #[test]
 fn cleanup_command() {
-    assert_eq!(parse(argv(&["cleanup"])), Command::Cleanup);
+    assert_eq!(parse(argv(&["cleanup"])), Command::Cleanup { json: false });
+}
+
+#[test]
+fn json_flag_sets_machine_readable_output() {
+    assert_eq!(
+        parse(argv(&["status", "--json"])),
+        Command::Status { json: true }
+    );
+    assert_eq!(
+        parse(argv(&["cleanup", "--json"])),
+        Command::Cleanup { json: true }
+    );
+}
+
+#[test]
+fn json_flag_only_applies_to_its_command() {
+    // A bare `--json` (no subcommand) is an unknown arg, not a status/cleanup request.
+    assert_eq!(parse(argv(&["--json"])), Command::Help);
+    // An unrelated trailing flag does not switch on JSON output.
+    assert_eq!(
+        parse(argv(&["status", "--verbose"])),
+        Command::Status { json: false }
+    );
+}
+
+#[test]
+fn status_json_reports_running_pid_and_address() {
+    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(42))).unwrap();
+    assert_eq!(value["running"], serde_json::json!(true));
+    assert_eq!(value["pid"], serde_json::json!(42));
+    assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+}
+
+#[test]
+fn status_json_null_pid_when_unknown_or_down() {
+    let value: serde_json::Value = serde_json::from_str(&status_json(false, None)).unwrap();
+    assert_eq!(value["running"], serde_json::json!(false));
+    assert!(value["pid"].is_null());
+    assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+}
+
+#[test]
+fn cleanup_json_reports_removed_and_running() {
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
+    assert_eq!(value["running"], serde_json::json!(true));
+    assert_eq!(value["removed"], serde_json::json!(3));
+
+    let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
+    assert_eq!(down["running"], serde_json::json!(false));
+    assert_eq!(down["removed"], serde_json::json!(0));
 }
 
 #[test]

@@ -19,7 +19,8 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Have better daemon logging, with timestamps and log levels
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
-- Add a `--json` flag to `moadim status`/`cleanup` so the CLI output can be consumed by scripts
+- Enrich `moadim status --json` with the server's liveness details from `GET /health` (e.g. `uptime_secs`) so a single call returns running-state + age, not just the local PID
+- Give `moadim status`/`cleanup` a script-friendly exit-code contract (e.g. exit 3 when no server is running) so callers can branch on `$?` without parsing stdout, and document it in the README CLI table
 - Add a `moadim restart` CLI subcommand that stops a running daemon (if any) and starts a fresh background instance
 - Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast
 - Auto-refresh the routine LOGS view (or show a removed badge) after a CLEANUP NOW sweep so stale run output isn't shown for reaped workbenches

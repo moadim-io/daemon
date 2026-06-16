@@ -38,8 +38,8 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
-        cli::Command::Status => cli::status(),
-        cli::Command::Cleanup => cli::cleanup(),
+        cli::Command::Status { json } => cli::status(json),
+        cli::Command::Cleanup { json } => cli::cleanup(json),
         cli::Command::Stop => cli::stop(),
         cli::Command::Background => cli::run_background(),
         cli::Command::Foreground => run_server().await,

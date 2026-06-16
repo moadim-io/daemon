@@ -186,7 +186,9 @@ Moadim runs as a local daemon. By default it starts **in the background**:
 moadim                 # start detached, print the PID, return to the shell
 moadim --interactive   # run in the foreground, attached to the terminal (Ctrl-C to stop)
 moadim status          # report whether a server is running
+moadim status --json   # same, as a machine-readable JSON object
 moadim cleanup         # reap finished, expired routine workbenches now
+moadim cleanup --json  # same, as a machine-readable JSON object
 moadim stop            # ask a running server to stop
 ```
 
@@ -195,8 +197,8 @@ moadim stop            # ask a running server to stop
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. |
-| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. |
-| `moadim cleanup`   | —             | Sends `POST /routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). |
+| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. |
+| `moadim cleanup`   | —             | Sends `POST /routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. |
 
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send

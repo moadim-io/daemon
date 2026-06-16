@@ -16,6 +16,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - This changelog.
 - `GET /routines.ics` iCalendar feed of upcoming routine fire times for
   subscribing in external calendars.
+- `--json` flag for `moadim status` and `moadim cleanup` so their output can be
+  consumed by scripts.
+
+### Fixed
+
+- Restore the build under `#![deny(warnings)]` and regenerate the committed
+  OpenAPI spec, both left stale by the cleanup-module/TTL refactor.
 
 ## [0.7.0] - 2026-06-16
 

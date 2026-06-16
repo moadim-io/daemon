@@ -98,7 +98,7 @@ pub struct UpdateRoutineRequest {
 // ─── API layer ────────────────────────────────────────────────────────────────
 
 async fn api_list() -> Result<Vec<Routine>, String> {
-    Request::get("/routines")
+    Request::get("/api/v1/routines")
         .send()
         .await
         .map_err(|e| e.to_string())?
@@ -108,7 +108,7 @@ async fn api_list() -> Result<Vec<Routine>, String> {
 }
 
 async fn api_agents() -> Result<Vec<String>, String> {
-    Request::get("/agents")
+    Request::get("/api/v1/agents")
         .send()
         .await
         .map_err(|e| e.to_string())?
@@ -118,7 +118,7 @@ async fn api_agents() -> Result<Vec<String>, String> {
 }
 
 async fn api_create(req: &CreateRoutineRequest) -> Result<Routine, String> {
-    let resp = Request::post("/routines")
+    let resp = Request::post("/api/v1/routines")
         .json(req)
         .map_err(|e| e.to_string())?
         .send()
@@ -131,7 +131,7 @@ async fn api_create(req: &CreateRoutineRequest) -> Result<Routine, String> {
 }
 
 async fn api_update(id: &str, req: &UpdateRoutineRequest) -> Result<Routine, String> {
-    let resp = Request::patch(&format!("/routines/{id}"))
+    let resp = Request::patch(&format!("/api/v1/routines/{id}"))
         .json(req)
         .map_err(|e| e.to_string())?
         .send()
@@ -144,7 +144,7 @@ async fn api_update(id: &str, req: &UpdateRoutineRequest) -> Result<Routine, Str
 }
 
 async fn api_delete(id: &str) -> Result<(), String> {
-    let resp = Request::delete(&format!("/routines/{id}"))
+    let resp = Request::delete(&format!("/api/v1/routines/{id}"))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -156,7 +156,7 @@ async fn api_delete(id: &str) -> Result<(), String> {
 }
 
 async fn api_trigger(id: &str) -> Result<Routine, String> {
-    let resp = Request::post(&format!("/routines/{id}/trigger"))
+    let resp = Request::post(&format!("/api/v1/routines/{id}/trigger"))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -167,7 +167,7 @@ async fn api_trigger(id: &str) -> Result<Routine, String> {
 }
 
 async fn api_cleanup() -> Result<usize, String> {
-    let resp = Request::post("/routines/cleanup")
+    let resp = Request::post("/api/v1/routines/cleanup")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -181,7 +181,7 @@ async fn api_cleanup() -> Result<usize, String> {
 }
 
 async fn api_logs(id: &str) -> Result<String, String> {
-    let resp = Request::get(&format!("/routines/{id}/logs"))
+    let resp = Request::get(&format!("/api/v1/routines/{id}/logs"))
         .send()
         .await
         .map_err(|e| e.to_string())?;

@@ -29,7 +29,7 @@ async fn build_app_serves_agents() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/agents")
+                .uri("/api/v1/agents")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -49,7 +49,7 @@ async fn build_app_serves_health() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/health")
+                .uri("/api/v1/health")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -87,6 +87,25 @@ async fn build_app_redirects_ui_to_root() {
     assert_eq!(resp.headers().get("location").unwrap(), "/");
 }
 
+#[tokio::test]
+async fn build_app_spa_fallback_serves_ui_on_client_routes() {
+    // `/cron-jobs` (and other client-routed paths) are NOT API endpoints — the API lives under
+    // `/api/v1`. Unmatched GETs fall back to the app HTML so the Yew router can resolve the path.
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/cron-jobs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ctype = resp.headers().get(CONTENT_TYPE).unwrap();
+    assert!(ctype.to_str().unwrap().starts_with("text/html"));
+}
+
 // ── cron-jobs CRUD lifecycle (covers all HTTP handlers + FromRef) ─────────────
 
 #[tokio::test]
@@ -98,7 +117,7 @@ async fn router_cron_job_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/cron-jobs")
+                .uri("/api/v1/cron-jobs")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"schedule":"@daily","handler":"test-h"}"#))
                 .unwrap(),
@@ -116,7 +135,7 @@ async fn router_cron_job_full_lifecycle() {
     let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
-                .uri("/cron-jobs")
+                .uri("/api/v1/cron-jobs")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -128,7 +147,7 @@ async fn router_cron_job_full_lifecycle() {
     let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
-                .uri(format!("/cron-jobs/{id}"))
+                .uri(format!("/api/v1/cron-jobs/{id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -141,7 +160,7 @@ async fn router_cron_job_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("PATCH")
-                .uri(format!("/cron-jobs/{id}"))
+                .uri(format!("/api/v1/cron-jobs/{id}"))
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"handler":"patched"}"#))
                 .unwrap(),
@@ -155,7 +174,7 @@ async fn router_cron_job_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/cron-jobs/{id}/trigger"))
+                .uri(format!("/api/v1/cron-jobs/{id}/trigger"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -168,7 +187,7 @@ async fn router_cron_job_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/cron-jobs/{id}"))
+                .uri(format!("/api/v1/cron-jobs/{id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -184,7 +203,7 @@ async fn router_create_invalid_cron_returns_400() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/cron-jobs")
+                .uri("/api/v1/cron-jobs")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"schedule":"bad","handler":"h"}"#))
                 .unwrap(),
@@ -199,7 +218,7 @@ async fn router_get_nonexistent_returns_404() {
     let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
-                .uri("/cron-jobs/no-such-id")
+                .uri("/api/v1/cron-jobs/no-such-id")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -214,7 +233,7 @@ async fn router_patch_nonexistent_returns_404() {
         .oneshot(
             Request::builder()
                 .method("PATCH")
-                .uri("/cron-jobs/no-such-id")
+                .uri("/api/v1/cron-jobs/no-such-id")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"handler":"h"}"#))
                 .unwrap(),
@@ -230,7 +249,7 @@ async fn router_delete_nonexistent_returns_404() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri("/cron-jobs/no-such-id")
+                .uri("/api/v1/cron-jobs/no-such-id")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -245,7 +264,7 @@ async fn router_trigger_nonexistent_returns_404() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/cron-jobs/no-such-id/trigger")
+                .uri("/api/v1/cron-jobs/no-such-id/trigger")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -260,7 +279,7 @@ async fn router_routines_cleanup_returns_removed_count() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/routines/cleanup")
+                .uri("/api/v1/routines/cleanup")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -340,7 +359,7 @@ async fn router_get_logs_nonexistent_returns_404() {
     let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(
             Request::builder()
-                .uri("/cron-jobs/no-such-id/logs")
+                .uri("/api/v1/cron-jobs/no-such-id/logs")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -356,7 +375,7 @@ async fn router_get_logs_existing_returns_empty_when_no_file() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/cron-jobs")
+                .uri("/api/v1/cron-jobs")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"schedule":"@daily","handler":"log-h"}"#))
                 .unwrap(),
@@ -372,7 +391,7 @@ async fn router_get_logs_existing_returns_empty_when_no_file() {
     let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
-                .uri(format!("/cron-jobs/{id}/logs"))
+                .uri(format!("/api/v1/cron-jobs/{id}/logs"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -388,7 +407,7 @@ async fn router_get_logs_existing_returns_empty_when_no_file() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/cron-jobs/{id}"))
+                .uri(format!("/api/v1/cron-jobs/{id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -403,7 +422,7 @@ async fn router_get_logs_returns_file_content() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/cron-jobs")
+                .uri("/api/v1/cron-jobs")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"schedule":"@daily","handler":"log-h2"}"#))
                 .unwrap(),
@@ -422,7 +441,7 @@ async fn router_get_logs_returns_file_content() {
     let resp = build_app(store.clone(), crate::routines::new_store())
         .oneshot(
             Request::builder()
-                .uri(format!("/cron-jobs/{id}/logs"))
+                .uri(format!("/api/v1/cron-jobs/{id}/logs"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -438,7 +457,7 @@ async fn router_get_logs_returns_file_content() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/cron-jobs/{id}"))
+                .uri(format!("/api/v1/cron-jobs/{id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -458,7 +477,7 @@ async fn router_routine_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/routines")
+                .uri("/api/v1/routines")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -476,7 +495,7 @@ async fn router_routine_full_lifecycle() {
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()
-                .uri("/routines")
+                .uri("/api/v1/routines")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -488,7 +507,7 @@ async fn router_routine_full_lifecycle() {
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()
-                .uri(format!("/routines/{id}"))
+                .uri(format!("/api/v1/routines/{id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -501,7 +520,7 @@ async fn router_routine_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("PATCH")
-                .uri(format!("/routines/{id}"))
+                .uri(format!("/api/v1/routines/{id}"))
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"title":"Patched"}"#))
                 .unwrap(),
@@ -515,7 +534,7 @@ async fn router_routine_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(format!("/routines/{id}"))
+                .uri(format!("/api/v1/routines/{id}"))
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"prompt":"replaced"}"#))
                 .unwrap(),
@@ -529,7 +548,7 @@ async fn router_routine_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/routines/{id}/trigger"))
+                .uri(format!("/api/v1/routines/{id}/trigger"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -541,7 +560,7 @@ async fn router_routine_full_lifecycle() {
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()
-                .uri(format!("/routines/{id}/logs"))
+                .uri(format!("/api/v1/routines/{id}/logs"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -554,7 +573,7 @@ async fn router_routine_full_lifecycle() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/routines/{id}"))
+                .uri(format!("/api/v1/routines/{id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -570,7 +589,7 @@ async fn router_routine_create_invalid_cron_400() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/routines")
+                .uri("/api/v1/routines")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(
                     r#"{"schedule":"bad","title":"t","agent":"a","prompt":"p"}"#,
@@ -594,7 +613,7 @@ async fn router_routine_not_found_paths() {
             .oneshot(
                 Request::builder()
                     .method(method)
-                    .uri(format!("/routines/no-such{suffix}"))
+                    .uri(format!("/api/v1/routines/no-such{suffix}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -608,7 +627,7 @@ async fn router_routine_not_found_paths() {
         .oneshot(
             Request::builder()
                 .method("PATCH")
-                .uri("/routines/no-such")
+                .uri("/api/v1/routines/no-such")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"title":"x"}"#))
                 .unwrap(),
@@ -658,7 +677,7 @@ async fn build_app_shutdown_route_acknowledges() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/shutdown")
+                .uri("/api/v1/shutdown")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -691,7 +710,7 @@ async fn shutdown_route_stops_the_serving_loop() {
         .await
         .unwrap();
     stream
-        .write_all(b"POST /shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .write_all(b"POST /api/v1/shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
     let mut buf = vec![0u8; 512];
@@ -759,7 +778,7 @@ async fn router_serves_routines_ical_feed() {
     let resp = build_app(new_store(), routines)
         .oneshot(
             Request::builder()
-                .uri("/routines.ics")
+                .uri("/api/v1/routines.ics")
                 .body(Body::empty())
                 .unwrap(),
         )

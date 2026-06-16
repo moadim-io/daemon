@@ -138,13 +138,9 @@ pub(crate) fn build_app_with_shutdown(
         StreamableHttpServerConfig::default(),
     );
 
-    Router::new()
-        .route("/", get(index))
-        // Back-compat: the UI used to live at `/ui`; redirect old links to the root.
-        .route(
-            "/ui",
-            get(|| async { axum::response::Redirect::permanent("/") }),
-        )
+    // All REST endpoints live under the `/api/v1` prefix so the root path space is free for the
+    // client-routed web UI (e.g. `/cron-jobs`, `/routines` resolve to UI pages, not JSON).
+    let api = Router::new()
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
         .route("/echo", post(echo))
@@ -170,12 +166,24 @@ pub(crate) fn build_app_with_shutdown(
                 .delete(routines::delete),
         )
         .route("/routines/{id}/trigger", post(routines::trigger))
-        .route("/routines/{id}/logs", get(routines::get_logs))
+        .route("/routines/{id}/logs", get(routines::get_logs));
+
+    Router::new()
+        .route("/", get(index))
+        // Back-compat: the UI used to live at `/ui`; redirect old links to the root.
+        .route(
+            "/ui",
+            get(|| async { axum::response::Redirect::permanent("/") }),
+        )
+        .nest("/api/v1", api)
         .nest_service("/mcp", mcp_service)
         .merge({
             use utoipa::OpenApi as _;
             SwaggerUi::new("/docs").url("/docs/openapi.json", crate::openapi::ApiDoc::openapi())
         })
+        // SPA fallback: client-routed pages (`/cron-jobs`, `/routines`) and refreshes on them return
+        // the app HTML so the Yew router can resolve the path on load.
+        .fallback(get(index))
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         .with_state(app_state)

@@ -11,32 +11,11 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:5784",
+      "url": "http://127.0.0.1:5784/api/v1",
       "description": "Local development"
     }
   ],
   "paths": {
-    "/": {
-      "get": {
-        "tags": [
-          "crate::routes::http"
-        ],
-        "summary": "`GET /` — serve the web client (single-page UI).",
-        "operationId": "index",
-        "responses": {
-          "200": {
-            "description": "Web client HTML",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/agents": {
       "get": {
         "tags": [
@@ -817,7 +796,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Workbench retention in seconds for finished runs; `None` uses [`DEFAULT_TTL_SECS`].",
+            "description": "Workbench retention in seconds for finished runs; `None` uses\n[`crate::routines::DEFAULT_TTL_SECS`].",
             "minimum": 0
           }
         }
@@ -1077,7 +1056,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\n`None` falls back to [`DEFAULT_TTL_SECS`]. Sessions still running are never reaped.",
+            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\n`None` falls back to [`crate::routines::DEFAULT_TTL_SECS`]. Sessions still running are never\nreaped. The default and [`Routine::effective_ttl_secs`] live in the cleanup module.",
             "minimum": 0
           },
           "updated_at": {

@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- Built-in **default routines**, seeded and kept current on startup. The first
+  ships out of the box: _Update moadim cargo package_, which runs daily at 09:00
+  local time and tasks the agent with checking the installed `moadim` cargo
+  package against the latest crates.io release and running
+  `cargo install moadim --force` when it is behind. Defaults are daemon-owned —
+  schedule, agent, and prompt are refreshed from the built-in spec on every
+  start so improvements ship on upgrade — but the user's `enabled` toggle is
+  never overridden: a default the user turns off stays off across restarts.
+
 ## [0.9.0] - 2026-06-17
 
 ### Fixed

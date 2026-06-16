@@ -14,7 +14,10 @@ use crate::paths::workbenches_dir;
 use crate::utils::time::now_secs;
 
 use super::command::slugify;
-use super::model::{RoutineStore, DEFAULT_TTL_SECS};
+use super::model::RoutineStore;
+
+mod ttl;
+pub use ttl::DEFAULT_TTL_SECS;
 
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);

@@ -125,16 +125,30 @@ pub fn run_background() -> anyhow::Result<()> {
 /// one is already up, this is the explicit "give me a clean process now" command: it stops the
 /// running server when present, otherwise just starts one.
 pub fn restart() -> anyhow::Result<()> {
-    if is_running() {
-        let pid = read_pid_file()
-            .map(|p| format!(" (pid {p})"))
-            .unwrap_or_default();
-        println!("moadim is running{pid}; stopping it");
+    let old_pid = if is_running() {
+        let pid = read_pid_file();
+        let suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+        println!("moadim is running{suffix}; stopping it");
         crate::restart::stop_running_and_wait()?;
+        pid
     } else {
         println!("moadim is not running; starting a fresh instance");
-    }
-    start_detached_and_report("restarted")
+        None
+    };
+    let new_pid = spawn_detached()?;
+    // Headline the rotation so scripts/logs can see the process actually changed.
+    println!("{}", restart_rotation_line(old_pid, new_pid));
+    report_endpoints();
+    Ok(())
+}
+
+/// Format the one-line PID rotation summary `restart` prints, e.g. `restarted: pid 123 -> 456`.
+///
+/// `old` is the PID of the server that was stopped; when nothing was running (or its PID could not
+/// be read) the old side reads `none`, e.g. `restarted: pid none -> 456`.
+fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
+    let old = old.map_or_else(|| "none".to_string(), |pid| pid.to_string());
+    format!("restarted: pid {old} -> {new}")
 }
 
 /// Spawn a detached server process and print where to reach and manage it.
@@ -143,10 +157,15 @@ pub fn restart() -> anyhow::Result<()> {
 fn start_detached_and_report(verb: &str) -> anyhow::Result<()> {
     let pid = spawn_detached()?;
     println!("moadim {verb} in the background (pid {pid}) at http://{BIND_ADDR}");
+    report_endpoints();
+    Ok(())
+}
+
+/// Print the reach/manage hints (UI, stop, logs) shared by every detached-launch report.
+fn report_endpoints() {
     println!("  UI    http://{BIND_ADDR}");
     println!("  stop  moadim stop   (or use the STOP button in the UI)");
     println!("  logs  {}", paths_daemon_log());
-    Ok(())
 }
 
 /// Ask a running server to stop via the `/shutdown` route.

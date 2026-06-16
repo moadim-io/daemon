@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::super::command::slugify;
 use super::super::model::RoutineStore;
-use super::ttl::DEFAULT_TTL_SECS;
+use super::ttl::MAX_TTL_SECS;
 
 /// Snapshot each routine's `slug -> effective TTL` from the store.
 ///
@@ -18,7 +18,7 @@ pub fn snapshot_ttls(store: &RoutineStore) -> HashMap<String, u64> {
 }
 
 /// Resolve a workbench slug's TTL against a [`snapshot_ttls`] map, falling back to
-/// [`DEFAULT_TTL_SECS`] for orphaned workbenches whose routine was since deleted.
+/// [`MAX_TTL_SECS`] for orphaned workbenches whose routine was since deleted.
 pub fn ttl_for(snapshot: &HashMap<String, u64>, slug: &str) -> u64 {
-    snapshot.get(slug).copied().unwrap_or(DEFAULT_TTL_SECS)
+    snapshot.get(slug).copied().unwrap_or(MAX_TTL_SECS)
 }

@@ -817,7 +817,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Workbench retention in seconds for finished runs; `None` uses [`DEFAULT_TTL_SECS`].",
+            "description": "Workbench retention in seconds for finished runs; caps the cron-derived\nretention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.",
             "minimum": 0
           }
         }
@@ -1077,7 +1077,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\n`None` falls back to [`DEFAULT_TTL_SECS`]. Sessions still running are never reaped.",
+            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\nCaps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only\nshorten, never extend it. `None` uses the cron-derived value. Sessions still running are\nnever reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.",
             "minimum": 0
           },
           "updated_at": {

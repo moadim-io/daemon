@@ -47,8 +47,9 @@ pub struct Routine {
     /// Unix timestamp (seconds) when the routine was last manually triggered, if ever.
     pub last_triggered_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
-    /// `None` falls back to [`crate::routines::DEFAULT_TTL_SECS`]. Sessions still running are never
-    /// reaped. The default and [`Routine::effective_ttl_secs`] live in the cleanup module.
+    /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
+    /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
+    /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
 }
@@ -145,8 +146,8 @@ pub struct CreateRoutineRequest {
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
-    /// Workbench retention in seconds for finished runs; `None` uses
-    /// [`crate::routines::DEFAULT_TTL_SECS`].
+    /// Workbench retention in seconds for finished runs; caps the cron-derived
+    /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
 }

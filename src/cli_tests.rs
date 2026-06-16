@@ -93,6 +93,22 @@ fn restart_command() {
 }
 
 #[test]
+fn restart_rotation_line_shows_old_and_new_pid() {
+    assert_eq!(
+        restart_rotation_line(Some(123), 456),
+        "restarted: pid 123 -> 456"
+    );
+}
+
+#[test]
+fn restart_rotation_line_reads_none_when_nothing_was_running() {
+    assert_eq!(
+        restart_rotation_line(None, 456),
+        "restarted: pid none -> 456"
+    );
+}
+
+#[test]
 fn help_and_version_flags() {
     for flag in ["-h", "--help", "help"] {
         assert_eq!(parse(argv(&[flag])), Command::Help, "flag {flag}");

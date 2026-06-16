@@ -344,6 +344,49 @@
     .toggle input:checked + .toggle-track              { border-color: var(--accent); background: var(--accent-dim); }
     .toggle input:checked + .toggle-track::after       { transform: translateX(16px); background: var(--accent); }
 
+    /* ── Multiselect ── */
+    .th-select, .td-select { width: 28px; text-align: center; padding-right: 0; }
+    tbody tr.row-selected { background: var(--accent-dim); }
+    tbody tr.row-selected:hover { background: var(--accent-dim); }
+
+    .row-check {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border: 1px solid var(--border-hi);
+      background: var(--bg-3);
+      cursor: pointer;
+      position: relative;
+      vertical-align: middle;
+      transition: border-color 0.1s, background 0.1s;
+    }
+    .row-check:hover { border-color: var(--accent-dim); }
+    .row-check:checked { border-color: var(--accent); background: var(--accent-dim); }
+    .row-check:checked::after {
+      content: '✓';
+      position: absolute;
+      top: -2px; left: 1px;
+      font-size: 11px;
+      color: var(--accent);
+    }
+    .row-check:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+    .bulk-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+      padding: 8px 14px;
+      margin-bottom: 10px;
+      border: 1px solid var(--accent-dim);
+      background: var(--bg-2);
+    }
+    .bulk-count {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .bulk-acts { display: flex; gap: 8px; align-items: center; }
+
     /* ── Row actions ── */
     .row-actions { display: flex; gap: 4px; align-items: center; }
 

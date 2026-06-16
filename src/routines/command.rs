@@ -180,9 +180,10 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
     ));
-    stmts.extend([
-        format!(r#"cp {} "$WB/prompt.md""#, shell_quote(&prompt_path)),
-    ]);
+    stmts.extend([format!(
+        r#"cp {} "$WB/prompt.md""#,
+        shell_quote(&prompt_path)
+    )]);
     if let Some(setup) = &agent.setup {
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
         stmts.push(setup.clone());

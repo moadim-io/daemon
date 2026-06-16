@@ -1,7 +1,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
-use super::*;
 use super::ttl::MAX_TTL_SECS;
+use super::*;
 
 #[test]
 fn parse_workbench_name_splits_slug_and_timestamp() {

@@ -11,3 +11,4 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add an endpoint/CLI to trigger workbench cleanup on demand (not only the hourly sweep)
 - Auto-stamp the release version/date into CHANGELOG.md from the `chore(release)` step so the `## [Unreleased]` section rolls over on tag
 - Add a CI check that fails a PR when it changes `src/` or `ui/` but leaves `## [Unreleased]` in CHANGELOG.md empty
+- Have a commands folder for all the cli commands, we want to work with colocation of files

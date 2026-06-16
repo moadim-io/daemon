@@ -18,4 +18,5 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
 - Add a "CLEANUP NOW" button in the UI that calls `POST /routines/cleanup` and shows the removed count
-- Add a `moadim cleanup` CLI subcommand that POSTs `/routines/cleanup` to a running daemon and prints how many workbenches were reaped
+- Add a `--json` flag to `moadim status`/`cleanup` so the CLI output can be consumed by scripts
+- Add a `moadim restart` CLI subcommand that stops a running daemon (if any) and starts a fresh background instance

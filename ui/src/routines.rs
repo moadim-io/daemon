@@ -5,13 +5,14 @@
 
 use std::rc::Rc;
 
+use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
-use crate::{describe_cron_live, reltime, ToastKind};
+use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
@@ -180,12 +181,21 @@ pub enum RModal {
     ConfirmDelete { id: String, title: String },
 }
 
+/// How the list page presents routines: a table, or a month calendar of upcoming fire times.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum RView {
+    #[default]
+    Table,
+    Calendar,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RState {
     pub routines: Vec<Routine>,
     pub loading: bool,
     pub page: RPage,
     pub modal: RModal,
+    pub view: RView,
 }
 
 impl Default for RState {
@@ -195,6 +205,7 @@ impl Default for RState {
             loading: true,
             page: RPage::List,
             modal: RModal::None,
+            view: RView::default(),
         }
     }
 }
@@ -207,6 +218,7 @@ pub enum RAction {
     OpenEdit(String),
     OpenConfirmDelete { id: String, title: String },
     CloseModal,
+    SetView(RView),
     Upsert(Routine),
     Remove(String),
 }
@@ -229,6 +241,7 @@ impl Reducible for RState {
                 s.modal = RModal::ConfirmDelete { id, title }
             }
             RAction::CloseModal => s.modal = RModal::None,
+            RAction::SetView(view) => s.view = view,
             RAction::Upsert(routine) => {
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
                     s.routines[i] = routine;
@@ -302,6 +315,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         Callback::from(move |(id, title): (String, String)| {
             state.dispatch(RAction::OpenConfirmDelete { id, title })
         })
+    };
+    let on_set_view = {
+        let state = state.clone();
+        Callback::from(move |view: RView| state.dispatch(RAction::SetView(view)))
     };
 
     let on_create = {
@@ -431,6 +448,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let loading = state.loading;
     let page = state.page.clone();
     let modal = state.modal.clone();
+    let view = state.view;
 
     let edit_routine = match &modal {
         RModal::Edit(id) => routines.iter().find(|r| r.id == *id).cloned(),
@@ -456,17 +474,29 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             <RoutineStats routines={routines.clone()} />
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED ROUTINES"}</div>
-                                <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW ROUTINE"}</button>
+                                <div class="section-acts">
+                                    <ViewToggle view={view} on_set_view={on_set_view} />
+                                    <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW ROUTINE"}</button>
+                                </div>
                             </div>
-                            <RoutineTable
-                                routines={routines}
-                                loading={loading}
-                                on_edit={on_edit}
-                                on_delete={on_ask_delete}
-                                on_toggle={on_toggle}
-                                on_trigger={on_trigger}
-                                on_logs={on_logs}
-                            />
+                            {
+                                match view {
+                                    RView::Table => html! {
+                                        <RoutineTable
+                                            routines={routines}
+                                            loading={loading}
+                                            on_edit={on_edit}
+                                            on_delete={on_ask_delete}
+                                            on_toggle={on_toggle}
+                                            on_trigger={on_trigger}
+                                            on_logs={on_logs}
+                                        />
+                                    },
+                                    RView::Calendar => html! {
+                                        <RoutineCalendar routines={routines} loading={loading} />
+                                    },
+                                }
+                            }
                         </main>
                     },
                 }
@@ -527,6 +557,201 @@ pub fn routine_stats(props: &StatsProps) -> Html {
                 <div class="stat-label">{"UNREGISTERED AGENT"}</div>
                 <div class="stat-val">{unreg}</div>
             </div>
+        </div>
+    }
+}
+
+// ─── View toggle ──────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct ViewToggleProps {
+    pub view: RView,
+    pub on_set_view: Callback<RView>,
+}
+
+#[function_component(ViewToggle)]
+pub fn view_toggle(props: &ViewToggleProps) -> Html {
+    let mk = |view: RView, label: &'static str| {
+        let cb = props.on_set_view.clone();
+        let cls = if props.view == view {
+            "view-btn active"
+        } else {
+            "view-btn"
+        };
+        html! {
+            <button class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(view))}>
+                { label }
+            </button>
+        }
+    };
+    html! {
+        <div class="view-toggle">
+            { mk(RView::Table, "LIST") }
+            { mk(RView::Calendar, "CALENDAR") }
+        </div>
+    }
+}
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MONTHS: [&str; 12] = [
+    "JANUARY",
+    "FEBRUARY",
+    "MARCH",
+    "APRIL",
+    "MAY",
+    "JUNE",
+    "JULY",
+    "AUGUST",
+    "SEPTEMBER",
+    "OCTOBER",
+    "NOVEMBER",
+    "DECEMBER",
+];
+/// Cells in the month grid: 6 weeks × 7 days, always, so the layout never reflows.
+const GRID_CELLS: usize = 42;
+/// Upper bound on fire-time iterations per routine across the visible grid. A `@hourly`
+/// routine fires ~1008 times across 42 days; this leaves headroom while bounding cost.
+const MAX_OCCURRENCES: usize = 4000;
+
+/// First day of the month `offset` months away from the month containing `today`.
+fn month_start(today: NaiveDate, offset: i32) -> NaiveDate {
+    let total = today.year() * 12 + today.month0() as i32 + offset;
+    let year = total.div_euclid(12);
+    let month0 = total.rem_euclid(12) as u32;
+    NaiveDate::from_ymd_opt(year, month0 + 1, 1).unwrap_or(today)
+}
+
+/// One routine's fire counts per grid cell over `[grid_start, grid_start + 42 days)`.
+fn occurrences_per_day(schedule: &str, grid_start: NaiveDate) -> Option<[u32; GRID_CELLS]> {
+    let cron = parse_cron(schedule)?;
+    let start_naive = grid_start.and_hms_opt(0, 0, 0)?;
+    // Step back one second so an occurrence exactly at midnight on the first cell counts.
+    let start = Local
+        .from_local_datetime(&start_naive)
+        .earliest()?
+        .checked_sub_signed(Duration::seconds(1))?;
+    let mut counts = [0u32; GRID_CELLS];
+    for dt in cron.iter_after(start).take(MAX_OCCURRENCES) {
+        let day = (dt.date_naive() - grid_start).num_days();
+        if day < 0 {
+            continue;
+        }
+        if day as usize >= GRID_CELLS {
+            break;
+        }
+        counts[day as usize] += 1;
+    }
+    Some(counts)
+}
+
+#[derive(Properties, PartialEq)]
+pub struct CalendarProps {
+    pub routines: Vec<Routine>,
+    pub loading: bool,
+}
+
+#[function_component(RoutineCalendar)]
+pub fn routine_calendar(props: &CalendarProps) -> Html {
+    let offset = use_state(|| 0i32);
+
+    let on_prev = {
+        let offset = offset.clone();
+        Callback::from(move |_: MouseEvent| offset.set(*offset - 1))
+    };
+    let on_next = {
+        let offset = offset.clone();
+        Callback::from(move |_: MouseEvent| offset.set(*offset + 1))
+    };
+    let on_today = {
+        let offset = offset.clone();
+        Callback::from(move |_: MouseEvent| offset.set(0))
+    };
+
+    if props.loading {
+        return html! {
+            <div class="table-wrap"><div class="empty"><div class="spinner"></div></div></div>
+        };
+    }
+
+    let today = Local::now().date_naive();
+    let first = month_start(today, *offset);
+    let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
+
+    // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
+    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    let mut scheduled = 0usize;
+    for r in props.routines.iter().filter(|r| r.enabled) {
+        if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
+            scheduled += 1;
+            for (i, &c) in counts.iter().enumerate() {
+                if c > 0 {
+                    cells[i].push((r.title.clone(), c));
+                }
+            }
+        }
+    }
+
+    let month_label = format!("{} {}", MONTHS[first.month0() as usize], first.year());
+
+    let body = if scheduled == 0 {
+        html! {
+            <div class="empty">
+                <div class="empty-icon">{"🗓"}</div>
+                <div class="empty-msg">{"NOTHING SCHEDULED"}</div>
+                <div class="empty-sub">{"enabled routines with a valid schedule appear here"}</div>
+            </div>
+        }
+    } else {
+        html! {
+            <>
+                <div class="cal-weekdays">
+                    { for WEEKDAYS.iter().map(|d| html! { <div class="cal-weekday">{*d}</div> }) }
+                </div>
+                <div class="cal-grid">
+                    { for cells.iter().enumerate().map(|(i, hits)| {
+                        let date = grid_start + Duration::days(i as i64);
+                        let mut cls = String::from("cal-day");
+                        if date.month() != first.month() {
+                            cls.push_str(" other-month");
+                        }
+                        if date == today {
+                            cls.push_str(" today");
+                        }
+                        html! {
+                            <div class={cls}>
+                                <div class="cal-daynum">{date.day()}</div>
+                                <div class="cal-hits">
+                                    { for hits.iter().take(4).map(|(title, count)| {
+                                        let label = if *count > 1 {
+                                            format!("{title} ×{count}")
+                                        } else {
+                                            title.clone()
+                                        };
+                                        html! { <div class="cal-chip" title={label.clone()}>{label}</div> }
+                                    }) }
+                                    if hits.len() > 4 {
+                                        <div class="cal-more">{format!("+{} more", hits.len() - 4)}</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }) }
+                </div>
+            </>
+        }
+    };
+
+    html! {
+        <div class="cal-wrap">
+            <div class="cal-nav">
+                <button class="btn-refresh" title="Previous month" onclick={on_prev}>{"‹"}</button>
+                <div class="cal-month">{month_label}</div>
+                <button class="btn-refresh" title="Next month" onclick={on_next}>{"›"}</button>
+                <button class="btn btn-ghost btn-sm" onclick={on_today}>{"TODAY"}</button>
+            </div>
+            {body}
         </div>
     }
 }

@@ -1501,13 +1501,14 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-/// Returns (is_valid, human description) for a cron expression.
-pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
+/// Parse a cron expression into a `Cron`, normalizing the 7-field
+/// (sec min hour dom month dow year) form to 5-field to match server behaviour.
+/// Returns `None` for empty or invalid expressions.
+pub(crate) fn parse_cron(expr: &str) -> Option<Cron> {
     let s = expr.trim();
     if s.is_empty() {
-        return (false, "— enter a cron expression —".into());
+        return None;
     }
-    // Normalize 7-field (sec min hour dom month dow year) to 5-field, matching server behaviour.
     let normalized = if s.starts_with('@') {
         s.to_string()
     } else {
@@ -1518,9 +1519,17 @@ pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
             s.to_string()
         }
     };
-    match normalized.parse::<Cron>() {
-        Ok(cron) => (true, cron.describe()),
-        Err(_) => (false, "Invalid cron expression".into()),
+    normalized.parse::<Cron>().ok()
+}
+
+/// Returns (is_valid, human description) for a cron expression.
+pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
+    if expr.trim().is_empty() {
+        return (false, "— enter a cron expression —".into());
+    }
+    match parse_cron(expr) {
+        Some(cron) => (true, cron.describe()),
+        None => (false, "Invalid cron expression".into()),
     }
 }
 

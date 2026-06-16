@@ -19,6 +19,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - `--json` flag for `moadim status` and `moadim cleanup` so their output can be
   consumed by scripts.
 
+### Changed
+
+- Split the UI into separate cron jobs and routines pages, and moved the REST
+  API under the `/api/v1` prefix.
+
 ### Fixed
 
 - Restore the build under `#![deny(warnings)]` and regenerate the committed

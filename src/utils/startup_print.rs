@@ -4,6 +4,7 @@
 pub fn print(addr: &str) {
     println!("Server on http://{addr}");
     println!("  UI    http://{addr}/");
+    println!("  REST  http://{addr}/api/v1");
     println!("  MCP   http://{addr}/mcp");
     println!("  Docs  http://{addr}/docs");
 }

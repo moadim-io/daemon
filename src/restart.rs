@@ -18,7 +18,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// Sends `POST /shutdown` for a graceful exit, then polls [`is_running`] until the port goes quiet
 /// or [`RESTART_TIMEOUT`] elapses. If it is still up by then, the recorded PID is killed directly.
 pub fn stop_running_and_wait() -> anyhow::Result<()> {
-    let _ = crate::cli::http_request("POST", "/shutdown");
+    let _ = crate::cli::http_request("POST", "/api/v1/shutdown");
 
     if wait_until_stopped() {
         return Ok(());

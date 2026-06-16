@@ -21,6 +21,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - CI `Changelog` workflow that fails a PR touching `src/` or `ui/` when
   CHANGELOG.md is not updated, bypassable with a `skip-changelog` label.
 
+### Changed
+
+- Split the UI into separate cron jobs and routines pages, and moved the REST
+  API under the `/api/v1` prefix.
+
 ### Fixed
 
 - Restore the build under `#![deny(warnings)]` and regenerate the committed

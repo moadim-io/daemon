@@ -122,7 +122,7 @@ pub fn run_background() -> anyhow::Result<()> {
 
 /// Ask a running server to stop via the `/shutdown` route.
 pub fn stop() -> anyhow::Result<()> {
-    match http_request("POST", "/shutdown") {
+    match http_request("POST", "/api/v1/shutdown") {
         Ok(200) => {
             println!("moadim is shutting down");
             Ok(())
@@ -140,11 +140,11 @@ pub fn stop() -> anyhow::Result<()> {
 /// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
 ///
 /// Runs the same sweep as the hourly background task instead of waiting for the next tick, via the
-/// `/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no server is
-/// up. With `json`, emits a single machine-readable object instead so the result can be piped into
-/// scripts.
+/// `/api/v1/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no
+/// server is up. With `json`, emits a single machine-readable object instead so the result can be
+/// piped into scripts.
 pub fn cleanup(json: bool) -> anyhow::Result<()> {
-    match http_request_with_body("POST", "/routines/cleanup") {
+    match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
             let removed = parse_removed_count(&body).unwrap_or(0);
             if json {
@@ -250,7 +250,7 @@ fn paths_daemon_log() -> String {
 
 /// Returns `true` if a server answers `GET /health` on [`BIND_ADDR`].
 pub(crate) fn is_running() -> bool {
-    matches!(http_request("GET", "/health"), Ok(200))
+    matches!(http_request("GET", "/api/v1/health"), Ok(200))
 }
 
 /// Send a minimal HTTP/1.1 request to the local server and return the response status code.

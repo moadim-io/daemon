@@ -9,7 +9,7 @@
 Rust server that exposes cron job management over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs
-- **REST** (`http://localhost:5784/`) — standard HTTP API for browsers, CLI tools, and services
+- **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
 All three share the same port. Jobs created through any interface are automatically synced to the OS crontab so they actually run on schedule.
@@ -171,7 +171,7 @@ recipient = "me@local"    # overrides job.toml recipient
 
 ### `job.local.log`
 
-Append-only log written by the server on each run. Gitignored via `*.local.*`. Readable in the UI via the LOGS button or `GET /cron-jobs/{id}/logs`.
+Append-only log written by the server on each run. Gitignored via `*.local.*`. Readable in the UI via the LOGS button or `GET /api/v1/cron-jobs/{id}/logs`.
 
 ```
 2026-06-11T09:30:00Z [daily-report] run started
@@ -198,7 +198,7 @@ moadim stop            # ask a running server to stop
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. |
-| `moadim cleanup`   | —             | Sends `POST /routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. |
+| `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. |
 
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send

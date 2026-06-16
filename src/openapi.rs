@@ -3,9 +3,8 @@
 #[derive(utoipa::OpenApi)]
 #[openapi(
     info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
-    servers((url = "http://127.0.0.1:5784", description = "Local development")),
+    servers((url = "http://127.0.0.1:5784/api/v1", description = "Local development")),
     paths(
-        crate::routes::http::index,
         crate::routes::http::health,
         crate::routes::http::shutdown,
         crate::routes::http::echo,

@@ -1,0 +1,21 @@
+name: Spell check
+
+# Gate every PR (and pushes to main) on the `typos` spell checker so prose and
+# source typos are caught even when contributors haven't installed the local
+# pre-commit hook. Uses the same typos.toml config as the hook, so CI and local
+# runs stay in lockstep.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  typos:
+    name: typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Spell check with typos
+        uses: crate-ci/typos@master

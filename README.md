@@ -6,6 +6,12 @@
 >
 > _Set the loop. Forget the keyboard. moadim fires the prompt so you don't have to._
 
+**One-line install** — install Rust/Cargo, install moadim, then run it:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env" && cargo install moadim && moadim
+```
+
 Rust server that exposes cron job management over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs

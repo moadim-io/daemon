@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
+  disclosure** section that instructs the agent to reveal, in every
+  outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),
+  that the action originates from the running moadim routine — naming it. The
+  routine name is injected at launch time. Internal logs and in-repo working
+  files are exempt.
 - Routine listings can now be filtered and sorted by repository. `GET /routines`
   accepts `repository` (case-insensitive URL substring filter), `sort`
   (`created`|`updated`|`title`|`repository`), and `order` (`asc`|`desc`) query

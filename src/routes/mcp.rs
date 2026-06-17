@@ -223,7 +223,10 @@ impl MoadimMcp {
     /// Return all managed routines as a JSON array sorted by creation time.
     #[tool(description = "List all managed routines (agent-driven jobs)")]
     fn list_routines(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_list(&self.routines)))
+        Ok(ok(routines::svc_list(
+            &self.routines,
+            &routines::RoutineListQuery::default(),
+        )))
     }
 
     /// Return the routine matching the given UUID.

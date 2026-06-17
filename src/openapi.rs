@@ -40,6 +40,8 @@
         crate::routines::CreateRoutineRequest,
         crate::routines::UpdateRoutineRequest,
         crate::routines::CleanupResponse,
+        crate::routines::RoutineSort,
+        crate::routines::SortOrder,
         crate::routes::http::HealthResponse,
         crate::routes::http::ShutdownResponse,
         crate::routes::http::EchoRequest,

@@ -12,16 +12,56 @@ use super::agents::load_agent_command;
 use super::cleanup::cleanup_expired_workbenches;
 use super::command::{build_routine_command, slugify};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
-    UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
+    RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
-/// Return all routines sorted by creation time (oldest first).
-pub fn svc_list(store: &RoutineStore) -> Vec<RoutineResponse> {
+/// Sort key placing routines with a repository before those without, then by
+/// the primary (first) repository URL alphabetically (case-insensitive).
+fn repo_sort_key(routine: &Routine) -> (bool, String) {
+    match routine.repositories.first() {
+        Some(repo) => (false, repo.repository.to_lowercase()),
+        None => (true, String::new()),
+    }
+}
+
+/// Return the routines matching `query`, filtered and sorted as requested.
+///
+/// The default query (no repository filter, sort by creation time ascending)
+/// reproduces the previous behaviour. The `repository` filter keeps routines
+/// referencing a matching repository URL; `sort`/`order` control ordering.
+pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
     let lock = store.lock().unwrap();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
-    routines.sort_by_key(|routine| routine.created_at);
     drop(lock);
+
+    // Filter: keep routines with a repository URL containing the substring (case-insensitive).
+    if let Some(needle) = query
+        .repository
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let needle = needle.to_lowercase();
+        routines.retain(|routine| {
+            routine
+                .repositories
+                .iter()
+                .any(|repo| repo.repository.to_lowercase().contains(&needle))
+        });
+    }
+
+    // Sort ascending by the requested field, then flip for descending order.
+    match query.sort {
+        RoutineSort::Created => routines.sort_by_key(|routine| routine.created_at),
+        RoutineSort::Updated => routines.sort_by_key(|routine| routine.updated_at),
+        RoutineSort::Title => routines.sort_by_key(|routine| routine.title.to_lowercase()),
+        RoutineSort::Repository => routines.sort_by_key(repo_sort_key),
+    }
+    if query.order == SortOrder::Desc {
+        routines.reverse();
+    }
+
     routines
         .into_iter()
         .map(RoutineResponse::from_routine)

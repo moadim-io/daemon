@@ -379,8 +379,37 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`GET /routines` — list all routines sorted by creation time.",
+        "summary": "`GET /routines` — list routines, optionally filtered and sorted by repository.",
         "operationId": "list",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "description": "Keep only routines with at least one repository whose URL contains this\nsubstring (case-insensitive). Empty or absent keeps every routine.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Field to sort by (default: creation time).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RoutineSort"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "Sort direction (default: ascending).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortOrder"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1107,6 +1136,16 @@
         ],
         "description": "A [`Routine`] enriched with derived, non-persisted fields for API responses."
       },
+      "RoutineSort": {
+        "type": "string",
+        "description": "Field to sort a routine listing by.",
+        "enum": [
+          "created",
+          "updated",
+          "title",
+          "repository"
+        ]
+      },
       "ShutdownResponse": {
         "type": "object",
         "description": "Response body for `POST /shutdown`.",
@@ -1119,6 +1158,14 @@
             "description": "Acknowledgement status (always `\"shutting down\"`)."
           }
         }
+      },
+      "SortOrder": {
+        "type": "string",
+        "description": "Sort direction for a routine listing.",
+        "enum": [
+          "asc",
+          "desc"
+        ]
       },
       "UpdateRequest": {
         "type": "object",

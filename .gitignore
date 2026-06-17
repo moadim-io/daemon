@@ -5,3 +5,6 @@
 .playwright-mcp
 node_modules/
 dist/
+
+# user-specific run scripts (a bare pattern matches run.sh at any depth)
+run.sh

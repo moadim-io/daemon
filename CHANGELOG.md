@@ -33,6 +33,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The `/health` endpoint and the `health` MCP tool now compute `uptime_secs`
+  with `saturating_sub`, so a backward wall-clock adjustment after startup can
+  no longer underflow `now - uptime_start` (a panic in debug builds, a wrap to a
+  near-`u64::MAX` uptime in release). Uptime clamps to `0` until the clock passes
+  the recorded start again.
 - Routine store writes are now atomic. `write_routine` persists `routine.toml`
   and `prompt.md` via a shared `atomic_write` helper (write a sibling temp file,
   then rename it into place) instead of an in-place `std::fs::write` truncate.

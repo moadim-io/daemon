@@ -8,8 +8,9 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{build_app, echo, run_with_listener_until};
-use crate::cron_jobs::new_store;
+use super::{build_app, echo, health, run_with_listener_until};
+use crate::cron_jobs::{new_registry, new_store, AppState};
+use crate::utils::time::now_secs;
 
 // ── build_app / router smoke tests ───────────────────────────────────────────
 
@@ -798,4 +799,22 @@ async fn router_serves_routines_ical_feed() {
     assert!(body.starts_with("BEGIN:VCALENDAR"));
     assert!(body.contains("BEGIN:VEVENT"));
     assert!(body.contains("SUMMARY:My Routine"));
+}
+
+#[tokio::test]
+async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
+    // A `uptime_start` in the future models the wall clock jumping backward
+    // after the server started. The old `now_secs() - uptime_start` would
+    // underflow; saturating_sub must clamp uptime to 0 instead.
+    let state = AppState {
+        store: new_store(),
+        handlers: new_registry(),
+        routines: crate::routines::new_store(),
+        uptime_start: now_secs() + 10_000,
+        shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
+    };
+    let resp = health(axum::extract::State(state)).await;
+    assert_eq!(resp.0.uptime_secs, 0);
+    assert_eq!(resp.0.status, "ok");
+    assert!(resp.0.running);
 }

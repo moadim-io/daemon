@@ -13,6 +13,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim stop --json` now includes the bound `address` field
+  (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
+  `status --json`'s object shape exactly so both can be parsed uniformly.
 - `moadim stop --json` now emits a single machine-readable object
   (`{"running":true}` when a running server was asked to shut down,
   `{"running":false}` when none was reachable), completing the `--json`

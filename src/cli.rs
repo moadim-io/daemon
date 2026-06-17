@@ -198,7 +198,8 @@ fn report_endpoints() {
 }
 
 /// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
-/// machine-readable object (`{"running":bool,"pid":N|null}`) instead of the human-readable line.
+/// machine-readable object (`{"running":bool,"pid":N|null,"address":…}`, matching `status --json`'s
+/// shape) instead of the human-readable line.
 ///
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
@@ -230,14 +231,17 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null}`, mirroring
-/// `status --json`'s `pid` field. `running` is `true` when a running server was asked to shut down,
-/// and `false` when none was reachable. `pid` is the process that was stopped (read from the pid
-/// file before the shutdown request), or `null` when no pid file was present.
+/// Render the `stop` result as a one-line JSON object:
+/// `{"running":bool,"pid":N|null,"address":…}`, matching `status --json`'s shape exactly so both
+/// can be parsed uniformly. `running` is `true` when a running server was asked to shut down, and
+/// `false` when none was reachable. `pid` is the process that was stopped (read from the pid file
+/// before the shutdown request), or `null` when no pid file was present. `address` is the bound
+/// [`BIND_ADDR`] the request was sent to.
 fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
         "pid": pid,
+        "address": BIND_ADDR,
     })
     .to_string()
 }

@@ -29,6 +29,7 @@ fn format_routine_line_invokes_script_with_schedule_and_tag() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let line = format_routine_line(&routine, &agent).unwrap();
     assert!(line.starts_with("30 9 * * 1-5 "));
@@ -62,6 +63,7 @@ fn format_routine_line_creates_missing_parent_dir() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let line = format_routine_line(&routine, &agent).unwrap();
     assert!(line.ends_with("# moadim-routine:parent-create"));
@@ -91,6 +93,7 @@ fn format_routine_line_returns_none_when_script_write_fails() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let result = format_routine_line(&routine, &agent);
     assert!(result.is_none(), "expected None on script write failure");
@@ -120,6 +123,7 @@ fn format_routine_line_when_parent_dir_already_exists() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
 
     let line = format_routine_line(&routine, &agent).unwrap();

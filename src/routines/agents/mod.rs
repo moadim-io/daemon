@@ -27,6 +27,19 @@ pub struct AgentCommand {
     /// (tmux session name) in scope — e.g. to pre-seed per-directory editor trust state.
     #[serde(default)]
     pub setup: Option<String>,
+    /// Filename the agent reads its project instructions from, written into the workbench by the
+    /// daemon so the moadim system prompt and routine-origin disclosure reach the agent that
+    /// actually runs. Claude Code reads `CLAUDE.md` (the default); Codex reads `AGENTS.md`.
+    #[serde(default = "default_instructions_file")]
+    pub instructions_file: String,
+}
+
+/// Default project-instructions filename for an agent: Claude Code's `CLAUDE.md` convention.
+///
+/// Applied when an agent's TOML omits `instructions_file`, preserving the prior behavior of
+/// always writing `CLAUDE.md` for configs that predate this field.
+fn default_instructions_file() -> String {
+    "CLAUDE.md".to_string()
 }
 
 /// Load the agent command for `name`, returning `None` if the config is missing or invalid.

@@ -64,6 +64,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             command: "claude".to_string(),
             args: vec![],
             setup: None,
+            instructions_file: "CLAUDE.md".to_string(),
         };
         let cmd = build_routine_command(&routine, &agent);
         // The resolved tmux dir is baked into the exported PATH.

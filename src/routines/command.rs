@@ -153,18 +153,27 @@ const MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\\n\
 ///
 /// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
 /// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
-pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -> Vec<String> {
+///
+/// `instructions_file` is the agent's project-instructions filename (e.g. `CLAUDE.md` for Claude
+/// Code, `AGENTS.md` for Codex) so the moadim prompt and routine-origin disclosure land in the file
+/// the running agent actually reads.
+pub(crate) fn system_prompt_stmts(
+    user_prompt_path: &str,
+    routine_title: &str,
+    instructions_file: &str,
+) -> Vec<String> {
     let header = shell_quote(MOADIM_SYSTEM_PROMPT);
     let disclosure = shell_quote(MOADIM_DISCLOSURE);
     let title = shell_quote(routine_title);
     let uq = shell_quote(user_prompt_path);
+    let dest = format!("\"$WB/{instructions_file}\"");
     vec![
         format!(
-            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > {dest}"#,
             header, disclosure, title
         ),
         format!(
-            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> "$WB/CLAUDE.md" || true"#,
+            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> {dest} || true"#,
             uq = uq
         ),
     ]
@@ -210,6 +219,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
         &routine.title,
+        &agent.instructions_file,
     ));
     stmts.extend([
         // Fail-fast if the routine's source prompt is missing. The statements are `;`-joined, so a

@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim stop --json` now emits a single machine-readable object
+  (`{"running":true}` when a running server was asked to shut down,
+  `{"running":false}` when none was reachable), completing the `--json`
+  contract alongside `status` and `cleanup`. The exit code is unchanged
+  (`0` running, `3` not).
+
 ### Fixed
 
 - Restored `cargo clippy` compliance across the crate. The `min_ident_chars`

@@ -28,7 +28,7 @@ fn background_flags_select_background() {
 
 #[test]
 fn stop_and_status_commands() {
-    assert_eq!(parse(argv(&["stop"])), Command::Stop);
+    assert_eq!(parse(argv(&["stop"])), Command::Stop { json: false });
     assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
 }
 
@@ -46,6 +46,10 @@ fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["cleanup", "--json"])),
         Command::Cleanup { json: true }
+    );
+    assert_eq!(
+        parse(argv(&["stop", "--json"])),
+        Command::Stop { json: true }
     );
 }
 
@@ -85,6 +89,15 @@ fn cleanup_json_reports_removed_and_running() {
     let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+}
+
+#[test]
+fn stop_json_reports_running() {
+    let up: serde_json::Value = serde_json::from_str(&stop_json(true)).unwrap();
+    assert_eq!(up["running"], serde_json::json!(true));
+
+    let down: serde_json::Value = serde_json::from_str(&stop_json(false)).unwrap();
+    assert_eq!(down["running"], serde_json::json!(false));
 }
 
 #[test]

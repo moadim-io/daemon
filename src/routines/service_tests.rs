@@ -75,36 +75,40 @@ fn svc_create_rejects_duplicate_slug() {
     // title slugifies to the same value forces a `Conflict`.
     let title = "Svc Create Dup ZZZ";
     let store = new_store();
-    let first = svc_create(
-        &store,
-        CreateRoutineRequest {
-            schedule: "@daily".into(),
-            title: title.into(),
-            agent: "claude".into(),
-            prompt: "p".into(),
-            repositories: vec![],
-            enabled: true,
-            ttl_secs: None,
-        },
-    )
-    .unwrap();
+    // Clear PATH so the crontab sync inside svc_create/svc_delete can't spawn the
+    // real `crontab` binary and clobber the developer's live crontab.
+    with_empty_path(|| {
+        let first = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: title.into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![],
+                enabled: true,
+                ttl_secs: None,
+            },
+        )
+        .unwrap();
 
-    let conflict = svc_create(
-        &store,
-        CreateRoutineRequest {
-            schedule: "@daily".into(),
-            // Different casing/spacing, same slug.
-            title: "  svc create   DUP zzz ".into(),
-            agent: "claude".into(),
-            prompt: "p".into(),
-            repositories: vec![],
-            enabled: true,
-            ttl_secs: None,
-        },
-    );
-    assert!(matches!(conflict, Err(AppError::Conflict(_))));
+        let conflict = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                // Different casing/spacing, same slug.
+                title: "  svc create   DUP zzz ".into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![],
+                enabled: true,
+                ttl_secs: None,
+            },
+        );
+        assert!(matches!(conflict, Err(AppError::Conflict(_))));
 
-    svc_delete(&store, &first.routine.id).unwrap();
+        svc_delete(&store, &first.routine.id).unwrap();
+    });
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
@@ -126,21 +130,25 @@ fn svc_update_rejects_renaming_into_existing_slug() {
         .unwrap()
         .insert("other-id".into(), routine_other);
 
-    let conflict = svc_update(
-        &store,
-        "other-id",
-        UpdateRoutineRequest {
-            schedule: None,
-            // Rename "other" into the slug already owned by "keep".
-            title: Some(title_keep.into()),
-            agent: None,
-            prompt: None,
-            repositories: None,
-            enabled: None,
-            ttl_secs: None,
-        },
-    );
-    assert!(matches!(conflict, Err(AppError::Conflict(_))));
+    // The conflict short-circuits before sync, but clear PATH defensively so a
+    // future change that syncs first can't reach the real `crontab` binary.
+    with_empty_path(|| {
+        let conflict = svc_update(
+            &store,
+            "other-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                // Rename "other" into the slug already owned by "keep".
+                title: Some(title_keep.into()),
+                agent: None,
+                prompt: None,
+                repositories: None,
+                enabled: None,
+                ttl_secs: None,
+            },
+        );
+        assert!(matches!(conflict, Err(AppError::Conflict(_))));
+    });
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title_keep));
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title_other));
@@ -155,21 +163,25 @@ fn svc_update_sets_ttl_secs() {
     crate::routine_storage::write_routine(&routine).unwrap();
     store.lock().unwrap().insert("ttl-id".into(), routine);
 
-    let updated = svc_update(
-        &store,
-        "ttl-id",
-        UpdateRoutineRequest {
-            schedule: None,
-            title: None,
-            agent: None,
-            prompt: None,
-            repositories: None,
-            enabled: None,
-            ttl_secs: Some(4242),
-        },
-    )
-    .unwrap();
-    assert_eq!(updated.routine.ttl_secs, Some(4242));
+    // Clear PATH so the crontab sync inside svc_update can't spawn the real
+    // `crontab` binary and clobber the developer's live crontab.
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "ttl-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: None,
+                agent: None,
+                prompt: None,
+                repositories: None,
+                enabled: None,
+                ttl_secs: Some(4242),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.ttl_secs, Some(4242));
+    });
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

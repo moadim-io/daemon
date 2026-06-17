@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- The daemon now **initializes a logging backend** (`env_logger`) on the
+  foreground server path, so the existing `log::` call sites actually emit —
+  the request logger (`{method} {path} -> {status} in {ms}ms`), startup
+  warnings (e.g. a failed crontab sync), and the rest. Records go to **stderr**
+  with a timestamp and level, keeping stdout clean for the machine-readable
+  `--json` CLI subcommands (`status`/`stop`/`cleanup`), which never initialize
+  the backend. The level is configurable via `RUST_LOG` (e.g. `RUST_LOG=debug`),
+  defaulting to `info` when unset.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),

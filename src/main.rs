@@ -47,9 +47,24 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+/// Initialize the `log` backend once, on the foreground server path, so the 27 `log::` call sites
+/// (request logger middleware, startup warnings, …) actually emit. Records go to **stderr** with a
+/// timestamp and level, leaving stdout clean for the machine-readable `--json` CLI subcommands
+/// (which never reach this path). The level is read from `RUST_LOG`, defaulting to `info` when unset.
+///
+/// `try_init` is idempotent: a second call (e.g. from a test that already installed a logger) is a
+/// no-op rather than a panic.
+fn init_logging() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .target(env_logger::Target::Stderr)
+        .try_init()
+        .ok();
+}
+
 /// Run the HTTP/MCP/UI server in the foreground until a termination signal or the `/shutdown` route
 /// stops it. Records this process's PID so `moadim stop`/`status` can find it, and clears it on exit.
 async fn run_server() -> anyhow::Result<()> {
+    init_logging();
     routines::ensure_default_agents();
     let store = storage::load_store();
     // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the

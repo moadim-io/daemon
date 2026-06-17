@@ -611,3 +611,28 @@ fn svc_logs_empty_when_newest_has_no_log_file() {
     assert_eq!(svc_logs(&store, "logs-nofile").unwrap(), "");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn svc_logs_ignores_other_routine_with_shared_slug_prefix() {
+    let store = new_store();
+    let mut routine = make_routine("logs-prefix");
+    routine.title = "Logs Cov Prefix ZZQ".into();
+    let slug = slugify(&routine.title); // "logs-cov-prefix-zzq"
+    store.lock().unwrap().insert("logs-prefix".into(), routine);
+
+    let wb = crate::paths::workbenches_dir();
+    let mine = wb.join(format!("{slug}-1000"));
+    // Belongs to a *different* routine whose slug is `{slug}-extra`. Its name shares
+    // the bare `{slug}-` prefix and sorts lexicographically *after* `mine`, so the old
+    // prefix match would wrongly return its log.
+    let other = wb.join(format!("{slug}-extra-2000"));
+    std::fs::create_dir_all(&mine).unwrap();
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(mine.join("agent.log"), "mine").unwrap();
+    std::fs::write(other.join("agent.log"), "not-mine").unwrap();
+
+    assert_eq!(svc_logs(&store, "logs-prefix").unwrap(), "mine");
+
+    std::fs::remove_dir_all(&mine).unwrap();
+    std::fs::remove_dir_all(&other).unwrap();
+}

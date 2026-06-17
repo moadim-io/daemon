@@ -25,6 +25,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
 
+### Fixed
+
+- Routine logs (`GET /routines/{id}/logs`) could return another routine's log
+  when one routine's slug is a dash-prefix of another's (e.g. `logs` vs
+  `logs-extra`): the newest-workbench lookup matched a bare `{slug}-` prefix,
+  so `logs-extra-<ts>` was wrongly attributed to `logs`. It now matches the
+  slug exactly via the same `{slug}-{ts}` parser the cleanup sweep uses, and
+  picks the newest run by numeric timestamp instead of a lexicographic compare
+  over the directory name.
+
 ### Documentation
 
 - Added a **Scripting** table to the README that documents the `--json` object

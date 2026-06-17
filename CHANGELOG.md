@@ -13,6 +13,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Max-runtime watchdog** for routine runs. Routines gain an optional
+  `max_runtime_secs` (TOML, REST/OpenAPI, and the `create_routine` /
+  `update_routine` MCP tools); when unset it defaults to a 6-hour cap. The
+  background cleanup sweep now force-kills (`tmux kill-session`) any live run
+  that has outlived its routine's effective max runtime, records the forced
+  termination in the run's `agent.log`, and lets the workbench be reaped under
+  the normal TTL rules. This bounds a hung agent (one that waits on stdin, loops
+  forever, or blocks on a stuck network/git op) that the finished-run TTL reaper
+  could never touch, and stops stuck sessions accumulating one per cron tick. A
+  live run still within its max runtime is never interrupted.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),

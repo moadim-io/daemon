@@ -6,7 +6,14 @@
 //! workbench is removed once its run has *finished* (no live tmux session) **and** it is older than
 //! the owning routine's [`Routine::effective_ttl_secs`]. Still-running sessions are never touched,
 //! and orphaned workbenches (routine since deleted) fall back to `MAX_TTL_SECS`.
+//!
+//! A second rule handles the one case the TTL reaper cannot: a run that never *finishes*. A session
+//! whose run has outlived its routine's [`Routine::effective_max_runtime_secs`] is force-killed
+//! (`tmux kill-session`) and its forced termination recorded in the run's `agent.log`; the workbench
+//! is then eligible for normal TTL reaping. This bounds the blast radius of a hung agent and stops
+//! stuck sessions accumulating one per cron tick.
 
+use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
@@ -57,16 +64,61 @@ fn tmux_session_alive(session: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Scan `dir`, removing each `{slug}-{ts}` workbench that is expired (`is_alive` returns `false` for
-/// its session and `ttl_for(slug)` has elapsed). Returns the number of directories removed.
+/// Force-kill the tmux session named `session`.
 ///
-/// `ttl_for` and `is_alive` are injected so the decision logic is unit-testable without a filesystem
-/// clock or a live tmux server.
+/// Uses an exact (`=`) target match so `moadim-foo-1` never matches `moadim-foo-10`. Best-effort: a
+/// missing `tmux` binary or an already-gone session is ignored — the goal (no live session) is met
+/// either way.
+fn tmux_kill_session(session: &str) {
+    let _ = std::process::Command::new("tmux")
+        .arg("kill-session")
+        .arg("-t")
+        .arg(format!("={session}"))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Append a forced-termination note to a workbench's `agent.log`, so the reason a run ended is
+/// visible alongside the agent's own output. Best-effort: a write failure is logged and ignored.
+fn record_forced_termination(workbench: &Path, runtime_secs: u64, max_runtime_secs: u64) {
+    let log_path = workbench.join("agent.log");
+    let line = format!(
+        "moadim: routine exceeded max runtime ({runtime_secs}s > {max_runtime_secs}s); killing session\n"
+    );
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        Ok(mut file) => {
+            if let Err(err) = file.write_all(line.as_bytes()) {
+                log::warn!("cleanup: failed to write {log_path:?}: {err}");
+            }
+        }
+        Err(err) => log::warn!("cleanup: failed to open {log_path:?}: {err}"),
+    }
+}
+
+/// Scan `dir`, applying the watchdog then the TTL reaper to each `{slug}-{ts}` workbench. Returns
+/// the number of directories removed.
+///
+/// For each workbench:
+/// 1. **Watchdog** — if its session is still alive but its run has outlived `max_runtime_for(slug)`,
+///    `kill_session` it and append a note to the run's `agent.log`. A live session still *within*
+///    its max runtime is left untouched and the workbench skipped (a running run is never reaped).
+/// 2. **Reaper** — a finished run (no live session, or one just killed above) whose age exceeds
+///    `ttl_for(slug)` is removed; otherwise it is kept until its TTL elapses on a later sweep.
+///
+/// `ttl_for`, `max_runtime_for`, `is_alive`, and `kill_session` are injected so the decision logic is
+/// unit-testable without a filesystem clock or a live tmux server.
 fn reap_dir(
     dir: &Path,
     now: u64,
     ttl_for: &dyn Fn(&str) -> u64,
+    max_runtime_for: &dyn Fn(&str) -> u64,
     is_alive: &dyn Fn(&str) -> bool,
+    kill_session: &dyn Fn(&str),
 ) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -80,10 +132,20 @@ fn reap_dir(
         let Some((slug, ts)) = parse_workbench_name(&name) else {
             continue;
         };
-        if !is_expired(now, ts, ttl_for(slug)) {
-            continue;
+        let session = format!("moadim-{name}");
+        if is_alive(&session) {
+            let runtime = now.saturating_sub(ts);
+            let max_runtime = max_runtime_for(slug);
+            if runtime <= max_runtime {
+                // A running run within its max runtime is never touched.
+                continue;
+            }
+            // Hung run: force-kill the session and record why, so it becomes reapable below.
+            kill_session(&session);
+            record_forced_termination(&entry.path(), runtime, max_runtime);
+            log::warn!("cleanup: killed session {session:?} after {runtime}s (max {max_runtime}s)");
         }
-        if is_alive(&format!("moadim-{name}")) {
+        if !is_expired(now, ts, ttl_for(slug)) {
             continue;
         }
         match std::fs::remove_dir_all(entry.path()) {
@@ -97,18 +159,22 @@ fn reap_dir(
     removed
 }
 
-/// Remove finished, expired workbenches under `~/.moadim/workbenches/`, using each routine's TTL.
+/// Remove finished, expired workbenches under `~/.moadim/workbenches/`, force-killing any session
+/// that has exceeded its routine's max runtime first. Uses each routine's TTL and max runtime.
 ///
-/// Returns the number of workbenches removed. Safe to call repeatedly; it only ever touches
-/// directories whose run has ended.
+/// Returns the number of workbenches removed. Safe to call repeatedly; it only reaps directories
+/// whose run has ended (or was just killed for overrunning).
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
-    let ttls = snapshot::snapshot_ttls(store);
-    let ttl_for = |slug: &str| snapshot::ttl_for(&ttls, slug);
+    let limits = snapshot::snapshot_limits(store);
+    let ttl_for = |slug: &str| snapshot::ttl_for(&limits, slug);
+    let max_runtime_for = |slug: &str| snapshot::max_runtime_for(&limits, slug);
     reap_dir(
         &workbenches_dir(),
         now_secs(),
         &ttl_for,
+        &max_runtime_for,
         &tmux_session_alive,
+        &tmux_kill_session,
     )
 }
 

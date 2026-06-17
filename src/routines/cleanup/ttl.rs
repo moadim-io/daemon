@@ -16,7 +16,24 @@ use super::super::model::Routine;
 /// can't be computed, and the retention for orphaned workbenches whose routine was since deleted.
 pub const MAX_TTL_SECS: u64 = 60 * 60;
 
+/// Default cap on a single run's wall-clock runtime when a routine sets no explicit
+/// `max_runtime_secs`: six hours.
+///
+/// Generous enough not to interrupt a legitimately long agent run, while still bounding a hung
+/// session (one that waits on stdin, loops forever, or blocks on a stuck network/git operation) so
+/// it cannot accumulate one zombie per cron tick. The watchdog in the cleanup module kills any live
+/// session whose run has exceeded its routine's [`Routine::effective_max_runtime_secs`]. It is also
+/// the fallback for orphaned workbenches whose routine was since deleted.
+pub const DEFAULT_MAX_RUNTIME_SECS: u64 = 6 * 60 * 60;
+
 impl Routine {
+    /// Maximum wall-clock seconds a single run of this routine may execute before the watchdog
+    /// force-kills its session: the explicit `max_runtime_secs` if set, else
+    /// [`DEFAULT_MAX_RUNTIME_SECS`].
+    pub fn effective_max_runtime_secs(&self) -> u64 {
+        self.max_runtime_secs.unwrap_or(DEFAULT_MAX_RUNTIME_SECS)
+    }
+
     /// Retention for this routine's finished workbenches.
     ///
     /// `min(MAX_TTL_SECS, cron interval)`, then further lowered by an explicit `ttl_secs` if set.

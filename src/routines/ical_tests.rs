@@ -18,6 +18,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         updated_at: 0,
         last_triggered_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 

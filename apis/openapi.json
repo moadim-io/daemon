@@ -800,6 +800,15 @@
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
           },
+          "max_runtime_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Maximum wall-clock seconds a run may execute before the watchdog kills it.\n`None` uses the default cap (`DEFAULT_MAX_RUNTIME_SECS`).",
+            "minimum": 0
+          },
           "prompt": {
             "type": "string",
             "description": "Task prompt."
@@ -1056,6 +1065,15 @@
             "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.",
             "minimum": 0
           },
+          "max_runtime_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits tmux session. `None` uses the documented default cap (`DEFAULT_MAX_RUNTIME_SECS`). Unlike\n`ttl_secs` (which governs *finished* runs), this bounds a *still-running* run, so a hung agent\nthat never exits is eventually killed and its workbench reaped. See\n[`Routine::effective_max_runtime_secs`] in the cleanup module.",
+            "minimum": 0
+          },
           "prompt": {
             "type": "string",
             "description": "The task prompt handed to the agent."
@@ -1214,6 +1232,15 @@
               "null"
             ],
             "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "max_runtime_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "New max run runtime (seconds), or `None` to keep the existing value.",
+            "minimum": 0
           },
           "prompt": {
             "type": [

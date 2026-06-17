@@ -347,3 +347,111 @@ fn schedule_description_none_for_unparseable_expression() {
     let resp = CronJobResponse::from_job(job, &new_registry());
     assert!(resp.schedule_description.is_none());
 }
+
+#[test]
+fn from_source_managed_maps_to_managed() {
+    assert_eq!(
+        CronJobSourceType::from_source("managed"),
+        CronJobSourceType::Managed
+    );
+}
+
+#[test]
+fn from_source_non_managed_maps_to_system() {
+    // Anything other than the exact "managed" string is treated as a read-only
+    // OS-discovered (system) entry.
+    assert_eq!(
+        CronJobSourceType::from_source("system:user"),
+        CronJobSourceType::System
+    );
+    assert_eq!(
+        CronJobSourceType::from_source(""),
+        CronJobSourceType::System
+    );
+}
+
+#[test]
+fn from_job_system_source_sets_source_type() {
+    let mut job = make_job("sys");
+    job.source = "system:root".to_string();
+    let resp = CronJobResponse::from_job(job, &new_registry());
+    assert_eq!(resp.source_type, CronJobSourceType::System);
+}
+
+#[test]
+fn svc_trigger_spawns_existing_handler_script() {
+    // Place an executable handler script under the handlers dir so svc_trigger's
+    // `handler_path.exists()` branch is taken and the script is spawned.
+    let handlers = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers).unwrap();
+    let handler_name = format!("cov-handler-{}", uuid::Uuid::new_v4());
+    let handler_path = handlers.join(&handler_name);
+    std::fs::write(&handler_path, "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut perms = std::fs::metadata(&handler_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&handler_path, perms).unwrap();
+    }
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: handler_name.clone(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let triggered = svc_trigger(&store, &id).unwrap();
+    assert!(triggered.last_triggered_at.is_some());
+
+    crate::storage::remove_job_dir(&id).unwrap();
+    let _ = std::fs::remove_file(&handler_path);
+}
+
+#[tokio::test]
+async fn replace_handler_updates_job() {
+    use axum::extract::{Path, State};
+    use axum::Json;
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "before".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let state = AppState {
+        store: store.clone(),
+        handlers: new_registry(),
+        routines: crate::routines::new_store(),
+        uptime_start: 0,
+        shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
+    };
+    let body = UpdateRequest {
+        schedule: None,
+        handler: Some("after".into()),
+        metadata: None,
+        enabled: None,
+    };
+    let resp = replace(State(state), Path(id.clone()), Json(body))
+        .await
+        .unwrap();
+    assert_eq!(resp.0.job.handler, "after");
+
+    crate::storage::remove_job_dir(&id).unwrap();
+}

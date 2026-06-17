@@ -175,6 +175,28 @@ fn config_gitignore_path_in_config_dir() {
 }
 
 #[test]
+fn pid_file_ends_with_moadim_pid() {
+    let path = pid_file();
+    assert!(
+        path.to_string_lossy().ends_with("moadim.pid"),
+        "expected path to end with 'moadim.pid': {}",
+        path.display()
+    );
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
+fn daemon_log_file_ends_with_daemon_log() {
+    let path = daemon_log_file();
+    assert!(
+        path.to_string_lossy().ends_with("daemon.log"),
+        "expected path to end with 'daemon.log': {}",
+        path.display()
+    );
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
 fn user_prompt_path_filename() {
     let path = user_prompt_path();
     assert_eq!(

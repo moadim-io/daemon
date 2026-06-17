@@ -103,3 +103,7 @@ pub(crate) fn ensure_default_agents_in(dir: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "agents_tests.rs"]
+mod agents_tests;

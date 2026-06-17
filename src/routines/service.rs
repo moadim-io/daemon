@@ -260,3 +260,7 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod service_tests;

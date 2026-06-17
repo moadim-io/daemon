@@ -84,6 +84,53 @@ fn reap_dir_uses_per_slug_ttl() {
     std::fs::remove_dir_all(&base).unwrap();
 }
 
+#[test]
+fn reap_dir_returns_zero_when_dir_unreadable() {
+    // A directory that does not exist makes `read_dir` fail; the early `return 0`
+    // branch is taken and nothing is reaped.
+    let missing = std::env::temp_dir().join(format!("moadim-cleanup-missing-{}", uuid::Uuid::new_v4()));
+    assert!(!missing.exists());
+    let ttl_for = |_slug: &str| 0u64;
+    let dead = |_session: &str| false;
+    assert_eq!(reap_dir(&missing, 1000, &ttl_for, &dead), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn reap_dir_counts_zero_when_remove_fails() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // An expired + dead workbench whose removal fails (parent dir is read-only) is
+    // not counted, exercising the `Err` arm of the remove match.
+    let base = std::env::temp_dir().join(format!("moadim-cleanup-removefail-{}", uuid::Uuid::new_v4()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    touch_dir(&base, "expired-100");
+    std::fs::write(base.join("expired-100").join("inner"), b"x").unwrap();
+
+    // Strip write permission from the parent so removing the child directory fails.
+    let mut perms = std::fs::metadata(&base).unwrap().permissions();
+    perms.set_mode(0o555);
+    std::fs::set_permissions(&base, perms).unwrap();
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> expired
+    let dead = |_session: &str| false;
+    let removed = reap_dir(&base, now, &ttl_for, &dead);
+    // A read-only parent makes `remove_dir_all` fail for an unprivileged user, so
+    // the directory survives and the Err arm runs (0 removed). Root bypasses the
+    // permission check; tolerate that by only asserting consistency.
+    if base.join("expired-100").exists() {
+        assert_eq!(removed, 0);
+    }
+
+    // Restore permissions so cleanup can proceed.
+    let mut perms = std::fs::metadata(&base).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&base, perms).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
 fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
     super::super::model::Routine {
         id: "x".into(),

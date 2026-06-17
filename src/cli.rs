@@ -113,8 +113,8 @@ pub fn print_help() {
          \x20   version, -V            show the version\n\
          \n\
          Pass --json to `status`/`cleanup` for a single-line machine-readable object.\n\
-         `status`/`cleanup` exit 0 when a server is running and 3 when none is, so scripts can\n\
-         branch on $? without parsing stdout.\n\
+         `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
+         can branch on $? without parsing stdout.\n\
          \n\
          Once running, manage the server from the web client at http://{BIND_ADDR}\n\
          (the STOP button) or with `moadim stop`."
@@ -193,18 +193,22 @@ fn report_endpoints() {
 }
 
 /// Ask a running server to stop via the `/shutdown` route.
-pub fn stop() -> anyhow::Result<()> {
+///
+/// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
+/// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
+/// scripts can branch on `$?` without parsing stdout.
+pub fn stop() -> anyhow::Result<i32> {
     match http_request("POST", "/api/v1/shutdown") {
         Ok(200) => {
             println!("moadim is shutting down");
-            Ok(())
+            Ok(liveness_exit_code(true))
         }
         Ok(status) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
         }
         Err(_) => {
             println!("moadim is not running");
-            Ok(())
+            Ok(liveness_exit_code(false))
         }
     }
 }

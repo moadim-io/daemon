@@ -204,10 +204,13 @@ fn report_endpoints() {
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
 pub fn stop(json: bool) -> anyhow::Result<i32> {
+    // Read the recorded PID before the shutdown request: the server clears its pid file as it
+    // exits, so capturing it first lets `--json` report which process was stopped.
+    let pid = read_pid_file();
     match http_request("POST", "/api/v1/shutdown") {
         Ok(200) => {
             if json {
-                println!("{}", stop_json(true));
+                println!("{}", stop_json(true, pid));
             } else {
                 println!("moadim is shutting down");
             }
@@ -218,7 +221,7 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
         }
         Err(_) => {
             if json {
-                println!("{}", stop_json(false));
+                println!("{}", stop_json(false, pid));
             } else {
                 println!("moadim is not running");
             }
@@ -227,11 +230,14 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// Render the `stop` result as a one-line JSON object: `{"running":bool}`. `running` is `true` when
-/// a running server was asked to shut down, and `false` when none was reachable.
-fn stop_json(running: bool) -> String {
+/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null}`. `running`
+/// is `true` when a running server was asked to shut down, and `false` when none was reachable.
+/// `pid` is the PID recorded in the pid file before the shutdown request (mirroring `status
+/// --json`), or `null` when no pid file is present.
+fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
+        "pid": pid,
     })
     .to_string()
 }

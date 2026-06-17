@@ -18,12 +18,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `{"running":false}` when none was reachable), completing the `--json`
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
+- `moadim stop --json` now folds in the stopped server's `pid`
+  (`{"running":bool,"pid":N|null}`), read from the pid file before the
+  shutdown request so it reports which process was stopped, mirroring
+  `status --json`'s `pid` field. `pid` is `null` when no pid file is present.
 
 ### Documentation
 
 - Added a **Scripting** table to the README that documents the `--json` object
   shapes for `status` (`{"running":bool,"pid":N|null,"address":…}`), `cleanup`
-  (`{"running":bool,"removed":N}`), and `stop` (`{"running":bool}`) alongside
+  (`{"running":bool,"removed":N}`), and `stop` (`{"running":bool,"pid":N|null}`) alongside
   their exit codes, so the machine-readable contract is discoverable without
   reading `--help`. Also documents `moadim stop --json`, which was previously
   only mentioned in `--help`.

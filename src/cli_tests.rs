@@ -92,12 +92,14 @@ fn cleanup_json_reports_removed_and_running() {
 }
 
 #[test]
-fn stop_json_reports_running() {
-    let up: serde_json::Value = serde_json::from_str(&stop_json(true)).unwrap();
+fn stop_json_reports_running_and_pid() {
+    let up: serde_json::Value = serde_json::from_str(&stop_json(true, Some(99))).unwrap();
     assert_eq!(up["running"], serde_json::json!(true));
+    assert_eq!(up["pid"], serde_json::json!(99));
 
-    let down: serde_json::Value = serde_json::from_str(&stop_json(false)).unwrap();
+    let down: serde_json::Value = serde_json::from_str(&stop_json(false, None)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
+    assert!(down["pid"].is_null());
 }
 
 #[test]

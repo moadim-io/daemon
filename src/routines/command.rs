@@ -225,3 +225,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.join("; ")
 }
+
+#[cfg(test)]
+#[path = "command_tests.rs"]
+mod command_tests;

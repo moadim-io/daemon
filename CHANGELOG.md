@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-17
+
 ### Added
 
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
@@ -31,6 +33,19 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
 
+### Changed
+
+- Restored 100% line coverage (enforced by the pre-push hook). To exercise the
+  daemon-lifecycle, crontab-sync, and config-path code without touching the
+  user's real environment, the binary gained test-only seams read from
+  environment variables — `MOADIM_HOME_OVERRIDE` (config/routine/job paths),
+  `MOADIM_BIND_ADDR` (server bind + client probe address),
+  `MOADIM_CRONTAB_BIN` (the `crontab` executable), and
+  `MOADIM_RESTART_TIMEOUT_MS`/`MOADIM_RESTART_POLL_MS` (restart stop-wait
+  timing). They default to the previous behaviour when unset. The test harness
+  is pinned single-threaded (`.cargo/config.toml`) so these overrides cannot
+  race. No change to default runtime behaviour.
+
 ### Fixed
 
 - Routine store writes are now atomic. `write_routine` persists `routine.toml`
@@ -46,6 +61,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   slug exactly via the same `{slug}-{ts}` parser the cleanup sweep uses, and
   picks the newest run by numeric timestamp instead of a lexicographic compare
   over the directory name.
+- Restored `cargo clippy` compliance across the crate. The `min_ident_chars`
+  and `missing_docs` lints (both `deny` in `Cargo.toml`) were failing on
+  current stable, which also broke the pre-push hook. Renamed all single-letter
+  bindings to descriptive names and documented the remaining undocumented
+  fields — no behavioral change.
 
 ### Documentation
 
@@ -55,14 +75,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   their exit codes, so the machine-readable contract is discoverable without
   reading `--help`. Also documents `moadim stop --json`, which was previously
   only mentioned in `--help`.
-
-### Fixed
-
-- Restored `cargo clippy` compliance across the crate. The `min_ident_chars`
-  and `missing_docs` lints (both `deny` in `Cargo.toml`) were failing on
-  current stable, which also broke the pre-push hook. Renamed all single-letter
-  bindings to descriptive names and documented the remaining undocumented
-  fields — no behavioral change.
 
 ## [0.10.0] - 2026-06-17
 
@@ -225,7 +237,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/moadim-io/daemon/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/moadim-io/daemon/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/moadim-io/daemon/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/moadim-io/daemon/compare/v0.7.0...v0.8.0

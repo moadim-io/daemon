@@ -37,9 +37,7 @@ const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux session
 /// line that calls it stays short regardless of how long the command is.
 fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
     let path = routine_script_path(&slugify(&routine.title));
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
     let command = build_routine_command(routine, agent);
     std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;

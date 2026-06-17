@@ -18,6 +18,11 @@ name: Test
 # job would be red on arrival and block every PR. Enforcing it in CI is tracked
 # as follow-up work once the coverage gap is closed (see issue #150).
 
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
+# read repository contents to check out and run the test suite.
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:

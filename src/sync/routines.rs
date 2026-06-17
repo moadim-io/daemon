@@ -106,11 +106,29 @@ fn build_block(store: &RoutineStore) -> String {
     }
 }
 
+/// Substring identifying a routine line inside the crontab block (`# moadim-routine:<id>`).
+const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
+
 /// Write all enabled managed routines from `store` into the OS routines crontab block.
 ///
 /// Idempotent: skips the `crontab -` call when the crontab would not change.
+///
+/// Footgun guard: refuses to overwrite a populated routines block when the store is *empty*. An
+/// empty store at sync time means the store never loaded (or a second daemon is racing this one),
+/// not a genuine "no routines" state — startup always reseeds the built-in defaults, so the steady
+/// state is never an empty store. Without this guard such a sync would write a bare block and
+/// silently drop every scheduled routine's cron line (the incident that motivated it). A store that
+/// loaded fine but holds only disabled/unmanaged routines is *not* empty, so legitimately clearing
+/// the last routine still works.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
     let current = read_crontab()?;
+    if store.lock().unwrap().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
+        log::warn!(
+            "routine sync: store is empty but the crontab still has routine lines; refusing to \
+             wipe the routines block (suspected load failure or a concurrent daemon)"
+        );
+        return Ok(());
+    }
     let block = build_block(store);
     let new_crontab = replace_block_with(&current, &block, BLOCK_BEGIN, BLOCK_END);
     if new_crontab == current {

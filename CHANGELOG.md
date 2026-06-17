@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Routine crontab sync no longer wipes the populated `MOADIM-ROUTINES` block
+  when the routine store is empty. An empty store at sync time signals a load
+  failure or a racing second daemon rather than a genuine "no routines" state
+  (startup always reseeds the built-in defaults), and previously such a sync
+  silently dropped every scheduled routine's cron line — leaving routines that
+  never fired. The sync now detects this case and preserves the existing block.
+
 ## [0.11.0] - 2026-06-17
 
 ### Added

@@ -1,0 +1,46 @@
+name: Test
+
+# Mirror the local pre-push hook's test gate in CI, so the test suite is
+# enforced on every PR even when a contributor (or a fork) hasn't installed the
+# git hooks. Previously CI ran only fmt + clippy (see lint.yml); `cargo test`
+# lived solely in the pre-push hook, so a PR that skipped hook setup could break
+# tests and still go green.
+#
+# This relies on the committed `prebuilt.html` (build.rs falls back to it when
+# trunk is absent), so no trunk or wasm target is needed to build and test the
+# server crate. The command mirrors CONTRIBUTING.md's documented pre-push gate
+# (`cargo test`) — keep the two in lockstep.
+#
+# NOTE: the pre-push hook also enforces a 100% line-coverage floor
+# (`cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'`).
+# That gate is intentionally NOT added here yet: the tree is currently below
+# 100% line coverage on current stable Rust, so a `--fail-under-lines 100` CI
+# job would be red on arrival and block every PR. Enforcing it in CI is tracked
+# as follow-up work once the coverage gap is closed (see issue #150).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry (registry only, not target)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test

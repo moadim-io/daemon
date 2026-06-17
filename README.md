@@ -198,6 +198,8 @@ moadim cleanup --json  # same, as a machine-readable JSON object
 moadim restart         # stop a running server (if any) and start a fresh one
 moadim stop            # ask a running server to stop
 moadim stop --json     # same, as a machine-readable JSON object
+moadim install         # register as an OS service so it runs at login / survives reboots
+moadim uninstall       # deregister and remove the OS service
 ```
 
 | Command            | Mode          | Behaviour |
@@ -208,6 +210,8 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. Exits `0` when running, `3` when not. |
+| `moadim install`   | —             | Registers moadim as a per-user OS service so it starts at login and survives reboots: a launchd LaunchAgent at `~/Library/LaunchAgents/io.moadim.daemon.plist` on macOS, or a systemd user unit at `~/.config/systemd/user/moadim.service` on Linux. Writes the unit with the resolved binary path, then loads/enables it. Unsupported on other platforms (e.g. Windows). |
+| `moadim uninstall` | —             | Stops and deregisters the OS service, then removes its unit file. |
 
 `status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch
 on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`

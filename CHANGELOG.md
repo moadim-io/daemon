@@ -13,6 +13,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim install` / `moadim uninstall` subcommands that register the daemon as
+  a per-user **OS service** so scheduled routines keep firing across reboots. On
+  macOS it writes a launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`) and `launchctl load`s it; on
+  Linux a systemd user unit (`~/.config/systemd/user/moadim.service`) enabled
+  with `systemctl --user enable --now`. Both run `moadim --interactive` under the
+  supervisor (start at login, restart on exit), with the resolved binary path
+  from `current_exe()`. `uninstall` deregisters the service and removes its unit
+  file. Other platforms (e.g. Windows) are reported as unsupported.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),

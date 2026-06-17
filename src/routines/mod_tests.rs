@@ -303,7 +303,7 @@ fn svc_get_not_found() {
 
 #[test]
 fn svc_list_empty() {
-    assert!(svc_list(&new_store()).is_empty());
+    assert!(svc_list(&new_store(), &RoutineListQuery::default()).is_empty());
 }
 
 #[test]
@@ -315,9 +315,81 @@ fn svc_list_sorted_by_created_at() {
     late.created_at = 20;
     store.lock().unwrap().insert("late".into(), late);
     store.lock().unwrap().insert("early".into(), early);
-    let list = svc_list(&store);
+    let list = svc_list(&store, &RoutineListQuery::default());
     assert_eq!(list[0].routine.id, "early");
     assert_eq!(list[1].routine.id, "late");
+}
+
+#[test]
+fn svc_list_descending_order() {
+    let store = new_store();
+    let mut early = make_routine("early");
+    early.created_at = 10;
+    let mut late = make_routine("late");
+    late.created_at = 20;
+    store.lock().unwrap().insert("early".into(), early);
+    store.lock().unwrap().insert("late".into(), late);
+    let query = RoutineListQuery {
+        order: SortOrder::Desc,
+        ..Default::default()
+    };
+    let list = svc_list(&store, &query);
+    assert_eq!(list[0].routine.id, "late");
+    assert_eq!(list[1].routine.id, "early");
+}
+
+#[test]
+fn svc_list_filters_by_repository_substring() {
+    let store = new_store();
+    let mut alpha = make_routine("alpha");
+    alpha.repositories = vec![Repository {
+        repository: "https://github.com/octocat/Alpha".to_string(),
+        branch: None,
+    }];
+    let mut beta = make_routine("beta");
+    beta.repositories = vec![Repository {
+        repository: "https://github.com/octocat/Beta".to_string(),
+        branch: None,
+    }];
+    store.lock().unwrap().insert("alpha".into(), alpha);
+    store.lock().unwrap().insert("beta".into(), beta);
+    let query = RoutineListQuery {
+        // Case-insensitive substring match.
+        repository: Some("alpha".to_string()),
+        ..Default::default()
+    };
+    let list = svc_list(&store, &query);
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].routine.id, "alpha");
+}
+
+#[test]
+fn svc_list_sorts_by_repository_no_repo_last() {
+    let store = new_store();
+    let mut zeta = make_routine("zeta");
+    zeta.repositories = vec![Repository {
+        repository: "https://github.com/octocat/Zeta".to_string(),
+        branch: None,
+    }];
+    let mut apple = make_routine("apple");
+    apple.repositories = vec![Repository {
+        repository: "https://github.com/octocat/Apple".to_string(),
+        branch: None,
+    }];
+    let mut none = make_routine("none");
+    none.repositories = vec![];
+    store.lock().unwrap().insert("zeta".into(), zeta);
+    store.lock().unwrap().insert("apple".into(), apple);
+    store.lock().unwrap().insert("none".into(), none);
+    let query = RoutineListQuery {
+        sort: RoutineSort::Repository,
+        ..Default::default()
+    };
+    let list = svc_list(&store, &query);
+    assert_eq!(list[0].routine.id, "apple");
+    assert_eq!(list[1].routine.id, "zeta");
+    // Routines with no repository sort last.
+    assert_eq!(list[2].routine.id, "none");
 }
 
 #[test]

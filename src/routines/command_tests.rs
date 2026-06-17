@@ -71,14 +71,6 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             cmd.contains(&dir_str),
             "expected resolved tmux dir {dir_str} in: {cmd}"
         );
-        // PATH is *appended* to the login shell's `$PATH` (sourced from the user's profile via the
-        // `/bin/sh -l` crontab invocation), not replaced, so the user's own entries survive.
-        // `${PATH:+$PATH:}` also guards against a leading colon (an empty "cwd" element) when PATH
-        // is unset.
-        assert!(
-            cmd.contains(r#"export PATH="${PATH:+$PATH:}"#),
-            "expected PATH appended to $PATH in: {cmd}"
-        );
     });
 
     let _ = std::fs::remove_dir_all(&dir);

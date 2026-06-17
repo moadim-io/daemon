@@ -15,10 +15,11 @@
 //! limit, which cron silently drops.
 //!
 //! The `-l` makes `run.sh` execute under a **login** shell so it sources the user's `~/.profile`,
-//! giving the agent the same environment (PATH, GH_TOKEN, API keys, …) an interactive login shell
+//! giving the agent the environment variables (`GH_TOKEN`, API keys, …) an interactive login shell
 //! has. Cron's own environment is minimal and outside the GUI login session, so without `-l` the
-//! agent would launch with no credentials. Reverse sync is not implemented — routines are managed
-//! only through the API.
+//! agent would launch with no credentials. (`run.sh` still replaces `PATH` with its own curated
+//! list, so binary resolution is unaffected — only env vars are gained.) Reverse sync is not
+//! implemented — routines are managed only through the API.
 
 use std::io;
 use std::os::unix::fs::PermissionsExt;
@@ -54,7 +55,8 @@ fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<s
 /// `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`.
 ///
 /// The `-l` runs the script under a login shell so it sources the user's `~/.profile`, letting the
-/// agent inherit their environment (PATH, GH_TOKEN, API keys, …) rather than cron's minimal one.
+/// agent inherit their environment variables (`GH_TOKEN`, API keys, …) rather than cron's minimal
+/// one.
 ///
 /// Returns `None` (after a warning) if the script cannot be written.
 pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Option<String> {

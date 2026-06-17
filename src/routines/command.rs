@@ -191,20 +191,16 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
 
     let mut stmts = vec![
         // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see
-        // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced and the
-        // agent inherits their environment — PATH, GH_TOKEN, API keys and the like — just as an
-        // interactive login shell would. Cron's own env is otherwise minimal and (on macOS) the
-        // process cannot reach the GUI Keychain, so without this the agent has no credentials.
+        // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced first and
+        // the agent inherits their environment — GH_TOKEN, API keys and the like — which cron's
+        // minimal env (and, on macOS, the GUI-Keychain-less session) otherwise withholds.
         //
-        // Still append a curated fallback PATH so `tmux` and the agent binary resolve even when the
-        // profile sets no PATH — e.g. a zsh user who exports it only from `~/.zshrc`, which a
-        // non-interactive login shell does not read. `${PATH:+$PATH:}` keeps any profile-provided
-        // PATH first and avoids a leading colon (an empty PATH element means "cwd", a footgun) when
-        // PATH is unset.
-        format!(
-            r#"export PATH="${{PATH:+$PATH:}}{}""#,
-            cron_path(&agent.command)
-        ),
+        // PATH is still *replaced* with this curated list (not merged with the profile's), keeping
+        // binary resolution identical to before the login-shell change: tmux and the agent always
+        // resolve to the same dirs the daemon itself uses, regardless of how the profile orders
+        // PATH. Only environment *variables* are gained from the profile; PATH behaviour is
+        // unchanged.
+        format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),

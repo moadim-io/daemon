@@ -15,13 +15,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 - Scheduled routine agents now run under a **login shell** (`/bin/sh -l '<run.sh>'`
   in the crontab line; `sh -lc` for manual triggers), so the agent sources the
-  user's `~/.profile` and inherits their environment — `PATH`, `GH_TOKEN`, API
+  user's `~/.profile` and inherits their environment variables — `GH_TOKEN`, API
   keys, etc. Previously routines launched with cron's minimal environment and,
   on macOS, outside the GUI login session, so tools like `gh`/`git` had no
-  credentials and could not authenticate. The curated fallback `PATH` is now
-  *appended* to the profile's `PATH` (`${PATH:+$PATH:}…`) rather than replacing
-  it, preserving the user's own entries while still guaranteeing `tmux`/agent
-  binaries resolve. Put any environment the agent needs (e.g. `export
+  credentials and could not authenticate. `PATH` is still replaced with the same
+  curated list as before, so binary resolution is unchanged — only environment
+  variables are gained. Put any environment the agent needs (e.g. `export
   GH_TOKEN=…`) in `~/.profile`.
 - Routine crontab sync no longer wipes the populated `MOADIM-ROUTINES` block
   when the routine store is empty. An empty store at sync time signals a load

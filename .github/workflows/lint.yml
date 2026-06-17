@@ -1,0 +1,44 @@
+name: Lint
+
+# Gate every PR (and pushes to main) on the same formatting and lint checks the
+# local pre-push hook enforces (`cargo fmt --check`, `cargo clippy -- -D
+# warnings`), so style/lint regressions are caught in review even when a
+# contributor hasn't installed the hooks. CI and the hook stay in lockstep:
+# both run the exact same two commands against the whole workspace.
+#
+# clippy needs the wasm32 target available because the `ui` workspace member is
+# a Yew/wasm-bindgen crate; the toolchain step installs it so a workspace-wide
+# lint doesn't fail to resolve the target.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  fmt-clippy:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry (registry only, not target)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy -- -D warnings

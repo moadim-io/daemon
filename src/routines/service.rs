@@ -201,7 +201,14 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     match load_agent_command(&routine.agent) {
         Some(agent) => {
             let cmd = build_routine_command(&routine, &agent);
-            if let Err(err) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            if let Err(err) = std::process::Command::new("sh")
+                .arg("-lc")
+                .arg(&cmd)
+                .spawn()
+            {
                 log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }

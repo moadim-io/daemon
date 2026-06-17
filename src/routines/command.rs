@@ -190,10 +190,21 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![
-        // cron runs with a minimal PATH (/usr/bin:/bin) that omits tmux/claude/npm dirs. Bake the
-        // daemon's own PATH into the line so the agent tools resolve the same way they do for a
-        // manual trigger (which inherits the daemon's environment).
-        format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
+        // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see
+        // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced and the
+        // agent inherits their environment — PATH, GH_TOKEN, API keys and the like — just as an
+        // interactive login shell would. Cron's own env is otherwise minimal and (on macOS) the
+        // process cannot reach the GUI Keychain, so without this the agent has no credentials.
+        //
+        // Still append a curated fallback PATH so `tmux` and the agent binary resolve even when the
+        // profile sets no PATH — e.g. a zsh user who exports it only from `~/.zshrc`, which a
+        // non-interactive login shell does not read. `${PATH:+$PATH:}` keeps any profile-provided
+        // PATH first and avoids a leading colon (an empty PATH element means "cwd", a footgun) when
+        // PATH is unset.
+        format!(
+            r#"export PATH="${{PATH:+$PATH:}}{}""#,
+            cron_path(&agent.command)
+        ),
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),

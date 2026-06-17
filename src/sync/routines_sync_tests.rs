@@ -34,6 +34,9 @@ fn format_routine_line_invokes_script_with_schedule_and_tag() {
     assert!(line.starts_with("30 9 * * 1-5 "));
     // crontab line just runs the generated script — keeps it well under cron's length limit
     assert!(line.contains("/bin/sh "));
+    // `-l` runs the script under a login shell so it sources the user's profile and the agent
+    // inherits their environment (PATH, GH_TOKEN, …) instead of cron's minimal one.
+    assert!(line.contains("/bin/sh -l "));
     assert!(line.contains(&format!("/{slug}/run.sh")));
     assert!(line.ends_with("# moadim-routine:fid"));
     assert!(!line.contains('\n'));

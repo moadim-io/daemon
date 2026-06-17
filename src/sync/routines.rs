@@ -5,14 +5,20 @@
 //! ```text
 //! # BEGIN MOADIM-ROUTINES
 //! # Managed by moadim — routines (agent tmux sessions)
-//! * * * * * /bin/sh '/…/routines/<slug>/run.sh' # moadim-routine:<id>
+//! * * * * * /bin/sh -l '/…/routines/<slug>/run.sh' # moadim-routine:<id>
 //! # END MOADIM-ROUTINES
 //! ```
 //!
 //! Each routine's full launch command is written to a per-routine `run.sh` script; the crontab line
-//! is just `<schedule> /bin/sh '<run.sh>' # moadim-routine:<id>`. Inlining the whole command (which
-//! includes a long per-agent `setup` step) pushed lines past cron's ~1000-char per-line limit, which
-//! cron silently drops. Reverse sync is not implemented — routines are managed only through the API.
+//! is just `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`. Inlining the whole command
+//! (which includes a long per-agent `setup` step) pushed lines past cron's ~1000-char per-line
+//! limit, which cron silently drops.
+//!
+//! The `-l` makes `run.sh` execute under a **login** shell so it sources the user's `~/.profile`,
+//! giving the agent the same environment (PATH, GH_TOKEN, API keys, …) an interactive login shell
+//! has. Cron's own environment is minimal and outside the GUI login session, so without `-l` the
+//! agent would launch with no credentials. Reverse sync is not implemented — routines are managed
+//! only through the API.
 
 use std::io;
 use std::os::unix::fs::PermissionsExt;
@@ -45,7 +51,10 @@ fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<s
 }
 
 /// Format a single routine as a crontab line that invokes its `run.sh`:
-/// `<schedule> /bin/sh '<run.sh>' # moadim-routine:<id>`.
+/// `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`.
+///
+/// The `-l` runs the script under a login shell so it sources the user's `~/.profile`, letting the
+/// agent inherit their environment (PATH, GH_TOKEN, API keys, …) rather than cron's minimal one.
 ///
 /// Returns `None` (after a warning) if the script cannot be written.
 pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Option<String> {
@@ -61,7 +70,7 @@ pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Op
     };
     let schedule = to_os_schedule(&routine.schedule);
     Some(format!(
-        "{} /bin/sh {} # moadim-routine:{}",
+        "{} /bin/sh -l {} # moadim-routine:{}",
         schedule,
         shell_quote(&script.to_string_lossy()),
         routine.id

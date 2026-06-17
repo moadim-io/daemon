@@ -8,7 +8,7 @@ use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
-use super::agents::load_agent_command;
+use super::agents::{available_agents, load_agent_command};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
@@ -79,12 +79,30 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Reject an `agent` that is not present in the agent registry.
+///
+/// An unknown agent resolves to no command at fire time and the routine is silently
+/// skipped (see #139), so failing loud here — at create/update — surfaces the typo to
+/// the caller instead. Mirrors the `validate_cron` / slug-conflict guards.
+fn validate_agent(agent: &str) -> Result<(), AppError> {
+    let agents = available_agents();
+    if agents.iter().any(|known| known == agent) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!(
+            "unknown agent \"{agent}\"; valid agents: {}",
+            agents.join(", ")
+        )))
+    }
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    validate_agent(&req.agent)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
@@ -128,6 +146,9 @@ pub fn svc_update(
 ) -> Result<RoutineResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
+    }
+    if let Some(ref agent) = req.agent {
+        validate_agent(agent)?;
     }
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);

@@ -415,7 +415,7 @@ fn sync_error_display_renders_both_variants() {
     let cmd = SyncError::CrontabCommand("nope".to_string());
     assert_eq!(format!("{cmd}"), "crontab: nope");
 
-    let io_err = std::io::Error::new(std::io::ErrorKind::Other, "disk gone");
+    let io_err = std::io::Error::other("disk gone");
     let wrapped = SyncError::Io(io_err);
     assert_eq!(format!("{wrapped}"), "io: disk gone");
 }

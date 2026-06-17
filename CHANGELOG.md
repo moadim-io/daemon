@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-17
+
 ### Fixed
 
 - Routine crontab sync no longer wipes the populated `MOADIM-ROUTINES` block

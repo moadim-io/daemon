@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-06-17
+
 ### Fixed
 
 - Scheduled routine agents now run under a **login shell** (`/bin/sh -l '<run.sh>'`

@@ -33,8 +33,10 @@ struct RoutineToml {
     created_at: Option<u64>,
     /// Unix last-updated timestamp.
     updated_at: Option<u64>,
-    /// Unix timestamp of last manual trigger.
-    last_triggered_at: Option<u64>,
+    /// Unix timestamp of last manual trigger. Accepts the legacy `last_triggered_at` key so
+    /// routine.toml files written before the rename still load.
+    #[serde(alias = "last_triggered_at")]
+    last_manual_trigger_at: Option<u64>,
     /// Workbench retention in seconds for finished runs; absent means the daemon default.
     #[serde(default)]
     ttl_secs: Option<u64>,
@@ -65,7 +67,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),
         updated_at: toml.updated_at.unwrap_or(0),
-        last_triggered_at: toml.last_triggered_at,
+        last_manual_trigger_at: toml.last_manual_trigger_at,
         ttl_secs: toml.ttl_secs,
     })
 }
@@ -94,7 +96,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         enabled: Some(routine.enabled),
         created_at: Some(routine.created_at),
         updated_at: Some(routine.updated_at),
-        last_triggered_at: routine.last_triggered_at,
+        last_manual_trigger_at: routine.last_manual_trigger_at,
         ttl_secs: routine.ttl_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;

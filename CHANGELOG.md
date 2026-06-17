@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
+  on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
+  the web UI). The field was only ever updated by *manual* triggers, never by
+  scheduled cron firings, so the old name wrongly read as "never ran" for a
+  routine that fires on schedule but was never triggered by hand. Deserialization
+  accepts the legacy `last_triggered_at` key via a serde alias, so existing
+  `routine.toml` / job files still load.
+
 ### Added
 
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin

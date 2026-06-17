@@ -87,7 +87,11 @@ pub struct Routine {
     /// Unix timestamp (seconds) when the routine was last updated.
     pub updated_at: u64,
     /// Unix timestamp (seconds) when the routine was last manually triggered, if ever.
-    pub last_triggered_at: Option<u64>,
+    ///
+    /// Only manual triggers (`trigger_routine`) update this; scheduled cron firings run the built
+    /// command directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.
+    #[serde(alias = "last_triggered_at")]
+    pub last_manual_trigger_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are

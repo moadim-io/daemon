@@ -208,7 +208,7 @@ impl MoadimMcp {
 
     /// Manually trigger a cron job immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a cron job outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a cron job outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_cron_job(
         &self,
@@ -292,7 +292,7 @@ impl MoadimMcp {
 
     /// Manually trigger a routine immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a routine outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a routine outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_routine(
         &self,

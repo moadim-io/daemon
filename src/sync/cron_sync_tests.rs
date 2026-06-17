@@ -99,7 +99,7 @@ fn make_job(id: &str, schedule: &str, handler: &str) -> CronJob {
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 

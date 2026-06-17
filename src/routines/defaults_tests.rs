@@ -49,7 +49,7 @@ fn materialize_stamps_timestamps_and_marks_managed() {
     assert_eq!(routine.updated_at, 1234);
     assert_eq!(routine.source, "managed");
     assert!(routine.enabled);
-    assert!(routine.last_triggered_at.is_none());
+    assert!(routine.last_manual_trigger_at.is_none());
     assert!(!routine.id.is_empty());
     // Schedule is normalized, not the raw spec string.
     assert_eq!(routine.schedule, normalize_schedule(spec.schedule));

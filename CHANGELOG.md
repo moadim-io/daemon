@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored `cargo clippy` compliance across the crate. The `min_ident_chars`
+  and `missing_docs` lints (both `deny` in `Cargo.toml`) were failing on
+  current stable, which also broke the pre-push hook. Renamed all single-letter
+  bindings to descriptive names and documented the remaining undocumented
+  fields — no behavioral change.
+
 ## [0.10.0] - 2026-06-17
 
 ### Added

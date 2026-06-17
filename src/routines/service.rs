@@ -20,7 +20,7 @@ use super::model::{
 pub fn svc_list(store: &RoutineStore) -> Vec<RoutineResponse> {
     let lock = store.lock().unwrap();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
-    routines.sort_by_key(|r| r.created_at);
+    routines.sort_by_key(|routine| routine.created_at);
     drop(lock);
     routines
         .into_iter()
@@ -48,7 +48,7 @@ pub fn svc_create(
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
-        if lock.values().any(|r| slugify(&r.title) == slug) {
+        if lock.values().any(|routine| slugify(&routine.title) == slug) {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{slug}\" already exists"
             )));
@@ -74,8 +74,8 @@ pub fn svc_create(
         .lock()
         .unwrap()
         .insert(routine.id.clone(), routine.clone());
-    if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine create failed: {e}");
+    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+        log::warn!("crontab sync after routine create failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
@@ -97,7 +97,7 @@ pub fn svc_update(
         if new_slug != old_slug
             && lock
                 .values()
-                .any(|r| r.id != id && slugify(&r.title) == new_slug)
+                .any(|routine| routine.id != id && slugify(&routine.title) == new_slug)
         {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{new_slug}\" already exists"
@@ -105,23 +105,23 @@ pub fn svc_update(
         }
     }
     let routine = lock.get_mut(id).unwrap();
-    if let Some(s) = req.schedule {
-        routine.schedule = normalize_schedule(&s);
+    if let Some(schedule) = req.schedule {
+        routine.schedule = normalize_schedule(&schedule);
     }
-    if let Some(t) = req.title {
-        routine.title = t;
+    if let Some(title) = req.title {
+        routine.title = title;
     }
-    if let Some(a) = req.agent {
-        routine.agent = a;
+    if let Some(agent) = req.agent {
+        routine.agent = agent;
     }
-    if let Some(p) = req.prompt {
-        routine.prompt = p;
+    if let Some(prompt) = req.prompt {
+        routine.prompt = prompt;
     }
-    if let Some(r) = req.repositories {
-        routine.repositories = r;
+    if let Some(repositories) = req.repositories {
+        routine.repositories = repositories;
     }
-    if let Some(e) = req.enabled {
-        routine.enabled = e;
+    if let Some(enabled) = req.enabled {
+        routine.enabled = enabled;
     }
     if let Some(ttl) = req.ttl_secs {
         routine.ttl_secs = Some(ttl);
@@ -134,8 +134,8 @@ pub fn svc_update(
     if new_slug != old_slug {
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
     }
-    if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine update failed: {e}");
+    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+        log::warn!("crontab sync after routine update failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
@@ -144,8 +144,8 @@ pub fn svc_update(
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
-    if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine delete failed: {e}");
+    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+        log::warn!("crontab sync after routine delete failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
@@ -161,8 +161,8 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     match load_agent_command(&routine.agent) {
         Some(agent) => {
             let cmd = build_routine_command(&routine, &agent);
-            if let Err(e) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
-                log::warn!("trigger: failed to spawn routine command: {e}");
+            if let Err(err) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
+                log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
         None => log::warn!(

@@ -33,7 +33,7 @@ fn every_agent_is_a_known_builtin() {
     let known = available_agents();
     for spec in DEFAULT_ROUTINES {
         assert!(
-            known.iter().any(|a| a == spec.agent),
+            known.iter().any(|agent| agent == spec.agent),
             "agent {:?} for routine {:?} is not a built-in agent",
             spec.agent,
             spec.title
@@ -44,15 +44,15 @@ fn every_agent_is_a_known_builtin() {
 #[test]
 fn materialize_stamps_timestamps_and_marks_managed() {
     let spec = &DEFAULT_ROUTINES[0];
-    let r = materialize(spec, 1234);
-    assert_eq!(r.created_at, 1234);
-    assert_eq!(r.updated_at, 1234);
-    assert_eq!(r.source, "managed");
-    assert!(r.enabled);
-    assert!(r.last_triggered_at.is_none());
-    assert!(!r.id.is_empty());
+    let routine = materialize(spec, 1234);
+    assert_eq!(routine.created_at, 1234);
+    assert_eq!(routine.updated_at, 1234);
+    assert_eq!(routine.source, "managed");
+    assert!(routine.enabled);
+    assert!(routine.last_triggered_at.is_none());
+    assert!(!routine.id.is_empty());
     // Schedule is normalized, not the raw spec string.
-    assert_eq!(r.schedule, normalize_schedule(spec.schedule));
+    assert_eq!(routine.schedule, normalize_schedule(spec.schedule));
 }
 
 #[test]

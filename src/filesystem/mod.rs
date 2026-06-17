@@ -13,10 +13,10 @@ impl FsLocation {
         Self {
             server_root: std::env::current_dir()
                 .ok()
-                .map(|p| p.to_string_lossy().into_owned()),
+                .map(|path| path.to_string_lossy().into_owned()),
             server_exe_dir: std::env::current_exe()
                 .ok()
-                .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned())),
+                .and_then(|path| path.parent().map(|dir| dir.to_string_lossy().into_owned())),
         }
     }
 }

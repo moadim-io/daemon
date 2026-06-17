@@ -198,8 +198,8 @@ pub async fn run_with_listener_until(
 ) -> anyhow::Result<()> {
     let addr = listener.local_addr()?.to_string();
     let spec_path = concat!(env!("CARGO_MANIFEST_DIR"), "/apis/openapi.json");
-    if let Err(e) = std::fs::write(spec_path, crate::openapi::ApiDoc::to_json()) {
-        log::warn!("could not write openapi spec: {e}");
+    if let Err(err) = std::fs::write(spec_path, crate::openapi::ApiDoc::to_json()) {
+        log::warn!("could not write openapi spec: {err}");
     }
     let signal: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
     // Periodically reap finished, expired run workbenches so triggered routines do not accumulate

@@ -52,10 +52,10 @@ fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<s
 /// Returns `None` (after a warning) if the script cannot be written.
 pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Option<String> {
     let script = match write_routine_script(routine, agent) {
-        Ok(p) => p,
-        Err(e) => {
+        Ok(path) => path,
+        Err(err) => {
             log::warn!(
-                "routine sync: failed to write run.sh for routine {:?}: {e}; skipping",
+                "routine sync: failed to write run.sh for routine {:?}: {err}; skipping",
                 routine.id
             );
             return None;
@@ -77,21 +77,21 @@ fn build_block(store: &RoutineStore) -> String {
     let mut routines: Vec<Routine> = {
         let lock = store.lock().unwrap();
         lock.values()
-            .filter(|r| r.source == "managed" && r.enabled)
+            .filter(|routine| routine.source == "managed" && routine.enabled)
             .cloned()
             .collect()
     };
-    routines.sort_by_key(|r| r.created_at);
+    routines.sort_by_key(|routine| routine.created_at);
 
     let lines: Vec<String> = routines
         .iter()
-        .filter_map(|r| match load_agent_command(&r.agent) {
-            Some(agent) => format_routine_line(r, &agent),
+        .filter_map(|routine| match load_agent_command(&routine.agent) {
+            Some(agent) => format_routine_line(routine, &agent),
             None => {
                 log::warn!(
                     "routine sync: agent config not found for routine {:?} (agent {:?}); skipping",
-                    r.id,
-                    r.agent
+                    routine.id,
+                    routine.agent
                 );
                 None
             }

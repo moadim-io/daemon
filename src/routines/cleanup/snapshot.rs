@@ -13,7 +13,7 @@ use super::ttl::MAX_TTL_SECS;
 pub fn snapshot_ttls(store: &RoutineStore) -> HashMap<String, u64> {
     let lock = store.lock().unwrap();
     lock.values()
-        .map(|r| (slugify(&r.title), r.effective_ttl_secs()))
+        .map(|routine| (slugify(&routine.title), routine.effective_ttl_secs()))
         .collect()
 }
 

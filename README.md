@@ -6,6 +6,12 @@
 >
 > _Set the loop. Forget the keyboard. moadim fires the prompt so you don't have to._
 
+**One-line install** — install Rust/Cargo, install moadim, then run it:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env" && cargo install moadim && moadim
+```
+
 Rust server that exposes cron job management over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs
@@ -207,6 +213,20 @@ moadim stop --json     # same, as a machine-readable JSON object
 on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`
 asked it to shut down) and `3` when no server is reachable. Any other failure exits non-zero (`1`)
 with a message on stderr.
+
+### Scripting
+
+`status`, `cleanup`, and `stop` each accept `--json` for a single-line, machine-readable object
+on stdout. Paired with the exit codes above, a caller gets the full contract without parsing prose:
+
+| Command            | `--json` shape | Exit codes |
+|--------------------|----------------|------------|
+| `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — `pid` is `null` when no pid file is present | `0` running, `3` not |
+| `moadim cleanup --json` | `{"running":bool,"removed":N}` — `removed` is `0` when no server is running | `0` running, `3` not |
+| `moadim stop --json`    | `{"running":bool,"pid":N\|null}` — `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
+
+Any other failure exits `1` with a message on stderr. The object is always a single line, so
+`moadim status --json | jq -r .pid` and similar pipelines work without buffering.
 
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send

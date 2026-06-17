@@ -19,6 +19,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
 
+### Documentation
+
+- Added a **Scripting** table to the README that documents the `--json` object
+  shapes for `status` (`{"running":bool,"pid":N|null,"address":…}`), `cleanup`
+  (`{"running":bool,"removed":N}`), and `stop` (`{"running":bool}`) alongside
+  their exit codes, so the machine-readable contract is discoverable without
+  reading `--help`. Also documents `moadim stop --json`, which was previously
+  only mentioned in `--help`.
+
 ### Fixed
 
 - Restored `cargo clippy` compliance across the crate. The `min_ident_chars`

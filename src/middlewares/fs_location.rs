@@ -11,20 +11,20 @@ pub async fn fs_location(req: Request, next: Next) -> Response {
 /// Inject fields from a JSON object value as `x-*` response headers.
 fn inject_headers_from_value(mut res: Response, val: serde_json::Value) -> Response {
     let map = match val {
-        serde_json::Value::Object(m) => m,
+        serde_json::Value::Object(obj) => obj,
         _ => return res,
     };
-    for (k, v) in map {
-        let s = match v {
-            serde_json::Value::String(s) => s,
+    for (key, value) in map {
+        let str_value = match value {
+            serde_json::Value::String(string) => string,
             _ => continue,
         };
-        let name = format!("x-{}", k.replace('_', "-"));
-        if let (Ok(n), Ok(v)) = (
+        let name = format!("x-{}", key.replace('_', "-"));
+        if let (Ok(header_name), Ok(header_value)) = (
             axum::http::HeaderName::from_bytes(name.as_bytes()),
-            HeaderValue::from_str(&s),
+            HeaderValue::from_str(&str_value),
         ) {
-            res.headers_mut().insert(n, v);
+            res.headers_mut().insert(header_name, header_value);
         }
     }
     res

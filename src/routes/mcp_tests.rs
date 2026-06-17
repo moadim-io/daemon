@@ -33,7 +33,7 @@ fn health_content_contains_status() {
     let result = handler.health().unwrap();
     let text = &result.content[0];
     let json_str = match &text.raw {
-        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -52,7 +52,7 @@ fn echo_tool_returns_message() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -65,7 +65,7 @@ fn list_cron_jobs_empty() {
     let result = handler.list_cron_jobs().unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -203,7 +203,7 @@ fn create_cron_job_tool_success() {
     let result = handler.create_cron_job(Parameters(req)).unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -330,7 +330,7 @@ fn create_get_update_trigger_delete_routine_success() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -378,7 +378,7 @@ fn cleanup_workbenches_tool_returns_removed_count() {
     let result = handler.cleanup_workbenches().unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let json_str = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(t) => t.text.clone(),
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();

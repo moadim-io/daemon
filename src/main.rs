@@ -38,9 +38,9 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
-        cli::Command::Status { json } => cli::status(json),
-        cli::Command::Cleanup { json } => cli::cleanup(json),
-        cli::Command::Stop => cli::stop(),
+        cli::Command::Status { json } => std::process::exit(cli::status(json)?),
+        cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
+        cli::Command::Stop { json } => std::process::exit(cli::stop(json)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
         cli::Command::Foreground => run_server().await,
@@ -59,6 +59,10 @@ async fn run_server() -> anyhow::Result<()> {
     // store reflects the canonical dirs the crontab sync and run.sh `cp prompt.md` both target.
     routine_storage::migrate_routine_dirs();
     let routines = routine_storage::load_store();
+    // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
+    // fresh install ships with them, and a default deleted while stopped is restored. Existing
+    // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
+    routines::ensure_default_routines(&routines);
     // The crontab sync writes only run.sh; re-persist so every routine also has its routine.toml +
     // prompt.md sidecar in the slug dir, healing dirs left with run.sh but no prompt (otherwise the
     // cron `cp prompt.md` fails and the agent launches with an empty prompt).
@@ -66,8 +70,8 @@ async fn run_server() -> anyhow::Result<()> {
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
     // create/update/delete, leaving scheduled routines silently un-fired.
-    if let Err(e) = sync::routines::sync_routines_to_crontab(&routines) {
-        log::warn!("startup crontab sync failed: {e}");
+    if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
+        log::warn!("startup crontab sync failed: {err}");
     }
     let listener = tokio::net::TcpListener::bind(cli::BIND_ADDR).await?;
     cli::write_pid_file()?;

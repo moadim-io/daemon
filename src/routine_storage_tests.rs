@@ -67,6 +67,33 @@ fn load_routine_from_dir_missing_returns_none() {
 }
 
 #[test]
+fn torn_routine_toml_loads_as_none() {
+    // A truncated/garbage routine.toml (e.g. left by a crash mid-write) must not panic or load a
+    // half-baked routine; the loader returns None and the routine is simply absent.
+    let slug = "rs-torn-toml-routine";
+    let dir = crate::paths::routine_dir(slug);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(crate::paths::routine_toml_path(slug), "id = \"x\"\nschedu").unwrap();
+    assert!(load_routine_from_dir(slug).is_none());
+    remove_routine_dir(slug).unwrap();
+}
+
+#[test]
+fn write_routine_leaves_no_tmp_residue() {
+    let id = "rs-no-residue-id";
+    let title = "Rs No Residue Routine";
+    let slug = slugify(title);
+    write_routine(&make_routine(id, title)).unwrap();
+    let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
+        .count();
+    assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
 fn load_store_includes_written_routine() {
     let id = "rs-loadstore-id";
     let title = "Rs Loadstore Routine";

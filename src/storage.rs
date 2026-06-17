@@ -44,9 +44,9 @@ fn json_to_toml_table(val: &serde_json::Value) -> toml::Table {
     match val {
         serde_json::Value::Object(map) => {
             let mut table = toml::Table::new();
-            for (k, v) in map {
-                if let Ok(tv) = serde_json::from_value::<toml::Value>(v.clone()) {
-                    table.insert(k.clone(), tv);
+            for (key, value) in map {
+                if let Ok(toml_value) = serde_json::from_value::<toml::Value>(value.clone()) {
+                    table.insert(key.clone(), toml_value);
                 }
             }
             table
@@ -62,36 +62,36 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
     let (schedule, handler, enabled, created_at, updated_at, last_triggered_at, mut meta) = (
         local
             .as_ref()
-            .and_then(|l| l.schedule.clone())
+            .and_then(|local_job| local_job.schedule.clone())
             .or(base.schedule)?,
         local
             .as_ref()
-            .and_then(|l| l.handler.clone())
+            .and_then(|local_job| local_job.handler.clone())
             .or(base.handler)?,
         local
             .as_ref()
-            .and_then(|l| l.enabled)
+            .and_then(|local_job| local_job.enabled)
             .or(base.enabled)
             .unwrap_or(true),
         local
             .as_ref()
-            .and_then(|l| l.created_at)
+            .and_then(|local_job| local_job.created_at)
             .or(base.created_at)
             .unwrap_or(0),
         local
             .as_ref()
-            .and_then(|l| l.updated_at)
+            .and_then(|local_job| local_job.updated_at)
             .or(base.updated_at)
             .unwrap_or(0),
         local
             .as_ref()
-            .and_then(|l| l.last_triggered_at)
+            .and_then(|local_job| local_job.last_triggered_at)
             .or(base.last_triggered_at),
         base.metadata,
     );
-    if let Some(local_meta) = local.as_ref().map(|l| &l.metadata) {
-        for (k, v) in local_meta {
-            meta.insert(k.clone(), v.clone());
+    if let Some(local_meta) = local.as_ref().map(|local_job| &local_job.metadata) {
+        for (key, value) in local_meta {
+            meta.insert(key.clone(), value.clone());
         }
     }
     Some(CronJob {
@@ -150,7 +150,11 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> CronStore {
     let mut jobs = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                .unwrap_or(false)
+            {
                 let id = entry.file_name().to_string_lossy().to_string();
                 if let Some(job) = load_job_from_dir(&id) {
                     jobs.insert(id, job);

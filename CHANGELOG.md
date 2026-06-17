@@ -11,6 +11,72 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
+  disclosure** section that instructs the agent to reveal, in every
+  outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),
+  that the action originates from the running moadim routine — naming it. The
+  routine name is injected at launch time. Internal logs and in-repo working
+  files are exempt.
+- Routine listings can now be filtered and sorted by repository. `GET /routines`
+  accepts `repository` (case-insensitive URL substring filter), `sort`
+  (`created`|`updated`|`title`|`repository`), and `order` (`asc`|`desc`) query
+  parameters, and the Routines tab gains a filter/sort bar (repository input,
+  sort dropdown, direction toggle). Defaults preserve the previous
+  created-ascending behaviour.
+- `moadim stop --json` now emits a single machine-readable object
+  (`{"running":true}` when a running server was asked to shut down,
+  `{"running":false}` when none was reachable), completing the `--json`
+  contract alongside `status` and `cleanup`. The exit code is unchanged
+  (`0` running, `3` not).
+
+### Fixed
+
+- Routine store writes are now atomic. `write_routine` persists `routine.toml`
+  and `prompt.md` via a shared `atomic_write` helper (write a sibling temp file,
+  then rename it into place) instead of an in-place `std::fs::write` truncate.
+  A crash or full disk mid-write can no longer leave a torn `routine.toml` —
+  which parsed to nothing and silently dropped the routine from the store — and
+  the continuously-running reverse crontab sync never observes a partial file.
+- Routine logs (`GET /routines/{id}/logs`) could return another routine's log
+  when one routine's slug is a dash-prefix of another's (e.g. `logs` vs
+  `logs-extra`): the newest-workbench lookup matched a bare `{slug}-` prefix,
+  so `logs-extra-<ts>` was wrongly attributed to `logs`. It now matches the
+  slug exactly via the same `{slug}-{ts}` parser the cleanup sweep uses, and
+  picks the newest run by numeric timestamp instead of a lexicographic compare
+  over the directory name.
+
+### Documentation
+
+- Added a **Scripting** table to the README that documents the `--json` object
+  shapes for `status` (`{"running":bool,"pid":N|null,"address":…}`), `cleanup`
+  (`{"running":bool,"removed":N}`), and `stop` (`{"running":bool}`) alongside
+  their exit codes, so the machine-readable contract is discoverable without
+  reading `--help`. Also documents `moadim stop --json`, which was previously
+  only mentioned in `--help`.
+
+### Fixed
+
+- Restored `cargo clippy` compliance across the crate. The `min_ident_chars`
+  and `missing_docs` lints (both `deny` in `Cargo.toml`) were failing on
+  current stable, which also broke the pre-push hook. Renamed all single-letter
+  bindings to descriptive names and documented the remaining undocumented
+  fields — no behavioral change.
+
+## [0.10.0] - 2026-06-17
+
+### Added
+
+- Built-in **default routines**, seeded and kept current on startup. The first
+  ships out of the box: _Update moadim cargo package_, which runs daily at 09:00
+  local time and tasks the agent with checking the installed `moadim` cargo
+  package against the latest crates.io release and running
+  `cargo install moadim --force` when it is behind. Defaults are daemon-owned —
+  schedule, agent, and prompt are refreshed from the built-in spec on every
+  start so improvements ship on upgrade — but the user's `enabled` toggle is
+  never overridden: a default the user turns off stays off across restarts.
+
 ## [0.9.0] - 2026-06-17
 
 ### Fixed
@@ -31,6 +97,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - `moadim restart` now prints the PID rotation as `restarted: pid <old> -> <new>`
   (old reads `none` when nothing was running) so scripts/logs can confirm the
   process was actually replaced.
+- Script-friendly exit-code contract for `moadim status` and `moadim cleanup`:
+  they exit `0` when a server is running and `3` when none is, so callers can
+  branch on `$?` without parsing stdout.
 - Multiselect in the web UI cron-jobs table: select rows via click /
   `Shift`+click range / `Cmd`/`Ctrl`+click toggle, a select-all checkbox, and a
   bulk-action bar to enable, disable, or delete the selected jobs at once.
@@ -156,7 +225,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/moadim-io/daemon/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/moadim-io/daemon/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/moadim-io/daemon/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/moadim-io/daemon/compare/v0.6.1...v0.7.0

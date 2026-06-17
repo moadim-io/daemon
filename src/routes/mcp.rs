@@ -150,7 +150,7 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
             Ok(resp) => ok(resp),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 
@@ -165,7 +165,7 @@ impl MoadimMcp {
         Ok(
             match cron_jobs::svc_create(&self.store, &self.handlers, req) {
                 Ok(resp) => ok(resp),
-                Err(e) => err(e),
+                Err(error) => err(error),
             },
         )
     }
@@ -187,7 +187,7 @@ impl MoadimMcp {
         Ok(
             match cron_jobs::svc_update(&self.store, &self.handlers, &input.id, req) {
                 Ok(resp) => ok(resp),
-                Err(e) => err(e),
+                Err(error) => err(error),
             },
         )
     }
@@ -201,7 +201,7 @@ impl MoadimMcp {
         Ok(
             match cron_jobs::svc_delete(&self.store, &self.handlers, &id) {
                 Ok(resp) => ok(resp),
-                Err(e) => err(e),
+                Err(error) => err(error),
             },
         )
     }
@@ -216,14 +216,17 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match cron_jobs::svc_trigger(&self.store, &id) {
             Ok(job) => ok(job),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 
     /// Return all managed routines as a JSON array sorted by creation time.
     #[tool(description = "List all managed routines (agent-driven jobs)")]
     fn list_routines(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_list(&self.routines)))
+        Ok(ok(routines::svc_list(
+            &self.routines,
+            &routines::RoutineListQuery::default(),
+        )))
     }
 
     /// Return the routine matching the given UUID.
@@ -234,7 +237,7 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match routines::svc_get(&self.routines, &id) {
             Ok(resp) => ok(resp),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 
@@ -248,7 +251,7 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match routines::svc_create(&self.routines, req) {
             Ok(resp) => ok(resp),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 
@@ -271,7 +274,7 @@ impl MoadimMcp {
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 
@@ -283,7 +286,7 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match routines::svc_delete(&self.routines, &id) {
             Ok(resp) => ok(resp),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 
@@ -297,7 +300,7 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match routines::svc_trigger(&self.routines, &id) {
             Ok(routine) => ok(routine),
-            Err(e) => err(e),
+            Err(error) => err(error),
         })
     }
 

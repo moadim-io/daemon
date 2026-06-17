@@ -12,9 +12,9 @@ use super::model::Routine;
 pub(crate) fn slugify(title: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
-    for c in title.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_lowercase());
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
             prev_dash = false;
         } else if !prev_dash {
             out.push('-');
@@ -31,28 +31,29 @@ pub(crate) fn slugify(title: &str) -> String {
 
 /// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
 pub(crate) fn compose_prompt(routine: &Routine) -> String {
-    let mut s = String::from("# Workbench\n");
-    s.push_str(
+    let mut body = String::from("# Workbench\n");
+    body.push_str(
         "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
     );
     for repo in &routine.repositories {
         match &repo.branch {
-            Some(b) => s.push_str(&format!("- {} (branch {})\n", repo.repository, b)),
-            None => s.push_str(&format!("- {}\n", repo.repository)),
+            Some(branch) => body.push_str(&format!("- {} (branch {})\n", repo.repository, branch)),
+            None => body.push_str(&format!("- {}\n", repo.repository)),
         }
     }
-    s.push_str("\n---\n");
-    s.push_str(&routine.prompt);
-    s.push('\n');
-    s
+    body.push_str("\n---\n");
+    body.push_str(&routine.prompt);
+    body.push('\n');
+    body
 }
 
 /// Substitute `{workbench}`, `{prompt_file}`, and `{prompt}` placeholders in `s`.
 ///
 /// `{prompt}` expands to a shell command substitution that reads `prompt.md` from the agent's
 /// cwd (the workbench), so the full prompt is passed as a single argument to the agent process.
-pub(crate) fn substitute(s: &str, workbench: &str, prompt_file: &str) -> String {
-    s.replace("{workbench}", workbench)
+pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> String {
+    template
+        .replace("{workbench}", workbench)
         .replace("{prompt_file}", prompt_file)
         .replace("{prompt}", r#""$(cat prompt.md)""#)
 }
@@ -61,8 +62,8 @@ pub(crate) fn substitute(s: &str, workbench: &str, prompt_file: &str) -> String 
 fn bin_dir(bin: &str) -> Option<String> {
     let path = std::env::var("PATH").ok()?;
     path.split(':')
-        .filter(|d| !d.is_empty())
-        .find(|d| std::path::Path::new(d).join(bin).is_file())
+        .filter(|dir| !dir.is_empty())
+        .find(|dir| std::path::Path::new(dir).join(bin).is_file())
         .map(str::to_string)
 }
 
@@ -77,11 +78,11 @@ fn cron_path(agent_command: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
     let mut dirs: Vec<String> = Vec::new();
     for bin in ["tmux", agent_command] {
-        if let Some(d) = bin_dir(bin) {
-            dirs.push(d);
+        if let Some(dir) = bin_dir(bin) {
+            dirs.push(dir);
         }
     }
-    for d in [
+    for dir in [
         format!("{home}/.local/bin"),
         "/opt/homebrew/bin".to_string(),
         "/usr/local/bin".to_string(),
@@ -92,21 +93,21 @@ fn cron_path(agent_command: &str) -> String {
         "/usr/sbin".to_string(),
         "/sbin".to_string(),
     ] {
-        dirs.push(d);
+        dirs.push(dir);
     }
     let mut seen = std::collections::HashSet::new();
-    dirs.retain(|d| seen.insert(d.clone()));
+    dirs.retain(|dir| seen.insert(dir.clone()));
     dirs.join(":")
 }
 
 /// Wrap `s` in single quotes for safe inclusion in a POSIX shell command.
-pub(crate) fn shell_quote(s: &str) -> String {
+pub(crate) fn shell_quote(text: &str) -> String {
     let mut out = String::from("'");
-    for c in s.chars() {
-        if c == '\'' {
+    for ch in text.chars() {
+        if ch == '\'' {
             out.push_str("'\\''");
         } else {
-            out.push(c);
+            out.push(ch);
         }
     }
     out.push('\'');
@@ -125,20 +126,42 @@ const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
     You are running inside a moadim-managed agent session. \
     Complete the task described in `prompt.md` and exit when done.";
 
+/// Routine-origin disclosure appended to the moadim system prompt.
+///
+/// Instructs the agent to reveal, in every outward-facing communication, that it acts on behalf of
+/// the moadim routine — naming it. The routine name itself is *not* part of this constant: it is
+/// injected at run time as a separate `printf` `%s` argument (text expanded by `printf '%b'` is not
+/// re-scanned for conversions, so a `%s` placed inside this `%b` string would print literally).
+/// This constant therefore ends just before the name. `\n` are literal two-character sequences
+/// re-expanded into newlines by `printf '%b'`, matching `MOADIM_SYSTEM_PROMPT`.
+const MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\\n\
+    \\n\
+    You act on behalf of the moadim routine named below. In every external, outward-facing \
+    communication you produce — GitHub issues, pull requests and comments; Slack messages; emails; \
+    any channel a human or third-party system receives — you MUST disclose that the action \
+    originates from this moadim routine, naming it (for example: 'This pull request was opened by \
+    the <routine name> routine of moadim.'). Phrasing may be adapted per channel but must \
+    include the routine name. This does NOT apply to internal logs or in-repo working files.\\n\
+    \\n\
+    Routine name: ";
+
 /// Shell statements that write `CLAUDE.md` into `$WB` with two layers:
 ///
-/// 1. **Moadim prompt** — daemon-managed preamble plus a run-time date stamp.
+/// 1. **Moadim prompt** — daemon-managed preamble, the routine-origin disclosure naming
+///    `routine_title`, plus a run-time date stamp.
 /// 2. **User prompt** — contents of `~/.config/moadim/user_prompt.md`, appended if the file exists.
 ///
 /// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
 /// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
-pub(crate) fn system_prompt_stmts(user_prompt_path: &str) -> Vec<String> {
+pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -> Vec<String> {
     let header = shell_quote(MOADIM_SYSTEM_PROMPT);
+    let disclosure = shell_quote(MOADIM_DISCLOSURE);
+    let title = shell_quote(routine_title);
     let uq = shell_quote(user_prompt_path);
     vec![
         format!(
-            r#"printf '%b\n\n**Run date**: %s\n**Timezone**: %s\n' {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
-            header
+            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            header, disclosure, title
         ),
         format!(
             r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> "$WB/CLAUDE.md" || true"#,
@@ -161,8 +184,8 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let workbench_ref = ".";
 
     let mut invocation = vec![agent.command.clone()];
-    for a in &agent.args {
-        invocation.push(substitute(a, workbench_ref, prompt_file_ref));
+    for arg in &agent.args {
+        invocation.push(substitute(arg, workbench_ref, prompt_file_ref));
     }
     let invocation = invocation.join(" ");
 
@@ -179,6 +202,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     ];
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
+        &routine.title,
     ));
     stmts.extend([
         // Fail-fast if the routine's source prompt is missing. The statements are `;`-joined, so a

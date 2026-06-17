@@ -74,9 +74,9 @@ fn high_frequency_schedule_is_capped() {
 
 #[test]
 fn text_fields_are_escaped() {
-    let mut r = routine_with("r1", "@daily", true);
-    r.title = "a,b;c\\d\ne".to_string();
-    let ics = build_ical(&[r], fixed_now());
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.title = "a,b;c\\d\ne".to_string();
+    let ics = build_ical(&[routine], fixed_now());
     assert!(ics.contains("SUMMARY:a\\,b\\;c\\\\d\\ne\r\n"));
 }
 

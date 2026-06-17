@@ -26,7 +26,7 @@ pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 /// Names are `{slug}-{unix_secs}`; the timestamp is the trailing all-digit segment after the final
 /// `-`. Returns `None` when the name has no such suffix or an empty slug (so unrelated directories
 /// are skipped rather than reaped).
-fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
+pub(super) fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
     let (slug, ts) = name.rsplit_once('-')?;
     if slug.is_empty() || ts.is_empty() || !ts.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;

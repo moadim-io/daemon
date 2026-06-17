@@ -9,7 +9,7 @@ use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
 use super::agents::load_agent_command;
-use super::cleanup::cleanup_expired_workbenches;
+use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
@@ -192,17 +192,26 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
-    let prefix = format!("{}-", slugify(&routine.title));
-    let mut newest: Option<String> = None;
+    let slug = slugify(&routine.title);
+    let mut newest: Option<(u64, String)> = None;
     if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with(&prefix) && newest.as_ref().is_none_or(|n| name > *n) {
-                newest = Some(name);
+            // Select only this routine's own workbenches by an *exact* slug match.
+            // A bare `{slug}-` prefix would also match another routine whose slug
+            // begins with this one (e.g. `logs` vs `logs-extra`), leaking that
+            // routine's log. Reusing the canonical `{slug}-{ts}` parser also makes
+            // "newest" a numeric timestamp comparison rather than a lexicographic
+            // one over the whole directory name.
+            if let Some((dir_slug, ts)) = parse_workbench_name(&name) {
+                if dir_slug == slug && newest.as_ref().is_none_or(|(newest_ts, _)| ts > *newest_ts)
+                {
+                    newest = Some((ts, name));
+                }
             }
         }
     }
-    let Some(dir) = newest else {
+    let Some((_, dir)) = newest else {
         return Ok(String::new());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");

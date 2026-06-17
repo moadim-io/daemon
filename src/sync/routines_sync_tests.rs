@@ -28,6 +28,7 @@ fn format_routine_line_invokes_script_with_schedule_and_tag() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let line = format_routine_line(&routine, &agent).unwrap();
@@ -61,6 +62,7 @@ fn format_routine_line_creates_missing_parent_dir() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let line = format_routine_line(&routine, &agent).unwrap();
@@ -90,6 +92,7 @@ fn format_routine_line_returns_none_when_script_write_fails() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let result = format_routine_line(&routine, &agent);
@@ -119,6 +122,7 @@ fn format_routine_line_when_parent_dir_already_exists() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
 

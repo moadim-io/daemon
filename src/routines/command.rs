@@ -145,26 +145,35 @@ const MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\\n\
     \\n\
     Routine name: ";
 
-/// Shell statements that write `CLAUDE.md` into `$WB` with two layers:
+/// Shell statements that write the agent's instructions file (e.g. `CLAUDE.md` for Claude,
+/// `AGENTS.md` for Codex) into `$WB` with two layers:
 ///
 /// 1. **Moadim prompt** — daemon-managed preamble, the routine-origin disclosure naming
 ///    `routine_title`, plus a run-time date stamp.
 /// 2. **User prompt** — contents of `~/.config/moadim/user_prompt.md`, appended if the file exists.
 ///
+/// `instructions_file` is the workbench-relative filename the selected agent reads its project
+/// instructions from; writing the disclosure there guarantees the agent that actually runs sees it.
+///
 /// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
 /// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
-pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -> Vec<String> {
+pub(crate) fn system_prompt_stmts(
+    user_prompt_path: &str,
+    routine_title: &str,
+    instructions_file: &str,
+) -> Vec<String> {
     let header = shell_quote(MOADIM_SYSTEM_PROMPT);
     let disclosure = shell_quote(MOADIM_DISCLOSURE);
     let title = shell_quote(routine_title);
     let uq = shell_quote(user_prompt_path);
+    let dest = format!(r#""$WB/{instructions_file}""#);
     vec![
         format!(
-            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > {dest}"#,
             header, disclosure, title
         ),
         format!(
-            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> "$WB/CLAUDE.md" || true"#,
+            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> {dest} || true"#,
             uq = uq
         ),
     ]
@@ -210,6 +219,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
         &routine.title,
+        &agent.instructions_file,
     ));
     stmts.extend([
         // Fail-fast if the routine's source prompt is missing. The statements are `;`-joined, so a

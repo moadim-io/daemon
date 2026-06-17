@@ -63,6 +63,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
         let agent = AgentCommand {
             command: "claude".to_string(),
             args: vec![],
+            instructions_file: "CLAUDE.md".to_string(),
             setup: None,
         };
         let cmd = build_routine_command(&routine, &agent);

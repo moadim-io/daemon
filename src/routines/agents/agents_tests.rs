@@ -90,6 +90,19 @@ fn ensure_default_agents_in_logs_and_continues_on_write_failure() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn builtin_configs_declare_expected_instructions_file() {
+    // Claude omits `instructions_file`, so it falls back to the CLAUDE.md default. Codex declares
+    // AGENTS.md explicitly, since that is the file Codex reads its project instructions from. This
+    // guards the routine-origin disclosure landing in the file each agent actually reads.
+    let claude: AgentCommand = toml::from_str(claude_code::CONFIG).unwrap();
+    assert_eq!(claude.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
+    assert_eq!(claude.instructions_file, "CLAUDE.md");
+
+    let codex: AgentCommand = toml::from_str(codex::CONFIG).unwrap();
+    assert_eq!(codex.instructions_file, "AGENTS.md");
+}
+
 #[cfg(unix)]
 #[test]
 fn ensure_default_agents_in_logs_on_write_failure_into_readonly_dir() {

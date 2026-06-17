@@ -27,6 +27,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Routine store writes are now atomic. `write_routine` persists `routine.toml`
+  and `prompt.md` via a shared `atomic_write` helper (write a sibling temp file,
+  then rename it into place) instead of an in-place `std::fs::write` truncate.
+  A crash or full disk mid-write can no longer leave a torn `routine.toml` —
+  which parsed to nothing and silently dropped the routine from the store — and
+  the continuously-running reverse crontab sync never observes a partial file.
 - Routine logs (`GET /routines/{id}/logs`) could return another routine's log
   when one routine's slug is a dash-prefix of another's (e.g. `logs` vs
   `logs-extra`): the newest-workbench lookup matched a bare `{slug}-` prefix,

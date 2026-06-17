@@ -90,8 +90,8 @@ impl RoutineResponse {
             .to_string_lossy()
             .into_owned();
         let timezone = local_timezone();
-        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|c| {
-            let desc = c.describe();
+        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|cron| {
+            let desc = cron.describe();
             match &timezone {
                 Some(tz) => format!("{desc} ({tz})"),
                 None => desc,

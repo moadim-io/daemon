@@ -124,7 +124,7 @@ pub fn ensure_default_routines(store: &RoutineStore) {
             .lock()
             .unwrap()
             .values()
-            .find(|r| slugify(&r.title) == slug)
+            .find(|routine| slugify(&routine.title) == slug)
             .cloned();
         let routine = match existing {
             Some(cur) => match reconcile(spec, &cur, now_secs()) {
@@ -133,9 +133,9 @@ pub fn ensure_default_routines(store: &RoutineStore) {
             },
             None => materialize(spec, now_secs()),
         };
-        if let Err(e) = write_routine(&routine) {
+        if let Err(err) = write_routine(&routine) {
             log::warn!(
-                "ensure_default_routines: failed to write {:?}: {e}; skipping",
+                "ensure_default_routines: failed to write {:?}: {err}; skipping",
                 spec.title
             );
             continue;

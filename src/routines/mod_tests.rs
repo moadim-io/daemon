@@ -38,22 +38,22 @@ fn slugify_empty_falls_back() {
 
 #[test]
 fn compose_prompt_lists_repos_and_prompt() {
-    let r = make_routine("x");
-    let p = compose_prompt(&r);
-    assert!(p.contains("# Workbench"));
-    assert!(p.contains("https://github.com/octocat/Hello-World (branch master)"));
-    assert!(p.contains("do the thing"));
+    let routine = make_routine("x");
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Workbench"));
+    assert!(prompt.contains("https://github.com/octocat/Hello-World (branch master)"));
+    assert!(prompt.contains("do the thing"));
 }
 
 #[test]
 fn compose_prompt_repo_without_branch() {
-    let mut r = make_routine("x");
-    r.repositories = vec![Repository {
+    let mut routine = make_routine("x");
+    routine.repositories = vec![Repository {
         repository: "git@example.com:a/b".to_string(),
         branch: None,
     }];
-    let p = compose_prompt(&r);
-    assert!(p.contains("- git@example.com:a/b\n"));
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("- git@example.com:a/b\n"));
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn shell_quote_wraps_and_escapes() {
 
 #[test]
 fn build_routine_command_contains_expected_pieces() {
-    let r = make_routine("rid");
+    let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![
@@ -85,7 +85,7 @@ fn build_routine_command_contains_expected_pieces() {
         ],
         setup: None,
     };
-    let cmd = build_routine_command(&r, &agent);
+    let cmd = build_routine_command(&routine, &agent);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
     // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
     assert!(cmd.contains("export PATH="));
@@ -108,25 +108,25 @@ fn build_routine_command_contains_expected_pieces() {
 
 #[test]
 fn build_routine_command_substitutes_arg_placeholders() {
-    let r = make_routine("rid");
+    let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "codex".to_string(),
         args: vec!["exec".to_string(), "{prompt_file}".to_string()],
         setup: None,
     };
-    let cmd = build_routine_command(&r, &agent);
+    let cmd = build_routine_command(&routine, &agent);
     assert!(cmd.contains("'codex exec prompt.md'"));
 }
 
 #[test]
 fn build_routine_command_writes_claude_md() {
-    let r = make_routine("rid");
+    let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: None,
     };
-    let cmd = build_routine_command(&r, &agent);
+    let cmd = build_routine_command(&routine, &agent);
     // moadim-managed section written via printf %b
     assert!(cmd.contains("CLAUDE.md"), "CLAUDE.md write missing");
     assert!(
@@ -151,19 +151,19 @@ fn build_routine_command_writes_claude_md() {
 
 #[test]
 fn build_routine_command_aborts_when_prompt_missing() {
-    let r = make_routine("rid");
+    let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: None,
     };
-    let cmd = build_routine_command(&r, &agent);
+    let cmd = build_routine_command(&routine, &agent);
     // The cp of the routine's source prompt must fail-fast: a missing source aborts the launch
     // instead of starting the agent with an empty "$(cat prompt.md)" argument (a task-less session).
     let cp_at = cmd.find("cp ").expect("cp in cmd");
     let abort_at = cmd[cp_at..]
         .find("exit 1")
-        .map(|o| cp_at + o)
+        .map(|off| cp_at + off)
         .expect("cp should be guarded by an abort");
     let launch_at = cmd.find("tmux new-session").expect("launch present");
     assert!(
@@ -176,13 +176,13 @@ fn build_routine_command_aborts_when_prompt_missing() {
 
 #[test]
 fn build_routine_command_inserts_setup_before_launch() {
-    let r = make_routine("rid");
+    let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: Some("seed-trust \"$WB\"".to_string()),
     };
-    let cmd = build_routine_command(&r, &agent);
+    let cmd = build_routine_command(&routine, &agent);
     let setup_at = cmd.find("seed-trust").expect("setup present");
     let launch_at = cmd.find("tmux new-session").expect("launch present");
     // setup runs before the agent launches
@@ -273,9 +273,9 @@ fn routine_response_schedule_description() {
 
 #[test]
 fn routine_response_schedule_description_none_for_reboot() {
-    let mut r = make_routine("x");
-    r.schedule = "@reboot".to_string();
-    let resp = RoutineResponse::from_routine(r);
+    let mut routine = make_routine("x");
+    routine.schedule = "@reboot".to_string();
+    let resp = RoutineResponse::from_routine(routine);
     assert!(resp.schedule_description.is_none());
 }
 
@@ -430,9 +430,9 @@ fn svc_trigger_not_found() {
 fn svc_trigger_records_time_without_agent_config() {
     // Agent name that has no config file → records trigger, does not spawn.
     let store = new_store();
-    let mut r = make_routine("trig-id");
-    r.agent = "no-such-agent-xyz".into();
-    store.lock().unwrap().insert("trig-id".into(), r);
+    let mut routine = make_routine("trig-id");
+    routine.agent = "no-such-agent-xyz".into();
+    store.lock().unwrap().insert("trig-id".into(), routine);
     let triggered = svc_trigger(&store, "trig-id").unwrap();
     assert!(triggered.last_triggered_at.is_some());
     // folder is slug of "My Routine"
@@ -454,11 +454,14 @@ fn svc_trigger_with_agent_config_spawns() {
 
     let store = new_store();
     let title = "Trigger Cov Title ZZZ";
-    let mut r = make_routine("trig-cfg");
-    r.title = title.into();
-    r.agent = agent_name.into();
-    store.lock().unwrap().insert("trig-cfg".into(), r.clone());
-    crate::routine_storage::write_routine(&r).unwrap();
+    let mut routine = make_routine("trig-cfg");
+    routine.title = title.into();
+    routine.agent = agent_name.into();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-cfg".into(), routine.clone());
+    crate::routine_storage::write_routine(&routine).unwrap();
 
     let triggered = svc_trigger(&store, "trig-cfg").unwrap();
     assert!(triggered.last_triggered_at.is_some());
@@ -470,9 +473,9 @@ fn svc_trigger_with_agent_config_spawns() {
     crate::routine_storage::remove_routine_dir("trigger-cov-title-zzz").unwrap();
     let prefix = format!("{}-", slugify(title));
     if let Ok(entries) = std::fs::read_dir(crate::paths::workbenches_dir()) {
-        for e in entries.flatten() {
-            if e.file_name().to_string_lossy().starts_with(&prefix) {
-                let _ = std::fs::remove_dir_all(e.path());
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_dir_all(entry.path());
             }
         }
     }
@@ -495,19 +498,19 @@ fn svc_logs_not_found() {
 #[test]
 fn svc_logs_empty_when_no_workbench() {
     let store = new_store();
-    let mut r = make_routine("logs-id");
-    r.title = "Unlikely Title For Logs 9988".into();
-    store.lock().unwrap().insert("logs-id".into(), r);
+    let mut routine = make_routine("logs-id");
+    routine.title = "Unlikely Title For Logs 9988".into();
+    store.lock().unwrap().insert("logs-id".into(), routine);
     assert_eq!(svc_logs(&store, "logs-id").unwrap(), "");
 }
 
 #[test]
 fn svc_logs_returns_newest_workbench_log() {
     let store = new_store();
-    let mut r = make_routine("logs-newest");
-    r.title = "Logs Cov Newest AAA".into();
-    let slug = slugify(&r.title);
-    store.lock().unwrap().insert("logs-newest".into(), r);
+    let mut routine = make_routine("logs-newest");
+    routine.title = "Logs Cov Newest AAA".into();
+    let slug = slugify(&routine.title);
+    store.lock().unwrap().insert("logs-newest".into(), routine);
 
     let wb = crate::paths::workbenches_dir();
     let old = wb.join(format!("{slug}-1000"));
@@ -526,10 +529,10 @@ fn svc_logs_returns_newest_workbench_log() {
 #[test]
 fn svc_logs_empty_when_newest_has_no_log_file() {
     let store = new_store();
-    let mut r = make_routine("logs-nofile");
-    r.title = "Logs Cov NoFile BBB".into();
-    let slug = slugify(&r.title);
-    store.lock().unwrap().insert("logs-nofile".into(), r);
+    let mut routine = make_routine("logs-nofile");
+    routine.title = "Logs Cov NoFile BBB".into();
+    let slug = slugify(&routine.title);
+    store.lock().unwrap().insert("logs-nofile".into(), routine);
 
     let dir = crate::paths::workbenches_dir().join(format!("{slug}-3000"));
     std::fs::create_dir_all(&dir).unwrap();

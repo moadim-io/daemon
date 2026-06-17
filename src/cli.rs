@@ -44,10 +44,16 @@ pub enum Command {
     /// Ask a running background server to stop.
     Stop,
     /// Report whether a server is currently running. `json` requests machine-readable output.
-    Status { json: bool },
+    Status {
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Ask a running server to reap finished, expired routine run workbenches now. `json` requests
     /// machine-readable output.
-    Cleanup { json: bool },
+    Cleanup {
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Print usage help.
     Help,
     /// Print the binary version.
@@ -127,7 +133,7 @@ pub fn print_version() {
 pub fn run_background() -> anyhow::Result<()> {
     if is_running() {
         let pid = read_pid_file()
-            .map(|p| format!(" (pid {p})"))
+            .map(|process_id| format!(" (pid {process_id})"))
             .unwrap_or_default();
         println!("moadim is already running{pid}; stopping it to start a fresh instance");
         crate::restart::stop_running_and_wait()?;
@@ -143,7 +149,9 @@ pub fn run_background() -> anyhow::Result<()> {
 pub fn restart() -> anyhow::Result<()> {
     let old_pid = if is_running() {
         let pid = read_pid_file();
-        let suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+        let suffix = pid
+            .map(|process_id| format!(" (pid {process_id})"))
+            .unwrap_or_default();
         println!("moadim is running{suffix}; stopping it");
         crate::restart::stop_running_and_wait()?;
         pid
@@ -249,7 +257,9 @@ pub fn status(json: bool) -> anyhow::Result<i32> {
         return Ok(liveness_exit_code(running));
     }
     if running {
-        let pid_suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+        let pid_suffix = pid
+            .map(|process_id| format!(" (pid {process_id})"))
+            .unwrap_or_default();
         println!("moadim is running{pid_suffix} at http://{BIND_ADDR}");
     } else {
         println!("moadim is not running");

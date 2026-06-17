@@ -24,13 +24,13 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
 fn format_routine_line_invokes_script_with_schedule_and_tag() {
     let title = "Fid Sync Routine";
     let slug = slugify(title);
-    let r = make_routine("fid", title, "claude");
+    let routine = make_routine("fid", title, "claude");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
     };
-    let line = format_routine_line(&r, &agent).unwrap();
+    let line = format_routine_line(&routine, &agent).unwrap();
     assert!(line.starts_with("30 9 * * 1-5 "));
     // crontab line just runs the generated script — keeps it well under cron's length limit
     assert!(line.contains("/bin/sh "));

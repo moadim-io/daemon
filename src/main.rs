@@ -70,8 +70,8 @@ async fn run_server() -> anyhow::Result<()> {
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
     // create/update/delete, leaving scheduled routines silently un-fired.
-    if let Err(e) = sync::routines::sync_routines_to_crontab(&routines) {
-        log::warn!("startup crontab sync failed: {e}");
+    if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
+        log::warn!("startup crontab sync failed: {err}");
     }
     let listener = tokio::net::TcpListener::bind(cli::BIND_ADDR).await?;
     cli::write_pid_file()?;

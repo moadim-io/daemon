@@ -89,3 +89,30 @@ fn ensure_default_agents_in_logs_and_continues_on_write_failure() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn ensure_default_agents_in_logs_on_write_failure_into_readonly_dir() {
+    // Covers the `if let Err(err) = std::fs::write(..)` warn branch directly: the
+    // agents dir exists but is read-only, so `path.exists()` is false (no file yet)
+    // and the subsequent `std::fs::write` of each agent's `.toml` fails with EACCES.
+    // The previous write-failure test instead blocks the path with a directory, which
+    // makes `path.exists()` true and takes the `continue` arm — so it never reaches
+    // the write call. This one reaches and fails the write.
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = unique_dir("write-fail-readonly");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Read+execute but NOT write: file creation inside is denied.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    ensure_default_agents_in(&dir);
+
+    // Restore permissions so the dir can be inspected and cleaned up.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Nothing could be written: every agent write failed and was only logged.
+    assert!(!dir.join("claude.toml").exists());
+    assert!(!dir.join("codex.toml").exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

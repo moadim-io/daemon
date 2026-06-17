@@ -209,6 +209,78 @@ fn svc_logs_returns_newest_workbench_log() {
 }
 
 #[test]
+fn svc_logs_skips_foreign_and_unparseable_workbenches() {
+    // Exercises the read_dir loop body across every arm: a workbench whose name
+    // does not parse as `{slug}-{ts}` (parser returns None → skipped), a workbench
+    // that parses but belongs to a different routine (`dir_slug != slug` → skipped),
+    // and finally this routine's own workbench whose log is returned.
+    let title = "Svc Logs Mixed ZZQ";
+    let slug = slugify(title);
+    let store = new_store();
+    let routine = make_routine("logs-mixed-id", title, 1, 1);
+    store.lock().unwrap().insert("logs-mixed-id".into(), routine);
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+
+    // Not a `{slug}-{ts}` directory at all: parse_workbench_name returns None.
+    let unparseable = workbenches.join("not-a-workbench-name");
+    std::fs::create_dir_all(&unparseable).unwrap();
+    std::fs::write(unparseable.join("agent.log"), "ignored").unwrap();
+
+    // A well-formed workbench owned by a *different* routine slug.
+    let foreign = workbenches.join("some-other-routine-9999");
+    std::fs::create_dir_all(&foreign).unwrap();
+    std::fs::write(foreign.join("agent.log"), "foreign log").unwrap();
+
+    // This routine's own workbench.
+    let mine = workbenches.join(format!("{slug}-4242"));
+    std::fs::create_dir_all(&mine).unwrap();
+    std::fs::write(mine.join("agent.log"), "mine log contents").unwrap();
+
+    let logs = svc_logs(&store, "logs-mixed-id").unwrap();
+    assert_eq!(logs, "mine log contents");
+
+    let _ = std::fs::remove_dir_all(&unparseable);
+    let _ = std::fs::remove_dir_all(&foreign);
+    let _ = std::fs::remove_dir_all(&mine);
+}
+
+#[test]
+fn svc_logs_empty_when_workbenches_dir_absent() {
+    // Covers the `read_dir` error path in `svc_logs`: with `HOME` redirected to a fresh
+    // temp dir, `workbenches_dir()` does not exist, so `std::fs::read_dir` returns Err and
+    // the loop is skipped entirely. With no workbench found, the function returns an empty
+    // string.
+    let title = "Svc Logs No Workbenches ZZQ";
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("logs-empty-id".into(), make_routine("logs-empty-id", title, 1, 1));
+
+    let fresh_home = std::env::temp_dir().join(format!("moadim-no-wb-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&fresh_home).unwrap();
+    let saved = std::env::var_os("HOME");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored immediately after.
+    unsafe {
+        std::env::set_var("HOME", &fresh_home);
+    }
+    assert!(!crate::paths::workbenches_dir().exists());
+
+    let logs = svc_logs(&store, "logs-empty-id").unwrap();
+
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+    assert_eq!(logs, "");
+    let _ = std::fs::remove_dir_all(&fresh_home);
+}
+
+#[test]
 fn svc_logs_missing_routine_not_found() {
     assert!(matches!(svc_logs(&new_store(), "nope"), Err(AppError::NotFound)));
 }

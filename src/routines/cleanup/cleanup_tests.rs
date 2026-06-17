@@ -189,3 +189,16 @@ fn effective_ttl_falls_back_to_cap_for_unparseable_schedule() {
         MAX_TTL_SECS
     );
 }
+
+#[test]
+fn effective_ttl_falls_back_to_cap_when_schedule_never_fires() {
+    // "Feb 30" parses as a valid cron expression but matches no real date, so the
+    // schedule yields no future fire times. `cron_interval_secs` returns None at the
+    // first `fires.next()?`, and `effective_ttl_secs` falls back to the cap.
+    assert_eq!(
+        routine_with("0 0 30 2 *", None).effective_ttl_secs(),
+        MAX_TTL_SECS
+    );
+    // An explicit ttl below the cap still wins even when the interval can't be computed.
+    assert_eq!(routine_with("0 0 30 2 *", Some(15)).effective_ttl_secs(), 15);
+}

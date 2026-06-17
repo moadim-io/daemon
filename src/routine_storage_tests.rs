@@ -62,6 +62,64 @@ fn prompt_file_contains_composed_prompt() {
 }
 
 #[test]
+fn write_routine_persists_composed_prompt_sidecar_with_repos() {
+    // Focused coverage for the `atomic_write(routine_prompt_path, compose_prompt(..))`
+    // call in `write_routine`: a routine with a non-empty prompt AND repositories runs
+    // `compose_prompt` fully, and the composed body lands in prompt.md on disk.
+    let id = "rs-prompt-sidecar-id";
+    let title = "Rs Prompt Sidecar Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine(id, title);
+    routine.prompt = "line one\nline two".to_string();
+    routine.repositories = vec![
+        Repository {
+            repository: "https://example.com/a.git".to_string(),
+            branch: Some("dev".to_string()),
+        },
+        Repository {
+            repository: "https://example.com/b.git".to_string(),
+            branch: None,
+        },
+    ];
+
+    write_routine(&routine).unwrap();
+
+    let written = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    assert_eq!(written, compose_prompt(&routine));
+    assert!(written.contains("https://example.com/a.git (branch dev)"));
+    assert!(written.contains("https://example.com/b.git\n"));
+    assert!(written.contains("line one\nline two"));
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn write_routine_errors_when_prompt_sidecar_write_fails() {
+    // Covers the error-propagation (`?`) on the prompt `atomic_write` in `write_routine`:
+    // the routine dir, gitignore, and `routine.toml` all write successfully, but a
+    // non-empty directory occupies the `prompt.md` path, so the atomic rename over it
+    // fails and `write_routine` returns that error.
+    let id = "rs-prompt-write-fail-id";
+    let title = "Rs Prompt Write Fail Routine";
+    let slug = slugify(title);
+    let dir = crate::paths::routine_dir(&slug);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Block prompt.md with a *non-empty* directory so the atomic rename over it fails.
+    let prompt_dir = crate::paths::routine_prompt_path(&slug);
+    std::fs::create_dir_all(&prompt_dir).unwrap();
+    std::fs::write(prompt_dir.join("occupant"), "keep me non-empty").unwrap();
+
+    let err = write_routine(&make_routine(id, title)).unwrap_err();
+    let _ = err;
+
+    // routine.toml was written successfully before the prompt step failed.
+    assert!(crate::paths::routine_toml_path(&slug).exists());
+    assert!(prompt_dir.is_dir(), "the blocking prompt dir is left in place");
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
 fn load_routine_from_dir_missing_returns_none() {
     assert!(load_routine_from_dir("rs-does-not-exist-zzz").is_none());
 }

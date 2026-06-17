@@ -217,3 +217,20 @@ fn user_prompt_path_from_home_none_falls_back_to_dot() {
 fn user_prompt_path_is_in_config_dir() {
     assert_eq!(user_prompt_path().parent().unwrap(), config_dir());
 }
+
+#[test]
+fn config_dir_from_home_none_falls_back_to_dot() {
+    // Exercises the `home.unwrap_or_else(|| PathBuf::from("."))` fallback in
+    // `config_dir_from_home` for the case where `dirs::home_dir()` yields `None`.
+    let dir = super::config_dir_from_home(None);
+    assert!(dir.ends_with(".config/moadim"));
+    assert!(dir.starts_with("."));
+}
+
+#[test]
+fn config_dir_from_home_some_joins_under_home() {
+    // The `Some(home)` arm: the moadim config dir nests under the provided home.
+    let home = std::path::PathBuf::from("/tmp/some-home");
+    let dir = super::config_dir_from_home(Some(home.clone()));
+    assert_eq!(dir, home.join(".config").join("moadim"));
+}

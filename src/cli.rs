@@ -12,6 +12,15 @@ use std::time::Duration;
 /// Address the server binds to and that the client talks to.
 pub const BIND_ADDR: &str = "127.0.0.1:5784";
 
+/// Environment variable overriding [`BIND_ADDR`] (test seam): lets tests run the server and probe
+/// it on an ephemeral port instead of the fixed default, so they never collide with a real daemon.
+const BIND_ADDR_ENV: &str = "MOADIM_BIND_ADDR";
+
+/// The socket address to bind/probe, honoring the [`BIND_ADDR_ENV`] override when set.
+pub fn bind_addr() -> String {
+    std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
+}
+
 /// How long to wait when probing or signalling a running server over HTTP.
 const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 
@@ -373,14 +382,15 @@ pub(crate) fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
 
 /// Send a minimal HTTP/1.1 request and return the response status code together with its body.
 fn http_request_with_body(method: &str, path: &str) -> std::io::Result<(u16, String)> {
-    let addr: SocketAddr = BIND_ADDR
+    let addr_str = bind_addr();
+    let addr: SocketAddr = addr_str
         .parse()
-        .expect("BIND_ADDR is a valid socket address");
+        .expect("bind address is a valid socket address");
     let mut stream = std::net::TcpStream::connect_timeout(&addr, PROBE_TIMEOUT)?;
     stream.set_read_timeout(Some(PROBE_TIMEOUT))?;
     stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
     let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {BIND_ADDR}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
     stream.write_all(req.as_bytes())?;
     let mut resp = String::new();

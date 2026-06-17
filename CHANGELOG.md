@@ -11,6 +11,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Scheduled routine agents now run under a **login shell** (`/bin/sh -l '<run.sh>'`
+  in the crontab line; `sh -lc` for manual triggers), so the agent sources the
+  user's `~/.profile` and inherits their environment variables — `GH_TOKEN`, API
+  keys, etc. Previously routines launched with cron's minimal environment and,
+  on macOS, outside the GUI login session, so tools like `gh`/`git` had no
+  credentials and could not authenticate. `PATH` is still replaced with the same
+  curated list as before, so binary resolution is unchanged — only environment
+  variables are gained. Put any environment the agent needs (e.g. `export
+  GH_TOKEN=…`) in `~/.profile`.
+
 ## [0.11.1] - 2026-06-17
 
 ### Fixed

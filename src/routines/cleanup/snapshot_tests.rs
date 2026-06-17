@@ -1,9 +1,9 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
-use super::*;
 use super::super::super::command::slugify;
 use super::super::super::model::{new_store, Routine};
 use super::super::ttl::MAX_TTL_SECS;
+use super::*;
 
 fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
     Routine {
@@ -25,10 +25,10 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
 #[test]
 fn snapshot_ttls_maps_slug_to_effective_ttl() {
     let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("id".into(), routine_with("My Routine", "*/10 * * * *", None));
+    store.lock().unwrap().insert(
+        "id".into(),
+        routine_with("My Routine", "*/10 * * * *", None),
+    );
 
     let snapshot = snapshot_ttls(&store);
     // Title "My Routine" slugifies; the sub-hour interval yields a 600s TTL.

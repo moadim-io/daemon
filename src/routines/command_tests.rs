@@ -77,6 +77,30 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
 }
 
 #[test]
+fn cron_path_falls_back_to_root_home_when_home_unset() {
+    // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
+    // fallback arm, so the `~/.local/bin` etc. entries are anchored under `/root`.
+    let saved = std::env::var_os("HOME");
+    // SAFETY: single-threaded test harness; restored immediately below.
+    unsafe {
+        std::env::remove_var("HOME");
+    }
+
+    let path = cron_path("definitely-not-a-real-binary-xyz");
+    assert!(
+        path.contains("/root/.local/bin"),
+        "expected /root-anchored fallback dirs in: {path}"
+    );
+
+    unsafe {
+        match saved {
+            Some(prev) => std::env::set_var("HOME", prev),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+}
+
+#[test]
 fn bin_dir_returns_none_when_path_unset() {
     // With PATH removed entirely, `std::env::var("PATH").ok()?` short-circuits to None.
     let saved = std::env::var_os("PATH");

@@ -114,9 +114,37 @@ fn write_routine_errors_when_prompt_sidecar_write_fails() {
 
     // routine.toml was written successfully before the prompt step failed.
     assert!(crate::paths::routine_toml_path(&slug).exists());
-    assert!(prompt_dir.is_dir(), "the blocking prompt dir is left in place");
+    assert!(
+        prompt_dir.is_dir(),
+        "the blocking prompt dir is left in place"
+    );
 
     remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn load_routine_from_dir_applies_defaults_for_absent_optional_fields() {
+    // A minimal routine.toml that omits prompt, enabled, timestamps, and id exercises the
+    // default-fallback arms in load_routine_from_dir: prompt -> "", enabled -> true,
+    // created_at/updated_at -> 0, and id -> dir_name (legacy fallback).
+    let slug = "rs-defaults-routine";
+    let dir = crate::paths::routine_dir(slug);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        crate::paths::routine_toml_path(slug),
+        "schedule = \"@daily\"\ntitle = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
+
+    let loaded = load_routine_from_dir(slug).unwrap();
+    assert_eq!(loaded.id, slug, "absent id falls back to the dir name");
+    assert_eq!(loaded.prompt, "", "absent prompt defaults to empty");
+    assert!(loaded.enabled, "absent enabled defaults to true");
+    assert_eq!(loaded.created_at, 0);
+    assert_eq!(loaded.updated_at, 0);
+    assert!(loaded.repositories.is_empty());
+
+    remove_routine_dir(slug).unwrap();
 }
 
 #[test]

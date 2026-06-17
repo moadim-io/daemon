@@ -333,9 +333,7 @@ fn cleanup_json(removed: usize, running: bool) -> String {
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
+    std::fs::create_dir_all(path.parent().expect("pid file path has a parent dir"))?;
     ensure_config_gitignore();
     std::fs::write(&path, std::process::id().to_string())?;
     Ok(())
@@ -433,9 +431,7 @@ fn spawn_detached() -> anyhow::Result<u32> {
 
     let exe = std::env::current_exe()?;
     let log_path = crate::paths::daemon_log_file();
-    if let Some(dir) = log_path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
+    std::fs::create_dir_all(log_path.parent().expect("daemon log path has a parent dir"))?;
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

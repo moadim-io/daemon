@@ -120,10 +120,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
     let routine_other = make_routine("other-id", title_other, 2, 2);
     crate::routine_storage::write_routine(&routine_keep).unwrap();
     crate::routine_storage::write_routine(&routine_other).unwrap();
-    store
-        .lock()
-        .unwrap()
-        .insert("keep-id".into(), routine_keep);
+    store.lock().unwrap().insert("keep-id".into(), routine_keep);
     store
         .lock()
         .unwrap()
@@ -218,7 +215,10 @@ fn svc_logs_skips_foreign_and_unparseable_workbenches() {
     let slug = slugify(title);
     let store = new_store();
     let routine = make_routine("logs-mixed-id", title, 1, 1);
-    store.lock().unwrap().insert("logs-mixed-id".into(), routine);
+    store
+        .lock()
+        .unwrap()
+        .insert("logs-mixed-id".into(), routine);
 
     let workbenches = crate::paths::workbenches_dir();
     std::fs::create_dir_all(&workbenches).unwrap();
@@ -254,10 +254,10 @@ fn svc_logs_empty_when_workbenches_dir_absent() {
     // string.
     let title = "Svc Logs No Workbenches ZZQ";
     let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("logs-empty-id".into(), make_routine("logs-empty-id", title, 1, 1));
+    store.lock().unwrap().insert(
+        "logs-empty-id".into(),
+        make_routine("logs-empty-id", title, 1, 1),
+    );
 
     let fresh_home = std::env::temp_dir().join(format!("moadim-no-wb-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&fresh_home).unwrap();
@@ -282,7 +282,10 @@ fn svc_logs_empty_when_workbenches_dir_absent() {
 
 #[test]
 fn svc_logs_missing_routine_not_found() {
-    assert!(matches!(svc_logs(&new_store(), "nope"), Err(AppError::NotFound)));
+    assert!(matches!(
+        svc_logs(&new_store(), "nope"),
+        Err(AppError::NotFound)
+    ));
 }
 
 /// Serializes the tests that clear `PATH`, so concurrent service tests never see
@@ -294,7 +297,9 @@ static PATH_GUARD: Mutex<()> = Mutex::new(());
 /// Clearing `PATH` makes the `crontab` and `sh` lookups inside the crontab sync
 /// and the trigger spawn fail to launch, exercising their warning branches.
 fn with_empty_path(body: impl FnOnce()) {
-    let guard = PATH_GUARD.lock().unwrap_or_else(|poison| poison.into_inner());
+    let guard = PATH_GUARD
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     let saved = std::env::var_os("PATH");
     std::env::set_var("PATH", "");
     body();
@@ -338,10 +343,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
     let store = new_store();
     let routine = make_routine("upd-sync-id", title, 1, 1);
     crate::routine_storage::write_routine(&routine).unwrap();
-    store
-        .lock()
-        .unwrap()
-        .insert("upd-sync-id".into(), routine);
+    store.lock().unwrap().insert("upd-sync-id".into(), routine);
     with_empty_path(|| {
         let updated = svc_update(
             &store,
@@ -369,10 +371,7 @@ fn svc_delete_warns_when_crontab_sync_fails() {
     let store = new_store();
     let routine = make_routine("del-sync-id", title, 1, 1);
     crate::routine_storage::write_routine(&routine).unwrap();
-    store
-        .lock()
-        .unwrap()
-        .insert("del-sync-id".into(), routine);
+    store.lock().unwrap().insert("del-sync-id".into(), routine);
     with_empty_path(|| {
         let deleted = svc_delete(&store, "del-sync-id").unwrap();
         assert_eq!(deleted.routine.title, title);

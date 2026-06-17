@@ -173,10 +173,7 @@ fn ensure_default_routines_skips_up_to_date_existing() {
         let existing = materialize(spec, now_secs());
         let existing_id = existing.id.clone();
         let store = empty_store();
-        store
-            .lock()
-            .unwrap()
-            .insert(existing.id.clone(), existing);
+        store.lock().unwrap().insert(existing.id.clone(), existing);
 
         ensure_default_routines(&store);
 
@@ -200,10 +197,7 @@ fn ensure_default_routines_rewrites_drifted_existing() {
         existing.prompt = "stale prompt".to_string();
         existing.schedule = "0 0 * * *".to_string();
         let store = empty_store();
-        store
-            .lock()
-            .unwrap()
-            .insert(existing.id.clone(), existing);
+        store.lock().unwrap().insert(existing.id.clone(), existing);
 
         ensure_default_routines(&store);
 

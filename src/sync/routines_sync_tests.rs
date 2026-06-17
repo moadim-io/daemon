@@ -96,6 +96,38 @@ fn format_routine_line_returns_none_when_script_write_fails() {
 }
 
 #[test]
+fn format_routine_line_when_parent_dir_already_exists() {
+    // Covers write_routine_script's path where the routine directory (the script's parent) already
+    // exists, so create_dir_all is a no-op success and execution proceeds to build + write the
+    // script and format the line. Uses a keyword schedule and repositories to run the full body.
+    let title = "Existing Parent Sync Routine";
+    let slug = slugify(title);
+    let routine_dir = crate::paths::routine_dir(&slug);
+    // Pre-create the routine (parent) directory so create_dir_all has nothing to do.
+    std::fs::create_dir_all(&routine_dir).unwrap();
+    assert!(routine_dir.exists());
+
+    let mut routine = make_routine("existing-parent", title, "claude");
+    routine.schedule = "@daily".to_string();
+    routine.repositories = vec![crate::routines::Repository {
+        repository: "https://example.com/ctx.git".to_string(),
+        branch: Some("main".to_string()),
+    }];
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+
+    let line = format_routine_line(&routine, &agent).unwrap();
+    assert!(line.starts_with("@daily "), "wrong schedule: {line}");
+    assert!(line.ends_with("# moadim-routine:existing-parent"));
+    assert!(crate::paths::routine_script_path(&slug).exists());
+
+    let _ = std::fs::remove_dir_all(&routine_dir);
+}
+
+#[test]
 fn build_block_empty_when_no_routines() {
     let block = build_block(&new_store());
     assert!(block.contains(BLOCK_BEGIN));

@@ -178,9 +178,7 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         .expect("stdin is piped")
         .write_all(content.as_bytes())?;
 
-    let status = child
-        .wait()
-        .map_err(|err| SyncError::CrontabCommand(format!("crontab wait failed: {err}")))?;
+    let status = child.wait()?;
 
     if !status.success() {
         return Err(SyncError::CrontabCommand(format!(

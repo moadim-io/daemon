@@ -12,6 +12,9 @@ mod middlewares;
 mod openapi;
 /// Filesystem path builders for the jobs directory.
 mod paths;
+/// OS-specific scheduler and launcher backends (crontab/tmux on Unix, Task Scheduler/PowerShell on
+/// Windows).
+mod platform;
 /// Replace an already-running daemon with a fresh process on launch.
 mod restart;
 /// HTTP and MCP route definitions.

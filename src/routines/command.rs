@@ -51,6 +51,7 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
 ///
 /// `{prompt}` expands to a shell command substitution that reads `prompt.md` from the agent's
 /// cwd (the workbench), so the full prompt is passed as a single argument to the agent process.
+#[cfg(unix)]
 pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> String {
     template
         .replace("{workbench}", workbench)
@@ -59,6 +60,7 @@ pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> 
 }
 
 /// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
+#[cfg(unix)]
 fn bin_dir(bin: &str) -> Option<String> {
     let path = std::env::var("PATH").ok()?;
     path.split(':')
@@ -74,6 +76,7 @@ fn bin_dir(bin: &str) -> Option<String> {
 /// limit (~1000 chars) and silently disable the job. Instead this resolves just the dirs holding
 /// `tmux` and the agent `command`, then appends common tool locations and the cron defaults,
 /// deduplicated and order-preserving — short enough to stay well under the limit.
+#[cfg(unix)]
 fn cron_path(agent_command: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
     let mut dirs: Vec<String> = Vec::new();
@@ -101,6 +104,7 @@ fn cron_path(agent_command: &str) -> String {
 }
 
 /// Wrap `s` in single quotes for safe inclusion in a POSIX shell command.
+#[cfg(unix)]
 pub(crate) fn shell_quote(text: &str) -> String {
     let mut out = String::from("'");
     for ch in text.chars() {
@@ -119,6 +123,7 @@ pub(crate) fn shell_quote(text: &str) -> String {
 /// Uses `\n` as literal two-character sequences (not real newlines) so the text can be embedded
 /// in a single crontab line and passed to `printf '%b'`, which re-expands them into newlines at
 /// run time. The run date and timezone are appended dynamically by the shell.
+#[cfg(unix)]
 const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
     \\n\
     > This section is managed by the moadim daemon. Do not edit it.\\n\
@@ -134,6 +139,7 @@ const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
 /// re-scanned for conversions, so a `%s` placed inside this `%b` string would print literally).
 /// This constant therefore ends just before the name. `\n` are literal two-character sequences
 /// re-expanded into newlines by `printf '%b'`, matching `MOADIM_SYSTEM_PROMPT`.
+#[cfg(unix)]
 const MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\\n\
     \\n\
     You act on behalf of the moadim routine named below. In every external, outward-facing \
@@ -153,6 +159,7 @@ const MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\\n\
 ///
 /// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
 /// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
+#[cfg(unix)]
 pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -> Vec<String> {
     let header = shell_quote(MOADIM_SYSTEM_PROMPT);
     let disclosure = shell_quote(MOADIM_DISCLOSURE);
@@ -176,6 +183,7 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
 /// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
+#[cfg(unix)]
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
@@ -224,6 +232,154 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     ));
     stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.join("; ")
+}
+
+// ─── Windows (PowerShell) launch script ──────────────────────────────────────
+
+/// Moadim-managed system prompt written to every workbench `CLAUDE.md` (Windows).
+///
+/// Real newlines, embedded literally in a PowerShell single-quoted here-string (`@'…'@`), which
+/// performs no `$`/backtick interpolation — safe for the backticks in the body. The run date and
+/// timezone are appended separately at run time.
+#[cfg(windows)]
+const WIN_MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\n\
+    \n\
+    > This section is managed by the moadim daemon. Do not edit it.\n\
+    \n\
+    You are running inside a moadim-managed agent session. \
+    Complete the task described in `prompt.md` and exit when done.";
+
+/// Routine-origin disclosure appended to the moadim system prompt (Windows).
+///
+/// Mirrors the Unix `MOADIM_DISCLOSURE`; ends just before the routine name, which is concatenated
+/// at script-build time as a separate PowerShell single-quoted string.
+#[cfg(windows)]
+const WIN_MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\n\
+    \n\
+    You act on behalf of the moadim routine named below. In every external, outward-facing \
+    communication you produce — GitHub issues, pull requests and comments; Slack messages; emails; \
+    any channel a human or third-party system receives — you MUST disclose that the action \
+    originates from this moadim routine, naming it (for example: 'This pull request was opened by \
+    the <routine name> routine of moadim.'). Phrasing may be adapted per channel but must \
+    include the routine name. This does NOT apply to internal logs or in-repo working files.\n\
+    \n\
+    Routine name: ";
+
+/// Wrap `text` in single quotes for safe inclusion in a PowerShell command (`'` → `''`).
+#[cfg(windows)]
+pub(crate) fn ps_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "''"))
+}
+
+/// Build the PowerShell expression for one agent argument.
+///
+/// `{workbench}` → `.`, `{prompt_file}` → `prompt.md`, and `{prompt}` → a `Get-Content -Raw` of the
+/// workbench `prompt.md` so the full prompt reaches the agent as a single argument (via splatting).
+/// Non-`{prompt}` text is single-quoted; `{prompt}` segments are concatenated with `+`.
+#[cfg(windows)]
+fn ps_arg_expr(arg: &str) -> String {
+    const PROMPT_READ: &str = "(Get-Content -Raw -LiteralPath (Join-Path $wb 'prompt.md'))";
+    let mut pieces: Vec<String> = Vec::new();
+    for (idx, segment) in arg.split("{prompt}").enumerate() {
+        if idx > 0 {
+            pieces.push(PROMPT_READ.to_string());
+        }
+        if !segment.is_empty() {
+            let literal = segment
+                .replace("{workbench}", ".")
+                .replace("{prompt_file}", "prompt.md");
+            pieces.push(ps_quote(&literal));
+        }
+    }
+    if pieces.is_empty() {
+        "''".to_string()
+    } else {
+        pieces.join(" + ")
+    }
+}
+
+/// Prepend the daemon's `PATH` so scheduled tasks resolve the agent and tools the same way a manual
+/// trigger (which inherits the daemon's environment) does. PowerShell `.ps1` scripts have no per-line
+/// length limit, so the full inherited `PATH` is baked verbatim.
+#[cfg(windows)]
+fn win_path_prefix() -> String {
+    match std::env::var("PATH") {
+        Ok(path) if !path.is_empty() => {
+            format!("$env:PATH = {} + ';' + $env:PATH\n", ps_quote(&path))
+        }
+        _ => String::new(),
+    }
+}
+
+/// Build the PowerShell `run.ps1` body that creates a workbench and launches the agent.
+///
+/// Mirrors the Unix [`build_routine_command`]: it stamps a workbench under
+/// `%USERPROFILE%\.moadim\workbenches\{slug}-{unix_secs}`, writes the moadim `CLAUDE.md` (system
+/// prompt + routine-origin disclosure + run date/timezone, then the user prompt if present), copies
+/// the routine's `prompt.md` (aborting if missing), runs any agent `setup` verbatim, then runs the
+/// agent synchronously with its output tee'd to `agent.log`. `$wb` and `$sess` are in scope for the
+/// setup step. The script records its own PID in `agent.pid` (cleared on clean exit) so the cleanup
+/// task can tell a still-running session from a finished one.
+#[cfg(windows)]
+pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
+    let slug = slugify(&routine.title);
+    let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
+    let user_prompt = crate::paths::user_prompt_path()
+        .to_string_lossy()
+        .into_owned();
+
+    let arg_exprs: Vec<String> = agent.args.iter().map(|arg| ps_arg_expr(arg)).collect();
+    let argument_list = if arg_exprs.is_empty() {
+        String::new()
+    } else {
+        format!("$agentArgs = @({})\n", arg_exprs.join(", "))
+    };
+    let invoke = if arg_exprs.is_empty() {
+        format!("& {}", ps_quote(&agent.command))
+    } else {
+        format!("& {} @agentArgs", ps_quote(&agent.command))
+    };
+
+    let setup = match &agent.setup {
+        // Inserted verbatim so the agent author controls quoting; `$wb`/`$sess` are in scope.
+        Some(step) => format!("{step}\n"),
+        None => String::new(),
+    };
+
+    let header = format!("{WIN_MOADIM_SYSTEM_PROMPT}\n\n{WIN_MOADIM_DISCLOSURE}");
+
+    format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         {path}\
+         $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()\n\
+         $slug = {slug}\n\
+         $wb = Join-Path $env:USERPROFILE (Join-Path '.moadim' (Join-Path 'workbenches' \"$slug-$ts\"))\n\
+         $sess = \"moadim-$slug-$ts\"\n\
+         New-Item -ItemType Directory -Force -Path $wb | Out-Null\n\
+         $claudeMd = Join-Path $wb 'CLAUDE.md'\n\
+         $header = @'\n{header}\n'@\n\
+         Set-Content -Path $claudeMd -Encoding utf8 -Value ($header + {title})\n\
+         Add-Content -Path $claudeMd -Encoding utf8 -Value \"`n`n**Run date**: $(Get-Date)`n**Timezone**: $([System.TimeZoneInfo]::Local.DisplayName)\"\n\
+         $userPrompt = {user_prompt}\n\
+         if (Test-Path -LiteralPath $userPrompt) {{ Add-Content -Path $claudeMd -Encoding utf8 -Value \"`n---`n\"; Get-Content -LiteralPath $userPrompt | Add-Content -Path $claudeMd -Encoding utf8 }}\n\
+         $src = {src}\n\
+         if (-not (Test-Path -LiteralPath $src)) {{ \"moadim: missing routine prompt $src; aborting launch\" | Tee-Object -FilePath (Join-Path $wb 'agent.log') -Append | Write-Error; exit 1 }}\n\
+         Copy-Item -LiteralPath $src -Destination (Join-Path $wb 'prompt.md')\n\
+         {setup}\
+         $PID | Set-Content -Path (Join-Path $wb 'agent.pid')\n\
+         {argument_list}\
+         {invoke} *>&1 | Tee-Object -FilePath (Join-Path $wb 'agent.log')\n\
+         Remove-Item -LiteralPath (Join-Path $wb 'agent.pid') -ErrorAction SilentlyContinue\n",
+        path = win_path_prefix(),
+        slug = ps_quote(&slug),
+        header = header,
+        title = ps_quote(&routine.title),
+        user_prompt = ps_quote(&user_prompt),
+        src = ps_quote(&prompt_path),
+        setup = setup,
+        argument_list = argument_list,
+        invoke = invoke,
+    )
 }
 
 #[cfg(test)]

@@ -101,9 +101,20 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
     routine_dir(id).join(".gitignore")
 }
 
-/// Returns the path to `{routines_dir}/{id}/run.sh`, the generated launch script invoked by cron.
+/// Returns the path to the generated launch script invoked by the OS scheduler.
+///
+/// `run.sh` on Unix (invoked by cron via `/bin/sh`); `run.ps1` on Windows (invoked by Task
+/// Scheduler via `powershell -File`).
+#[cfg(not(windows))]
 pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")
+}
+
+/// Returns the path to `{routines_dir}/{id}/run.ps1`, the PowerShell launch script invoked by the
+/// Windows Task Scheduler.
+#[cfg(windows)]
+pub fn routine_script_path(id: &str) -> PathBuf {
+    routine_dir(id).join("run.ps1")
 }
 
 // ─── Agent registry ──────────────────────────────────────────────────────────

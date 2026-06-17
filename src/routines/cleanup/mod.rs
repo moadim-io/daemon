@@ -45,6 +45,7 @@ fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
 /// Uses an exact (`=`) target match so `moadim-foo-1` never matches `moadim-foo-10`. A missing
 /// `tmux` binary (exit status unavailable) is treated as "not alive": with no tmux there is no
 /// running session to protect, so an expired workbench is safe to reap.
+#[cfg(unix)]
 fn tmux_session_alive(session: &str) -> bool {
     std::process::Command::new("tmux")
         .arg("has-session")
@@ -104,12 +105,12 @@ fn reap_dir(
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
     let ttls = snapshot::snapshot_ttls(store);
     let ttl_for = |slug: &str| snapshot::ttl_for(&ttls, slug);
-    reap_dir(
-        &workbenches_dir(),
-        now_secs(),
-        &ttl_for,
-        &tmux_session_alive,
-    )
+    // Unix asks tmux whether the run's session is live; Windows checks the run's recorded PID.
+    #[cfg(unix)]
+    let is_alive = tmux_session_alive;
+    #[cfg(windows)]
+    let is_alive = crate::platform::run_alive;
+    reap_dir(&workbenches_dir(), now_secs(), &ttl_for, &is_alive)
 }
 
 #[cfg(test)]

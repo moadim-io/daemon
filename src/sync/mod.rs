@@ -17,34 +17,46 @@
 //! in-memory store and persisted to TOML. New entries without a known UUID are
 //! imported as managed jobs.
 
+#[cfg(unix)]
 use std::collections::{HashMap, HashSet};
+#[cfg(unix)]
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 
 use crate::cron_jobs::{CronJob, CronStore};
 use crate::paths::handlers_dir;
+#[cfg(unix)]
 use crate::storage::write_job;
+#[cfg(unix)]
 use crate::utils::time::now_secs;
 
 /// Crontab block for routines (agent-driven tmux jobs).
 pub mod routines;
 
 /// Delimiter marking the start of the moadim-owned crontab block.
+#[cfg(unix)]
 const BLOCK_BEGIN: &str = "# BEGIN MOADIM";
 /// Delimiter marking the end of the moadim-owned crontab block.
+#[cfg(unix)]
 const BLOCK_END: &str = "# END MOADIM";
 /// Human-readable header comment written inside the block.
+#[cfg(unix)]
 const BLOCK_HEADER: &str =
     "# Managed by moadim — manual edits to this block sync back automatically";
 
 // ─── Error type ────────────────────────────────────────────────────────────
 
-/// Error returned by crontab sync operations.
+/// Error returned by OS scheduler sync operations.
 #[derive(Debug)]
 pub enum SyncError {
-    /// The `crontab` command failed or was not found.
+    /// The `crontab` command failed or was not found (Unix backend).
+    #[cfg_attr(windows, allow(dead_code))]
     CrontabCommand(String),
+    /// The Windows Task Scheduler (`schtasks`) command failed (Windows backend).
+    #[cfg(windows)]
+    Scheduler(String),
     /// An I/O error occurred while persisting a job.
     Io(std::io::Error),
 }
@@ -53,6 +65,8 @@ impl std::fmt::Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SyncError::CrontabCommand(msg) => write!(f, "crontab: {msg}"),
+            #[cfg(windows)]
+            SyncError::Scheduler(msg) => write!(f, "schtasks: {msg}"),
             SyncError::Io(err) => write!(f, "io: {err}"),
         }
     }
@@ -71,6 +85,7 @@ impl From<std::io::Error> for SyncError {
 ///
 /// `@keyword` schedules are passed through unchanged.
 /// The seconds (field 0) and year (field 6) are dropped.
+#[cfg(unix)]
 pub(crate) fn to_os_schedule(schedule: &str) -> String {
     let trimmed = schedule.trim();
     if trimmed.starts_with('@') {
@@ -89,6 +104,7 @@ pub(crate) fn to_os_schedule(schedule: &str) -> String {
 /// Moadim uses 5-field format (`min hour dom month dow`) natively, which is the
 /// same as the OS crontab. The value is returned as-is. `@keyword` schedules are
 /// also passed through unchanged.
+#[cfg(unix)]
 #[allow(dead_code)]
 pub(crate) fn to_moadim_schedule(schedule: &str) -> String {
     schedule.trim().to_string()
@@ -117,6 +133,7 @@ pub(crate) fn resolve_handler_path(handler: &str, dir: &Path) -> PathBuf {
 ///
 /// If `command` is a path under `dir`, the stem (filename without extension)
 /// is used. Otherwise the bare filename stem is returned.
+#[cfg(unix)]
 #[allow(dead_code)]
 pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
     let path = Path::new(command.trim());
@@ -139,6 +156,7 @@ pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
 /// Honours the `MOADIM_CRONTAB_BIN` environment variable when set, falling back
 /// to the system `crontab` otherwise. The override exists so tests can point
 /// crontab I/O at a shim instead of mutating the developer's real crontab.
+#[cfg(unix)]
 fn crontab_bin() -> String {
     std::env::var("MOADIM_CRONTAB_BIN").unwrap_or_else(|_| "crontab".to_string())
 }
@@ -146,6 +164,7 @@ fn crontab_bin() -> String {
 /// Read the current user crontab via `crontab -l`.
 ///
 /// Returns an empty string when no crontab exists for the user.
+#[cfg(unix)]
 pub(crate) fn read_crontab() -> Result<String, SyncError> {
     let out = Command::new(crontab_bin())
         .arg("-l")
@@ -164,6 +183,7 @@ pub(crate) fn read_crontab() -> Result<String, SyncError> {
 }
 
 /// Install `content` as the user's crontab via `crontab -`.
+#[cfg(unix)]
 pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
     let mut child = Command::new(crontab_bin())
         .arg("-")
@@ -191,6 +211,7 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
 // ─── Block assembly ────────────────────────────────────────────────────────
 
 /// Format a single managed job as a crontab line with a trailing `# moadim:<id>` tag.
+#[cfg(unix)]
 pub(crate) fn format_crontab_line(job: &CronJob, handlers: &Path) -> String {
     let schedule = to_os_schedule(&job.schedule);
     let path = resolve_handler_path(&job.handler, handlers);
@@ -198,6 +219,7 @@ pub(crate) fn format_crontab_line(job: &CronJob, handlers: &Path) -> String {
 }
 
 /// Build the full moadim block string from the enabled managed jobs in `store`.
+#[cfg(unix)]
 fn build_block(store: &CronStore) -> String {
     let dir = handlers_dir();
     let mut jobs: Vec<CronJob> = {
@@ -222,11 +244,13 @@ fn build_block(store: &CronStore) -> String {
 }
 
 /// Replace (or insert) the moadim handler block inside `crontab` text.
+#[cfg(unix)]
 pub(crate) fn replace_block(crontab: &str, block: &str) -> String {
     replace_block_with(crontab, block, BLOCK_BEGIN, BLOCK_END)
 }
 
 /// Replace (or insert) a delimited block (`begin_marker`..`end_marker`) inside `crontab` text.
+#[cfg(unix)]
 pub(crate) fn replace_block_with(
     crontab: &str,
     block: &str,
@@ -278,6 +302,7 @@ pub(crate) fn replace_block_with(
 /// Parse a crontab line that carries a `# moadim:<uuid>` tag.
 ///
 /// Returns `(uuid, os_schedule, command)` on success.
+#[cfg(unix)]
 #[allow(dead_code)]
 pub(crate) fn parse_moadim_line(line: &str) -> Option<(String, String, String)> {
     let tag = "# moadim:";
@@ -309,6 +334,7 @@ pub(crate) fn parse_moadim_line(line: &str) -> Option<(String, String, String)> 
 /// Extract all moadim entries from a crontab string.
 ///
 /// Returns a map of `uuid → (os_schedule, command)`.
+#[cfg(unix)]
 #[allow(dead_code)]
 pub(crate) fn parse_block(crontab: &str) -> HashMap<String, (String, String)> {
     let mut in_block = false;
@@ -336,10 +362,12 @@ pub(crate) fn parse_block(crontab: &str) -> HashMap<String, (String, String)> {
 
 // ─── Public sync API ───────────────────────────────────────────────────────
 
-/// Write all enabled managed jobs from `store` into the OS crontab block.
+/// Write all enabled managed jobs from `store` into the OS scheduler.
 ///
-/// Idempotent: skips the `crontab -` call when the crontab would not change.
+/// On Unix this rewrites the moadim crontab block (idempotent: skips the `crontab -` call when the
+/// crontab would not change). On Windows it reconciles one Task Scheduler task per managed job.
 /// Call this after every job mutation. Errors are logged by the caller.
+#[cfg(unix)]
 pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
     let current = read_crontab()?;
     let block = build_block(store);
@@ -348,6 +376,39 @@ pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
         return Ok(());
     }
     write_crontab(&new_crontab)
+}
+
+/// Reconcile one Windows Task Scheduler task per enabled managed job. See [`sync_to_crontab`].
+#[cfg(windows)]
+pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
+    crate::platform::reconcile(crate::platform::JOB_PREFIX, &windows_job_tasks(store))
+}
+
+/// Build the Windows scheduled-task list for the enabled managed jobs in `store`.
+///
+/// Each task runs the resolved handler path; the cron schedule is translated to Task Scheduler
+/// triggers during reconciliation.
+#[cfg(windows)]
+fn windows_job_tasks(store: &CronStore) -> Vec<crate::platform::SchedTask> {
+    let dir = handlers_dir();
+    let mut jobs: Vec<CronJob> = {
+        let lock = store.lock().unwrap();
+        lock.values()
+            .filter(|job| job.source == "managed" && job.enabled)
+            .cloned()
+            .collect()
+    };
+    jobs.sort_by_key(|job| job.created_at);
+    jobs.iter()
+        .map(|job| {
+            let path = resolve_handler_path(&job.handler, &dir);
+            crate::platform::SchedTask {
+                name: format!("{}{}", crate::platform::JOB_PREFIX, job.id),
+                schedule: job.schedule.clone(),
+                run: format!("\"{}\"", path.display()),
+            }
+        })
+        .collect()
 }
 
 /// Read the OS crontab and reconcile changes in the moadim block back into `store`.
@@ -360,6 +421,9 @@ pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
 ///   the block by the last forward sync).
 ///
 /// Returns `true` if any jobs were created or updated.
+///
+/// Unix only: reverse sync reads the crontab, which has no Windows Task Scheduler analogue.
+#[cfg(unix)]
 #[allow(dead_code)]
 pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
     let crontab = read_crontab()?;
@@ -428,6 +492,8 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
     Ok(changed)
 }
 
-#[cfg(test)]
+// Exercises the Unix crontab block machinery (pure helpers + reconcile); gated to Unix where that
+// machinery is compiled.
+#[cfg(all(test, unix))]
 #[path = "cron_sync_tests.rs"]
 mod cron_sync_tests;

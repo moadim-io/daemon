@@ -11,6 +11,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Windows support.** The daemon now builds and runs on Windows. The Unix
+  scheduler backend (crontab + `/bin/sh` + tmux) is unchanged; on Windows the
+  same managed jobs and routines are registered with the **Task Scheduler**
+  (`schtasks`) — one task per job (`moadim-job-<id>`) and routine
+  (`moadim-routine-<id>`) — and routines launch via a generated `run.ps1`
+  PowerShell script instead of a tmux session, recording their PID for cleanup
+  liveness. A new `src/platform` module isolates the per-OS scheduler/launcher
+  backends. Cron is more expressive than the Task Scheduler's calendar triggers,
+  so schedules outside the common subset (every-N-minutes, hourly-at, daily-at,
+  weekly-on-days, monthly-on-day, and the `@keyword` shortcuts) are logged and
+  left unscheduled rather than registered at the wrong time. Crontab reverse
+  sync has no Windows equivalent — routines and jobs are API-managed there.
+- A CI **coverage** workflow enforces 100% line coverage (excluding
+  `src/main.rs`) on every PR, mirroring the local pre-push hook so the bar is
+  also checked when contributors haven't installed the git hooks.
+
 ### Fixed
 
 - Routine crontab sync no longer wipes the populated `MOADIM-ROUTINES` block

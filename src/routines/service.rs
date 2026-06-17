@@ -201,8 +201,15 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     match load_agent_command(&routine.agent) {
         Some(agent) => {
             let cmd = build_routine_command(&routine, &agent);
-            if let Err(err) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
-                log::warn!("trigger: failed to spawn routine command: {err}");
+            #[cfg(not(windows))]
+            {
+                if let Err(err) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
+                    log::warn!("trigger: failed to spawn routine command: {err}");
+                }
+            }
+            #[cfg(windows)]
+            {
+                crate::platform::spawn_routine_now(&cmd);
             }
         }
         None => log::warn!(

@@ -22,9 +22,10 @@ pub struct AgentCommand {
     /// placeholders; `{prompt}` inlines the composed prompt as a single shell-quoted argument.
     #[serde(default)]
     pub args: Vec<String>,
-    /// Optional shell command run in the workbench *before* the agent launches, inserted verbatim
-    /// into the cron line. Runs with the shell vars `$WB` (absolute workbench path) and `$SESS`
-    /// (tmux session name) in scope — e.g. to pre-seed per-directory editor trust state.
+    /// Optional command run in the workbench *before* the agent launches, inserted verbatim into the
+    /// generated launch script. The workbench path and session name are in scope — `$WB`/`$SESS` in
+    /// the Unix `/bin/sh` line, `$wb`/`$sess` in the Windows `run.ps1` — e.g. to pre-seed
+    /// per-directory editor trust state.
     #[serde(default)]
     pub setup: Option<String>,
 }

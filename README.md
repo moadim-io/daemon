@@ -97,6 +97,8 @@ Moadim owns a single block inside your crontab. Everything outside that block is
 
 **Timezone:** because jobs run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
 
+**Windows:** moadim runs on Windows too. The crontab/`/bin/sh`/tmux backend is Unix-only; on Windows the same managed schedules are registered with the **Task Scheduler** (`schtasks`) — one task per job (`moadim-job-<id>`) and routine (`moadim-routine-<id>`) — and routines launch via a generated `run.ps1` PowerShell script instead of a tmux session. Cron is more expressive than the Task Scheduler's triggers, so schedules outside the common subset (every-N-minutes, hourly-at, daily-at, weekly-on-days, monthly-on-day, and the `@keyword` shortcuts) are logged and left unscheduled rather than registered at the wrong time. Crontab reverse sync has no Windows equivalent: routines and jobs are managed through the UI/REST/MCP only.
+
 ## Handlers
 
 Handlers are executable scripts under `~/.config/moadim/handlers/`. The `handler` field in `job.toml` is the filename without extension.

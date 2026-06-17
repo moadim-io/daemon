@@ -198,16 +198,19 @@ fn report_endpoints() {
 }
 
 /// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
-/// machine-readable object instead of the human-readable line.
+/// machine-readable object (`{"running":bool,"pid":N|null}`) instead of the human-readable line.
 ///
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
 pub fn stop(json: bool) -> anyhow::Result<i32> {
+    // Read the PID before asking the server to stop: a graceful shutdown clears the pid file, so
+    // the only reliable moment to capture which process we stopped is *before* the request.
+    let pid = read_pid_file();
     match http_request("POST", "/api/v1/shutdown") {
         Ok(200) => {
             if json {
-                println!("{}", stop_json(true));
+                println!("{}", stop_json(true, pid));
             } else {
                 println!("moadim is shutting down");
             }
@@ -218,7 +221,7 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
         }
         Err(_) => {
             if json {
-                println!("{}", stop_json(false));
+                println!("{}", stop_json(false, pid));
             } else {
                 println!("moadim is not running");
             }
@@ -227,11 +230,14 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// Render the `stop` result as a one-line JSON object: `{"running":bool}`. `running` is `true` when
-/// a running server was asked to shut down, and `false` when none was reachable.
-fn stop_json(running: bool) -> String {
+/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null}`, mirroring
+/// `status --json`'s `pid` field. `running` is `true` when a running server was asked to shut down,
+/// and `false` when none was reachable. `pid` is the process that was stopped (read from the pid
+/// file before the shutdown request), or `null` when no pid file was present.
+fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
+        "pid": pid,
     })
     .to_string()
 }

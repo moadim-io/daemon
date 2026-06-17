@@ -29,5 +29,4 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast
 - Auto-refresh the routine LOGS view (or show a removed badge) after a CLEANUP NOW sweep so stale run output isn't shown for reaped workbenches
 - Add the option to filter routines by repositories in the ui
-- Add a copy-pasteable shell snippet to the README "Scripting" section showing a real branch on `moadim status --json` exit codes (e.g. `if ! moadim status --json >/dev/null; then moadim; fi`) so readers see the contract in use, not just its shape
 - Run the README's fenced `sh`/`json` blocks through a docs lint in CI (e.g. a `markdownlint`/`mdsh` check or a `--json | jq -e` smoke test) so the documented JSON shapes can't drift from the actual CLI output silently

@@ -9,6 +9,7 @@ use crate::paths::{
     routine_dir, routine_gitignore_path, routine_prompt_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
+use crate::utils::atomic::atomic_write;
 
 /// TOML representation of a routine on disk.
 #[derive(Debug, Deserialize, Serialize)]
@@ -97,8 +98,14 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         ttl_secs: routine.ttl_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
-    std::fs::write(routine_toml_path(&slug), text)?;
-    std::fs::write(routine_prompt_path(&slug), compose_prompt(routine))?;
+    // Atomic write (temp + rename) so the continuously-running reverse crontab sync, which re-reads
+    // these files every 30s, never observes a torn routine.toml — a torn file parses to `None` and
+    // would silently drop the routine from the store.
+    atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
+    atomic_write(
+        &routine_prompt_path(&slug),
+        compose_prompt(routine).as_bytes(),
+    )?;
     Ok(())
 }
 

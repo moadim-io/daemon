@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Routine listings can now be filtered and sorted by repository. `GET /routines`
+  accepts `repository` (case-insensitive URL substring filter), `sort`
+  (`created`|`updated`|`title`|`repository`), and `order` (`asc`|`desc`) query
+  parameters, and the Routines tab gains a filter/sort bar (repository input,
+  sort dropdown, direction toggle). Defaults preserve the previous
+  created-ascending behaviour.
 - `moadim stop --json` now emits a single machine-readable object
   (`{"running":true}` when a running server was asked to shut down,
   `{"running":false}` when none was reachable), completing the `--json`

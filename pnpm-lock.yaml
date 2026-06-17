@@ -11,6 +11,9 @@ importers:
       block-no-verify:
         specifier: ^1.2.0
         version: 1.2.0
+      husky:
+        specifier: ^9.1.7
+        version: 9.1.7
 
 packages:
 
@@ -23,6 +26,11 @@ packages:
     engines: {node: '>=20.0.0'}
     hasBin: true
 
+  husky@9.1.7:
+    resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
 snapshots:
 
   '@polyhook/sdk@0.1.4': {}
@@ -30,3 +38,5 @@ snapshots:
   block-no-verify@1.2.0:
     dependencies:
       '@polyhook/sdk': 0.1.4
+
+  husky@9.1.7: {}

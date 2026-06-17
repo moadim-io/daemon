@@ -41,8 +41,11 @@ pub enum Command {
     Background,
     /// Stop a running background server (if any) and start a fresh detached instance.
     Restart,
-    /// Ask a running background server to stop.
-    Stop,
+    /// Ask a running background server to stop. `json` requests machine-readable output.
+    Stop {
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Report whether a server is currently running. `json` requests machine-readable output.
     Status {
         /// Emit machine-readable JSON output instead of human-readable text.
@@ -69,7 +72,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     match args.first().map(String::as_str) {
         None => Command::Background,
         Some("restart") => Command::Restart,
-        Some("stop") => Command::Stop,
+        Some("stop") => Command::Stop {
+            json: wants_json(&args[1..]),
+        },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
         },
@@ -106,13 +111,13 @@ pub fn print_help() {
          \n\
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
-         \x20   stop                   stop a running background server\n\
+         \x20   stop [--json]          stop a running background server\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
-         Pass --json to `status`/`cleanup` for a single-line machine-readable object.\n\
+         Pass --json to `stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
          can branch on $? without parsing stdout.\n\
          \n\
@@ -192,25 +197,43 @@ fn report_endpoints() {
     println!("  logs  {}", paths_daemon_log());
 }
 
-/// Ask a running server to stop via the `/shutdown` route.
+/// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
+/// machine-readable object instead of the human-readable line.
 ///
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
-pub fn stop() -> anyhow::Result<i32> {
+pub fn stop(json: bool) -> anyhow::Result<i32> {
     match http_request("POST", "/api/v1/shutdown") {
         Ok(200) => {
-            println!("moadim is shutting down");
+            if json {
+                println!("{}", stop_json(true));
+            } else {
+                println!("moadim is shutting down");
+            }
             Ok(liveness_exit_code(true))
         }
         Ok(status) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
         }
         Err(_) => {
-            println!("moadim is not running");
+            if json {
+                println!("{}", stop_json(false));
+            } else {
+                println!("moadim is not running");
+            }
             Ok(liveness_exit_code(false))
         }
     }
+}
+
+/// Render the `stop` result as a one-line JSON object: `{"running":bool}`. `running` is `true` when
+/// a running server was asked to shut down, and `false` when none was reachable.
+fn stop_json(running: bool) -> String {
+    serde_json::json!({
+        "running": running,
+    })
+    .to_string()
 }
 
 /// Ask a running server to reap finished, expired routine run workbenches now, and print the count.

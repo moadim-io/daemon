@@ -24,6 +24,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `{"running":false}` when none was reachable), completing the `--json`
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
+- **Hermes** is now a built-in agent alongside `claude` and `codex`. A default
+  `hermes.toml` (`hermes exec {prompt_file}`, mirroring Codex) is seeded into
+  `~/.config/moadim/agents/` on startup, and `hermes` appears in
+  `available_agents()` / `GET /agents`, so routines can launch Hermes.
 
 ### Fixed
 

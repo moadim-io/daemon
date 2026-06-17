@@ -124,7 +124,13 @@ const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
     > This section is managed by the moadim daemon. Do not edit it.\\n\
     \\n\
     You are running inside a moadim-managed agent session. \
-    Complete the task described in `prompt.md` and exit when done.";
+    Complete the task described in `prompt.md` and exit when done.\\n\
+    \\n\
+    When you take any outward-facing action — opening or commenting on GitHub issues and \
+    pull requests, sending Slack messages, sending emails, or any other external communication \
+    — disclose that you act on behalf of this moadim routine and name it (see **Routine** \
+    below). This keeps automated actions transparent and traceable. It does not apply to \
+    internal logs or in-repo working files.";
 
 /// Shell statements that write `CLAUDE.md` into `$WB` with two layers:
 ///
@@ -133,13 +139,18 @@ const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
 ///
 /// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
 /// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
-pub(crate) fn system_prompt_stmts(user_prompt_path: &str) -> Vec<String> {
+///
+/// `routine_name` is stamped into the `**Routine**` field so the disclosure instruction in the
+/// static header has a concrete name to cite. It is passed as a `printf` `%s` argument (no escape
+/// expansion) so names containing `%` or `\` survive verbatim.
+pub(crate) fn system_prompt_stmts(routine_name: &str, user_prompt_path: &str) -> Vec<String> {
     let header = shell_quote(MOADIM_SYSTEM_PROMPT);
+    let name_q = shell_quote(routine_name);
     let uq = shell_quote(user_prompt_path);
     vec![
         format!(
-            r#"printf '%b\n\n**Run date**: %s\n**Timezone**: %s\n' {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
-            header
+            r#"printf '%b\n\n**Routine**: %s\n**Run date**: %s\n**Timezone**: %s\n' {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            header, name_q
         ),
         format!(
             r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> "$WB/CLAUDE.md" || true"#,
@@ -179,6 +190,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         r#"mkdir -p "$WB""#.to_string(),
     ];
     stmts.extend(system_prompt_stmts(
+        &routine.title,
         &crate::paths::user_prompt_path().to_string_lossy(),
     ));
     stmts.extend([

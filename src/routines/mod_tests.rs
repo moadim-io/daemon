@@ -150,6 +150,41 @@ fn build_routine_command_writes_claude_md() {
 }
 
 #[test]
+fn build_routine_command_discloses_routine_origin() {
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // the static header instructs the agent to disclose its routine origin externally
+    assert!(
+        cmd.contains("disclose that you act on behalf of this moadim routine"),
+        "disclosure instruction missing"
+    );
+    // the routine name is stamped into a Routine field the instruction can cite
+    assert!(cmd.contains("**Routine**: %s"), "Routine field missing");
+    assert!(
+        cmd.contains("'My Routine'"),
+        "routine name not passed to printf"
+    );
+}
+
+#[test]
+fn system_prompt_stmts_quotes_routine_name() {
+    // a name with shell-special characters must be single-quoted, not interpreted
+    let stmts = system_prompt_stmts("Deploy & ship $NOW", "/tmp/user_prompt.md");
+    let printf = &stmts[0];
+    assert!(
+        printf.contains(r#"'Deploy & ship $NOW'"#),
+        "routine name not safely quoted: {printf}"
+    );
+    // passed as a %s argument, so escape sequences in the name are not expanded
+    assert!(printf.contains("**Routine**: %s"));
+}
+
+#[test]
 fn build_routine_command_aborts_when_prompt_missing() {
     let routine = make_routine("rid");
     let agent = AgentCommand {

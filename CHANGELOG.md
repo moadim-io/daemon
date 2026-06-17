@@ -25,6 +25,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
 
+### Changed
+
+- The moadim-managed `CLAUDE.md` preamble now instructs the agent to disclose,
+  in any outward-facing action (GitHub issues/PRs/comments, Slack, email, …),
+  that it acts on behalf of a moadim routine, and names that routine via a new
+  `**Routine**` line stamped with the routine title. Internal logs and in-repo
+  working files are exempt. Adds transparency/traceability to automated actions.
+
 ### Fixed
 
 - Routine logs (`GET /routines/{id}/logs`) could return another routine's log

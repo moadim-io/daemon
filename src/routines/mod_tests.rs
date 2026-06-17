@@ -150,6 +150,28 @@ fn build_routine_command_writes_claude_md() {
 }
 
 #[test]
+fn build_routine_command_discloses_routine_origin() {
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The moadim preamble instructs the agent to disclose automated origin in external comms.
+    assert!(
+        cmd.contains("disclose that you are acting on behalf of a moadim routine"),
+        "external-communication disclosure instruction missing"
+    );
+    // The routine is named via a **Routine** line stamped with the routine title.
+    assert!(cmd.contains("**Routine**: %s"));
+    assert!(
+        cmd.contains("'My Routine'"),
+        "routine title should be stamped into CLAUDE.md"
+    );
+}
+
+#[test]
 fn build_routine_command_aborts_when_prompt_missing() {
     let routine = make_routine("rid");
     let agent = AgentCommand {

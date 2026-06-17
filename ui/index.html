@@ -708,6 +708,49 @@
     .view-btn:hover  { color: var(--text-mid); }
     .view-btn.active { color: var(--accent); background: var(--accent-dim); }
 
+    /* ── Filter & sort bar ── */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .filter-field { display: flex; align-items: center; gap: 8px; }
+    .filter-input {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 6px 10px;
+      min-width: 240px;
+      outline: none;
+      transition: border-color 0.12s;
+    }
+    .filter-input:focus       { border-color: var(--accent); }
+    .filter-input::placeholder { color: var(--text-ghost); }
+    .filter-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .filter-select {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 6px 10px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.12s;
+    }
+    .filter-select:focus { border-color: var(--accent); }
+
     /* ── Calendar ── */
     .cal-wrap {
       border: 1px solid var(--border);

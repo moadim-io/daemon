@@ -4,7 +4,7 @@ use super::*;
 
 /// Build a `Vec<String>` from string literals for [`parse`].
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|s| s.to_string()).collect()
+    args.iter().map(|arg| arg.to_string()).collect()
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn background_flags_select_background() {
 
 #[test]
 fn stop_and_status_commands() {
-    assert_eq!(parse(argv(&["stop"])), Command::Stop);
+    assert_eq!(parse(argv(&["stop"])), Command::Stop { json: false });
     assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
 }
 
@@ -46,6 +46,10 @@ fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["cleanup", "--json"])),
         Command::Cleanup { json: true }
+    );
+    assert_eq!(
+        parse(argv(&["stop", "--json"])),
+        Command::Stop { json: true }
     );
 }
 
@@ -85,6 +89,25 @@ fn cleanup_json_reports_removed_and_running() {
     let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+}
+
+#[test]
+fn stop_json_reports_running_and_pid() {
+    let up: serde_json::Value = serde_json::from_str(&stop_json(true, Some(42))).unwrap();
+    assert_eq!(up["running"], serde_json::json!(true));
+    assert_eq!(up["pid"], serde_json::json!(42));
+
+    let down: serde_json::Value = serde_json::from_str(&stop_json(false, None)).unwrap();
+    assert_eq!(down["running"], serde_json::json!(false));
+    assert!(down["pid"].is_null());
+}
+
+#[test]
+fn liveness_exit_code_maps_running_to_codes() {
+    // A reachable server exits 0; a missing one exits the documented EXIT_NOT_RUNNING.
+    assert_eq!(liveness_exit_code(true), 0);
+    assert_eq!(liveness_exit_code(false), EXIT_NOT_RUNNING);
+    assert_eq!(EXIT_NOT_RUNNING, 3);
 }
 
 #[test]

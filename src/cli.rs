@@ -18,6 +18,20 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
+/// Process exit code emitted by `status`/`cleanup` when no server is running, so callers can branch
+/// on `$?` without parsing stdout. The success case (server reachable) exits `0`.
+pub const EXIT_NOT_RUNNING: i32 = 3;
+
+/// Map a server-liveness flag to the script-friendly process exit code: `0` when a server is
+/// reachable, [`EXIT_NOT_RUNNING`] when it is not.
+fn liveness_exit_code(running: bool) -> i32 {
+    if running {
+        0
+    } else {
+        EXIT_NOT_RUNNING
+    }
+}
+
 /// The action the user asked for on the command line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -27,13 +41,22 @@ pub enum Command {
     Background,
     /// Stop a running background server (if any) and start a fresh detached instance.
     Restart,
-    /// Ask a running background server to stop.
-    Stop,
+    /// Ask a running background server to stop. `json` requests machine-readable output.
+    Stop {
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Report whether a server is currently running. `json` requests machine-readable output.
-    Status { json: bool },
+    Status {
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Ask a running server to reap finished, expired routine run workbenches now. `json` requests
     /// machine-readable output.
-    Cleanup { json: bool },
+    Cleanup {
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Print usage help.
     Help,
     /// Print the binary version.
@@ -49,7 +72,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     match args.first().map(String::as_str) {
         None => Command::Background,
         Some("restart") => Command::Restart,
-        Some("stop") => Command::Stop,
+        Some("stop") => Command::Stop {
+            json: wants_json(&args[1..]),
+        },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
         },
@@ -86,13 +111,15 @@ pub fn print_help() {
          \n\
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
-         \x20   stop                   stop a running background server\n\
+         \x20   stop [--json]          stop a running background server\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
-         Pass --json to `status`/`cleanup` for a single-line machine-readable object.\n\
+         Pass --json to `stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
+         `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
+         can branch on $? without parsing stdout.\n\
          \n\
          Once running, manage the server from the web client at http://{BIND_ADDR}\n\
          (the STOP button) or with `moadim stop`."
@@ -111,7 +138,7 @@ pub fn print_version() {
 pub fn run_background() -> anyhow::Result<()> {
     if is_running() {
         let pid = read_pid_file()
-            .map(|p| format!(" (pid {p})"))
+            .map(|process_id| format!(" (pid {process_id})"))
             .unwrap_or_default();
         println!("moadim is already running{pid}; stopping it to start a fresh instance");
         crate::restart::stop_running_and_wait()?;
@@ -127,7 +154,9 @@ pub fn run_background() -> anyhow::Result<()> {
 pub fn restart() -> anyhow::Result<()> {
     let old_pid = if is_running() {
         let pid = read_pid_file();
-        let suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+        let suffix = pid
+            .map(|process_id| format!(" (pid {process_id})"))
+            .unwrap_or_default();
         println!("moadim is running{suffix}; stopping it");
         crate::restart::stop_running_and_wait()?;
         pid
@@ -168,21 +197,49 @@ fn report_endpoints() {
     println!("  logs  {}", paths_daemon_log());
 }
 
-/// Ask a running server to stop via the `/shutdown` route.
-pub fn stop() -> anyhow::Result<()> {
+/// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
+/// machine-readable object (`{"running":bool,"pid":N|null}`) instead of the human-readable line.
+///
+/// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
+/// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
+/// scripts can branch on `$?` without parsing stdout.
+pub fn stop(json: bool) -> anyhow::Result<i32> {
+    // Read the PID before asking the server to stop: a graceful shutdown clears the pid file, so
+    // the only reliable moment to capture which process we stopped is *before* the request.
+    let pid = read_pid_file();
     match http_request("POST", "/api/v1/shutdown") {
         Ok(200) => {
-            println!("moadim is shutting down");
-            Ok(())
+            if json {
+                println!("{}", stop_json(true, pid));
+            } else {
+                println!("moadim is shutting down");
+            }
+            Ok(liveness_exit_code(true))
         }
         Ok(status) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
         }
         Err(_) => {
-            println!("moadim is not running");
-            Ok(())
+            if json {
+                println!("{}", stop_json(false, pid));
+            } else {
+                println!("moadim is not running");
+            }
+            Ok(liveness_exit_code(false))
         }
     }
+}
+
+/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null}`, mirroring
+/// `status --json`'s `pid` field. `running` is `true` when a running server was asked to shut down,
+/// and `false` when none was reachable. `pid` is the process that was stopped (read from the pid
+/// file before the shutdown request), or `null` when no pid file was present.
+fn stop_json(running: bool, pid: Option<u32>) -> String {
+    serde_json::json!({
+        "running": running,
+        "pid": pid,
+    })
+    .to_string()
 }
 
 /// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
@@ -191,7 +248,10 @@ pub fn stop() -> anyhow::Result<()> {
 /// `/api/v1/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no
 /// server is up. With `json`, emits a single machine-readable object instead so the result can be
 /// piped into scripts.
-pub fn cleanup(json: bool) -> anyhow::Result<()> {
+///
+/// Returns the process exit code to surface: `0` when the server handled the sweep, and
+/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
+pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
             let removed = parse_removed_count(&body).unwrap_or(0);
@@ -201,7 +261,7 @@ pub fn cleanup(json: bool) -> anyhow::Result<()> {
                 let plural = if removed == 1 { "" } else { "es" };
                 println!("cleanup removed {removed} workbench{plural}");
             }
-            Ok(())
+            Ok(liveness_exit_code(true))
         }
         Ok((status, _)) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
@@ -212,27 +272,32 @@ pub fn cleanup(json: bool) -> anyhow::Result<()> {
             } else {
                 println!("moadim is not running");
             }
-            Ok(())
+            Ok(liveness_exit_code(false))
         }
     }
 }
 
 /// Report whether a server is running, with its PID when known. With `json`, emits a single
 /// machine-readable object instead of the human-readable line.
-pub fn status(json: bool) -> anyhow::Result<()> {
+///
+/// Returns the process exit code to surface: `0` when a server is reachable, and
+/// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout.
+pub fn status(json: bool) -> anyhow::Result<i32> {
     let running = is_running();
     let pid = read_pid_file();
     if json {
         println!("{}", status_json(running, pid));
-        return Ok(());
+        return Ok(liveness_exit_code(running));
     }
     if running {
-        let pid_suffix = pid.map(|p| format!(" (pid {p})")).unwrap_or_default();
+        let pid_suffix = pid
+            .map(|process_id| format!(" (pid {process_id})"))
+            .unwrap_or_default();
         println!("moadim is running{pid_suffix} at http://{BIND_ADDR}");
     } else {
         println!("moadim is not running");
     }
-    Ok(())
+    Ok(liveness_exit_code(running))
 }
 
 /// Render the `status` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`.

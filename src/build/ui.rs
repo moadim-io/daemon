@@ -58,20 +58,20 @@ fn run_trunk(ui_dir: &Path) -> bool {
         .current_dir(ui_dir)
         .status()
     {
-        Ok(s) if s.success() => true,
+        Ok(status) if status.success() => true,
         Ok(_) => {
             println!("cargo:warning=trunk build exited with non-zero status");
             false
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             println!(
                 "cargo:warning=trunk not found; Yew UI not compiled \
                  (install with: cargo install trunk)"
             );
             false
         }
-        Err(e) => {
-            println!("cargo:warning=failed to launch trunk: {e}");
+        Err(err) => {
+            println!("cargo:warning=failed to launch trunk: {err}");
             false
         }
     }
@@ -90,26 +90,26 @@ fn inline_into_html(dist: &Path, output: &Path) {
 
     let js = js_path
         .as_ref()
-        .map(|p| std::fs::read_to_string(p).expect("failed to read .js dist asset"))
+        .map(|path| std::fs::read_to_string(path).expect("failed to read .js dist asset"))
         .unwrap_or_default();
 
     let wasm_b64 = wasm_path
         .as_ref()
-        .map(|p| {
-            let bytes = std::fs::read(p).expect("failed to read .wasm dist asset");
+        .map(|path| {
+            let bytes = std::fs::read(path).expect("failed to read .wasm dist asset");
             base64_encode(&bytes)
         })
         .unwrap_or_default();
 
     let wasm_file = wasm_path
         .as_ref()
-        .and_then(|p| p.file_name())
+        .and_then(|path| path.file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
     let js_file = js_path
         .as_ref()
-        .and_then(|p| p.file_name())
+        .and_then(|path| path.file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
@@ -143,12 +143,12 @@ fn find_dist_assets(dist: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
     let mut js_path = None;
     let mut wasm_path = None;
     for entry in std::fs::read_dir(dist).expect("dist dir missing").flatten() {
-        let p = entry.path();
-        let name = p.file_name().unwrap_or_default().to_string_lossy();
+        let path = entry.path();
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
         if name.ends_with(".js") && name != "index.html" {
-            js_path = Some(p);
+            js_path = Some(path);
         } else if name.ends_with(".wasm") {
-            wasm_path = Some(p);
+            wasm_path = Some(path);
         }
     }
     (js_path, wasm_path)
@@ -160,8 +160,8 @@ fn assemble_html(html: &str, inline_script: &str, js_file: &str, wasm_file: &str
     let stripped: String = html
         .lines()
         .filter(|line| {
-            let l = line.trim();
-            !(l.contains(js_file) || l.contains(wasm_file))
+            let trimmed = line.trim();
+            !(trimmed.contains(js_file) || trimmed.contains(wasm_file))
         })
         .collect::<Vec<_>>()
         .join("\n");

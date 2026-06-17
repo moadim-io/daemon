@@ -14,15 +14,15 @@ const MAX_EVENTS_PER_ROUTINE: usize = 100;
 const PRODID: &str = "-//moadim//routines//EN";
 
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
-fn escape_text(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
+fn escape_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
             '\\' => out.push_str("\\\\"),
             ';' => out.push_str("\\;"),
             ',' => out.push_str("\\,"),
             '\n' => out.push_str("\\n"),
-            _ => out.push(c),
+            _ => out.push(ch),
         }
     }
     out

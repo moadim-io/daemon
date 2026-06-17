@@ -198,13 +198,14 @@ moadim stop            # ask a running server to stop
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. |
-| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. |
+| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. Exits `0` when running, `3` when not. |
 
-`status` and `cleanup` follow a script-friendly exit-code contract so callers can branch on
-`$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept) and
-`3` when no server is reachable. Any other failure exits non-zero (`1`) with a message on stderr.
+`status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch
+on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`
+asked it to shut down) and `3` when no server is reachable. Any other failure exits non-zero (`1`)
+with a message on stderr.
 
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send

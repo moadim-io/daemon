@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 description = "Moadim.io MCP/REST server for managing cron jobs"
 license = "MIT"

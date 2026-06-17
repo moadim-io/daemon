@@ -22,6 +22,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   curated list as before, so binary resolution is unchanged — only environment
   variables are gained. Put any environment the agent needs (e.g. `export
   GH_TOKEN=…`) in `~/.profile`.
+
+## [0.11.1] - 2026-06-17
+
+### Fixed
+
 - Routine crontab sync no longer wipes the populated `MOADIM-ROUTINES` block
   when the routine store is empty. An empty store at sync time signals a load
   failure or a racing second daemon rather than a genuine "no routines" state

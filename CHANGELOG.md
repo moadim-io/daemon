@@ -12,12 +12,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ## [Unreleased]
 
 ### Added
-
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was
   running), so scripts that branch on `$?` alone get no stdout noise. The flag is
   ignored under `--json`, which always prints its single machine-readable object.
+
+### Added
+
+- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
+  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
+  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
+  request surfaces, so no extra request is made.
 
 ## [0.12.0] - 2026-06-18
 

@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim status --json` now folds the running server's `GET /health` details into
+  its object as `uptime_secs` and `version`, so a single call answers liveness
+  **and** age/version instead of forcing a second `curl /health`. Both fields are
+  `null` when no server answers or its `/health` body cannot be parsed; exit codes
+  and the human-readable `status` output are unchanged (#284).
+
 ### Fixed
 
 - Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA

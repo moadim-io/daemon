@@ -183,6 +183,67 @@ Append-only log written by the server on each run. Gitignored via `*.local.*`. R
 2026-06-11T09:30:01Z [daily-report] run finished OK (1.2s)
 ```
 
+## Routines
+
+> _Cron jobs run a script. Routines run an agent._
+
+A **routine** is a scheduled AI-agent task — the agent-driven sibling of a cron
+job. Where a job fires a handler script, a routine fires a prompt at a coding
+agent (e.g. Claude) on a cron schedule, each run inside its own throwaway
+workbench.
+
+Routines are stored as folders under `~/.config/moadim/routines/<id>/`,
+git-trackable just like jobs:
+
+```
+~/.config/moadim/routines/
+└── nightly-triage/
+    ├── routine.toml   # tracked — schedule, agent, prompt, repositories
+    ├── prompt.md      # tracked — the rendered prompt handed to the agent
+    ├── run.sh         # generated — the crontab entry invokes this
+    └── .gitignore     # generated — excludes *.local.* and *.log
+```
+
+| Field          | Type   | Required | Description                                                                                  |
+| -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
+| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. |
+| `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
+| `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
+| `prompt`       | string | yes      | The task prompt handed to the agent.                                                          |
+| `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
+| `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
+| `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
+
+**Workbenches and cleanup:** each run executes in a workbench under
+`~/.config/moadim/workbenches/`. Finished, expired workbenches are reaped on an
+hourly sweep so they don't accumulate; trigger a sweep on demand with
+`moadim cleanup`. Sessions still running are never reaped.
+
+**REST** — under the `/api/v1` prefix:
+
+```
+GET    /routines              # list (filter by ?repository=, sort by ?sort=/&order=)
+POST   /routines              # create
+GET    /routines/{id}         # fetch one
+PUT    /routines/{id}         # replace
+PATCH  /routines/{id}         # update fields
+DELETE /routines/{id}         # delete
+POST   /routines/{id}/trigger # run now, outside the schedule
+GET    /routines/{id}/logs    # run output
+POST   /routines/cleanup      # reap expired workbenches now
+GET    /agents                # list registered agents
+GET    /routines.ics          # subscribe to fire times as a calendar feed
+```
+
+**MCP** — the same operations are exposed as tools: `list_routines`,
+`get_routine`, `create_routine`, `update_routine`, `delete_routine`,
+`trigger_routine`, and `cleanup_routines`.
+
+**Agents:** the `agent` field resolves to a config at
+`~/.config/moadim/agents/<agent>.toml`. API responses include
+`agent_registered` so callers can tell whether the named agent is configured on
+the host.
+
 ## Running
 
 Moadim runs as a local daemon. By default it starts **in the background**:

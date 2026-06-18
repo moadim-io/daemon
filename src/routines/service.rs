@@ -108,6 +108,7 @@ pub fn svc_create(
         updated_at: now,
         last_triggered_at: None,
         ttl_secs: req.ttl_secs,
+        max_runtime_secs: req.max_runtime_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -166,6 +167,9 @@ pub fn svc_update(
     if let Some(ttl) = req.ttl_secs {
         routine.ttl_secs = Some(ttl);
     }
+    if let Some(max_runtime) = req.max_runtime_secs {
+        routine.max_runtime_secs = Some(max_runtime);
+    }
     routine.updated_at = now_secs();
     let routine = routine.clone();
     drop(lock);
@@ -201,7 +205,14 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     match load_agent_command(&routine.agent) {
         Some(agent) => {
             let cmd = build_routine_command(&routine, &agent);
-            if let Err(err) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            if let Err(err) = std::process::Command::new("sh")
+                .arg("-lc")
+                .arg(&cmd)
+                .spawn()
+            {
                 log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
@@ -260,3 +271,7 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod service_tests;

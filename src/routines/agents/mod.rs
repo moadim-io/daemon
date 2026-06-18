@@ -12,6 +12,8 @@ use crate::paths::{agent_toml_path, agents_dir};
 mod claude_code;
 #[path = "codex/setup.rs"]
 mod codex;
+#[path = "hermes/setup.rs"]
+mod hermes;
 
 /// A resolved agent invocation read from `~/.config/moadim/agents/<name>.toml`.
 #[derive(Debug, Clone, Deserialize)]
@@ -39,6 +41,7 @@ pub fn load_agent_command(name: &str) -> Option<AgentCommand> {
 const DEFAULT_AGENT_CONFIGS: &[(&str, &str)] = &[
     (claude_code::NAME, claude_code::CONFIG),
     (codex::NAME, codex::CONFIG),
+    (hermes::NAME, hermes::CONFIG),
 ];
 
 /// Registry keys of the built-in agents, in declaration order.
@@ -103,3 +106,7 @@ pub(crate) fn ensure_default_agents_in(dir: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "agents_tests.rs"]
+mod agents_tests;

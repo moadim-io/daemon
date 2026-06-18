@@ -8,8 +8,37 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{build_app, echo, run_with_listener_until};
+use super::{build_app, echo, run_with_listener_until, write_openapi_spec};
 use crate::cron_jobs::new_store;
+
+// ── openapi spec writer ──────────────────────────────────────────────────────
+
+#[test]
+fn write_openapi_spec_writes_json_to_path() {
+    let dir = std::env::temp_dir().join(format!("moadim-openapi-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("openapi.json");
+    write_openapi_spec(&path);
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.contains("openapi"), "spec JSON should be written");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn write_openapi_spec_logs_on_write_failure() {
+    // The target's parent is a regular file, so writing the spec underneath it fails,
+    // exercising the best-effort `log::warn!` branch. The call must not panic.
+    let dir = std::env::temp_dir().join(format!("moadim-openapi-fail-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let blocker = dir.join("blocker");
+    std::fs::write(&blocker, "i am a file").unwrap();
+    let unwritable = blocker.join("openapi.json");
+
+    write_openapi_spec(&unwritable);
+
+    assert!(!unwritable.exists(), "the write should have failed");
+    let _ = std::fs::remove_dir_all(&dir);
+}
 
 // ── build_app / router smoke tests ───────────────────────────────────────────
 
@@ -775,6 +804,7 @@ async fn router_serves_routines_ical_feed() {
             updated_at: 0,
             last_triggered_at: None,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     );
     let resp = build_app(new_store(), routines)

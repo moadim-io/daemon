@@ -124,7 +124,7 @@ pub fn svc_create(
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };
@@ -219,7 +219,7 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let mut lock = store.lock().unwrap();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.last_triggered_at = Some(now_secs());
+    routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;

@@ -19,7 +19,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         source: "managed".to_string(),
         created_at,
         updated_at,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -457,7 +457,7 @@ fn svc_trigger_warns_when_spawn_fails() {
 
     with_empty_path(|| {
         let triggered = svc_trigger(&store, "trig-spawn-id").unwrap();
-        assert!(triggered.last_triggered_at.is_some());
+        assert!(triggered.last_manual_trigger_at.is_some());
     });
 
     let _ = std::fs::remove_file(&cfg);

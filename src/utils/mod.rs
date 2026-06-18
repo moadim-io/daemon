@@ -1,5 +1,7 @@
 /// Atomic file writes (write temp + rename) so readers never observe a torn file.
 pub mod atomic;
+/// Spawn child processes and reap them so triggers don't leak zombie (`<defunct>`) entries.
+pub mod process;
 /// JSON Schema helpers for schemars.
 pub mod schema;
 /// Startup print printed to stdout when the server begins listening.

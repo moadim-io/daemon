@@ -208,13 +208,11 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.
-            if let Err(err) = std::process::Command::new("sh")
-                .arg("-lc")
-                .arg(&cmd)
-                .spawn()
-            {
-                log::warn!("trigger: failed to spawn routine command: {err}");
-            }
+            let mut command = std::process::Command::new("sh");
+            command.arg("-lc").arg(&cmd);
+            // Reap the child in the background so the short-lived launcher shell does not
+            // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
+            crate::utils::process::spawn_and_reap(command, "routine command");
         }
         None => log::warn!(
             "trigger: agent config not found for routine {:?} (agent {:?})",

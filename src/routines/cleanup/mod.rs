@@ -26,9 +26,9 @@ pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 /// Names are `{slug}-{unix_secs}`; the timestamp is the trailing all-digit segment after the final
 /// `-`. Returns `None` when the name has no such suffix or an empty slug (so unrelated directories
 /// are skipped rather than reaped).
-fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
+pub(super) fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
     let (slug, ts) = name.rsplit_once('-')?;
-    if slug.is_empty() || ts.is_empty() || !ts.bytes().all(|b| b.is_ascii_digit()) {
+    if slug.is_empty() || ts.is_empty() || !ts.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     Some((slug, ts.parse().ok()?))
@@ -53,7 +53,7 @@ fn tmux_session_alive(session: &str) -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|s| s.success())
+        .map(|status| status.success())
         .unwrap_or(false)
 }
 
@@ -73,7 +73,7 @@ fn reap_dir(
     };
     let mut removed = 0;
     for entry in entries.flatten() {
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -91,7 +91,7 @@ fn reap_dir(
                 removed += 1;
                 log::info!("cleanup: removed expired workbench {name:?}");
             }
-            Err(e) => log::warn!("cleanup: failed to remove workbench {name:?}: {e}"),
+            Err(err) => log::warn!("cleanup: failed to remove workbench {name:?}: {err}"),
         }
     }
     removed

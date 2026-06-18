@@ -13,6 +13,32 @@ const RESTART_TIMEOUT: Duration = Duration::from_secs(5);
 /// How often to re-probe the port while waiting for the old server to exit.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Env override for [`RESTART_TIMEOUT`] in milliseconds (test seam): lets tests drive the
+/// force-kill/timeout path quickly instead of waiting the full default.
+const RESTART_TIMEOUT_MS_ENV: &str = "MOADIM_RESTART_TIMEOUT_MS";
+
+/// Env override for [`POLL_INTERVAL`] in milliseconds (test seam).
+const POLL_INTERVAL_MS_ENV: &str = "MOADIM_RESTART_POLL_MS";
+
+/// The stop-wait deadline, honoring [`RESTART_TIMEOUT_MS_ENV`] when set.
+fn restart_timeout() -> Duration {
+    parse_millis_env(RESTART_TIMEOUT_MS_ENV).unwrap_or(RESTART_TIMEOUT)
+}
+
+/// The port re-probe interval, honoring [`POLL_INTERVAL_MS_ENV`] when set.
+fn poll_interval() -> Duration {
+    parse_millis_env(POLL_INTERVAL_MS_ENV).unwrap_or(POLL_INTERVAL)
+}
+
+/// Parse a millisecond [`Duration`] from environment variable `name`, or `None` when unset/invalid.
+fn parse_millis_env(name: &str) -> Option<Duration> {
+    std::env::var(name)
+        .ok()?
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_millis)
+}
+
 /// Stop the running server and block until it stops answering, falling back to a kill signal.
 ///
 /// Sends `POST /shutdown` for a graceful exit, then polls [`is_running`] until the port goes quiet
@@ -24,28 +50,26 @@ pub fn stop_running_and_wait() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Graceful shutdown did not take effect in time; force-kill the recorded PID.
+    // Graceful shutdown did not take effect in time; force-kill the recorded PID, then re-check.
     if let Some(pid) = read_pid_file() {
         kill_pid(pid);
-        if wait_until_stopped() {
-            return Ok(());
-        }
     }
 
-    if is_running() {
-        anyhow::bail!("could not stop the running moadim instance at http://{BIND_ADDR}");
+    if wait_until_stopped() {
+        Ok(())
+    } else {
+        anyhow::bail!("could not stop the running moadim instance at http://{BIND_ADDR}")
     }
-    Ok(())
 }
 
 /// Poll the port until it stops answering or [`RESTART_TIMEOUT`] elapses. Returns `true` if stopped.
 fn wait_until_stopped() -> bool {
-    let deadline = std::time::Instant::now() + RESTART_TIMEOUT;
+    let deadline = std::time::Instant::now() + restart_timeout();
     while std::time::Instant::now() < deadline {
         if !is_running() {
             return true;
         }
-        std::thread::sleep(POLL_INTERVAL);
+        std::thread::sleep(poll_interval());
     }
     !is_running()
 }
@@ -65,3 +89,7 @@ fn kill_pid(pid: u32) {
         .args(["/F", "/PID", &pid.to_string()])
         .output();
 }
+
+#[cfg(test)]
+#[path = "restart_tests.rs"]
+mod restart_tests;

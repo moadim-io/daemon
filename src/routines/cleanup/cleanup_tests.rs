@@ -84,6 +84,99 @@ fn reap_dir_uses_per_slug_ttl() {
     std::fs::remove_dir_all(&base).unwrap();
 }
 
+#[test]
+fn reap_dir_returns_zero_when_dir_unreadable() {
+    // A directory that does not exist makes `read_dir` fail; the early `return 0`
+    // branch is taken and nothing is reaped.
+    let missing =
+        std::env::temp_dir().join(format!("moadim-cleanup-missing-{}", uuid::Uuid::new_v4()));
+    assert!(!missing.exists());
+    let ttl_for = |_slug: &str| 0u64;
+    let dead = |_session: &str| false;
+    assert_eq!(reap_dir(&missing, 1000, &ttl_for, &dead), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn reap_dir_counts_zero_when_remove_fails() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // An expired + dead workbench whose removal fails (parent dir is read-only) is
+    // not counted, exercising the `Err` arm of the remove match.
+    let base = std::env::temp_dir().join(format!(
+        "moadim-cleanup-removefail-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    touch_dir(&base, "expired-100");
+    std::fs::write(base.join("expired-100").join("inner"), b"x").unwrap();
+
+    // Strip write permission from the parent so removing the child directory fails.
+    let mut perms = std::fs::metadata(&base).unwrap().permissions();
+    perms.set_mode(0o555);
+    std::fs::set_permissions(&base, perms).unwrap();
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> expired
+    let dead = |_session: &str| false;
+    let removed = reap_dir(&base, now, &ttl_for, &dead);
+    // A read-only parent makes `remove_dir_all` fail for an unprivileged user, so
+    // the directory survives and the Err arm runs (0 removed). Root bypasses the
+    // permission check; tolerate that by only asserting consistency.
+    if base.join("expired-100").exists() {
+        assert_eq!(removed, 0);
+    }
+
+    // Restore permissions so cleanup can proceed.
+    let mut perms = std::fs::metadata(&base).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&base, perms).unwrap();
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn cleanup_expired_workbenches_scans_real_workbenches_dir() {
+    // Drives the public entry point so `cleanup_expired_workbenches` resolves the real
+    // `workbenches_dir()` (honouring MOADIM_HOME_OVERRIDE) and `tmux_session_alive` runs as the
+    // injected liveness check. With an empty store every slug falls back to MAX_TTL_SECS, so we
+    // stamp the expired workbench far enough in the past to exceed that cap.
+    let home = std::env::temp_dir().join(format!("moadim-cleanup-{}", uuid::Uuid::new_v4()));
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+    // An expired (timestamp 1) finished workbench whose tmux session is absent -> reaped.
+    std::fs::create_dir_all(workbenches.join("orphan-1")).unwrap();
+    // A workbench triggered "now-ish" so it is not yet expired -> kept.
+    let fresh_ts = now_secs();
+    std::fs::create_dir_all(workbenches.join(format!("recent-{fresh_ts}"))).unwrap();
+    // A non-workbench directory (no numeric suffix) -> skipped.
+    std::fs::create_dir_all(workbenches.join("notawb")).unwrap();
+
+    let store = super::super::model::new_store();
+    let removed = cleanup_expired_workbenches(&store);
+
+    // The orphaned, expired, session-less workbench is removed; the others survive.
+    assert!(removed >= 1, "expected at least the orphan to be reaped");
+    assert!(!workbenches.join("orphan-1").exists());
+    assert!(workbenches.join(format!("recent-{fresh_ts}")).exists());
+    assert!(workbenches.join("notawb").exists());
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
     super::super::model::Routine {
         id: "x".into(),
@@ -140,5 +233,21 @@ fn effective_ttl_falls_back_to_cap_for_unparseable_schedule() {
     assert_eq!(
         routine_with("@reboot", None).effective_ttl_secs(),
         MAX_TTL_SECS
+    );
+}
+
+#[test]
+fn effective_ttl_falls_back_to_cap_when_schedule_never_fires() {
+    // "Feb 30" parses as a valid cron expression but matches no real date, so the
+    // schedule yields no future fire times. `cron_interval_secs` returns None at the
+    // first `fires.next()?`, and `effective_ttl_secs` falls back to the cap.
+    assert_eq!(
+        routine_with("0 0 30 2 *", None).effective_ttl_secs(),
+        MAX_TTL_SECS
+    );
+    // An explicit ttl below the cap still wins even when the interval can't be computed.
+    assert_eq!(
+        routine_with("0 0 30 2 *", Some(15)).effective_ttl_secs(),
+        15
     );
 }

@@ -9,19 +9,59 @@ use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
 use super::agents::load_agent_command;
-use super::cleanup::cleanup_expired_workbenches;
+use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
-    UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
+    RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
-/// Return all routines sorted by creation time (oldest first).
-pub fn svc_list(store: &RoutineStore) -> Vec<RoutineResponse> {
+/// Sort key placing routines with a repository before those without, then by
+/// the primary (first) repository URL alphabetically (case-insensitive).
+fn repo_sort_key(routine: &Routine) -> (bool, String) {
+    match routine.repositories.first() {
+        Some(repo) => (false, repo.repository.to_lowercase()),
+        None => (true, String::new()),
+    }
+}
+
+/// Return the routines matching `query`, filtered and sorted as requested.
+///
+/// The default query (no repository filter, sort by creation time ascending)
+/// reproduces the previous behaviour. The `repository` filter keeps routines
+/// referencing a matching repository URL; `sort`/`order` control ordering.
+pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
     let lock = store.lock().unwrap();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
-    routines.sort_by_key(|r| r.created_at);
     drop(lock);
+
+    // Filter: keep routines with a repository URL containing the substring (case-insensitive).
+    if let Some(needle) = query
+        .repository
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let needle = needle.to_lowercase();
+        routines.retain(|routine| {
+            routine
+                .repositories
+                .iter()
+                .any(|repo| repo.repository.to_lowercase().contains(&needle))
+        });
+    }
+
+    // Sort ascending by the requested field, then flip for descending order.
+    match query.sort {
+        RoutineSort::Created => routines.sort_by_key(|routine| routine.created_at),
+        RoutineSort::Updated => routines.sort_by_key(|routine| routine.updated_at),
+        RoutineSort::Title => routines.sort_by_key(|routine| routine.title.to_lowercase()),
+        RoutineSort::Repository => routines.sort_by_key(repo_sort_key),
+    }
+    if query.order == SortOrder::Desc {
+        routines.reverse();
+    }
+
     routines
         .into_iter()
         .map(RoutineResponse::from_routine)
@@ -48,7 +88,7 @@ pub fn svc_create(
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
-        if lock.values().any(|r| slugify(&r.title) == slug) {
+        if lock.values().any(|routine| slugify(&routine.title) == slug) {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{slug}\" already exists"
             )));
@@ -74,8 +114,8 @@ pub fn svc_create(
         .lock()
         .unwrap()
         .insert(routine.id.clone(), routine.clone());
-    if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine create failed: {e}");
+    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+        log::warn!("crontab sync after routine create failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
@@ -97,7 +137,7 @@ pub fn svc_update(
         if new_slug != old_slug
             && lock
                 .values()
-                .any(|r| r.id != id && slugify(&r.title) == new_slug)
+                .any(|routine| routine.id != id && slugify(&routine.title) == new_slug)
         {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{new_slug}\" already exists"
@@ -105,23 +145,23 @@ pub fn svc_update(
         }
     }
     let routine = lock.get_mut(id).unwrap();
-    if let Some(s) = req.schedule {
-        routine.schedule = normalize_schedule(&s);
+    if let Some(schedule) = req.schedule {
+        routine.schedule = normalize_schedule(&schedule);
     }
-    if let Some(t) = req.title {
-        routine.title = t;
+    if let Some(title) = req.title {
+        routine.title = title;
     }
-    if let Some(a) = req.agent {
-        routine.agent = a;
+    if let Some(agent) = req.agent {
+        routine.agent = agent;
     }
-    if let Some(p) = req.prompt {
-        routine.prompt = p;
+    if let Some(prompt) = req.prompt {
+        routine.prompt = prompt;
     }
-    if let Some(r) = req.repositories {
-        routine.repositories = r;
+    if let Some(repositories) = req.repositories {
+        routine.repositories = repositories;
     }
-    if let Some(e) = req.enabled {
-        routine.enabled = e;
+    if let Some(enabled) = req.enabled {
+        routine.enabled = enabled;
     }
     if let Some(ttl) = req.ttl_secs {
         routine.ttl_secs = Some(ttl);
@@ -134,8 +174,8 @@ pub fn svc_update(
     if new_slug != old_slug {
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
     }
-    if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine update failed: {e}");
+    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+        log::warn!("crontab sync after routine update failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
@@ -144,8 +184,8 @@ pub fn svc_update(
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
-    if let Err(e) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine delete failed: {e}");
+    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+        log::warn!("crontab sync after routine delete failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
@@ -161,8 +201,15 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     match load_agent_command(&routine.agent) {
         Some(agent) => {
             let cmd = build_routine_command(&routine, &agent);
-            if let Err(e) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
-                log::warn!("trigger: failed to spawn routine command: {e}");
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            if let Err(err) = std::process::Command::new("sh")
+                .arg("-lc")
+                .arg(&cmd)
+                .spawn()
+            {
+                log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
         None => log::warn!(
@@ -192,17 +239,26 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
-    let prefix = format!("{}-", slugify(&routine.title));
-    let mut newest: Option<String> = None;
+    let slug = slugify(&routine.title);
+    let mut newest: Option<(u64, String)> = None;
     if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with(&prefix) && newest.as_ref().is_none_or(|n| name > *n) {
-                newest = Some(name);
+            // Select only this routine's own workbenches by an *exact* slug match.
+            // A bare `{slug}-` prefix would also match another routine whose slug
+            // begins with this one (e.g. `logs` vs `logs-extra`), leaking that
+            // routine's log. Reusing the canonical `{slug}-{ts}` parser also makes
+            // "newest" a numeric timestamp comparison rather than a lexicographic
+            // one over the whole directory name.
+            if let Some((dir_slug, ts)) = parse_workbench_name(&name) {
+                if dir_slug == slug && newest.as_ref().is_none_or(|(newest_ts, _)| ts > *newest_ts)
+                {
+                    newest = Some((ts, name));
+                }
             }
         }
     }
-    let Some(dir) = newest else {
+    let Some((_, dir)) = newest else {
         return Ok(String::new());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
@@ -211,3 +267,7 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod service_tests;

@@ -20,6 +20,8 @@ mod routes;
 mod routine_storage;
 /// Routine (agent-driven job) data model, service layer, and handlers.
 mod routines;
+/// `moadim install` / `uninstall`: register the daemon as an OS service.
+mod service;
 /// TOML-backed job persistence.
 mod storage;
 /// Bidirectional sync between managed jobs and the OS crontab.
@@ -40,9 +42,11 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Status { json } => std::process::exit(cli::status(json)?),
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
-        cli::Command::Stop => cli::stop(),
+        cli::Command::Stop { json } => std::process::exit(cli::stop(json)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
+        cli::Command::Install => service::install(),
+        cli::Command::Uninstall => service::uninstall(),
         cli::Command::Foreground => run_server().await,
     }
 }
@@ -70,10 +74,10 @@ async fn run_server() -> anyhow::Result<()> {
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
     // create/update/delete, leaving scheduled routines silently un-fired.
-    if let Err(e) = sync::routines::sync_routines_to_crontab(&routines) {
-        log::warn!("startup crontab sync failed: {e}");
+    if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
+        log::warn!("startup crontab sync failed: {err}");
     }
-    let listener = tokio::net::TcpListener::bind(cli::BIND_ADDR).await?;
+    let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;
     let result =
         routes::http::run_with_listener_until(store, routines, listener, termination_signal())

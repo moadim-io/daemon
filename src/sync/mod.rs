@@ -53,14 +53,14 @@ impl std::fmt::Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SyncError::CrontabCommand(msg) => write!(f, "crontab: {msg}"),
-            SyncError::Io(e) => write!(f, "io: {e}"),
+            SyncError::Io(err) => write!(f, "io: {err}"),
         }
     }
 }
 
 impl From<std::io::Error> for SyncError {
-    fn from(e: std::io::Error) -> Self {
-        SyncError::Io(e)
+    fn from(err: std::io::Error) -> Self {
+        SyncError::Io(err)
     }
 }
 
@@ -72,15 +72,15 @@ impl From<std::io::Error> for SyncError {
 /// `@keyword` schedules are passed through unchanged.
 /// The seconds (field 0) and year (field 6) are dropped.
 pub(crate) fn to_os_schedule(schedule: &str) -> String {
-    let s = schedule.trim();
-    if s.starts_with('@') {
-        return s.to_string();
+    let trimmed = schedule.trim();
+    if trimmed.starts_with('@') {
+        return trimmed.to_string();
     }
-    let fields: Vec<&str> = s.split_ascii_whitespace().collect();
+    let fields: Vec<&str> = trimmed.split_ascii_whitespace().collect();
     match fields.len() {
         7 => fields[1..6].join(" "),
-        5 => s.to_string(),
-        _ => s.to_string(),
+        5 => trimmed.to_string(),
+        _ => trimmed.to_string(),
     }
 }
 
@@ -119,25 +119,38 @@ pub(crate) fn resolve_handler_path(handler: &str, dir: &Path) -> PathBuf {
 /// is used. Otherwise the bare filename stem is returned.
 #[allow(dead_code)]
 pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
-    let p = Path::new(command.trim());
-    let stem = if let Ok(rel) = p.strip_prefix(dir) {
-        rel.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+    let path = Path::new(command.trim());
+    let stem = if let Ok(rel) = path.strip_prefix(dir) {
+        rel.file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_string)
     } else {
-        p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_string)
     };
     stem.unwrap_or_else(|| command.trim().to_string())
 }
 
 // ─── Crontab I/O ──────────────────────────────────────────────────────────
 
+/// Resolve the `crontab` binary to invoke.
+///
+/// Honours the `MOADIM_CRONTAB_BIN` environment variable when set, falling back
+/// to the system `crontab` otherwise. The override exists so tests can point
+/// crontab I/O at a shim instead of mutating the developer's real crontab.
+fn crontab_bin() -> String {
+    std::env::var("MOADIM_CRONTAB_BIN").unwrap_or_else(|_| "crontab".to_string())
+}
+
 /// Read the current user crontab via `crontab -l`.
 ///
 /// Returns an empty string when no crontab exists for the user.
 pub(crate) fn read_crontab() -> Result<String, SyncError> {
-    let out = Command::new("crontab")
+    let out = Command::new(crontab_bin())
         .arg("-l")
         .output()
-        .map_err(|e| SyncError::CrontabCommand(format!("failed to run crontab -l: {e}")))?;
+        .map_err(|err| SyncError::CrontabCommand(format!("failed to run crontab -l: {err}")))?;
 
     if out.status.success() {
         return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
@@ -152,11 +165,11 @@ pub(crate) fn read_crontab() -> Result<String, SyncError> {
 
 /// Install `content` as the user's crontab via `crontab -`.
 pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
-    let mut child = Command::new("crontab")
+    let mut child = Command::new(crontab_bin())
         .arg("-")
         .stdin(Stdio::piped())
         .spawn()
-        .map_err(|e| SyncError::CrontabCommand(format!("failed to spawn crontab: {e}")))?;
+        .map_err(|err| SyncError::CrontabCommand(format!("failed to spawn crontab: {err}")))?;
 
     // Taking stdin drops (closes) it after write_all, signalling EOF.
     child
@@ -165,9 +178,7 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         .expect("stdin is piped")
         .write_all(content.as_bytes())?;
 
-    let status = child
-        .wait()
-        .map_err(|e| SyncError::CrontabCommand(format!("crontab wait failed: {e}")))?;
+    let status = child.wait()?;
 
     if !status.success() {
         return Err(SyncError::CrontabCommand(format!(
@@ -279,7 +290,7 @@ pub(crate) fn parse_moadim_line(line: &str) -> Option<(String, String, String)> 
 
     if body.starts_with('@') {
         // @keyword command
-        let mut parts = body.splitn(2, |c: char| c.is_ascii_whitespace());
+        let mut parts = body.splitn(2, |ch: char| ch.is_ascii_whitespace());
         let schedule = parts.next()?.trim().to_string();
         let command = parts.next()?.trim().to_string();
         return Some((uuid, schedule, command));
@@ -409,8 +420,8 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
 
     // Persist changes outside the lock.
     for job in &jobs_to_write {
-        if let Err(e) = write_job(job) {
-            log::warn!("cron_sync: failed to persist job {}: {e}", job.id);
+        if let Err(err) = write_job(job) {
+            log::warn!("cron_sync: failed to persist job {}: {err}", job.id);
         }
     }
 

@@ -64,9 +64,9 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
         return builtin_agent_names();
     };
     let mut names: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let path = e.path();
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
             (path.extension()? == "toml")
                 .then(|| path.file_stem()?.to_str().map(str::to_string))
                 .flatten()
@@ -89,8 +89,8 @@ pub fn ensure_default_agents() {
 
 /// Write missing built-in agent configs into `dir`. See [`ensure_default_agents`].
 pub(crate) fn ensure_default_agents_in(dir: &Path) {
-    if let Err(e) = std::fs::create_dir_all(dir) {
-        log::warn!("ensure_default_agents: failed to create {dir:?}: {e}");
+    if let Err(err) = std::fs::create_dir_all(dir) {
+        log::warn!("ensure_default_agents: failed to create {dir:?}: {err}");
         return;
     }
     for (name, contents) in DEFAULT_AGENT_CONFIGS {
@@ -98,8 +98,12 @@ pub(crate) fn ensure_default_agents_in(dir: &Path) {
         if path.exists() {
             continue;
         }
-        if let Err(e) = std::fs::write(&path, contents) {
-            log::warn!("ensure_default_agents: failed to write {path:?}: {e}");
+        if let Err(err) = std::fs::write(&path, contents) {
+            log::warn!("ensure_default_agents: failed to write {path:?}: {err}");
         }
     }
 }
+
+#[cfg(test)]
+#[path = "agents_tests.rs"]
+mod agents_tests;

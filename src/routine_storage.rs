@@ -9,6 +9,7 @@ use crate::paths::{
     routine_dir, routine_gitignore_path, routine_prompt_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
+use crate::utils::atomic::atomic_write;
 
 /// TOML representation of a routine on disk.
 #[derive(Debug, Deserialize, Serialize)]
@@ -50,22 +51,22 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
 /// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
 fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
-    let t = read_routine_toml(&routine_toml_path(dir_name))?;
-    let title = t.title?;
-    let id = t.id.unwrap_or_else(|| dir_name.to_string());
+    let toml = read_routine_toml(&routine_toml_path(dir_name))?;
+    let title = toml.title?;
+    let id = toml.id.unwrap_or_else(|| dir_name.to_string());
     Some(Routine {
         id,
-        schedule: t.schedule?,
+        schedule: toml.schedule?,
         title,
-        agent: t.agent?,
-        prompt: t.prompt.unwrap_or_default(),
-        repositories: t.repositories,
-        enabled: t.enabled.unwrap_or(true),
+        agent: toml.agent?,
+        prompt: toml.prompt.unwrap_or_default(),
+        repositories: toml.repositories,
+        enabled: toml.enabled.unwrap_or(true),
         source: "managed".to_string(),
-        created_at: t.created_at.unwrap_or(0),
-        updated_at: t.updated_at.unwrap_or(0),
-        last_triggered_at: t.last_triggered_at,
-        ttl_secs: t.ttl_secs,
+        created_at: toml.created_at.unwrap_or(0),
+        updated_at: toml.updated_at.unwrap_or(0),
+        last_triggered_at: toml.last_triggered_at,
+        ttl_secs: toml.ttl_secs,
     })
 }
 
@@ -97,8 +98,14 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         ttl_secs: routine.ttl_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
-    std::fs::write(routine_toml_path(&slug), text)?;
-    std::fs::write(routine_prompt_path(&slug), compose_prompt(routine))?;
+    // Atomic write (temp + rename) so the continuously-running reverse crontab sync, which re-reads
+    // these files every 30s, never observes a torn routine.toml — a torn file parses to `None` and
+    // would silently drop the routine from the store.
+    atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
+    atomic_write(
+        &routine_prompt_path(&slug),
+        compose_prompt(routine).as_bytes(),
+    )?;
     Ok(())
 }
 
@@ -117,20 +124,27 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 /// `prompt.txt` on disk; the new `run.sh` references `prompt.md`, so the first cron trigger would
 /// fail the `cp` step if this migration has not run.
 pub fn migrate_prompt_files() {
-    let dir = routines_dir();
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
+    migrate_prompt_files_from_dir(&routines_dir());
+}
+
+/// Inner variant of [`migrate_prompt_files`] that scans `dir` instead of [`routines_dir`].
+///
+/// Extracted so tests can drive the migration against a controlled scratch directory, including the
+/// `read_dir` error-return branch and the per-entry rename-failure branch.
+pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
         Err(_) => return,
     };
     for entry in entries.flatten() {
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
             continue;
         }
         let old = entry.path().join("prompt.txt");
         let new = entry.path().join("prompt.md");
         if old.exists() && !new.exists() {
-            if let Err(e) = std::fs::rename(&old, &new) {
-                log::warn!("migrate_prompt_files: failed to rename {:?}: {e}", old);
+            if let Err(err) = std::fs::rename(&old, &new) {
+                log::warn!("migrate_prompt_files: failed to rename {:?}: {err}", old);
             }
         }
     }
@@ -148,13 +162,21 @@ pub fn migrate_prompt_files() {
 /// Idempotent: routines already in their slug dir are skipped. Call once at startup before
 /// `load_store` so the in-memory store reflects the canonical layout.
 pub fn migrate_routine_dirs() {
-    let dir = routines_dir();
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
+    migrate_routine_dirs_from_dir(&routines_dir());
+}
+
+/// Inner variant of [`migrate_routine_dirs`] that scans `dir` instead of [`routines_dir`].
+///
+/// Extracted so tests can drive the migration against a controlled scratch directory, exercising the
+/// `read_dir` error-return branch, the non-directory and unparsable-toml `continue` branches, and the
+/// `write_routine`/`remove_routine_dir` failure-log branches.
+pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
         Err(_) => return,
     };
     for entry in entries.flatten() {
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
             continue;
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
@@ -167,12 +189,12 @@ pub fn migrate_routine_dirs() {
         if slug == dir_name {
             continue;
         }
-        if let Err(e) = write_routine(&routine) {
-            log::warn!("migrate_routine_dirs: failed to write {slug:?}: {e}; leaving legacy dir");
+        if let Err(err) = write_routine(&routine) {
+            log::warn!("migrate_routine_dirs: failed to write {slug:?}: {err}; leaving legacy dir");
             continue;
         }
-        if let Err(e) = remove_routine_dir(&dir_name) {
-            log::warn!("migrate_routine_dirs: failed to remove legacy dir {dir_name:?}: {e}");
+        if let Err(err) = remove_routine_dir(&dir_name) {
+            log::warn!("migrate_routine_dirs: failed to remove legacy dir {dir_name:?}: {err}");
         }
     }
 }
@@ -186,11 +208,11 @@ pub fn migrate_routine_dirs() {
 /// heals those dirs. Idempotent; safe to call on every startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
     let routines: Vec<Routine> = store.lock().unwrap().values().cloned().collect();
-    for r in &routines {
-        if let Err(e) = write_routine(r) {
+    for routine in &routines {
+        if let Err(err) = write_routine(routine) {
             log::warn!(
-                "repersist_routines: failed to write routine {:?}: {e}",
-                r.id
+                "repersist_routines: failed to write routine {:?}: {err}",
+                routine.id
             );
         }
     }
@@ -206,7 +228,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
     let mut routines = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
                 let dir_name = entry.file_name().to_string_lossy().to_string();
                 if let Some(routine) = load_routine_from_dir(&dir_name) {
                     routines.insert(routine.id.clone(), routine);

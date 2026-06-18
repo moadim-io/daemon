@@ -87,7 +87,11 @@ impl CronJobResponse {
         let source_type = CronJobSourceType::from_source(&job.source);
         let handler_registered = handlers.contains(&job.handler);
         let file_path = job_toml_path(&job.id).to_string_lossy().into_owned();
-        let schedule_description = job.schedule.parse::<Cron>().ok().map(|c| c.describe());
+        let schedule_description = job
+            .schedule
+            .parse::<Cron>()
+            .ok()
+            .map(|cron| cron.describe());
         Self {
             job,
             source_type,
@@ -153,14 +157,14 @@ pub fn new_registry() -> HandlerRegistry {
 /// Strips the seconds (field 0) and year (field 6) from any 7-field expression.
 /// `@keyword` schedules and already-5-field expressions are returned unchanged.
 pub(crate) fn normalize_schedule(expr: &str) -> String {
-    let s = expr.trim();
-    if s.starts_with('@') {
-        return s.to_string();
+    let trimmed = expr.trim();
+    if trimmed.starts_with('@') {
+        return trimmed.to_string();
     }
-    let fields: Vec<&str> = s.split_ascii_whitespace().collect();
+    let fields: Vec<&str> = trimmed.split_ascii_whitespace().collect();
     match fields.len() {
         7 => fields[1..6].join(" "),
-        _ => s.to_string(),
+        _ => trimmed.to_string(),
     }
 }
 
@@ -172,7 +176,7 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     let normalized = normalize_schedule(expr.trim());
     normalized
         .parse::<Cron>()
-        .map_err(|e| AppError::BadRequest(format!("invalid cron expression: {}", e)))?;
+        .map_err(|err| AppError::BadRequest(format!("invalid cron expression: {}", err)))?;
     Ok(())
 }
 
@@ -275,8 +279,8 @@ pub fn svc_create(
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
     store.lock().unwrap().insert(job.id.clone(), job.clone());
-    if let Err(e) = crate::sync::sync_to_crontab(store) {
-        log::warn!("crontab sync after create failed: {e}");
+    if let Err(err) = crate::sync::sync_to_crontab(store) {
+        log::warn!("crontab sync after create failed: {err}");
     }
     Ok(CronJobResponse::from_job(job, handlers))
 }
@@ -293,24 +297,24 @@ pub fn svc_update(
     }
     let mut lock = store.lock().unwrap();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    if let Some(s) = req.schedule {
-        job.schedule = normalize_schedule(&s);
+    if let Some(sched) = req.schedule {
+        job.schedule = normalize_schedule(&sched);
     }
-    if let Some(h) = req.handler {
-        job.handler = h;
+    if let Some(handler) = req.handler {
+        job.handler = handler;
     }
-    if let Some(m) = req.metadata {
-        job.metadata = m;
+    if let Some(metadata) = req.metadata {
+        job.metadata = metadata;
     }
-    if let Some(e) = req.enabled {
-        job.enabled = e;
+    if let Some(enabled) = req.enabled {
+        job.enabled = enabled;
     }
     job.updated_at = now_secs();
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
-    if let Err(e) = crate::sync::sync_to_crontab(store) {
-        log::warn!("crontab sync after update failed: {e}");
+    if let Err(err) = crate::sync::sync_to_crontab(store) {
+        log::warn!("crontab sync after update failed: {err}");
     }
     Ok(CronJobResponse::from_job(job, handlers))
 }
@@ -323,8 +327,8 @@ pub fn svc_delete(
 ) -> Result<CronJobResponse, AppError> {
     let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
-    if let Err(e) = crate::sync::sync_to_crontab(store) {
-        log::warn!("crontab sync after delete failed: {e}");
+    if let Err(err) = crate::sync::sync_to_crontab(store) {
+        log::warn!("crontab sync after delete failed: {err}");
     }
     Ok(CronJobResponse::from_job(job, handlers))
 }
@@ -340,8 +344,8 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     write_job(&job).map_err(|_| AppError::Internal)?;
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
-        if let Err(e) = std::process::Command::new(&handler_path).spawn() {
-            log::warn!("trigger: failed to spawn handler {:?}: {e}", handler_path);
+        if let Err(err) = std::process::Command::new(&handler_path).spawn() {
+            log::warn!("trigger: failed to spawn handler {:?}: {err}", handler_path);
         }
     } else {
         log::warn!("trigger: handler script not found at {:?}", handler_path);

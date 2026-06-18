@@ -19,6 +19,48 @@ pub struct Repository {
     pub branch: Option<String>,
 }
 
+/// Field to sort a routine listing by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineSort {
+    /// Creation time (default).
+    #[default]
+    Created,
+    /// Last update time.
+    Updated,
+    /// Title, alphabetically (case-insensitive).
+    Title,
+    /// Primary (first) repository URL, alphabetically; routines with no
+    /// repository sort last.
+    Repository,
+}
+
+/// Sort direction for a routine listing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    /// Ascending (default): oldest / A→Z first.
+    #[default]
+    Asc,
+    /// Descending: newest / Z→A first.
+    Desc,
+}
+
+/// Query parameters for `GET /routines`: filter and sort a routine listing,
+/// notably by the repositories a routine references.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct RoutineListQuery {
+    /// Keep only routines with at least one repository whose URL contains this
+    /// substring (case-insensitive). Empty or absent keeps every routine.
+    pub repository: Option<String>,
+    /// Field to sort by (default: creation time).
+    pub sort: RoutineSort,
+    /// Sort direction (default: ascending).
+    pub order: SortOrder,
+}
+
 /// A persisted routine: a scheduled AI-agent task.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Routine {
@@ -82,6 +124,19 @@ pub fn local_timezone() -> Option<String> {
     iana_time_zone::get_timezone().ok()
 }
 
+/// Render a human-readable schedule description for `schedule`, appending the
+/// timezone in parentheses when known. Returns `None` when the cron expression
+/// cannot be parsed.
+fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
+    schedule.parse::<Cron>().ok().map(|cron| {
+        let desc = cron.describe();
+        match timezone {
+            Some(tz) => format!("{desc} ({tz})"),
+            None => desc,
+        }
+    })
+}
+
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
@@ -90,13 +145,7 @@ impl RoutineResponse {
             .to_string_lossy()
             .into_owned();
         let timezone = local_timezone();
-        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|c| {
-            let desc = c.describe();
-            match &timezone {
-                Some(tz) => format!("{desc} ({tz})"),
-                None => desc,
-            }
-        });
+        let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
         Self {
             routine,
             agent_registered,
@@ -171,3 +220,7 @@ pub struct UpdateRoutineRequest {
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod model_tests;

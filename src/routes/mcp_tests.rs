@@ -8,6 +8,34 @@ fn make_handler() -> MoadimMcp {
     MoadimMcp::new(new_store(), new_registry(), crate::routines::new_store(), 0)
 }
 
+/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
+/// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
+/// `"claude"` is accepted) while `load_agent_command` finds no config — exercising the trigger
+/// "no spawn" path without launching a real agent or writing into the user's real home. Tests in
+/// this crate run single-threaded per binary, so the global env mutation is safe.
+struct TempHome;
+
+impl TempHome {
+    fn set() -> TempHome {
+        let dir = std::env::temp_dir().join(format!("moadim-mcptest-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp home");
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+        }
+        TempHome
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::remove_var("MOADIM_HOME_OVERRIDE");
+        }
+    }
+}
+
 #[test]
 fn ok_helper_is_not_error() {
     let result = ok(serde_json::json!({"status": "good"}));
@@ -281,7 +309,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
-        agent: "mcp-routine-agent-x".into(),
+        agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
@@ -322,6 +350,7 @@ fn create_routine_tool_invalid_cron_is_error() {
 #[test]
 fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
     let routines = crate::routines::new_store();
     let handler = MoadimMcp::new(new_store(), new_registry(), routines.clone(), 0);
 

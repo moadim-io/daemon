@@ -408,6 +408,29 @@ fn resolve_handler_path_matches_extension() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn resolve_handler_path_matches_exact() {
+    // Covers the exact-match `return exact` branch: a file named exactly like the
+    // handler (no extension) exists in the directory.
+    let dir = std::env::temp_dir().join(format!("moadim-handlers-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("deploy");
+    std::fs::write(&script, "#!/bin/sh\n").unwrap();
+
+    let resolved = resolve_handler_path("deploy", &dir);
+    assert_eq!(resolved, script);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_block_empty_store_emits_header_only() {
+    // Covers the `lines.is_empty()` branch of build_block: an empty store yields the
+    // begin/header/end markers with no managed job lines between them.
+    let block = build_block(&store_with(vec![]));
+    assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
+}
+
 // ─── SyncError Display & From<io::Error> ─────────────────────────────────────
 
 #[test]

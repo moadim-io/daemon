@@ -576,6 +576,113 @@ fn svc_delete_warns_when_crontab_sync_fails() {
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
+/// Run `body` with `MOADIM_CRONTAB_BIN` pointed at a shim that succeeds (`crontab -l` prints an
+/// empty crontab and exits 0; `crontab -` swallows stdin and exits 0), so the crontab sync returns
+/// `Ok` and the non-error branch of `svc_create`/`svc_update`/`svc_delete` is exercised without
+/// touching the developer's real crontab. The prior env value is restored and the temp dir removed.
+fn with_working_crontab(body: impl FnOnce()) {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let guard = PATH_GUARD
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let base = std::env::temp_dir().join(format!("moadim-routcronok-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let script = base.join("crontab-ok.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let saved = std::env::var_os("MOADIM_CRONTAB_BIN");
+    std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+    body();
+    match saved {
+        Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+        None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    drop(guard);
+}
+
+#[test]
+fn svc_create_syncs_crontab_on_success() {
+    // A working crontab shim makes the post-create sync return `Ok`, covering the
+    // non-error branch of the sync guard in `svc_create`.
+    let title = "Svc Create Sync OK ZZZ";
+    let store = new_store();
+    with_working_crontab(|| {
+        let created = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: title.into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(created.routine.title, title);
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_syncs_crontab_on_success() {
+    let title = "Svc Update Sync OK ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-sync-ok-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("upd-sync-ok-id".into(), routine);
+    with_working_crontab(|| {
+        let updated = svc_update(
+            &store,
+            "upd-sync-ok-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: None,
+                agent: None,
+                prompt: Some("changed".into()),
+                repositories: None,
+                enabled: None,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.prompt, "changed");
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_delete_syncs_crontab_on_success() {
+    let title = "Svc Delete Sync OK ZZZ";
+    let store = new_store();
+    let routine = make_routine("del-sync-ok-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("del-sync-ok-id".into(), routine);
+    with_working_crontab(|| {
+        let deleted = svc_delete(&store, "del-sync-ok-id").unwrap();
+        assert_eq!(deleted.routine.title, title);
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
 #[test]
 fn svc_trigger_warns_when_spawn_fails() {
     // With `PATH` cleared and an agent config present, `build_routine_command`

@@ -43,6 +43,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   epoch (1970). A VM or container booted with a dead real-time clock could make
   `SystemTime::duration_since` fail and crash the daemon; such readings are now
   clamped to `0` until the clock is corrected.
+- Several `svc_*` routine-service tests no longer overwrite the developer's real
+  user crontab. `svc_create`/`svc_update`/`svc_delete` sync the crontab, and four
+  tests exercised them without isolating the `crontab` binary, so running the
+  suite locally replaced the live routines block with a single test fixture line.
+  The tests now run under an empty `PATH` so the sync cannot spawn `crontab`
+  (#175).
 
 ## [0.11.2] - 2026-06-17
 

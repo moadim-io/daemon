@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- `now_secs()` no longer panics when the system clock reads before the Unix
+  epoch (1970). A VM or container booted with a dead real-time clock could make
+  `SystemTime::duration_since` fail and crash the daemon; such readings are now
+  clamped to `0` until the clock is corrected.
+
 ## [0.11.2] - 2026-06-17
 
 ### Fixed
@@ -40,6 +47,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim install` / `moadim uninstall` register the daemon as an OS service so
+  it starts at login and is restarted on crash, keeping scheduled routines firing
+  across reboots. macOS writes a per-user launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
+  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
+  enabled with `systemctl --user enable --now`). Both run the daemon in the
+  foreground (`moadim --interactive`) so the service manager supervises it; other
+  platforms report that the command is not yet supported.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),

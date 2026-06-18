@@ -139,9 +139,10 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         max_runtime_secs: routine.max_runtime_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
-    // Atomic write (temp + rename) so the continuously-running reverse crontab sync, which re-reads
-    // these files every 30s, never observes a torn routine.toml — a torn file parses to `None` and
-    // would silently drop the routine from the store.
+    // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
+    // a torn file parses to `None` and would silently drop the routine from the store. (Note:
+    // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
+    // is implemented but not wired up — see issue #218.)
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
     atomic_write(
         &routine_prompt_path(&slug),

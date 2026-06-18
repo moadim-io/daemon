@@ -24,7 +24,8 @@ mod routines;
 mod service;
 /// TOML-backed job persistence.
 mod storage;
-/// Bidirectional sync between managed jobs and the OS crontab.
+/// Forward sync of managed jobs into the OS crontab (reverse sync is implemented
+/// but not wired up — see the `sync` module docs and issue #218).
 mod sync;
 /// Shared utility functions.
 mod utils;

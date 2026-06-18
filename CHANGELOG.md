@@ -11,6 +11,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- `uptime_secs` is now clamped against backward clock skew (saturating
+  subtraction) so it never underflows.
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

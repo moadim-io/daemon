@@ -76,6 +76,9 @@ struct UpdateRoutineInput {
     enabled: Option<bool>,
     /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
     ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
+    /// the existing value.
+    max_runtime_secs: Option<u64>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -273,6 +276,7 @@ impl MoadimMcp {
             repositories: input.repositories,
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
+            max_runtime_secs: input.max_runtime_secs,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),

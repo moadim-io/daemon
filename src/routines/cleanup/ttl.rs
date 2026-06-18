@@ -30,7 +30,7 @@ impl Routine {
     /// future fire times can't be computed. For irregular schedules this is the interval starting
     /// now; since it only matters when below [`MAX_TTL_SECS`], sub-hour schedules (the only ones it
     /// changes) have a constant interval regardless of `now`.
-    fn cron_interval_secs(&self) -> Option<u64> {
+    pub(super) fn cron_interval_secs(&self) -> Option<u64> {
         let cron = self.schedule.parse::<Cron>().ok()?;
         let mut fires = cron.iter_after(Local::now());
         let first = fires.next()?;

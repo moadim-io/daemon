@@ -116,6 +116,12 @@ fn restart_command() {
 }
 
 #[test]
+fn install_and_uninstall_commands() {
+    assert_eq!(parse(argv(&["install"])), Command::Install);
+    assert_eq!(parse(argv(&["uninstall"])), Command::Uninstall);
+}
+
+#[test]
 fn restart_rotation_line_shows_old_and_new_pid() {
     assert_eq!(
         restart_rotation_line(Some(123), 456),
@@ -183,4 +189,306 @@ fn rejects_non_cleanup_body() {
     assert_eq!(parse_removed_count(""), None);
     assert_eq!(parse_removed_count("not json"), None);
     assert_eq!(parse_removed_count("{\"other\":1}"), None);
+}
+
+// ─── Lifecycle / HTTP-client integration tests ───────────────────────────────
+//
+// These exercise the parts of the CLI that talk to a running server, spawn detached
+// processes, and read/write the pid file. They rely on the `MOADIM_BIND_ADDR` and
+// `MOADIM_HOME_OVERRIDE` seams to target an ephemeral port and a tempdir, and on the
+// single-threaded test harness (`.cargo/config.toml`) so env mutation is race-free.
+
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+/// A loopback port that nothing listens on, so probes fail fast with a refused connection.
+const UNREACHABLE_ADDR: &str = "127.0.0.1:1";
+
+/// Save an env var's prior value and restore it on drop, so a test's override never leaks.
+struct EnvGuard {
+    /// The environment variable name being temporarily overridden.
+    name: &'static str,
+    /// The value present before this guard set it, restored on drop.
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    /// Set `name` to `value`, remembering the prior value for restoration.
+    fn set(name: &'static str, value: &str) -> EnvGuard {
+        let previous = std::env::var_os(name);
+        // SAFETY: tests in this crate run single-threaded per binary.
+        unsafe {
+            std::env::set_var(name, value);
+        }
+        EnvGuard { name, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+}
+
+/// Create a unique tempdir to use as `MOADIM_HOME_OVERRIDE` for a test.
+fn temp_home(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("moadim-cli-{tag}-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("create temp home");
+    dir
+}
+
+/// A throwaway loopback HTTP server for driving the CLI's probe/signal client. While `alive`
+/// it answers every connection with a canned status line and body; once not alive it accepts
+/// and drops connections so probes observe it as down.
+struct FakeServer {
+    /// The `host:port` the server is listening on, for `MOADIM_BIND_ADDR`.
+    addr: String,
+    /// Whether the server currently answers requests; flip to `false` to simulate shutdown.
+    alive: Arc<AtomicBool>,
+    /// Signals the accept loop to exit.
+    stop: Arc<AtomicBool>,
+    /// The accept-loop thread handle, joined on drop.
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl FakeServer {
+    /// Start a server on an ephemeral port answering with `status` and `body` while alive.
+    fn start(status: u16, body: String) -> FakeServer {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr").to_string();
+        listener.set_nonblocking(true).expect("set nonblocking");
+        let alive = Arc::new(AtomicBool::new(true));
+        let stop = Arc::new(AtomicBool::new(false));
+        let alive_loop = Arc::clone(&alive);
+        let stop_loop = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            let response = format!(
+                "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            while !stop_loop.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut buf = [0u8; 1024];
+                        let _ = stream.read(&mut buf);
+                        if alive_loop.load(Ordering::SeqCst) {
+                            let _ = stream.write_all(response.as_bytes());
+                        }
+                    }
+                    Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        FakeServer {
+            addr,
+            alive,
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    /// Spawn a timer that flips the server to "down" after `delay`, simulating graceful shutdown.
+    fn stop_after(&self, delay: Duration) {
+        let alive = Arc::clone(&self.alive);
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            alive.store(false, Ordering::SeqCst);
+        });
+    }
+}
+
+impl Drop for FakeServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+#[test]
+fn bind_addr_uses_default_when_unset() {
+    let previous = std::env::var_os(BIND_ADDR_ENV);
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        std::env::remove_var(BIND_ADDR_ENV);
+    }
+    assert_eq!(bind_addr(), BIND_ADDR);
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        if let Some(value) = previous {
+            std::env::set_var(BIND_ADDR_ENV, value);
+        }
+    }
+}
+
+#[test]
+fn bind_addr_honors_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    assert_eq!(bind_addr(), "127.0.0.1:6000");
+}
+
+#[test]
+fn print_help_and_version_emit_without_panicking() {
+    print_help();
+    print_version();
+}
+
+#[test]
+fn stop_reports_not_running_when_no_server() {
+    let home = temp_home("stop-down");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(stop(false).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(stop(true).unwrap(), EXIT_NOT_RUNNING);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn stop_signals_running_server() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("stop-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(stop(false).unwrap(), 0);
+    assert_eq!(stop(true).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn stop_errors_on_unexpected_status() {
+    let server = FakeServer::start(500, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(stop(false).is_err());
+}
+
+#[test]
+fn status_reports_down_when_no_server() {
+    let home = temp_home("status-down");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(status(false).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(true).unwrap(), EXIT_NOT_RUNNING);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_reports_running_with_pid() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("status-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    // A pid file makes the human-readable "running (pid N)" suffix branch run.
+    write_pid_file().unwrap();
+    assert_eq!(status(false).unwrap(), 0);
+    assert_eq!(status(true).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn cleanup_reports_removed_counts_when_running() {
+    let home = temp_home("cleanup-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    // Singular count exercises the "" plural branch.
+    {
+        let server = FakeServer::start(200, "{\"removed\":1}".to_string());
+        let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+        assert_eq!(cleanup(false).unwrap(), 0);
+        assert_eq!(cleanup(true).unwrap(), 0);
+    }
+    // Plural count exercises the "es" plural branch.
+    {
+        let server = FakeServer::start(200, "{\"removed\":2}".to_string());
+        let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+        assert_eq!(cleanup(false).unwrap(), 0);
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn cleanup_reports_not_running_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(cleanup(false).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(cleanup(true).unwrap(), EXIT_NOT_RUNNING);
+}
+
+#[test]
+fn cleanup_errors_on_unexpected_status() {
+    let server = FakeServer::start(500, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(cleanup(false).is_err());
+}
+
+#[test]
+fn pid_file_write_read_clear_roundtrip() {
+    let home = temp_home("pidfile");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    write_pid_file().unwrap();
+    assert_eq!(read_pid_file(), Some(std::process::id()));
+    assert!(crate::paths::config_gitignore_path().exists());
+    // A second write hits the "gitignore already exists, skip" branch.
+    write_pid_file().unwrap();
+    clear_pid_file();
+    assert!(read_pid_file().is_none());
+    // A garbage pid file parses to None rather than panicking.
+    std::fs::write(crate::paths::pid_file(), "not-a-pid").unwrap();
+    assert!(read_pid_file().is_none());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn run_background_starts_when_none_running() {
+    let home = temp_home("runbg-fresh");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    run_background().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn run_background_restarts_when_already_running() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("runbg-restart");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "2000");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    write_pid_file().unwrap();
+    server.stop_after(Duration::from_millis(80));
+    run_background().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_starts_fresh_when_none_running() {
+    let home = temp_home("restart-fresh");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    restart().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_replaces_running_server() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("restart-running");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "2000");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    write_pid_file().unwrap();
+    server.stop_after(Duration::from_millis(80));
+    restart().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
 }

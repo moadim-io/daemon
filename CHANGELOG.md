@@ -13,6 +13,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- iCalendar (`.ics`) feed output now folds long content lines per RFC 5545 §3.1
+  so no physical line exceeds 75 octets (excluding CRLF). Continuation lines are
+  introduced with `CRLF` followed by a single leading space, and folding only
+  breaks on character boundaries so multibyte characters are never split.
 - `now_secs()` no longer panics when the system clock reads before the Unix
   epoch (1970). A VM or container booted with a dead real-time clock could make
   `SystemTime::duration_since` fail and crash the daemon; such readings are now

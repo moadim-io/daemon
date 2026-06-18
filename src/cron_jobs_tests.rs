@@ -579,6 +579,35 @@ fn svc_trigger_spawns_existing_handler_script() {
     let _ = std::fs::remove_file(&handler_path);
 }
 
+#[test]
+fn handler_spawn_target_honours_override() {
+    // Regression guard for issue #217: by default the spawn target is the resolved
+    // handler path, but `MOADIM_HANDLER_SPAWN` redirects the spawn to a shim so a
+    // test can avoid executing a real handler.
+    let handler = std::path::Path::new("/tmp/moadim-real-handler");
+
+    let saved = std::env::var_os("MOADIM_HANDLER_SPAWN");
+    unsafe {
+        std::env::remove_var("MOADIM_HANDLER_SPAWN");
+    }
+    assert_eq!(handler_spawn_target(handler), handler.to_path_buf());
+
+    unsafe {
+        std::env::set_var("MOADIM_HANDLER_SPAWN", "/tmp/moadim-handler-shim");
+    }
+    assert_eq!(
+        handler_spawn_target(handler),
+        std::path::PathBuf::from("/tmp/moadim-handler-shim")
+    );
+
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_HANDLER_SPAWN", value),
+            None => std::env::remove_var("MOADIM_HANDLER_SPAWN"),
+        }
+    }
+}
+
 #[tokio::test]
 async fn replace_handler_updates_job() {
     use axum::extract::{Path, State};

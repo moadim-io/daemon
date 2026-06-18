@@ -68,6 +68,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   returning a non-existent path so the spawn fails harmlessly. This is a
   structural safety net: no test — current or future — can clobber the
   developer's live crontab even if it forgets to isolate the binary (#175).
+- Routine triggers and cron-job triggers now resolve their spawn target through a
+  structural seam instead of hard-coding it. The routine trigger reads `sh` via a
+  `MOADIM_SH_BIN` resolver that, mirroring `crontab_bin()`, refuses to fall back to
+  the real `sh` in test builds (returning a non-existent path) so a trigger test
+  can never accidentally launch a live shell or agent. The cron handler spawn
+  honours an opt-in `MOADIM_HANDLER_SPAWN` override so a test can redirect a
+  handler spawn to a shim even when a real executable handler exists on disk
+  (#217).
 
 ## [0.11.2] - 2026-06-17
 

@@ -331,13 +331,32 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     write_job(&job).map_err(|_| AppError::Internal)?;
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
-        if let Err(err) = std::process::Command::new(&handler_path).spawn() {
+        if let Err(err) = std::process::Command::new(handler_spawn_target(&handler_path)).spawn() {
             log::warn!("trigger: failed to spawn handler {:?}: {err}", handler_path);
         }
     } else {
         log::warn!("trigger: handler script not found at {:?}", handler_path);
     }
     Ok(job)
+}
+
+/// Resolve the program to spawn for a triggered cron handler.
+///
+/// Returns `handler_path` (the resolved handler script) unchanged in normal
+/// operation. The `MOADIM_HANDLER_SPAWN` environment variable, when set, overrides
+/// the spawn target with a shim instead — a structural seam (issue #217) that lets
+/// a test redirect a handler spawn to a harmless shim even when a real, executable
+/// handler file exists on disk. Unlike the `sh`/`crontab` seams this does *not*
+/// default-deny under `cfg(test)`: the handler is a user-controlled path (not a
+/// looked-up binary), and an existing test deliberately spawns a real executable
+/// handler script, so a blanket cfg(test) guard would break it. The opt-in
+/// override is the minimal robust improvement that adds the safety seam without
+/// regressing existing tests.
+fn handler_spawn_target(handler_path: &std::path::Path) -> std::path::PathBuf {
+    if let Ok(shim) = std::env::var("MOADIM_HANDLER_SPAWN") {
+        return std::path::PathBuf::from(shim);
+    }
+    handler_path.to_path_buf()
 }
 
 // --- Axum HTTP handlers ---

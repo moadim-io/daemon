@@ -194,6 +194,32 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Resolve the shell binary used to spawn a manual trigger.
+///
+/// Honours the `MOADIM_SH_BIN` environment variable when set, falling back to the
+/// system `sh` otherwise. The override exists so tests can point the trigger spawn
+/// at a shim instead of launching a real shell (and, transitively, a real agent).
+///
+/// In **test builds**, when no `MOADIM_SH_BIN` shim is configured this never falls
+/// back to the real system `sh`: it returns a path that cannot exist, so the spawn
+/// fails harmlessly and the trigger logs a warning instead of actually running an
+/// agent. This is a structural safety net (issue #217) mirroring [`crontab_bin`]
+/// (`crate::sync`): a trigger test that forgets to clear `PATH` or install a shim
+/// still cannot launch a live agent process. Tests that need a working spawn set
+/// `MOADIM_SH_BIN` to a shim, which is honoured first.
+///
+/// [`crontab_bin`]: crate::sync
+fn sh_bin() -> String {
+    if let Ok(bin) = std::env::var("MOADIM_SH_BIN") {
+        return bin;
+    }
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-sh-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "sh".to_string();
+    fallback
+}
+
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let mut lock = store.lock().unwrap();
@@ -208,7 +234,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.
-            if let Err(err) = std::process::Command::new("sh")
+            if let Err(err) = std::process::Command::new(sh_bin())
                 .arg("-lc")
                 .arg(&cmd)
                 .spawn()

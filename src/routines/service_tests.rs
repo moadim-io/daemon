@@ -463,3 +463,35 @@ fn svc_trigger_warns_when_spawn_fails() {
     let _ = std::fs::remove_file(&cfg);
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
+
+#[test]
+fn sh_bin_default_denies_in_test_builds() {
+    // Regression guard for issue #217: with no `MOADIM_SH_BIN` shim configured, the
+    // resolver must NOT return the real `sh` under `cfg(test)`. Otherwise a trigger
+    // test could accidentally launch a live shell (and agent). It returns a path
+    // that cannot exist, so the spawn fails harmlessly.
+    let guard = PATH_GUARD
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let saved = std::env::var_os("MOADIM_SH_BIN");
+    unsafe {
+        std::env::remove_var("MOADIM_SH_BIN");
+    }
+    let resolved = sh_bin();
+    assert_ne!(resolved, "sh");
+    assert!(!std::path::Path::new(&resolved).exists());
+
+    // The override is honoured when set.
+    unsafe {
+        std::env::set_var("MOADIM_SH_BIN", "/tmp/moadim-sh-shim");
+    }
+    assert_eq!(sh_bin(), "/tmp/moadim-sh-shim");
+
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
+            None => std::env::remove_var("MOADIM_SH_BIN"),
+        }
+    }
+    drop(guard);
+}

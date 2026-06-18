@@ -11,6 +11,27 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+- The daemon now installs a logging backend at startup so `log` calls
+  actually emit output instead of being silently dropped.
+
+### Changed
+- moadim-generated `.gitignore` files (job and routine) now ignore
+  user-specific `run.sh` scripts.
+
+### Fixed
+- `moadim status` now reports the effective bind address instead of the
+  hardcoded default when a custom bind address is configured.
+
+### Fixed
+- iCal `escape_text` now normalizes carriage returns (CR and CRLF) to `\n`
+  per RFC 5545, so generated calendar feeds no longer emit raw control
+  characters in escaped text.
+
+### Fixed
+- Cron `@keyword` documentation now matches the actual validation contract,
+  aligning the documented and accepted set of `@`-keywords.
+
 ### Added
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping

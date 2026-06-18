@@ -237,7 +237,7 @@ Finished run workbenches are reaped automatically by an hourly background sweep
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
 the same sweep includes a watchdog that force-kills any session whose run has exceeded the routine's
-`max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 6h) — bounding a hung agent that never exits —
+`max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 1h) — bounding a hung agent that never exits —
 recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
 `ttl_secs` rules.
 

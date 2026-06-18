@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm exec block-no-verify"
+            "command": "jq -r '.tool_input.command' | pnpm exec block-no-verify"
           }
         ]
       },
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm exec block-no-verify"
+            "command": "jq -r '.tool_input.command' | pnpm exec block-no-verify"
           }
         ]
       }

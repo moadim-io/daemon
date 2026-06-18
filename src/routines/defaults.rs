@@ -70,8 +70,9 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
@@ -81,7 +82,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
 /// repositories list) drifted from the spec and the routine must be rewritten, or `None` when `cur`
 /// already matches and no write is needed. The user-owned [`Routine::enabled`] toggle is always
 /// carried over from `cur` — so a default the user turned off stays off — as are its `id`,
-/// `created_at`, and `last_triggered_at`.
+/// `created_at`, and `last_manual_trigger_at`.
 fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> {
     let schedule = normalize_schedule(spec.schedule);
     let up_to_date = cur.schedule == schedule
@@ -103,8 +104,9 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         source: "managed".to_string(),
         created_at: cur.created_at,
         updated_at: now,
-        last_triggered_at: cur.last_triggered_at,
+        last_manual_trigger_at: cur.last_manual_trigger_at,
         ttl_secs: cur.ttl_secs,
+        max_runtime_secs: cur.max_runtime_secs,
     })
 }
 

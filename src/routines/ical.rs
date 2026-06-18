@@ -16,12 +16,22 @@ const PRODID: &str = "-//moadim//routines//EN";
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
 fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             '\\' => out.push_str("\\\\"),
             ';' => out.push_str("\\;"),
             ',' => out.push_str("\\,"),
             '\n' => out.push_str("\\n"),
+            // RFC 5545 §3.3.11: a TEXT value must not contain a raw CR. Normalize
+            // both CRLF and a lone CR to a single escaped newline so they match the
+            // `\n` handling and never leak a stray `\r` into a content line.
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push_str("\\n");
+            }
             _ => out.push(ch),
         }
     }
@@ -31,6 +41,36 @@ fn escape_text(text: &str) -> String {
 /// Format a UTC instant as an iCalendar UTC date-time (`YYYYMMDDTHHMMSSZ`).
 fn format_utc(dt: DateTime<Utc>) -> String {
     dt.format("%Y%m%dT%H%M%SZ").to_string()
+}
+
+/// Maximum octets per physical content line per RFC 5545 §3.1 (excluding CRLF).
+const FOLD_LIMIT: usize = 75;
+
+/// Fold a content line per RFC 5545 §3.1 so no physical line exceeds
+/// [`FOLD_LIMIT`] octets (excluding the CRLF terminator).
+///
+/// Continuation lines are introduced with `CRLF` followed by a single leading
+/// space, and that space counts toward the octet limit. Folding measures **octets**
+/// (UTF-8 byte length) but only ever breaks on character boundaries, so a multibyte
+/// character is never split across a fold.
+fn fold_line(line: &str) -> String {
+    if line.len() <= FOLD_LIMIT {
+        return line.to_string();
+    }
+    let mut out = String::with_capacity(line.len() + line.len() / FOLD_LIMIT + 1);
+    // First physical line gets the full budget; each continuation spends one octet
+    // on its leading space.
+    let mut budget = FOLD_LIMIT;
+    for ch in line.chars() {
+        let char_len = ch.len_utf8();
+        if char_len > budget {
+            out.push_str("\r\n ");
+            budget = FOLD_LIMIT - 1;
+        }
+        out.push(ch);
+        budget -= char_len;
+    }
+    out
 }
 
 /// Render upcoming fire times of every enabled routine as an iCalendar (`.ics`) feed.
@@ -75,8 +115,13 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
         }
     }
     lines.push("END:VCALENDAR".to_string());
-    // RFC 5545 mandates CRLF line endings, including a trailing CRLF after the final line.
-    let mut out = lines.join("\r\n");
+    // RFC 5545 mandates CRLF line endings, including a trailing CRLF after the final
+    // line. Each content line is folded (§3.1) so no physical line exceeds 75 octets.
+    let mut out = lines
+        .iter()
+        .map(|line| fold_line(line))
+        .collect::<Vec<_>>()
+        .join("\r\n");
     out.push_str("\r\n");
     out
 }

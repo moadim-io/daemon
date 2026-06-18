@@ -235,7 +235,11 @@ instants so external calendars can subscribe without an embedded `VTIMEZONE`. Se
 Finished run workbenches are reaped automatically by an hourly background sweep
 (`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
-need not wait for the next tick. Live tmux sessions are never touched.
+need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
+the same sweep includes a watchdog that force-kills any session whose run has exceeded the routine's
+`max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 1h) — bounding a hung agent that never exits —
+recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
+`ttl_secs` rules.
 
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`,

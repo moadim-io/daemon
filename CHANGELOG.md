@@ -11,6 +11,150 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Crontab docs no longer claim reverse sync (crontab → moadim) runs. It is
+  implemented but never wired to a poller or startup hook, so manual edits to
+  the moadim block do not round-trip and are overwritten by the next forward
+  sync. The in-crontab header, README "Crontab sync" section, and module/`main`
+  docs now say so instead of promising automatic sync-back (#218).
+
+### Changed
+- Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
+  on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
+  the web UI). The field was only ever updated by *manual* triggers, never by
+  scheduled cron firings, so the old name wrongly read as "never ran" for a
+  routine that fires on schedule but was never triggered by hand. Deserialization
+  accepts the legacy `last_triggered_at` key via a serde alias, so existing
+  `routine.toml` / job files still load.
+
+### Fixed
+- `uptime_secs` is now clamped against backward clock skew (saturating
+  subtraction) so it never underflows.
+
+### Fixed
+- Routine create/update now validates the configured agent, rejecting unknown agents.
+
+### Changed
+- Service tests no longer touch the real user crontab; they run against an
+  isolated test crontab seam.
+
+### Fixed
+- The daemon now installs a logging backend at startup so `log` calls
+  actually emit output instead of being silently dropped.
+
+### Changed
+- moadim-generated `.gitignore` files (job and routine) now ignore
+  user-specific `run.sh` scripts.
+
+### Fixed
+- `moadim status` now reports the effective bind address instead of the
+  hardcoded default when a custom bind address is configured.
+
+### Fixed
+- iCal `escape_text` now normalizes carriage returns (CR and CRLF) to `\n`
+  per RFC 5545, so generated calendar feeds no longer emit raw control
+  characters in escaped text.
+
+### Fixed
+- Cron `@keyword` documentation now matches the actual validation contract,
+  aligning the documented and accepted set of `@`-keywords.
+
+### Added
+- `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
+  status line (`moadim is shutting down` / `moadim is not running`) while keeping
+  the exit-code contract (`0` when a server was stopped, `3` when none was
+  running), so scripts that branch on `$?` alone get no stdout noise. The flag is
+  ignored under `--json`, which always prints its single machine-readable object.
+
+### Added
+- `moadim stop --json` now includes the bound `address` field
+  (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
+  `status --json`'s object shape exactly so both can be parsed uniformly.
+
+### Added
+
+- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
+  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
+  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
+  request surfaces, so no extra request is made.
+
+### Fixed
+
+- Routine create/update now reject nonsensical field values with `400 Bad
+  Request` instead of silently persisting a broken routine. A blank
+  (empty/whitespace-only) `title` previously produced an empty routine-origin
+  disclosure name and a bare `"routine"` slug (#226); a blank `prompt` made the
+  routine fire forever with no task (#224); and a zero `ttl_secs` /
+  `max_runtime_secs` instantly reaped the run's logs or self-killed the session
+  (#233). All four are validated up front on both `POST` (create) and `PATCH`
+  (update), before anything is written to disk or the crontab.
+- Routine **create/update now reject a blank or unusable `title`** with
+  `400 Bad Request`. A title must contain at least one alphanumeric character
+  (so empty, whitespace-only, and punctuation-only titles like `"!!!"` are
+  refused) and is capped at 200 characters. Previously such a title was accepted,
+  producing a nameless routine-origin disclosure (`Routine name:` with nothing
+  after it) in the workbench `CLAUDE.md` and a silent `"routine"` slug the user
+  never chose.
+
+## [0.12.0] - 2026-06-18
+
+### Added
+
+- Per-routine **max-runtime watchdog** bounds hung agent runs. Routines carry an
+  optional `max_runtime_secs` (TOML + REST/MCP create/update). Like `ttl_secs`,
+  the effective bound is `min(MAX_RUNTIME_SECS, cron interval)` (default cap 1h),
+  lowered further by an explicit `max_runtime_secs`. The hourly cleanup sweep now
+  force-kills any tmux session
+  whose run has exceeded its effective max runtime — recording
+  `moadim: routine exceeded max runtime; killing session` in the run's
+  `agent.log` — after which the workbench is reaped under the existing
+  `ttl_secs` rules. A session still within its max runtime is never touched.
+  Previously a hung run (waiting on stdin, looping, blocked on a stuck
+  network/git op) lived forever and stacked one zombie session + workbench per
+  cron tick, since the TTL reaper only governs *finished* runs.
+- `moadim install` / `moadim uninstall` register the daemon as an OS service so
+  it starts at login and is restarted on crash, keeping scheduled routines firing
+  across reboots. macOS writes a per-user launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
+  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
+  enabled with `systemctl --user enable --now`). Both run the daemon in the
+  foreground (`moadim --interactive`) so the service manager supervises it; other
+  platforms report that the command is not yet supported.
+- **Hermes** is now a built-in agent alongside `claude` and `codex`. A default
+  `hermes.toml` (`hermes exec {prompt_file}`, mirroring Codex) is seeded into
+  `~/.config/moadim/agents/` on startup, and `hermes` appears in
+  `available_agents()` / `GET /agents`, so routines can launch Hermes.
+
+### Changed
+
+- Routine runtime state (last-run timestamps and related mutable fields) is now
+  stored in a separate, git-ignored sidecar file instead of the git-tracked
+  `routine.toml`, so scheduled runs no longer produce noisy diffs or merge
+  conflicts in version-controlled routine definitions (#127).
+
+### Fixed
+
+- iCal feeds now fold long content lines at 75 octets per RFC 5545 §3.1, using a
+  UTF-8-aware byte budget so multi-byte characters are never split across a fold
+  boundary. Previously over-long `SUMMARY`/`DESCRIPTION` lines were emitted
+  unfolded, which some calendar clients reject.
+- `now_secs()` no longer panics when the system clock reads before the Unix
+  epoch (1970). A VM or container booted with a dead real-time clock could make
+  `SystemTime::duration_since` fail and crash the daemon; such readings are now
+  clamped to `0` until the clock is corrected.
+- Several `svc_*` routine-service tests no longer overwrite the developer's real
+  user crontab. `svc_create`/`svc_update`/`svc_delete` sync the crontab, and four
+  tests exercised them without isolating the `crontab` binary, so running the
+  suite locally replaced the live routines block with a single test fixture line.
+  The tests now run under an empty `PATH` so the sync cannot spawn `crontab`
+  (#175).
+- The crontab binary resolver now refuses to fall back to the real system
+  `crontab` in test builds when no `MOADIM_CRONTAB_BIN` shim is configured,
+  returning a non-existent path so the spawn fails harmlessly. This is a
+  structural safety net: no test — current or future — can clobber the
+  developer's live crontab even if it forgets to isolate the binary (#175).
+
 ## [0.11.2] - 2026-06-17
 
 ### Fixed

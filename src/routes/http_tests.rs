@@ -8,8 +8,9 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{build_app, echo, run_with_listener_until, write_openapi_spec};
-use crate::cron_jobs::new_store;
+use super::{build_app, echo, health, run_with_listener_until, write_openapi_spec};
+use crate::cron_jobs::{new_registry, new_store, AppState};
+use crate::utils::time::now_secs;
 
 // ── openapi spec writer ──────────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ async fn build_app_serves_health() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["status"], "ok");
     assert_eq!(json["running"], true);
+    assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
 }
 
 #[tokio::test]
@@ -802,8 +804,9 @@ async fn router_serves_routines_ical_feed() {
             source: "managed".to_string(),
             created_at: 0,
             updated_at: 0,
-            last_triggered_at: None,
+            last_manual_trigger_at: None,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     );
     let resp = build_app(new_store(), routines)
@@ -827,4 +830,22 @@ async fn router_serves_routines_ical_feed() {
     assert!(body.starts_with("BEGIN:VCALENDAR"));
     assert!(body.contains("BEGIN:VEVENT"));
     assert!(body.contains("SUMMARY:My Routine"));
+}
+
+#[tokio::test]
+async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
+    // A `uptime_start` in the future models the wall clock jumping backward
+    // after the server started. The old `now_secs() - uptime_start` would
+    // underflow; saturating_sub must clamp uptime to 0 instead.
+    let state = AppState {
+        store: new_store(),
+        handlers: new_registry(),
+        routines: crate::routines::new_store(),
+        uptime_start: now_secs() + 10_000,
+        shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
+    };
+    let resp = health(axum::extract::State(state)).await;
+    assert_eq!(resp.0.uptime_secs, 0);
+    assert_eq!(resp.0.status, "ok");
+    assert!(resp.0.running);
 }

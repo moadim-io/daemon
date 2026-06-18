@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_dir, routine_gitignore_path, routine_prompt_path, routine_toml_path, routines_dir,
+    routine_dir, routine_gitignore_path, routine_prompt_path, routine_state_path,
+    routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -34,10 +35,31 @@ struct RoutineToml {
     /// Unix last-updated timestamp.
     updated_at: Option<u64>,
     /// Unix timestamp of last manual trigger.
-    last_triggered_at: Option<u64>,
+    ///
+    /// **Read-only / legacy.** Runtime trigger state now lives in the gitignored `state.local.toml`
+    /// sidecar ([`RuntimeState`]) so it no longer churns the version-controlled `routine.toml`.
+    /// This field is still parsed so routines written by older daemons keep their timestamp (the
+    /// value migrates into the sidecar on the next [`write_routine`]), but it is never written back
+    /// — `skip_serializing` keeps it out of every freshly written `routine.toml`. Accepts the
+    /// legacy `last_triggered_at` key so routine.toml files written before the rename still load.
+    #[serde(default, skip_serializing, alias = "last_triggered_at")]
+    last_manual_trigger_at: Option<u64>,
     /// Workbench retention in seconds for finished runs; absent means the daemon default.
     #[serde(default)]
     ttl_secs: Option<u64>,
+    /// Max wall-clock seconds a single run may execute before the watchdog kills it; absent means
+    /// the daemon default.
+    #[serde(default)]
+    max_runtime_secs: Option<u64>,
+}
+
+/// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
+/// sidecar so it never appears in the version-controlled `routine.toml`.
+#[derive(Debug, Deserialize, Serialize)]
+struct RuntimeState {
+    /// Unix timestamp of the last manual trigger, or `None` if it has never been triggered.
+    #[serde(default)]
+    last_manual_trigger_at: Option<u64>,
 }
 
 /// Parse a routine TOML file at `path`, returning `None` on any error.
@@ -46,14 +68,27 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
+/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar, returning `None` when
+/// the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
+fn read_runtime_state(dir_name: &str) -> Option<u64> {
+    let text = std::fs::read_to_string(routine_state_path(dir_name)).ok()?;
+    toml::from_str::<RuntimeState>(&text)
+        .ok()?
+        .last_manual_trigger_at
+}
+
 /// Load a routine from `{routines_dir}/{dir_name}/routine.toml`.
 ///
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
 /// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
+///
+/// `last_manual_trigger_at` is read from the `state.local.toml` sidecar, falling back to the legacy
+/// `routine.toml` field for routines written before the runtime state was split out.
 fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     let toml = read_routine_toml(&routine_toml_path(dir_name))?;
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
+    let last_manual_trigger_at = read_runtime_state(dir_name).or(toml.last_manual_trigger_at);
     Some(Routine {
         id,
         schedule: toml.schedule?,
@@ -65,15 +100,19 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),
         updated_at: toml.updated_at.unwrap_or(0),
-        last_triggered_at: toml.last_triggered_at,
+        last_manual_trigger_at,
         ttl_secs: toml.ttl_secs,
+        max_runtime_secs: toml.max_runtime_secs,
     })
 }
 
-/// Write `routine` to disk: `routine.toml`, the composed `prompt.md`, and `.gitignore` if absent.
+/// Write `routine` to disk: `routine.toml` (tracked config), the composed `prompt.md`, the
+/// gitignored `state.local.toml` runtime sidecar, and `.gitignore` if absent.
 ///
 /// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
-/// stored inside `routine.toml` so it survives a rename.
+/// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
+/// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
+/// version-controlled config file.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
@@ -81,7 +120,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\n")?;
+        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
     }
 
     let toml_routine = RoutineToml {
@@ -94,18 +133,46 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         enabled: Some(routine.enabled),
         created_at: Some(routine.created_at),
         updated_at: Some(routine.updated_at),
-        last_triggered_at: routine.last_triggered_at,
+        // Runtime state is written to the sidecar below, never to the tracked `routine.toml`
+        // (`skip_serializing` also keeps this field out regardless of its value).
+        last_manual_trigger_at: None,
         ttl_secs: routine.ttl_secs,
+        max_runtime_secs: routine.max_runtime_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
-    // Atomic write (temp + rename) so the continuously-running reverse crontab sync, which re-reads
-    // these files every 30s, never observes a torn routine.toml — a torn file parses to `None` and
-    // would silently drop the routine from the store.
+    // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
+    // a torn file parses to `None` and would silently drop the routine from the store. (Note:
+    // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
+    // is implemented but not wired up — see issue #218.)
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
     atomic_write(
         &routine_prompt_path(&slug),
         compose_prompt(routine).as_bytes(),
     )?;
+    write_runtime_state(&slug, routine.last_manual_trigger_at)?;
+    Ok(())
+}
+
+/// Persist a routine's runtime state to its gitignored `state.local.toml` sidecar.
+///
+/// Writes the sidecar (atomically) when `last_manual_trigger_at` is set, and removes any stale
+/// sidecar when it is `None`, so the on-disk state always mirrors the in-memory routine.
+fn write_runtime_state(slug: &str, last_manual_trigger_at: Option<u64>) -> std::io::Result<()> {
+    let path = routine_state_path(slug);
+    match last_manual_trigger_at {
+        Some(_) => {
+            let state = RuntimeState {
+                last_manual_trigger_at,
+            };
+            let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
+            atomic_write(&path, text.as_bytes())?;
+        }
+        None => {
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+            }
+        }
+    }
     Ok(())
 }
 

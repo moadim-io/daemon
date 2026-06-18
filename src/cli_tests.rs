@@ -28,7 +28,13 @@ fn background_flags_select_background() {
 
 #[test]
 fn stop_and_status_commands() {
-    assert_eq!(parse(argv(&["stop"])), Command::Stop { json: false });
+    assert_eq!(
+        parse(argv(&["stop"])),
+        Command::Stop {
+            json: false,
+            quiet: false
+        }
+    );
     assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
 }
 
@@ -49,8 +55,43 @@ fn json_flag_sets_machine_readable_output() {
     );
     assert_eq!(
         parse(argv(&["stop", "--json"])),
-        Command::Stop { json: true }
+        Command::Stop {
+            json: true,
+            quiet: false
+        }
     );
+}
+
+#[test]
+fn quiet_flag_only_applies_to_stop() {
+    for flag in ["--quiet", "-q"] {
+        assert_eq!(
+            parse(argv(&["stop", flag])),
+            Command::Stop {
+                json: false,
+                quiet: true
+            },
+            "flag {flag}"
+        );
+    }
+    // `--quiet` and `--json` compose; order between them does not matter.
+    assert_eq!(
+        parse(argv(&["stop", "--json", "--quiet"])),
+        Command::Stop {
+            json: true,
+            quiet: true
+        }
+    );
+    assert_eq!(
+        parse(argv(&["stop", "-q", "--json"])),
+        Command::Stop {
+            json: true,
+            quiet: true
+        }
+    );
+    // A bare `--quiet` (no subcommand) is an unknown arg, not a stop request.
+    assert_eq!(parse(argv(&["--quiet"])), Command::Help);
+    assert_eq!(parse(argv(&["-q"])), Command::Help);
 }
 
 #[test]
@@ -92,14 +133,16 @@ fn cleanup_json_reports_removed_and_running() {
 }
 
 #[test]
-fn stop_json_reports_running_and_pid() {
+fn stop_json_reports_running_pid_and_address() {
     let up: serde_json::Value = serde_json::from_str(&stop_json(true, Some(42))).unwrap();
     assert_eq!(up["running"], serde_json::json!(true));
     assert_eq!(up["pid"], serde_json::json!(42));
+    assert_eq!(up["address"], serde_json::json!(BIND_ADDR));
 
     let down: serde_json::Value = serde_json::from_str(&stop_json(false, None)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert!(down["pid"].is_null());
+    assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
 #[test]
@@ -113,6 +156,12 @@ fn liveness_exit_code_maps_running_to_codes() {
 #[test]
 fn restart_command() {
     assert_eq!(parse(argv(&["restart"])), Command::Restart);
+}
+
+#[test]
+fn install_and_uninstall_commands() {
+    assert_eq!(parse(argv(&["install"])), Command::Install);
+    assert_eq!(parse(argv(&["uninstall"])), Command::Uninstall);
 }
 
 #[test]
@@ -334,6 +383,13 @@ fn bind_addr_honors_override() {
 }
 
 #[test]
+fn status_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+#[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();
     print_version();
@@ -344,8 +400,10 @@ fn stop_reports_not_running_when_no_server() {
     let home = temp_home("stop-down");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(stop(false).unwrap(), EXIT_NOT_RUNNING);
-    assert_eq!(stop(true).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(stop(false, false).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(stop(true, false).unwrap(), EXIT_NOT_RUNNING);
+    // --quiet suppresses the human line but keeps the exit-code contract.
+    assert_eq!(stop(false, true).unwrap(), EXIT_NOT_RUNNING);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -355,8 +413,10 @@ fn stop_signals_running_server() {
     let home = temp_home("stop-up");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert_eq!(stop(false).unwrap(), 0);
-    assert_eq!(stop(true).unwrap(), 0);
+    assert_eq!(stop(false, false).unwrap(), 0);
+    assert_eq!(stop(true, false).unwrap(), 0);
+    // --quiet suppresses the human line but keeps the success exit code.
+    assert_eq!(stop(false, true).unwrap(), 0);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -364,7 +424,7 @@ fn stop_signals_running_server() {
 fn stop_errors_on_unexpected_status() {
     let server = FakeServer::start(500, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert!(stop(false).is_err());
+    assert!(stop(false, false).is_err());
 }
 
 #[test]

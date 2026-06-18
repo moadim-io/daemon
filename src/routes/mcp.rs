@@ -76,6 +76,9 @@ struct UpdateRoutineInput {
     enabled: Option<bool>,
     /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
     ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
+    /// the existing value.
+    max_runtime_secs: Option<u64>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -113,7 +116,9 @@ impl MoadimMcp {
         let loc = crate::filesystem::FsLocation::current();
         let mut val = serde_json::json!({
             "status": "ok",
-            "uptime_secs": now_secs() - self.uptime_start,
+            // saturating_sub so a backward wall-clock adjustment can't underflow
+            // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
+            "uptime_secs": now_secs().saturating_sub(self.uptime_start),
             "running": true,
         });
         if let (Some(obj), Ok(serde_json::Value::Object(loc_map))) =
@@ -208,7 +213,7 @@ impl MoadimMcp {
 
     /// Manually trigger a cron job immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a cron job outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a cron job outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_cron_job(
         &self,
@@ -271,6 +276,7 @@ impl MoadimMcp {
             repositories: input.repositories,
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
+            max_runtime_secs: input.max_runtime_secs,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),
@@ -292,7 +298,7 @@ impl MoadimMcp {
 
     /// Manually trigger a routine immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a routine outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a routine outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_routine(
         &self,

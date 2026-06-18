@@ -1,7 +1,23 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
+use super::runtime::MAX_RUNTIME_SECS;
 use super::ttl::MAX_TTL_SECS;
 use super::*;
+
+/// A `max_runtime_for` that never trips the watchdog (so reap tests exercise TTL only).
+fn never_expires_runtime(_slug: &str) -> u64 {
+    u64::MAX
+}
+
+/// A `kill` that does nothing (the watchdog is not expected to fire).
+fn noop_kill(_session: &str) {}
+
+#[test]
+fn tmux_kill_session_is_best_effort_on_missing_session() {
+    // The real tmux side-effect helper. Killing a session that does not exist (or running with no
+    // tmux installed) must not panic — the call is best-effort and any failure is swallowed.
+    tmux_kill_session("moadim-nonexistent-watchdog-test-session");
+}
 
 #[test]
 fn parse_workbench_name_splits_slug_and_timestamp() {
@@ -50,7 +66,14 @@ fn reap_dir_removes_only_finished_and_expired() {
     let ttl_for = |_slug: &str| 500u64; // expiry threshold: age > 500
     let alive = |session: &str| session == "moadim-running-100";
 
-    let removed = reap_dir(&base, now, &ttl_for, &alive);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &never_expires_runtime,
+        &alive,
+        &noop_kill,
+    );
 
     assert_eq!(removed, 1);
     assert!(!base.join("expired-100").exists());
@@ -75,11 +98,96 @@ fn reap_dir_uses_per_slug_ttl() {
     let ttl_for = |slug: &str| if slug == "short" { 100 } else { 100_000 };
     let dead = |_session: &str| false;
 
-    let removed = reap_dir(&base, now, &ttl_for, &dead);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &never_expires_runtime,
+        &dead,
+        &noop_kill,
+    );
 
     assert_eq!(removed, 1);
     assert!(!base.join("short-500").exists());
     assert!(base.join("long-500").exists());
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
+    let base = std::env::temp_dir().join("moadim-cleanup-watchdog-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    touch_dir(&base, "hung-100"); // live + over max runtime -> killed, then reaped
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> TTL elapsed
+    let max_runtime_for = |_slug: &str| 300u64; // age 900 > 300 -> watchdog trips
+    let alive = |_session: &str| true; // session is still running
+    let killed = std::cell::RefCell::new(Vec::new());
+    let kill = |session: &str| killed.borrow_mut().push(session.to_string());
+
+    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
+
+    assert_eq!(removed, 1, "hung-then-killed workbench is reaped");
+    assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
+    assert!(!base.join("hung-100").exists());
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
+    let base = std::env::temp_dir().join("moadim-cleanup-watchdog-log-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    touch_dir(&base, "hung-900"); // live + over max runtime, but TTL not yet elapsed
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 100_000u64; // age 100 <= huge TTL -> not reaped this sweep
+    let max_runtime_for = |_slug: &str| 50u64; // age 100 > 50 -> watchdog trips
+    let alive = |_session: &str| true;
+    let killed = std::cell::RefCell::new(Vec::new());
+    let kill = |session: &str| killed.borrow_mut().push(session.to_string());
+
+    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
+
+    assert_eq!(
+        removed, 0,
+        "killed but TTL not elapsed -> left for a later sweep"
+    );
+    assert_eq!(killed.into_inner(), vec!["moadim-hung-900".to_string()]);
+    // The forced termination is recorded in the run's agent.log.
+    let log = std::fs::read_to_string(base.join("hung-900").join("agent.log")).unwrap();
+    assert!(log.contains("exceeded max runtime"));
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn reap_dir_does_not_kill_dead_session_missing_tmux() {
+    // Mirrors the missing-tmux fallback: is_alive reports false (no tmux / session gone), so the
+    // watchdog never kills, and an expired finished run is reaped normally.
+    let base = std::env::temp_dir().join("moadim-cleanup-watchdog-dead-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    touch_dir(&base, "gone-100"); // over both bounds but already dead
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 100u64;
+    let max_runtime_for = |_slug: &str| 100u64;
+    let dead = |_session: &str| false;
+    let killed = std::cell::RefCell::new(Vec::new());
+    let kill = |session: &str| killed.borrow_mut().push(session.to_string());
+
+    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &dead, &kill);
+
+    assert_eq!(removed, 1);
+    assert!(
+        killed.into_inner().is_empty(),
+        "no kill for an already-dead session"
+    );
 
     std::fs::remove_dir_all(&base).unwrap();
 }
@@ -93,7 +201,17 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
     assert!(!missing.exists());
     let ttl_for = |_slug: &str| 0u64;
     let dead = |_session: &str| false;
-    assert_eq!(reap_dir(&missing, 1000, &ttl_for, &dead), 0);
+    assert_eq!(
+        reap_dir(
+            &missing,
+            1000,
+            &ttl_for,
+            &never_expires_runtime,
+            &dead,
+            &noop_kill
+        ),
+        0
+    );
 }
 
 #[cfg(unix)]
@@ -120,7 +238,14 @@ fn reap_dir_counts_zero_when_remove_fails() {
     let now = 1000;
     let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> expired
     let dead = |_session: &str| false;
-    let removed = reap_dir(&base, now, &ttl_for, &dead);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &never_expires_runtime,
+        &dead,
+        &noop_kill,
+    );
     // A read-only parent makes `remove_dir_all` fail for an unprivileged user, so
     // the directory survives and the Err arm runs (0 removed). Root bypasses the
     // permission check; tolerate that by only asserting consistency.
@@ -189,8 +314,9 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs,
+        max_runtime_secs: None,
     }
 }
 
@@ -234,6 +360,35 @@ fn effective_ttl_falls_back_to_cap_for_unparseable_schedule() {
         routine_with("@reboot", None).effective_ttl_secs(),
         MAX_TTL_SECS
     );
+}
+
+#[test]
+fn effective_max_runtime_defaults_to_cap_when_unset() {
+    // Daily interval (24h) is above the 1h cap, so the bound is the cap.
+    assert_eq!(
+        routine_with("@daily", None).effective_max_runtime_secs(),
+        MAX_RUNTIME_SECS
+    );
+}
+
+#[test]
+fn effective_max_runtime_follows_sub_hour_cron_interval() {
+    // Every 10 minutes -> the bound is the 600s interval, below the cap.
+    let mut routine = routine_with("*/10 * * * *", None);
+    assert_eq!(routine.effective_max_runtime_secs(), 10 * 60);
+    // An explicit value can only lower it further, never raise it above the cron-derived cap.
+    routine.max_runtime_secs = Some(u64::MAX);
+    assert_eq!(routine.effective_max_runtime_secs(), 10 * 60);
+}
+
+#[test]
+fn effective_max_runtime_uses_explicit_value() {
+    let mut routine = routine_with("@daily", None);
+    routine.max_runtime_secs = Some(1234);
+    assert_eq!(routine.effective_max_runtime_secs(), 1234);
+    // An explicit value above the cap is clamped down to it.
+    routine.max_runtime_secs = Some(u64::MAX);
+    assert_eq!(routine.effective_max_runtime_secs(), MAX_RUNTIME_SECS);
 }
 
 #[test]

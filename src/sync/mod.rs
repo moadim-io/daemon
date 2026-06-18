@@ -1,21 +1,27 @@
-//! Bidirectional synchronization between moadim managed jobs and the OS crontab.
+//! Synchronization from moadim managed jobs into the OS crontab.
 //!
 //! Moadim owns a single delimited block inside the user's crontab:
 //!
 //! ```text
 //! # BEGIN MOADIM
-//! # Managed by moadim — manual edits to this block sync back automatically
+//! # Managed by moadim — edits here are overwritten on the next sync
 //! 30 9 * * 1-5 /home/user/.config/moadim/handlers/send-report # moadim:uuid
 //! # END MOADIM
 //! ```
 //!
 //! **Forward sync** (moadim → crontab): called after every job mutation.
 //! Enabled managed jobs are written into the block; disabled/deleted jobs are removed.
+//! This is the only sync direction the daemon runs.
 //!
-//! **Reverse sync** (crontab → moadim): polled every 30 s and on startup.
-//! Schedule or handler changes made directly in the block are reflected into the
-//! in-memory store and persisted to TOML. New entries without a known UUID are
-//! imported as managed jobs.
+//! **Reverse sync** (crontab → moadim) is *not* wired up. The functions that
+//! implement it ([`sync_from_crontab`] and its `parse_block` /
+//! `parse_moadim_line` / `to_moadim_schedule` / `handler_from_command` helpers)
+//! exist and are unit-tested, but no caller invokes them on any interval or at
+//! startup — see issue #218. As a result, manual edits to the block do **not**
+//! round-trip back into the store: a hand-edited schedule or handler is
+//! reverted by the next forward sync, and hand-added lines are never imported.
+//! These helpers are kept (behind `#[allow(dead_code)]`) so reverse sync can be
+//! enabled later without re-deriving the parser.
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -35,8 +41,11 @@ const BLOCK_BEGIN: &str = "# BEGIN MOADIM";
 /// Delimiter marking the end of the moadim-owned crontab block.
 const BLOCK_END: &str = "# END MOADIM";
 /// Human-readable header comment written inside the block.
-const BLOCK_HEADER: &str =
-    "# Managed by moadim — manual edits to this block sync back automatically";
+///
+/// Reverse sync is not wired up (see the module docs and issue #218), so manual
+/// edits to this block do not round-trip — they are overwritten by the next
+/// forward sync. The header says so rather than promising automatic sync-back.
+const BLOCK_HEADER: &str = "# Managed by moadim — edits here are overwritten on the next sync";
 
 // ─── Error type ────────────────────────────────────────────────────────────
 
@@ -139,8 +148,23 @@ pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
 /// Honours the `MOADIM_CRONTAB_BIN` environment variable when set, falling back
 /// to the system `crontab` otherwise. The override exists so tests can point
 /// crontab I/O at a shim instead of mutating the developer's real crontab.
+///
+/// In **test builds**, when no `MOADIM_CRONTAB_BIN` shim is configured this never
+/// falls back to the real system `crontab`: it returns a path that cannot exist,
+/// so the spawn fails and the sync logs a warning instead of clobbering the
+/// developer's live crontab. This is a structural safety net for issue #175 — a
+/// test that forgets to install a shim (or clear `PATH`) still cannot touch the
+/// real crontab. Tests that need a working sync set `MOADIM_CRONTAB_BIN` to a
+/// shim, which is honoured first.
 fn crontab_bin() -> String {
-    std::env::var("MOADIM_CRONTAB_BIN").unwrap_or_else(|_| "crontab".to_string())
+    if let Ok(bin) = std::env::var("MOADIM_CRONTAB_BIN") {
+        return bin;
+    }
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-crontab-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "crontab".to_string();
+    fallback
 }
 
 /// Read the current user crontab via `crontab -l`.
@@ -409,7 +433,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
                     source: "managed".to_string(),
                     created_at: now,
                     updated_at: now,
-                    last_triggered_at: None,
+                    last_manual_trigger_at: None,
                 };
                 lock.insert(id.clone(), job.clone());
                 jobs_to_write.push(job);

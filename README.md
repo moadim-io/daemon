@@ -228,6 +228,22 @@ on stdout. Paired with the exit codes above, a caller gets the full contract wit
 Any other failure exits `1` with a message on stderr. The object is always a single line, so
 `moadim status --json | jq -r .pid` and similar pipelines work without buffering.
 
+Putting the contract to use — branch on the exit code, then read the JSON only when you need a field:
+
+```sh
+# Start the server only if one isn't already running (status exits 3 when not).
+if ! moadim status --json >/dev/null; then
+  moadim
+fi
+
+# Grab the running server's PID for a downstream check (empty when not running).
+pid=$(moadim status --json | jq -r '.pid // empty')
+
+# Reap expired routine workbenches and report how many were freed.
+removed=$(moadim cleanup --json | jq -r .removed)
+echo "moadim: reaped ${removed} workbench(es)"
+```
+
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send
 `POST /shutdown`. (During development, `cargo run -- --interactive` keeps it in

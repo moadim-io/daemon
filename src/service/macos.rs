@@ -10,7 +10,18 @@ const LAUNCHD_LABEL: &str = "io.moadim.daemon";
 /// The `launchctl` executable, overridable via `MOADIM_LAUNCHCTL_BIN` so tests can substitute a
 /// no-op shim instead of mutating the real launchd session. Mirrors the `MOADIM_CRONTAB_BIN` seam.
 pub(super) fn launchctl_bin() -> String {
-    std::env::var("MOADIM_LAUNCHCTL_BIN").unwrap_or_else(|_| "launchctl".to_string())
+    if let Ok(bin) = std::env::var("MOADIM_LAUNCHCTL_BIN") {
+        return bin;
+    }
+    // In test builds, never fall back to the real `launchctl`: a test that forgets to wire up the
+    // `MOADIM_LAUNCHCTL_BIN` shim must not mutate the developer's live launchd session. The guard
+    // path does not exist, so the eventual spawn fails harmlessly. Mirrors the `crontab_bin()` guard
+    // from issue #211.
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-launchctl-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "launchctl".to_string();
+    fallback
 }
 
 /// Escape the five XML metacharacters so a filesystem path embeds safely in the plist `<string>`s.

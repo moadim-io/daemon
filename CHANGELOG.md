@@ -81,6 +81,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   after it) in the workbench `CLAUDE.md` and a silent `"routine"` slug the user
   never chose.
 - Route the macOS LaunchAgent `plist_path()` through the `MOADIM_HOME_OVERRIDE` home seam so service install/uninstall tests can no longer write to or delete the developer's real `~/Library/LaunchAgents/io.moadim.daemon.plist` (#214).
+- `kill_pid` (the force-kill fallback in the restart path) now resolves its
+  executable through an opt-in `MOADIM_KILL_BIN` seam, letting tests inject a
+  harmless shim instead of signalling a real PID. The default stays the platform
+  killer (`kill` / `taskkill`), so the existing self-contained test that kills
+  its own spawned child still works. (#216)
 
 ## [0.12.0] - 2026-06-18
 

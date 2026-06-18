@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Routine create/update now validates the configured agent, rejecting unknown agents.
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

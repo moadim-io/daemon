@@ -37,7 +37,7 @@ fn from_routine_populates_derived_fields() {
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     };

@@ -2,6 +2,7 @@
 
 use super::mcp::MoadimMcp;
 use crate::cron_jobs::{self, new_registry, AppState, CronStore, ShutdownSignal};
+use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
@@ -24,6 +25,8 @@ pub struct HealthResponse {
     pub uptime_secs: u64,
     /// Whether the server is running.
     pub running: bool,
+    /// Daemon version (from `CARGO_PKG_VERSION`).
+    pub version: String,
 }
 
 /// Request body for `POST /echo`.
@@ -49,14 +52,29 @@ pub async fn index() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
 }
 
+/// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
+///
+/// The nested API router needs its own fallback: in axum 0.8 a `nest`ed router with no
+/// fallback inherits the outer one, so the SPA `.fallback(get(index))` would otherwise
+/// answer an unknown `/api/v1/...` path (a typo'd or removed endpoint) with the SPA
+/// `index.html` body and `200` instead of a proper `404` (issue #270). Routing it through
+/// [`AppError::NotFound`] keeps the JSON error shape (`{"error":"not found"}`) consistent
+/// with the handler-level 404s, while the outer SPA fallback still serves UI routes.
+async fn api_not_found() -> AppError {
+    AppError::NotFound
+}
+
 /// `GET /health` — health check with uptime.
 #[utoipa::path(get, path = "/health",
     responses((status = 200, body = HealthResponse)))]
 pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        uptime_secs: now_secs() - state.uptime_start,
+        // saturating_sub so a backward wall-clock adjustment can't underflow
+        // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
+        uptime_secs: now_secs().saturating_sub(state.uptime_start),
         running: true,
+        version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }
 
@@ -166,7 +184,10 @@ pub(crate) fn build_app_with_shutdown(
                 .delete(routines::delete),
         )
         .route("/routines/{id}/trigger", post(routines::trigger))
-        .route("/routines/{id}/logs", get(routines::get_logs));
+        .route("/routines/{id}/logs", get(routines::get_logs))
+        // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
+        // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
+        .fallback(api_not_found);
 
     Router::new()
         .route("/", get(index))

@@ -105,7 +105,7 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
 }
 
 /// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
-/// daemon-written runtime state (e.g. `last_triggered_at`) kept out of the tracked `routine.toml`.
+/// daemon-written runtime state (e.g. `last_manual_trigger_at`) kept out of the tracked `routine.toml`.
 ///
 /// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
 /// trigger churn never produces version-control diffs.

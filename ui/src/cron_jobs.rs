@@ -27,7 +27,7 @@ pub struct CronJob {
     pub created_at: u64,
     pub updated_at: u64,
     #[serde(default)]
-    pub last_triggered_at: Option<u64>,
+    pub last_manual_trigger_at: Option<u64>,
     /// Human-readable schedule description supplied by the server (e.g. "At 09:30, Monday through Friday").
     #[serde(default)]
     pub schedule_description: Option<String>,
@@ -862,7 +862,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
     };
 
     let last_run = job
-        .last_triggered_at
+        .last_manual_trigger_at
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 

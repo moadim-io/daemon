@@ -17,7 +17,7 @@ fn make_routine(id: &str) -> Routine {
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -533,7 +533,7 @@ fn svc_trigger_records_time_without_agent_config() {
     routine.agent = "no-such-agent-xyz".into();
     store.lock().unwrap().insert("trig-id".into(), routine);
     let triggered = svc_trigger(&store, "trig-id").unwrap();
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
     // folder is slug of "My Routine"
     crate::routine_storage::remove_routine_dir("my-routine").unwrap();
 }
@@ -563,7 +563,7 @@ fn svc_trigger_with_agent_config_spawns() {
     crate::routine_storage::write_routine(&routine).unwrap();
 
     let triggered = svc_trigger(&store, "trig-cfg").unwrap();
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     // Let the fire-and-forget shell create its workbench, then clean everything up.
     std::thread::sleep(std::time::Duration::from_millis(150));

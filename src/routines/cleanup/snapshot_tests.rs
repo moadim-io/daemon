@@ -2,6 +2,7 @@
 
 use super::super::super::command::slugify;
 use super::super::super::model::{new_store, Routine};
+use super::super::runtime::MAX_RUNTIME_SECS;
 use super::super::ttl::MAX_TTL_SECS;
 use super::*;
 
@@ -19,6 +20,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         updated_at: 0,
         last_triggered_at: None,
         ttl_secs,
+        max_runtime_secs: None,
     }
 }
 
@@ -52,4 +54,36 @@ fn ttl_for_returns_snapshot_value_when_present() {
 fn ttl_for_falls_back_to_max_for_orphan_slug() {
     let snapshot: HashMap<String, u64> = HashMap::new();
     assert_eq!(ttl_for(&snapshot, "orphan"), MAX_TTL_SECS);
+}
+
+#[test]
+fn snapshot_max_runtimes_maps_slug_to_effective_max_runtime() {
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "id".into(),
+        routine_with("My Routine", "*/10 * * * *", None),
+    );
+
+    let snapshot = snapshot_max_runtimes(&store);
+    // The sub-hour interval bounds the max runtime to the 600s interval, below the cap.
+    let slug = slugify("My Routine");
+    assert_eq!(snapshot.get(&slug).copied(), Some(10 * 60));
+}
+
+#[test]
+fn snapshot_max_runtimes_empty_store_is_empty() {
+    assert!(snapshot_max_runtimes(&new_store()).is_empty());
+}
+
+#[test]
+fn max_runtime_for_returns_snapshot_value_when_present() {
+    let mut snapshot = HashMap::new();
+    snapshot.insert("known".to_string(), 99u64);
+    assert_eq!(max_runtime_for(&snapshot, "known"), 99);
+}
+
+#[test]
+fn max_runtime_for_falls_back_to_cap_for_orphan_slug() {
+    let snapshot: HashMap<String, u64> = HashMap::new();
+    assert_eq!(max_runtime_for(&snapshot, "orphan"), MAX_RUNTIME_SECS);
 }

@@ -20,6 +20,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- iCal feeds now fold long content lines at 75 octets per RFC 5545 §3.1, using a
+  UTF-8-aware byte budget so multi-byte characters are never split across a fold
+  boundary. Previously over-long `SUMMARY`/`DESCRIPTION` lines were emitted
+  unfolded, which some calendar clients reject.
 - `now_secs()` no longer panics when the system clock reads before the Unix
   epoch (1970). A VM or container booted with a dead real-time clock could make
   `SystemTime::duration_since` fail and crash the daemon; such readings are now
@@ -54,6 +58,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim install` / `moadim uninstall` register the daemon as an OS service so
+  it starts at login and is restarted on crash, keeping scheduled routines firing
+  across reboots. macOS writes a per-user launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
+  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
+  enabled with `systemctl --user enable --now`). Both run the daemon in the
+  foreground (`moadim --interactive`) so the service manager supervises it; other
+  platforms report that the command is not yet supported.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),

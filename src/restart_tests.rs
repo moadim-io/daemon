@@ -180,6 +180,38 @@ fn kill_pid_terminates_a_live_process() {
     );
 }
 
+/// `MOADIM_KILL_BIN` diverts `kill_pid` away from the real killer: a shim shell script records
+/// that it was invoked (proving the seam fired) and a never-spawned victim PID is never signalled.
+#[cfg(unix)]
+#[test]
+fn kill_pid_honors_kill_bin_override() {
+    let dir = temp_home("kill-bin-seam");
+    let marker = dir.join("ran.txt");
+    let script = dir.join("fake-kill.sh");
+    // Shim records its args and exits 0 — it never signals any process.
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\nexit 0\n",
+            marker.display()
+        ),
+    )
+    .expect("write shim");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("chmod shim");
+
+    let _kill = EnvGuard::set("MOADIM_KILL_BIN", script.to_str().unwrap());
+    // A PID that does not exist: if the real `kill` ran it would error, but we never invoke it.
+    kill_pid(424242);
+
+    let recorded = std::fs::read_to_string(&marker).expect("shim ran and wrote its args");
+    assert!(
+        recorded.contains("424242"),
+        "shim received the pid, proving the override diverted the call: {recorded:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn timeout_and_poll_honor_env_overrides() {
     let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "25");

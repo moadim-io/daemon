@@ -41,6 +41,41 @@ fn plist_path_is_under_launch_agents() {
     assert!(path.ends_with("Library/LaunchAgents/io.moadim.daemon.plist"));
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn plist_path_honors_home_override() {
+    // With `MOADIM_HOME_OVERRIDE` set (as the install/uninstall tests do), `plist_path()` must
+    // resolve under the temp home, never the developer's real `~/Library/LaunchAgents`.
+    let base = std::env::temp_dir().join(format!("moadim-plist-home-{}", uuid::Uuid::new_v4()));
+    let prev_override = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); the var is restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
+    }
+
+    let path = plist_path().unwrap();
+
+    // SAFETY: single-threaded harness; restore the saved value before any assertion can unwind.
+    unsafe {
+        match prev_override {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+
+    assert_eq!(
+        path,
+        base.join("Library/LaunchAgents/io.moadim.daemon.plist"),
+        "plist_path() must land under MOADIM_HOME_OVERRIDE, not the real home"
+    );
+    if let Some(real_home) = dirs::home_dir() {
+        assert!(
+            !path.starts_with(real_home),
+            "plist_path() must not resolve under the real home when the override is set"
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn unit_carries_exec_start_and_install_section() {

@@ -8,7 +8,10 @@ use std::path::PathBuf;
 const HOME_OVERRIDE_ENV: &str = "MOADIM_HOME_OVERRIDE";
 
 /// Resolve the base home directory, honoring the [`HOME_OVERRIDE_ENV`] test seam when set.
-fn home() -> Option<PathBuf> {
+///
+/// Exposed to the crate so platform service installers resolve their home-relative paths (e.g. the
+/// macOS LaunchAgents plist) through the same override seam, keeping tests off the real home.
+pub(crate) fn home() -> Option<PathBuf> {
     match std::env::var_os(HOME_OVERRIDE_ENV) {
         Some(dir) => Some(PathBuf::from(dir)),
         None => dirs::home_dir(),
@@ -102,7 +105,7 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
 }
 
 /// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
-/// daemon-written runtime state (e.g. `last_triggered_at`) kept out of the tracked `routine.toml`.
+/// daemon-written runtime state (e.g. `last_manual_trigger_at`) kept out of the tracked `routine.toml`.
 ///
 /// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
 /// trigger churn never produces version-control diffs.

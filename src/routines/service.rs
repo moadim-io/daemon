@@ -8,7 +8,7 @@ use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
-use super::agents::load_agent_command;
+use super::agents::{load_agent_command, AgentLoadError};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
@@ -22,6 +22,21 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
     match routine.repositories.first() {
         Some(repo) => (false, repo.repository.to_lowercase()),
         None => (true, String::new()),
+    }
+}
+
+/// Reject a referenced agent whose `<name>.toml` is present but unparseable.
+///
+/// Surfaces the malformed-TOML failure at edit time (REST 400 / MCP) instead of letting it slip
+/// through to fire time, where it would only be logged and the routine silently skipped. A *missing*
+/// config is intentionally allowed: the agent may be registered later, and the missing-file case is
+/// handled (warned + skipped) downstream exactly as before.
+fn validate_agent(agent: &str) -> Result<(), AppError> {
+    match load_agent_command(agent) {
+        Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
+        Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} has a malformed config: {err}"
+        ))),
     }
 }
 
@@ -85,6 +100,7 @@ pub fn svc_create(
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    validate_agent(&req.agent)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
@@ -129,6 +145,9 @@ pub fn svc_update(
 ) -> Result<RoutineResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
+    }
+    if let Some(ref agent) = req.agent {
+        validate_agent(agent)?;
     }
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
@@ -203,7 +222,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     match load_agent_command(&routine.agent) {
-        Some(agent) => {
+        Ok(agent) => {
             let cmd = build_routine_command(&routine, &agent);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
@@ -216,10 +235,11 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
                 log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
-        None => log::warn!(
-            "trigger: agent config not found for routine {:?} (agent {:?})",
-            routine.id,
-            routine.agent
+        Err(err) => log::warn!(
+            "trigger: cannot load agent {:?} ({}) for routine {:?}",
+            routine.agent,
+            err,
+            routine.id
         ),
     }
     Ok(routine)

@@ -116,6 +116,74 @@ fn svc_create_rejects_duplicate_slug() {
 }
 
 #[test]
+fn svc_create_rejects_malformed_agent_config() {
+    // A referenced agent whose `<name>.toml` is present but unparseable is rejected at create time
+    // with `BadRequest` quoting the parse error — not silently skipped at fire time.
+    let agent_name = "svc-create-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Malformed ZZZ".into(),
+            agent: agent_name.into(),
+            prompt: "p".into(),
+            repositories: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn svc_update_rejects_malformed_agent_config() {
+    // The same rejection applies when an update switches a routine to a malformed agent.
+    let agent_name = "svc-update-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let title = "Svc Update Malformed ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-mal-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-mal-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-mal-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: Some(agent_name.into()),
+            prompt: None,
+            repositories: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
 fn svc_update_rejects_renaming_into_existing_slug() {
     // Covers the slug-conflict branch in `svc_update`: renaming one routine to a
     // title that another routine already owns yields a `Conflict`.

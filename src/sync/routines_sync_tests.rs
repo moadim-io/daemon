@@ -168,6 +168,27 @@ fn build_block_skips_routine_with_missing_agent_config() {
     assert!(!block.contains("moadim-routine:"));
 }
 
+#[test]
+fn build_block_skips_routine_with_malformed_agent_config() {
+    // A present-but-unparseable agent TOML must still be skipped, but for the *malformed* reason
+    // (not the missing-file message). The routine never reaches the crontab block.
+    let agent_name = "test-sync-agent-malformed-block";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    // `command` must be a string; an array makes the TOML structurally invalid for `AgentCommand`.
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "mal".into(),
+        make_routine("mal", "Malformed Agent Sync Routine", agent_name),
+    );
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
 /// A temp-dir `crontab` shim wired in via `MOADIM_CRONTAB_BIN`: `-l` prints the store file, `-`
 /// overwrites it from stdin. Restores the prior env value and removes the temp dir on drop.
 struct CronShim {

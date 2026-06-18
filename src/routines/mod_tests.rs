@@ -539,8 +539,11 @@ fn svc_trigger_records_time_without_agent_config() {
 }
 
 #[test]
-fn load_agent_command_missing_returns_none() {
-    assert!(load_agent_command("definitely-not-an-agent-zzz").is_none());
+fn load_agent_command_missing_returns_missing_error() {
+    assert!(matches!(
+        load_agent_command("definitely-not-an-agent-zzz"),
+        Err(crate::routines::AgentLoadError::Missing)
+    ));
 }
 
 #[test]

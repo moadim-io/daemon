@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- A malformed (present-but-unparseable) agent TOML is no longer misreported as
+  "agent config not found". `load_agent_command` now returns a `Result` with a
+  distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics
+  name the agent and quote the underlying `toml` parse error. Creating or
+  updating a routine that references a malformed agent config is now rejected
+  with `400 Bad Request` (REST + MCP) at edit time instead of being silently
+  skipped at fire time. The missing-file case is unchanged (still skipped and
+  warned, with an accurate message). (#189)
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

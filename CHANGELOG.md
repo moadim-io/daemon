@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Manually triggering a routine or cron job no longer leaks a `<defunct>`
+  (zombie) child process. Both trigger paths spawned a child and dropped the
+  `Child` without `wait()`, so the kernel kept a zombie for the daemon's
+  lifetime (Rust's stdlib does not reap on `Child` drop). A new
+  `utils::process::spawn_reaped` helper spawns the child and reaps it on a
+  detached thread, keeping the trigger fire-and-forget. ([#212])
+
+[#212]: https://github.com/moadim-io/daemon/issues/212
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

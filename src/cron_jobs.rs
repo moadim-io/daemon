@@ -331,7 +331,9 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     write_job(&job).map_err(|_| AppError::Internal)?;
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
-        if let Err(err) = std::process::Command::new(&handler_path).spawn() {
+        if let Err(err) =
+            crate::utils::process::spawn_reaped(&mut std::process::Command::new(&handler_path))
+        {
             log::warn!("trigger: failed to spawn handler {:?}: {err}", handler_path);
         }
     } else {

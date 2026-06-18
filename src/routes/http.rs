@@ -24,6 +24,8 @@ pub struct HealthResponse {
     pub uptime_secs: u64,
     /// Whether the server is running.
     pub running: bool,
+    /// Daemon version (from `CARGO_PKG_VERSION`).
+    pub version: String,
 }
 
 /// Request body for `POST /echo`.
@@ -57,6 +59,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         status: "ok".to_string(),
         uptime_secs: now_secs() - state.uptime_start,
         running: true,
+        version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }
 

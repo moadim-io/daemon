@@ -230,7 +230,9 @@ identical command via `sh -c`.
 
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
-instants so external calendars can subscribe without an embedded `VTIMEZONE`. See `src/routines/ical.rs`.
+instants so external calendars can subscribe without an embedded `VTIMEZONE`. The optional
+`?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
+an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
 Finished run workbenches are reaped automatically by an hourly background sweep
 (`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool

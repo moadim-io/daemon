@@ -833,6 +833,58 @@ async fn router_serves_routines_ical_feed() {
 }
 
 #[tokio::test]
+async fn router_serves_per_routine_ical_feed_via_query() {
+    // `GET /routines.ics?routine=<id>` scopes the feed to one routine and names the
+    // calendar after it; an unknown id returns a well-formed empty calendar (issue #263).
+    let routines = crate::routines::new_store();
+    let mk = |id: &str, title: &str| crate::routines::Routine {
+        id: id.to_string(),
+        schedule: "@daily".to_string(),
+        title: title.to_string(),
+        agent: "claude".to_string(),
+        prompt: "do the thing".to_string(),
+        repositories: vec![],
+        enabled: true,
+        source: "managed".to_string(),
+        created_at: 0,
+        updated_at: 0,
+        last_manual_trigger_at: None,
+        ttl_secs: None,
+        max_runtime_secs: None,
+    };
+    {
+        let mut lock = routines.lock().unwrap();
+        lock.insert("a".to_string(), mk("a", "Routine A"));
+        lock.insert("b".to_string(), mk("b", "Routine B"));
+    }
+
+    let fetch = |uri: &'static str| {
+        let app = build_app(new_store(), routines.clone());
+        async move {
+            let resp = app
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            String::from_utf8(bytes.to_vec()).unwrap()
+        }
+    };
+
+    let filtered = fetch("/api/v1/routines.ics?routine=a").await;
+    assert!(filtered.contains("UID:a-"));
+    assert!(!filtered.contains("UID:b-"));
+    assert!(filtered.contains("X-WR-CALNAME:Routine A\r\n"));
+
+    let unknown = fetch("/api/v1/routines.ics?routine=missing").await;
+    assert!(unknown.starts_with("BEGIN:VCALENDAR"));
+    assert!(unknown.ends_with("END:VCALENDAR\r\n"));
+    assert_eq!(unknown.matches("BEGIN:VEVENT").count(), 0);
+}
+
+#[tokio::test]
 async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
     // A `uptime_start` in the future models the wall clock jumping backward
     // after the server started. The old `now_secs() - uptime_start` would

@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `GET /routines.ics` accepts an optional **`?routine=<id>`** query param that
+  scopes the feed to a single routine, so a calendar client can subscribe to one
+  routine's fire times instead of the firehose of every routine on the host. The
+  filtered calendar is named after the routine (`X-WR-CALNAME`); an unknown or
+  disabled id yields a well-formed empty calendar (still `200 text/calendar`).
+  Without the param the feed is unchanged — every enabled routine (#263).
+
 ### Fixed
 
 - Crontab docs no longer claim reverse sync (crontab → moadim) runs. It is

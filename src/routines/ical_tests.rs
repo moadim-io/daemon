@@ -167,3 +167,41 @@ fn svc_ical_reads_store() {
     assert!(ics.starts_with("BEGIN:VCALENDAR"));
     assert!(ics.contains("BEGIN:VEVENT"));
 }
+
+#[test]
+fn svc_ical_routine_filters_to_one_routine() {
+    // Two enabled routines in the store; the filtered feed contains only the requested
+    // one's events, and the calendar is named after that routine (issue #263).
+    let store = new_store();
+    {
+        let mut lock = store.lock().unwrap();
+        let mut keep = routine_with("keep", "@daily", true);
+        keep.title = "Keep Me".to_string();
+        lock.insert("keep".to_string(), keep);
+        let mut other = routine_with("other", "@daily", true);
+        other.title = "Other".to_string();
+        lock.insert("other".to_string(), other);
+    }
+    let ics = svc_ical_routine(&store, "keep");
+    assert!(ics.contains("UID:keep-"));
+    assert!(!ics.contains("UID:other-"));
+    assert!(ics.contains("SUMMARY:Keep Me\r\n"));
+    // Calendar is named after the routine, not the generic all-routines name.
+    assert!(ics.contains("X-WR-CALNAME:Keep Me\r\n"));
+    assert!(!ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
+}
+
+#[test]
+fn svc_ical_routine_unknown_id_is_well_formed_empty_calendar() {
+    // An unknown id is not an error: a valid, empty VCALENDAR with the default name.
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("r1".to_string(), routine_with("r1", "@daily", true));
+    let ics = svc_ical_routine(&store, "does-not-exist");
+    assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
+    assert!(ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
+    assert!(ics.ends_with("END:VCALENDAR\r\n"));
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
+}

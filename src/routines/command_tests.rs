@@ -18,6 +18,7 @@ fn make_routine(title: &str) -> Routine {
         updated_at: 0,
         last_triggered_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 

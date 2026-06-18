@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
-        cli::Command::Status { json } => std::process::exit(cli::status(json)?),
+        cli::Command::Status { json, wait } => std::process::exit(cli::status(json, wait)?),
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Background => cli::run_background(),

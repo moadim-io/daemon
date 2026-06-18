@@ -35,7 +35,13 @@ fn stop_and_status_commands() {
             quiet: false
         }
     );
-    assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
+    assert_eq!(
+        parse(argv(&["status"])),
+        Command::Status {
+            json: false,
+            wait: None
+        }
+    );
 }
 
 #[test]
@@ -47,7 +53,10 @@ fn cleanup_command() {
 fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["status", "--json"])),
-        Command::Status { json: true }
+        Command::Status {
+            json: true,
+            wait: None
+        }
     );
     assert_eq!(
         parse(argv(&["cleanup", "--json"])),
@@ -101,7 +110,46 @@ fn json_flag_only_applies_to_its_command() {
     // An unrelated trailing flag does not switch on JSON output.
     assert_eq!(
         parse(argv(&["status", "--verbose"])),
-        Command::Status { json: false }
+        Command::Status {
+            json: false,
+            wait: None
+        }
+    );
+}
+
+#[test]
+fn wait_flag_parses_for_status() {
+    // Bare `--wait` → wait with the default timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait"])),
+        Command::Status {
+            json: false,
+            wait: Some(None)
+        }
+    );
+    // `--wait=SECS` → wait up to that many seconds.
+    assert_eq!(
+        parse(argv(&["status", "--wait=15"])),
+        Command::Status {
+            json: false,
+            wait: Some(Some(15))
+        }
+    );
+    // A non-numeric value falls back to the default timeout, not an error.
+    assert_eq!(
+        parse(argv(&["status", "--wait=oops"])),
+        Command::Status {
+            json: false,
+            wait: Some(None)
+        }
+    );
+    // Composes with `--json`.
+    assert_eq!(
+        parse(argv(&["status", "--json", "--wait=5"])),
+        Command::Status {
+            json: true,
+            wait: Some(Some(5))
+        }
     );
 }
 
@@ -432,8 +480,8 @@ fn status_reports_down_when_no_server() {
     let home = temp_home("status-down");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(status(false).unwrap(), EXIT_NOT_RUNNING);
-    assert_eq!(status(true).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(true, None).unwrap(), EXIT_NOT_RUNNING);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -445,8 +493,51 @@ fn status_reports_running_with_pid() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     // A pid file makes the human-readable "running (pid N)" suffix branch run.
     write_pid_file().unwrap();
-    assert_eq!(status(false).unwrap(), 0);
-    assert_eq!(status(true).unwrap(), 0);
+    assert_eq!(status(false, None).unwrap(), 0);
+    assert_eq!(status(true, None).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_returns_immediately_when_already_up() {
+    // A server that is already reachable: `--wait` exits 0 without blocking.
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("status-wait-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let started = std::time::Instant::now();
+    assert_eq!(status(false, Some(Some(5))).unwrap(), 0);
+    // It must not have spent anywhere near the 5s budget waiting.
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_succeeds_when_server_comes_up_before_timeout() {
+    // Server starts down, then comes up shortly after; `--wait` must catch it and exit 0.
+    let server = FakeServer::start(200, String::new());
+    server.alive.store(false, Ordering::SeqCst);
+    let alive = Arc::clone(&server.alive);
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(250));
+        alive.store(true, Ordering::SeqCst);
+    });
+    let home = temp_home("status-wait-delayed");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(status(false, Some(Some(5))).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_times_out_when_never_up() {
+    // Nothing ever answers: `--wait=1` blocks for ~1s then exits with the not-running code.
+    let home = temp_home("status-wait-timeout");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    let started = std::time::Instant::now();
+    assert_eq!(status(false, Some(Some(1))).unwrap(), EXIT_NOT_RUNNING);
+    assert!(started.elapsed() >= Duration::from_secs(1));
     let _ = std::fs::remove_dir_all(&home);
 }
 

@@ -390,6 +390,13 @@ fn status_json_address_reflects_bind_override() {
 }
 
 #[test]
+fn stop_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+#[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();
     print_version();

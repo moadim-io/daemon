@@ -60,6 +60,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   actually emit output instead of being silently dropped.
 - `moadim status` now reports the effective bind address instead of the
   hardcoded default when a custom bind address is configured.
+- `moadim stop --json` now reports the effective bind address (`address`
+  field) instead of the hardcoded default, matching `status --json`. It hardcoded
+  `BIND_ADDR` while `status --json` already honored the bind override, so the two
+  shapes drifted apart whenever a custom bind address was configured.
 - iCal `escape_text` now normalizes carriage returns (CR and CRLF) to `\n`
   per RFC 5545, so generated calendar feeds no longer emit raw control
   characters in escaped text.

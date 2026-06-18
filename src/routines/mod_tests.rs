@@ -223,6 +223,12 @@ fn ensure_default_agents_writes_parsable_configs() {
     assert_eq!(codex.command, "codex");
     assert!(codex.args.contains(&"{prompt_file}".to_string()));
 
+    // hermes default parses and passes the prompt file as an argument
+    let hermes: AgentCommand =
+        toml::from_str(&std::fs::read_to_string(dir.join("hermes.toml")).unwrap()).unwrap();
+    assert_eq!(hermes.command, "hermes");
+    assert!(hermes.args.contains(&"{prompt_file}".to_string()));
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -267,10 +273,14 @@ fn available_agents_lists_sorted_toml_stems() {
 fn available_agents_falls_back_to_builtins_when_missing() {
     let dir = std::env::temp_dir().join("moadim-agents-missing-test");
     let _ = std::fs::remove_dir_all(&dir);
-    // directory does not exist → built-in defaults
+    // directory does not exist → built-in defaults (declaration order)
     assert_eq!(
         available_agents_in(&dir),
-        vec!["claude".to_string(), "codex".to_string()]
+        vec![
+            "claude".to_string(),
+            "codex".to_string(),
+            "hermes".to_string()
+        ]
     );
 }
 

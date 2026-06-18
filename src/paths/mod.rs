@@ -101,6 +101,15 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
     routine_dir(id).join(".gitignore")
 }
 
+/// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
+/// daemon-written runtime state (e.g. `last_triggered_at`) kept out of the tracked `routine.toml`.
+///
+/// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
+/// trigger churn never produces version-control diffs.
+pub fn routine_state_path(id: &str) -> PathBuf {
+    routine_dir(id).join("state.local.toml")
+}
+
 /// Returns the path to `{routines_dir}/{id}/run.sh`, the generated launch script invoked by cron.
 pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")

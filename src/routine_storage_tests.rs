@@ -153,6 +153,101 @@ fn load_routine_from_dir_missing_returns_none() {
 }
 
 #[test]
+fn last_triggered_at_persists_to_sidecar_not_routine_toml() {
+    // Runtime trigger state is written to the gitignored `state.local.toml` sidecar and kept out
+    // of the version-controlled `routine.toml`, then read back from the sidecar on load.
+    let title = "Rs Sidecar Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("rs-sidecar-id", title);
+    routine.last_triggered_at = Some(12345);
+    write_routine(&routine).unwrap();
+
+    // The tracked config file does not carry the runtime timestamp...
+    let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+    assert!(
+        !toml_text.contains("last_triggered_at"),
+        "routine.toml must not carry runtime trigger state: {toml_text}"
+    );
+    // ...the gitignored sidecar does, and it round-trips through load.
+    assert!(crate::paths::routine_state_path(&slug).exists());
+    let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
+    assert!(state_text.contains("last_triggered_at"));
+    assert_eq!(
+        load_routine_from_dir(&slug).unwrap().last_triggered_at,
+        Some(12345)
+    );
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn write_routine_clears_stale_sidecar_when_untriggered() {
+    // Re-writing a routine whose trigger state has been cleared removes the now-stale sidecar, so
+    // the on-disk state mirrors the in-memory `None`.
+    let title = "Rs Clear Sidecar Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("rs-clear-id", title);
+    routine.last_triggered_at = Some(999);
+    write_routine(&routine).unwrap();
+    assert!(crate::paths::routine_state_path(&slug).exists());
+
+    routine.last_triggered_at = None;
+    write_routine(&routine).unwrap();
+    assert!(
+        !crate::paths::routine_state_path(&slug).exists(),
+        "sidecar should be removed when there is no trigger state"
+    );
+    assert_eq!(
+        load_routine_from_dir(&slug).unwrap().last_triggered_at,
+        None
+    );
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn load_routine_falls_back_to_legacy_last_triggered_in_routine_toml() {
+    // A routine written by an older daemon stored `last_triggered_at` inside `routine.toml` and
+    // has no sidecar. Load still surfaces the timestamp via the legacy-field fallback.
+    let slug = "rs-legacy-trigger-routine";
+    let dir = crate::paths::routine_dir(slug);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        crate::paths::routine_toml_path(slug),
+        "schedule = \"@daily\"\ntitle = \"Rs Legacy Trigger\"\nagent = \"claude\"\nlast_triggered_at = 777\n",
+    )
+    .unwrap();
+    // No sidecar exists yet.
+    assert!(!crate::paths::routine_state_path(slug).exists());
+
+    assert_eq!(
+        load_routine_from_dir(slug).unwrap().last_triggered_at,
+        Some(777)
+    );
+
+    remove_routine_dir(slug).unwrap();
+}
+
+#[test]
+fn load_routine_ignores_unparsable_sidecar() {
+    // A malformed `state.local.toml` parses to `None` (rather than crashing the load), and with no
+    // legacy field in `routine.toml` the routine loads with no trigger timestamp.
+    let slug = "rs-bad-sidecar-routine";
+    let dir = crate::paths::routine_dir(slug);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        crate::paths::routine_toml_path(slug),
+        "schedule = \"@daily\"\ntitle = \"Rs Bad Sidecar\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
+    std::fs::write(crate::paths::routine_state_path(slug), "= not valid toml =").unwrap();
+
+    assert_eq!(load_routine_from_dir(slug).unwrap().last_triggered_at, None);
+
+    remove_routine_dir(slug).unwrap();
+}
+
+#[test]
 fn torn_routine_toml_loads_as_none() {
     // A truncated/garbage routine.toml (e.g. left by a crash mid-write) must not panic or load a
     // half-baked routine; the loader returns None and the routine is simply absent.

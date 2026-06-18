@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Status { json } => std::process::exit(cli::status(json)?),
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
-        cli::Command::Stop { json } => std::process::exit(cli::stop(json)?),
+        cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
         cli::Command::Foreground => run_server().await,

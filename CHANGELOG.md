@@ -11,12 +11,63 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-18
+
+### Added
+
+- Per-routine **max-runtime watchdog** bounds hung agent runs. Routines carry an
+  optional `max_runtime_secs` (TOML + REST/MCP create/update). Like `ttl_secs`,
+  the effective bound is `min(MAX_RUNTIME_SECS, cron interval)` (default cap 1h),
+  lowered further by an explicit `max_runtime_secs`. The hourly cleanup sweep now
+  force-kills any tmux session
+  whose run has exceeded its effective max runtime — recording
+  `moadim: routine exceeded max runtime; killing session` in the run's
+  `agent.log` — after which the workbench is reaped under the existing
+  `ttl_secs` rules. A session still within its max runtime is never touched.
+  Previously a hung run (waiting on stdin, looping, blocked on a stuck
+  network/git op) lived forever and stacked one zombie session + workbench per
+  cron tick, since the TTL reaper only governs *finished* runs.
+- `moadim install` / `moadim uninstall` register the daemon as an OS service so
+  it starts at login and is restarted on crash, keeping scheduled routines firing
+  across reboots. macOS writes a per-user launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
+  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
+  enabled with `systemctl --user enable --now`). Both run the daemon in the
+  foreground (`moadim --interactive`) so the service manager supervises it; other
+  platforms report that the command is not yet supported.
+- **Hermes** is now a built-in agent alongside `claude` and `codex`. A default
+  `hermes.toml` (`hermes exec {prompt_file}`, mirroring Codex) is seeded into
+  `~/.config/moadim/agents/` on startup, and `hermes` appears in
+  `available_agents()` / `GET /agents`, so routines can launch Hermes.
+
+### Changed
+
+- Routine runtime state (last-run timestamps and related mutable fields) is now
+  stored in a separate, git-ignored sidecar file instead of the git-tracked
+  `routine.toml`, so scheduled runs no longer produce noisy diffs or merge
+  conflicts in version-controlled routine definitions (#127).
+
 ### Fixed
 
+- iCal feeds now fold long content lines at 75 octets per RFC 5545 §3.1, using a
+  UTF-8-aware byte budget so multi-byte characters are never split across a fold
+  boundary. Previously over-long `SUMMARY`/`DESCRIPTION` lines were emitted
+  unfolded, which some calendar clients reject.
 - `now_secs()` no longer panics when the system clock reads before the Unix
   epoch (1970). A VM or container booted with a dead real-time clock could make
   `SystemTime::duration_since` fail and crash the daemon; such readings are now
   clamped to `0` until the clock is corrected.
+- Several `svc_*` routine-service tests no longer overwrite the developer's real
+  user crontab. `svc_create`/`svc_update`/`svc_delete` sync the crontab, and four
+  tests exercised them without isolating the `crontab` binary, so running the
+  suite locally replaced the live routines block with a single test fixture line.
+  The tests now run under an empty `PATH` so the sync cannot spawn `crontab`
+  (#175).
+- The crontab binary resolver now refuses to fall back to the real system
+  `crontab` in test builds when no `MOADIM_CRONTAB_BIN` shim is configured,
+  returning a non-existent path so the spawn fails harmlessly. This is a
+  structural safety net: no test — current or future — can clobber the
+  developer's live crontab even if it forgets to isolate the binary (#175).
 
 ## [0.11.2] - 2026-06-17
 
@@ -47,14 +98,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
-- `moadim install` / `moadim uninstall` register the daemon as an OS service so
-  it starts at login and is restarted on crash, keeping scheduled routines firing
-  across reboots. macOS writes a per-user launchd LaunchAgent
-  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
-  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
-  enabled with `systemctl --user enable --now`). Both run the daemon in the
-  foreground (`moadim --interactive`) so the service manager supervises it; other
-  platforms report that the command is not yet supported.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),

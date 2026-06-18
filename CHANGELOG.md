@@ -11,6 +11,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Service tests no longer touch the real user crontab; they run against an
+  isolated test crontab seam.
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

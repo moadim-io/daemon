@@ -77,7 +77,7 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
     }
-    let listener = tokio::net::TcpListener::bind(cli::BIND_ADDR).await?;
+    let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;
     let result =
         routes::http::run_with_listener_until(store, routines, listener, termination_signal())

@@ -463,3 +463,84 @@ fn svc_trigger_warns_when_spawn_fails() {
     let _ = std::fs::remove_file(&cfg);
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
+
+#[test]
+fn svc_create_rejects_empty_prompt() {
+    // Covers `validate_prompt`'s reject branch via `svc_create`: an empty prompt
+    // is a 400 before any persistence or crontab sync (issue #224).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Empty Prompt ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "".into(),
+            repositories: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // No routine was created, so the store stays empty.
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_whitespace_prompt() {
+    // A whitespace-only prompt trims to empty and is rejected like a blank one.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Whitespace Prompt ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "   \n\t".into(),
+            repositories: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_update_rejects_clearing_prompt_to_empty() {
+    // Covers the `req.prompt` validation branch in `svc_update`: updating an
+    // existing routine's prompt to whitespace-only is a 400, and the stored
+    // prompt is left untouched (issue #224).
+    let title = "Svc Update Empty Prompt ZZZ";
+    let store = new_store();
+    let routine = make_routine("empty-prompt-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("empty-prompt-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "empty-prompt-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: Some("   ".into()),
+            repositories: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert_eq!(
+        store.lock().unwrap().get("empty-prompt-id").unwrap().prompt,
+        "do the thing"
+    );
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}

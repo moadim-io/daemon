@@ -79,12 +79,28 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
+///
+/// The prompt is the one field that defines what a routine actually does. A blank
+/// prompt still produces a valid `prompt.md` (just the moadim preamble + repo list),
+/// so the routine fires on every cron tick and launches an agent with no task —
+/// silently burning scheduled runs and the user's agent/API budget (issue #224).
+/// Shared by the create and update paths so the REST and MCP surfaces reject it
+/// identically, mirroring [`validate_cron`].
+fn validate_prompt(prompt: &str) -> Result<(), AppError> {
+    if prompt.trim().is_empty() {
+        return Err(AppError::BadRequest("prompt must not be empty".to_string()));
+    }
+    Ok(())
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    validate_prompt(&req.prompt)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
@@ -129,6 +145,9 @@ pub fn svc_update(
 ) -> Result<RoutineResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
+    }
+    if let Some(ref prompt) = req.prompt {
+        validate_prompt(prompt)?;
     }
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);

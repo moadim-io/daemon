@@ -20,6 +20,21 @@ Rust server that exposes cron job management over three interfaces simultaneousl
 
 All three share the same port. Jobs created through any interface are automatically synced to the OS crontab so they actually run on schedule.
 
+## Prerequisites
+
+moadim depends on a few external tools at runtime, in addition to Rust/Cargo for
+building and installing:
+
+| Tool       | Required for | Install |
+| ---------- | ------------ | ------- |
+| Rust/Cargo | building and installing moadim | <https://rustup.rs> |
+| `tmux`     | launching routine agents — every scheduled routine starts its agent inside a tmux session. **Without `tmux`, routine runs silently fail to launch.** | `brew install tmux` (macOS) · `apt install tmux` (Debian/Ubuntu) |
+| `crontab`  | scheduling — moadim writes managed jobs and routines into the OS crontab so they fire on schedule | preinstalled on macOS; `apt install cron` (Debian/Ubuntu) |
+
+The daemon reports whether `tmux` resolves on its `PATH` in `GET /api/v1/health`
+(under `dependencies`) and logs a warning at startup when it is missing, so a
+misconfigured host is easy to spot.
+
 ## Installation
 
 ```sh

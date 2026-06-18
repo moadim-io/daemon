@@ -54,6 +54,15 @@ async fn main() -> anyhow::Result<()> {
 /// Run the HTTP/MCP/UI server in the foreground until a termination signal or the `/shutdown` route
 /// stops it. Records this process's PID so `moadim stop`/`status` can find it, and clears it on exit.
 async fn run_server() -> anyhow::Result<()> {
+    // tmux is a hard runtime dependency: every routine agent launches via `tmux new-session`. When
+    // it is missing the launch command silently no-ops (the statements are `;`-joined), so warn
+    // loudly at startup rather than letting scheduled runs vanish. Also surfaced in `GET /health`.
+    if !routines::tmux_available() {
+        log::warn!(
+            "tmux not found on PATH; scheduled routine runs will silently fail to launch their \
+             agent. Install tmux (e.g. `brew install tmux` or `apt install tmux`)."
+        );
+    }
     routines::ensure_default_agents();
     let store = storage::load_store();
     // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the

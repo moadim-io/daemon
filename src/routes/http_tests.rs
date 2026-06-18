@@ -91,6 +91,11 @@ async fn build_app_serves_health() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["status"], "ok");
     assert_eq!(json["running"], true);
+    // The dependencies section reports tmux presence so the UI/CLI can flag a missing dependency.
+    assert!(
+        json["dependencies"]["tmux"].is_boolean(),
+        "health payload should carry a boolean dependencies.tmux flag, got: {json}"
+    );
 }
 
 #[tokio::test]

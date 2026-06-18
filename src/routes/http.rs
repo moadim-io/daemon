@@ -15,6 +15,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa_swagger_ui::SwaggerUi;
 
+/// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
+/// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
+/// instead of having routine runs silently no-op.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct DependencyHealth {
+    /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
+    pub tmux: bool,
+}
+
 /// Response body for `GET /health`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
@@ -24,6 +33,8 @@ pub struct HealthResponse {
     pub uptime_secs: u64,
     /// Whether the server is running.
     pub running: bool,
+    /// Presence of required external binaries on the daemon's `PATH`.
+    pub dependencies: DependencyHealth,
 }
 
 /// Request body for `POST /echo`.
@@ -57,6 +68,9 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         status: "ok".to_string(),
         uptime_secs: now_secs() - state.uptime_start,
         running: true,
+        dependencies: DependencyHealth {
+            tmux: routines::tmux_available(),
+        },
     })
 }
 

@@ -11,6 +11,21 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `GET /health` now reports a `dependencies` section (currently `{"tmux": bool}`)
+  so the UI/CLI can detect when the `tmux` runtime dependency is missing, and the
+  daemon logs a `warn!` at startup naming the missing binary. `tmux` is a hard
+  dependency — every routine agent launches inside a tmux session — but its
+  absence was previously unchecked and undocumented, so a host without `tmux`
+  made scheduled routine runs silently no-op. Detection reuses the existing
+  PATH probe (`tmux_available_in` / `tmux_available`) (#187).
+
+### Documentation
+
+- Documented the required external binaries (`tmux`, `crontab`) under a new
+  **Prerequisites** section in the README (#187).
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

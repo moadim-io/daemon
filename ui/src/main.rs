@@ -18,6 +18,7 @@ pub struct Health {
     pub status: String,
     pub uptime_secs: Option<u64>,
     pub running: bool,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +132,7 @@ async fn poll_health(state: UseReducerHandle<ShellState>) {
                 status: "offline".into(),
                 running: false,
                 uptime_secs: None,
+                version: None,
             },
             ok: false,
         }),
@@ -214,6 +216,7 @@ pub fn shell() -> Html {
                                 status: "stopping".into(),
                                 running: false,
                                 uptime_secs: None,
+                                version: None,
                             },
                             ok: false,
                         });
@@ -312,6 +315,12 @@ pub fn header(props: &HeaderProps) -> Html {
         "health-dot error"
     };
     let status = props.health.status.to_uppercase();
+    let version = props
+        .health
+        .version
+        .as_ref()
+        .map(|v| format!("/ v{v}"))
+        .unwrap_or_default();
     let uptime = props
         .health
         .uptime_secs
@@ -323,6 +332,7 @@ pub fn header(props: &HeaderProps) -> Html {
             <div class="logo">
                 {"MOADIM"}
                 <span class="logo-sub">{"/ CONTROL"}</span>
+                <span class="logo-version">{version}</span>
             </div>
             <div class="header-right">
                 <div class="health">

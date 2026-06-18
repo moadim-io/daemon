@@ -190,6 +190,59 @@ fn svc_trigger_not_found() {
 }
 
 #[test]
+fn validate_handler_accepts_normal_identifier() {
+    assert!(validate_handler("send-report").is_ok());
+    assert!(validate_handler("send-report.sh").is_ok());
+}
+
+#[test]
+fn validate_handler_rejects_empty_and_whitespace() {
+    for bad in ["", "   ", "\t"] {
+        let err = validate_handler(bad);
+        assert!(
+            matches!(err, Err(AppError::BadRequest(_))),
+            "{bad:?} should be rejected with BadRequest"
+        );
+    }
+}
+
+#[test]
+fn validate_handler_rejects_control_characters() {
+    // A newline would inject extra crontab lines when the handler is written out.
+    for bad in ["a\nb", "a\rb", "evil # moadim:x\n* * * * * /bin/sh"] {
+        let err = validate_handler(bad);
+        assert!(
+            matches!(err, Err(AppError::BadRequest(_))),
+            "{bad:?} should be rejected with BadRequest"
+        );
+    }
+}
+
+#[test]
+fn svc_create_invalid_handler_returns_err() {
+    let store = new_store();
+    let req = CreateRequest {
+        schedule: "@daily".into(),
+        handler: "bad\nhandler".into(),
+        metadata: serde_json::Value::Null,
+        enabled: true,
+    };
+    assert!(svc_create(&store, &new_registry(), req).is_err());
+}
+
+#[test]
+fn svc_update_invalid_handler_rejected() {
+    let store = make_store_with("id");
+    let req = UpdateRequest {
+        schedule: None,
+        handler: Some("  ".into()),
+        metadata: None,
+        enabled: None,
+    };
+    assert!(svc_update(&store, &new_registry(), "id", req).is_err());
+}
+
+#[test]
 fn svc_trigger_sets_last_manual_trigger_at() {
     let store = make_store_with("id");
     assert!(store

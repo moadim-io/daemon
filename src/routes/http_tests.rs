@@ -92,6 +92,7 @@ async fn build_app_serves_health() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["status"], "ok");
     assert_eq!(json["running"], true);
+    assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
 }
 
 #[tokio::test]

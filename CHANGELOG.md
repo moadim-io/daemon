@@ -11,6 +11,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+- Routine create/update now validates the configured agent, rejecting unknown agents.
+
 ### Changed
 - Service tests no longer touch the real user crontab; they run against an
   isolated test crontab seam.

@@ -93,7 +93,7 @@ Moadim owns a single block inside your crontab. Everything outside that block is
 
 **Reverse sync (crontab → moadim):** on startup and every 30 seconds, moadim reads the block and applies any changes back into its store and TOML files. This means you can edit the crontab directly — change a schedule, swap a handler — and moadim will pick it up without a restart.
 
-**Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot`) are also accepted.
+**Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`) are also accepted. `@reboot` and `@midnight` are **not** supported via the API and are rejected with `400 Bad Request`.
 
 **Timezone:** because jobs run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
 
@@ -156,7 +156,7 @@ timezone  = "Asia/Jerusalem"
 
 | Field        | Type   | Required | Description                                                            |
 | ------------ | ------ | -------- | ---------------------------------------------------------------------- |
-| `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@daily`, `@hourly`, etc. |
+| `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@hourly`/`@daily`/`@weekly`/`@monthly`/`@yearly`/`@annually`. |
 | `handler`    | string | yes      | Script name in `handlers/` (without extension)                         |
 | `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.             |
 | `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars.          |

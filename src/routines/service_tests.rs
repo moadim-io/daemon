@@ -21,6 +21,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         updated_at,
         last_triggered_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
@@ -85,6 +86,7 @@ fn svc_create_rejects_duplicate_slug() {
             repositories: vec![],
             enabled: true,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     )
     .unwrap();
@@ -100,6 +102,7 @@ fn svc_create_rejects_duplicate_slug() {
             repositories: vec![],
             enabled: true,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     );
     assert!(matches!(conflict, Err(AppError::Conflict(_))));
@@ -138,6 +141,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
             repositories: None,
             enabled: None,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     );
     assert!(matches!(conflict, Err(AppError::Conflict(_))));
@@ -166,6 +170,7 @@ fn svc_update_sets_ttl_secs() {
             repositories: None,
             enabled: None,
             ttl_secs: Some(4242),
+            max_runtime_secs: None,
         },
     )
     .unwrap();
@@ -328,6 +333,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 repositories: vec![],
                 enabled: true,
                 ttl_secs: None,
+                max_runtime_secs: None,
             },
         )
         .unwrap();
@@ -356,6 +362,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 repositories: None,
                 enabled: None,
                 ttl_secs: None,
+                max_runtime_secs: None,
             },
         )
         .unwrap();

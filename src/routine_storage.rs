@@ -46,6 +46,10 @@ struct RoutineToml {
     /// Workbench retention in seconds for finished runs; absent means the daemon default.
     #[serde(default)]
     ttl_secs: Option<u64>,
+    /// Max wall-clock seconds a single run may execute before the watchdog kills it; absent means
+    /// the daemon default.
+    #[serde(default)]
+    max_runtime_secs: Option<u64>,
 }
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
@@ -97,6 +101,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         updated_at: toml.updated_at.unwrap_or(0),
         last_triggered_at,
         ttl_secs: toml.ttl_secs,
+        max_runtime_secs: toml.max_runtime_secs,
     })
 }
 
@@ -131,6 +136,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         // (`skip_serializing` also keeps this field out regardless of its value).
         last_triggered_at: None,
         ttl_secs: routine.ttl_secs,
+        max_runtime_secs: routine.max_runtime_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so the continuously-running reverse crontab sync, which re-reads

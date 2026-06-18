@@ -11,6 +11,21 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- Per-routine **max-runtime watchdog** bounds hung agent runs. Routines carry an
+  optional `max_runtime_secs` (TOML + REST/MCP create/update). Like `ttl_secs`,
+  the effective bound is `min(MAX_RUNTIME_SECS, cron interval)` (default cap 1h),
+  lowered further by an explicit `max_runtime_secs`. The hourly cleanup sweep now
+  force-kills any tmux session
+  whose run has exceeded its effective max runtime — recording
+  `moadim: routine exceeded max runtime; killing session` in the run's
+  `agent.log` — after which the workbench is reaped under the existing
+  `ttl_secs` rules. A session still within its max runtime is never touched.
+  Previously a hung run (waiting on stdin, looping, blocked on a stuck
+  network/git op) lived forever and stacked one zombie session + workbench per
+  cron tick, since the TTL reaper only governs *finished* runs.
+
 ### Changed
 
 - Routine runtime state (last-run timestamps and related mutable fields) is now

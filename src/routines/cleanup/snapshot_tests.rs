@@ -19,6 +19,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         updated_at: 0,
         last_triggered_at: None,
         ttl_secs,
+        max_runtime_secs: None,
     }
 }
 

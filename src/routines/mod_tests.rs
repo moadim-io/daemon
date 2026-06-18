@@ -135,6 +135,17 @@ fn build_routine_command_writes_claude_md() {
     );
     // dynamic date/timezone appended at run time
     assert!(cmd.contains("$(date)"), "run-time date expansion missing");
+    // routine-origin disclosure section, naming the routine, written into the moadim prompt
+    assert!(
+        cmd.contains("Routine origin disclosure"),
+        "routine-origin disclosure section missing"
+    );
+    assert!(cmd.contains("Routine name: "), "routine-name label missing");
+    // the routine title is injected as a printf %s argument after the disclosure body
+    assert!(
+        cmd.contains("'My Routine'"),
+        "routine title not injected into CLAUDE.md write"
+    );
     // user prompt appended if file exists
     assert!(
         cmd.contains("user_prompt.md"),

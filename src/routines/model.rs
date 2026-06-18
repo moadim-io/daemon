@@ -124,6 +124,19 @@ pub fn local_timezone() -> Option<String> {
     iana_time_zone::get_timezone().ok()
 }
 
+/// Render a human-readable schedule description for `schedule`, appending the
+/// timezone in parentheses when known. Returns `None` when the cron expression
+/// cannot be parsed.
+fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
+    schedule.parse::<Cron>().ok().map(|cron| {
+        let desc = cron.describe();
+        match timezone {
+            Some(tz) => format!("{desc} ({tz})"),
+            None => desc,
+        }
+    })
+}
+
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
@@ -132,13 +145,7 @@ impl RoutineResponse {
             .to_string_lossy()
             .into_owned();
         let timezone = local_timezone();
-        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|cron| {
-            let desc = cron.describe();
-            match &timezone {
-                Some(tz) => format!("{desc} ({tz})"),
-                None => desc,
-            }
-        });
+        let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
         Self {
             routine,
             agent_registered,
@@ -213,3 +220,7 @@ pub struct UpdateRoutineRequest {
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod model_tests;

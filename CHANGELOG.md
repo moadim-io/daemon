@@ -11,8 +11,67 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Routine runtime state (last-run timestamps and related mutable fields) is now
+  stored in a separate, git-ignored sidecar file instead of the git-tracked
+  `routine.toml`, so scheduled runs no longer produce noisy diffs or merge
+  conflicts in version-controlled routine definitions (#127).
+
+### Fixed
+
+- iCal feeds now fold long content lines at 75 octets per RFC 5545 §3.1, using a
+  UTF-8-aware byte budget so multi-byte characters are never split across a fold
+  boundary. Previously over-long `SUMMARY`/`DESCRIPTION` lines were emitted
+  unfolded, which some calendar clients reject.
+- `now_secs()` no longer panics when the system clock reads before the Unix
+  epoch (1970). A VM or container booted with a dead real-time clock could make
+  `SystemTime::duration_since` fail and crash the daemon; such readings are now
+  clamped to `0` until the clock is corrected.
+
+## [0.11.2] - 2026-06-17
+
+### Fixed
+
+- Scheduled routine agents now run under a **login shell** (`/bin/sh -l '<run.sh>'`
+  in the crontab line; `sh -lc` for manual triggers), so the agent sources the
+  user's `~/.profile` and inherits their environment variables — `GH_TOKEN`, API
+  keys, etc. Previously routines launched with cron's minimal environment and,
+  on macOS, outside the GUI login session, so tools like `gh`/`git` had no
+  credentials and could not authenticate. `PATH` is still replaced with the same
+  curated list as before, so binary resolution is unchanged — only environment
+  variables are gained. Put any environment the agent needs (e.g. `export
+  GH_TOKEN=…`) in `~/.profile`.
+
+## [0.11.1] - 2026-06-17
+
+### Fixed
+
+- Routine crontab sync no longer wipes the populated `MOADIM-ROUTINES` block
+  when the routine store is empty. An empty store at sync time signals a load
+  failure or a racing second daemon rather than a genuine "no routines" state
+  (startup always reseeds the built-in defaults), and previously such a sync
+  silently dropped every scheduled routine's cron line — leaving routines that
+  never fired. The sync now detects this case and preserves the existing block.
+
+## [0.11.0] - 2026-06-17
+
 ### Added
 
+- `moadim install` / `moadim uninstall` register the daemon as an OS service so
+  it starts at login and is restarted on crash, keeping scheduled routines firing
+  across reboots. macOS writes a per-user launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
+  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
+  enabled with `systemctl --user enable --now`). Both run the daemon in the
+  foreground (`moadim --interactive`) so the service manager supervises it; other
+  platforms report that the command is not yet supported.
+- The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
+  disclosure** section that instructs the agent to reveal, in every
+  outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),
+  that the action originates from the running moadim routine — naming it. The
+  routine name is injected at launch time. Internal logs and in-repo working
+  files are exempt.
 - Routine listings can now be filtered and sorted by repository. `GET /routines`
   accepts `repository` (case-insensitive URL substring filter), `sort`
   (`created`|`updated`|`title`|`repository`), and `order` (`asc`|`desc`) query
@@ -29,8 +88,27 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `~/.config/moadim/agents/` on startup, and `hermes` appears in
   `available_agents()` / `GET /agents`, so routines can launch Hermes.
 
+### Changed
+
+- Restored 100% line coverage (enforced by the pre-push hook). To exercise the
+  daemon-lifecycle, crontab-sync, and config-path code without touching the
+  user's real environment, the binary gained test-only seams read from
+  environment variables — `MOADIM_HOME_OVERRIDE` (config/routine/job paths),
+  `MOADIM_BIND_ADDR` (server bind + client probe address),
+  `MOADIM_CRONTAB_BIN` (the `crontab` executable), and
+  `MOADIM_RESTART_TIMEOUT_MS`/`MOADIM_RESTART_POLL_MS` (restart stop-wait
+  timing). They default to the previous behaviour when unset. The test harness
+  is pinned single-threaded (`.cargo/config.toml`) so these overrides cannot
+  race. No change to default runtime behaviour.
+
 ### Fixed
 
+- Routine store writes are now atomic. `write_routine` persists `routine.toml`
+  and `prompt.md` via a shared `atomic_write` helper (write a sibling temp file,
+  then rename it into place) instead of an in-place `std::fs::write` truncate.
+  A crash or full disk mid-write can no longer leave a torn `routine.toml` —
+  which parsed to nothing and silently dropped the routine from the store — and
+  the continuously-running reverse crontab sync never observes a partial file.
 - Routine logs (`GET /routines/{id}/logs`) could return another routine's log
   when one routine's slug is a dash-prefix of another's (e.g. `logs` vs
   `logs-extra`): the newest-workbench lookup matched a bare `{slug}-` prefix,
@@ -38,6 +116,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   slug exactly via the same `{slug}-{ts}` parser the cleanup sweep uses, and
   picks the newest run by numeric timestamp instead of a lexicographic compare
   over the directory name.
+- Restored `cargo clippy` compliance across the crate. The `min_ident_chars`
+  and `missing_docs` lints (both `deny` in `Cargo.toml`) were failing on
+  current stable, which also broke the pre-push hook. Renamed all single-letter
+  bindings to descriptive names and documented the remaining undocumented
+  fields — no behavioral change.
 
 ### Documentation
 
@@ -47,14 +130,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   their exit codes, so the machine-readable contract is discoverable without
   reading `--help`. Also documents `moadim stop --json`, which was previously
   only mentioned in `--help`.
-
-### Fixed
-
-- Restored `cargo clippy` compliance across the crate. The `min_ident_chars`
-  and `missing_docs` lints (both `deny` in `Cargo.toml`) were failing on
-  current stable, which also broke the pre-push hook. Renamed all single-letter
-  bindings to descriptive names and documented the remaining undocumented
-  fields — no behavioral change.
 
 ## [0.10.0] - 2026-06-17
 
@@ -217,7 +292,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/moadim-io/daemon/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/moadim-io/daemon/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/moadim-io/daemon/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/moadim-io/daemon/compare/v0.7.0...v0.8.0

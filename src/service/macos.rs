@@ -7,6 +7,12 @@ use super::common::{daemon_log, moadim_exe, run};
 /// launchd label, also the plist file stem (`io.moadim.daemon.plist`).
 const LAUNCHD_LABEL: &str = "io.moadim.daemon";
 
+/// The `launchctl` executable, overridable via `MOADIM_LAUNCHCTL_BIN` so tests can substitute a
+/// no-op shim instead of mutating the real launchd session. Mirrors the `MOADIM_CRONTAB_BIN` seam.
+pub(super) fn launchctl_bin() -> String {
+    std::env::var("MOADIM_LAUNCHCTL_BIN").unwrap_or_else(|_| "launchctl".to_string())
+}
+
 /// Escape the five XML metacharacters so a filesystem path embeds safely in the plist `<string>`s.
 pub(super) fn xml_escape(text: &str) -> String {
     text.replace('&', "&amp;")
@@ -18,8 +24,12 @@ pub(super) fn xml_escape(text: &str) -> String {
 
 /// Absolute path to the per-user LaunchAgents plist for the moadim service.
 pub(super) fn plist_path() -> anyhow::Result<PathBuf> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("could not determine the home directory"))?;
+    plist_path_from_home(dirs::home_dir())
+}
+
+/// Resolve the LaunchAgents plist path under `home`, erroring when the home directory is unknown.
+pub(super) fn plist_path_from_home(home: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    let home = home.ok_or_else(|| anyhow::anyhow!("could not determine the home directory"))?;
     Ok(home
         .join("Library/LaunchAgents")
         .join(format!("{LAUNCHD_LABEL}.plist")))
@@ -60,7 +70,7 @@ pub(super) fn render_plist(exe: &Path, log: &Path) -> String {
 }
 
 /// Render the plist for `exe`/`log` and write it (creating parent dirs) to `plist`.
-fn write_plist(plist: &Path, exe: &Path, log: &Path) -> anyhow::Result<()> {
+pub(super) fn write_plist(plist: &Path, exe: &Path, log: &Path) -> anyhow::Result<()> {
     if let Some(dir) = plist.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -75,8 +85,9 @@ fn write_plist(plist: &Path, exe: &Path, log: &Path) -> anyhow::Result<()> {
 /// with `-w` to enable it.
 fn reload_agent(plist: &Path) -> anyhow::Result<()> {
     let plist_arg = plist.display().to_string();
-    let _ = run("launchctl", &["unload", &plist_arg]);
-    run("launchctl", &["load", "-w", &plist_arg])
+    let launchctl = launchctl_bin();
+    let _ = run(&launchctl, &["unload", &plist_arg]);
+    run(&launchctl, &["load", "-w", &plist_arg])
 }
 
 /// Print the post-install summary (paths and a status hint).
@@ -103,7 +114,7 @@ pub fn uninstall() -> anyhow::Result<()> {
     let plist = plist_path()?;
     if plist.exists() {
         let plist_arg = plist.display().to_string();
-        let _ = run("launchctl", &["unload", "-w", &plist_arg]);
+        let _ = run(&launchctl_bin(), &["unload", "-w", &plist_arg]);
         std::fs::remove_file(&plist)?;
         println!("moadim launchd agent removed ({})", plist.display());
     } else {

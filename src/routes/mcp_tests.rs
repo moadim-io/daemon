@@ -8,6 +8,35 @@ fn make_handler() -> MoadimMcp {
     MoadimMcp::new(new_store(), new_registry(), crate::routines::new_store(), 0)
 }
 
+/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for a test, then restore and remove it
+/// on drop. With no `<agent>.toml` seeded under the tempdir, the agent registry resolves to the
+/// built-in defaults (so a built-in agent name validates) while `load_agent_command` still returns
+/// `None` (no config file) — letting a trigger record without spawning. Routine state is also
+/// isolated under the tempdir instead of the developer's real `~/.config/moadim`.
+struct TempHome(std::path::PathBuf);
+
+impl TempHome {
+    fn new(tag: &str) -> Self {
+        let home = std::env::temp_dir().join(format!("moadim-{tag}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        // SAFETY: tests in this crate run single-threaded per binary (RUST_TEST_THREADS=1).
+        unsafe {
+            std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+        }
+        Self(home)
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::remove_var("MOADIM_HOME_OVERRIDE");
+        }
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 fn ok_helper_is_not_error() {
     let result = ok(serde_json::json!({"status": "good"}));
@@ -281,7 +310,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
-        agent: "mcp-routine-agent-x".into(),
+        agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
@@ -322,6 +351,9 @@ fn create_routine_tool_invalid_cron_is_error() {
 #[test]
 fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
+    // Isolate the agent registry and routine storage under a temp home: the built-in `claude`
+    // agent then validates, while the absent config keeps the trigger from spawning a process.
+    let _home = TempHome::new("mcp-routine-lifecycle");
     let routines = crate::routines::new_store();
     let handler = MoadimMcp::new(new_store(), new_registry(), routines.clone(), 0);
 

@@ -18,6 +18,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
   request surfaces, so no extra request is made.
 
+### Fixed
+
+- Routine **create/update now reject a blank or unusable `title`** with
+  `400 Bad Request`. A title must contain at least one alphanumeric character
+  (so empty, whitespace-only, and punctuation-only titles like `"!!!"` are
+  refused) and is capped at 200 characters. Previously such a title was accepted,
+  producing a nameless routine-origin disclosure (`Routine name:` with nothing
+  after it) in the workbench `CLAUDE.md` and a silent `"routine"` slug the user
+  never chose.
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

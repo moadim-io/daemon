@@ -463,3 +463,85 @@ fn svc_trigger_warns_when_spawn_fails() {
     let _ = std::fs::remove_file(&cfg);
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
+
+/// Build a create request with the given title and an otherwise-valid body.
+fn create_req_with_title(title: &str) -> CreateRoutineRequest {
+    CreateRoutineRequest {
+        schedule: "@daily".into(),
+        title: title.into(),
+        agent: "claude".into(),
+        prompt: "p".into(),
+        repositories: vec![],
+        enabled: true,
+        ttl_secs: None,
+        max_runtime_secs: None,
+    }
+}
+
+#[test]
+fn svc_create_rejects_blank_and_punctuation_titles() {
+    // Covers `validate_title`'s alphanumeric-required reject branch via `svc_create`:
+    // empty, whitespace-only, and punctuation-only titles all 400 before any
+    // persistence or crontab sync, leaving the store empty (issue #226).
+    for title in ["", "   \n\t", "!!!"] {
+        let store = new_store();
+        let result = svc_create(&store, create_req_with_title(title));
+        assert!(
+            matches!(result, Err(AppError::BadRequest(_))),
+            "title {title:?} should be rejected"
+        );
+        assert!(store.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn svc_create_rejects_overlong_title() {
+    // Covers `validate_title`'s max-length reject branch: a title past
+    // `MAX_TITLE_LEN` characters 400s even though it has alphanumerics.
+    let store = new_store();
+    let title = "a".repeat(MAX_TITLE_LEN + 1);
+    let result = svc_create(&store, create_req_with_title(&title));
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_update_rejects_blank_and_punctuation_titles() {
+    // Covers the `req.title` validation branch in `svc_update`: renaming an
+    // existing routine to an empty, whitespace-only, or punctuation-only title
+    // 400s and leaves the stored title untouched (issue #226).
+    let original = "Svc Update Title Guard ZZZ";
+    for title in ["", "   ", "!!!"] {
+        let store = new_store();
+        let routine = make_routine("title-guard-id", original, 1, 1);
+        crate::routine_storage::write_routine(&routine).unwrap();
+        store
+            .lock()
+            .unwrap()
+            .insert("title-guard-id".into(), routine);
+
+        let result = svc_update(
+            &store,
+            "title-guard-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: Some(title.into()),
+                agent: None,
+                prompt: None,
+                repositories: None,
+                enabled: None,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        );
+        assert!(
+            matches!(result, Err(AppError::BadRequest(_))),
+            "update to title {title:?} should be rejected"
+        );
+        assert_eq!(
+            store.lock().unwrap().get("title-guard-id").unwrap().title,
+            original
+        );
+    }
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(original));
+}

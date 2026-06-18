@@ -116,6 +116,12 @@ fn restart_command() {
 }
 
 #[test]
+fn install_and_uninstall_commands() {
+    assert_eq!(parse(argv(&["install"])), Command::Install);
+    assert_eq!(parse(argv(&["uninstall"])), Command::Uninstall);
+}
+
+#[test]
 fn restart_rotation_line_shows_old_and_new_pid() {
     assert_eq!(
         restart_rotation_line(Some(123), 456),

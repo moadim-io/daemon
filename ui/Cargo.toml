@@ -17,7 +17,7 @@ serde_json = "1"
 croner = "3"
 chrono = "0.4"
 gloo-net = { version = "0.6", features = ["http"] }
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["HtmlInputElement", "HtmlSelectElement"] }
 log = "0.4"

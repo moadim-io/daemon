@@ -42,6 +42,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA
+  `index.html` with `200`. The nested API router had no fallback of its own, so
+  in axum 0.8 it inherited the outer SPA `.fallback(get(index))` — a typo'd or
+  removed endpoint answered with HTML/200, surfacing as a confusing downstream
+  parse error rather than a clear not-found. The API router now owns a JSON 404
+  fallback while the SPA fallback still serves UI routes (#270).
 - Crontab docs no longer claim reverse sync (crontab → moadim) runs. It is
   implemented but never wired to a poller or startup hook, so manual edits to
   the moadim block do not round-trip and are overwritten by the next forward

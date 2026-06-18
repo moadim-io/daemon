@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-18
+
 ### Added
 
 - Per-routine **max-runtime watchdog** bounds hung agent runs. Routines carry an
@@ -25,6 +27,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   Previously a hung run (waiting on stdin, looping, blocked on a stuck
   network/git op) lived forever and stacked one zombie session + workbench per
   cron tick, since the TTL reaper only governs *finished* runs.
+- `moadim install` / `moadim uninstall` register the daemon as an OS service so
+  it starts at login and is restarted on crash, keeping scheduled routines firing
+  across reboots. macOS writes a per-user launchd LaunchAgent
+  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
+  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
+  enabled with `systemctl --user enable --now`). Both run the daemon in the
+  foreground (`moadim --interactive`) so the service manager supervises it; other
+  platforms report that the command is not yet supported.
+- **Hermes** is now a built-in agent alongside `claude` and `codex`. A default
+  `hermes.toml` (`hermes exec {prompt_file}`, mirroring Codex) is seeded into
+  `~/.config/moadim/agents/` on startup, and `hermes` appears in
+  `available_agents()` / `GET /agents`, so routines can launch Hermes.
 
 ### Changed
 
@@ -84,14 +98,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
-- `moadim install` / `moadim uninstall` register the daemon as an OS service so
-  it starts at login and is restarted on crash, keeping scheduled routines firing
-  across reboots. macOS writes a per-user launchd LaunchAgent
-  (`~/Library/LaunchAgents/io.moadim.daemon.plist`, loaded with `launchctl`);
-  Linux writes a systemd **user** service (`~/.config/systemd/user/moadim.service`,
-  enabled with `systemctl --user enable --now`). Both run the daemon in the
-  foreground (`moadim --interactive`) so the service manager supervises it; other
-  platforms report that the command is not yet supported.
 - The moadim-managed system prompt (`CLAUDE.md`) now carries a **routine-origin
   disclosure** section that instructs the agent to reveal, in every
   outward-facing communication (GitHub issues/PRs/comments, Slack, email, etc.),
@@ -109,10 +115,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `{"running":false}` when none was reachable), completing the `--json`
   contract alongside `status` and `cleanup`. The exit code is unchanged
   (`0` running, `3` not).
-- **Hermes** is now a built-in agent alongside `claude` and `codex`. A default
-  `hermes.toml` (`hermes exec {prompt_file}`, mirroring Codex) is seeded into
-  `~/.config/moadim/agents/` on startup, and `hermes` appears in
-  `available_agents()` / `GET /agents`, so routines can launch Hermes.
 
 ### Changed
 

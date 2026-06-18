@@ -228,6 +228,28 @@ on stdout. Paired with the exit codes above, a caller gets the full contract wit
 Any other failure exits `1` with a message on stderr. The object is always a single line, so
 `moadim status --json | jq -r .pid` and similar pipelines work without buffering.
 
+Because the contract lives in the exit code, scripts can branch on `$?` without parsing any
+output. A common pattern — start the server only if it is not already running:
+
+```sh
+# Exit 0 = running, exit 3 = not running. Discard stdout; we only care about $?.
+if ! moadim status --json >/dev/null; then
+  moadim            # not running: start it detached in the background
+fi
+```
+
+Or wait for an already-running server before talking to it, and bail otherwise:
+
+```sh
+if moadim status >/dev/null; then
+  pid=$(moadim status --json | jq -r .pid)
+  echo "moadim is up (pid $pid)"
+else
+  echo "moadim is not running" >&2
+  exit 1
+fi
+```
+
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send
 `POST /shutdown`. (During development, `cargo run -- --interactive` keeps it in

@@ -216,6 +216,38 @@ pub enum RView {
     Calendar,
 }
 
+/// Field the routine table is sorted by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RSort {
+    #[default]
+    Created,
+    Updated,
+    Title,
+    Repository,
+}
+
+impl RSort {
+    /// Parse the value of the sort `<select>`.
+    fn from_str(s: &str) -> Self {
+        match s {
+            "updated" => RSort::Updated,
+            "title" => RSort::Title,
+            "repository" => RSort::Repository,
+            _ => RSort::Created,
+        }
+    }
+
+    /// `<option>` value for this sort field.
+    fn as_str(self) -> &'static str {
+        match self {
+            RSort::Created => "created",
+            RSort::Updated => "updated",
+            RSort::Title => "title",
+            RSort::Repository => "repository",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RState {
     pub routines: Vec<Routine>,
@@ -223,6 +255,12 @@ pub struct RState {
     pub page: RPage,
     pub modal: RModal,
     pub view: RView,
+    /// Case-insensitive repository-URL substring filter for the table.
+    pub repo_filter: String,
+    /// Field the table is sorted by.
+    pub sort: RSort,
+    /// `true` sorts descending (newest / Z→A first).
+    pub sort_desc: bool,
 }
 
 impl Default for RState {
@@ -233,6 +271,9 @@ impl Default for RState {
             page: RPage::List,
             modal: RModal::None,
             view: RView::default(),
+            repo_filter: String::new(),
+            sort: RSort::default(),
+            sort_desc: false,
         }
     }
 }
@@ -246,6 +287,9 @@ pub enum RAction {
     OpenConfirmDelete { id: String, title: String },
     CloseModal,
     SetView(RView),
+    SetRepoFilter(String),
+    SetSort(RSort),
+    ToggleSortDir,
     Upsert(Routine),
     Remove(String),
 }
@@ -269,6 +313,9 @@ impl Reducible for RState {
             }
             RAction::CloseModal => s.modal = RModal::None,
             RAction::SetView(view) => s.view = view,
+            RAction::SetRepoFilter(f) => s.repo_filter = f,
+            RAction::SetSort(sort) => s.sort = sort,
+            RAction::ToggleSortDir => s.sort_desc = !s.sort_desc,
             RAction::Upsert(routine) => {
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
                     s.routines[i] = routine;
@@ -346,6 +393,18 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_view = {
         let state = state.clone();
         Callback::from(move |view: RView| state.dispatch(RAction::SetView(view)))
+    };
+    let on_repo_filter = {
+        let state = state.clone();
+        Callback::from(move |f: String| state.dispatch(RAction::SetRepoFilter(f)))
+    };
+    let on_set_sort = {
+        let state = state.clone();
+        Callback::from(move |sort: RSort| state.dispatch(RAction::SetSort(sort)))
+    };
+    let on_toggle_sort_dir = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(RAction::ToggleSortDir))
     };
 
     let on_create = {
@@ -495,6 +554,39 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let page = state.page.clone();
     let modal = state.modal.clone();
     let view = state.view;
+    let repo_filter = state.repo_filter.clone();
+    let sort = state.sort;
+    let sort_desc = state.sort_desc;
+
+    // Repository filter + sort applied client-side; mirrors the `repository`/`sort`/`order`
+    // query params the `/routines` API accepts.
+    let visible = {
+        let needle = repo_filter.trim().to_lowercase();
+        let mut v: Vec<Routine> = routines
+            .iter()
+            .filter(|r| {
+                needle.is_empty()
+                    || r.repositories
+                        .iter()
+                        .any(|repo| repo.repository.to_lowercase().contains(&needle))
+            })
+            .cloned()
+            .collect();
+        match sort {
+            RSort::Created => v.sort_by_key(|r| r.created_at),
+            RSort::Updated => v.sort_by_key(|r| r.updated_at),
+            RSort::Title => v.sort_by_key(|r| r.title.to_lowercase()),
+            // Routines with a repository sort before those without, then by primary URL.
+            RSort::Repository => v.sort_by_key(|r| match r.repositories.first() {
+                Some(repo) => (false, repo.repository.to_lowercase()),
+                None => (true, String::new()),
+            }),
+        }
+        if sort_desc {
+            v.reverse();
+        }
+        v
+    };
 
     let edit_routine = match &modal {
         RModal::Edit(id) => routines.iter().find(|r| r.id == *id).cloned(),
@@ -527,11 +619,19 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                     <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW ROUTINE"}</button>
                                 </div>
                             </div>
+                            <FilterSortBar
+                                repo_filter={repo_filter}
+                                sort={sort}
+                                sort_desc={sort_desc}
+                                on_repo_filter={on_repo_filter}
+                                on_set_sort={on_set_sort}
+                                on_toggle_sort_dir={on_toggle_sort_dir}
+                            />
                             {
                                 match view {
                                     RView::Table => html! {
                                         <RoutineTable
-                                            routines={routines}
+                                            routines={visible}
                                             loading={loading}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
@@ -541,7 +641,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={routines} loading={loading} />
+                                        <RoutineCalendar routines={visible} loading={loading} />
                                     },
                                 }
                             }
@@ -636,6 +736,86 @@ pub fn view_toggle(props: &ViewToggleProps) -> Html {
         <div class="view-toggle">
             { mk(RView::Table, "LIST") }
             { mk(RView::Calendar, "CALENDAR") }
+        </div>
+    }
+}
+
+// ─── Filter & sort bar ────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct FilterSortBarProps {
+    pub repo_filter: String,
+    pub sort: RSort,
+    pub sort_desc: bool,
+    pub on_repo_filter: Callback<String>,
+    pub on_set_sort: Callback<RSort>,
+    pub on_toggle_sort_dir: Callback<()>,
+}
+
+/// Repository filter input plus a sort-field dropdown and direction toggle for the routine table.
+#[function_component(FilterSortBar)]
+pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
+    let on_input = {
+        let cb = props.on_repo_filter.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            cb.emit(input.value());
+        })
+    };
+    let on_clear = {
+        let cb = props.on_repo_filter.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(String::new()))
+    };
+    let on_sort_change = {
+        let cb = props.on_set_sort.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(RSort::from_str(&select.value()));
+        })
+    };
+    let on_dir = {
+        let cb = props.on_toggle_sort_dir.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let dir_label = if props.sort_desc {
+        "↓ DESC"
+    } else {
+        "↑ ASC"
+    };
+    let current = props.sort.as_str();
+
+    html! {
+        <div class="filter-bar">
+            <div class="filter-field">
+                <input
+                    type="text"
+                    class="filter-input"
+                    placeholder="Filter by repository…"
+                    value={props.repo_filter.clone()}
+                    oninput={on_input}
+                />
+                {
+                    if props.repo_filter.is_empty() {
+                        html! {}
+                    } else {
+                        html! {
+                            <button class="btn btn-ghost btn-sm" onclick={on_clear}
+                                title="Clear repository filter">{"✕"}</button>
+                        }
+                    }
+                }
+            </div>
+            <div class="filter-field">
+                <span class="filter-label">{"SORT"}</span>
+                <select class="filter-select" onchange={on_sort_change}>
+                    <option value="created" selected={current == "created"}>{"Created"}</option>
+                    <option value="updated" selected={current == "updated"}>{"Updated"}</option>
+                    <option value="title" selected={current == "title"}>{"Title"}</option>
+                    <option value="repository" selected={current == "repository"}>{"Repository"}</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" onclick={on_dir}
+                    title="Toggle sort direction">{dir_label}</button>
+            </div>
         </div>
     }
 }

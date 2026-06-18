@@ -33,6 +33,36 @@ fn format_utc(dt: DateTime<Utc>) -> String {
     dt.format("%Y%m%dT%H%M%SZ").to_string()
 }
 
+/// Maximum octets per physical content line per RFC 5545 §3.1 (excluding CRLF).
+const FOLD_LIMIT: usize = 75;
+
+/// Fold a content line per RFC 5545 §3.1 so no physical line exceeds
+/// [`FOLD_LIMIT`] octets (excluding the CRLF terminator).
+///
+/// Continuation lines are introduced with `CRLF` followed by a single leading
+/// space, and that space counts toward the octet limit. Folding measures **octets**
+/// (UTF-8 byte length) but only ever breaks on character boundaries, so a multibyte
+/// character is never split across a fold.
+fn fold_line(line: &str) -> String {
+    if line.len() <= FOLD_LIMIT {
+        return line.to_string();
+    }
+    let mut out = String::with_capacity(line.len() + line.len() / FOLD_LIMIT + 1);
+    // First physical line gets the full budget; each continuation spends one octet
+    // on its leading space.
+    let mut budget = FOLD_LIMIT;
+    for ch in line.chars() {
+        let char_len = ch.len_utf8();
+        if char_len > budget {
+            out.push_str("\r\n ");
+            budget = FOLD_LIMIT - 1;
+        }
+        out.push(ch);
+        budget -= char_len;
+    }
+    out
+}
+
 /// Render upcoming fire times of every enabled routine as an iCalendar (`.ics`) feed.
 ///
 /// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
@@ -75,8 +105,13 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
         }
     }
     lines.push("END:VCALENDAR".to_string());
-    // RFC 5545 mandates CRLF line endings, including a trailing CRLF after the final line.
-    let mut out = lines.join("\r\n");
+    // RFC 5545 mandates CRLF line endings, including a trailing CRLF after the final
+    // line. Each content line is folded (§3.1) so no physical line exceeds 75 octets.
+    let mut out = lines
+        .iter()
+        .map(|line| fold_line(line))
+        .collect::<Vec<_>>()
+        .join("\r\n");
     out.push_str("\r\n");
     out
 }

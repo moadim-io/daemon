@@ -9,19 +9,59 @@ use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
 use super::agents::load_agent_command;
-use super::cleanup::cleanup_expired_workbenches;
+use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
-    UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
+    RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
-/// Return all routines sorted by creation time (oldest first).
-pub fn svc_list(store: &RoutineStore) -> Vec<RoutineResponse> {
+/// Sort key placing routines with a repository before those without, then by
+/// the primary (first) repository URL alphabetically (case-insensitive).
+fn repo_sort_key(routine: &Routine) -> (bool, String) {
+    match routine.repositories.first() {
+        Some(repo) => (false, repo.repository.to_lowercase()),
+        None => (true, String::new()),
+    }
+}
+
+/// Return the routines matching `query`, filtered and sorted as requested.
+///
+/// The default query (no repository filter, sort by creation time ascending)
+/// reproduces the previous behaviour. The `repository` filter keeps routines
+/// referencing a matching repository URL; `sort`/`order` control ordering.
+pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
     let lock = store.lock().unwrap();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
-    routines.sort_by_key(|routine| routine.created_at);
     drop(lock);
+
+    // Filter: keep routines with a repository URL containing the substring (case-insensitive).
+    if let Some(needle) = query
+        .repository
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let needle = needle.to_lowercase();
+        routines.retain(|routine| {
+            routine
+                .repositories
+                .iter()
+                .any(|repo| repo.repository.to_lowercase().contains(&needle))
+        });
+    }
+
+    // Sort ascending by the requested field, then flip for descending order.
+    match query.sort {
+        RoutineSort::Created => routines.sort_by_key(|routine| routine.created_at),
+        RoutineSort::Updated => routines.sort_by_key(|routine| routine.updated_at),
+        RoutineSort::Title => routines.sort_by_key(|routine| routine.title.to_lowercase()),
+        RoutineSort::Repository => routines.sort_by_key(repo_sort_key),
+    }
+    if query.order == SortOrder::Desc {
+        routines.reverse();
+    }
+
     routines
         .into_iter()
         .map(RoutineResponse::from_routine)
@@ -68,6 +108,7 @@ pub fn svc_create(
         updated_at: now,
         last_triggered_at: None,
         ttl_secs: req.ttl_secs,
+        max_runtime_secs: req.max_runtime_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -126,6 +167,9 @@ pub fn svc_update(
     if let Some(ttl) = req.ttl_secs {
         routine.ttl_secs = Some(ttl);
     }
+    if let Some(max_runtime) = req.max_runtime_secs {
+        routine.max_runtime_secs = Some(max_runtime);
+    }
     routine.updated_at = now_secs();
     let routine = routine.clone();
     drop(lock);
@@ -161,7 +205,14 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     match load_agent_command(&routine.agent) {
         Some(agent) => {
             let cmd = build_routine_command(&routine, &agent);
-            if let Err(err) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            if let Err(err) = std::process::Command::new("sh")
+                .arg("-lc")
+                .arg(&cmd)
+                .spawn()
+            {
                 log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
@@ -192,17 +243,26 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
-    let prefix = format!("{}-", slugify(&routine.title));
-    let mut newest: Option<String> = None;
+    let slug = slugify(&routine.title);
+    let mut newest: Option<(u64, String)> = None;
     if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with(&prefix) && newest.as_ref().is_none_or(|n| name > *n) {
-                newest = Some(name);
+            // Select only this routine's own workbenches by an *exact* slug match.
+            // A bare `{slug}-` prefix would also match another routine whose slug
+            // begins with this one (e.g. `logs` vs `logs-extra`), leaking that
+            // routine's log. Reusing the canonical `{slug}-{ts}` parser also makes
+            // "newest" a numeric timestamp comparison rather than a lexicographic
+            // one over the whole directory name.
+            if let Some((dir_slug, ts)) = parse_workbench_name(&name) {
+                if dir_slug == slug && newest.as_ref().is_none_or(|(newest_ts, _)| ts > *newest_ts)
+                {
+                    newest = Some((ts, name));
+                }
             }
         }
     }
-    let Some(dir) = newest else {
+    let Some((_, dir)) = newest else {
         return Ok(String::new());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
@@ -211,3 +271,7 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod service_tests;

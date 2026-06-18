@@ -19,6 +19,48 @@ pub struct Repository {
     pub branch: Option<String>,
 }
 
+/// Field to sort a routine listing by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineSort {
+    /// Creation time (default).
+    #[default]
+    Created,
+    /// Last update time.
+    Updated,
+    /// Title, alphabetically (case-insensitive).
+    Title,
+    /// Primary (first) repository URL, alphabetically; routines with no
+    /// repository sort last.
+    Repository,
+}
+
+/// Sort direction for a routine listing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    /// Ascending (default): oldest / A→Z first.
+    #[default]
+    Asc,
+    /// Descending: newest / Z→A first.
+    Desc,
+}
+
+/// Query parameters for `GET /routines`: filter and sort a routine listing,
+/// notably by the repositories a routine references.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct RoutineListQuery {
+    /// Keep only routines with at least one repository whose URL contains this
+    /// substring (case-insensitive). Empty or absent keeps every routine.
+    pub repository: Option<String>,
+    /// Field to sort by (default: creation time).
+    pub sort: RoutineSort,
+    /// Sort direction (default: ascending).
+    pub order: SortOrder,
+}
+
 /// A persisted routine: a scheduled AI-agent task.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Routine {
@@ -52,6 +94,13 @@ pub struct Routine {
     /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills
+    /// its (hung) tmux session, after which the workbench is reaped under the normal TTL rules.
+    /// `None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A
+    /// session still within this bound is never touched. The cap and
+    /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -82,6 +131,19 @@ pub fn local_timezone() -> Option<String> {
     iana_time_zone::get_timezone().ok()
 }
 
+/// Render a human-readable schedule description for `schedule`, appending the
+/// timezone in parentheses when known. Returns `None` when the cron expression
+/// cannot be parsed.
+fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
+    schedule.parse::<Cron>().ok().map(|cron| {
+        let desc = cron.describe();
+        match timezone {
+            Some(tz) => format!("{desc} ({tz})"),
+            None => desc,
+        }
+    })
+}
+
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
@@ -90,13 +152,7 @@ impl RoutineResponse {
             .to_string_lossy()
             .into_owned();
         let timezone = local_timezone();
-        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|cron| {
-            let desc = cron.describe();
-            match &timezone {
-                Some(tz) => format!("{desc} ({tz})"),
-                None => desc,
-            }
-        });
+        let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
         Self {
             routine,
             agent_registered,
@@ -150,6 +206,10 @@ pub struct CreateRoutineRequest {
     /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Max wall-clock seconds a run may execute before the watchdog kills its hung
+    /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -170,4 +230,10 @@ pub struct UpdateRoutineRequest {
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
+    pub max_runtime_secs: Option<u64>,
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod model_tests;

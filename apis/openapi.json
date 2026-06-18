@@ -379,8 +379,37 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`GET /routines` — list all routines sorted by creation time.",
+        "summary": "`GET /routines` — list routines, optionally filtered and sorted by repository.",
         "operationId": "list",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "description": "Keep only routines with at least one repository whose URL contains this\nsubstring (case-insensitive). Empty or absent keeps every routine.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Field to sort by (default: creation time).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RoutineSort"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "Sort direction (default: ascending).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SortOrder"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -771,6 +800,15 @@
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
           },
+          "max_runtime_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Max wall-clock seconds a run may execute before the watchdog kills its hung\nsession. `None` uses the default cap (`MAX_RUNTIME_SECS`).",
+            "minimum": 0
+          },
           "prompt": {
             "type": "string",
             "description": "Task prompt."
@@ -1027,6 +1065,15 @@
             "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.",
             "minimum": 0
           },
+          "max_runtime_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module.",
+            "minimum": 0
+          },
           "prompt": {
             "type": "string",
             "description": "The task prompt handed to the agent."
@@ -1107,6 +1154,16 @@
         ],
         "description": "A [`Routine`] enriched with derived, non-persisted fields for API responses."
       },
+      "RoutineSort": {
+        "type": "string",
+        "description": "Field to sort a routine listing by.",
+        "enum": [
+          "created",
+          "updated",
+          "title",
+          "repository"
+        ]
+      },
       "ShutdownResponse": {
         "type": "object",
         "description": "Response body for `POST /shutdown`.",
@@ -1119,6 +1176,14 @@
             "description": "Acknowledgement status (always `\"shutting down\"`)."
           }
         }
+      },
+      "SortOrder": {
+        "type": "string",
+        "description": "Sort direction for a routine listing.",
+        "enum": [
+          "asc",
+          "desc"
+        ]
       },
       "UpdateRequest": {
         "type": "object",
@@ -1167,6 +1232,15 @@
               "null"
             ],
             "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "max_runtime_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "New max runtime (seconds) for a single run, or `None` to keep the existing value.",
+            "minimum": 0
           },
           "prompt": {
             "type": [

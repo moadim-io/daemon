@@ -80,6 +80,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   producing a nameless routine-origin disclosure (`Routine name:` with nothing
   after it) in the workbench `CLAUDE.md` and a silent `"routine"` slug the user
   never chose.
+- Route the macOS LaunchAgent `plist_path()` through the `MOADIM_HOME_OVERRIDE` home seam so service install/uninstall tests can no longer write to or delete the developer's real `~/Library/LaunchAgents/io.moadim.daemon.plist` (#214).
 
 ## [0.12.0] - 2026-06-18
 

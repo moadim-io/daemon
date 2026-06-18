@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Status { json } => std::process::exit(cli::status(json)?),
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
-        cli::Command::Stop { json } => std::process::exit(cli::stop(json)?),
+        cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
@@ -54,6 +54,13 @@ async fn main() -> anyhow::Result<()> {
 /// Run the HTTP/MCP/UI server in the foreground until a termination signal or the `/shutdown` route
 /// stops it. Records this process's PID so `moadim stop`/`status` can find it, and clears it on exit.
 async fn run_server() -> anyhow::Result<()> {
+    // Initialize the logging backend so the `log::*` call sites across the daemon actually emit;
+    // without an installed backend the `log` facade is a silent no-op and startup, crontab-sync,
+    // and HTTP-request diagnostics are dropped. Defaults to the `info` level and is overridable via
+    // `RUST_LOG`. A detached daemon redirects stderr to its log file, so these lines land there
+    // with timestamps and levels. Use `try_init` to avoid panicking if a backend is already set.
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .try_init();
     routines::ensure_default_agents();
     let store = storage::load_store();
     // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the

@@ -49,6 +49,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   suite locally replaced the live routines block with a single test fixture line.
   The tests now run under an empty `PATH` so the sync cannot spawn `crontab`
   (#175).
+- The crontab binary resolver now refuses to fall back to the real system
+  `crontab` in test builds when no `MOADIM_CRONTAB_BIN` shim is configured,
+  returning a non-existent path so the spawn fails harmlessly. This is a
+  structural safety net: no test — current or future — can clobber the
+  developer's live crontab even if it forgets to isolate the binary (#175).
 
 ## [0.11.2] - 2026-06-17
 

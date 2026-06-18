@@ -724,3 +724,32 @@ fn sync_from_crontab_skips_managed_job_absent_from_block() {
     );
     drop(shim);
 }
+
+#[test]
+fn crontab_bin_never_resolves_to_real_crontab_in_test_builds() {
+    // Structural guard for issue #175: in a test build, with no `MOADIM_CRONTAB_BIN`
+    // shim configured, `crontab_bin()` must never fall back to the real `crontab`,
+    // so a test that forgets to isolate the crontab cannot clobber the developer's
+    // live crontab. The resolved path must also not exist, so the eventual spawn
+    // fails harmlessly and the sync only logs a warning.
+    let saved = std::env::var_os("MOADIM_CRONTAB_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::remove_var("MOADIM_CRONTAB_BIN");
+    }
+    let bin = crontab_bin();
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+            None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+        }
+    }
+    assert_ne!(
+        bin, "crontab",
+        "test build must not fall back to the real crontab"
+    );
+    assert!(
+        !Path::new(&bin).exists(),
+        "the test-build crontab guard path must not exist so the spawn fails: {bin}"
+    );
+}

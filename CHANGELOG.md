@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- `now_secs()` no longer panics when the system clock reads before the Unix
+  epoch (1970). A VM or container booted with a dead real-time clock could make
+  `SystemTime::duration_since` fail and crash the daemon; such readings are now
+  clamped to `0` until the clock is corrected.
+
 ## [0.11.2] - 2026-06-17
 
 ### Fixed

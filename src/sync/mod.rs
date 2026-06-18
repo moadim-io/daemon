@@ -134,11 +134,20 @@ pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
 
 // ─── Crontab I/O ──────────────────────────────────────────────────────────
 
+/// Resolve the `crontab` binary to invoke.
+///
+/// Honours the `MOADIM_CRONTAB_BIN` environment variable when set, falling back
+/// to the system `crontab` otherwise. The override exists so tests can point
+/// crontab I/O at a shim instead of mutating the developer's real crontab.
+fn crontab_bin() -> String {
+    std::env::var("MOADIM_CRONTAB_BIN").unwrap_or_else(|_| "crontab".to_string())
+}
+
 /// Read the current user crontab via `crontab -l`.
 ///
 /// Returns an empty string when no crontab exists for the user.
 pub(crate) fn read_crontab() -> Result<String, SyncError> {
-    let out = Command::new("crontab")
+    let out = Command::new(crontab_bin())
         .arg("-l")
         .output()
         .map_err(|err| SyncError::CrontabCommand(format!("failed to run crontab -l: {err}")))?;
@@ -156,7 +165,7 @@ pub(crate) fn read_crontab() -> Result<String, SyncError> {
 
 /// Install `content` as the user's crontab via `crontab -`.
 pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
-    let mut child = Command::new("crontab")
+    let mut child = Command::new(crontab_bin())
         .arg("-")
         .stdin(Stdio::piped())
         .spawn()
@@ -169,9 +178,7 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         .expect("stdin is piped")
         .write_all(content.as_bytes())?;
 
-    let status = child
-        .wait()
-        .map_err(|err| SyncError::CrontabCommand(format!("crontab wait failed: {err}")))?;
+    let status = child.wait()?;
 
     if !status.success() {
         return Err(SyncError::CrontabCommand(format!(

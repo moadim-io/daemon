@@ -1,7 +1,7 @@
 //! Axum HTTP handlers for the `/routines` resource.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
@@ -11,8 +11,8 @@ use crate::error::AppError;
 
 use super::ical::svc_ical;
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineResponse, RoutineStore,
-    UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse,
+    RoutineStore, UpdateRoutineRequest,
 };
 use super::service::{
     svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger, svc_update,
@@ -29,11 +29,15 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(svc_create(&store, body)?)))
 }
 
-/// `GET /routines` — list all routines sorted by creation time.
+/// `GET /routines` — list routines, optionally filtered and sorted by repository.
 #[utoipa::path(get, path = "/routines",
+    params(RoutineListQuery),
     responses((status = 200, body = Vec<RoutineResponse>)))]
-pub async fn list(State(store): State<RoutineStore>) -> Json<Vec<RoutineResponse>> {
-    Json(svc_list(&store))
+pub async fn list(
+    State(store): State<RoutineStore>,
+    Query(query): Query<RoutineListQuery>,
+) -> Json<Vec<RoutineResponse>> {
+    Json(svc_list(&store, &query))
 }
 
 /// `GET /agents` — list the agent registry keys a routine may target.

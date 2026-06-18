@@ -9,6 +9,7 @@ use crate::paths::{
     routine_dir, routine_gitignore_path, routine_prompt_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
+use crate::utils::atomic::atomic_write;
 
 /// TOML representation of a routine on disk.
 #[derive(Debug, Deserialize, Serialize)]
@@ -97,8 +98,14 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         ttl_secs: routine.ttl_secs,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
-    std::fs::write(routine_toml_path(&slug), text)?;
-    std::fs::write(routine_prompt_path(&slug), compose_prompt(routine))?;
+    // Atomic write (temp + rename) so the continuously-running reverse crontab sync, which re-reads
+    // these files every 30s, never observes a torn routine.toml — a torn file parses to `None` and
+    // would silently drop the routine from the store.
+    atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
+    atomic_write(
+        &routine_prompt_path(&slug),
+        compose_prompt(routine).as_bytes(),
+    )?;
     Ok(())
 }
 
@@ -117,8 +124,15 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 /// `prompt.txt` on disk; the new `run.sh` references `prompt.md`, so the first cron trigger would
 /// fail the `cp` step if this migration has not run.
 pub fn migrate_prompt_files() {
-    let dir = routines_dir();
-    let entries = match std::fs::read_dir(&dir) {
+    migrate_prompt_files_from_dir(&routines_dir());
+}
+
+/// Inner variant of [`migrate_prompt_files`] that scans `dir` instead of [`routines_dir`].
+///
+/// Extracted so tests can drive the migration against a controlled scratch directory, including the
+/// `read_dir` error-return branch and the per-entry rename-failure branch.
+pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
+    let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
     };
@@ -148,8 +162,16 @@ pub fn migrate_prompt_files() {
 /// Idempotent: routines already in their slug dir are skipped. Call once at startup before
 /// `load_store` so the in-memory store reflects the canonical layout.
 pub fn migrate_routine_dirs() {
-    let dir = routines_dir();
-    let entries = match std::fs::read_dir(&dir) {
+    migrate_routine_dirs_from_dir(&routines_dir());
+}
+
+/// Inner variant of [`migrate_routine_dirs`] that scans `dir` instead of [`routines_dir`].
+///
+/// Extracted so tests can drive the migration against a controlled scratch directory, exercising the
+/// `read_dir` error-return branch, the non-directory and unparsable-toml `continue` branches, and the
+/// `write_routine`/`remove_routine_dir` failure-log branches.
+pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
+    let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
     };

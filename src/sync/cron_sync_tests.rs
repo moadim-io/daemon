@@ -4,6 +4,121 @@ use std::path::Path;
 
 use super::*;
 
+// ─── Crontab shim harness ───────────────────────────────────────────────────
+
+/// A temp-dir crontab shim that emulates the system `crontab` binary against a
+/// file-backed store, wired in via the `MOADIM_CRONTAB_BIN` env override.
+///
+/// `read_crontab`/`write_crontab` invoke the shim instead of the user's real
+/// crontab. On drop it restores the previous `MOADIM_CRONTAB_BIN` value and
+/// removes its temp directory.
+struct CronShim {
+    /// Temp directory holding the shim script and store file.
+    base: std::path::PathBuf,
+    /// Path to the file emulating the crontab contents.
+    store_file: std::path::PathBuf,
+    /// Saved prior value of `MOADIM_CRONTAB_BIN` to restore on drop.
+    previous: Option<std::ffi::OsString>,
+}
+
+impl CronShim {
+    /// Build a shim whose `-l` prints `initial` (or, when `None`, reports "no
+    /// crontab" and exits 1) and whose `-` overwrites the store from stdin.
+    fn new(initial: Option<&str>) -> Self {
+        Self::with_body(initial, false)
+    }
+
+    /// Build a shim that always exits non-zero with a generic error on every
+    /// invocation, emulating a crontab command failure.
+    fn failing() -> Self {
+        Self::with_body(None, true)
+    }
+
+    /// Internal constructor. When `always_fail` is set the shim exits 1 with a
+    /// non-"no crontab" stderr for both `-l` and `-`.
+    fn with_body(initial: Option<&str>, always_fail: bool) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronshim-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let store_file = base.join("store");
+        // When `initial` is provided, seed the store file; when absent the shim's
+        // `-l` will report "no crontab" because the file is missing.
+        if let Some(content) = initial {
+            std::fs::write(&store_file, content).unwrap();
+        }
+
+        let store_display = store_file.to_string_lossy().into_owned();
+        let script_body = if always_fail {
+            format!(
+                "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\necho \"crontab boom\" 1>&2\nexit 1\n"
+            )
+        } else {
+            // `-l` prints the store (or reports "no crontab" when it is absent);
+            // `-` overwrites the store from stdin.
+            format!(
+                "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-l\" ]; then\n  if [ -f \"$STORE\" ]; then cat \"$STORE\"; else echo \"no crontab for tester\" 1>&2; exit 1; fi\nelif [ \"$1\" = \"-\" ]; then\n  cat > \"$STORE\"\nfi\n"
+            )
+        };
+
+        let script_path = base.join("crontab-shim.sh");
+        std::fs::write(&script_path, script_body).unwrap();
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1);
+        // the override is restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script_path);
+        }
+
+        Self {
+            base,
+            store_file,
+            previous,
+        }
+    }
+
+    /// Read back the current emulated crontab contents from the store file.
+    fn store_contents(&self) -> String {
+        std::fs::read_to_string(&self.store_file).unwrap_or_default()
+    }
+}
+
+impl Drop for CronShim {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test harness; restore the saved value.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+                None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+/// Build a managed [`CronJob`] with an explicit `created_at` for ordering tests.
+fn make_managed_job(id: &str, schedule: &str, handler: &str, created_at: u64) -> CronJob {
+    CronJob {
+        id: id.to_string(),
+        schedule: schedule.to_string(),
+        handler: handler.to_string(),
+        metadata: serde_json::json!({}),
+        enabled: true,
+        source: "managed".to_string(),
+        created_at,
+        updated_at: created_at,
+        last_triggered_at: None,
+    }
+}
+
+/// Wrap `jobs` into a fresh [`CronStore`].
+fn store_with(jobs: Vec<CronJob>) -> CronStore {
+    let map: HashMap<String, CronJob> = jobs.into_iter().map(|j| (j.id.clone(), j)).collect();
+    std::sync::Arc::new(std::sync::Mutex::new(map))
+}
+
 // ─── Schedule conversion ───────────────────────────────────────────────────
 
 #[test]
@@ -244,4 +359,368 @@ fn replace_block_empty_crontab() {
     let block = "# BEGIN MOADIM\n# hdr\n# END MOADIM";
     let result = replace_block("", block);
     assert_eq!(result.trim(), block.trim());
+}
+
+#[test]
+fn replace_block_appends_trailing_newline_to_unterminated_rest() {
+    // Covers the `if !result.ends_with('\n')` branch: content follows the END
+    // marker but does not end in a newline, so one is appended to preserve it.
+    let crontab = "# BEGIN MOADIM\nold # moadim:x\n# END MOADIM\ntrailing line no newline";
+    let block = "# BEGIN MOADIM\nnew # moadim:y\n# END MOADIM";
+    let result = replace_block(crontab, block);
+    assert!(
+        result.contains("new # moadim:y"),
+        "block not replaced: {result}"
+    );
+    assert!(
+        result.contains("trailing line no newline"),
+        "trailing content lost: {result}"
+    );
+    assert!(
+        result.ends_with('\n'),
+        "trailing newline not appended: {result:?}"
+    );
+}
+
+// ─── to_os_schedule odd-field branch ─────────────────────────────────────────
+
+#[test]
+fn to_os_schedule_non_5_or_7_field_passthrough() {
+    // Covers the `_ =>` arm: neither @keyword, 5-field, nor 7-field.
+    assert_eq!(to_os_schedule("1 2 3"), "1 2 3");
+    assert_eq!(to_os_schedule("a b c d e f g h"), "a b c d e f g h");
+}
+
+// ─── resolve_handler_path extension match ────────────────────────────────────
+
+#[test]
+fn resolve_handler_path_matches_extension() {
+    // Covers the extension-candidate `return candidate` branch: an exact match
+    // is absent but `<handler>.sh` exists in the directory.
+    let dir = std::env::temp_dir().join(format!("moadim-handlers-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("greet.sh");
+    std::fs::write(&script, "#!/bin/sh\n").unwrap();
+
+    let resolved = resolve_handler_path("greet", &dir);
+    assert_eq!(resolved, script);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ─── SyncError Display & From<io::Error> ─────────────────────────────────────
+
+#[test]
+fn sync_error_display_renders_both_variants() {
+    let cmd = SyncError::CrontabCommand("nope".to_string());
+    assert_eq!(format!("{cmd}"), "crontab: nope");
+
+    let io_err = std::io::Error::other("disk gone");
+    let wrapped = SyncError::Io(io_err);
+    assert_eq!(format!("{wrapped}"), "io: disk gone");
+}
+
+#[test]
+fn sync_error_from_io_error_wraps_io_variant() {
+    let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+    let converted: SyncError = io_err.into();
+    match converted {
+        SyncError::Io(inner) => {
+            assert_eq!(inner.kind(), std::io::ErrorKind::PermissionDenied);
+        }
+        SyncError::CrontabCommand(msg) => panic!("expected Io variant, got CrontabCommand({msg})"),
+    }
+}
+
+// ─── read_crontab via shim ───────────────────────────────────────────────────
+
+#[test]
+fn read_crontab_returns_store_contents_on_success() {
+    let shim = CronShim::new(Some("0 0 * * * /bin/existing\n"));
+    let result = read_crontab().unwrap();
+    assert_eq!(result, "0 0 * * * /bin/existing\n");
+    drop(shim);
+}
+
+#[test]
+fn read_crontab_empty_when_no_crontab() {
+    // Shim with no store file reports "no crontab" and exits 1 → empty string.
+    let shim = CronShim::new(None);
+    let result = read_crontab().unwrap();
+    assert_eq!(result, "");
+    drop(shim);
+}
+
+#[test]
+fn read_crontab_errors_on_non_no_crontab_failure() {
+    // Shim exits non-zero with stderr that does NOT contain "no crontab".
+    let shim = CronShim::failing();
+    let err = read_crontab().unwrap_err();
+    match err {
+        SyncError::CrontabCommand(msg) => assert!(msg.contains("boom"), "unexpected msg: {msg}"),
+        SyncError::Io(io) => panic!("expected CrontabCommand, got Io({io})"),
+    }
+    drop(shim);
+}
+
+// ─── write_crontab via shim ──────────────────────────────────────────────────
+
+#[test]
+fn write_crontab_persists_content_on_success() {
+    let shim = CronShim::new(Some(""));
+    write_crontab("hello # moadim:z\n").unwrap();
+    assert_eq!(shim.store_contents(), "hello # moadim:z\n");
+    drop(shim);
+}
+
+#[test]
+fn write_crontab_errors_on_non_success_exit() {
+    let shim = CronShim::failing();
+    let err = write_crontab("anything\n").unwrap_err();
+    match err {
+        SyncError::CrontabCommand(msg) => assert!(
+            msg.contains("exited with"),
+            "expected exit message, got: {msg}"
+        ),
+        SyncError::Io(io) => panic!("expected CrontabCommand, got Io({io})"),
+    }
+    drop(shim);
+}
+
+// ─── sync_to_crontab ─────────────────────────────────────────────────────────
+
+#[test]
+fn sync_to_crontab_writes_block_and_is_idempotent() {
+    let shim = CronShim::new(Some(""));
+    let store = store_with(vec![make_managed_job(
+        "job-1",
+        "30 9 * * 1-5",
+        "send-report",
+        1,
+    )]);
+
+    // First sync installs the block.
+    sync_to_crontab(&store).unwrap();
+    let after_first = shim.store_contents();
+    assert!(
+        after_first.contains("# moadim:job-1"),
+        "block missing: {after_first}"
+    );
+
+    // Second sync makes no change: covers the `new_crontab == current` early return.
+    sync_to_crontab(&store).unwrap();
+    assert_eq!(
+        shim.store_contents(),
+        after_first,
+        "idempotent sync changed the crontab"
+    );
+    drop(shim);
+}
+
+// ─── sync_from_crontab ───────────────────────────────────────────────────────
+
+#[test]
+fn sync_from_crontab_updates_existing_and_imports_unknown() {
+    // Block carries: an updated schedule for a known job, and an unknown UUID to import.
+    let crontab = "\
+# BEGIN MOADIM
+# Managed by moadim
+0 6 * * * /handlers/known # moadim:known-1
+15 3 * * 0 /handlers/fresh.sh # moadim:imported-9
+# END MOADIM
+";
+    let shim = CronShim::new(Some(crontab));
+    let store = store_with(vec![make_managed_job(
+        "known-1",
+        "30 9 * * 1-5",
+        "known",
+        1,
+    )]);
+
+    let changed = sync_from_crontab(&store).unwrap();
+    assert!(changed, "expected changes to be reported");
+
+    let lock = store.lock().unwrap();
+    let known = lock.get("known-1").unwrap();
+    assert_eq!(known.schedule, "0 6 * * *", "schedule not updated");
+
+    let imported = lock.get("imported-9").expect("unknown UUID not imported");
+    assert_eq!(imported.schedule, "15 3 * * 0");
+    assert_eq!(imported.handler, "fresh");
+    assert_eq!(imported.source, "managed");
+    assert!(imported.enabled);
+    drop(lock);
+    drop(shim);
+
+    // sync_from_crontab persists updated/imported jobs to disk; clean them up.
+    let _ = std::fs::remove_dir_all(crate::paths::job_dir("known-1"));
+    let _ = std::fs::remove_dir_all(crate::paths::job_dir("imported-9"));
+}
+
+#[test]
+fn sync_from_crontab_updates_handler_only() {
+    // The block changes a known job's handler but keeps its schedule, exercising the
+    // `if handler_changed { job.handler = new_handler; }` branch independently of the schedule one.
+    let crontab = "\
+# BEGIN MOADIM
+# Managed by moadim
+30 9 * * 1-5 /handlers/renamed # moadim:hjob-1
+# END MOADIM
+";
+    let shim = CronShim::new(Some(crontab));
+    let store = store_with(vec![make_managed_job(
+        "hjob-1",
+        "30 9 * * 1-5",
+        "original",
+        1,
+    )]);
+
+    let changed = sync_from_crontab(&store).unwrap();
+    assert!(changed, "expected the handler change to be reported");
+
+    let lock = store.lock().unwrap();
+    let job = lock.get("hjob-1").unwrap();
+    assert_eq!(job.schedule, "30 9 * * 1-5", "schedule must be unchanged");
+    assert_eq!(job.handler, "renamed", "handler should be updated");
+    drop(lock);
+    drop(shim);
+
+    let _ = std::fs::remove_dir_all(crate::paths::job_dir("hjob-1"));
+}
+
+#[test]
+fn sync_from_crontab_logs_when_write_job_fails() {
+    // Import path runs (unknown UUID) but `write_job` fails because a regular file occupies the
+    // jobs directory path under the override home, so `create_dir_all` errors. This exercises the
+    // `log::warn!("cron_sync: failed to persist job ...")` branch while leaving the in-memory store
+    // updated (changed == true).
+    let home = std::env::temp_dir().join(format!("moadim-cronpersist-{}", uuid::Uuid::new_v4()));
+    let previous_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: single-threaded test harness; restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+    // Block the jobs dir: create `{home}/.config/moadim` and drop a regular file named `jobs`, so
+    // `job_dir(id)` -> `.../jobs/<id>` cannot be created.
+    let moadim_cfg = home.join(".config").join("moadim");
+    std::fs::create_dir_all(&moadim_cfg).unwrap();
+    std::fs::write(moadim_cfg.join("jobs"), "block the jobs dir").unwrap();
+
+    let crontab = "\
+# BEGIN MOADIM
+# Managed by moadim
+15 3 * * 0 /handlers/fresh.sh # moadim:persist-fail-9
+# END MOADIM
+";
+    let shim = CronShim::new(Some(crontab));
+    let store = store_with(vec![]);
+
+    let changed = sync_from_crontab(&store).unwrap();
+    assert!(
+        changed,
+        "import still flips changed even though persistence failed"
+    );
+    assert!(
+        store.lock().unwrap().contains_key("persist-fail-9"),
+        "imported job is in the in-memory store regardless of the persist failure"
+    );
+
+    drop(shim);
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous_home {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn sync_from_crontab_no_change_returns_false() {
+    // Block matches the store exactly → no updates, no imports.
+    let crontab = "\
+# BEGIN MOADIM
+# Managed by moadim
+30 9 * * 1-5 /handlers/known # moadim:known-1
+# END MOADIM
+";
+    let shim = CronShim::new(Some(crontab));
+    let store = store_with(vec![make_managed_job(
+        "known-1",
+        "30 9 * * 1-5",
+        "known",
+        1,
+    )]);
+
+    let changed = sync_from_crontab(&store).unwrap();
+    assert!(!changed, "expected no changes");
+    drop(shim);
+}
+
+#[test]
+fn write_crontab_errors_when_binary_is_missing() {
+    // Pointing the crontab seam at a nonexistent binary makes the spawn fail, exercising the
+    // spawn-failure error branch.
+    let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        std::env::set_var(
+            "MOADIM_CRONTAB_BIN",
+            "/nonexistent/moadim-no-such-crontab-xyz",
+        );
+    }
+    let result = write_crontab("# BEGIN MOADIM\n# END MOADIM\n");
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+            None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+        }
+    }
+    assert!(
+        result.is_err(),
+        "spawning a missing crontab binary must error"
+    );
+}
+
+#[test]
+fn handler_from_command_strips_dir_prefix_to_stem() {
+    let dir = std::path::Path::new("/handlers");
+    // A command under `dir` resolves via the stripped relative stem (the strip_prefix Ok branch).
+    assert_eq!(handler_from_command("/handlers/report.sh", dir), "report");
+    // A bare command falls back to its own file stem (the strip_prefix Err branch).
+    assert_eq!(handler_from_command("standalone.py", dir), "standalone");
+    // A command with no file stem falls back to the trimmed command (the unwrap_or_else branch).
+    assert_eq!(handler_from_command("/", dir), "/");
+}
+
+#[test]
+fn sync_from_crontab_skips_managed_job_absent_from_block() {
+    // A managed job lives in the store but the crontab block is empty (the job was disabled, so
+    // the last forward sync excluded it). The reconcile loop must skip it (the `if let Some` miss)
+    // rather than touch it, and report no change.
+    let crontab = "\
+# BEGIN MOADIM
+# Managed by moadim
+# END MOADIM
+";
+    let shim = CronShim::new(Some(crontab));
+    let store = store_with(vec![make_managed_job(
+        "absent-from-block-1",
+        "30 9 * * 1-5",
+        "ghost",
+        1,
+    )]);
+
+    let changed = sync_from_crontab(&store).unwrap();
+    assert!(
+        !changed,
+        "a store job missing from the block is left untouched"
+    );
+    assert!(
+        store.lock().unwrap().contains_key("absent-from-block-1"),
+        "the absent job stays in the store"
+    );
+    drop(shim);
 }

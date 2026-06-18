@@ -22,3 +22,7 @@ pub fn snapshot_ttls(store: &RoutineStore) -> HashMap<String, u64> {
 pub fn ttl_for(snapshot: &HashMap<String, u64>, slug: &str) -> u64 {
     snapshot.get(slug).copied().unwrap_or(MAX_TTL_SECS)
 }
+
+#[cfg(test)]
+#[path = "snapshot_tests.rs"]
+mod snapshot_tests;

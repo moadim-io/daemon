@@ -222,8 +222,15 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         ),
     ]);
     if let Some(setup) = &agent.setup {
-        // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
-        stmts.push(setup.clone());
+        // Fail-fast if the agent's setup step fails, mirroring the `cp prompt.md` guard above. The
+        // statements are `;`-joined (no `set -e`), so a bare `setup` failure would be ignored and
+        // the agent would launch anyway — typically into the interactive trust/onboarding prompt
+        // with no stdin, where it hangs until the watchdog reaps it ~1h later with no diagnostic.
+        // Abort instead, recording the reason in agent.log and on stderr. The setup string is
+        // inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
+        stmts.push(format!(
+            r#"{{ {setup}; }} || {{ echo "moadim: agent setup failed; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#
+        ));
     }
     stmts.push(format!(
         r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,

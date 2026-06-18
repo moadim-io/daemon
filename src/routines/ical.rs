@@ -16,12 +16,22 @@ const PRODID: &str = "-//moadim//routines//EN";
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
 fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             '\\' => out.push_str("\\\\"),
             ';' => out.push_str("\\;"),
             ',' => out.push_str("\\,"),
             '\n' => out.push_str("\\n"),
+            // RFC 5545 §3.3.11: a TEXT value cannot contain a raw carriage
+            // return. Normalize both CRLF and a lone CR to the same escaped
+            // newline as a bare LF, so no stray '\r' ever reaches the feed.
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push_str("\\n");
+            }
             _ => out.push(ch),
         }
     }

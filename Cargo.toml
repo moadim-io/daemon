@@ -53,3 +53,8 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Require variables to be interpolated directly in format strings
+# (`format!("{x}")` instead of `format!("{}", x)`). Inline captures keep the
+# placeholder next to its value, so they read clearer and cannot drift out of
+# sync with the trailing argument list.
+uninlined_format_args = "deny"

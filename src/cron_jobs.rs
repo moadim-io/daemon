@@ -180,7 +180,7 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     let normalized = normalize_schedule(expr.trim());
     normalized
         .parse::<Cron>()
-        .map_err(|err| AppError::BadRequest(format!("invalid cron expression: {}", err)))?;
+        .map_err(|err| AppError::BadRequest(format!("invalid cron expression: {err}")))?;
     Ok(())
 }
 
@@ -336,10 +336,10 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
         if let Err(err) = std::process::Command::new(&handler_path).spawn() {
-            log::warn!("trigger: failed to spawn handler {:?}: {err}", handler_path);
+            log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}");
         }
     } else {
-        log::warn!("trigger: handler script not found at {:?}", handler_path);
+        log::warn!("trigger: handler script not found at {handler_path:?}");
     }
     Ok(job)
 }

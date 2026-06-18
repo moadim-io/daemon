@@ -109,7 +109,7 @@ fn make_managed_job(id: &str, schedule: &str, handler: &str, created_at: u64) ->
         source: "managed".to_string(),
         created_at,
         updated_at: created_at,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 
@@ -214,7 +214,7 @@ fn make_job(id: &str, schedule: &str, handler: &str) -> CronJob {
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 

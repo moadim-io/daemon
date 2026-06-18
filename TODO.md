@@ -19,7 +19,6 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
 - Enrich `moadim status --json` with the server's liveness details from `GET /health` (e.g. `uptime_secs`) so a single call returns running-state + age, not just the local PID
-- Add a `moadim stop --quiet`/`-q` flag that suppresses the human-readable line (and is implied/ignored under `--json`), so scripts that branch on `$?` alone get no stdout noise
 - Have `moadim cleanup --json` include the bound `address` field too (`{"running":bool,"removed":N,"address":…}`), so every `--json` command surfaces the endpoint it talked to, matching `status`/`stop`
 - Add a `cli_tests` assertion that `status --json` and `stop --json` produce the SAME set of object keys, so the two shapes can't silently drift apart again as fields are added
 - Add a CLI integration test (spawn a real listener on an ephemeral port, point the probe at it) that exercises the `status`/`cleanup`/`stop` network paths end-to-end, lifting `cli.rs` off its ~27% coverage floor toward the repo's 100% line-coverage gate
@@ -30,5 +29,4 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast
 - Auto-refresh the routine LOGS view (or show a removed badge) after a CLEANUP NOW sweep so stale run output isn't shown for reaped workbenches
 - Add the option to filter routines by repositories in the ui
-- Add a copy-pasteable shell snippet to the README "Scripting" section showing a real branch on `moadim status --json` exit codes (e.g. `if ! moadim status --json >/dev/null; then moadim; fi`) so readers see the contract in use, not just its shape
 - Run the README's fenced `sh`/`json` blocks through a docs lint in CI (e.g. a `markdownlint`/`mdsh` check or a `--json | jq -e` smoke test) so the documented JSON shapes can't drift from the actual CLI output silently

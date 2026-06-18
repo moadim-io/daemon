@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+- Service tests no longer touch the real user crontab; they run against an
+  isolated test crontab seam.
+
 ### Fixed
 - The daemon now installs a logging backend at startup so `log` calls
   actually emit output instead of being silently dropped.

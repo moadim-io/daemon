@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Routine runtime state (last-run timestamps and related mutable fields) is now
+  stored in a separate, git-ignored sidecar file instead of the git-tracked
+  `routine.toml`, so scheduled runs no longer produce noisy diffs or merge
+  conflicts in version-controlled routine definitions (#127).
+
 ### Fixed
 
 - `now_secs()` no longer panics when the system clock reads before the Unix

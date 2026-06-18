@@ -18,6 +18,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
@@ -78,6 +79,70 @@ fn text_fields_are_escaped() {
     routine.title = "a,b;c\\d\ne".to_string();
     let ics = build_ical(&[routine], fixed_now());
     assert!(ics.contains("SUMMARY:a\\,b\\;c\\\\d\\ne\r\n"));
+}
+
+/// Assert no physical line in `ics` exceeds 75 octets (excluding the CRLF).
+fn assert_all_lines_within_75_octets(ics: &str) {
+    for line in ics.split("\r\n") {
+        assert!(
+            line.len() <= 75,
+            "line exceeds 75 octets ({}): {line:?}",
+            line.len()
+        );
+    }
+}
+
+#[test]
+fn short_value_is_left_unfolded() {
+    assert_eq!(fold_line("SUMMARY:hello"), "SUMMARY:hello");
+    // exactly 75 octets stays on one line
+    let exact = "A".repeat(75);
+    assert_eq!(fold_line(&exact), exact);
+}
+
+#[test]
+fn long_line_is_folded_with_leading_space() {
+    let line = format!("DESCRIPTION:{}", "x".repeat(200));
+    let folded = fold_line(&line);
+    let physical: Vec<&str> = folded.split("\r\n").collect();
+    assert!(physical.len() > 1, "expected multiple folded lines");
+    assert!(physical[0].len() <= 75);
+    for cont in &physical[1..] {
+        assert!(
+            cont.starts_with(' '),
+            "continuation must start with a space"
+        );
+        assert!(cont.len() <= 75, "continuation exceeds 75 octets");
+    }
+    // unfolding (strip CRLF + single leading space) restores the original
+    let unfolded = folded.replace("\r\n ", "");
+    assert_eq!(unfolded, line);
+}
+
+#[test]
+fn fold_never_splits_multibyte_character() {
+    // 'é' is 2 octets in UTF-8; place a run straddling the 75-octet boundary.
+    let line = format!("SUMMARY:{}", "é".repeat(80));
+    let folded = fold_line(&line);
+    for cont in folded.split("\r\n") {
+        assert!(cont.len() <= 75);
+    }
+    // Every physical line must be valid UTF-8 with no replacement chars,
+    // i.e. no character was split mid-codepoint.
+    let unfolded = folded.replace("\r\n ", "");
+    assert_eq!(unfolded, line);
+    assert!(!folded.contains('\u{FFFD}'));
+}
+
+#[test]
+fn feed_with_long_prompt_is_fully_folded() {
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.prompt = "lorem ipsum dolor sit amet ".repeat(20);
+    routine.title = "A very long routine title ".repeat(5);
+    let ics = build_ical(&[routine], fixed_now());
+    assert_all_lines_within_75_octets(&ics);
+    // DESCRIPTION was long enough to require at least one continuation line.
+    assert!(ics.contains("\r\n "), "expected folded continuation lines");
 }
 
 #[test]

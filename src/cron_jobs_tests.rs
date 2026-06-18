@@ -352,3 +352,274 @@ fn schedule_description_none_for_unparseable_expression() {
     let resp = CronJobResponse::from_job(job, &new_registry());
     assert!(resp.schedule_description.is_none());
 }
+
+#[test]
+fn from_source_managed_maps_to_managed() {
+    assert_eq!(
+        CronJobSourceType::from_source("managed"),
+        CronJobSourceType::Managed
+    );
+}
+
+#[test]
+fn from_source_non_managed_maps_to_system() {
+    // Anything other than the exact "managed" string is treated as a read-only
+    // OS-discovered (system) entry.
+    assert_eq!(
+        CronJobSourceType::from_source("system:user"),
+        CronJobSourceType::System
+    );
+    assert_eq!(
+        CronJobSourceType::from_source(""),
+        CronJobSourceType::System
+    );
+}
+
+#[test]
+fn from_job_system_source_sets_source_type() {
+    let mut job = make_job("sys");
+    job.source = "system:root".to_string();
+    let resp = CronJobResponse::from_job(job, &new_registry());
+    assert_eq!(resp.source_type, CronJobSourceType::System);
+}
+
+/// Install a `MOADIM_CRONTAB_BIN` shim that always exits non-zero with a stderr that
+/// does NOT contain "no crontab", so `read_crontab` (and thus `sync_to_crontab`) returns
+/// an error. The previous value of the env var is restored on drop and the temp dir removed.
+///
+/// This exercises the best-effort `if let Err(err) = sync_to_crontab(..)` warn branches in
+/// `svc_create`/`svc_update`/`svc_delete`: the crontab sync fails but the operation still succeeds.
+struct FailingCrontabShim {
+    /// Temp dir holding the shim script; removed on drop.
+    base: std::path::PathBuf,
+    /// Saved prior value of `MOADIM_CRONTAB_BIN` to restore on drop.
+    previous: Option<std::ffi::OsString>,
+}
+
+impl FailingCrontabShim {
+    fn install() -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronfail-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let script = base.join("crontab-fail.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\necho \"crontab boom\" 1>&2\nexit 1\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+        }
+        Self { base, previous }
+    }
+}
+
+impl Drop for FailingCrontabShim {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test harness; restore the saved value.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+                None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+#[test]
+fn svc_create_succeeds_despite_crontab_sync_failure() {
+    let _shim = FailingCrontabShim::install();
+    let store = new_store();
+    let resp = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-fail-create".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .expect("create must succeed even when crontab sync fails");
+    assert!(store.lock().unwrap().contains_key(&resp.job.id));
+    crate::storage::remove_job_dir(&resp.job.id).unwrap();
+}
+
+#[test]
+fn svc_update_succeeds_despite_crontab_sync_failure() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-fail-update".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let _shim = FailingCrontabShim::install();
+    let updated = svc_update(
+        &store,
+        &new_registry(),
+        &id,
+        UpdateRequest {
+            schedule: Some("@weekly".into()),
+            handler: None,
+            metadata: None,
+            enabled: None,
+        },
+    )
+    .expect("update must succeed even when crontab sync fails");
+    assert_eq!(updated.job.schedule, "@weekly");
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
+fn svc_delete_succeeds_despite_crontab_sync_failure() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-fail-delete".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let _shim = FailingCrontabShim::install();
+    svc_delete(&store, &new_registry(), &id)
+        .expect("delete must succeed even when crontab sync fails");
+    assert!(!store.lock().unwrap().contains_key(&id));
+}
+
+#[test]
+fn svc_trigger_logs_when_handler_spawn_fails() {
+    // A handler file that exists but is not executable cannot be spawned: `Command::spawn`
+    // returns Err, exercising the spawn-failure `log::warn!` branch. The trigger itself
+    // still succeeds (best-effort spawn).
+    let handlers = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers).unwrap();
+    let handler_name = format!("cov-nonexec-{}", uuid::Uuid::new_v4());
+    let handler_path = handlers.join(&handler_name);
+    // No shebang, no execute bit → spawn fails with a permission/exec error.
+    std::fs::write(&handler_path, "not an executable").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&handler_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: handler_name.clone(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let triggered = svc_trigger(&store, &id).expect("trigger succeeds despite spawn failure");
+    assert!(triggered.last_manual_trigger_at.is_some());
+
+    crate::storage::remove_job_dir(&id).unwrap();
+    let _ = std::fs::remove_file(&handler_path);
+}
+
+#[test]
+fn svc_trigger_spawns_existing_handler_script() {
+    // Place an executable handler script under the handlers dir so svc_trigger's
+    // `handler_path.exists()` branch is taken and the script is spawned.
+    let handlers = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers).unwrap();
+    let handler_name = format!("cov-handler-{}", uuid::Uuid::new_v4());
+    let handler_path = handlers.join(&handler_name);
+    std::fs::write(&handler_path, "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut perms = std::fs::metadata(&handler_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&handler_path, perms).unwrap();
+    }
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: handler_name.clone(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let triggered = svc_trigger(&store, &id).unwrap();
+    assert!(triggered.last_manual_trigger_at.is_some());
+
+    crate::storage::remove_job_dir(&id).unwrap();
+    let _ = std::fs::remove_file(&handler_path);
+}
+
+#[tokio::test]
+async fn replace_handler_updates_job() {
+    use axum::extract::{Path, State};
+    use axum::Json;
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "before".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let state = AppState {
+        store: store.clone(),
+        handlers: new_registry(),
+        routines: crate::routines::new_store(),
+        uptime_start: 0,
+        shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
+    };
+    let body = UpdateRequest {
+        schedule: None,
+        handler: Some("after".into()),
+        metadata: None,
+        enabled: None,
+    };
+    let resp = replace(State(state), Path(id.clone()), Json(body))
+        .await
+        .unwrap();
+    assert_eq!(resp.0.job.handler, "after");
+
+    crate::storage::remove_job_dir(&id).unwrap();
+}

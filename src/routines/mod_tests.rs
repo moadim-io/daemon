@@ -19,6 +19,7 @@ fn make_routine(id: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
@@ -223,6 +224,12 @@ fn ensure_default_agents_writes_parsable_configs() {
     assert_eq!(codex.command, "codex");
     assert!(codex.args.contains(&"{prompt_file}".to_string()));
 
+    // hermes default parses and passes the prompt file as an argument
+    let hermes: AgentCommand =
+        toml::from_str(&std::fs::read_to_string(dir.join("hermes.toml")).unwrap()).unwrap();
+    assert_eq!(hermes.command, "hermes");
+    assert!(hermes.args.contains(&"{prompt_file}".to_string()));
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -267,10 +274,14 @@ fn available_agents_lists_sorted_toml_stems() {
 fn available_agents_falls_back_to_builtins_when_missing() {
     let dir = std::env::temp_dir().join("moadim-agents-missing-test");
     let _ = std::fs::remove_dir_all(&dir);
-    // directory does not exist → built-in defaults
+    // directory does not exist → built-in defaults (declaration order)
     assert_eq!(
         available_agents_in(&dir),
-        vec!["claude".to_string(), "codex".to_string()]
+        vec![
+            "claude".to_string(),
+            "codex".to_string(),
+            "hermes".to_string()
+        ]
     );
 }
 
@@ -414,6 +425,7 @@ fn svc_create_invalid_cron_rejected() {
         repositories: vec![],
         enabled: true,
         ttl_secs: None,
+        max_runtime_secs: None,
     };
     assert!(svc_create(&store, req).is_err());
 }
@@ -431,6 +443,7 @@ fn svc_create_update_delete_lifecycle() {
             repositories: vec![],
             enabled: true,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     )
     .unwrap();
@@ -453,6 +466,7 @@ fn svc_create_update_delete_lifecycle() {
             }]),
             enabled: Some(false),
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     )
     .unwrap();
@@ -476,6 +490,7 @@ fn svc_update_not_found() {
         repositories: None,
         enabled: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -495,6 +510,7 @@ fn svc_update_invalid_cron_rejected() {
         repositories: None,
         enabled: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

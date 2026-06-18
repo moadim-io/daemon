@@ -166,3 +166,80 @@ fn load_store_from_dir_missing_dir_returns_empty_store() {
     let store = load_store_from_dir(std::path::Path::new("/nonexistent-jobs-dir-99999"));
     assert!(store.lock().unwrap().is_empty());
 }
+
+#[test]
+fn write_job_errors_when_job_dir_path_is_a_file() {
+    // A regular file occupies the job's directory path, so `create_dir_all` fails and
+    // `write_job` returns the error rather than panicking.
+    let id = "test-write-blocked-by-file";
+    let jobs_dir = crate::paths::jobs_dir();
+    std::fs::create_dir_all(&jobs_dir).unwrap();
+    let blocker = jobs_dir.join(id);
+    // Make sure no leftover dir is in the way, then block the path with a file.
+    let _ = std::fs::remove_dir_all(&blocker);
+    std::fs::write(&blocker, "i block the job dir").unwrap();
+
+    let err = write_job(&test_job(id)).unwrap_err();
+    let _ = err; // the specific kind is OS-dependent; the point is that it errored
+
+    assert!(blocker.is_file(), "the blocking file is left untouched");
+    std::fs::remove_file(&blocker).unwrap();
+}
+
+#[test]
+fn write_job_errors_when_job_toml_path_is_a_directory() {
+    // The gitignore write and dir creation succeed, but a directory occupies the
+    // `job.toml` path, so the final `std::fs::write(job_toml_path, ..)` fails.
+    let id = "test-write-toml-blocked-by-dir";
+    let dir = crate::paths::job_dir(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Block the job.toml path with a directory so writing the file fails.
+    std::fs::create_dir_all(crate::paths::job_toml_path(id)).unwrap();
+
+    let err = write_job(&test_job(id)).unwrap_err();
+    let _ = err;
+
+    assert!(crate::paths::job_toml_path(id).is_dir());
+    remove_job_dir(id).expect("cleanup failed");
+}
+
+#[test]
+fn json_to_toml_table_skips_non_representable_values() {
+    // TOML cannot represent a JSON null, so that key is dropped while the
+    // representable sibling key survives — exercising the `if let Ok(..)` skip arm.
+    let val = serde_json::json!({"keep": "yes", "drop": serde_json::Value::Null});
+    let table = json_to_toml_table(&val);
+    assert!(table.contains_key("keep"));
+    assert!(
+        !table.contains_key("drop"),
+        "a null value is not representable in TOML and must be skipped"
+    );
+}
+
+#[test]
+fn load_job_from_dir_torn_toml_returns_none() {
+    // A truncated/garbage job.toml must parse to None rather than panic or load a
+    // half-baked job.
+    let id = "test-torn-job-toml";
+    let dir = crate::paths::job_dir(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(crate::paths::job_toml_path(id), "schedule = \"@dai").unwrap();
+    assert!(load_job_from_dir(id).is_none());
+    remove_job_dir(id).expect("cleanup failed");
+}
+
+#[test]
+fn load_job_from_dir_missing_schedule_returns_none() {
+    // A job.toml that parses but lacks the required `schedule` field yields None
+    // (the `?` on `base.schedule` short-circuits in `load_job_from_dir`).
+    let id = "test-job-missing-schedule";
+    let dir = crate::paths::job_dir(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        crate::paths::job_toml_path(id),
+        "handler = \"h\"\nenabled = true\n",
+    )
+    .unwrap();
+    assert!(load_job_from_dir(id).is_none());
+    remove_job_dir(id).expect("cleanup failed");
+}

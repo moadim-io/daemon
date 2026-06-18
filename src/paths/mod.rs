@@ -2,9 +2,22 @@
 
 use std::path::PathBuf;
 
+/// Environment variable that, when set, overrides the home directory all moadim paths resolve
+/// under. Used by tests to redirect config/routines/jobs/agents/workbenches into a tempdir so they
+/// never read or write the user's real `~/.config/moadim`.
+const HOME_OVERRIDE_ENV: &str = "MOADIM_HOME_OVERRIDE";
+
+/// Resolve the base home directory, honoring the [`HOME_OVERRIDE_ENV`] test seam when set.
+fn home() -> Option<PathBuf> {
+    match std::env::var_os(HOME_OVERRIDE_ENV) {
+        Some(dir) => Some(PathBuf::from(dir)),
+        None => dirs::home_dir(),
+    }
+}
+
 /// Returns the path to `~/.config/moadim/jobs/`.
 pub fn jobs_dir() -> PathBuf {
-    jobs_dir_from_home(dirs::home_dir())
+    jobs_dir_from_home(home())
 }
 
 /// Returns the jobs directory under `home`, or `.` if `home` is `None`.
@@ -17,7 +30,7 @@ pub(crate) fn jobs_dir_from_home(home: Option<PathBuf>) -> PathBuf {
 
 /// Returns the path to `~/.config/moadim/handlers/`.
 pub fn handlers_dir() -> PathBuf {
-    handlers_dir_from_home(dirs::home_dir())
+    handlers_dir_from_home(home())
 }
 
 /// Returns the handlers directory under `home`, or `.` if `home` is `None`.
@@ -57,7 +70,7 @@ pub fn job_log_path(id: &str) -> PathBuf {
 
 /// Returns the path to `~/.config/moadim/routines/`.
 pub fn routines_dir() -> PathBuf {
-    routines_dir_from_home(dirs::home_dir())
+    routines_dir_from_home(home())
 }
 
 /// Returns the routines directory under `home`, or `.` if `home` is `None`.
@@ -88,6 +101,15 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
     routine_dir(id).join(".gitignore")
 }
 
+/// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
+/// daemon-written runtime state (e.g. `last_manual_trigger_at`) kept out of the tracked `routine.toml`.
+///
+/// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
+/// trigger churn never produces version-control diffs.
+pub fn routine_state_path(id: &str) -> PathBuf {
+    routine_dir(id).join("state.local.toml")
+}
+
 /// Returns the path to `{routines_dir}/{id}/run.sh`, the generated launch script invoked by cron.
 pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")
@@ -97,7 +119,7 @@ pub fn routine_script_path(id: &str) -> PathBuf {
 
 /// Returns the path to `~/.config/moadim/agents/`.
 pub fn agents_dir() -> PathBuf {
-    agents_dir_from_home(dirs::home_dir())
+    agents_dir_from_home(home())
 }
 
 /// Returns the agents directory under `home`, or `.` if `home` is `None`.
@@ -117,7 +139,7 @@ pub fn agent_toml_path(name: &str) -> PathBuf {
 
 /// Returns the path to `~/.config/moadim/`.
 pub fn config_dir() -> PathBuf {
-    config_dir_from_home(dirs::home_dir())
+    config_dir_from_home(home())
 }
 
 /// Returns the moadim config directory under `home`, or `.` if `home` is `None`.
@@ -148,7 +170,7 @@ pub fn config_gitignore_path() -> PathBuf {
 /// Returns the path to `~/.config/moadim/user_prompt.md`, where the user writes a persistent
 /// system prompt injected into every agent workbench `CLAUDE.md` alongside the moadim prompt.
 pub fn user_prompt_path() -> PathBuf {
-    user_prompt_path_from_home(dirs::home_dir())
+    user_prompt_path_from_home(home())
 }
 
 /// Returns the user prompt path under `home`, or `.` if `home` is `None`.
@@ -163,7 +185,7 @@ pub(crate) fn user_prompt_path_from_home(home: Option<PathBuf>) -> PathBuf {
 
 /// Returns the path to `~/.moadim/`.
 pub fn moadim_home() -> PathBuf {
-    moadim_home_from_home(dirs::home_dir())
+    moadim_home_from_home(home())
 }
 
 /// Returns the moadim home directory under `home`, or `.` if `home` is `None`.

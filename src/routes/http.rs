@@ -189,6 +189,17 @@ pub(crate) fn build_app_with_shutdown(
         .with_state(app_state)
 }
 
+/// Write the generated OpenAPI spec JSON to `path`, logging a warning on failure.
+///
+/// Best-effort: the spec is a development convenience (committed under `apis/`), so a write
+/// failure must not abort server startup. Extracted from [`run_with_listener_until`] so the
+/// failure branch can be exercised against an unwritable path.
+pub(crate) fn write_openapi_spec(path: &std::path::Path) {
+    if let Err(err) = std::fs::write(path, crate::openapi::ApiDoc::to_json()) {
+        log::warn!("could not write openapi spec: {err}");
+    }
+}
+
 /// Serve the application on `listener`, shutting down when `shutdown` resolves.
 pub async fn run_with_listener_until(
     store: CronStore,
@@ -197,10 +208,10 @@ pub async fn run_with_listener_until(
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let addr = listener.local_addr()?.to_string();
-    let spec_path = concat!(env!("CARGO_MANIFEST_DIR"), "/apis/openapi.json");
-    if let Err(err) = std::fs::write(spec_path, crate::openapi::ApiDoc::to_json()) {
-        log::warn!("could not write openapi spec: {err}");
-    }
+    write_openapi_spec(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/apis/openapi.json"
+    )));
     let signal: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
     // Periodically reap finished, expired run workbenches so triggered routines do not accumulate
     // forever (see `routines::cleanup`). The first tick fires immediately, sweeping leftovers from

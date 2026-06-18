@@ -104,3 +104,141 @@ fn reconcile_keeps_enabled_default_enabled() {
     let updated = reconcile(spec, &cur, 200).expect("drift should be rewritten");
     assert!(updated.enabled);
 }
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+/// A unique, not-yet-created scratch home directory under the system temp dir.
+fn scratch_home() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("moadim-defaults-{}", uuid::Uuid::new_v4()))
+}
+
+/// Run `body` with `HOME` redirected at a fresh temp home (so `crate::paths` resolves all
+/// config/routines paths under it), restoring the previous value and removing the temp home
+/// afterwards. The crate's tests run single-threaded, so mutating the process-global `HOME` here is
+/// safe. `dirs::home_dir()` — which every `crate::paths` builder consults — reads `$HOME` on this
+/// platform, so redirecting it points `routines_dir()` (and thus `write_routine`) at the tempdir.
+fn with_redirected_home(body: impl FnOnce(&std::path::Path)) {
+    let home = scratch_home();
+    std::fs::create_dir_all(&home).unwrap();
+    let previous = std::env::var_os("HOME");
+    // SAFETY: tests in this crate run single-threaded per binary; we set and immediately restore the
+    // override around this call.
+    unsafe {
+        std::env::set_var("HOME", &home);
+    }
+    body(&home);
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// An empty in-memory routine store.
+fn empty_store() -> RoutineStore {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+#[test]
+fn ensure_default_routines_seeds_empty_store() {
+    // (a) Empty store → materialize + write + insert: the routine lands on disk and in the store.
+    with_redirected_home(|_home| {
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let seeded = store.lock().unwrap();
+        let spec = &DEFAULT_ROUTINES[0];
+        let slug = slugify(spec.title);
+        let routine = seeded
+            .values()
+            .find(|routine| slugify(&routine.title) == slug)
+            .expect("default routine must be seeded into the store");
+        assert_eq!(routine.title, spec.title);
+        assert_eq!(routine.source, "managed");
+        assert!(routine.enabled);
+        // The routine's directory was written under the redirected home.
+        assert!(crate::paths::routine_dir(&slug).is_dir());
+    });
+}
+
+#[test]
+fn ensure_default_routines_skips_up_to_date_existing() {
+    // (b) Existing up-to-date routine → reconcile returns None → `continue`: the store is left
+    // untouched (same id, no extra entries).
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let existing = materialize(spec, now_secs());
+        let existing_id = existing.id.clone();
+        let store = empty_store();
+        store.lock().unwrap().insert(existing.id.clone(), existing);
+
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        assert_eq!(after.len(), 1, "up-to-date default must not be duplicated");
+        assert!(
+            after.contains_key(&existing_id),
+            "the original entry must be preserved unchanged"
+        );
+    });
+}
+
+#[test]
+fn ensure_default_routines_rewrites_drifted_existing() {
+    // (c) Existing drifted routine → reconcile returns Some → rewrite path: identity is preserved
+    // but the daemon-owned content is refreshed to the spec.
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let mut existing = materialize(spec, now_secs());
+        let existing_id = existing.id.clone();
+        existing.prompt = "stale prompt".to_string();
+        existing.schedule = "0 0 * * *".to_string();
+        let store = empty_store();
+        store.lock().unwrap().insert(existing.id.clone(), existing);
+
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        assert_eq!(after.len(), 1, "drifted default must not be duplicated");
+        let refreshed = after
+            .get(&existing_id)
+            .expect("drifted default keeps its id");
+        assert_eq!(
+            refreshed.prompt, spec.prompt,
+            "prompt must be refreshed from the spec"
+        );
+        assert_eq!(
+            refreshed.schedule,
+            normalize_schedule(spec.schedule),
+            "schedule must be refreshed from the spec"
+        );
+    });
+}
+
+#[test]
+fn ensure_default_routines_logs_and_skips_on_write_failure() {
+    // (d) write_routine failure branch: a regular FILE sits at the routine's directory path, so the
+    // `create_dir_all` inside write_routine errors. The failure is logged and skipped, so an empty
+    // store stays empty (the routine is never inserted).
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let slug = slugify(spec.title);
+        let routines = crate::paths::routines_dir();
+        std::fs::create_dir_all(&routines).unwrap();
+        // Occupy the routine's directory path with a regular file so create_dir_all fails.
+        std::fs::write(routines.join(&slug), "i am a file, not a dir").unwrap();
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        assert!(
+            store.lock().unwrap().is_empty(),
+            "a write failure must not insert the routine into the store"
+        );
+        // The blocking path remains a regular file (the write never overwrote it).
+        assert!(routines.join(&slug).is_file());
+    });
+}

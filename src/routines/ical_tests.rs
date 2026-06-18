@@ -16,7 +16,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -143,6 +143,17 @@ fn feed_with_long_prompt_is_fully_folded() {
     assert_all_lines_within_75_octets(&ics);
     // DESCRIPTION was long enough to require at least one continuation line.
     assert!(ics.contains("\r\n "), "expected folded continuation lines");
+}
+
+#[test]
+fn carriage_returns_are_normalized() {
+    let mut routine = routine_with("r1", "@daily", true);
+    // A pasted CRLF plus a lone CR — neither may leak a raw `\r` into the feed.
+    routine.title = "a\r\nb\rc".to_string();
+    let ics = build_ical(&[routine], fixed_now());
+    assert!(ics.contains("SUMMARY:a\\nb\\nc\r\n"));
+    // The only raw CRs left are the structural CRLF line terminators.
+    assert!(!ics.replace("\r\n", "").contains('\r'));
 }
 
 #[test]

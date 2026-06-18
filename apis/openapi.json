@@ -871,13 +871,13 @@
             "type": "string",
             "description": "Unique identifier (UUID v4)."
           },
-          "last_triggered_at": {
+          "last_manual_trigger_at": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.",
+            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.\n\nOnly manual triggers update this; scheduled cron firings run the built command directly and\ndo not. Accepts the legacy `last_triggered_at` key on deserialize.",
             "minimum": 0
           },
           "metadata": {
@@ -1061,13 +1061,13 @@
             "type": "string",
             "description": "Unique identifier (UUID v4)."
           },
-          "last_triggered_at": {
+          "last_manual_trigger_at": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.",
+            "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.\n\nOnly manual triggers (`trigger_routine`) update this; scheduled cron firings run the built\ncommand directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.",
             "minimum": 0
           },
           "max_runtime_secs": {

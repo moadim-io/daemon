@@ -61,7 +61,11 @@ pub struct CronJob {
     /// Unix timestamp (seconds) when the job was last updated.
     pub updated_at: u64,
     /// Unix timestamp (seconds) when the job was last manually triggered, if ever.
-    pub last_triggered_at: Option<u64>,
+    ///
+    /// Only manual triggers update this; scheduled cron firings run the built command directly and
+    /// do not. Accepts the legacy `last_triggered_at` key on deserialize.
+    #[serde(alias = "last_triggered_at")]
+    pub last_manual_trigger_at: Option<u64>,
 }
 
 /// A [`CronJob`] enriched with a flag indicating whether its handler is registered.
@@ -262,7 +266,7 @@ pub fn svc_create(
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
     store.lock().unwrap().insert(job.id.clone(), job.clone());
@@ -320,12 +324,12 @@ pub fn svc_delete(
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
-/// Record a manual trigger for `id`, updating `last_triggered_at` in-store and on disk,
+/// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk,
 /// then spawn the handler script from the handlers directory if it exists.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let mut lock = store.lock().unwrap();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    job.last_triggered_at = Some(now_secs());
+    job.last_manual_trigger_at = Some(now_secs());
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;

@@ -12,8 +12,8 @@ use super::agents::{available_agents, load_agent_command};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
-    RoutineStore, SortOrder, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
+    RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
 /// Sort key placing routines with a repository before those without, then by
@@ -96,6 +96,42 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
     }
 }
 
+/// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
+/// normalized copy with surrounding whitespace trimmed.
+///
+/// `repository` is a free-form string rendered verbatim into the agent's `prompt.md` preamble by
+/// `compose_prompt` (see #241), so a blank or padded entry yields a broken `- ` clone bullet. An
+/// empty list is valid — this only guards the contents of non-empty entries. Mirrors the
+/// `validate_cron` / `validate_agent` boundary checks for the other routine fields (#224/#226).
+fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppError> {
+    let mut normalized = Vec::with_capacity(repos.len());
+    for (index, repo) in repos.iter().enumerate() {
+        let repository = repo.repository.trim();
+        if repository.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "repositories[{index}].repository must not be empty or whitespace-only"
+            )));
+        }
+        let branch = match &repo.branch {
+            Some(branch) => {
+                let trimmed = branch.trim();
+                if trimmed.is_empty() {
+                    return Err(AppError::BadRequest(format!(
+                        "repositories[{index}].branch must not be empty or whitespace-only when set"
+                    )));
+                }
+                Some(trimmed.to_string())
+            }
+            None => None,
+        };
+        normalized.push(Repository {
+            repository: repository.to_string(),
+            branch,
+        });
+    }
+    Ok(normalized)
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
@@ -103,6 +139,7 @@ pub fn svc_create(
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
     validate_agent(&req.agent)?;
+    let repositories = validate_repositories(&req.repositories)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
@@ -119,7 +156,7 @@ pub fn svc_create(
         title: req.title,
         agent: req.agent,
         prompt: req.prompt,
-        repositories: req.repositories,
+        repositories,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -151,6 +188,10 @@ pub fn svc_update(
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;
     }
+    let repositories = match req.repositories {
+        Some(ref repos) => Some(validate_repositories(repos)?),
+        None => None,
+    };
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
@@ -179,7 +220,7 @@ pub fn svc_update(
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;
     }
-    if let Some(repositories) = req.repositories {
+    if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
     if let Some(enabled) = req.enabled {

@@ -548,3 +548,129 @@ fn svc_update_rejects_unknown_agent() {
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
+
+#[test]
+fn svc_create_rejects_blank_repository_url() {
+    // Covers the repositories-validation branch in `svc_create` (#241): an entry
+    // whose URL is empty or whitespace-only must fail loud with `BadRequest`
+    // instead of being stored and rendered as a broken `- ` clone bullet.
+    let store = new_store();
+    for url in ["", "   "] {
+        let result = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: "Svc Create Blank Repo ZZZ".into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![Repository {
+                    repository: url.into(),
+                    branch: None,
+                }],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        );
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+    // Nothing should have been persisted.
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_blank_repository_branch() {
+    // Covers the optional-branch guard: a `Some` branch that is empty/whitespace
+    // must be rejected so `compose_prompt` cannot emit `- url (branch )`.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Blank Branch ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "p".into(),
+            repositories: vec![Repository {
+                repository: "https://github.com/octocat/Hello-World".into(),
+                branch: Some("  ".into()),
+            }],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_trims_repository_entries() {
+    // Covers the normalization path: surrounding whitespace on a valid URL/branch
+    // is trimmed before storing, so the rendered preamble bullet is clean.
+    crate::routines::ensure_default_agents();
+    let title = "Svc Create Trim Repo ZZZ";
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: title.into(),
+            agent: "claude".into(),
+            prompt: "p".into(),
+            repositories: vec![Repository {
+                repository: "  https://github.com/octocat/Hello-World  ".into(),
+                branch: Some("  main  ".into()),
+            }],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    )
+    .unwrap();
+    let repo = &created.routine.repositories[0];
+    assert_eq!(repo.repository, "https://github.com/octocat/Hello-World");
+    assert_eq!(repo.branch.as_deref(), Some("main"));
+
+    svc_delete(&store, &created.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_rejects_blank_repository_url() {
+    // Covers the repositories-validation branch in `svc_update`: replacing the
+    // list with a blank-URL entry must fail with `BadRequest` before persisting.
+    let title = "Svc Update Blank Repo ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-repo-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-repo-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-repo-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: None,
+            repositories: Some(vec![Repository {
+                repository: " ".into(),
+                branch: None,
+            }]),
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // The stored routine keeps its original (empty) repository list.
+    assert!(store
+        .lock()
+        .unwrap()
+        .get("upd-repo-id")
+        .unwrap()
+        .repositories
+        .is_empty());
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}

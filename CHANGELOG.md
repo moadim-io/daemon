@@ -42,6 +42,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Each generated routine `run.sh` is now stamped with a `# moadim-version: X.Y.Z`
+  comment naming the daemon that wrote it, and the routine sync **refuses to
+  overwrite a `run.sh` stamped by a newer daemon with an older binary**.
+  Previously a stale/older daemon regenerated every `run.sh` as a pure function
+  of its own source and silently dropped whatever a newer binary had written —
+  most damagingly the routine-origin disclosure block — with no version guard or
+  warning. The newer script is now preserved (and a warning logged); the crontab
+  line still points at it so scheduling is unaffected (#167).
 - Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA
   `index.html` with `200`. The nested API router had no fallback of its own, so
   in axum 0.8 it inherited the outer SPA `.fallback(get(index))` — a typo'd or

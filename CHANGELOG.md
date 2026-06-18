@@ -13,6 +13,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- iCal feeds now fold long content lines at 75 octets per RFC 5545 §3.1, using a
+  UTF-8-aware byte budget so multi-byte characters are never split across a fold
+  boundary. Previously over-long `SUMMARY`/`DESCRIPTION` lines were emitted
+  unfolded, which some calendar clients reject.
 - `now_secs()` no longer panics when the system clock reads before the Unix
   epoch (1970). A VM or container booted with a dead real-time clock could make
   `SystemTime::duration_since` fail and crash the daemon; such readings are now

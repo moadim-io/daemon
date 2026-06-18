@@ -52,13 +52,13 @@ fn fold_line(line: &str) -> String {
     // on its leading space.
     let mut budget = FOLD_LIMIT;
     for ch in line.chars() {
-        let clen = ch.len_utf8();
-        if clen > budget {
+        let char_len = ch.len_utf8();
+        if char_len > budget {
             out.push_str("\r\n ");
             budget = FOLD_LIMIT - 1;
         }
         out.push(ch);
-        budget -= clen;
+        budget -= char_len;
     }
     out
 }

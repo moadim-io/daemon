@@ -391,7 +391,9 @@ pub async fn update(
     Ok(Json(svc_update(&state.store, &state.handlers, &id, body)?))
 }
 
-/// `PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).
+/// `PUT /cron-jobs/{id}` — alias for PATCH: a partial merge, **not** a full replacement. Fields
+/// omitted from the body are retained from the existing cron job (they are not reset to defaults),
+/// because `UpdateRequest` uses all-`Option` fields. Delegates to [`update`].
 #[utoipa::path(put, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
     request_body = UpdateRequest,

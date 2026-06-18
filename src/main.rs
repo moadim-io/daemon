@@ -20,6 +20,8 @@ mod routes;
 mod routine_storage;
 /// Routine (agent-driven job) data model, service layer, and handlers.
 mod routines;
+/// `moadim install` / `uninstall`: register the daemon as an OS service.
+mod service;
 /// TOML-backed job persistence.
 mod storage;
 /// Bidirectional sync between managed jobs and the OS crontab.
@@ -43,6 +45,8 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Stop { json } => std::process::exit(cli::stop(json)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
+        cli::Command::Install => service::install(),
+        cli::Command::Uninstall => service::uninstall(),
         cli::Command::Foreground => run_server().await,
     }
 }
@@ -73,7 +77,7 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
     }
-    let listener = tokio::net::TcpListener::bind(cli::BIND_ADDR).await?;
+    let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;
     let result =
         routes::http::run_with_listener_until(store, routines, listener, termination_signal())

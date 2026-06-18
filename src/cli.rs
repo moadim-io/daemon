@@ -106,6 +106,7 @@ fn wants_json(rest: &[String]) -> bool {
 
 /// Print usage help to stdout.
 pub fn print_help() {
+    let bind_addr = bind_addr();
     println!(
         "moadim — cron/MCP/REST server with a web control panel\n\
          \n\
@@ -130,7 +131,7 @@ pub fn print_help() {
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
          can branch on $? without parsing stdout.\n\
          \n\
-         Once running, manage the server from the web client at http://{BIND_ADDR}\n\
+         Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
     );
 }
@@ -194,14 +195,17 @@ fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
 /// `verb` describes how the process came to be ("started" / "restarted") for the first line.
 fn start_detached_and_report(verb: &str) -> anyhow::Result<()> {
     let pid = spawn_detached()?;
-    println!("moadim {verb} in the background (pid {pid}) at http://{BIND_ADDR}");
+    println!(
+        "moadim {verb} in the background (pid {pid}) at http://{}",
+        bind_addr()
+    );
     report_endpoints();
     Ok(())
 }
 
 /// Print the reach/manage hints (UI, stop, logs) shared by every detached-launch report.
 fn report_endpoints() {
-    println!("  UI    http://{BIND_ADDR}");
+    println!("  UI    http://{}", bind_addr());
     println!("  stop  moadim stop   (or use the STOP button in the UI)");
     println!("  logs  {}", paths_daemon_log());
 }
@@ -302,7 +306,7 @@ pub fn status(json: bool) -> anyhow::Result<i32> {
         let pid_suffix = pid
             .map(|process_id| format!(" (pid {process_id})"))
             .unwrap_or_default();
-        println!("moadim is running{pid_suffix} at http://{BIND_ADDR}");
+        println!("moadim is running{pid_suffix} at http://{}", bind_addr());
     } else {
         println!("moadim is not running");
     }
@@ -315,7 +319,7 @@ fn status_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
         "pid": pid,
-        "address": BIND_ADDR,
+        "address": bind_addr(),
     })
     .to_string()
 }

@@ -70,6 +70,148 @@ fn svc_list_sorts_by_title_case_insensitively() {
     assert_eq!(list[2].routine.id, "cherry");
 }
 
+/// Build a minimal valid create request; callers tweak the field under test.
+fn valid_create_request() -> CreateRoutineRequest {
+    CreateRoutineRequest {
+        schedule: "@daily".into(),
+        title: "Valid Title".into(),
+        agent: "claude".into(),
+        prompt: "do the thing".into(),
+        repositories: vec![],
+        enabled: true,
+        ttl_secs: None,
+        max_runtime_secs: None,
+    }
+}
+
+/// Build a no-op update request (every field `None`); callers set one field.
+fn empty_update_request() -> UpdateRoutineRequest {
+    UpdateRoutineRequest {
+        schedule: None,
+        title: None,
+        agent: None,
+        prompt: None,
+        repositories: None,
+        enabled: None,
+        ttl_secs: None,
+        max_runtime_secs: None,
+    }
+}
+
+#[test]
+fn svc_create_rejects_blank_title() {
+    // Covers the `reject_blank("title", ..)` error arm in `svc_create`: a
+    // whitespace-only title is refused before any slug/disk work (#226).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            title: "   ".into(),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_rejects_blank_prompt() {
+    // Covers the `reject_blank("prompt", ..)` error arm in `svc_create`: an empty
+    // prompt would make the routine fire forever with no task (#224).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            prompt: String::new(),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_rejects_zero_ttl_secs() {
+    // Covers the `reject_zero_secs("ttl_secs", ..)` error arm in `svc_create`:
+    // a zero TTL reaps finished-run logs instantly (#233).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            ttl_secs: Some(0),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_rejects_zero_max_runtime_secs() {
+    // Covers the `reject_zero_secs("max_runtime_secs", ..)` error arm in
+    // `svc_create`: a zero cap self-kills the run immediately (#233).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            max_runtime_secs: Some(0),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_update_rejects_blank_title() {
+    // Covers the `reject_blank("title", ..)` error arm in `svc_update`.
+    let store = store_with(vec![make_routine("upd-blank-title", "Keep", 1, 1)]);
+    let result = svc_update(
+        &store,
+        "upd-blank-title",
+        UpdateRoutineRequest {
+            title: Some("  ".into()),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_update_rejects_blank_prompt() {
+    // Covers the `reject_blank("prompt", ..)` error arm in `svc_update`.
+    let store = store_with(vec![make_routine("upd-blank-prompt", "Keep", 1, 1)]);
+    let result = svc_update(
+        &store,
+        "upd-blank-prompt",
+        UpdateRoutineRequest {
+            prompt: Some("\t\n".into()),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_update_rejects_zero_durations() {
+    // Covers both `reject_zero_secs` error arms on the update path.
+    let store = store_with(vec![make_routine("upd-zero-secs", "Keep", 1, 1)]);
+    let ttl = svc_update(
+        &store,
+        "upd-zero-secs",
+        UpdateRoutineRequest {
+            ttl_secs: Some(0),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(ttl, Err(AppError::BadRequest(_))));
+    let max_runtime = svc_update(
+        &store,
+        "upd-zero-secs",
+        UpdateRoutineRequest {
+            max_runtime_secs: Some(0),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(max_runtime, Err(AppError::BadRequest(_))));
+}
+
 #[test]
 fn svc_create_rejects_duplicate_slug() {
     // Covers the slug-conflict branch in `svc_create`: an existing routine whose

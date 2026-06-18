@@ -81,6 +81,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Routine create/update now reject nonsensical field values with `400 Bad
+  Request` instead of silently persisting a broken routine. A blank
+  (empty/whitespace-only) `title` previously produced an empty routine-origin
+  disclosure name and a bare `"routine"` slug (#226); a blank `prompt` made the
+  routine fire forever with no task (#224); and a zero `ttl_secs` /
+  `max_runtime_secs` instantly reaped the run's logs or self-killed the session
+  (#233). All four are validated up front on both `POST` (create) and `PATCH`
+  (update), before anything is written to disk or the crontab.
 - Routine **create/update now reject a blank or unusable `title`** with
   `400 Bad Request`. A title must contain at least one alphanumeric character
   (so empty, whitespace-only, and punctuation-only titles like `"!!!"` are

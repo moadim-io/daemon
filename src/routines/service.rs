@@ -16,6 +16,34 @@ use super::model::{
     RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
+/// Reject a blank (empty or whitespace-only) required text field.
+///
+/// An empty `prompt` makes a routine fire forever with no task (#224); an empty
+/// `title` yields an empty routine-origin disclosure name and a bare `"routine"`
+/// slug (#226). Both are caught here before anything is persisted.
+fn reject_blank(field: &str, value: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "routine {field} must not be empty"
+        )));
+    }
+    Ok(())
+}
+
+/// Reject a zero-second duration for an optional cap (`None` keeps the default).
+///
+/// `ttl_secs: 0` reaps a finished run's logs instantly and `max_runtime_secs: 0`
+/// makes the watchdog kill the session the moment it starts (#233), so a supplied
+/// value must be positive.
+fn reject_zero_secs(field: &str, value: Option<u64>) -> Result<(), AppError> {
+    if value == Some(0) {
+        return Err(AppError::BadRequest(format!(
+            "routine {field} must be greater than zero"
+        )));
+    }
+    Ok(())
+}
+
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).
 fn repo_sort_key(routine: &Routine) -> (bool, String) {
@@ -137,6 +165,10 @@ pub fn svc_create(
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    reject_blank("title", &req.title)?;
+    reject_blank("prompt", &req.prompt)?;
+    reject_zero_secs("ttl_secs", req.ttl_secs)?;
+    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let slug = slugify(&req.title);
@@ -185,11 +217,17 @@ pub fn svc_update(
         validate_cron(sched)?;
     }
     if let Some(ref title) = req.title {
+        reject_blank("title", title)?;
         validate_title(title)?;
+    }
+    if let Some(ref prompt) = req.prompt {
+        reject_blank("prompt", prompt)?;
     }
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;
     }
+    reject_zero_secs("ttl_secs", req.ttl_secs)?;
+    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.

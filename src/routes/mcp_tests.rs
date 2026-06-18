@@ -281,7 +281,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
-        agent: "mcp-routine-agent-x".into(),
+        agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
@@ -361,7 +361,7 @@ fn create_get_update_trigger_delete_routine_success() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 
-    // trigger (no agent config → records, no spawn)
+    // trigger (records the manual trigger)
     let result = handler
         .trigger_routine(Parameters(IdInput { id: id.clone() }))
         .unwrap();

@@ -544,7 +544,7 @@ async fn router_routine_full_lifecycle() {
     let store = new_store();
     let routines = crate::routines::new_store();
 
-    let body = r#"{"schedule":"@daily","title":"Http Routine","agent":"http-test-agent-x","prompt":"p","repositories":[{"repository":"r","branch":"main"}]}"#;
+    let body = r#"{"schedule":"@daily","title":"Http Routine","agent":"claude","prompt":"p","repositories":[{"repository":"r","branch":"main"}]}"#;
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()
@@ -615,7 +615,7 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // trigger (agent has no config → records trigger, no spawn)
+    // trigger (records the manual trigger and returns OK)
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()

@@ -16,6 +16,34 @@ use super::model::{
     RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
+/// Reject a blank (empty or whitespace-only) required text field.
+///
+/// An empty `prompt` makes a routine fire forever with no task (#224); an empty
+/// `title` yields an empty routine-origin disclosure name and a bare `"routine"`
+/// slug (#226). Both are caught here before anything is persisted.
+fn reject_blank(field: &str, value: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "routine {field} must not be empty"
+        )));
+    }
+    Ok(())
+}
+
+/// Reject a zero-second duration for an optional cap (`None` keeps the default).
+///
+/// `ttl_secs: 0` reaps a finished run's logs instantly and `max_runtime_secs: 0`
+/// makes the watchdog kill the session the moment it starts (#233), so a supplied
+/// value must be positive.
+fn reject_zero_secs(field: &str, value: Option<u64>) -> Result<(), AppError> {
+    if value == Some(0) {
+        return Err(AppError::BadRequest(format!(
+            "routine {field} must be greater than zero"
+        )));
+    }
+    Ok(())
+}
+
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).
 fn repo_sort_key(routine: &Routine) -> (bool, String) {
@@ -79,6 +107,41 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Upper bound on a routine title, in characters, to keep `CLAUDE.md`, crontab
+/// comments, iCal `SUMMARY`s, and UI rows from rendering an unbounded string.
+const MAX_TITLE_LEN: usize = 200;
+
+/// Reject a routine `title` that carries no usable name with `400 Bad Request`.
+///
+/// `title` is the only required identifying field on a routine, yet it was never
+/// content-checked. Two concrete failures follow from a blank or punctuation-only
+/// title (issue #226):
+///
+/// 1. The moadim routine-origin disclosure breaks — `system_prompt_stmts` writes
+///    `Routine name: <title>` into every workbench `CLAUDE.md`, so an empty title
+///    yields a nameless disclosure the agent cannot satisfy.
+/// 2. `slugify` maps any title with no ASCII-alphanumerics (`""`, `"   "`, `"!!!"`)
+///    to the constant `"routine"`, so the routine silently takes a slug the user
+///    never chose and collides with the next such routine.
+///
+/// Requiring at least one ASCII-alphanumeric character rejects all three cases at
+/// once (it is exactly the condition under which `slugify` falls back). A max
+/// length bounds downstream rendering. Shared by the create and update paths so
+/// the REST and MCP surfaces reject identically, mirroring [`validate_cron`].
+fn validate_title(title: &str) -> Result<(), AppError> {
+    if !title.chars().any(|ch| ch.is_ascii_alphanumeric()) {
+        return Err(AppError::BadRequest(
+            "title must contain at least one alphanumeric character".to_string(),
+        ));
+    }
+    if title.trim().chars().count() > MAX_TITLE_LEN {
+        return Err(AppError::BadRequest(format!(
+            "title must be at most {MAX_TITLE_LEN} characters"
+        )));
+    }
+    Ok(())
+}
+
 /// Reject an `agent` that is not present in the agent registry.
 ///
 /// An unknown agent resolves to no command at fire time and the routine is silently
@@ -138,6 +201,11 @@ pub fn svc_create(
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    reject_blank("title", &req.title)?;
+    reject_blank("prompt", &req.prompt)?;
+    reject_zero_secs("ttl_secs", req.ttl_secs)?;
+    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
+    validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
     let slug = slugify(&req.title);
@@ -185,9 +253,18 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
+    if let Some(ref title) = req.title {
+        reject_blank("title", title)?;
+        validate_title(title)?;
+    }
+    if let Some(ref prompt) = req.prompt {
+        reject_blank("prompt", prompt)?;
+    }
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;
     }
+    reject_zero_secs("ttl_secs", req.ttl_secs)?;
+    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let repositories = match req.repositories {
         Some(ref repos) => Some(validate_repositories(repos)?),
         None => None,

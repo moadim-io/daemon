@@ -12,6 +12,34 @@ use super::{build_app, echo, health, run_with_listener_until, write_openapi_spec
 use crate::cron_jobs::{new_registry, new_store, AppState};
 use crate::utils::time::now_secs;
 
+/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
+/// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
+/// `"claude"` is accepted) while `load_agent_command` finds no config — exercising the trigger
+/// "no spawn" path without launching a real agent or writing into the user's real home. Tests in
+/// this crate run single-threaded per binary, so the global env mutation is safe.
+struct TempHome;
+
+impl TempHome {
+    fn set() -> TempHome {
+        let dir = std::env::temp_dir().join(format!("moadim-httptest-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp home");
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+        }
+        TempHome
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::remove_var("MOADIM_HOME_OVERRIDE");
+        }
+    }
+}
+
 // ── openapi spec writer ──────────────────────────────────────────────────────
 
 #[test]
@@ -135,6 +163,47 @@ async fn build_app_spa_fallback_serves_ui_on_client_routes() {
     assert_eq!(resp.status(), StatusCode::OK);
     let ctype = resp.headers().get(CONTENT_TYPE).unwrap();
     assert!(ctype.to_str().unwrap().starts_with("text/html"));
+}
+
+#[tokio::test]
+async fn router_unknown_api_path_returns_json_404_not_spa() {
+    // A path that matches NO route under `/api/v1` (distinct from the nonexistent-id tests,
+    // which hit a real handler) must return a JSON 404 — not fall through to the SPA
+    // `index.html`/200 via the outer fallback (issue #270).
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bogus")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let ctype = resp.headers().get(CONTENT_TYPE).unwrap();
+    assert!(ctype.to_str().unwrap().starts_with("application/json"));
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"], "not found");
+}
+
+#[tokio::test]
+async fn router_unknown_api_path_non_get_returns_404() {
+    // The fallback covers every method, not just GET: a POST to an unknown `/api/v1` path
+    // is a 404 too (issue #270).
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/bogus")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 // ── cron-jobs CRUD lifecycle (covers all HTTP handlers + FromRef) ─────────────
@@ -500,10 +569,11 @@ async fn router_get_logs_returns_file_content() {
 
 #[tokio::test]
 async fn router_routine_full_lifecycle() {
+    let _home = TempHome::set();
     let store = new_store();
     let routines = crate::routines::new_store();
 
-    let body = r#"{"schedule":"@daily","title":"Http Routine","agent":"http-test-agent-x","prompt":"p","repositories":[{"repository":"r","branch":"main"}]}"#;
+    let body = r#"{"schedule":"@daily","title":"Http Routine","agent":"claude","prompt":"p","repositories":[{"repository":"r","branch":"main"}]}"#;
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()
@@ -574,7 +644,7 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // trigger (agent has no config → records trigger, no spawn)
+    // trigger (records the manual trigger and returns OK)
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
             Request::builder()

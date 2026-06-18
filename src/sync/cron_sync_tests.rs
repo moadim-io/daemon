@@ -127,6 +127,14 @@ fn to_os_schedule_7field_drops_sec_and_year() {
 }
 
 #[test]
+fn to_os_schedule_6field_drops_seconds() {
+    // 6-field `sec min hour dom month dow` -> 5-field. Without reduction the
+    // expression is written verbatim to the OS crontab and never fires.
+    assert_eq!(to_os_schedule("0 */5 * * * *"), "*/5 * * * *");
+    assert_eq!(to_os_schedule("30 0 9 * * 1-5"), "0 9 * * 1-5");
+}
+
+#[test]
 fn to_os_schedule_passthrough_keyword() {
     assert_eq!(to_os_schedule("@daily"), "@daily");
     assert_eq!(to_os_schedule("@reboot"), "@reboot");

@@ -38,15 +38,63 @@ const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
+/// Comment line written as the second line of every generated `run.sh`, stamping the daemon
+/// version that produced it: `# moadim-version: X.Y.Z`.
+///
+/// The stamp lets a later sync detect when a `run.sh` was written by a *newer* daemon than the one
+/// now running and refuse to clobber it — see [`write_routine_script`] and issue #167.
+const VERSION_STAMP_PREFIX: &str = "# moadim-version: ";
+
+/// Parse a `MAJOR.MINOR.PATCH` semver core into a comparable tuple, ignoring any
+/// `-prerelease`/`+build` suffix. Returns `None` if the three numeric components are not present.
+fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
+    let core = value.trim().split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+/// Read the `# moadim-version:` stamp from an existing `run.sh` at `path`, returning `None` when the
+/// file is absent/unreadable or carries no parsable stamp (e.g. a script written by a daemon from
+/// before the stamp existed).
+fn script_stamped_version(path: &std::path::Path) -> Option<(u64, u64, u64)> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .find_map(|line| line.strip_prefix(VERSION_STAMP_PREFIX))
+        .and_then(parse_version)
+}
+
 /// Write the routine's launch command to its `run.sh` script and return the path.
 ///
 /// The script holds the full self-contained command from [`build_routine_command`], so the crontab
-/// line that calls it stays short regardless of how long the command is.
+/// line that calls it stays short regardless of how long the command is. Its second line stamps the
+/// generating daemon version ([`VERSION_STAMP_PREFIX`]).
+///
+/// **Downgrade guard (issue #167):** if an existing `run.sh` is stamped with a *newer* version than
+/// the running binary, the script is left untouched. A stale/older daemon regenerates `run.sh` as a
+/// pure function of its own (older) source, silently dropping whatever the newer binary had written
+/// — most damagingly the routine-origin disclosure block. Refusing the overwrite preserves the
+/// newer script; the returned path still points at it so the crontab line stays valid.
 fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
     let path = routine_script_path(&slugify(&routine.title));
     std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
+    if let (Some(current), Some(existing)) = (
+        parse_version(env!("CARGO_PKG_VERSION")),
+        script_stamped_version(&path),
+    ) {
+        if existing > current {
+            log::warn!(
+                "routine sync: {path:?} was written by a newer moadim ({existing:?} > {current:?}); \
+                 refusing to overwrite it with an older binary (issue #167)"
+            );
+            return Ok(path);
+        }
+    }
     let command = build_routine_command(routine, agent);
-    std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
+    let stamp = format!("{VERSION_STAMP_PREFIX}{}", env!("CARGO_PKG_VERSION"));
+    std::fs::write(&path, format!("#!/bin/sh\n{stamp}\n{command}\n"))?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path)
 }

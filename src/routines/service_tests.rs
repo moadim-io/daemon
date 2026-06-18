@@ -21,6 +21,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         updated_at,
         last_triggered_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
@@ -75,36 +76,42 @@ fn svc_create_rejects_duplicate_slug() {
     // title slugifies to the same value forces a `Conflict`.
     let title = "Svc Create Dup ZZZ";
     let store = new_store();
-    let first = svc_create(
-        &store,
-        CreateRoutineRequest {
-            schedule: "@daily".into(),
-            title: title.into(),
-            agent: "claude".into(),
-            prompt: "p".into(),
-            repositories: vec![],
-            enabled: true,
-            ttl_secs: None,
-        },
-    )
-    .unwrap();
+    // `with_empty_path` so the post-create/delete crontab sync cannot spawn the
+    // real `crontab` binary and clobber the developer's live crontab (issue #175).
+    with_empty_path(|| {
+        let first = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: title.into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        )
+        .unwrap();
 
-    let conflict = svc_create(
-        &store,
-        CreateRoutineRequest {
-            schedule: "@daily".into(),
-            // Different casing/spacing, same slug.
-            title: "  svc create   DUP zzz ".into(),
-            agent: "claude".into(),
-            prompt: "p".into(),
-            repositories: vec![],
-            enabled: true,
-            ttl_secs: None,
-        },
-    );
-    assert!(matches!(conflict, Err(AppError::Conflict(_))));
+        let conflict = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                // Different casing/spacing, same slug.
+                title: "  svc create   DUP zzz ".into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        );
+        assert!(matches!(conflict, Err(AppError::Conflict(_))));
 
-    svc_delete(&store, &first.routine.id).unwrap();
+        svc_delete(&store, &first.routine.id).unwrap();
+    });
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
@@ -126,21 +133,26 @@ fn svc_update_rejects_renaming_into_existing_slug() {
         .unwrap()
         .insert("other-id".into(), routine_other);
 
-    let conflict = svc_update(
-        &store,
-        "other-id",
-        UpdateRoutineRequest {
-            schedule: None,
-            // Rename "other" into the slug already owned by "keep".
-            title: Some(title_keep.into()),
-            agent: None,
-            prompt: None,
-            repositories: None,
-            enabled: None,
-            ttl_secs: None,
-        },
-    );
-    assert!(matches!(conflict, Err(AppError::Conflict(_))));
+    // Wrapped defensively: the rename short-circuits on `Conflict` before the
+    // sync, but `with_empty_path` guarantees no real crontab write either way (#175).
+    with_empty_path(|| {
+        let conflict = svc_update(
+            &store,
+            "other-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                // Rename "other" into the slug already owned by "keep".
+                title: Some(title_keep.into()),
+                agent: None,
+                prompt: None,
+                repositories: None,
+                enabled: None,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        );
+        assert!(matches!(conflict, Err(AppError::Conflict(_))));
+    });
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title_keep));
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title_other));
@@ -155,21 +167,62 @@ fn svc_update_sets_ttl_secs() {
     crate::routine_storage::write_routine(&routine).unwrap();
     store.lock().unwrap().insert("ttl-id".into(), routine);
 
-    let updated = svc_update(
-        &store,
-        "ttl-id",
-        UpdateRoutineRequest {
-            schedule: None,
-            title: None,
-            agent: None,
-            prompt: None,
-            repositories: None,
-            enabled: None,
-            ttl_secs: Some(4242),
-        },
-    )
-    .unwrap();
-    assert_eq!(updated.routine.ttl_secs, Some(4242));
+    // `with_empty_path` keeps the post-update crontab sync from touching the real
+    // crontab (issue #175): the update succeeds, the sync just warns.
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "ttl-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: None,
+                agent: None,
+                prompt: None,
+                repositories: None,
+                enabled: None,
+                ttl_secs: Some(4242),
+                max_runtime_secs: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.ttl_secs, Some(4242));
+    });
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_sets_max_runtime_secs() {
+    // Covers the `req.max_runtime_secs` apply branch in `svc_update`.
+    let title = "Svc Update Max Runtime ZZZ";
+    let store = new_store();
+    let routine = make_routine("max-runtime-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("max-runtime-id".into(), routine);
+
+    // `with_empty_path` keeps the post-update crontab sync from touching the real
+    // crontab (issue #175): the update succeeds, the sync just warns.
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "max-runtime-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: None,
+                agent: None,
+                prompt: None,
+                repositories: None,
+                enabled: None,
+                ttl_secs: None,
+                max_runtime_secs: Some(1234),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.max_runtime_secs, Some(1234));
+    });
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
@@ -328,6 +381,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 repositories: vec![],
                 enabled: true,
                 ttl_secs: None,
+                max_runtime_secs: None,
             },
         )
         .unwrap();
@@ -356,6 +410,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 repositories: None,
                 enabled: None,
                 ttl_secs: None,
+                max_runtime_secs: None,
             },
         )
         .unwrap();

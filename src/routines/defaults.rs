@@ -72,6 +72,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         updated_at: now,
         last_triggered_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
@@ -105,6 +106,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         updated_at: now,
         last_triggered_at: cur.last_triggered_at,
         ttl_secs: cur.ttl_secs,
+        max_runtime_secs: cur.max_runtime_secs,
     })
 }
 

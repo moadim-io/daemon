@@ -11,6 +11,35 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
+  status line (`moadim is shutting down` / `moadim is not running`) while keeping
+  the exit-code contract (`0` when a server was stopped, `3` when none was
+  running), so scripts that branch on `$?` alone get no stdout noise. The flag is
+  ignored under `--json`, which always prints its single machine-readable object.
+- `moadim stop --json` now includes the bound `address` field
+  (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
+  `status --json`'s object shape exactly so both can be parsed uniformly.
+- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
+  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
+  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
+  request surfaces, so no extra request is made.
+
+### Changed
+
+- Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
+  on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
+  the web UI). The field was only ever updated by *manual* triggers, never by
+  scheduled cron firings, so the old name wrongly read as "never ran" for a
+  routine that fires on schedule but was never triggered by hand. Deserialization
+  accepts the legacy `last_triggered_at` key via a serde alias, so existing
+  `routine.toml` / job files still load.
+- Service tests no longer touch the real user crontab; they run against an
+  isolated test crontab seam.
+- moadim-generated `.gitignore` files (job and routine) now ignore
+  user-specific `run.sh` scripts.
+
 ### Fixed
 
 - Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA
@@ -19,75 +48,23 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   removed endpoint answered with HTML/200, surfacing as a confusing downstream
   parse error rather than a clear not-found. The API router now owns a JSON 404
   fallback while the SPA fallback still serves UI routes (#270).
-
 - Crontab docs no longer claim reverse sync (crontab → moadim) runs. It is
   implemented but never wired to a poller or startup hook, so manual edits to
   the moadim block do not round-trip and are overwritten by the next forward
   sync. The in-crontab header, README "Crontab sync" section, and module/`main`
   docs now say so instead of promising automatic sync-back (#218).
-
-### Changed
-- Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
-  on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
-  the web UI). The field was only ever updated by *manual* triggers, never by
-  scheduled cron firings, so the old name wrongly read as "never ran" for a
-  routine that fires on schedule but was never triggered by hand. Deserialization
-  accepts the legacy `last_triggered_at` key via a serde alias, so existing
-  `routine.toml` / job files still load.
-
-### Fixed
 - `uptime_secs` is now clamped against backward clock skew (saturating
   subtraction) so it never underflows.
-
-### Fixed
 - Routine create/update now validates the configured agent, rejecting unknown agents.
-
-### Changed
-- Service tests no longer touch the real user crontab; they run against an
-  isolated test crontab seam.
-
-### Fixed
 - The daemon now installs a logging backend at startup so `log` calls
   actually emit output instead of being silently dropped.
-
-### Changed
-- moadim-generated `.gitignore` files (job and routine) now ignore
-  user-specific `run.sh` scripts.
-
-### Fixed
 - `moadim status` now reports the effective bind address instead of the
   hardcoded default when a custom bind address is configured.
-
-### Fixed
 - iCal `escape_text` now normalizes carriage returns (CR and CRLF) to `\n`
   per RFC 5545, so generated calendar feeds no longer emit raw control
   characters in escaped text.
-
-### Fixed
 - Cron `@keyword` documentation now matches the actual validation contract,
   aligning the documented and accepted set of `@`-keywords.
-
-### Added
-- `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
-  status line (`moadim is shutting down` / `moadim is not running`) while keeping
-  the exit-code contract (`0` when a server was stopped, `3` when none was
-  running), so scripts that branch on `$?` alone get no stdout noise. The flag is
-  ignored under `--json`, which always prints its single machine-readable object.
-
-### Added
-- `moadim stop --json` now includes the bound `address` field
-  (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
-  `status --json`'s object shape exactly so both can be parsed uniformly.
-
-### Added
-
-- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
-  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
-  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
-  request surfaces, so no extra request is made.
-
-### Fixed
-
 - Routine create/update now reject nonsensical field values with `400 Bad
   Request` instead of silently persisting a broken routine. A blank
   (empty/whitespace-only) `title` previously produced an empty routine-origin

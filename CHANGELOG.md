@@ -42,6 +42,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The iCal feed (`GET /routines.ics`) no longer silently stops short of its
+  advertised 30-day horizon for high-frequency routines. The per-routine
+  `MAX_EVENTS_PER_ROUTINE = 100` cap still bounds feed size, but when a routine
+  fires more often than the cap allows within the horizon, a trailing
+  truncation-marker `VEVENT` (UID `…-truncated@moadim`) is now appended at the
+  first omitted fire time, so calendar subscribers can see the projection was
+  capped and where it stops instead of the routine appearing to just end after a
+  few days (#251).
 - Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA
   `index.html` with `200`. The nested API router had no fallback of its own, so
   in axum 0.8 it inherited the outer SPA `.fallback(get(index))` — a typo'd or

@@ -12,6 +12,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ## [Unreleased]
 
 ### Fixed
+- `moadim status` now reports the effective bind address instead of the
+  hardcoded default when a custom bind address is configured.
+
+### Fixed
 - iCal `escape_text` now normalizes carriage returns (CR and CRLF) to `\n`
   per RFC 5545, so generated calendar feeds no longer emit raw control
   characters in escaped text.

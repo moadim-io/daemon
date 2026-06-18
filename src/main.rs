@@ -20,6 +20,8 @@ mod routes;
 mod routine_storage;
 /// Routine (agent-driven job) data model, service layer, and handlers.
 mod routines;
+/// `moadim install` / `uninstall`: register the daemon as an OS service.
+mod service;
 /// TOML-backed job persistence.
 mod storage;
 /// Bidirectional sync between managed jobs and the OS crontab.
@@ -43,6 +45,8 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
+        cli::Command::Install => service::install(),
+        cli::Command::Uninstall => service::uninstall(),
         cli::Command::Foreground => run_server().await,
     }
 }

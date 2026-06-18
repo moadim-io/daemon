@@ -69,6 +69,10 @@ pub enum Command {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
     },
+    /// Register the daemon as an OS service (launchd on macOS, systemd user on Linux).
+    Install,
+    /// Remove the OS service registration created by [`Command::Install`].
+    Uninstall,
     /// Print usage help.
     Help,
     /// Print the binary version.
@@ -94,6 +98,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         Some("cleanup") => Command::Cleanup {
             json: wants_json(&args[1..]),
         },
+        Some("install") => Command::Install,
+        Some("uninstall") => Command::Uninstall,
         Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
@@ -133,6 +139,8 @@ pub fn print_help() {
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
+         \x20   install                register moadim as an OS service (launchd / systemd user)\n\
+         \x20   uninstall              remove the OS service registration\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\

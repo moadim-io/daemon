@@ -108,6 +108,7 @@ pub fn svc_create(
         updated_at: now,
         last_triggered_at: None,
         ttl_secs: req.ttl_secs,
+        max_runtime_secs: req.max_runtime_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -165,6 +166,9 @@ pub fn svc_update(
     }
     if let Some(ttl) = req.ttl_secs {
         routine.ttl_secs = Some(ttl);
+    }
+    if let Some(max_runtime) = req.max_runtime_secs {
+        routine.max_runtime_secs = Some(max_runtime);
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();

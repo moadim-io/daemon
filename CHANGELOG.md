@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+- The daemon now installs a logging backend at startup so `log` calls
+  actually emit output instead of being silently dropped.
+
 ### Changed
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.

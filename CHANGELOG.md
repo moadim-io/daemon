@@ -12,7 +12,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ## [Unreleased]
 
 ### Changed
-
 - Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
   on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
   the web UI). The field was only ever updated by *manual* triggers, never by
@@ -20,6 +19,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   routine that fires on schedule but was never triggered by hand. Deserialization
   accepts the legacy `last_triggered_at` key via a serde alias, so existing
   `routine.toml` / job files still load.
+
+### Added
+
+- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
+  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
+  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
+  request surfaces, so no extra request is made.
 
 ## [0.12.0] - 2026-06-18
 

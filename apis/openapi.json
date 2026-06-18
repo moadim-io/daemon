@@ -984,7 +984,8 @@
         "required": [
           "status",
           "uptime_secs",
-          "running"
+          "running",
+          "version"
         ],
         "properties": {
           "running": {
@@ -1000,6 +1001,10 @@
             "format": "int64",
             "description": "Seconds elapsed since the server started.",
             "minimum": 0
+          },
+          "version": {
+            "type": "string",
+            "description": "Daemon version (from `CARGO_PKG_VERSION`)."
           }
         }
       },

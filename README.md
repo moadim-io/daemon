@@ -47,7 +47,6 @@ attached to your terminal instead, use `moadim --interactive`.
 > _Close the loop. Skip the keyboard. Loop engineering, shipped as a daemon._
 
 - Jobs created via REST or MCP are written into your OS crontab automatically
-- Edit the crontab directly and moadim picks up the changes within 30 s
 - Job declarations live in `~/.config/moadim/jobs/` — git-trackable, diff-friendly
 - Handlers are executable scripts in `~/.config/moadim/handlers/` — any language, also git-trackable
 - `job.local.toml` per job for secrets and machine-specific overrides that stay off-git
@@ -77,13 +76,13 @@ attached to your terminal instead, use `moadim --interactive`.
 
 ## Crontab sync
 
-> _Two-way sync, zero surprises. Your crontab, your rules — we just keep them honest._
+> _Your crontab, your rules — moadim keeps its own block in sync._
 
 Moadim owns a single block inside your crontab. Everything outside that block is untouched.
 
 ```
 # BEGIN MOADIM
-# Managed by moadim — manual edits to this block sync back automatically
+# Managed by moadim — edits here are overwritten on the next sync
 30 9 * * 1-5 /home/user/.config/moadim/handlers/send-report # moadim:uuid
 0 0 * * 0 /home/user/.config/moadim/handlers/cleanup-temp # moadim:uuid
 # END MOADIM
@@ -91,7 +90,7 @@ Moadim owns a single block inside your crontab. Everything outside that block is
 
 **Forward sync (moadim → crontab):** any time you create, update, or delete a job via the UI, REST, or MCP, the crontab block is rewritten immediately. Disabled jobs are excluded from the block.
 
-**Reverse sync (crontab → moadim):** on startup and every 30 seconds, moadim reads the block and applies any changes back into its store and TOML files. This means you can edit the crontab directly — change a schedule, swap a handler — and moadim will pick it up without a restart.
+**Reverse sync (crontab → moadim) is not currently enabled.** Edit jobs through the UI, REST, or MCP rather than by hand: manual changes inside the block do **not** sync back into moadim and are overwritten by the next forward sync. (The reverse-sync parser exists but is not wired to run — tracked in [#218](https://github.com/moadim-io/daemon/issues/218).)
 
 **Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`) are also accepted. `@reboot` and `@midnight` are **not** supported via the API and are rejected with `400 Bad Request`.
 

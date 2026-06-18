@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- Crontab docs no longer claim reverse sync (crontab → moadim) runs. It is
+  implemented but never wired to a poller or startup hook, so manual edits to
+  the moadim block do not round-trip and are overwritten by the next forward
+  sync. The in-crontab header, README "Crontab sync" section, and module/`main`
+  docs now say so instead of promising automatic sync-back (#218).
+
 ### Changed
 - Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
   on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and

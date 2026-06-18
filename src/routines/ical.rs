@@ -33,6 +33,27 @@ fn format_utc(dt: DateTime<Utc>) -> String {
     dt.format("%Y%m%dT%H%M%SZ").to_string()
 }
 
+/// Maximum characters of a routine prompt shown in a `DESCRIPTION` before truncation.
+const DESCRIPTION_PROMPT_MAX: usize = 120;
+
+/// Build a compact, single-line summary of a routine prompt for a `VEVENT` `DESCRIPTION`.
+///
+/// Prompts are routinely multi-KB and identical across all of a routine's fire times, so embedding
+/// the full prompt in every event bloats the feed and makes calendar entries unreadable. Take the
+/// first non-empty line, trimmed and truncated to [`DESCRIPTION_PROMPT_MAX`] characters, appending
+/// an ellipsis when any content (a longer line, or further lines) was dropped.
+fn prompt_summary(prompt: &str) -> String {
+    let non_empty = || prompt.lines().filter(|line| !line.trim().is_empty());
+    let first_line = non_empty().next().unwrap_or("").trim();
+    let has_more_lines = non_empty().count() > 1;
+    let truncated: String = first_line.chars().take(DESCRIPTION_PROMPT_MAX).collect();
+    if has_more_lines || truncated.chars().count() < first_line.chars().count() {
+        format!("{truncated}…")
+    } else {
+        truncated
+    }
+}
+
 /// Render upcoming fire times of every enabled routine as an iCalendar (`.ics`) feed.
 ///
 /// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
@@ -58,7 +79,11 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
             continue;
         };
         let summary = escape_text(&routine.title);
-        let description = escape_text(&format!("{} (agent: {})", routine.prompt, routine.agent));
+        let description = escape_text(&format!(
+            "{} (agent: {})",
+            prompt_summary(&routine.prompt),
+            routine.agent
+        ));
         for fire in cron
             .iter_after(now)
             .take_while(|dt| *dt <= horizon)

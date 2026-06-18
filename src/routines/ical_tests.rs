@@ -81,6 +81,42 @@ fn text_fields_are_escaped() {
 }
 
 #[test]
+fn description_summarizes_long_multiline_prompt() {
+    let mut routine = routine_with("r1", "* * * * *", true);
+    routine.prompt = format!("First line of the plan\n{}", "x".repeat(5000));
+    let ics = build_ical(&[routine], fixed_now());
+    // Only the first line is shown, with an ellipsis marking the elided remainder.
+    assert!(ics.contains("DESCRIPTION:First line of the plan… (agent: claude)\r\n"));
+    // The multi-KB tail never reaches the feed, even once.
+    assert!(!ics.contains("xxxxxxxxxx"));
+}
+
+#[test]
+fn description_truncates_overlong_single_line() {
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.prompt = "a".repeat(500);
+    let ics = build_ical(&[routine], fixed_now());
+    let mut saw_description = false;
+    for line in ics.split("\r\n").filter(|l| l.starts_with("DESCRIPTION:")) {
+        saw_description = true;
+        assert!(
+            line.chars().count() < 200,
+            "DESCRIPTION not bounded: {line}"
+        );
+        assert!(line.ends_with("… (agent: claude)"));
+    }
+    assert!(saw_description);
+}
+
+#[test]
+fn description_handles_blank_prompt() {
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.prompt = "   \n  ".to_string();
+    let ics = build_ical(&[routine], fixed_now());
+    assert!(ics.contains("DESCRIPTION: (agent: claude)\r\n"));
+}
+
+#[test]
 fn svc_ical_reads_store() {
     let store = new_store();
     store

@@ -8,7 +8,7 @@ use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
-use super::agents::load_agent_command;
+use super::agents::{available_agents, load_agent_command};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
@@ -114,6 +114,23 @@ fn validate_title(title: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Reject an `agent` that is not present in the agent registry.
+///
+/// An unknown agent resolves to no command at fire time and the routine is silently
+/// skipped (see #139), so failing loud here — at create/update — surfaces the typo to
+/// the caller instead. Mirrors the `validate_cron` / slug-conflict guards.
+fn validate_agent(agent: &str) -> Result<(), AppError> {
+    let agents = available_agents();
+    if agents.iter().any(|known| known == agent) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!(
+            "unknown agent \"{agent}\"; valid agents: {}",
+            agents.join(", ")
+        )))
+    }
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
@@ -121,6 +138,7 @@ pub fn svc_create(
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
     validate_title(&req.title)?;
+    validate_agent(&req.agent)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock().unwrap();
@@ -142,7 +160,7 @@ pub fn svc_create(
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };
@@ -168,6 +186,9 @@ pub fn svc_update(
     }
     if let Some(ref title) = req.title {
         validate_title(title)?;
+    }
+    if let Some(ref agent) = req.agent {
+        validate_agent(agent)?;
     }
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
@@ -237,7 +258,7 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let mut lock = store.lock().unwrap();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.last_triggered_at = Some(now_secs());
+    routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;

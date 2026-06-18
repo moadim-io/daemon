@@ -225,7 +225,7 @@ fn get_cron_job_tool_success() {
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     };
     store.lock().unwrap().insert("get-test-id".into(), job);
     let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);

@@ -12,7 +12,7 @@ fn make_job(id: &str) -> CronJob {
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 
@@ -44,6 +44,33 @@ fn validate_cron_rejects_invalid() {
 }
 
 #[test]
+fn validate_cron_accepts_all_documented_keywords() {
+    for kw in [
+        "@hourly",
+        "@daily",
+        "@weekly",
+        "@monthly",
+        "@yearly",
+        "@annually",
+    ] {
+        assert!(validate_cron(kw).is_ok(), "{kw} should be accepted");
+    }
+}
+
+#[test]
+fn validate_cron_rejects_unsupported_keywords() {
+    // @reboot and @midnight are documented as unsupported via the API.
+    for kw in ["@reboot", "@midnight", "@nonsense"] {
+        let err = validate_cron(kw);
+        assert!(err.is_err(), "{kw} should be rejected");
+        assert!(
+            matches!(err, Err(AppError::BadRequest(_))),
+            "{kw} should be rejected with BadRequest"
+        );
+    }
+}
+
+#[test]
 fn cron_job_serializes() {
     let job = CronJob {
         id: "abc".to_string(),
@@ -54,7 +81,7 @@ fn cron_job_serializes() {
         source: "managed".to_string(),
         created_at: 1000,
         updated_at: 1000,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     };
     let json = serde_json::to_string(&job).unwrap();
     assert!(json.contains("\"id\":\"abc\""));
@@ -163,14 +190,14 @@ fn svc_trigger_not_found() {
 }
 
 #[test]
-fn svc_trigger_sets_last_triggered_at() {
+fn svc_trigger_sets_last_manual_trigger_at() {
     let store = make_store_with("id");
     assert!(store
         .lock()
         .unwrap()
         .get("id")
         .unwrap()
-        .last_triggered_at
+        .last_manual_trigger_at
         .is_none());
     // Call trigger directly on store without disk I/O
     store
@@ -178,9 +205,14 @@ fn svc_trigger_sets_last_triggered_at() {
         .unwrap()
         .get_mut("id")
         .unwrap()
-        .last_triggered_at = Some(9999);
+        .last_manual_trigger_at = Some(9999);
     assert_eq!(
-        store.lock().unwrap().get("id").unwrap().last_triggered_at,
+        store
+            .lock()
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .last_manual_trigger_at,
         Some(9999)
     );
 }
@@ -295,7 +327,7 @@ fn svc_delete_removes_from_store_and_disk() {
 }
 
 #[test]
-fn svc_trigger_persists_last_triggered_at() {
+fn svc_trigger_persists_last_manual_trigger_at() {
     let store = new_store();
     let created = svc_create(
         &store,
@@ -309,10 +341,10 @@ fn svc_trigger_persists_last_triggered_at() {
     )
     .unwrap();
     let id = created.job.id.clone();
-    assert!(created.job.last_triggered_at.is_none());
+    assert!(created.job.last_manual_trigger_at.is_none());
 
     let triggered = svc_trigger(&store, &id).unwrap();
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     crate::storage::remove_job_dir(&id).unwrap();
 }
@@ -535,7 +567,7 @@ fn svc_trigger_logs_when_handler_spawn_fails() {
     let id = created.job.id.clone();
 
     let triggered = svc_trigger(&store, &id).expect("trigger succeeds despite spawn failure");
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     crate::storage::remove_job_dir(&id).unwrap();
     let _ = std::fs::remove_file(&handler_path);
@@ -573,7 +605,7 @@ fn svc_trigger_spawns_existing_handler_script() {
     let id = created.job.id.clone();
 
     let triggered = svc_trigger(&store, &id).unwrap();
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     crate::storage::remove_job_dir(&id).unwrap();
     let _ = std::fs::remove_file(&handler_path);

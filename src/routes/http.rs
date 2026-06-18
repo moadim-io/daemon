@@ -57,7 +57,9 @@ pub async fn index() -> axum::response::Html<&'static str> {
 pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        uptime_secs: now_secs() - state.uptime_start,
+        // saturating_sub so a backward wall-clock adjustment can't underflow
+        // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
+        uptime_secs: now_secs().saturating_sub(state.uptime_start),
         running: true,
         version: env!("CARGO_PKG_VERSION").to_string(),
     })

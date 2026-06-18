@@ -116,7 +116,9 @@ impl MoadimMcp {
         let loc = crate::filesystem::FsLocation::current();
         let mut val = serde_json::json!({
             "status": "ok",
-            "uptime_secs": now_secs() - self.uptime_start,
+            // saturating_sub so a backward wall-clock adjustment can't underflow
+            // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
+            "uptime_secs": now_secs().saturating_sub(self.uptime_start),
             "running": true,
         });
         if let (Some(obj), Ok(serde_json::Value::Object(loc_map))) =

@@ -116,7 +116,7 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
 
     let gitignore = job_gitignore_path(&job.id);
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\n")?;
+        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
     }
 
     let toml_job = JobToml {

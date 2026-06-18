@@ -44,6 +44,33 @@ fn validate_cron_rejects_invalid() {
 }
 
 #[test]
+fn validate_cron_accepts_all_documented_keywords() {
+    for kw in [
+        "@hourly",
+        "@daily",
+        "@weekly",
+        "@monthly",
+        "@yearly",
+        "@annually",
+    ] {
+        assert!(validate_cron(kw).is_ok(), "{kw} should be accepted");
+    }
+}
+
+#[test]
+fn validate_cron_rejects_unsupported_keywords() {
+    // @reboot and @midnight are documented as unsupported via the API.
+    for kw in ["@reboot", "@midnight", "@nonsense"] {
+        let err = validate_cron(kw);
+        assert!(err.is_err(), "{kw} should be rejected");
+        assert!(
+            matches!(err, Err(AppError::BadRequest(_))),
+            "{kw} should be rejected with BadRequest"
+        );
+    }
+}
+
+#[test]
 fn cron_job_serializes() {
     let job = CronJob {
         id: "abc".to_string(),

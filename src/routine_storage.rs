@@ -120,7 +120,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\n")?;
+        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
     }
 
     let toml_routine = RoutineToml {

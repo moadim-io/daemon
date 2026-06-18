@@ -115,6 +115,7 @@ fn write_job_creates_gitignore() {
     assert!(gitignore.exists());
     let content = std::fs::read_to_string(&gitignore).unwrap();
     assert!(content.contains("*.local.*"));
+    assert!(content.contains("run.sh"));
 
     remove_job_dir(id).expect("cleanup failed");
 }

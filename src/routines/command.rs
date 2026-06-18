@@ -32,13 +32,19 @@ pub(crate) fn slugify(title: &str) -> String {
 /// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
 pub(crate) fn compose_prompt(routine: &Routine) -> String {
     let mut body = String::from("# Workbench\n");
-    body.push_str(
-        "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
-    );
-    for repo in &routine.repositories {
-        match &repo.branch {
-            Some(branch) => body.push_str(&format!("- {} (branch {})\n", repo.repository, branch)),
-            None => body.push_str(&format!("- {}\n", repo.repository)),
+    if routine.repositories.is_empty() {
+        body.push_str("You are working in an empty directory.\n");
+    } else {
+        body.push_str(
+            "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
+        );
+        for repo in &routine.repositories {
+            match &repo.branch {
+                Some(branch) => {
+                    body.push_str(&format!("- {} (branch {})\n", repo.repository, branch))
+                }
+                None => body.push_str(&format!("- {}\n", repo.repository)),
+            }
         }
     }
     body.push_str("\n---\n");

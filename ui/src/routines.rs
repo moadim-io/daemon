@@ -46,7 +46,7 @@ pub struct Routine {
     #[serde(default)]
     pub updated_at: u64,
     #[serde(default)]
-    pub last_triggered_at: Option<u64>,
+    pub last_manual_trigger_at: Option<u64>,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
@@ -1095,7 +1095,7 @@ pub fn routine_row(props: &RowProps) -> Html {
     };
 
     let last_run = r
-        .last_triggered_at
+        .last_manual_trigger_at
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 

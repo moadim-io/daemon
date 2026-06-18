@@ -18,7 +18,7 @@ pub fn generate(manifest_dir: &str) {
         "properties": {
             "schedule": {
                 "type": "string",
-                "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or standard 5-field syntax (min hour dom month dow).",
+                "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, @yearly, @annually, or standard 5-field syntax (min hour dom month dow). @reboot and @midnight are not supported.",
                 "examples": ["@hourly", "@daily", "30 9 * * 1-5"]
             },
             "handler": {

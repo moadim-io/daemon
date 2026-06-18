@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+- moadim-generated `.gitignore` files (job and routine) now ignore
+  user-specific `run.sh` scripts.
+
 ### Fixed
 - `moadim status` now reports the effective bind address instead of the
   hardcoded default when a custom bind address is configured.

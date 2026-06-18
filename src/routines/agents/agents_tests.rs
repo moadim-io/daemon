@@ -92,15 +92,24 @@ fn ensure_default_agents_in_logs_and_continues_on_write_failure() {
 
 #[test]
 fn builtin_configs_declare_expected_instructions_file() {
-    // Claude omits `instructions_file`, so it falls back to the CLAUDE.md default. Codex declares
-    // AGENTS.md explicitly, since that is the file Codex reads its project instructions from. This
-    // guards the routine-origin disclosure landing in the file each agent actually reads.
+    // Both built-in agents now read their project instructions from AGENTS.md, unifying the
+    // moadim-managed system prompt and routine-origin disclosure onto a single file. Claude Code
+    // loads AGENTS.md as a memory/context file, and AGENTS.md is the file Codex reads, so the
+    // disclosure lands in the file each agent actually reads.
     let claude: AgentCommand = toml::from_str(claude_code::CONFIG).unwrap();
-    assert_eq!(claude.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
-    assert_eq!(claude.instructions_file, "CLAUDE.md");
+    assert_eq!(claude.instructions_file, "AGENTS.md");
 
     let codex: AgentCommand = toml::from_str(codex::CONFIG).unwrap();
     assert_eq!(codex.instructions_file, "AGENTS.md");
+}
+
+#[test]
+fn default_instructions_file_falls_back_to_claude_md() {
+    // A config that omits `instructions_file` falls back to the historical CLAUDE.md default,
+    // preserving backward compatibility for user-authored agent configs.
+    let agent: AgentCommand = toml::from_str(r#"command = "x""#).unwrap();
+    assert_eq!(agent.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
+    assert_eq!(agent.instructions_file, "CLAUDE.md");
 }
 
 #[cfg(unix)]

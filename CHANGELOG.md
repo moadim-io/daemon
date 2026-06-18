@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- The built-in Claude agent now reads its project instructions from `AGENTS.md`,
+  the same file Codex uses, unifying the moadim-managed system prompt and
+  routine-origin disclosure onto a single instructions file across agents. Claude
+  Code loads `AGENTS.md` as a memory/context file, so the disclosure is honored
+  exactly as it was from `CLAUDE.md`. User-authored agent configs that omit
+  `instructions_file` still fall back to the historical `CLAUDE.md` default.
+
 ## [0.11.2] - 2026-06-17
 
 ### Fixed

@@ -12,9 +12,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ## [Unreleased]
 
 ### Fixed
-
 - `moadim status` now reports the effective bind address instead of the
   hardcoded default when a custom bind address is configured.
+
+### Added
+
+- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
+  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
+  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
+  request surfaces, so no extra request is made.
 
 ## [0.12.0] - 2026-06-18
 

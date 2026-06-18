@@ -480,6 +480,7 @@ fn svc_create_rejects_unknown_agent() {
             repositories: vec![],
             enabled: true,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -504,6 +505,7 @@ fn svc_create_accepts_builtin_agent() {
             repositories: vec![],
             enabled: true,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     )
     .unwrap();
@@ -534,6 +536,7 @@ fn svc_update_rejects_unknown_agent() {
             repositories: None,
             enabled: None,
             ttl_secs: None,
+            max_runtime_secs: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

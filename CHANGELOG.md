@@ -13,6 +13,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Routines gained an **`ignore_until`** field (Unix seconds) that snoozes
+  *scheduled* runs until a given time without touching the cron entry. The
+  routine's generated `run.sh` carries a guard
+  (`if [ "$(date +%s)" -lt <ignore_until> ]; then exit 0; fi`) that exits before
+  launching the agent for any firing before the timestamp; because the guard
+  reads the live clock it lifts on its own once the time passes — no re-sync
+  needed. Manual triggers (`trigger_routine` / `POST .../trigger`) bypass the
+  snooze and always run. Settable on create and update (REST, OpenAPI, MCP);
+  `update` also accepts `clear_ignore_until: true` to unset an existing snooze,
+  which takes precedence over a supplied `ignore_until`. Persisted to the tracked
+  `routine.toml`.
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

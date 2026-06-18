@@ -22,6 +22,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -81,6 +82,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -95,6 +97,8 @@ fn empty_update_request() -> UpdateRoutineRequest {
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
+        clear_ignore_until: None,
     }
 }
 
@@ -232,6 +236,7 @@ fn svc_create_rejects_duplicate_slug() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
             },
         )
         .unwrap();
@@ -248,6 +253,7 @@ fn svc_create_rejects_duplicate_slug() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));
@@ -291,6 +297,8 @@ fn svc_update_rejects_renaming_into_existing_slug() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
+                clear_ignore_until: None,
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));
@@ -324,6 +332,8 @@ fn svc_update_sets_ttl_secs() {
                 enabled: None,
                 ttl_secs: Some(4242),
                 max_runtime_secs: None,
+                ignore_until: None,
+                clear_ignore_until: None,
             },
         )
         .unwrap();
@@ -360,6 +370,8 @@ fn svc_update_sets_max_runtime_secs() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: Some(1234),
+                ignore_until: None,
+                clear_ignore_until: None,
             },
         )
         .unwrap();
@@ -367,6 +379,118 @@ fn svc_update_sets_max_runtime_secs() {
     });
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_sets_ignore_until() {
+    // Covers the `ignore_until: req.ignore_until` field on the created routine.
+    let title = "Svc Create Ignore Until ZZZ";
+    let store = new_store();
+    with_empty_path(|| {
+        let resp = svc_create(
+            &store,
+            CreateRoutineRequest {
+                title: title.into(),
+                ignore_until: Some(4_102_444_800),
+                ..valid_create_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(resp.routine.ignore_until, Some(4_102_444_800));
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_sets_ignore_until() {
+    // Covers the `else if let Some(ignore_until)` apply branch in `svc_update`.
+    let title = "Svc Update Ignore Until ZZZ";
+    let store = new_store();
+    let routine = make_routine("ignore-until-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("ignore-until-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "ignore-until-id",
+            UpdateRoutineRequest {
+                ignore_until: Some(4_102_444_800),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.ignore_until, Some(4_102_444_800));
+    });
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_clear_ignore_until_wins_over_value() {
+    // Covers the `clear_ignore_until == Some(true)` branch and its precedence over a present
+    // `ignore_until`: sending both clears the snooze rather than setting it.
+    let title = "Svc Update Clear Ignore Until ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("clear-ignore-id", title, 1, 1);
+    routine.ignore_until = Some(4_102_444_800);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("clear-ignore-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "clear-ignore-id",
+            UpdateRoutineRequest {
+                ignore_until: Some(9_999_999_999),
+                clear_ignore_until: Some(true),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.ignore_until, None);
+    });
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_keeps_ignore_until_when_unset_in_request() {
+    // A request with neither `ignore_until` nor `clear_ignore_until` leaves an existing snooze
+    // untouched.
+    let title = "Svc Update Keep Ignore Until ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("keep-ignore-id", title, 1, 1);
+    routine.ignore_until = Some(4_102_444_800);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("keep-ignore-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "keep-ignore-id",
+            UpdateRoutineRequest {
+                title: Some("Svc Update Keep Ignore Until ZZZ Renamed".into()),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.ignore_until, Some(4_102_444_800));
+    });
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(
+        "Svc Update Keep Ignore Until ZZZ Renamed",
+    ));
 }
 
 #[test]
@@ -524,6 +648,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
             },
         )
         .unwrap();
@@ -553,6 +678,8 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
+                clear_ignore_until: None,
             },
         )
         .unwrap();
@@ -627,6 +754,7 @@ fn svc_create_syncs_crontab_on_success() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
             },
         )
         .unwrap();
@@ -658,6 +786,8 @@ fn svc_update_syncs_crontab_on_success() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
+                clear_ignore_until: None,
             },
         )
         .unwrap();
@@ -724,6 +854,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -771,6 +902,7 @@ fn svc_create_rejects_unknown_agent() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -805,6 +937,8 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                ignore_until: None,
+                clear_ignore_until: None,
             },
         );
         assert!(
@@ -837,6 +971,7 @@ fn svc_create_accepts_builtin_agent() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
         },
     )
     .unwrap();
@@ -868,6 +1003,8 @@ fn svc_update_rejects_unknown_agent() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
+            clear_ignore_until: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

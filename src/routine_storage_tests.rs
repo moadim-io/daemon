@@ -21,6 +21,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -66,6 +67,39 @@ fn write_then_load_round_trips() {
 
     remove_routine_dir(&slug).unwrap();
     assert!(!crate::paths::routine_dir(&slug).exists());
+}
+
+#[test]
+fn ignore_until_round_trips_through_toml() {
+    // The snooze timestamp is tracked config: it must persist into routine.toml and load back.
+    let id = "rs-ignore-until-id";
+    let title = "Rs Ignore Until Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine(id, title);
+    routine.ignore_until = Some(4_102_444_800);
+    write_routine(&routine).unwrap();
+
+    let toml = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+    assert!(
+        toml.contains("ignore_until = 4102444800"),
+        "ignore_until missing from routine.toml: {toml}"
+    );
+    let loaded = load_routine_from_dir(&slug).unwrap();
+    assert_eq!(loaded.ignore_until, Some(4_102_444_800));
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn ignore_until_absent_loads_as_none() {
+    // A routine.toml without an ignore_until key loads with the field defaulted to None.
+    let id = "rs-ignore-until-absent-id";
+    let title = "Rs Ignore Until Absent Routine";
+    let slug = slugify(title);
+    write_routine(&make_routine(id, title)).unwrap();
+    let loaded = load_routine_from_dir(&slug).unwrap();
+    assert_eq!(loaded.ignore_until, None);
+    remove_routine_dir(&slug).unwrap();
 }
 
 #[test]

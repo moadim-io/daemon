@@ -40,6 +40,7 @@ fn from_routine_populates_derived_fields() {
         last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     };
     let resp = RoutineResponse::from_routine(routine);
     assert!(resp.schedule_description.is_some());

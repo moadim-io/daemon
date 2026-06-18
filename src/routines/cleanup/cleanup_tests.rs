@@ -317,6 +317,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         last_manual_trigger_at: None,
         ttl_secs,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 

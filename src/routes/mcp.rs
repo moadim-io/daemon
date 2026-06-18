@@ -79,6 +79,12 @@ struct UpdateRoutineInput {
     /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
     /// the existing value.
     max_runtime_secs: Option<u64>,
+    /// New snooze timestamp (Unix seconds) until which scheduled runs are skipped, or `None` to
+    /// keep the existing value. To unset an existing snooze, send `clear_ignore_until: true`.
+    ignore_until: Option<u64>,
+    /// Set to `true` to clear an existing `ignore_until` snooze. Takes precedence over
+    /// `ignore_until`.
+    clear_ignore_until: Option<bool>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -277,6 +283,8 @@ impl MoadimMcp {
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
             max_runtime_secs: input.max_runtime_secs,
+            ignore_until: input.ignore_until,
+            clear_ignore_until: input.clear_ignore_until,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),

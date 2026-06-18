@@ -139,8 +139,23 @@ pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
 /// Honours the `MOADIM_CRONTAB_BIN` environment variable when set, falling back
 /// to the system `crontab` otherwise. The override exists so tests can point
 /// crontab I/O at a shim instead of mutating the developer's real crontab.
+///
+/// In **test builds**, when no `MOADIM_CRONTAB_BIN` shim is configured this never
+/// falls back to the real system `crontab`: it returns a path that cannot exist,
+/// so the spawn fails and the sync logs a warning instead of clobbering the
+/// developer's live crontab. This is a structural safety net for issue #175 — a
+/// test that forgets to install a shim (or clear `PATH`) still cannot touch the
+/// real crontab. Tests that need a working sync set `MOADIM_CRONTAB_BIN` to a
+/// shim, which is honoured first.
 fn crontab_bin() -> String {
-    std::env::var("MOADIM_CRONTAB_BIN").unwrap_or_else(|_| "crontab".to_string())
+    if let Ok(bin) = std::env::var("MOADIM_CRONTAB_BIN") {
+        return bin;
+    }
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-crontab-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "crontab".to_string();
+    fallback
 }
 
 /// Read the current user crontab via `crontab -l`.

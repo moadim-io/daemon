@@ -8,13 +8,41 @@ use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
-use super::agents::{load_agent_command, AgentLoadError};
+use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
     RoutineStore, SortOrder, UpdateRoutineRequest,
 };
+
+/// Reject a blank (empty or whitespace-only) required text field.
+///
+/// An empty `prompt` makes a routine fire forever with no task (#224); an empty
+/// `title` yields an empty routine-origin disclosure name and a bare `"routine"`
+/// slug (#226). Both are caught here before anything is persisted.
+fn reject_blank(field: &str, value: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "routine {field} must not be empty"
+        )));
+    }
+    Ok(())
+}
+
+/// Reject a zero-second duration for an optional cap (`None` keeps the default).
+///
+/// `ttl_secs: 0` reaps a finished run's logs instantly and `max_runtime_secs: 0`
+/// makes the watchdog kill the session the moment it starts (#233), so a supplied
+/// value must be positive.
+fn reject_zero_secs(field: &str, value: Option<u64>) -> Result<(), AppError> {
+    if value == Some(0) {
+        return Err(AppError::BadRequest(format!(
+            "routine {field} must be greater than zero"
+        )));
+    }
+    Ok(())
+}
 
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).
@@ -25,13 +53,25 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
     }
 }
 
-/// Reject a referenced agent whose `<name>.toml` is present but unparseable.
+/// Reject a referenced agent that is unknown or whose `<name>.toml` is present but unparseable.
 ///
-/// Surfaces the malformed-TOML failure at edit time (REST 400 / MCP) instead of letting it slip
-/// through to fire time, where it would only be logged and the routine silently skipped. A *missing*
-/// config is intentionally allowed: the agent may be registered later, and the missing-file case is
-/// handled (warned + skipped) downstream exactly as before.
+/// Two failures are surfaced at edit time (REST 400 / MCP) instead of slipping through to fire time,
+/// where they would only be logged and the routine silently skipped:
+///
+/// * An agent not present in the registry resolves to no command at fire time (#139). Mirrors the
+///   `validate_cron` / slug-conflict guards.
+/// * An agent whose config is present on disk but cannot be parsed (#189).
+///
+/// A *missing* config for a registered agent is intentionally allowed: the file may be created later,
+/// and the missing-file case is handled (warned + skipped) downstream exactly as before.
 fn validate_agent(agent: &str) -> Result<(), AppError> {
+    let agents = available_agents();
+    if !agents.iter().any(|known| known == agent) {
+        return Err(AppError::BadRequest(format!(
+            "unknown agent \"{agent}\"; valid agents: {}",
+            agents.join(", ")
+        )));
+    }
     match load_agent_command(agent) {
         Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
@@ -94,12 +134,52 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Upper bound on a routine title, in characters, to keep `CLAUDE.md`, crontab
+/// comments, iCal `SUMMARY`s, and UI rows from rendering an unbounded string.
+const MAX_TITLE_LEN: usize = 200;
+
+/// Reject a routine `title` that carries no usable name with `400 Bad Request`.
+///
+/// `title` is the only required identifying field on a routine, yet it was never
+/// content-checked. Two concrete failures follow from a blank or punctuation-only
+/// title (issue #226):
+///
+/// 1. The moadim routine-origin disclosure breaks — `system_prompt_stmts` writes
+///    `Routine name: <title>` into every workbench `CLAUDE.md`, so an empty title
+///    yields a nameless disclosure the agent cannot satisfy.
+/// 2. `slugify` maps any title with no ASCII-alphanumerics (`""`, `"   "`, `"!!!"`)
+///    to the constant `"routine"`, so the routine silently takes a slug the user
+///    never chose and collides with the next such routine.
+///
+/// Requiring at least one ASCII-alphanumeric character rejects all three cases at
+/// once (it is exactly the condition under which `slugify` falls back). A max
+/// length bounds downstream rendering. Shared by the create and update paths so
+/// the REST and MCP surfaces reject identically, mirroring [`validate_cron`].
+fn validate_title(title: &str) -> Result<(), AppError> {
+    if !title.chars().any(|ch| ch.is_ascii_alphanumeric()) {
+        return Err(AppError::BadRequest(
+            "title must contain at least one alphanumeric character".to_string(),
+        ));
+    }
+    if title.trim().chars().count() > MAX_TITLE_LEN {
+        return Err(AppError::BadRequest(format!(
+            "title must be at most {MAX_TITLE_LEN} characters"
+        )));
+    }
+    Ok(())
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
+    reject_blank("title", &req.title)?;
+    reject_blank("prompt", &req.prompt)?;
+    reject_zero_secs("ttl_secs", req.ttl_secs)?;
+    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
+    validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let slug = slugify(&req.title);
     {
@@ -122,7 +202,7 @@ pub fn svc_create(
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };
@@ -146,9 +226,18 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
+    if let Some(ref title) = req.title {
+        reject_blank("title", title)?;
+        validate_title(title)?;
+    }
+    if let Some(ref prompt) = req.prompt {
+        reject_blank("prompt", prompt)?;
+    }
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;
     }
+    reject_zero_secs("ttl_secs", req.ttl_secs)?;
+    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let mut lock = store.lock().unwrap();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
@@ -217,7 +306,7 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let mut lock = store.lock().unwrap();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.last_triggered_at = Some(now_secs());
+    routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;

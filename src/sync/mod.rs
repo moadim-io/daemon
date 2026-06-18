@@ -433,7 +433,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
                     source: "managed".to_string(),
                     created_at: now,
                     updated_at: now,
-                    last_triggered_at: None,
+                    last_manual_trigger_at: None,
                 };
                 lock.insert(id.clone(), job.clone());
                 jobs_to_write.push(job);

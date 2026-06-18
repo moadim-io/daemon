@@ -116,7 +116,9 @@ impl MoadimMcp {
         let loc = crate::filesystem::FsLocation::current();
         let mut val = serde_json::json!({
             "status": "ok",
-            "uptime_secs": now_secs() - self.uptime_start,
+            // saturating_sub so a backward wall-clock adjustment can't underflow
+            // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
+            "uptime_secs": now_secs().saturating_sub(self.uptime_start),
             "running": true,
         });
         if let (Some(obj), Ok(serde_json::Value::Object(loc_map))) =
@@ -211,7 +213,7 @@ impl MoadimMcp {
 
     /// Manually trigger a cron job immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a cron job outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a cron job outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_cron_job(
         &self,
@@ -296,7 +298,7 @@ impl MoadimMcp {
 
     /// Manually trigger a routine immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a routine outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a routine outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_routine(
         &self,

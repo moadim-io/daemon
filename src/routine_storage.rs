@@ -40,9 +40,10 @@ struct RoutineToml {
     /// sidecar ([`RuntimeState`]) so it no longer churns the version-controlled `routine.toml`.
     /// This field is still parsed so routines written by older daemons keep their timestamp (the
     /// value migrates into the sidecar on the next [`write_routine`]), but it is never written back
-    /// — `skip_serializing` keeps it out of every freshly written `routine.toml`.
-    #[serde(default, skip_serializing)]
-    last_triggered_at: Option<u64>,
+    /// — `skip_serializing` keeps it out of every freshly written `routine.toml`. Accepts the
+    /// legacy `last_triggered_at` key so routine.toml files written before the rename still load.
+    #[serde(default, skip_serializing, alias = "last_triggered_at")]
+    last_manual_trigger_at: Option<u64>,
     /// Workbench retention in seconds for finished runs; absent means the daemon default.
     #[serde(default)]
     ttl_secs: Option<u64>,
@@ -58,7 +59,7 @@ struct RoutineToml {
 struct RuntimeState {
     /// Unix timestamp of the last manual trigger, or `None` if it has never been triggered.
     #[serde(default)]
-    last_triggered_at: Option<u64>,
+    last_manual_trigger_at: Option<u64>,
 }
 
 /// Parse a routine TOML file at `path`, returning `None` on any error.
@@ -67,13 +68,13 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read `last_triggered_at` from a routine's `state.local.toml` sidecar, returning `None` when the
-/// sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
+/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar, returning `None` when
+/// the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
 fn read_runtime_state(dir_name: &str) -> Option<u64> {
     let text = std::fs::read_to_string(routine_state_path(dir_name)).ok()?;
     toml::from_str::<RuntimeState>(&text)
         .ok()?
-        .last_triggered_at
+        .last_manual_trigger_at
 }
 
 /// Load a routine from `{routines_dir}/{dir_name}/routine.toml`.
@@ -81,13 +82,13 @@ fn read_runtime_state(dir_name: &str) -> Option<u64> {
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
 /// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
 ///
-/// `last_triggered_at` is read from the `state.local.toml` sidecar, falling back to the legacy
+/// `last_manual_trigger_at` is read from the `state.local.toml` sidecar, falling back to the legacy
 /// `routine.toml` field for routines written before the runtime state was split out.
 fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     let toml = read_routine_toml(&routine_toml_path(dir_name))?;
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
-    let last_triggered_at = read_runtime_state(dir_name).or(toml.last_triggered_at);
+    let last_manual_trigger_at = read_runtime_state(dir_name).or(toml.last_manual_trigger_at);
     Some(Routine {
         id,
         schedule: toml.schedule?,
@@ -99,7 +100,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),
         updated_at: toml.updated_at.unwrap_or(0),
-        last_triggered_at,
+        last_manual_trigger_at,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
     })
@@ -110,7 +111,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
 ///
 /// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
 /// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
-/// (`last_triggered_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
+/// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
 /// version-controlled config file.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
@@ -119,7 +120,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\n")?;
+        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
     }
 
     let toml_routine = RoutineToml {
@@ -134,7 +135,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         updated_at: Some(routine.updated_at),
         // Runtime state is written to the sidecar below, never to the tracked `routine.toml`
         // (`skip_serializing` also keeps this field out regardless of its value).
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
     };
@@ -148,19 +149,21 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         &routine_prompt_path(&slug),
         compose_prompt(routine).as_bytes(),
     )?;
-    write_runtime_state(&slug, routine.last_triggered_at)?;
+    write_runtime_state(&slug, routine.last_manual_trigger_at)?;
     Ok(())
 }
 
 /// Persist a routine's runtime state to its gitignored `state.local.toml` sidecar.
 ///
-/// Writes the sidecar (atomically) when `last_triggered_at` is set, and removes any stale sidecar
-/// when it is `None`, so the on-disk state always mirrors the in-memory routine.
-fn write_runtime_state(slug: &str, last_triggered_at: Option<u64>) -> std::io::Result<()> {
+/// Writes the sidecar (atomically) when `last_manual_trigger_at` is set, and removes any stale
+/// sidecar when it is `None`, so the on-disk state always mirrors the in-memory routine.
+fn write_runtime_state(slug: &str, last_manual_trigger_at: Option<u64>) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    match last_triggered_at {
+    match last_manual_trigger_at {
         Some(_) => {
-            let state = RuntimeState { last_triggered_at };
+            let state = RuntimeState {
+                last_manual_trigger_at,
+            };
             let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
             atomic_write(&path, text.as_bytes())?;
         }

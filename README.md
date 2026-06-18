@@ -92,7 +92,7 @@ Moadim owns a single block inside your crontab. Everything outside that block is
 
 **Reverse sync (crontab → moadim) is not currently enabled.** Edit jobs through the UI, REST, or MCP rather than by hand: manual changes inside the block do **not** sync back into moadim and are overwritten by the next forward sync. (The reverse-sync parser exists but is not wired to run — tracked in [#218](https://github.com/moadim-io/daemon/issues/218).)
 
-**Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot`) are also accepted.
+**Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`) are also accepted. `@reboot` and `@midnight` are **not** supported via the API and are rejected with `400 Bad Request`.
 
 **Timezone:** because jobs run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
 
@@ -155,7 +155,7 @@ timezone  = "Asia/Jerusalem"
 
 | Field        | Type   | Required | Description                                                            |
 | ------------ | ------ | -------- | ---------------------------------------------------------------------- |
-| `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@daily`, `@hourly`, etc. |
+| `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@hourly`/`@daily`/`@weekly`/`@monthly`/`@yearly`/`@annually`. |
 | `handler`    | string | yes      | Script name in `handlers/` (without extension)                         |
 | `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.             |
 | `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars.          |
@@ -204,7 +204,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. |
-| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
+| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (matching `status --json`'s shape; the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. Exits `0` when running, `3` when not. |
 
@@ -222,10 +222,26 @@ on stdout. Paired with the exit codes above, a caller gets the full contract wit
 |--------------------|----------------|------------|
 | `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — `pid` is `null` when no pid file is present | `0` running, `3` not |
 | `moadim cleanup --json` | `{"running":bool,"removed":N}` — `removed` is `0` when no server is running | `0` running, `3` not |
-| `moadim stop --json`    | `{"running":bool,"pid":N\|null}` — `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
+| `moadim stop --json`    | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — same shape as `status --json`; `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
 
 Any other failure exits `1` with a message on stderr. The object is always a single line, so
 `moadim status --json | jq -r .pid` and similar pipelines work without buffering.
+
+Putting the contract to use — branch on the exit code, then read the JSON only when you need a field:
+
+```sh
+# Start the server only if one isn't already running (status exits 3 when not).
+if ! moadim status --json >/dev/null; then
+  moadim
+fi
+
+# Grab the running server's PID for a downstream check (empty when not running).
+pid=$(moadim status --json | jq -r '.pid // empty')
+
+# Reap expired routine workbenches and report how many were freed.
+removed=$(moadim cleanup --json | jq -r .removed)
+echo "moadim: reaped ${removed} workbench(es)"
+```
 
 Because the default mode is detached, you stop the server **from the client**:
 press the **STOP** button in the UI header, run `moadim stop`, or send

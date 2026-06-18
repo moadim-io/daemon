@@ -25,6 +25,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
   a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
   request surfaces, so no extra request is made.
+- Routine create/update now validates and normalizes `repositories` entries:
+  blank or whitespace-only `repository` values (and blank `branch` values when
+  set) are rejected with a `400 Bad Request` instead of being silently
+  persisted, and surviving entries are trimmed. Malformed `repositories` lists
+  are now caught at the API boundary rather than surfacing later as a confusing
+  run-time failure (#241).
 
 ### Changed
 

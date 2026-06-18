@@ -13,6 +13,13 @@ fn never_expires_runtime(_slug: &str) -> u64 {
 fn noop_kill(_session: &str) {}
 
 #[test]
+fn tmux_kill_session_is_best_effort_on_missing_session() {
+    // The real tmux side-effect helper. Killing a session that does not exist (or running with no
+    // tmux installed) must not panic — the call is best-effort and any failure is swallowed.
+    tmux_kill_session("moadim-nonexistent-watchdog-test-session");
+}
+
+#[test]
 fn parse_workbench_name_splits_slug_and_timestamp() {
     assert_eq!(parse_workbench_name("foo-123"), Some(("foo", 123)));
     // Slug may contain dashes; only the final all-digit segment is the timestamp.

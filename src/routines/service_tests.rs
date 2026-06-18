@@ -180,6 +180,38 @@ fn svc_update_sets_ttl_secs() {
 }
 
 #[test]
+fn svc_update_sets_max_runtime_secs() {
+    // Covers the `req.max_runtime_secs` apply branch in `svc_update`.
+    let title = "Svc Update Max Runtime ZZZ";
+    let store = new_store();
+    let routine = make_routine("max-runtime-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("max-runtime-id".into(), routine);
+
+    let updated = svc_update(
+        &store,
+        "max-runtime-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: None,
+            repositories: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: Some(1234),
+        },
+    )
+    .unwrap();
+    assert_eq!(updated.routine.max_runtime_secs, Some(1234));
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
 fn svc_logs_returns_newest_workbench_log() {
     // Covers the newest-workbench selection inside `svc_logs`: with two valid
     // `{slug}-{ts}` workbench directories, the higher timestamp wins and its

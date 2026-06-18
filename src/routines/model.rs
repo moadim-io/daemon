@@ -94,6 +94,13 @@ pub struct Routine {
     /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills
+    /// its (hung) tmux session, after which the workbench is reaped under the normal TTL rules.
+    /// `None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A
+    /// session still within this bound is never touched. The cap and
+    /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -199,6 +206,10 @@ pub struct CreateRoutineRequest {
     /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Max wall-clock seconds a run may execute before the watchdog kills its hung
+    /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -219,6 +230,8 @@ pub struct UpdateRoutineRequest {
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
+    pub max_runtime_secs: Option<u64>,
 }
 
 #[cfg(test)]

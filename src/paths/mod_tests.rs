@@ -127,6 +127,16 @@ fn routine_gitignore_path_filename() {
 }
 
 #[test]
+fn routine_state_path_filename() {
+    let path = routine_state_path("abc");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "state.local.toml"
+    );
+    assert_eq!(path.parent().unwrap(), routine_dir("abc"));
+}
+
+#[test]
 fn agents_dir_ends_with_agents() {
     let path = agents_dir().to_string_lossy().into_owned();
     assert!(

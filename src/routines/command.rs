@@ -190,9 +190,16 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![
-        // cron runs with a minimal PATH (/usr/bin:/bin) that omits tmux/claude/npm dirs. Bake the
-        // daemon's own PATH into the line so the agent tools resolve the same way they do for a
-        // manual trigger (which inherits the daemon's environment).
+        // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see
+        // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced first and
+        // the agent inherits their environment — GH_TOKEN, API keys and the like — which cron's
+        // minimal env (and, on macOS, the GUI-Keychain-less session) otherwise withholds.
+        //
+        // PATH is still *replaced* with this curated list (not merged with the profile's), keeping
+        // binary resolution identical to before the login-shell change: tmux and the agent always
+        // resolve to the same dirs the daemon itself uses, regardless of how the profile orders
+        // PATH. Only environment *variables* are gained from the profile; PATH behaviour is
+        // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
@@ -225,3 +232,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.join("; ")
 }
+
+#[cfg(test)]
+#[path = "command_tests.rs"]
+mod command_tests;

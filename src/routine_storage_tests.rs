@@ -25,6 +25,24 @@ fn make_routine(id: &str, title: &str) -> Routine {
 }
 
 #[test]
+fn load_store_from_dir_inserts_written_routines() {
+    // Covers the `routines.insert(..)` arm of `load_store_from_dir`: a directory holding a valid
+    // routine sub-folder is scanned and the parsed routine lands in the returned store.
+    with_override_home(|_home| {
+        write_routine(&make_routine("rs-loadstore-id", "Rs Loadstore Routine")).unwrap();
+        // A stray non-directory entry alongside the routine folder exercises the `is_dir == false`
+        // skip path of the scan loop.
+        std::fs::write(crate::paths::routines_dir().join("stray.txt"), b"x").unwrap();
+        let store = load_store_from_dir(&crate::paths::routines_dir());
+        assert!(store
+            .lock()
+            .unwrap()
+            .values()
+            .any(|routine| routine.id == "rs-loadstore-id"));
+    });
+}
+
+#[test]
 fn write_then_load_round_trips() {
     let id = "rs-roundtrip-id";
     let title = "Rs Roundtrip Routine";

@@ -54,6 +54,9 @@ pub enum Command {
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
+        /// Suppress the human-readable status line so scripts that branch on `$?` get no stdout
+        /// noise. Ignored under `json`, which always prints its single object.
+        quiet: bool,
     },
     /// Report whether a server is currently running. `json` requests machine-readable output.
     Status {
@@ -87,6 +90,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         Some("restart") => Command::Restart,
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
+            quiet: wants_quiet(&args[1..]),
         },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
@@ -110,6 +114,12 @@ fn wants_json(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--json")
 }
 
+/// Whether a `--quiet`/`-q` flag appears among a command's trailing arguments, requesting that
+/// `stop` suppress its human-readable status line.
+fn wants_quiet(rest: &[String]) -> bool {
+    rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
+}
+
 /// Print usage help to stdout.
 pub fn print_help() {
     let bind_addr = bind_addr();
@@ -127,7 +137,7 @@ pub fn print_help() {
          \n\
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
-         \x20   stop [--json]          stop a running background server\n\
+         \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
@@ -220,11 +230,13 @@ fn report_endpoints() {
 
 /// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
 /// machine-readable object (`{"running":bool,"pid":N|null}`) instead of the human-readable line.
+/// With `quiet`, the human-readable line is suppressed entirely (ignored under `json`), so scripts
+/// that branch on `$?` alone get no stdout noise.
 ///
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
-pub fn stop(json: bool) -> anyhow::Result<i32> {
+pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
     // Read the PID before asking the server to stop: a graceful shutdown clears the pid file, so
     // the only reliable moment to capture which process we stopped is *before* the request.
     let pid = read_pid_file();
@@ -232,7 +244,7 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
         Ok(200) => {
             if json {
                 println!("{}", stop_json(true, pid));
-            } else {
+            } else if !quiet {
                 println!("moadim is shutting down");
             }
             Ok(liveness_exit_code(true))
@@ -243,7 +255,7 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
         Err(_) => {
             if json {
                 println!("{}", stop_json(false, pid));
-            } else {
+            } else if !quiet {
                 println!("moadim is not running");
             }
             Ok(liveness_exit_code(false))

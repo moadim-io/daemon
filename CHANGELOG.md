@@ -42,6 +42,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- A malformed (present-but-unparseable) agent TOML is no longer misreported as
+  "agent config not found". `load_agent_command` now returns a `Result` with a
+  distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics
+  name the agent and quote the underlying `toml` parse error. Creating or
+  updating a routine that references a malformed agent config is now rejected
+  with `400 Bad Request` (REST + MCP) at edit time instead of being silently
+  skipped at fire time. The missing-file case is unchanged (still skipped and
+  warned, with an accurate message). (#189)
 - Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA
   `index.html` with `200`. The nested API router had no fallback of its own, so
   in axum 0.8 it inherited the outer SPA `.fallback(get(index))` — a typo'd or

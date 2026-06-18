@@ -8,7 +8,7 @@ use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
-use super::agents::{available_agents, load_agent_command};
+use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
@@ -50,6 +50,33 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
     match routine.repositories.first() {
         Some(repo) => (false, repo.repository.to_lowercase()),
         None => (true, String::new()),
+    }
+}
+
+/// Reject a referenced agent that is unknown or whose `<name>.toml` is present but unparseable.
+///
+/// Two failures are surfaced at edit time (REST 400 / MCP) instead of slipping through to fire time,
+/// where they would only be logged and the routine silently skipped:
+///
+/// * An agent not present in the registry resolves to no command at fire time (#139). Mirrors the
+///   `validate_cron` / slug-conflict guards.
+/// * An agent whose config is present on disk but cannot be parsed (#189).
+///
+/// A *missing* config for a registered agent is intentionally allowed: the file may be created later,
+/// and the missing-file case is handled (warned + skipped) downstream exactly as before.
+fn validate_agent(agent: &str) -> Result<(), AppError> {
+    let agents = available_agents();
+    if !agents.iter().any(|known| known == agent) {
+        return Err(AppError::BadRequest(format!(
+            "unknown agent \"{agent}\"; valid agents: {}",
+            agents.join(", ")
+        )));
+    }
+    match load_agent_command(agent) {
+        Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
+        Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} has a malformed config: {err}"
+        ))),
     }
 }
 
@@ -140,23 +167,6 @@ fn validate_title(title: &str) -> Result<(), AppError> {
         )));
     }
     Ok(())
-}
-
-/// Reject an `agent` that is not present in the agent registry.
-///
-/// An unknown agent resolves to no command at fire time and the routine is silently
-/// skipped (see #139), so failing loud here — at create/update — surfaces the typo to
-/// the caller instead. Mirrors the `validate_cron` / slug-conflict guards.
-fn validate_agent(agent: &str) -> Result<(), AppError> {
-    let agents = available_agents();
-    if agents.iter().any(|known| known == agent) {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest(format!(
-            "unknown agent \"{agent}\"; valid agents: {}",
-            agents.join(", ")
-        )))
-    }
 }
 
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
@@ -301,7 +311,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     match load_agent_command(&routine.agent) {
-        Some(agent) => {
+        Ok(agent) => {
             let cmd = build_routine_command(&routine, &agent);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
@@ -314,10 +324,11 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
                 log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
-        None => log::warn!(
-            "trigger: agent config not found for routine {:?} (agent {:?})",
-            routine.id,
-            routine.agent
+        Err(err) => log::warn!(
+            "trigger: cannot load agent {:?} ({}) for routine {:?}",
+            routine.agent,
+            err,
+            routine.id
         ),
     }
     Ok(routine)

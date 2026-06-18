@@ -95,12 +95,13 @@ fn build_block(store: &RoutineStore) -> String {
     let lines: Vec<String> = routines
         .iter()
         .filter_map(|routine| match load_agent_command(&routine.agent) {
-            Some(agent) => format_routine_line(routine, &agent),
-            None => {
+            Ok(agent) => format_routine_line(routine, &agent),
+            Err(err) => {
                 log::warn!(
-                    "routine sync: agent config not found for routine {:?} (agent {:?}); skipping",
-                    routine.id,
-                    routine.agent
+                    "routine sync: cannot load agent {:?} ({}) for routine {:?}; skipping",
+                    routine.agent,
+                    err,
+                    routine.id
                 );
                 None
             }

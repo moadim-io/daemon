@@ -48,6 +48,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The startup OpenAPI-spec writer no longer logs a warning on every installed-binary
+  start, nor rewrites an unchanged spec on every dev start. The spec is written to
+  `CARGO_MANIFEST_DIR/apis/openapi.json` (the build machine's source tree), which is
+  absent in an installed binary — so a missing parent directory is now treated as the
+  expected no-op (silent `debug`, not `warn`). When the parent dir does exist, the spec
+  is rewritten only if its contents actually changed, so dev startups stop churning the
+  committed file's mtime. (#319)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

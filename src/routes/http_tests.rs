@@ -55,17 +55,57 @@ fn write_openapi_spec_writes_json_to_path() {
 
 #[test]
 fn write_openapi_spec_logs_on_write_failure() {
-    // The target's parent is a regular file, so writing the spec underneath it fails,
-    // exercising the best-effort `log::warn!` branch. The call must not panic.
+    // The parent dir exists (so the installed-binary skip does not fire), but the target path is
+    // itself a directory, so writing the spec to it fails — exercising the best-effort
+    // `log::warn!` branch. The call must not panic.
     let dir = std::env::temp_dir().join(format!("moadim-openapi-fail-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
-    let blocker = dir.join("blocker");
-    std::fs::write(&blocker, "i am a file").unwrap();
-    let unwritable = blocker.join("openapi.json");
+    let target = dir.join("openapi.json");
+    std::fs::create_dir_all(&target).unwrap();
 
-    write_openapi_spec(&unwritable);
+    write_openapi_spec(&target);
 
-    assert!(!unwritable.exists(), "the write should have failed");
+    assert!(
+        target.is_dir(),
+        "the write should have failed, leaving the dir intact"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn write_openapi_spec_skips_when_parent_dir_absent() {
+    // An installed binary resolves CARGO_MANIFEST_DIR to an absent build-machine path. A missing
+    // parent dir must be a silent no-op: no warning, no panic, and no half-built directory tree.
+    let base =
+        std::env::temp_dir().join(format!("moadim-openapi-noparent-{}", uuid::Uuid::new_v4()));
+    let path = base.join("apis").join("openapi.json");
+
+    write_openapi_spec(&path);
+
+    assert!(
+        !path.exists(),
+        "no spec should be written when the parent dir is absent"
+    );
+    assert!(
+        !base.exists(),
+        "the writer must not create the missing tree"
+    );
+}
+
+#[test]
+fn write_openapi_spec_skips_rewrite_when_unchanged() {
+    // A second call with identical content must not rewrite the file, so dev startups don't churn
+    // the committed spec's mtime on every run.
+    let dir = std::env::temp_dir().join(format!("moadim-openapi-nochurn-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("openapi.json");
+
+    write_openapi_spec(&path);
+    let first = std::fs::metadata(&path).unwrap().modified().unwrap();
+    write_openapi_spec(&path);
+    let second = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+    assert_eq!(first, second, "unchanged spec should not be rewritten");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

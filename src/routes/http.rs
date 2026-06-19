@@ -215,8 +215,34 @@ pub(crate) fn build_app_with_shutdown(
 /// Best-effort: the spec is a development convenience (committed under `apis/`), so a write
 /// failure must not abort server startup. Extracted from [`run_with_listener_until`] so the
 /// failure branch can be exercised against an unwritable path.
+///
+/// The destination is `CARGO_MANIFEST_DIR/apis/openapi.json` — the build machine's source tree.
+/// In an installed binary that tree is absent at runtime, so an unconditional write logged a
+/// warning on every startup for a file the operator can never have. And in a dev checkout the
+/// spec rarely changes between runs, yet a blind write bumped the committed file's mtime (and
+/// surfaced as a spurious working-tree change) on each start. Guard both:
+///
+///   1. If the parent directory does not exist, skip silently — this is the expected
+///      installed-binary case, not an error worth a warning.
+///   2. If the on-disk spec already matches the freshly generated one, skip the write so dev
+///      startups don't needlessly rewrite an unchanged file.
 pub(crate) fn write_openapi_spec(path: &std::path::Path) {
-    if let Err(err) = std::fs::write(path, crate::openapi::ApiDoc::to_json()) {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.is_dir() {
+            log::debug!(
+                "skipping openapi spec write: {} is not a directory",
+                parent.display()
+            );
+            return;
+        }
+    }
+
+    let spec = crate::openapi::ApiDoc::to_json();
+    if std::fs::read_to_string(path).is_ok_and(|existing| existing == spec) {
+        return;
+    }
+
+    if let Err(err) = std::fs::write(path, spec) {
         log::warn!("could not write openapi spec: {err}");
     }
 }

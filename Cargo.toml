@@ -11,10 +11,13 @@ opt-level = "z"
 name = "moadim"
 version = "0.12.0"
 edition = "2021"
-description = "Moadim.io MCP/REST server for managing cron jobs"
+description = "A loop engine for AI agents — run Claude, Codex, or Hermes against your repo on a schedule, over MCP, REST, and a web UI."
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
 homepage = "https://github.com/moadim-io/daemon"
+readme = "README.md"
+keywords = ["ai-agents", "loop", "mcp", "scheduler", "cron"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 anyhow = "1"

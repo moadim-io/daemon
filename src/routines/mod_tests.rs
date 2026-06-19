@@ -58,6 +58,19 @@ fn compose_prompt_repo_without_branch() {
 }
 
 #[test]
+fn compose_prompt_without_repositories_omits_clone_header() {
+    let mut routine = make_routine("x");
+    routine.repositories = vec![];
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Workbench"));
+    assert!(prompt.contains("You are working in an empty directory.\n"));
+    // No dangling "clone any you need:" header (and no empty bullet list) when there are no repos.
+    assert!(!prompt.contains("clone any you need"));
+    assert!(!prompt.contains("\n- "));
+    assert!(prompt.contains("do the thing"));
+}
+
+#[test]
 fn substitute_replaces_placeholders() {
     assert_eq!(
         substitute("read {prompt_file} in {workbench}", ".", "prompt.md"),

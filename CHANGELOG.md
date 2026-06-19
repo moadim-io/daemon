@@ -48,6 +48,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The generated `prompt.md` no longer emits a dangling "These repositories are
+  relevant — clone any you need:" header with an empty bullet list when a routine
+  has no `repositories`. `compose_prompt` now writes a plain "You are working in
+  an empty directory." preamble in that case, so the agent isn't promised a repo
+  list with nothing under it.
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

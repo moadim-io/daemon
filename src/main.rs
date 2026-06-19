@@ -48,7 +48,10 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
-        cli::Command::Foreground => run_server().await,
+        cli::Command::Foreground => {
+            cli::ensure_not_running_for_foreground()?;
+            run_server().await
+        }
     }
 }
 

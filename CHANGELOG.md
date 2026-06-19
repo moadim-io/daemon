@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- An interactive foreground start (`moadim -i` / `--interactive`) now preflights
+  for an already-running daemon and refuses with a clear, actionable message
+  (naming the running pid when known and pointing at `moadim stop` /
+  `moadim restart`) instead of proceeding to bind and dying with an opaque
+  `Address already in use (os error 48)`. The launcher-spawned background child
+  (which also runs `--interactive`) is exempt via the `MOADIM_DAEMONIZED` marker,
+  so background/restart launches are unaffected (#298).
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

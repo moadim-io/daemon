@@ -60,6 +60,10 @@ fn json_flag_sets_machine_readable_output() {
             quiet: false
         }
     );
+    assert_eq!(
+        parse(argv(&["restart", "--json"])),
+        Command::Restart { json: true }
+    );
 }
 
 #[test]
@@ -155,7 +159,7 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+    assert_eq!(parse(argv(&["restart"])), Command::Restart { json: false });
 }
 
 #[test]
@@ -178,6 +182,20 @@ fn restart_rotation_line_reads_none_when_nothing_was_running() {
         restart_rotation_line(None, 456),
         "restarted: pid none -> 456"
     );
+}
+
+#[test]
+fn restart_json_reports_old_and_new_pid() {
+    let value: serde_json::Value = serde_json::from_str(&restart_json(Some(123), 456)).unwrap();
+    assert_eq!(value["old"], serde_json::json!(123));
+    assert_eq!(value["new"], serde_json::json!(456));
+}
+
+#[test]
+fn restart_json_null_old_when_nothing_was_running() {
+    let value: serde_json::Value = serde_json::from_str(&restart_json(None, 456)).unwrap();
+    assert!(value["old"].is_null());
+    assert_eq!(value["new"], serde_json::json!(456));
 }
 
 #[test]
@@ -529,7 +547,18 @@ fn restart_starts_fresh_when_none_running() {
     let home = temp_home("restart-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart().unwrap();
+    restart(false).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_json_starts_fresh_when_none_running() {
+    let home = temp_home("restart-fresh-json");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    // The `--json` path suppresses the human-readable progress/endpoint lines and prints only the
+    // PID-rotation object; it must still complete the spawn and return Ok.
+    restart(true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -543,6 +572,6 @@ fn restart_replaces_running_server() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart().unwrap();
+    restart(false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }

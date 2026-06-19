@@ -48,8 +48,12 @@ pub enum Command {
     Foreground,
     /// Spawn the server as a detached background process, then exit (the default, non-interactive).
     Background,
-    /// Stop a running background server (if any) and start a fresh detached instance.
-    Restart,
+    /// Stop a running background server (if any) and start a fresh detached instance. `json`
+    /// requests machine-readable output.
+    Restart {
+        /// Emit the machine-readable PID-rotation object instead of the human-readable summary.
+        json: bool,
+    },
     /// Ask a running background server to stop. `json` requests machine-readable output.
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
@@ -87,7 +91,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
         None => Command::Background,
-        Some("restart") => Command::Restart,
+        Some("restart") => Command::Restart {
+            json: wants_json(&args[1..]),
+        },
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
             quiet: wants_quiet(&args[1..]),
@@ -109,7 +115,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
 }
 
 /// Whether a `--json` flag appears among a command's trailing arguments, requesting
-/// machine-readable output for `status`/`cleanup`.
+/// machine-readable output for `restart`/`stop`/`status`/`cleanup`.
 fn wants_json(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--json")
 }
@@ -136,7 +142,7 @@ pub fn print_help() {
          \x20   -b, --background       start the server detached in the background (explicit default)\n\
          \n\
          COMMANDS:\n\
-         \x20   restart                stop a running server (if any) and start a fresh background one\n\
+         \x20   restart [--json]       stop a running server (if any) and start a fresh background one\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
@@ -145,7 +151,7 @@ pub fn print_help() {
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
-         Pass --json to `stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
+         Pass --json to `restart`/`stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
          can branch on $? without parsing stdout.\n\
          \n\
@@ -179,23 +185,35 @@ pub fn run_background() -> anyhow::Result<()> {
 /// Unlike [`run_background`], which restarts only as a side effect of being asked to start while
 /// one is already up, this is the explicit "give me a clean process now" command: it stops the
 /// running server when present, otherwise just starts one.
-pub fn restart() -> anyhow::Result<()> {
+///
+/// With `json`, the human-readable progress and endpoint hints are suppressed and a single
+/// machine-readable PID-rotation object (`{"old":N|null,"new":M}`) is printed instead, mirroring
+/// the `status`/`cleanup`/`stop` `--json` contract so the result can be piped into scripts.
+pub fn restart(json: bool) -> anyhow::Result<()> {
     let old_pid = if is_running() {
         let pid = read_pid_file();
-        let suffix = pid
-            .map(|process_id| format!(" (pid {process_id})"))
-            .unwrap_or_default();
-        println!("moadim is running{suffix}; stopping it");
+        if !json {
+            let suffix = pid
+                .map(|process_id| format!(" (pid {process_id})"))
+                .unwrap_or_default();
+            println!("moadim is running{suffix}; stopping it");
+        }
         crate::restart::stop_running_and_wait()?;
         pid
     } else {
-        println!("moadim is not running; starting a fresh instance");
+        if !json {
+            println!("moadim is not running; starting a fresh instance");
+        }
         None
     };
     let new_pid = spawn_detached()?;
-    // Headline the rotation so scripts/logs can see the process actually changed.
-    println!("{}", restart_rotation_line(old_pid, new_pid));
-    report_endpoints();
+    if json {
+        println!("{}", restart_json(old_pid, new_pid));
+    } else {
+        // Headline the rotation so scripts/logs can see the process actually changed.
+        println!("{}", restart_rotation_line(old_pid, new_pid));
+        report_endpoints();
+    }
     Ok(())
 }
 
@@ -206,6 +224,19 @@ pub fn restart() -> anyhow::Result<()> {
 fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
     let old = old.map_or_else(|| "none".to_string(), |pid| pid.to_string());
     format!("restarted: pid {old} -> {new}")
+}
+
+/// Render the `restart` PID rotation as a one-line JSON object: `{"old":N|null,"new":M}`.
+///
+/// `old` is the PID of the server that was stopped, or `null` when nothing was running (or its PID
+/// could not be read). `new` is the PID of the freshly spawned process. The shape mirrors the
+/// `status`/`cleanup`/`stop` `--json` objects so every command surfaces a parseable result.
+fn restart_json(old: Option<u32>, new: u32) -> String {
+    serde_json::json!({
+        "old": old,
+        "new": new,
+    })
+    .to_string()
 }
 
 /// Spawn a detached server process and print where to reach and manage it.

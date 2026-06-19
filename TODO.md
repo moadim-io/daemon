@@ -24,7 +24,6 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a CLI integration test (spawn a real listener on an ephemeral port, point the probe at it) that exercises the `status`/`cleanup`/`stop` network paths end-to-end, lifting `cli.rs` off its ~27% coverage floor toward the repo's 100% line-coverage gate
 - Add a `moadim status --wait[=SECS]` flag that polls `GET /health` until the server is reachable (or the timeout elapses), exiting 0 on success and the existing exit-3 on timeout, so scripts can block on startup instead of sleeping
 - Add a `moadim restart --interactive` (or `-i`) flavor that restarts the daemon in the foreground attached to the terminal instead of detached, mirroring `moadim -i`
-- Have `moadim restart` emit its PID-rotation summary as a `--json` object (`{"old":N|null,"new":M}`) too, mirroring the `status`/`cleanup` `--json` contract
 - Give `moadim restart` a `--quiet`/`-q` flag that prints only the rotation line (`restarted: pid <old> -> <new>`) and suppresses the UI/stop/logs hint block, for script consumption
 - Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast
 - Auto-refresh the routine LOGS view (or show a removed badge) after a CLEANUP NOW sweep so stale run output isn't shown for reaped workbenches

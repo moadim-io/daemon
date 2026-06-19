@@ -184,6 +184,25 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Validate a handler identifier, returning `BadRequest` if it is unusable.
+///
+/// The handler name is interpolated verbatim into a crontab line by the sync layer, so an
+/// empty or whitespace-only value writes a broken entry and an embedded newline would inject
+/// additional, attacker-controlled crontab lines. Reject both.
+pub(crate) fn validate_handler(handler: &str) -> Result<(), AppError> {
+    if handler.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "handler must not be empty or whitespace-only".to_string(),
+        ));
+    }
+    if handler.chars().any(char::is_control) {
+        return Err(AppError::BadRequest(
+            "handler must not contain control characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
@@ -256,6 +275,7 @@ pub fn svc_create(
     req: CreateRequest,
 ) -> Result<CronJobResponse, AppError> {
     validate_cron(&req.schedule)?;
+    validate_handler(&req.handler)?;
     let now = now_secs();
     let job = CronJob {
         id: Uuid::new_v4().to_string(),
@@ -285,6 +305,9 @@ pub fn svc_update(
 ) -> Result<CronJobResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
+    }
+    if let Some(ref handler) = req.handler {
+        validate_handler(handler)?;
     }
     let mut lock = store.lock().unwrap();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;

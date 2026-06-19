@@ -2,7 +2,9 @@
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
+    // `version` is intentionally omitted so utoipa derives it from `CARGO_PKG_VERSION`,
+    // keeping the spec in lockstep with the crate instead of a frozen literal (see issue #309).
+    info(title = "Moadim Server API", description = "REST API for managing cron jobs"),
     servers((url = "http://127.0.0.1:5784/api/v1", description = "Local development")),
     paths(
         crate::routes::http::health,

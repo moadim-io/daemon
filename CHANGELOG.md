@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the
+  committed `apis/openapi.json`) no longer advertises a frozen `0.1.0`. The
+  hardcoded `version` literal was dropped from the `#[openapi(info(...))]`
+  attribute so utoipa derives it from `CARGO_PKG_VERSION`, keeping the spec
+  version in lockstep with the crate (now `0.12.0`).
+
 ### Added
 
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable

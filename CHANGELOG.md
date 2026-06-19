@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- The routines iCalendar feed (`/routines.ics`) now advertises a one-hour poll
+  hint via the RFC 7986 `REFRESH-INTERVAL;VALUE=DURATION:PT1H` property plus the
+  widely-honored `X-PUBLISHED-TTL:PT1H` fallback. The feed is regenerated per
+  request, so without a hint subscribers fall back to their client's slow default
+  (often 12–24h) and routine changes lag for hours; the hint asks them to poll
+  hourly instead.
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

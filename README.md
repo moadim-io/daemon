@@ -344,3 +344,7 @@ Full interface definitions are auto-generated at build time — see the [`apis/`
 
 Release history lives in [`CHANGELOG.md`](CHANGELOG.md), following the
 [Keep a Changelog](https://keepachangelog.com/) format.
+
+## License
+
+Licensed under the [MIT License](LICENSE).

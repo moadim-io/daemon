@@ -12,13 +12,16 @@
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env" && cargo install moadim && moadim
 ```
 
-Rust server that exposes cron job management over three interfaces simultaneously:
+Rust server that schedules **cron jobs** (run a script) and **routines** (run an
+AI agent), exposing both over three interfaces simultaneously:
 
-- **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs
+- **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs and routines
 - **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
-All three share the same port. Jobs created through any interface are automatically synced to the OS crontab so they actually run on schedule.
+All three share the same port. Jobs and routines created through any interface are
+automatically synced to the OS crontab so they actually run on schedule. See
+[Routines](#routines) for the agent-loop engine.
 
 ## Installation
 
@@ -49,6 +52,9 @@ attached to your terminal instead, use `moadim --interactive`.
 - Jobs created via REST or MCP are written into your OS crontab automatically
 - Job declarations live in `~/.config/moadim/jobs/` — git-trackable, diff-friendly
 - Handlers are executable scripts in `~/.config/moadim/handlers/` — any language, also git-trackable
+- **Routines** schedule an AI agent instead of a script — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines))
+- **Agents** are a registry of coding agents (`claude`, …) under `~/.config/moadim/agents/<name>.toml`, referenced by routines
+- Each routine run executes in a throwaway **workbench** under `~/.config/moadim/workbenches/`, reaped on an hourly cleanup sweep
 - `job.local.toml` per job for secrets and machine-specific overrides that stay off-git
 - Same REST and MCP interface — no logic duplication between protocols
 - API spec auto-generated at build time into `apis/`
@@ -68,10 +74,19 @@ attached to your terminal instead, use `moadim --interactive`.
 │   └── sync-calendar/
 │       ├── job.toml
 │       └── job.local.toml
-└── handlers/
-    ├── send-report.sh
-    ├── cleanup-temp.py
-    └── sync-calendar.sh
+├── handlers/
+│   ├── send-report.sh
+│   ├── cleanup-temp.py
+│   └── sync-calendar.sh
+├── routines/                  # scheduled AI-agent tasks (see ## Routines)
+│   └── nightly-triage/
+│       ├── routine.toml       # tracked — schedule, agent, prompt, repositories
+│       ├── prompt.md          # tracked — the rendered prompt handed to the agent
+│       ├── run.sh             # generated — the crontab entry invokes this
+│       └── .gitignore         # generated — excludes *.local.* and *.log
+├── agents/                    # registered coding agents referenced by routines
+│   └── claude.toml
+└── workbenches/               # per-run throwaway dirs, reaped on the hourly sweep
 ```
 
 ## Crontab sync

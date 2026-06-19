@@ -120,10 +120,11 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
-/// Print usage help to stdout.
-pub fn print_help() {
+/// Build the usage help text. Every flag listed here must stay in sync with the
+/// aliases [`parse`] actually accepts; [`crate::cli_tests`] asserts as much.
+pub fn help_text() -> String {
     let bind_addr = bind_addr();
-    println!(
+    format!(
         "moadim — cron/MCP/REST server with a web control panel\n\
          \n\
          USAGE:\n\
@@ -132,8 +133,8 @@ pub fn print_help() {
          \n\
          MODES:\n\
          \x20   (default)              start the server in the background and exit\n\
-         \x20   -i, --interactive      run in the foreground, attached to the terminal (Ctrl-C to stop)\n\
-         \x20   -b, --background       start the server detached in the background (explicit default)\n\
+         \x20   -i, --interactive      run in the foreground, attached to the terminal (Ctrl-C to stop); aliases: -f, --foreground\n\
+         \x20   -b, --background       start the server detached in the background (explicit default); aliases: -d, --detach, --daemon\n\
          \n\
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
@@ -143,7 +144,7 @@ pub fn print_help() {
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration\n\
          \x20   help, -h, --help       show this help\n\
-         \x20   version, -V            show the version\n\
+         \x20   version, -V, --version show the version\n\
          \n\
          Pass --json to `stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
@@ -151,7 +152,12 @@ pub fn print_help() {
          \n\
          Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
-    );
+    )
+}
+
+/// Print usage help to stdout.
+pub fn print_help() {
+    println!("{}", help_text());
 }
 
 /// Print the binary version to stdout.

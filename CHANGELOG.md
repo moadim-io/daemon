@@ -13,6 +13,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim restart` accepts a `--json` flag that emits the PID rotation as a single
+  machine-readable object (`{"old":N|null,"new":M}`) instead of the human-readable
+  `restarted: pid <old> -> <new>` line and endpoint hints, so scripts can read the
+  rotated PIDs without parsing prose. `old` is `null` when nothing was running. This
+  completes the `--json` contract across `restart`/`status`/`cleanup`/`stop`.
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

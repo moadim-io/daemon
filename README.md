@@ -256,6 +256,7 @@ moadim status --json   # same, as a machine-readable JSON object
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
 moadim restart         # stop a running server (if any) and start a fresh one
+moadim restart --json  # same, as a machine-readable JSON object
 moadim stop            # ask a running server to stop
 moadim stop --json     # same, as a machine-readable JSON object
 ```
@@ -264,7 +265,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 |--------------------|---------------|-----------|
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
-| `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. |
+| `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. Add `--json` for `{"old":N\|null,"new":M}`. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (matching `status --json`'s shape; the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. Exits `0` when running, `3` when not. |
@@ -276,14 +277,16 @@ with a message on stderr.
 
 ### Scripting
 
-`status`, `cleanup`, and `stop` each accept `--json` for a single-line, machine-readable object
-on stdout. Paired with the exit codes above, a caller gets the full contract without parsing prose:
+`restart`, `status`, `cleanup`, and `stop` each accept `--json` for a single-line, machine-readable
+object on stdout. Paired with the exit codes above, a caller gets the full contract without parsing
+prose:
 
 | Command            | `--json` shape | Exit codes |
 |--------------------|----------------|------------|
 | `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — `pid` is `null` when no pid file is present | `0` running, `3` not |
 | `moadim cleanup --json` | `{"running":bool,"removed":N}` — `removed` is `0` when no server is running | `0` running, `3` not |
 | `moadim stop --json`    | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — same shape as `status --json`; `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
+| `moadim restart --json` | `{"old":N\|null,"new":M}` — `old` is the stopped server's PID (`null` when nothing was running), `new` is the freshly spawned PID | `0` (always restarts) |
 
 Any other failure exits `1` with a message on stderr. The object is always a single line, so
 `moadim status --json | jq -r .pid` and similar pipelines work without buffering.

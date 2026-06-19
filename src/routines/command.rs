@@ -195,12 +195,17 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // the agent inherits their environment — GH_TOKEN, API keys and the like — which cron's
         // minimal env (and, on macOS, the GUI-Keychain-less session) otherwise withholds.
         //
-        // PATH is still *replaced* with this curated list (not merged with the profile's), keeping
-        // binary resolution identical to before the login-shell change: tmux and the agent always
-        // resolve to the same dirs the daemon itself uses, regardless of how the profile orders
-        // PATH. Only environment *variables* are gained from the profile; PATH behaviour is
-        // unchanged.
-        format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
+        // The curated dirs are *appended* to the profile's PATH (`$PATH:<curated>`), not
+        // substituted for it. The profile-sourced `$PATH` therefore keeps precedence, so the
+        // version-manager shim dirs a profile prepends (nvm/pyenv/asdf/volta) survive and the agent
+        // resolves the node/python the user actually selected. The curated list trails as a
+        // fallback, guaranteeing `tmux` and the agent `command` stay resolvable even when the
+        // profile's PATH omits their dirs (or the profile sets no PATH at all). `$PATH` is left
+        // unquoted so the login shell expands it; only the curated suffix is quoted.
+        format!(
+            "export PATH=$PATH:{}",
+            shell_quote(&cron_path(&agent.command))
+        ),
         r#"TS="$(date +%s)""#.to_string(),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),

@@ -44,6 +44,24 @@ fn validate_cron_rejects_invalid() {
 }
 
 #[test]
+fn validate_cron_accepts_6_field() {
+    // croner accepts 6-field `sec min hour dom month dow`; validate_cron
+    // normalizes it down before parsing, so it must be accepted.
+    assert!(validate_cron("0 30 9 * * 1-5").is_ok());
+    assert!(validate_cron("*/30 * * * * *").is_ok());
+}
+
+#[test]
+fn normalize_schedule_projects_to_5_field() {
+    // 6- and 7-field schedules both lose their leading seconds (and trailing
+    // year) so the stored/crontab form is a valid 5-field expression.
+    assert_eq!(normalize_schedule("0 30 9 * * 1-5"), "30 9 * * 1-5");
+    assert_eq!(normalize_schedule("0 30 9 * * 1-5 *"), "30 9 * * 1-5");
+    assert_eq!(normalize_schedule("30 9 * * 1-5"), "30 9 * * 1-5");
+    assert_eq!(normalize_schedule("@daily"), "@daily");
+}
+
+#[test]
 fn validate_cron_accepts_all_documented_keywords() {
     for kw in [
         "@hourly",

@@ -48,6 +48,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- 6-field cron schedules (`sec min hour dom month dow`, accepted by `croner`)
+  are now projected to a valid 5-field OS crontab line instead of being written
+  verbatim. Previously only 7-field expressions had their leading seconds
+  stripped, so a valid 6-field schedule reached the crontab unchanged — where
+  vixie-cron/cronie either rejects the line (silently dropping every managed
+  job) or misreads seconds as minutes (shifting the schedule). `normalize_schedule`
+  and `to_os_schedule` now handle the 6-field form the same way as 7-field.
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

@@ -158,7 +158,10 @@ pub fn new_registry() -> HandlerRegistry {
 
 /// Normalize `expr` to 5-field OS cron format for consistent storage.
 ///
-/// Strips the seconds (field 0) and year (field 6) from any 7-field expression.
+/// Both the 6-field (`sec min hour dom month dow`) and 7-field
+/// (`sec min hour dom month dow year`) forms accepted by `croner` carry a
+/// leading seconds field that the OS crontab cannot express; it is dropped (as
+/// is the trailing year), projecting onto the 5-field `min hour dom month dow`.
 /// `@keyword` schedules and already-5-field expressions are returned unchanged.
 pub(crate) fn normalize_schedule(expr: &str) -> String {
     let trimmed = expr.trim();
@@ -167,7 +170,7 @@ pub(crate) fn normalize_schedule(expr: &str) -> String {
     }
     let fields: Vec<&str> = trimmed.split_ascii_whitespace().collect();
     match fields.len() {
-        7 => fields[1..6].join(" "),
+        6 | 7 => fields[1..6].join(" "),
         _ => trimmed.to_string(),
     }
 }

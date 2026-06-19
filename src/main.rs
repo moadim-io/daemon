@@ -1,6 +1,8 @@
 #![deny(warnings)]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
+/// Compile-time build provenance (crate version + git commit/date).
+mod build_info;
 /// Command-line interface and background-process lifecycle.
 mod cli;
 mod cron_jobs;

@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- The request logger now records `GET /health` at `debug` instead of `info`.
+  The web UI polls `/health` continuously, so at the default `info` level those
+  two-lines-per-poll entries dominated `daemon.log` (thousands of lines a day on
+  an otherwise idle daemon) and buried every other request. Health polls remain
+  visible under `RUST_LOG=debug`; all other requests still log at `info`.
+
 ### Added
 
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable

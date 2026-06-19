@@ -48,6 +48,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Managed cron jobs are now re-synced to the OS crontab on daemon startup,
+  mirroring the routines sync that already ran. Previously the cron-job block was
+  only written on a job create/update/delete, so if it was lost or emptied
+  (manual `crontab -e`/`crontab -r`, an OS migration, or a marker collision) every
+  managed job stayed silently un-fired until the next mutation — even across a
+  restart, while routines self-healed. The startup sync is idempotent, so it is a
+  no-op read on a healthy crontab. (#394)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

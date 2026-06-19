@@ -85,6 +85,14 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
     }
+    // Likewise re-sync managed cron-jobs to the crontab on startup, mirroring the routines sync
+    // above; otherwise a lost or emptied block (manual `crontab -e`/`crontab -r`, an OS migration,
+    // or a marker collision) leaves every managed job silently un-fired until the next job
+    // create/update/delete. `sync_to_crontab` is idempotent, so this is a no-op read on a healthy
+    // crontab.
+    if let Err(err) = sync::sync_to_crontab(&store) {
+        log::warn!("startup crontab sync (cron-jobs) failed: {err}");
+    }
     let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;
     let result =

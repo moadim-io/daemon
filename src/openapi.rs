@@ -1,4 +1,4 @@
-//! OpenAPI 3.0 spec for the Moadim Server REST API, generated from utoipa path decorators.
+//! `OpenAPI` 3.0 spec for the Moadim Server REST API, generated from utoipa path decorators.
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -48,11 +48,11 @@
         crate::routes::http::EchoResponse,
     ))
 )]
-/// OpenAPI document aggregating all REST paths and component schemas.
+/// `OpenAPI` document aggregating all REST paths and component schemas.
 pub struct ApiDoc;
 
 impl ApiDoc {
-    /// Serialize the OpenAPI spec to a pretty-printed JSON string.
+    /// Serialize the `OpenAPI` spec to a pretty-printed JSON string.
     pub fn to_json() -> String {
         use utoipa::OpenApi as _;
         serde_json::to_string_pretty(&Self::openapi()).unwrap_or_default()

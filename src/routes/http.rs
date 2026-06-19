@@ -210,7 +210,7 @@ pub(crate) fn build_app_with_shutdown(
         .with_state(app_state)
 }
 
-/// Write the generated OpenAPI spec JSON to `path`, logging a warning on failure.
+/// Write the generated `OpenAPI` spec JSON to `path`, logging a warning on failure.
 ///
 /// Best-effort: the spec is a development convenience (committed under `apis/`), so a write
 /// failure must not abort server startup. Extracted from [`run_with_listener_until`] so the

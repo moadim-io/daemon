@@ -13,6 +13,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Routines now track **`last_scheduled_trigger_at`** (Unix seconds), the mirror of
+  `last_manual_trigger_at` for scheduled cron firings, surfaced in the REST/OpenAPI
+  routine response. Because the OS crontab runs a routine's generated `run.sh`
+  directly — the daemon never observes a scheduled fire — the script itself stamps
+  the fire time into a new gitignored `scheduled.local.toml` sidecar, which the
+  daemon reads back on load. The sidecar is daemon-read-only and kept separate from
+  the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
+  scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
+  and lets you spot schedules that have never actually fired (#155).
+
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

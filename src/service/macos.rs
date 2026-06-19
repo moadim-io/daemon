@@ -1,4 +1,4 @@
-//! macOS launchd LaunchAgent: render the plist, write it, and (un)load it with `launchctl`.
+//! macOS launchd `LaunchAgent`: render the plist, write it, and (un)load it with `launchctl`.
 
 use std::path::{Path, PathBuf};
 
@@ -22,7 +22,7 @@ pub(super) fn xml_escape(text: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Absolute path to the per-user LaunchAgents plist for the moadim service.
+/// Absolute path to the per-user `LaunchAgents` plist for the moadim service.
 ///
 /// Resolves home through [`crate::paths::home`] so the `MOADIM_HOME_OVERRIDE` test seam redirects
 /// the plist under a tempdir instead of the developer's real `~/Library/LaunchAgents`.
@@ -30,7 +30,7 @@ pub(super) fn plist_path() -> anyhow::Result<PathBuf> {
     plist_path_from_home(crate::paths::home())
 }
 
-/// Resolve the LaunchAgents plist path under `home`, erroring when the home directory is unknown.
+/// Resolve the `LaunchAgents` plist path under `home`, erroring when the home directory is unknown.
 pub(super) fn plist_path_from_home(home: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     let home = home.ok_or_else(|| anyhow::anyhow!("could not determine the home directory"))?;
     Ok(home
@@ -101,7 +101,7 @@ fn report_installed(plist: &Path, log: &Path) {
     println!("  status  launchctl list | grep {LAUNCHD_LABEL}");
 }
 
-/// Write the LaunchAgent plist for the running binary and load it with launchd.
+/// Write the `LaunchAgent` plist for the running binary and load it with launchd.
 pub fn install() -> anyhow::Result<()> {
     let exe = moadim_exe()?;
     let log = daemon_log();
@@ -112,7 +112,7 @@ pub fn install() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Unload the LaunchAgent (if loaded) and delete its plist.
+/// Unload the `LaunchAgent` (if loaded) and delete its plist.
 pub fn uninstall() -> anyhow::Result<()> {
     let plist = plist_path()?;
     if plist.exists() {

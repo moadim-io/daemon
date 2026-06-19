@@ -53,3 +53,5 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Require backticks around code-like items (type names, paths, acronyms) in docs.
+doc_markdown = "deny"

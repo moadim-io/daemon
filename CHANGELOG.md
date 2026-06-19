@@ -21,6 +21,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - `moadim stop --json` now includes the bound `address` field
   (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
   `status --json`'s object shape exactly so both can be parsed uniformly.
+- `moadim cleanup --json` now includes the bound `address` field
+  (`{"running":bool,"removed":N,"address":"127.0.0.1:5784"}`), matching
+  `status --json`/`stop --json` so every `--json` command surfaces the endpoint
+  it talked to, not just the running-state and result.
 - The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
   next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
   a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health

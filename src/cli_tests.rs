@@ -126,10 +126,12 @@ fn cleanup_json_reports_removed_and_running() {
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["removed"], serde_json::json!(3));
+    assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
 
     let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+    assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
 #[test]
@@ -386,6 +388,13 @@ fn bind_addr_honors_override() {
 fn status_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
     let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+#[test]
+fn cleanup_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 

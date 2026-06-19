@@ -70,24 +70,6 @@ fn health_content_contains_status() {
 }
 
 #[test]
-fn echo_tool_returns_message() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .echo(Parameters(EchoInput {
-            message: "test-msg".into(),
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["message"], "test-msg");
-}
-
-#[test]
 fn list_cron_jobs_empty() {
     let handler = make_handler();
     let result = handler.list_cron_jobs().unwrap();

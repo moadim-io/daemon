@@ -12,7 +12,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -27,22 +27,6 @@ pub struct HealthResponse {
     pub running: bool,
     /// Daemon version (from `CARGO_PKG_VERSION`).
     pub version: String,
-}
-
-/// Request body for `POST /echo`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct EchoRequest {
-    /// Message to echo back.
-    pub message: String,
-}
-
-/// Response body for `POST /echo`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct EchoResponse {
-    /// The echoed message.
-    pub message: String,
-    /// Server timestamp (Unix seconds) when the echo was produced.
-    pub timestamp: u64,
 }
 
 /// `GET /` — serve the web client (single-page UI).
@@ -99,19 +83,6 @@ pub async fn shutdown(State(state): State<AppState>) -> Json<ShutdownResponse> {
     })
 }
 
-/// `POST /echo` — parse a JSON body and return the message with a server timestamp.
-#[utoipa::path(post, path = "/echo",
-    request_body = EchoRequest,
-    responses((status = 200, body = EchoResponse), (status = 400, description = "Invalid body")))]
-pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::http::StatusCode> {
-    let parsed: EchoRequest =
-        serde_json::from_slice(&body).map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
-    Ok(Json(EchoResponse {
-        message: parsed.message,
-        timestamp: now_secs(),
-    }))
-}
-
 /// Build the Axum router with all routes, middleware, and state wired up.
 ///
 /// The shutdown signal is created internally; callers that need to trigger shutdown out of band
@@ -161,7 +132,6 @@ pub(crate) fn build_app_with_shutdown(
     let api = Router::new()
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
-        .route("/echo", post(echo))
         .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(
             "/cron-jobs/{id}",

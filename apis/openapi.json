@@ -319,40 +319,6 @@
         }
       }
     },
-    "/echo": {
-      "post": {
-        "tags": [
-          "crate::routes::http"
-        ],
-        "summary": "`POST /echo` — parse a JSON body and return the message with a server timestamp.",
-        "operationId": "echo",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EchoRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EchoResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid body"
-          }
-        }
-      }
-    },
     "/health": {
       "get": {
         "tags": [
@@ -944,39 +910,6 @@
           "managed",
           "system"
         ]
-      },
-      "EchoRequest": {
-        "type": "object",
-        "description": "Request body for `POST /echo`.",
-        "required": [
-          "message"
-        ],
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "Message to echo back."
-          }
-        }
-      },
-      "EchoResponse": {
-        "type": "object",
-        "description": "Response body for `POST /echo`.",
-        "required": [
-          "message",
-          "timestamp"
-        ],
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "The echoed message."
-          },
-          "timestamp": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Server timestamp (Unix seconds) when the echo was produced.",
-            "minimum": 0
-          }
-        }
       },
       "HealthResponse": {
         "type": "object",

@@ -58,6 +58,71 @@ pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> 
         .replace("{prompt}", r#""$(cat prompt.md)""#)
 }
 
+/// The placeholder tokens [`substitute`] understands.
+const KNOWN_PLACEHOLDERS: [&str; 3] = ["{workbench}", "{prompt_file}", "{prompt}"];
+
+/// Return the placeholder-style `{name}` tokens in `arg`.
+///
+/// A token is a `{`, *not* immediately preceded by `$`, wrapping a lowercase identifier
+/// (`[a-z][a-z_]*`), closed by the next `}`. This shape deliberately matches the known
+/// placeholders and nothing else: shell constructs like `${HOME}`, `{}`, `{0}`, or `{print $1}`
+/// are ignored, so only genuine placeholder typos (`{prompt_fil}`, `{wokbench}`) surface.
+fn placeholder_tokens(arg: &str) -> Vec<String> {
+    let bytes = arg.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' && (i == 0 || bytes[i - 1] != b'$') {
+            if let Some(rel) = arg[i + 1..].find('}') {
+                let inner = &arg[i + 1..i + 1 + rel];
+                if inner.starts_with(|ch: char| ch.is_ascii_lowercase())
+                    && inner.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')
+                {
+                    out.push(format!("{{{inner}}}"));
+                }
+                i += 1 + rel + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Validate that an agent's `args` can actually deliver a prompt and carry no typo'd placeholder.
+///
+/// Two silent fire-time failures are caught up front (#322):
+///
+/// * **Typo'd placeholder.** A token like `{prompt_fil}` is left untouched by [`substitute`] and
+///   reaches the agent as a literal argument; the task never runs. Any placeholder-style token
+///   outside [`KNOWN_PLACEHOLDERS`] is rejected, naming the offender.
+/// * **Missing prompt.** If no arg contains `{prompt}` or `{prompt_file}`, the composed prompt is
+///   never passed and the agent launches with no task, burning a full run until the watchdog reaps
+///   it. At least one prompt placeholder is therefore required.
+pub(crate) fn validate_placeholders(args: &[String]) -> Result<(), String> {
+    for arg in args {
+        for token in placeholder_tokens(arg) {
+            if !KNOWN_PLACEHOLDERS.contains(&token.as_str()) {
+                return Err(format!(
+                    "unknown placeholder {token} in args; supported placeholders are {}",
+                    KNOWN_PLACEHOLDERS.join(", ")
+                ));
+            }
+        }
+    }
+    let delivers_prompt = args
+        .iter()
+        .any(|arg| arg.contains("{prompt}") || arg.contains("{prompt_file}"));
+    if !delivers_prompt {
+        return Err(
+            "args must include a prompt placeholder ({prompt} or {prompt_file}); \
+             otherwise the agent launches with no task"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
 fn bin_dir(bin: &str) -> Option<String> {
     let path = std::env::var("PATH").ok()?;

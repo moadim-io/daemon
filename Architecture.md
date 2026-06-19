@@ -247,6 +247,12 @@ The agent command is resolved from a configurable registry at `~/.config/moadim/
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 
+The only placeholders `args` may contain are `{workbench}`, `{prompt_file}`, and `{prompt}`, and at
+least one of `{prompt}` / `{prompt_file}` must appear so the agent actually receives the task.
+Creating or updating a routine validates the referenced agent's `args` against both rules: an unknown
+(typo'd) placeholder token or a missing prompt placeholder is rejected with `400 Bad Request` at edit
+time, rather than silently launching the agent with a garbage or empty task at fire time.
+
 Modules: `src/routines.rs` (model + service + command builder + handlers), `src/routine_storage.rs`
 (`routine.toml` + `prompt.txt` persistence), `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
 Reverse sync (crontab → store) is not implemented for routines.

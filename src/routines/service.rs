@@ -10,7 +10,7 @@ use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
-use super::command::{build_routine_command, slugify};
+use super::command::{build_routine_command, slugify, validate_placeholders};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
     RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
@@ -61,6 +61,8 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
 /// * An agent not present in the registry resolves to no command at fire time (#139). Mirrors the
 ///   `validate_cron` / slug-conflict guards.
 /// * An agent whose config is present on disk but cannot be parsed (#189).
+/// * An agent whose config parses but whose `args` carry a typo'd placeholder or no prompt
+///   placeholder at all, so it would launch with a garbage or empty task (#322).
 ///
 /// A *missing* config for a registered agent is intentionally allowed: the file may be created later,
 /// and the missing-file case is handled (warned + skipped) downstream exactly as before.
@@ -73,7 +75,9 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
         )));
     }
     match load_agent_command(agent) {
-        Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
+        Ok(command) => validate_placeholders(&command.args)
+            .map_err(|reason| AppError::BadRequest(format!("agent {agent:?} config: {reason}"))),
+        Err(AgentLoadError::Missing) => Ok(()),
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
             "agent {agent:?} has a malformed config: {err}"
         ))),

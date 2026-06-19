@@ -24,9 +24,15 @@ Run the checks the pre-push hook enforces before any push:
 
 ```sh
 cargo fmt --check
-cargo clippy
-cargo test
+cargo clippy --all-targets -- -D warnings
+cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 ```
+
+The hook gates are format, lint, and 100% line coverage — not bare
+`cargo test`. The clippy flags mirror CI (`.github/workflows/lint.yml`), and the
+coverage command needs `cargo-llvm-cov` (see [Tests](#tests) for setup). The
+hook additionally checks the test-file convention and a `CHANGELOG.md` entry for
+`src/`/`ui/` changes (both covered below).
 
 Enable the bundled git hooks once per clone:
 

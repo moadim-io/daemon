@@ -53,3 +53,8 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Prefer `map_or`/`is_ok_and`/`is_some_and` over `.map(f).unwrap_or(default)`.
+# The latter is harder to read and, on a `Result`, silently discards the `Err`
+# (e.g. `entry.file_type().map(|t| t.is_dir()).unwrap_or(false)` swallows the
+# I/O error). The dedicated combinators make the fallback explicit.
+map_unwrap_or = "deny"

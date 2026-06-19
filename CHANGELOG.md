@@ -48,6 +48,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Crontab block replacement now matches its delimiters as whole lines instead of
+  raw substrings, so the cron-jobs marker `# BEGIN MOADIM` no longer prefix-matches
+  the routines marker `# BEGIN MOADIM-ROUTINES`. Previously, syncing cron jobs into
+  a crontab that held only the routines block would target the routines delimiters
+  and silently overwrite (wipe) every scheduled routine line. (#324)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

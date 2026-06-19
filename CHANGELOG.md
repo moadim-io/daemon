@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Routine create/update now validates the referenced agent config's `args`
+  placeholders: a typo'd token (e.g. `{prompt_fil}`) or `args` that contain no
+  `{prompt}`/`{prompt_file}` at all are rejected with a `400 Bad Request` at edit
+  time, naming the offending token. Previously such a config passed the
+  agent-registered check and only failed at fire time — launching the agent with
+  a garbage or empty task and burning a full run until the watchdog reaped it
+  (#322).
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

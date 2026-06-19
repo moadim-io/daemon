@@ -82,6 +82,31 @@ async fn build_app_serves_root() {
 }
 
 #[tokio::test]
+async fn build_app_sets_security_headers_on_ui_and_api() {
+    // The whole router carries the security headers (issue #406): assert on a representative
+    // UI response (the SPA at `/`) and a representative API response (`/api/v1/health`).
+    for uri in ["/", "/api/v1/health"] {
+        let resp = build_app(new_store(), crate::routines::new_store())
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(
+            resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            resp.headers().get("referrer-policy").unwrap(),
+            "no-referrer"
+        );
+        assert_eq!(
+            resp.headers().get("content-security-policy").unwrap(),
+            "frame-ancestors 'none'"
+        );
+    }
+}
+
+#[tokio::test]
 async fn build_app_serves_agents() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app

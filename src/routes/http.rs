@@ -205,6 +205,9 @@ pub(crate) fn build_app_with_shutdown(
         // SPA fallback: client-routed pages (`/cron-jobs`, `/routines`) and refreshes on them return
         // the app HTML so the Yew router can resolve the path on load.
         .fallback(get(index))
+        .layer(middleware::from_fn(
+            middlewares::security_headers::security_headers,
+        ))
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         .with_state(app_state)

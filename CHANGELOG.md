@@ -48,6 +48,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
+  hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
+  the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
+  port or a reverse proxy instead of failing against an address the daemon may not
+  be bound to. (#385)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

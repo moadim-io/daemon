@@ -10,65 +10,24 @@ Moadim is a Rust daemon that manages cron jobs and exposes them over two protoco
 
 ## High-level picture
 
-```
-                ┌─────────────────────────────────────────┐
-                │           Axum HTTP server :5784         │
-                │                                          │
-  Browser ──────┤  GET /ui          (inlined HTML+WASM)   │
-  curl/SDK ─────┤  REST /cron-jobs  (JSON)                │
-  AI agent ─────┤  /mcp             (MCP streamable-HTTP) │
-                │                                          │
-                │  Shared AppState:                        │
-                │    CronStore   Arc<Mutex<HashMap>>       │
-                │    HandlerRegistry  Arc<HashSet>         │
-                └──────────────┬──────────────────────────┘
-                               │ read+write on every mutation
-                               ▼
-               ~/.config/moadim/jobs/
-               ├── <uuid>/job.toml          (tracked)
-               ├── <uuid>/job.local.toml    (gitignored, local overrides)
-               └── <uuid>/.gitignore
-```
+A single Axum HTTP server listens on port `5784` and fans incoming requests out to three surfaces from one process: browsers hit `GET /ui` (inlined HTML + WASM), `curl`/SDK clients use the REST `/cron-jobs` endpoints (JSON), and AI agents connect to `/mcp` (MCP streamable-HTTP). All three share a single `AppState` that holds the `CronStore` (an `Arc<Mutex<HashMap>>`) and the `HandlerRegistry` (an `Arc<HashSet>`). Every mutation reads and writes through that shared state, which in turn persists to `~/.config/moadim/jobs/`, where each job lives under its own UUID directory containing a tracked `job.toml`, a gitignored `job.local.toml` for local overrides, and a `.gitignore`.
 
 ---
 
 ## Source layout
 
-```
-src/
-├── main.rs              entry point — binds socket, loads store, starts server
-├── lib.rs               library root — re-exports wasm module when target=wasm32
-│
-├── cron_jobs.rs         data model + service layer + Axum HTTP handlers
-├── storage.rs           TOML persistence (load / write / remove)
-├── system_cron.rs       read-only discovery of host cron jobs
-├── fs_location.rs       captures working dir + exe dir for response headers
-├── paths/mod.rs         path builders for ~/.config/moadim/jobs/
-├── error.rs             AppError → HTTP status codes
-├── banner.rs            startup banner
-├── wasm.rs              wasm-bindgen exports (browser-side)
-│
-├── routes/
-│   ├── http.rs          Axum router assembly + run_with_listener_until
-│   └── mcp.rs           MoadimMcp — rmcp tool_router
-│
-├── middlewares/
-│   ├── logger.rs        request/response logger
-│   └── fs_location.rs   injects x-server-root / x-server-exe-dir headers
-│
-├── utils/
-│   ├── time.rs          now_secs() — Unix timestamp helper
-│   └── schema.rs        schemars override for free-form JSON metadata field
-│
-└── build/               build-script modules (compiled by build.rs, not the binary)
-    ├── mod.rs
-    ├── openapi.rs       writes apis/openapi.json
-    ├── job_schema.rs    writes schemas/job.schema.json + job.example.toml
-    └── ui.rs            runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
+The crate is rooted at `src/`. `main.rs` is the entry point that binds the socket, loads the store, and starts the server; `lib.rs` is the library root that re-exports the wasm module when targeting `wasm32`.
 
-ui/                      Yew workspace member (separate Cargo.toml)
-tests/                   integration tests
-```
+The top-level modules are: `cron_jobs.rs` (data model, service layer, and Axum HTTP handlers); `storage.rs` (TOML persistence — load, write, remove); `system_cron.rs` (read-only discovery of host cron jobs); `fs_location.rs` (captures the working dir and exe dir for response headers); `paths/mod.rs` (path builders for `~/.config/moadim/jobs/`); `error.rs` (maps `AppError` to HTTP status codes); `banner.rs` (startup banner); and `wasm.rs` (wasm-bindgen exports for the browser side).
+
+Submodules group the remaining concerns:
+
+- `routes/` — `http.rs` (Axum router assembly plus `run_with_listener_until`) and `mcp.rs` (`MoadimMcp`, the rmcp `tool_router`).
+- `middlewares/` — `logger.rs` (request/response logger) and `fs_location.rs` (injects the `x-server-root` and `x-server-exe-dir` headers).
+- `utils/` — `time.rs` (`now_secs()`, a Unix timestamp helper) and `schema.rs` (a schemars override for the free-form JSON metadata field).
+- `build/` — build-script modules compiled by `build.rs` rather than into the binary: `mod.rs`, `openapi.rs` (writes `apis/openapi.json`), `job_schema.rs` (writes `schemas/job.schema.json` and `job.example.toml`), and `ui.rs` (runs trunk and inlines WASM into `prebuilt.html` / `$OUT_DIR/index.html`).
+
+Outside `src/`, `ui/` is a Yew workspace member with its own `Cargo.toml`, and `tests/` holds integration tests.
 
 ---
 
@@ -76,19 +35,9 @@ tests/                   integration tests
 
 ### `CronJob` (`src/cron_jobs.rs`)
 
-```rust
-pub struct CronJob {
-    pub id: String,                       // UUID v4
-    pub schedule: String,                 // cron expression
-    pub handler: String,                  // name in ~/.config/moadim/handlers/
-    pub metadata: serde_json::Value,      // arbitrary JSON object
-    pub enabled: bool,
-    pub source: String,                   // "managed" | "system:user-crontab" | "system:etc-crontab" | "system:cron.d/<file>"
-    pub created_at: u64,                  // Unix seconds
-    pub updated_at: u64,
-    pub last_triggered_at: Option<u64>,
-}
-```
+`CronJob` is the core managed-job record. Its fields are: `id` (a UUID v4 string); `schedule` (the cron expression); `handler` (a name under `~/.config/moadim/handlers/`); `metadata` (an arbitrary JSON object, `serde_json::Value`); `enabled` (bool); `source` (one of `"managed"`, `"system:user-crontab"`, `"system:etc-crontab"`, or `"system:cron.d/<file>"`); `created_at` and `updated_at` (Unix seconds); and `last_manual_trigger_at` (an optional Unix timestamp covering manual triggers only — scheduled fires do not update it). The `last_manual_trigger_at` field carries a serde alias for the old `last_triggered_at` key so pre-rename records still deserialize.
+
+> `last_manual_trigger_at` is project-wide: both `CronJob` and `Routine` (`src/routines/model.rs`) carry it, renamed from `last_triggered_at` and kept readable via the `#[serde(alias = "last_triggered_at")]` back-compat alias.
 
 ### `CronJobResponse`
 
@@ -96,10 +45,7 @@ pub struct CronJob {
 
 ### `CronStore` / `HandlerRegistry`
 
-```rust
-pub type CronStore       = Arc<Mutex<HashMap<String, CronJob>>>;
-pub type HandlerRegistry = Arc<HashSet<String>>;
-```
+`CronStore` is a type alias for `Arc<Mutex<HashMap<String, CronJob>>>` and `HandlerRegistry` is a type alias for `Arc<HashSet<String>>`.
 
 Both are cloned into `AppState` (REST) and `MoadimMcp` (MCP). Every write acquires the mutex, updates in memory, then flushes to disk before releasing.
 
@@ -116,7 +62,7 @@ Both are cloned into `AppState` (REST) and `MoadimMcp` (MCP). Every write acquir
 | `svc_create` | Validates cron expr, assigns UUID v4, writes TOML, inserts into store |
 | `svc_update` | Partial-updates fields, bumps `updated_at`, rewrites TOML |
 | `svc_delete` | Removes from store, deletes job directory |
-| `svc_trigger` | Records `last_triggered_at = now`, rewrites TOML |
+| `svc_trigger` | Records `last_manual_trigger_at = now` (**manual** triggers only — scheduled cron firings run the built command directly and never update it), rewrites TOML |
 | `svc_logs_path` | Checks job exists, returns path to `job.local.log` |
 
 Both the HTTP handlers and MCP tools call these directly — there is no duplication of logic between the two transports.
@@ -149,10 +95,7 @@ Middleware stack (outermost first): `logger` → `fs_location`.
 
 Transport: `rmcp::transport::streamable_http_server::StreamableHttpService` with `LocalSessionManager`. Each MCP client gets its own session; the `MoadimMcp` handler is cloned per-session with shared `Arc` store and registry.
 
-Connect from Claude Code:
-```sh
-claude mcp add --transport http moadim http://localhost:5784/mcp
-```
+Connect from Claude Code by adding the server as an HTTP transport named `moadim` pointing at `http://localhost:5784/mcp` (via `claude mcp add --transport http`).
 
 ---
 
@@ -174,14 +117,7 @@ Invalid or missing `job.toml` → directory silently skipped.
 
 ### File layout
 
-```
-~/.config/moadim/jobs/
-└── <uuid>/
-    ├── job.toml         schedule, handler, enabled, timestamps, [metadata]
-    ├── job.local.toml   same schema, overrides job.toml (gitignored)
-    ├── .gitignore       auto-created: *.local.* and *.log
-    └── job.local.log    runtime log (gitignored)
-```
+Each job lives in its own UUID directory under `~/.config/moadim/jobs/`. That directory holds `job.toml` (schedule, handler, enabled flag, timestamps, and a `[metadata]` table); `job.local.toml` (the same schema, overriding `job.toml`, and gitignored); an auto-created `.gitignore` covering `*.local.*` and `*.log`; and `job.local.log` (the runtime log, also gitignored).
 
 Cron expression uses standard 5-field syntax (`min hour dom month dow`). The `cron` crate requires 7 fields internally; `normalize_cron` pads 5-field input to 7 before validation.
 
@@ -210,16 +146,7 @@ and a `title`. Routines are a separate type with their own store (`RoutineStore`
 When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
 time moadim composes `prompt.txt` (a repositories-as-context preamble + the prompt) into
 `~/.config/moadim/routines/<id>/`, then writes a single self-contained shell command into a dedicated
-crontab block:
-
-```
-# BEGIN MOADIM-ROUTINES
-# Managed by moadim — routines (agent tmux sessions)
-<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.txt $WB/; \
-  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
-  tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
-# END MOADIM-ROUTINES
-```
+crontab block. That block is delimited by `# BEGIN MOADIM-ROUTINES` and `# END MOADIM-ROUTINES` markers and contains a single scheduled line. The line stamps the current epoch seconds into a per-run workbench path, creates that workbench directory, copies `prompt.txt` into it, launches the agent in a detached tmux session rooted at the workbench, and wires `tmux pipe-pane` so the session's output is appended to `agent.log`. The line is tagged with a trailing `moadim-routine:<id>` comment so it can be located and replaced on re-sync.
 
 OS cron runs that line directly: it makes a fresh empty workbench under `~/.moadim/workbenches/`,
 launches the agent **interactively** (no `-p`) in a detached tmux session rooted there, and captures
@@ -253,13 +180,7 @@ Reverse sync (crontab → store) is not implemented for routines.
 
 ## Error handling (`src/error.rs`)
 
-```rust
-enum AppError {
-    Internal,           // 500 — disk I/O failures
-    BadRequest(String), // 400 — invalid cron expression
-    NotFound,           // 404 — job ID not in store
-}
-```
+The `AppError` enum has three variants: `Internal` (HTTP 500, for disk I/O failures), `BadRequest(String)` (HTTP 400, for an invalid cron expression), and `NotFound` (HTTP 404, for a job ID not present in the store).
 
 Implements `IntoResponse` → `{"error": "<message>"}` JSON body with matching status code. MCP tools use the `Display` impl of the same error type in a `CallToolResult::error` payload.
 
@@ -311,18 +232,7 @@ These are the bindings called by the Yew UI to communicate with the native serve
 
 ## Startup sequence
 
-```
-main()
-  storage::load_store()          scan ~/.config/moadim/jobs/ → CronStore
-  TcpListener::bind(:5784)
-  routes::http::run_with_listener_until(store, listener, pending())
-    build_app(store)
-      AppState { store, handlers: new_registry() }
-      StreamableHttpService::new(|| MoadimMcp::new(...))
-      Router::new()  ← wire all routes + middleware
-    banner::print(addr)          stdout: REST / MCP / UI URLs
-    axum::serve(listener, app).with_graceful_shutdown(pending())
-```
+On startup, `main()` first calls `storage::load_store()` to scan `~/.config/moadim/jobs/` and build the `CronStore`, then binds a `TcpListener` on port `5784`. It hands the store and listener to `routes::http::run_with_listener_until` along with a never-resolving shutdown future. That function calls `build_app(store)`, which constructs the `AppState` (the store plus a fresh handler registry), wires up the MCP `StreamableHttpService` (each session built via `MoadimMcp::new(...)`), and assembles the `Router` with all routes and middleware. The banner is then printed to stdout (the REST, MCP, and UI URLs), and `axum::serve` runs the app with graceful shutdown bound to that pending future.
 
 `std::future::pending()` means the server runs until the process is killed.
 

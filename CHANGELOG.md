@@ -48,6 +48,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- `moadim stop` / `POST /api/v1/shutdown` no longer hangs forever when a
+  long-lived connection stays open. Axum's graceful shutdown waits for every
+  in-flight connection to close, so an open `/mcp` SSE stream (or any slow
+  client) could keep the serving loop pending indefinitely. The server now
+  bounds the post-shutdown drain to a grace window (default 10s, overridable via
+  `MOADIM_SHUTDOWN_GRACE_MS`): connections still draining when it elapses are
+  abandoned and the process exits cleanly, logging a warning. (#342)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

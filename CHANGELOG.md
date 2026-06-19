@@ -48,6 +48,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- An unknown or mistyped command (e.g. `moadim staus`) is no longer treated as a
+  success. The parser now classifies an unrecognized first argument as a usage
+  error distinct from an explicit `help`/`-h`/`--help` request: it prints
+  `unknown command: <arg>` plus a hint to **stderr** and exits **2**, instead of
+  printing help to stdout and exiting `0`. Explicit `help` is unchanged (stdout,
+  exit `0`). This keeps the script-friendly exit-code contract intact so a
+  wrapper, systemd unit, or CI step can detect a typo. (#303)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

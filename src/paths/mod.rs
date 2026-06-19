@@ -1,11 +1,15 @@
 //! Path builders for the moadim jobs and handlers directory layout.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 /// Environment variable that, when set, overrides the home directory all moadim paths resolve
 /// under. Used by tests to redirect config/routines/jobs/agents/workbenches into a tempdir so they
 /// never read or write the user's real `~/.config/moadim`.
 const HOME_OVERRIDE_ENV: &str = "MOADIM_HOME_OVERRIDE";
+
+/// Environment variable from the XDG Base Directory spec that relocates the user's config root.
+const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 
 /// Resolve the base home directory, honoring the [`HOME_OVERRIDE_ENV`] test seam when set.
 ///
@@ -18,30 +22,47 @@ pub(crate) fn home() -> Option<PathBuf> {
     }
 }
 
-/// Returns the path to `~/.config/moadim/jobs/`.
+/// Resolve the config root the moadim config tree nests under, honoring the XDG Base Directory
+/// spec.
+///
+/// When `$XDG_CONFIG_HOME` is set to an **absolute** path it is used verbatim; an unset, empty, or
+/// relative value falls back to `$HOME/.config`. This mirrors the `dirs` crate that the Linux
+/// systemd installer ([`crate::service`]) already uses for the unit path, so a user who relocates
+/// their config root via `$XDG_CONFIG_HOME` gets a single coherent config tree instead of a
+/// surprise second one under `~/.config`.
+fn config_root() -> PathBuf {
+    config_root_from(std::env::var_os(XDG_CONFIG_HOME_ENV), home())
+}
+
+/// Resolve the config root from an explicit `$XDG_CONFIG_HOME` value and home directory.
+///
+/// Split out from [`config_root`] so the resolution rules are unit-testable without mutating
+/// process-global environment variables. A relative `$XDG_CONFIG_HOME` is ignored, per the spec
+/// ("All paths set in these environment variables must be absolute"). Falls back to `.` when the
+/// home directory is undeterminable.
+fn config_root_from(xdg: Option<OsString>, home: Option<PathBuf>) -> PathBuf {
+    if let Some(raw) = xdg {
+        let candidate = PathBuf::from(raw);
+        if candidate.is_absolute() {
+            return candidate;
+        }
+    }
+    home.unwrap_or_else(|| PathBuf::from(".")).join(".config")
+}
+
+/// Returns the moadim config directory: `$XDG_CONFIG_HOME/moadim`, defaulting to `~/.config/moadim`.
+pub fn config_dir() -> PathBuf {
+    config_root().join("moadim")
+}
+
+/// Returns the path to `{config_dir}/jobs/` (default `~/.config/moadim/jobs/`).
 pub fn jobs_dir() -> PathBuf {
-    jobs_dir_from_home(home())
+    config_dir().join("jobs")
 }
 
-/// Returns the jobs directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn jobs_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("jobs")
-}
-
-/// Returns the path to `~/.config/moadim/handlers/`.
+/// Returns the path to `{config_dir}/handlers/` (default `~/.config/moadim/handlers/`).
 pub fn handlers_dir() -> PathBuf {
-    handlers_dir_from_home(home())
-}
-
-/// Returns the handlers directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn handlers_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("handlers")
+    config_dir().join("handlers")
 }
 
 /// Returns the path to `{jobs_dir}/{id}/`.
@@ -71,17 +92,9 @@ pub fn job_log_path(id: &str) -> PathBuf {
 
 // ─── Routines ────────────────────────────────────────────────────────────────
 
-/// Returns the path to `~/.config/moadim/routines/`.
+/// Returns the path to `{config_dir}/routines/` (default `~/.config/moadim/routines/`).
 pub fn routines_dir() -> PathBuf {
-    routines_dir_from_home(home())
-}
-
-/// Returns the routines directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn routines_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("routines")
+    config_dir().join("routines")
 }
 
 /// Returns the path to `{routines_dir}/{id}/`.
@@ -120,49 +133,29 @@ pub fn routine_script_path(id: &str) -> PathBuf {
 
 // ─── Agent registry ──────────────────────────────────────────────────────────
 
-/// Returns the path to `~/.config/moadim/agents/`.
+/// Returns the path to `{config_dir}/agents/` (default `~/.config/moadim/agents/`).
 pub fn agents_dir() -> PathBuf {
-    agents_dir_from_home(home())
+    config_dir().join("agents")
 }
 
-/// Returns the agents directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn agents_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("agents")
-}
-
-/// Returns the path to `~/.config/moadim/agents/{name}.toml`.
+/// Returns the path to `{agents_dir}/{name}.toml`.
 pub fn agent_toml_path(name: &str) -> PathBuf {
     agents_dir().join(format!("{name}.toml"))
 }
 
 // ─── Daemon runtime files ────────────────────────────────────────────────────
 
-/// Returns the path to `~/.config/moadim/`.
-pub fn config_dir() -> PathBuf {
-    config_dir_from_home(home())
-}
-
-/// Returns the moadim config directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn config_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-}
-
-/// Returns the path to `~/.config/moadim/moadim.pid`, where the running server records its PID.
+/// Returns the path to `{config_dir}/moadim.pid`, where the running server records its PID.
 pub fn pid_file() -> PathBuf {
     config_dir().join("moadim.pid")
 }
 
-/// Returns the path to `~/.config/moadim/daemon.log`, where a backgrounded server writes its output.
+/// Returns the path to `{config_dir}/daemon.log`, where a backgrounded server writes its output.
 pub fn daemon_log_file() -> PathBuf {
     config_dir().join("daemon.log")
 }
 
-/// Returns the path to `~/.config/moadim/.gitignore`, used to keep generated runtime
+/// Returns the path to `{config_dir}/.gitignore`, used to keep generated runtime
 /// files (`*.pid`, `*.log`) out of version control when the config dir is tracked.
 pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
@@ -170,18 +163,10 @@ pub fn config_gitignore_path() -> PathBuf {
 
 // ─── System prompts ──────────────────────────────────────────────────────────
 
-/// Returns the path to `~/.config/moadim/user_prompt.md`, where the user writes a persistent
+/// Returns the path to `{config_dir}/user_prompt.md`, where the user writes a persistent
 /// system prompt injected into every agent workbench `CLAUDE.md` alongside the moadim prompt.
 pub fn user_prompt_path() -> PathBuf {
-    user_prompt_path_from_home(home())
-}
-
-/// Returns the user prompt path under `home`, or `.` if `home` is `None`.
-pub(crate) fn user_prompt_path_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("user_prompt.md")
+    config_dir().join("user_prompt.md")
 }
 
 // ─── Workbenches ─────────────────────────────────────────────────────────────

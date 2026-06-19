@@ -382,6 +382,73 @@ fn replace_block_appends_trailing_newline_to_unterminated_rest() {
     );
 }
 
+// ─── marker collision with the routines block (issue #324) ───────────────────
+
+#[test]
+fn replace_block_does_not_match_routines_marker_as_prefix() {
+    // A crontab that holds ONLY the routines block (`# BEGIN MOADIM-ROUTINES`)
+    // and no cron-jobs block. The cron-jobs marker `# BEGIN MOADIM` is a prefix
+    // of the routines marker; a substring `find` would match it here and wipe
+    // the routines block. Whole-line matching must leave the routines block
+    // untouched and *append* the cron-jobs block instead.
+    let crontab = "# BEGIN MOADIM-ROUTINES\n\
+                   # Managed by moadim — routines (agent tmux sessions)\n\
+                   * * * * * /bin/sh -l '/r/run.sh' # moadim-routine:rid\n\
+                   # END MOADIM-ROUTINES\n";
+    let block = "# BEGIN MOADIM\n# hdr\n30 9 * * * /cmd # moadim:uid\n# END MOADIM";
+    let result = replace_block(crontab, block);
+
+    assert!(
+        result.contains("# moadim-routine:rid"),
+        "routines block was wiped: {result}"
+    );
+    assert!(
+        result.contains("# BEGIN MOADIM-ROUTINES"),
+        "routines begin marker lost: {result}"
+    );
+    assert!(
+        result.contains("30 9 * * * /cmd # moadim:uid"),
+        "cron-jobs block not appended: {result}"
+    );
+}
+
+#[test]
+fn replace_block_targets_exact_marker_among_both_blocks() {
+    // Both blocks present. Replacing the cron-jobs block must edit only it and
+    // leave the adjacent routines block byte-for-byte intact.
+    let crontab = "# BEGIN MOADIM\nold # moadim:old\n# END MOADIM\n\
+                   # BEGIN MOADIM-ROUTINES\n* * * * * /bin/sh -l '/r/run.sh' # moadim-routine:rid\n# END MOADIM-ROUTINES\n";
+    let block = "# BEGIN MOADIM\nnew # moadim:new\n# END MOADIM";
+    let result = replace_block(crontab, block);
+
+    assert!(
+        result.contains("new # moadim:new"),
+        "not replaced: {result}"
+    );
+    assert!(
+        !result.contains("old # moadim:old"),
+        "stale line kept: {result}"
+    );
+    assert!(
+        result.contains("* * * * * /bin/sh -l '/r/run.sh' # moadim-routine:rid"),
+        "routines block disturbed: {result}"
+    );
+    assert!(
+        result.contains("# END MOADIM-ROUTINES"),
+        "routines end marker lost: {result}"
+    );
+}
+
+#[test]
+fn find_marker_line_ignores_surrounding_whitespace() {
+    // A marker indented with leading/trailing whitespace still matches by line,
+    // and the reported offsets bracket the marker text exactly.
+    let crontab = "noise\n  # END MOADIM  \n";
+    let (start, end) = find_marker_line(crontab, "# END MOADIM").expect("marker found");
+    assert_eq!(&crontab[start..end], "  # END MOADIM");
+    assert!(find_marker_line(crontab, "# BEGIN MOADIM").is_none());
+}
+
 // ─── to_os_schedule odd-field branch ─────────────────────────────────────────
 
 #[test]

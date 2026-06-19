@@ -274,6 +274,50 @@ fn svc_create_invalid_cron_returns_err() {
 }
 
 #[test]
+fn svc_create_blank_handler_returns_err() {
+    let store = new_store();
+    for handler in ["", "   "] {
+        let req = CreateRequest {
+            schedule: "@daily".into(),
+            handler: handler.into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        };
+        assert!(svc_create(&store, &new_registry(), req).is_err());
+    }
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_update_blank_handler_returns_err() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "keep".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let req = UpdateRequest {
+        schedule: None,
+        handler: Some("   ".into()),
+        metadata: None,
+        enabled: None,
+    };
+    assert!(svc_update(&store, &new_registry(), &id, req).is_err());
+    // The original handler is left untouched after a rejected update.
+    assert_eq!(store.lock().unwrap().get(&id).unwrap().handler, "keep");
+
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
 fn svc_update_changes_all_fields() {
     let store = new_store();
     let created = svc_create(

@@ -184,6 +184,21 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Reject a blank handler identifier.
+///
+/// The handler names the script under the handlers directory to spawn when the
+/// schedule fires (`svc_trigger`). A blank or whitespace-only value would be
+/// persisted as a job that can never resolve to an executable, so it is caught
+/// here before anything is written to disk.
+fn validate_handler(handler: &str) -> Result<(), AppError> {
+    if handler.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "handler must not be empty".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
@@ -256,6 +271,7 @@ pub fn svc_create(
     req: CreateRequest,
 ) -> Result<CronJobResponse, AppError> {
     validate_cron(&req.schedule)?;
+    validate_handler(&req.handler)?;
     let now = now_secs();
     let job = CronJob {
         id: Uuid::new_v4().to_string(),
@@ -285,6 +301,9 @@ pub fn svc_update(
 ) -> Result<CronJobResponse, AppError> {
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
+    }
+    if let Some(ref handler) = req.handler {
+        validate_handler(handler)?;
     }
     let mut lock = store.lock().unwrap();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;

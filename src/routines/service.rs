@@ -77,6 +77,9 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
             "agent {agent:?} has a malformed config: {err}"
         ))),
+        Err(AgentLoadError::Read(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} config is unreadable: {err}"
+        ))),
     }
 }
 

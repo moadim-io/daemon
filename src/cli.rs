@@ -49,7 +49,11 @@ pub enum Command {
     /// Spawn the server as a detached background process, then exit (the default, non-interactive).
     Background,
     /// Stop a running background server (if any) and start a fresh detached instance.
-    Restart,
+    Restart {
+        /// Suppress everything but the one-line PID-rotation summary, so scripts that only care
+        /// about the new PID get no surrounding chatter (the "stopping it"/hint-block lines).
+        quiet: bool,
+    },
     /// Ask a running background server to stop. `json` requests machine-readable output.
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
@@ -87,7 +91,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
         None => Command::Background,
-        Some("restart") => Command::Restart,
+        Some("restart") => Command::Restart {
+            quiet: wants_quiet(&args[1..]),
+        },
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
             quiet: wants_quiet(&args[1..]),
@@ -115,7 +121,7 @@ fn wants_json(rest: &[String]) -> bool {
 }
 
 /// Whether a `--quiet`/`-q` flag appears among a command's trailing arguments, requesting that
-/// `stop` suppress its human-readable status line.
+/// `stop`/`restart` suppress their human-readable status lines.
 fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
@@ -136,7 +142,7 @@ pub fn print_help() {
          \x20   -b, --background       start the server detached in the background (explicit default)\n\
          \n\
          COMMANDS:\n\
-         \x20   restart                stop a running server (if any) and start a fresh background one\n\
+         \x20   restart [-q]           stop a running server (if any) and start a fresh background one (-q/--quiet: rotation line only)\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
@@ -179,23 +185,34 @@ pub fn run_background() -> anyhow::Result<()> {
 /// Unlike [`run_background`], which restarts only as a side effect of being asked to start while
 /// one is already up, this is the explicit "give me a clean process now" command: it stops the
 /// running server when present, otherwise just starts one.
-pub fn restart() -> anyhow::Result<()> {
+///
+/// With `quiet`, only the one-line PID-rotation summary is printed; the "stopping it"/"not
+/// running" preamble and the reach/manage hint block are suppressed, mirroring `stop --quiet`, so
+/// a script can capture the rotation line alone.
+pub fn restart(quiet: bool) -> anyhow::Result<()> {
     let old_pid = if is_running() {
         let pid = read_pid_file();
-        let suffix = pid
-            .map(|process_id| format!(" (pid {process_id})"))
-            .unwrap_or_default();
-        println!("moadim is running{suffix}; stopping it");
+        if !quiet {
+            let suffix = pid
+                .map(|process_id| format!(" (pid {process_id})"))
+                .unwrap_or_default();
+            println!("moadim is running{suffix}; stopping it");
+        }
         crate::restart::stop_running_and_wait()?;
         pid
     } else {
-        println!("moadim is not running; starting a fresh instance");
+        if !quiet {
+            println!("moadim is not running; starting a fresh instance");
+        }
         None
     };
     let new_pid = spawn_detached()?;
-    // Headline the rotation so scripts/logs can see the process actually changed.
+    // Headline the rotation so scripts/logs can see the process actually changed; this is the one
+    // line `--quiet` keeps, since it carries the new PID a script restarts to learn.
     println!("{}", restart_rotation_line(old_pid, new_pid));
-    report_endpoints();
+    if !quiet {
+        report_endpoints();
+    }
     Ok(())
 }
 

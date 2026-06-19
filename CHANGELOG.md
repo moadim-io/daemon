@@ -18,6 +18,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the exit-code contract (`0` when a server was stopped, `3` when none was
   running), so scripts that branch on `$?` alone get no stdout noise. The flag is
   ignored under `--json`, which always prints its single machine-readable object.
+- `moadim restart` accepts a `--quiet`/`-q` flag that suppresses everything but
+  the one-line PID-rotation summary (`restarted: pid <old> -> <new>`): the
+  `moadim is running … ; stopping it` / `moadim is not running …` preamble and
+  the reach/manage hint block are dropped, mirroring `stop --quiet`, so a script
+  can capture the new PID without parsing surrounding chatter.
 - `moadim stop --json` now includes the bound `address` field
   (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
   `status --json`'s object shape exactly so both can be parsed uniformly.

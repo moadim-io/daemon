@@ -155,7 +155,23 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+    assert_eq!(parse(argv(&["restart"])), Command::Restart { quiet: false });
+}
+
+#[test]
+fn restart_quiet_flag() {
+    for flag in ["--quiet", "-q"] {
+        assert_eq!(
+            parse(argv(&["restart", flag])),
+            Command::Restart { quiet: true },
+            "flag {flag}"
+        );
+    }
+    // An unrelated trailing flag does not switch on quiet output.
+    assert_eq!(
+        parse(argv(&["restart", "--verbose"])),
+        Command::Restart { quiet: false }
+    );
 }
 
 #[test]
@@ -529,7 +545,9 @@ fn restart_starts_fresh_when_none_running() {
     let home = temp_home("restart-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart().unwrap();
+    restart(false).unwrap();
+    // --quiet drops the "not running" preamble and hint block but still rotates and prints the line.
+    restart(true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -543,6 +561,22 @@ fn restart_replaces_running_server() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart().unwrap();
+    restart(false).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_quiet_replaces_running_server() {
+    // The running branch under --quiet: the pid is read for the rotation line but the
+    // "stopping it" preamble and the hint block are suppressed.
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("restart-quiet-running");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "2000");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    write_pid_file().unwrap();
+    server.stop_after(Duration::from_millis(80));
+    restart(true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }

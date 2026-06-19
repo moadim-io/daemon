@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart => cli::restart(),
+        cli::Command::Restart { quiet } => cli::restart(quiet),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
         cli::Command::Foreground => run_server().await,

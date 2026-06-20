@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_dir, routine_gitignore_path, routine_prompt_path, routine_state_path,
-    routine_toml_path, routines_dir,
+    routine_dir, routine_gitignore_path, routine_prompt_path, routine_scheduled_state_path,
+    routine_state_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -62,6 +62,19 @@ struct RuntimeState {
     last_manual_trigger_at: Option<u64>,
 }
 
+/// Scheduler-written runtime state for a routine, persisted to the gitignored
+/// `scheduled.local.toml` sidecar.
+///
+/// Written by the routine's generated `run.sh` at each scheduled cron firing (the daemon is not in
+/// the loop then) and only ever read here — kept separate from [`RuntimeState`] so a daemon-side
+/// re-persist of `state.local.toml` can never clobber the scheduler's timestamp.
+#[derive(Debug, Deserialize, Serialize)]
+struct ScheduledState {
+    /// Unix timestamp of the last scheduled (cron) firing, or `None` if it has never fired.
+    #[serde(default)]
+    last_scheduled_trigger_at: Option<u64>,
+}
+
 /// Parse a routine TOML file at `path`, returning `None` on any error.
 fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     let text = std::fs::read_to_string(path).ok()?;
@@ -77,6 +90,16 @@ fn read_runtime_state(dir_name: &str) -> Option<u64> {
         .last_manual_trigger_at
 }
 
+/// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar, returning
+/// `None` when the sidecar is absent or unparsable (e.g. before the routine's schedule has ever
+/// fired). The daemon only reads this file; it is written by the routine's `run.sh` at fire time.
+fn read_scheduled_state(dir_name: &str) -> Option<u64> {
+    let text = std::fs::read_to_string(routine_scheduled_state_path(dir_name)).ok()?;
+    toml::from_str::<ScheduledState>(&text)
+        .ok()?
+        .last_scheduled_trigger_at
+}
+
 /// Load a routine from `{routines_dir}/{dir_name}/routine.toml`.
 ///
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
@@ -89,6 +112,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
     let last_manual_trigger_at = read_runtime_state(dir_name).or(toml.last_manual_trigger_at);
+    let last_scheduled_trigger_at = read_scheduled_state(dir_name);
     Some(Routine {
         id,
         schedule: toml.schedule?,
@@ -101,6 +125,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         created_at: toml.created_at.unwrap_or(0),
         updated_at: toml.updated_at.unwrap_or(0),
         last_manual_trigger_at,
+        last_scheduled_trigger_at,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
     })

@@ -9,7 +9,7 @@
 **One-line install** — install Rust/Cargo, install moadim, then run it:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env" && cargo install moadim && moadim
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env" && cargo install --locked moadim && moadim
 ```
 
 Rust server that exposes cron job management over three interfaces simultaneously:
@@ -23,8 +23,13 @@ All three share the same port. Jobs created through any interface are automatica
 ## Installation
 
 ```sh
-cargo install moadim
+cargo install --locked moadim
 ```
+
+`--locked` installs the exact dependency graph published and tested with this
+release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
+to the newest semver-compatible version at install time — so a bad or breaking
+transitive bump can't fail an otherwise-unchanged install.
 
 If `moadim` is not found after install, add Cargo's bin directory to your PATH:
 

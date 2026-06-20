@@ -27,6 +27,10 @@ pub struct HealthResponse {
     pub running: bool,
     /// Daemon version (from `CARGO_PKG_VERSION`).
     pub version: String,
+    /// Short git commit SHA the daemon was built from, or `"unknown"` outside a git checkout.
+    pub git_sha: String,
+    /// Committer date (`YYYY-MM-DD`) of the build commit, or `"unknown"` outside a git checkout.
+    pub build_date: String,
 }
 
 /// Request body for `POST /echo`.
@@ -74,7 +78,9 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
         uptime_secs: now_secs().saturating_sub(state.uptime_start),
         running: true,
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: crate::build_info::VERSION.to_string(),
+        git_sha: crate::build_info::GIT_SHA.to_string(),
+        build_date: crate::build_info::BUILD_DATE.to_string(),
     })
 }
 

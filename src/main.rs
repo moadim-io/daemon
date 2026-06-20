@@ -1,4 +1,8 @@
 #![deny(warnings)]
+// Forbid `.unwrap()` in production code so a poisoned lock or other panic
+// cannot take the daemon down. Tests use `.unwrap()` freely (panicking is the
+// desired failure mode there), so the lint is scoped to non-test builds.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
 /// Compile-time build provenance (crate version + git commit/date).

@@ -73,6 +73,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The in-memory routine and cron-job stores no longer panic the request that
+  observes a poisoned lock. Every `Mutex::lock().unwrap()` on these stores was
+  replaced with a new `LockRecover::lock_recover()` extension that recovers the
+  guard from `PoisonError` (the protected `HashMap` is still structurally valid),
+  so one panicking handler can't cascade into every later request taking the same
+  lock. The two `get_mut(id).unwrap()` invariant unwraps in `svc_update`/
+  `svc_trigger` became `ok_or(AppError::NotFound)?`, removing the last panicking
+  unwraps from the production code paths.
 - Managed cron jobs are now re-synced to the OS crontab on daemon startup,
   mirroring the routines sync that already ran. Previously the cron-job block was
   only written on a job create/update/delete, so if it was lost or emptied

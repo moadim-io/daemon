@@ -12,6 +12,7 @@
 //! is (re)created enabled. Suppressing re-add after an explicit delete (e.g. a "removed defaults"
 //! marker) is tracked as a follow-up.
 
+use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::cron_jobs::normalize_schedule;
@@ -144,7 +145,7 @@ pub fn ensure_default_routines(store: &RoutineStore) {
             );
             continue;
         }
-        store.lock().unwrap().insert(routine.id.clone(), routine);
+        store.lock_recover().insert(routine.id.clone(), routine);
     }
 }
 

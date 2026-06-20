@@ -1,5 +1,6 @@
 //! Cron job data model, service functions, and Axum HTTP handlers.
 
+use crate::utils::lock::LockRecover;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -225,7 +226,7 @@ pub struct UpdateRequest {
 
 /// Return all jobs sorted by creation time (oldest first).
 pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobResponse> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
     jobs.sort_by_key(|j| j.created_at);
     drop(lock);
@@ -269,7 +270,7 @@ pub fn svc_create(
         last_manual_trigger_at: None,
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
-    store.lock().unwrap().insert(job.id.clone(), job.clone());
+    store.lock_recover().insert(job.id.clone(), job.clone());
     if let Err(err) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after create failed: {err}");
     }
@@ -286,7 +287,7 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(sched) = req.schedule {
         job.schedule = normalize_schedule(&sched);
@@ -316,7 +317,7 @@ pub fn svc_delete(
     handlers: &HandlerRegistry,
     id: &str,
 ) -> Result<CronJobResponse, AppError> {
-    let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+    let job = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after delete failed: {err}");
@@ -327,7 +328,7 @@ pub fn svc_delete(
 /// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk,
 /// then spawn the handler script from the handlers directory if it exists.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     job.last_manual_trigger_at = Some(now_secs());
     let job = job.clone();
@@ -428,7 +429,7 @@ pub async fn trigger(
 
 /// Return the log file path for job `id`, or `NotFound` if no such job exists.
 pub fn svc_logs_path(store: &CronStore, id: &str) -> Result<std::path::PathBuf, AppError> {
-    if !store.lock().unwrap().contains_key(id) {
+    if !store.lock_recover().contains_key(id) {
         return Err(AppError::NotFound);
     }
     Ok(crate::paths::job_log_path(id))

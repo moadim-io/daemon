@@ -96,6 +96,7 @@ attached to your terminal instead, use `moadim --interactive`.
 │       └── .gitignore         # generated — excludes *.local.* and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
+├── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
 └── workbenches/               # per-run throwaway dirs, reaped on the hourly sweep
 ```
 
@@ -268,6 +269,23 @@ GET    /routines.ics          # subscribe to fire times as a calendar feed
 `~/.config/moadim/agents/<agent>.toml`. API responses include
 `agent_registered` so callers can tell whether the named agent is configured on
 the host.
+
+### Global user prompt
+
+An optional `~/.config/moadim/user_prompt.md` lets you inject persistent,
+host-wide instructions into **every** routine. At launch each run renders a
+`CLAUDE.md` in its workbench from two layers:
+
+1. **Moadim preamble** — the daemon-managed header, the routine-origin
+   disclosure (naming the routine), and the run-date/timezone stamp.
+2. **Your user prompt** — if `user_prompt.md` exists, its contents are appended
+   below a `---` separator.
+
+Use it for standing guidance that should apply to all routines regardless of
+their individual `prompt` — coding conventions, who to tag, tone, or a default
+identity. It is purely additive: a missing file is skipped silently, and it
+never replaces a routine's own `prompt`. Because it is user-scope (not per
+routine), it lives at the config root rather than inside a routine folder.
 
 ## Running
 

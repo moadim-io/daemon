@@ -67,6 +67,10 @@ fn health_content_contains_status() {
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     assert_eq!(val["status"], "ok");
     assert_eq!(val["running"], true);
+    // Build provenance is surfaced for parity with `GET /health` and `--version`.
+    assert_eq!(val["version"], crate::build_info::VERSION);
+    assert_eq!(val["git_sha"], crate::build_info::GIT_SHA);
+    assert_eq!(val["build_date"], crate::build_info::BUILD_DATE);
 }
 
 #[test]

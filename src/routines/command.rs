@@ -1,6 +1,6 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
-use crate::paths::routine_prompt_path;
+use crate::paths::{routine_prompt_path, routine_scheduled_state_path};
 
 use super::agents::AgentCommand;
 use super::model::Routine;
@@ -179,6 +179,9 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
+    let scheduled_state_path = routine_scheduled_state_path(&slug)
+        .to_string_lossy()
+        .into_owned();
 
     let prompt_file_ref = "prompt.md";
     let workbench_ref = ".";
@@ -202,6 +205,16 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
+        // Record this scheduled firing. The daemon never sees a cron run (the OS crontab executes
+        // this script directly), so the script itself stamps the fire time into the routine's
+        // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
+        // `last_scheduled_trigger_at` on load. Written before the prompt-copy guard below so an
+        // aborted run still records that the schedule fired, and best-effort (`|| true`) so a
+        // sidecar write failure never blocks launching the agent.
+        format!(
+            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
+            shell_quote(&scheduled_state_path)
+        ),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),

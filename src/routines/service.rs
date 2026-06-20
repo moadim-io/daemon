@@ -240,6 +240,7 @@ pub fn svc_create(
         created_at: now,
         updated_at: now,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };

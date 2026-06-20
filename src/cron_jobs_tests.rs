@@ -736,6 +736,48 @@ fn svc_trigger_spawns_existing_handler_script() {
     let _ = std::fs::remove_file(&handler_path);
 }
 
+#[test]
+fn svc_trigger_resolves_extensioned_handler() {
+    // Regression for #440: a handler stored with a script extension (e.g.
+    // `greet.sh`) is resolved by the scheduled crontab launch but used to be
+    // missed by the manual trigger, which only matched the extensionless name.
+    // svc_trigger must now resolve it via `resolve_handler_path` and take the
+    // exists() branch, spawning a script whose stored name carries no extension.
+    let handlers = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers).unwrap();
+    let handler_name = format!("cov-ext-{}", uuid::Uuid::new_v4());
+    // The stored handler name has no extension; the file on disk does.
+    let handler_path = handlers.join(format!("{handler_name}.sh"));
+    std::fs::write(&handler_path, "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut perms = std::fs::metadata(&handler_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&handler_path, perms).unwrap();
+    }
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: handler_name.clone(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let triggered = svc_trigger(&store, &id).unwrap();
+    assert!(triggered.last_manual_trigger_at.is_some());
+
+    crate::storage::remove_job_dir(&id).unwrap();
+    let _ = std::fs::remove_file(&handler_path);
+}
+
 #[tokio::test]
 async fn replace_handler_updates_job() {
     use axum::extract::{Path, State};

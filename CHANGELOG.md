@@ -48,6 +48,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Manually triggering a cron job (`POST /api/v1/cron-jobs/{id}/trigger`) now
+  resolves the handler the same way the scheduled crontab launch does — an exact
+  filename match first, then common script extensions (`sh`, `py`, `js`, …) via
+  the shared `resolve_handler_path`. Previously the trigger path matched only an
+  extensionless name, so a handler stored as e.g. `greet.sh` fired on schedule
+  but silently no-opped when triggered by hand. (#440)
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

@@ -333,7 +333,13 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
-    let handler_path = crate::paths::handlers_dir().join(&job.handler);
+    // Resolve the handler the same way the scheduled crontab launch does
+    // (`format_crontab_line` -> `resolve_handler_path`): an exact filename match
+    // first, then common script extensions. A bare `handlers_dir().join()` only
+    // matched an extensionless name, so a handler stored as e.g. `greet.sh` fired
+    // on schedule but silently no-opped on manual trigger (#440).
+    let handler_path =
+        crate::sync::resolve_handler_path(&job.handler, &crate::paths::handlers_dir());
     if handler_path.exists() {
         if let Err(err) = std::process::Command::new(&handler_path).spawn() {
             log::warn!("trigger: failed to spawn handler {:?}: {err}", handler_path);

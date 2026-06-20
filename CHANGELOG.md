@@ -58,6 +58,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The generated `prompt.md` no longer emits a dangling "These repositories are
+  relevant — clone any you need:" header with an empty bullet list when a routine
+  has no `repositories`. `compose_prompt` now writes a plain "You are working in
+  an empty directory." preamble in that case, so the agent isn't promised a repo
+  list with nothing under it.
 - Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:
   the test raced a ~35ms window between the restart timeout (80ms) and the server
   drop (130ms), so a coverage-instrumented or loaded CI run could miss the post-kill

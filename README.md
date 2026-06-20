@@ -354,9 +354,17 @@ the foreground.)
 
 Starts on `http://127.0.0.1:5784`. On startup the server:
 
-1. Loads all jobs from `~/.config/moadim/jobs/`.
-2. Reads your crontab and applies any changes made to the moadim block while the server was stopped.
-3. Writes all enabled managed jobs back into the crontab block.
+1. Loads all managed jobs from `~/.config/moadim/jobs/`.
+2. Loads all routines, seeds any missing built-in default routines, and rewrites
+   the **routines** crontab block — so a block that went stale while the server
+   was stopped (e.g. emptied by an earlier run) is regenerated and scheduled
+   routines keep firing.
+
+The **job** crontab block is _not_ rewritten at startup; it is kept current on
+each job create/update/delete (see [Crontab sync](#crontab-sync)). Reverse sync
+(crontab → moadim) is not run in either direction, so manual edits inside the
+managed blocks are never imported — they are overwritten by the next forward
+sync.
 
 ## MCP usage
 

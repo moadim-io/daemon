@@ -269,6 +269,21 @@ GET    /routines.ics          # subscribe to fire times as a calendar feed
 `agent_registered` so callers can tell whether the named agent is configured on
 the host.
 
+**Built-in `claude` agent prerequisites:** the default `claude` agent needs two
+things on the host beyond the `claude` CLI itself:
+
+- **`python3`** — the agent's `setup` step runs a short `python3` snippet to
+  pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
+  approvals) so the unattended session never blocks on a prompt. If `python3` is
+  not on `PATH`, the setup step fails and the run no-ops — the routine still
+  shows a healthy (green) status, but the agent never actually launches.
+- **`tmux`** — every routine run is launched inside a tmux session (named after
+  the run's workbench), so a tmux binary must be installed.
+
+Both are present by default on most developer machines; install them explicitly
+on a minimal host (e.g. a CI runner or fresh container) before relying on the
+built-in `claude` agent.
+
 ## Running
 
 Moadim runs as a local daemon. By default it starts **in the background**:

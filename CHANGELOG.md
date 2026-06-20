@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- The build now generates `schemas/routine.schema.json` and
+  `schemas/routine.example.toml` (a JSON Schema + annotated example for the
+  on-disk `routine.toml`), giving routine configs the same editor
+  validation/completion parity that `job.schema.json` already provides for
+  `job.toml`. The schema documents every field the daemon writes — including the
+  legacy, read-only `last_(manual_)trigger_at` keys now kept in the
+  `state.local.toml` sidecar — and is regenerated on every build from the
+  `RoutineToml` shape.
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

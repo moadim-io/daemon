@@ -10,7 +10,7 @@ use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
-use super::command::{build_routine_command, slugify};
+use super::command::{build_routine_command, slugify, TriggerSource};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
     RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
@@ -354,7 +354,9 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
-            let cmd = build_routine_command(&routine, &agent);
+            // A manual trigger records `last_manual_trigger_at` (above), not a scheduled fire, so
+            // the launch script must not stamp the `scheduled.local.toml` sidecar.
+            let cmd = build_routine_command(&routine, &agent, TriggerSource::Manual);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.

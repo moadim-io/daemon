@@ -46,7 +46,15 @@ fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<s
     let path = routine_script_path(&slugify(&routine.title));
     std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
     let command = build_routine_command(routine, agent);
-    std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
+    // Snooze guard: when `ignore_until` is set the script exits early for any firing before that
+    // Unix timestamp, so the cron entry itself stays untouched and the routine resumes on its own
+    // once the time passes (the guard reads the live clock). Manual triggers bypass this — they run
+    // `build_routine_command` directly without the guard (see `svc_trigger`).
+    let guard = match routine.ignore_until {
+        Some(ts) => format!("if [ \"$(date +%s)\" -lt {ts} ]; then exit 0; fi\n"),
+        None => String::new(),
+    };
+    std::fs::write(&path, format!("#!/bin/sh\n{guard}{command}\n"))?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path)
 }

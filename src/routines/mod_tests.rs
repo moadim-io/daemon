@@ -20,6 +20,7 @@ fn make_routine(id: &str) -> Routine {
         last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -426,6 +427,7 @@ fn svc_create_invalid_cron_rejected() {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     };
     assert!(svc_create(&store, req).is_err());
 }
@@ -444,6 +446,7 @@ fn svc_create_update_delete_lifecycle() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
         },
     )
     .unwrap();
@@ -467,6 +470,8 @@ fn svc_create_update_delete_lifecycle() {
             enabled: Some(false),
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
+            clear_ignore_until: None,
         },
     )
     .unwrap();
@@ -491,6 +496,8 @@ fn svc_update_not_found() {
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
+        clear_ignore_until: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -511,6 +518,8 @@ fn svc_update_invalid_cron_rejected() {
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
+        clear_ignore_until: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

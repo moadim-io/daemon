@@ -51,6 +51,10 @@ struct RoutineToml {
     /// the daemon default.
     #[serde(default)]
     max_runtime_secs: Option<u64>,
+    /// Unix timestamp (seconds) until which scheduled runs are skipped (a snooze); absent means not
+    /// snoozed.
+    #[serde(default)]
+    ignore_until: Option<u64>,
 }
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
@@ -103,6 +107,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         last_manual_trigger_at,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
+        ignore_until: toml.ignore_until,
     })
 }
 
@@ -138,6 +143,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         last_manual_trigger_at: None,
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
+        ignore_until: routine.ignore_until,
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —

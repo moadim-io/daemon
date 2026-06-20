@@ -315,6 +315,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -386,6 +387,8 @@ fn create_get_update_trigger_delete_routine_success() {
             enabled: Some(false),
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
+            clear_ignore_until: None,
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
@@ -431,6 +434,8 @@ fn update_routine_tool_not_found_is_error() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
+            clear_ignore_until: None,
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));

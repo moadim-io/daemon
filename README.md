@@ -213,6 +213,12 @@ git-trackable just like jobs:
 | `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
+| `ignore_until` | int    | no       | Unix timestamp (seconds) until which **scheduled** runs are skipped (a snooze). The cron entry is left untouched — the generated `run.sh` exits early until the time passes, then resumes on its own. Manual triggers bypass it. On update, send `clear_ignore_until: true` to unset it. |
+
+**Snoozing a routine:** set `ignore_until` to a future Unix timestamp to pause
+the *scheduled* firings without editing the schedule or disabling the routine —
+the cron line stays in place and the routine resumes automatically once the time
+passes. A manual `POST /routines/{id}/trigger` runs regardless of the snooze.
 
 **Workbenches and cleanup:** each run executes in a workbench under
 `~/.config/moadim/workbenches/`. Finished, expired workbenches are reaped on an

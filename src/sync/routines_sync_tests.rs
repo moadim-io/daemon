@@ -18,6 +18,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         last_manual_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        ignore_until: None,
     }
 }
 
@@ -290,6 +291,48 @@ fn sync_writes_block_for_a_loaded_store() {
     assert!(shim.store_contents().contains("# moadim-routine:w"));
 
     std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}
+
+#[test]
+fn run_script_has_snooze_guard_when_ignore_until_set() {
+    // ignore_until set → the generated run.sh exits early for firings before the timestamp, so the
+    // cron entry stays untouched while scheduled runs are skipped. The guard reads the live clock,
+    // so it lifts on its own once the time passes.
+    let title = "Snooze Guard Sync Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("snoozed", title, "claude");
+    routine.ignore_until = Some(4_102_444_800);
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    format_routine_line(&routine, &agent).unwrap();
+    let script = std::fs::read_to_string(crate::paths::routine_script_path(&slug)).unwrap();
+    let guard = r#"if [ "$(date +%s)" -lt 4102444800 ]; then exit 0; fi"#;
+    assert!(script.contains(guard), "missing snooze guard: {script}");
+    // The guard must run before the agent launches.
+    let guard_at = script.find(guard).unwrap();
+    let launch_at = script.find("tmux new-session").expect("launch present");
+    assert!(guard_at < launch_at, "guard must precede the launch");
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}
+
+#[test]
+fn run_script_has_no_guard_when_ignore_until_unset() {
+    // ignore_until None → no guard, the script launches immediately on every firing.
+    let title = "No Snooze Sync Routine";
+    let slug = slugify(title);
+    let routine = make_routine("not-snoozed", title, "claude");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    format_routine_line(&routine, &agent).unwrap();
+    let script = std::fs::read_to_string(crate::paths::routine_script_path(&slug)).unwrap();
+    assert!(!script.contains("-lt"), "unexpected snooze guard: {script}");
     let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
 }
 

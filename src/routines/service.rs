@@ -242,6 +242,7 @@ pub fn svc_create(
         last_manual_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
+        ignore_until: req.ignore_until,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -318,6 +319,13 @@ pub fn svc_update(
     }
     if let Some(max_runtime) = req.max_runtime_secs {
         routine.max_runtime_secs = Some(max_runtime);
+    }
+    // `clear_ignore_until` wins over `ignore_until` so a caller can unambiguously unset the snooze;
+    // otherwise a present `ignore_until` sets it and absence leaves the current value untouched.
+    if req.clear_ignore_until == Some(true) {
+        routine.ignore_until = None;
+    } else if let Some(ignore_until) = req.ignore_until {
+        routine.ignore_until = Some(ignore_until);
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();

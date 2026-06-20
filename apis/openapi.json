@@ -800,6 +800,15 @@
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
           },
+          "ignore_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) until which scheduled runs are skipped (a snooze). `None` (or a\npast value) means not snoozed. Manual triggers bypass it.",
+            "minimum": 0
+          },
           "max_runtime_secs": {
             "type": [
               "integer",
@@ -1061,6 +1070,15 @@
             "type": "string",
             "description": "Unique identifier (UUID v4)."
           },
+          "ignore_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) until which **scheduled** runs are skipped (a snooze). The cron\nentry is left untouched; the routine's `run.sh` guard exits early while `now < ignore_until`,\nresuming on its own once the time passes. Manual triggers (`trigger_routine`) bypass it.\n`None` (or a past value) means not snoozed.",
+            "minimum": 0
+          },
           "last_manual_trigger_at": {
             "type": [
               "integer",
@@ -1231,12 +1249,28 @@
             ],
             "description": "New agent key, or `None` to keep the existing value."
           },
+          "clear_ignore_until": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Set to `true` to clear an existing `ignore_until` snooze. Takes precedence over\n`ignore_until`. `None`/`false` leaves the current value untouched."
+          },
           "enabled": {
             "type": [
               "boolean",
               "null"
             ],
             "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "ignore_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "New snooze timestamp (Unix seconds) until which scheduled runs are skipped, or `None` to\nkeep the existing value. To unset an existing snooze, send `clear_ignore_until: true`.",
+            "minimum": 0
           },
           "max_runtime_secs": {
             "type": [

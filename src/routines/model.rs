@@ -105,6 +105,12 @@ pub struct Routine {
     /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Unix timestamp (seconds) until which **scheduled** runs are skipped (a snooze). The cron
+    /// entry is left untouched; the routine's `run.sh` guard exits early while `now < ignore_until`,
+    /// resuming on its own once the time passes. Manual triggers (`trigger_routine`) bypass it.
+    /// `None` (or a past value) means not snoozed.
+    #[serde(default)]
+    pub ignore_until: Option<u64>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -214,6 +220,10 @@ pub struct CreateRoutineRequest {
     /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Unix timestamp (seconds) until which scheduled runs are skipped (a snooze). `None` (or a
+    /// past value) means not snoozed. Manual triggers bypass it.
+    #[serde(default)]
+    pub ignore_until: Option<u64>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -236,6 +246,13 @@ pub struct UpdateRoutineRequest {
     pub ttl_secs: Option<u64>,
     /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
     pub max_runtime_secs: Option<u64>,
+    /// New snooze timestamp (Unix seconds) until which scheduled runs are skipped, or `None` to
+    /// keep the existing value. To unset an existing snooze, send `clear_ignore_until: true`.
+    pub ignore_until: Option<u64>,
+    /// Set to `true` to clear an existing `ignore_until` snooze. Takes precedence over
+    /// `ignore_until`. `None`/`false` leaves the current value untouched.
+    #[serde(default)]
+    pub clear_ignore_until: Option<bool>,
 }
 
 #[cfg(test)]

@@ -877,6 +877,7 @@ async fn router_serves_routines_ical_feed() {
             last_manual_trigger_at: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            ignore_until: None,
         },
     );
     let resp = build_app(new_store(), routines)

@@ -5,6 +5,8 @@
 mod build_info;
 /// Command-line interface and background-process lifecycle.
 mod cli;
+/// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
+mod commands;
 mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
@@ -50,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
+        cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Foreground => run_server().await,
     }
 }

@@ -13,6 +13,21 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Full action parity across the CLI, REST, and MCP surfaces.** Every cron-job
+  and routine action is now reachable from all three.
+  - **New CLI data commands** (thin clients over the running server's REST API,
+    built on `clap`): `moadim cron-jobs <create|list|get|update|replace|delete|trigger|logs>`,
+    `moadim routines <create|list|get|update|replace|delete|trigger|logs|ical>`,
+    `moadim agents`, and `moadim echo <message>`. They print the server's JSON
+    response and exit `3` ("not running") when no daemon is reachable, matching
+    the existing `status`/`stop`/`cleanup` contract. (`cron`/`routine` are
+    accepted as aliases.)
+  - **New MCP tools** filling the gaps versus REST: `list_agents`,
+    `cron_job_logs`, `routine_logs`, `shutdown`, and `restart`.
+  - **New `POST /api/v1/restart` route** (plus the matching `restart` MCP tool):
+    stops the running server and starts a fresh instance via a detached helper
+    process, since an in-process server cannot rebind its own port. Documented in
+    the OpenAPI spec.
 - The MCP `health` tool now reports build provenance — `version`, `git_sha`, and
   `build_date` — bringing it to parity with `GET /api/v1/health` and
   `moadim --version`, so an MCP client can tell exactly which build is running

@@ -317,6 +317,43 @@ on `$?` without parsing stdout: they exit `0` when a server is running (and `cle
 asked it to shut down) and `3` when no server is reachable. Any other failure exits non-zero (`1`)
 with a message on stderr.
 
+### Data commands
+
+Beyond lifecycle, the CLI exposes **every** cron-job and routine action the REST API and MCP tools
+do — they are thin clients that send the same JSON to the running server and print its response
+(pretty-printed JSON, or raw text for logs / the iCalendar feed). Like `status`/`stop`/`cleanup`,
+they exit `3` when no server is reachable and `1` on a non-2xx response.
+
+```sh
+# Cron jobs (alias: `cron`)
+moadim cron-jobs create --schedule "0 9 * * *" --handler send-report
+moadim cron-jobs list
+moadim cron-jobs get <id>
+moadim cron-jobs update <id> --schedule "0 10 * * *" --enabled false
+moadim cron-jobs replace <id> --schedule "0 9 * * *" --handler send-report
+moadim cron-jobs trigger <id>
+moadim cron-jobs logs <id>
+moadim cron-jobs delete <id>
+
+# Routines (alias: `routine`)
+moadim routines create --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..." \
+  --repositories '[{"repository":"https://github.com/me/repo","branch":"main"}]'
+moadim routines list
+moadim routines update <id> --title "Renamed" --ttl-secs 3600
+moadim routines trigger <id>
+moadim routines logs <id>
+moadim routines ical          # iCalendar feed of upcoming fire times
+moadim routines delete <id>
+
+# Misc
+moadim agents                 # list available agent keys
+moadim echo "hello"           # echo via the server (with a server timestamp)
+```
+
+Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.
+`--metadata` (cron) and `--repositories` (routines) take raw JSON. Optional flags map to a PATCH so
+only what you pass changes; `create`/`replace` send the full object.
+
 ### Scripting
 
 `status`, `cleanup`, and `stop` each accept `--json` for a single-line, machine-readable object

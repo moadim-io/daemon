@@ -48,6 +48,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:
+  the test raced a ~35ms window between the restart timeout (80ms) and the server
+  drop (130ms), so a coverage-instrumented or loaded CI run could miss the post-kill
+  `wait_until_stopped` window and fail the assertion. The margins are now 300ms /
+  450ms, giving ~150ms of slack on each side of the deadline while still exercising
+  the same force-kill-then-stops path.
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

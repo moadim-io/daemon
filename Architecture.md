@@ -42,7 +42,7 @@ src/
 ├── cron_jobs.rs         data model + service layer + Axum HTTP handlers
 ├── storage.rs           TOML persistence (load / write / remove)
 ├── system_cron.rs       read-only discovery of host cron jobs
-├── fs_location.rs       captures working dir + exe dir for response headers
+├── fs_location.rs       captures working dir + exe dir for the MCP health tool
 ├── paths/mod.rs         path builders for ~/.config/moadim/jobs/
 ├── error.rs             AppError → HTTP status codes
 ├── banner.rs            startup banner
@@ -53,8 +53,7 @@ src/
 │   └── mcp.rs           MoadimMcp — rmcp tool_router
 │
 ├── middlewares/
-│   ├── logger.rs        request/response logger
-│   └── fs_location.rs   injects x-server-root / x-server-exe-dir headers
+│   └── logger.rs        request/response logger
 │
 ├── utils/
 │   ├── time.rs          now_secs() — Unix timestamp helper
@@ -127,7 +126,7 @@ Both the HTTP handlers and MCP tools call these directly — there is no duplica
 
 Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
-Middleware stack (outermost first): `logger` → `fs_location`.
+Middleware stack (outermost first): `logger`.
 
 ---
 

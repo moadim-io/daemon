@@ -32,6 +32,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   are now caught at the API boundary rather than surfacing later as a confusing
   run-time failure (#241).
 
+### Security
+
+- HTTP responses no longer carry the `x-server-root` / `x-server-exe-dir`
+  headers that disclosed the daemon's absolute working directory and executable
+  directory on **every** response. No client consumed them, so removing the
+  `fs_location` response-header middleware eliminates the information leak with
+  no behavior change. The same filesystem location remains available to
+  authenticated callers through the MCP `health` tool, which is unchanged (#356).
+
 ### Changed
 
 - Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**

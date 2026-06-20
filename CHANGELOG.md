@@ -46,6 +46,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
 
+### Removed
+
+- Removed the vestigial `echo` demo endpoint/tool — the scaffold `POST
+  /api/v1/echo` REST route, the `echo` MCP tool, and their `EchoRequest` /
+  `EchoResponse` / `EchoInput` types and OpenAPI entries. It echoed a message
+  back with a server timestamp, served no product purpose, and only widened the
+  REST + MCP + OpenAPI surface; `GET /health` already covers liveness probing.
+  The committed `apis/openapi.json` is regenerated without the `/echo` path and
+  schemas (#359).
+
 ### Fixed
 
 - Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:

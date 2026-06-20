@@ -7,7 +7,6 @@
     paths(
         crate::routes::http::health,
         crate::routes::http::shutdown,
-        crate::routes::http::echo,
         crate::cron_jobs::list,
         crate::cron_jobs::create,
         crate::cron_jobs::get,
@@ -44,8 +43,6 @@
         crate::routines::SortOrder,
         crate::routes::http::HealthResponse,
         crate::routes::http::ShutdownResponse,
-        crate::routes::http::EchoRequest,
-        crate::routes::http::EchoResponse,
     ))
 )]
 /// OpenAPI document aggregating all REST paths and component schemas.

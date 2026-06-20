@@ -25,13 +25,6 @@ pub struct MoadimMcp {
     uptime_start: u64,
 }
 
-/// Input for the `echo` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct EchoInput {
-    /// Message to echo back.
-    message: String,
-}
-
 /// Input for tools that operate on a single job by ID.
 #[derive(Deserialize, JsonSchema)]
 struct IdInput {
@@ -127,18 +120,6 @@ impl MoadimMcp {
             obj.extend(loc_map);
         }
         Ok(ok(val))
-    }
-
-    /// Echo `message` back together with the current server timestamp.
-    #[tool(description = "Echo a message back with a server timestamp")]
-    fn echo(
-        &self,
-        Parameters(EchoInput { message }): Parameters<EchoInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(serde_json::json!({
-            "message": message,
-            "timestamp": now_secs(),
-        })))
     }
 
     /// Return all managed cron jobs as a JSON array sorted by creation time.

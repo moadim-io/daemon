@@ -95,7 +95,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   so one panicking handler can't cascade into every later request taking the same
   lock. The two `get_mut(id).unwrap()` invariant unwraps in `svc_update`/
   `svc_trigger` became `ok_or(AppError::NotFound)?`, removing the last panicking
-  unwraps from the production code paths.
+  unwraps from the production code paths. A new
+  `#![cfg_attr(not(test), deny(clippy::unwrap_used))]` crate lint now keeps
+  `.unwrap()` out of non-test code so the panic can't creep back in (tests still
+  use `.unwrap()` freely, where panicking is the intended failure mode).
 - Managed cron jobs are now re-synced to the OS crontab on daemon startup,
   mirroring the routines sync that already ran. Previously the cron-job block was
   only written on a job create/update/delete, so if it was lost or emptied

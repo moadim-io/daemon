@@ -64,7 +64,7 @@ attached to your terminal instead, use `moadim --interactive`.
 - Handlers are executable scripts in `~/.config/moadim/handlers/` — any language, also git-trackable
 - **Routines** schedule an AI agent instead of a script — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines))
 - **Agents** are a registry of coding agents (`claude`, …) under `~/.config/moadim/agents/<name>.toml`, referenced by routines
-- Each routine run executes in a throwaway **workbench** under `~/.config/moadim/workbenches/`, reaped on an hourly cleanup sweep
+- Each routine run executes in a throwaway **workbench** under `~/.moadim/workbenches/` (a separate tree from the config dir), reaped on an hourly cleanup sweep
 - `job.local.toml` per job for secrets and machine-specific overrides that stay off-git
 - Same REST and MCP interface — no logic duplication between protocols
 - API spec auto-generated at build time into `apis/`
@@ -96,7 +96,9 @@ attached to your terminal instead, use `moadim --interactive`.
 │       └── .gitignore         # generated — excludes *.local.* and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
-├── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
+└── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
+
+~/.moadim/                     # runtime tree, separate from the config dir above
 └── workbenches/               # per-run throwaway dirs, reaped on the hourly sweep
 ```
 

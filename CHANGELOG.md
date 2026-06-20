@@ -13,6 +13,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Routines now track **`last_scheduled_trigger_at`** (Unix seconds), the mirror of
+  `last_manual_trigger_at` for scheduled cron firings, surfaced in the REST/OpenAPI
+  routine response. Because the OS crontab runs a routine's generated `run.sh`
+  directly — the daemon never observes a scheduled fire — the script itself stamps
+  the fire time into a new gitignored `scheduled.local.toml` sidecar, which the
+  daemon reads back on load. The sidecar is daemon-read-only and kept separate from
+  the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
+  scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
+  and lets you spot schedules that have never actually fired (#155).
+
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was
@@ -53,6 +63,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   has no `repositories`. `compose_prompt` now writes a plain "You are working in
   an empty directory." preamble in that case, so the agent isn't promised a repo
   list with nothing under it.
+- Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:
+  the test raced a ~35ms window between the restart timeout (80ms) and the server
+  drop (130ms), so a coverage-instrumented or loaded CI run could miss the post-kill
+  `wait_until_stopped` window and fail the assertion. The margins are now 300ms /
+  450ms, giving ~150ms of slack on each side of the deadline while still exercising
+  the same force-kill-then-stops path.
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics

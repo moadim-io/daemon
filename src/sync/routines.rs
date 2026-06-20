@@ -21,6 +21,7 @@
 //! list, so binary resolution is unaffected — only env vars are gained.) Reverse sync is not
 //! implemented — routines are managed only through the API.
 
+use crate::utils::lock::LockRecover;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 
@@ -84,7 +85,7 @@ pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Op
 /// Routines whose agent config is missing are skipped with a warning.
 fn build_block(store: &RoutineStore) -> String {
     let mut routines: Vec<Routine> = {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         lock.values()
             .filter(|routine| routine.source == "managed" && routine.enabled)
             .cloned()
@@ -134,7 +135,7 @@ const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 /// the last routine still works.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
     let current = read_crontab()?;
-    if store.lock().unwrap().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
+    if store.lock_recover().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
         log::warn!(
             "routine sync: store is empty but the crontab still has routine lines; refusing to \
              wipe the routines block (suspected load failure or a concurrent daemon)"

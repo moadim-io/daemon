@@ -236,7 +236,7 @@ pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
         let new = entry.path().join("prompt.md");
         if old.exists() && !new.exists() {
             if let Err(err) = std::fs::rename(&old, &new) {
-                log::warn!("migrate_prompt_files: failed to rename {:?}: {err}", old);
+                log::warn!("migrate_prompt_files: failed to rename {old:?}: {err}");
             }
         }
     }

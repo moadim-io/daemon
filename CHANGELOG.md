@@ -63,6 +63,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- Enabled the `clippy::uninlined_format_args` lint (deny) and inlined the
+  existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
+  error messages read more directly. No behavior change.
 
 ### Fixed
 

@@ -55,5 +55,7 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Require inline format args (`{x}`) over positional (`{}`, x) where possible.
+uninlined_format_args = "deny"
 # Reject leftover `dbg!` debugging macros so they never ship to production.
 dbg_macro = "deny"

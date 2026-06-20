@@ -109,6 +109,14 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
             lines.push(format!("DTSTAMP:{dtstamp}"));
             lines.push(format!("DTSTART:{stamp}"));
+            // The feed is purely informational ("when will my loops fire?"), so a
+            // fire must not consume the subscriber's free/busy time. RFC 5545
+            // §3.8.2.7 defaults `TRANSP` to `OPAQUE` (counts as busy); mark each
+            // event `TRANSPARENT` so it never blocks availability. The legacy
+            // `X-MICROSOFT-CDO-BUSYSTATUS:FREE` carries the same intent to Outlook
+            // clients that honor the Microsoft property instead of `TRANSP`.
+            lines.push("TRANSP:TRANSPARENT".to_string());
+            lines.push("X-MICROSOFT-CDO-BUSYSTATUS:FREE".to_string());
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
             lines.push("END:VEVENT".to_string());

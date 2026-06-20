@@ -27,7 +27,7 @@ use std::os::unix::fs::PermissionsExt;
 use crate::paths::routine_script_path;
 use crate::routines::{
     build_routine_command, load_agent_command, shell_quote, slugify, AgentCommand, Routine,
-    RoutineStore,
+    RoutineStore, TriggerSource,
 };
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 
@@ -45,7 +45,8 @@ const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux session
 fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
     let path = routine_script_path(&slugify(&routine.title));
     std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
-    let command = build_routine_command(routine, agent);
+    // The crontab firing on schedule is the only path that records a scheduled run.
+    let command = build_routine_command(routine, agent, TriggerSource::Scheduled);
     std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path)

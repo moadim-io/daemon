@@ -69,6 +69,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- A manual ("run now") routine trigger no longer overwrites
+  `last_scheduled_trigger_at`. The on-demand trigger reused the exact same launch
+  script the crontab runs, which stamps the scheduled-fire `scheduled.local.toml`
+  sidecar — so every manual run masqueraded as a scheduled fire and clobbered the
+  real last-scheduled time. The launch script now records that stamp only for
+  genuine scheduled runs (`TriggerSource::Scheduled`); a manual trigger
+  (`TriggerSource::Manual`) launches the agent but leaves the sidecar untouched,
+  staying tracked solely via `last_manual_trigger_at`. (#478)
 - Managed cron jobs are now re-synced to the OS crontab on daemon startup,
   mirroring the routines sync that already ran. Previously the cron-job block was
   only written on a job create/update/delete, so if it was lost or emptied

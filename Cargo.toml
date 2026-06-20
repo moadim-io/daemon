@@ -15,6 +15,8 @@ description = "Moadim.io MCP/REST server for managing cron jobs"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
 homepage = "https://github.com/moadim-io/daemon"
+keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
 anyhow = "1"
@@ -53,3 +55,5 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Reject leftover `dbg!` debugging macros so they never ship to production.
+dbg_macro = "deny"

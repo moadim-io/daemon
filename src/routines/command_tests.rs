@@ -17,6 +17,7 @@ fn make_routine(title: &str) -> Routine {
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -75,6 +76,34 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
     });
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_routine_command_stamps_scheduled_trigger_sidecar() {
+    // The generated launch script records each scheduled firing by writing `$TS` into the
+    // routine's `scheduled.local.toml` sidecar (best-effort, before the prompt-copy guard), since
+    // the OS crontab runs this script directly without the daemon observing the fire.
+    let routine = make_routine("Cmd Scheduled Stamp Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
+        .to_string_lossy()
+        .into_owned();
+    assert!(
+        cmd.contains(&format!(
+            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
+            shell_quote(&sidecar)
+        )),
+        "expected scheduled-trigger sidecar stamp in: {cmd}"
+    );
+    // It must run before the prompt-copy guard so an aborted run still records the firing.
+    let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
+    let copy = cmd.find("/prompt.md\"").unwrap();
+    assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
 }
 
 #[test]

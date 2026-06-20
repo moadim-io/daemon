@@ -8,7 +8,9 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::cron_jobs::{self, CreateRequest, CronStore, HandlerRegistry, UpdateRequest};
+use crate::cron_jobs::{
+    self, CreateRequest, CronStore, HandlerRegistry, ShutdownSignal, UpdateRequest,
+};
 use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
 use crate::utils::time::now_secs;
 
@@ -23,6 +25,9 @@ pub struct MoadimMcp {
     routines: RoutineStore,
     /// Unix timestamp (seconds) recorded at server startup.
     uptime_start: u64,
+    /// Notify handle that triggers a graceful server shutdown (the `shutdown` tool fires it,
+    /// mirroring `POST /api/v1/shutdown` and `moadim stop`).
+    shutdown: ShutdownSignal,
 }
 
 /// Input for the `echo` MCP tool.
@@ -101,12 +106,14 @@ impl MoadimMcp {
         handlers: HandlerRegistry,
         routines: RoutineStore,
         uptime_start: u64,
+        shutdown: ShutdownSignal,
     ) -> Self {
         Self {
             store,
             handlers,
             routines,
             uptime_start,
+            shutdown,
         }
     }
 
@@ -321,6 +328,60 @@ impl MoadimMcp {
     )]
     fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::svc_cleanup(&self.routines)))
+    }
+
+    /// List the available agent registry keys a routine can launch.
+    #[tool(description = "List the available agent registry keys a routine can launch")]
+    fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(routines::available_agents()))
+    }
+
+    /// Return the contents of a cron job's log file, or an error if the job does not exist.
+    #[tool(description = "Get a cron job's log file contents by ID")]
+    fn cron_job_logs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match cron_jobs::svc_logs(&self.store, &id) {
+            Ok(logs) => ok(serde_json::json!({ "logs": logs })),
+            Err(error) => err(error),
+        })
+    }
+
+    /// Return the newest run log for a routine, or an error if the routine does not exist.
+    #[tool(description = "Get a routine's newest run log by ID")]
+    fn routine_logs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match routines::svc_logs(&self.routines, &id) {
+            Ok(logs) => ok(serde_json::json!({ "logs": logs })),
+            Err(error) => err(error),
+        })
+    }
+
+    /// Ask the server to stop gracefully, mirroring `POST /api/v1/shutdown` and `moadim stop`.
+    #[tool(
+        description = "Stop the running server gracefully. Mirrors the POST /api/v1/shutdown route and `moadim stop`."
+    )]
+    fn shutdown(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        log::info!("shutdown requested via MCP");
+        self.shutdown.notify_one();
+        Ok(ok(serde_json::json!({ "status": "shutting down" })))
+    }
+
+    /// Stop this server and start a fresh instance, mirroring `POST /api/v1/restart` and
+    /// `moadim restart`. Delegates to a detached helper process that performs the swap.
+    #[tool(
+        description = "Restart the server: stop it and start a fresh instance. Mirrors the POST /api/v1/restart route and `moadim restart`."
+    )]
+    fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        log::info!("restart requested via MCP");
+        Ok(crate::cli::spawn_restart()
+            .map(|helper_pid| {
+                ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
+            })
+            .unwrap_or_else(err))
     }
 }
 

@@ -42,7 +42,7 @@ fn liveness_exit_code(running: bool) -> i32 {
 }
 
 /// The action the user asked for on the command line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Run the server in the foreground, attached to the terminal (interactive mode).
     Foreground,
@@ -77,7 +77,15 @@ pub enum Command {
     Help,
     /// Print the binary version.
     Version,
+    /// A data-plane subcommand (`cron-jobs`, `routines`, `agents`, `echo`) handled by the clap-based
+    /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
+    /// argv (including the subcommand keyword) for clap to parse.
+    Data(Vec<String>),
 }
+
+/// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
+/// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
+pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "agents", "echo"];
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
@@ -87,6 +95,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
         None => Command::Background,
+        Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("restart") => Command::Restart,
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
@@ -144,6 +153,12 @@ pub fn print_help() {
          \x20   uninstall              remove the OS service registration\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
+         \n\
+         DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
+         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
+         \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
+         \x20   agents                 list available agent keys\n\
+         \x20   echo <message>         echo a message via the server\n\
          \n\
          Pass --json to `stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
@@ -406,17 +421,49 @@ pub(crate) fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
     http_request_with_body(method, path).map(|(status, _)| status)
 }
 
-/// Send a minimal HTTP/1.1 request and return the response status code together with its body.
+/// How long to wait on a data-plane request (`create`/`trigger`/etc.). More generous than
+/// [`PROBE_TIMEOUT`] because these routes can do real work (crontab sync, workbench spawn) before
+/// responding, whereas a liveness probe only needs the server to answer `GET /health` promptly.
+const DATA_OP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Send a minimal HTTP/1.1 request (no body) and return the response status code with its body.
 fn http_request_with_body(method: &str, path: &str) -> std::io::Result<(u16, String)> {
+    http_request_core(method, path, None, PROBE_TIMEOUT)
+}
+
+/// Send a minimal HTTP/1.1 request with an optional JSON `body` and return the response status code
+/// together with its body, using the generous [`DATA_OP_TIMEOUT`]. Data-plane CLI subcommands
+/// ([`crate::commands`]) use this to drive the running server's `/api/v1` routes over the same
+/// loopback client the lifecycle commands use.
+pub(crate) fn http_request_json(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> std::io::Result<(u16, String)> {
+    http_request_core(method, path, body, DATA_OP_TIMEOUT)
+}
+
+/// Core minimal HTTP/1.1 client: connect to the local server, send `method path` with an optional
+/// JSON `body`, and return the response status code together with its body. `timeout` bounds the
+/// connect/read/write so a hung or absent server fails fast.
+fn http_request_core(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    timeout: Duration,
+) -> std::io::Result<(u16, String)> {
     let addr_str = bind_addr();
     let addr: SocketAddr = addr_str
         .parse()
         .expect("bind address is a valid socket address");
-    let mut stream = std::net::TcpStream::connect_timeout(&addr, PROBE_TIMEOUT)?;
-    stream.set_read_timeout(Some(PROBE_TIMEOUT))?;
-    stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, timeout)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let payload = body.unwrap_or_default();
     let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
     );
     stream.write_all(req.as_bytes())?;
     let mut resp = String::new();
@@ -455,6 +502,30 @@ fn parse_removed_count(body: &str) -> Option<usize> {
 /// The child runs with `--interactive` (so it actually serves), in its own process group so a
 /// terminal SIGINT to the launcher does not reach it, with stdio redirected to the daemon log.
 fn spawn_detached() -> anyhow::Result<u32> {
+    spawn_detached_with(|cmd| {
+        cmd.arg("--interactive").env(DAEMONIZED_ENV, "1");
+    })
+}
+
+/// Spawn a detached helper that stops the currently-running server and starts a fresh one,
+/// returning the helper's PID. Used by the `/api/v1/restart` route and the `restart` MCP tool so the
+/// daemon can be cycled from any surface, not just the CLI: the in-process server cannot rebind its
+/// own port, so it delegates the stop-old-then-start-new dance to this separate process.
+///
+/// The helper is launched with the `--background` flag rather than the `restart` subcommand on
+/// purpose: `moadim --background` ([`run_background`]) already stops a running instance before
+/// starting a fresh one, and passing a flag (not a bare positional) means that under the test
+/// harness — where `current_exe` is the test binary — the child is rejected immediately instead of
+/// being interpreted as a test-name filter that would re-enter these very tests.
+pub fn spawn_restart() -> anyhow::Result<u32> {
+    spawn_detached_with(|cmd| {
+        cmd.arg("--background");
+    })
+}
+
+/// Spawn a detached copy of this binary with stdio redirected to the daemon log and its own process
+/// group, applying `configure` to set the subcommand/flags before launch. Returns the child PID.
+fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
     use std::process::{Command as Proc, Stdio};
 
     let exe = std::env::current_exe()?;
@@ -467,11 +538,10 @@ fn spawn_detached() -> anyhow::Result<u32> {
     let err = out.try_clone()?;
 
     let mut cmd = Proc::new(exe);
-    cmd.arg("--interactive")
-        .env(DAEMONIZED_ENV, "1")
-        .stdin(Stdio::null())
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::from(out))
         .stderr(Stdio::from(err));
+    configure(&mut cmd);
     detach(&mut cmd);
 
     let child = cmd.spawn()?;

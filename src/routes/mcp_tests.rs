@@ -5,7 +5,19 @@ use crate::cron_jobs::{new_registry, new_store};
 use super::*;
 
 fn make_handler() -> MoadimMcp {
-    MoadimMcp::new(new_store(), new_registry(), crate::routines::new_store(), 0)
+    MoadimMcp::new(
+        new_store(),
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    )
+}
+
+/// A throwaway shutdown signal for constructing a handler in tests; the `shutdown` tool fires it but
+/// nothing awaits it, so notifying is a harmless no-op.
+fn test_shutdown() -> crate::cron_jobs::ShutdownSignal {
+    std::sync::Arc::new(tokio::sync::Notify::new())
 }
 
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
@@ -144,7 +156,13 @@ fn trigger_cron_job_not_found_is_error() {
 fn create_cron_job_tool_invalid_cron_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let store = crate::cron_jobs::new_store();
-    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
     let req = crate::cron_jobs::CreateRequest {
         schedule: "not-a-cron".into(),
         handler: "h".into(),
@@ -163,6 +181,7 @@ fn update_cron_job_tool_not_found_is_error() {
         new_registry(),
         crate::routines::new_store(),
         0,
+        test_shutdown(),
     );
     let result = handler
         .update_cron_job(Parameters(UpdateInput {
@@ -192,7 +211,13 @@ fn delete_cron_job_tool_success() {
     )
     .unwrap();
     let id = created.job.id.clone();
-    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
     let result = handler.delete_cron_job(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
 }
@@ -213,7 +238,13 @@ fn trigger_cron_job_tool_success() {
     )
     .unwrap();
     let id = created.job.id.clone();
-    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
     let result = handler
         .trigger_cron_job(Parameters(IdInput { id: id.clone() }))
         .unwrap();
@@ -225,7 +256,13 @@ fn trigger_cron_job_tool_success() {
 fn create_cron_job_tool_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let store = crate::cron_jobs::new_store();
-    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
     let req = crate::cron_jobs::CreateRequest {
         schedule: "@daily".into(),
         handler: "mcp-handler".into(),
@@ -260,7 +297,13 @@ fn get_cron_job_tool_success() {
         last_manual_trigger_at: None,
     };
     store.lock().unwrap().insert("get-test-id".into(), job);
-    let handler = MoadimMcp::new(store, new_registry(), crate::routines::new_store(), 0);
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
     let result = handler
         .get_cron_job(Parameters(IdInput {
             id: "get-test-id".into(),
@@ -278,6 +321,7 @@ fn update_cron_job_tool_success() {
         new_registry(),
         crate::routines::new_store(),
         0,
+        test_shutdown(),
     );
     // Create a job first
     let created = crate::cron_jobs::svc_create(
@@ -356,7 +400,13 @@ fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(new_store(), new_registry(), routines.clone(), 0);
+    let handler = MoadimMcp::new(
+        new_store(),
+        new_registry(),
+        routines.clone(),
+        0,
+        test_shutdown(),
+    );
 
     // create
     let result = handler
@@ -462,4 +512,148 @@ fn trigger_routine_tool_not_found_is_error() {
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));
+}
+
+// ── parity tools: agents / logs / shutdown ──────────────────────────────────────
+
+#[test]
+fn list_agents_tool_returns_array() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler.list_agents().unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(val.is_array());
+}
+
+#[test]
+fn cron_job_logs_tool_returns_logs_for_existing_job() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let store = crate::cron_jobs::new_store();
+    let created = crate::cron_jobs::svc_create(
+        &store,
+        &new_registry(),
+        crate::cron_jobs::CreateRequest {
+            schedule: "@daily".into(),
+            handler: "h".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
+    let result = handler
+        .cron_job_logs(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    // No log file has been produced yet, so the contents are empty (but the key is present).
+    assert_eq!(val["logs"], "");
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
+fn cron_job_logs_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .cron_job_logs(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn routine_logs_tool_returns_logs_for_existing_routine() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(
+        new_store(),
+        new_registry(),
+        routines.clone(),
+        0,
+        test_shutdown(),
+    );
+    let created = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &created.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let result = handler
+        .routine_logs(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    // No run has executed, so there is no newest workbench log yet — empty contents.
+    assert_eq!(val["logs"], "");
+}
+
+#[test]
+fn routine_logs_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .routine_logs(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn shutdown_tool_acknowledges() {
+    let handler = make_handler();
+    let result = handler.shutdown().unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["status"], "shutting down");
+}
+
+#[test]
+fn restart_tool_spawns_helper_and_acknowledges() {
+    // The tool spawns a detached `current_exe --background` helper; under the test harness that exe
+    // is the test binary, which rejects `--background` and exits at once, so no real server starts.
+    // TempHome keeps the helper's log file out of the real home.
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler.restart().unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["status"], "restarting");
+    assert!(val["helper_pid"].as_u64().unwrap() > 0);
 }

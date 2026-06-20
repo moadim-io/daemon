@@ -13,6 +13,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- The MCP `health` tool now reports build provenance — `version`, `git_sha`, and
+  `build_date` — bringing it to parity with `GET /api/v1/health` and
+  `moadim --version`, so an MCP client can tell exactly which build is running
+  rather than only seeing status, uptime, and filesystem locations (#476).
 - The binary now embeds the git commit it was built from, so you can tell
   exactly which build is running rather than only the released crate version
   (which changes only on a `v*` tag). `moadim --version` prints

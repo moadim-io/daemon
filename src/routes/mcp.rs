@@ -110,8 +110,8 @@ impl MoadimMcp {
         }
     }
 
-    /// Return server health status, uptime, and filesystem locations.
-    #[tool(description = "Get server health, uptime, and filesystem locations")]
+    /// Return server health status, uptime, build provenance, and filesystem locations.
+    #[tool(description = "Get server health, uptime, build provenance, and filesystem locations")]
     fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let loc = crate::filesystem::FsLocation::current();
         let mut val = serde_json::json!({
@@ -120,6 +120,11 @@ impl MoadimMcp {
             // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
             "uptime_secs": now_secs().saturating_sub(self.uptime_start),
             "running": true,
+            // Build provenance, mirroring `GET /health` and `--version` so the
+            // running build is identifiable consistently across all three surfaces.
+            "version": crate::build_info::VERSION,
+            "git_sha": crate::build_info::GIT_SHA,
+            "build_date": crate::build_info::BUILD_DATE,
         });
         if let (Some(obj), Ok(serde_json::Value::Object(loc_map))) =
             (val.as_object_mut(), serde_json::to_value(&loc))

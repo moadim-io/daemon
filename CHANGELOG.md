@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- The binary now embeds the git commit it was built from, so you can tell
+  exactly which build is running rather than only the released crate version
+  (which changes only on a `v*` tag). `moadim --version` prints
+  `moadim <version> (<short-sha> <date>)`, and the `GET /api/v1/health` response
+  gained `git_sha` and `build_date` fields alongside `version`. `build.rs`
+  resolves the fields from git at compile time and falls back to `"unknown"`
+  when the source isn't a git checkout (e.g. a crates.io tarball), so published
+  builds still compile and report sensibly (#367).
 - Routines now track **`last_scheduled_trigger_at`** (Unix seconds), the mirror of
   `last_manual_trigger_at` for scheduled cron firings, surfaced in the REST/OpenAPI
   routine response. Because the OS crontab runs a routine's generated `run.sh`
@@ -65,6 +73,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   managed job stayed silently un-fired until the next mutation — even across a
   restart, while routines self-healed. The startup sync is idempotent, so it is a
   no-op read on a healthy crontab. (#394)
+- The generated `prompt.md` no longer emits a dangling "These repositories are
+  relevant — clone any you need:" header with an empty bullet list when a routine
+  has no `repositories`. `compose_prompt` now writes a plain "You are working in
+  an empty directory." preamble in that case, so the agent isn't promised a repo
+  list with nothing under it.
 - Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:
   the test raced a ~35ms window between the restart timeout (80ms) and the server
   drop (130ms), so a coverage-instrumented or loaded CI run could miss the post-kill

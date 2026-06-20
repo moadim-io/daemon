@@ -154,9 +154,10 @@ pub fn print_help() {
     );
 }
 
-/// Print the binary version to stdout.
+/// Print the binary version to stdout, including the git commit and date it was
+/// built from when available (e.g. `moadim 0.1.0 (a1b2c3d 2026-06-19)`).
 pub fn print_version() {
-    println!("moadim {}", env!("CARGO_PKG_VERSION"));
+    println!("moadim {}", crate::build_info::long_version());
 }
 
 /// Start the server as a detached background process and return immediately.

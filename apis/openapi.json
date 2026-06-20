@@ -985,9 +985,19 @@
           "status",
           "uptime_secs",
           "running",
-          "version"
+          "version",
+          "git_sha",
+          "build_date"
         ],
         "properties": {
+          "build_date": {
+            "type": "string",
+            "description": "Committer date (`YYYY-MM-DD`) of the build commit, or `\"unknown\"` outside a git checkout."
+          },
+          "git_sha": {
+            "type": "string",
+            "description": "Short git commit SHA the daemon was built from, or `\"unknown\"` outside a git checkout."
+          },
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."

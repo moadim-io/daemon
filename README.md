@@ -34,9 +34,10 @@ automatically synced to the OS crontab so they actually run on schedule. See
 cargo install --locked moadim
 ```
 
-`--locked` builds against the exact dependency versions in the published
-`Cargo.lock`, so new users get the same tree CI tested instead of a freshly
-re-resolved (and potentially broken) set of transitive deps.
+`--locked` installs the exact dependency graph published and tested with this
+release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
+to the newest semver-compatible version at install time — so a bad or breaking
+transitive bump can't fail an otherwise-unchanged install.
 
 If `moadim` is not found after install, add Cargo's bin directory to your PATH:
 

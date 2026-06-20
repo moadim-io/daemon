@@ -9,16 +9,18 @@
 //! # END MOADIM-ROUTINES
 //! ```
 //!
-//! Each routine's full launch command is written to a per-routine `run.sh` script; the crontab line
-//! is just `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`. Inlining the whole command
-//! (which includes a long per-agent `setup` step) pushed lines past cron's ~1000-char per-line
-//! limit, which cron silently drops.
+//! Each routine's `run.sh` is a thin wrapper that re-invokes the `moadim` binary to trigger the
+//! routine by ID (`moadim schedule trigger <id>`); the crontab line is just
+//! `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`. The wrapper hands off to the running
+//! daemon, which is the single source of truth for launch logic
+//! ([`crate::routines::build_routine_command`] + spawn). This means **scheduled routines require the
+//! daemon to be running** — it is installed as an OS service (launchd / systemd user) for exactly
+//! this reason. The earlier design inlined the whole launch command into `run.sh`, which both
+//! duplicated the build logic and pushed lines past cron's ~1000-char per-line limit.
 //!
-//! The `-l` makes `run.sh` execute under a **login** shell so it sources the user's `~/.profile`,
-//! giving the agent the environment variables (`GH_TOKEN`, API keys, …) an interactive login shell
-//! has. Cron's own environment is minimal and outside the GUI login session, so without `-l` the
-//! agent would launch with no credentials. (`run.sh` still replaces `PATH` with its own curated
-//! list, so binary resolution is unaffected — only env vars are gained.) Reverse sync is not
+//! The agent still inherits the user's login environment (`GH_TOKEN`, API keys, …): the daemon's
+//! trigger path spawns the agent under `sh -lc`, which sources `~/.profile`. The crontab line's `-l`
+//! is retained defensively so the wrapper itself runs under a login shell. Reverse sync is not
 //! implemented — routines are managed only through the API.
 
 use crate::utils::lock::LockRecover;
@@ -26,10 +28,7 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::paths::routine_script_path;
-use crate::routines::{
-    build_routine_command, load_agent_command, shell_quote, slugify, AgentCommand, Routine,
-    RoutineStore,
-};
+use crate::routines::{load_agent_command, shell_quote, slugify, Routine, RoutineStore};
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 
 /// Delimiter marking the start of the moadim routines crontab block.
@@ -39,14 +38,22 @@ const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
-/// Write the routine's launch command to its `run.sh` script and return the path.
+/// Write the routine's `run.sh` wrapper and return its path.
 ///
-/// The script holds the full self-contained command from [`build_routine_command`], so the crontab
-/// line that calls it stays short regardless of how long the command is.
-fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
+/// The script is a thin wrapper that re-invokes the `moadim` binary to trigger this routine by ID
+/// (`moadim schedule trigger <id>`), so the daemon owns the launch logic. It calls the daemon's own
+/// executable by absolute path ([`std::env::current_exe`]) so resolution does not depend on cron's
+/// `PATH`. The previous design inlined the whole launch command here, duplicating
+/// [`crate::routines::build_routine_command`] (still used by the in-process manual-trigger path).
+fn write_routine_script(routine: &Routine) -> io::Result<std::path::PathBuf> {
     let path = routine_script_path(&slugify(&routine.title));
     std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
-    let command = build_routine_command(routine, agent);
+    let exe = std::env::current_exe()?;
+    let command = format!(
+        "exec {} schedule trigger {}",
+        shell_quote(&exe.to_string_lossy()),
+        shell_quote(&routine.id),
+    );
     std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path)
@@ -55,13 +62,12 @@ fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<s
 /// Format a single routine as a crontab line that invokes its `run.sh`:
 /// `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`.
 ///
-/// The `-l` runs the script under a login shell so it sources the user's `~/.profile`, letting the
-/// agent inherit their environment variables (`GH_TOKEN`, API keys, …) rather than cron's minimal
-/// one.
+/// The `-l` runs the wrapper under a login shell so it sources the user's `~/.profile` (retained
+/// defensively; the agent's own environment is set up later by the daemon's `sh -lc` spawn).
 ///
 /// Returns `None` (after a warning) if the script cannot be written.
-pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Option<String> {
-    let script = match write_routine_script(routine, agent) {
+pub(crate) fn format_routine_line(routine: &Routine) -> Option<String> {
+    let script = match write_routine_script(routine) {
         Ok(path) => path,
         Err(err) => {
             log::warn!(
@@ -96,7 +102,9 @@ fn build_block(store: &RoutineStore) -> String {
     let lines: Vec<String> = routines
         .iter()
         .filter_map(|routine| match load_agent_command(&routine.agent) {
-            Ok(agent) => format_routine_line(routine, &agent),
+            // Validate the agent config at sync time so a broken routine is skipped here rather than
+            // failing at fire time; the wrapper script itself no longer embeds the agent command.
+            Ok(_) => format_routine_line(routine),
             Err(err) => {
                 log::warn!(
                     "routine sync: cannot load agent {:?} ({}) for routine {:?}; skipping",

@@ -27,25 +27,21 @@ fn format_routine_line_invokes_script_with_schedule_and_tag() {
     let title = "Fid Sync Routine";
     let slug = slugify(title);
     let routine = make_routine("fid", title, "claude");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let line = format_routine_line(&routine, &agent).unwrap();
+    let line = format_routine_line(&routine).unwrap();
     assert!(line.starts_with("30 9 * * 1-5 "));
     // crontab line just runs the generated script — keeps it well under cron's length limit
     assert!(line.contains("/bin/sh "));
-    // `-l` runs the script under a login shell so it sources the user's profile and the agent
-    // inherits their environment (PATH, GH_TOKEN, …) instead of cron's minimal one.
+    // `-l` runs the wrapper under a login shell (retained defensively).
     assert!(line.contains("/bin/sh -l "));
     assert!(line.contains(&format!("/{slug}/run.sh")));
     assert!(line.ends_with("# moadim-routine:fid"));
     assert!(!line.contains('\n'));
-    // the long launch command lives in the script, not the crontab line
+    // The script is a thin wrapper that re-invokes the binary to trigger the routine by ID; the
+    // launch logic now lives in the daemon, not the script.
     let script = std::fs::read_to_string(crate::paths::routine_script_path(&slug)).unwrap();
     assert!(script.starts_with("#!/bin/sh\n"));
-    assert!(script.contains("tmux new-session"));
+    assert!(script.contains("schedule trigger 'fid'"));
+    assert!(!script.contains("tmux new-session"));
     let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
 }
 
@@ -60,12 +56,7 @@ fn format_routine_line_creates_missing_parent_dir() {
     assert!(!crate::paths::routine_dir(&slug).exists());
 
     let routine = make_routine("parent-create", title, "claude");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let line = format_routine_line(&routine, &agent).unwrap();
+    let line = format_routine_line(&routine).unwrap();
     assert!(line.ends_with("# moadim-routine:parent-create"));
     assert!(crate::paths::routine_script_path(&slug).exists());
 
@@ -89,12 +80,7 @@ fn format_routine_line_returns_none_when_script_write_fails() {
     std::fs::write(&routine_dir, "blocker").unwrap();
 
     let routine = make_routine("write-fail", title, "claude");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let result = format_routine_line(&routine, &agent);
+    let result = format_routine_line(&routine);
     assert!(result.is_none(), "expected None on script write failure");
 
     let _ = std::fs::remove_file(&routine_dir);
@@ -118,13 +104,8 @@ fn format_routine_line_when_parent_dir_already_exists() {
         repository: "https://example.com/ctx.git".to_string(),
         branch: Some("main".to_string()),
     }];
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
 
-    let line = format_routine_line(&routine, &agent).unwrap();
+    let line = format_routine_line(&routine).unwrap();
     assert!(line.starts_with("@daily "), "wrong schedule: {line}");
     assert!(line.ends_with("# moadim-routine:existing-parent"));
     assert!(crate::paths::routine_script_path(&slug).exists());

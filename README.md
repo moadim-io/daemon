@@ -270,6 +270,48 @@ GET    /routines.ics          # subscribe to fire times as a calendar feed
 `agent_registered` so callers can tell whether the named agent is configured on
 the host.
 
+### Agent configuration
+
+Each agent the daemon can launch is described by a TOML file under
+`~/.config/moadim/agents/`. The filename stem is the registry key a routine
+references in its `agent` field — `claude.toml` registers the agent `claude`.
+On startup the daemon seeds the built-in defaults (`claude`, `codex`, `hermes`)
+for any that are missing; existing files are **never** overwritten, so your edits
+survive upgrades. Drop in a new `<name>.toml` to register an additional agent.
+
+```toml
+# ~/.config/moadim/agents/claude.toml
+command = "claude"
+args = ["--permission-mode", "auto", "{prompt}"]
+# Optional shell run in the workbench before the agent launches.
+# setup = "..."
+```
+
+| Field     | Type   | Required | Description                                                                                   |
+| --------- | ------ | -------- | --------------------------------------------------------------------------------------------- |
+| `command` | string | yes      | Executable to run (e.g. `"claude"`). Must be on the run's `PATH`.                              |
+| `args`    | list   | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.            |
+| `setup`   | string | no       | Shell command run in the workbench *before* the agent launches (e.g. to pre-seed editor trust state). |
+
+The agent runs with the workbench as its working directory. Each `args` entry
+(and the `command`) is expanded with these placeholders:
+
+| Placeholder     | Expands to                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `{workbench}`   | The workbench path. Since it is the cwd, this resolves to `.`.                               |
+| `{prompt_file}` | The composed prompt file, `prompt.md`, relative to the workbench.                            |
+| `{prompt}`      | The prompt's contents inlined as a single shell-quoted argument (`"$(cat prompt.md)"`).      |
+
+Prefer `{prompt_file}` for headless CLIs (`codex`/`hermes` use
+`args = ["exec", "{prompt_file}"]`): passing the prompt as one argument via
+`{prompt}` can exceed the OS per-argument size limit for large composed prompts.
+
+The optional `setup` command runs in the workbench with two shell variables in
+scope — `$WB` (absolute workbench path) and `$SESS` (tmux session name) — before
+the agent starts. The built-in `claude` config uses it to pre-seed
+`~/.claude.json` so the unattended session never blocks on the workspace-trust or
+MCP-approval prompts.
+
 ### Global user prompt
 
 An optional `~/.config/moadim/user_prompt.md` lets you inject persistent,

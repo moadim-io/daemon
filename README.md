@@ -235,7 +235,7 @@ git-trackable just like jobs:
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 
 **Workbenches and cleanup:** each run executes in a workbench under
-`~/.config/moadim/workbenches/`. Finished, expired workbenches are reaped on an
+`~/.moadim/workbenches/`. Finished, expired workbenches are reaped on an
 hourly sweep so they don't accumulate; trigger a sweep on demand with
 `moadim cleanup`. Sessions still running are never reaped.
 

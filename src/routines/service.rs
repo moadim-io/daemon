@@ -345,6 +345,24 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 }
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
+/// Resolve the shell binary used to launch a routine's agent command.
+///
+/// Mirrors the `crontab_bin()` structural guard (issues #217 / #175): the
+/// `MOADIM_SH_BIN` shim is honoured first, and in **test builds** with no shim
+/// configured this never falls back to the real `sh` — it returns a path that cannot
+/// exist, so the spawn fails harmlessly and the trigger only logs a warning instead
+/// of executing a real agent command on the developer's machine.
+fn sh_bin() -> String {
+    if let Ok(bin) = std::env::var("MOADIM_SH_BIN") {
+        return bin;
+    }
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-sh-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "sh".to_string();
+    fallback
+}
+
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let mut lock = store.lock().unwrap();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
@@ -358,7 +376,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.
-            if let Err(err) = std::process::Command::new("sh")
+            if let Err(err) = std::process::Command::new(sh_bin())
                 .arg("-lc")
                 .arg(&cmd)
                 .spawn()

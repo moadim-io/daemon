@@ -699,14 +699,22 @@ fn svc_trigger_logs_when_handler_spawn_fails() {
 }
 
 #[test]
-fn svc_trigger_spawns_existing_handler_script() {
-    // Place an executable handler script under the handlers dir so svc_trigger's
-    // `handler_path.exists()` branch is taken and the script is spawned.
+fn svc_trigger_guard_blocks_running_a_real_handler() {
+    // Structural guard for #217: an executable handler exists under the handlers dir,
+    // so `handler_path.exists()` is true and the spawn branch is taken — yet in a test
+    // build, with no `MOADIM_HANDLER_BIN` shim, `handler_bin()` resolves to a path that
+    // cannot exist, so the real handler is never executed. If it *were* run it would
+    // create the sentinel file; we assert that never happens.
     let handlers = crate::paths::handlers_dir();
     std::fs::create_dir_all(&handlers).unwrap();
     let handler_name = format!("cov-handler-{}", uuid::Uuid::new_v4());
     let handler_path = handlers.join(&handler_name);
-    std::fs::write(&handler_path, "#!/bin/sh\nexit 0\n").unwrap();
+    let sentinel = std::env::temp_dir().join(format!("moadim-sentinel-{}", uuid::Uuid::new_v4()));
+    std::fs::write(
+        &handler_path,
+        format!("#!/bin/sh\ntouch {}\n", sentinel.display()),
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -731,9 +739,55 @@ fn svc_trigger_spawns_existing_handler_script() {
 
     let triggered = svc_trigger(&store, &id).unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());
+    assert!(
+        !sentinel.exists(),
+        "the test-build guard must stop the real handler from executing"
+    );
 
     crate::storage::remove_job_dir(&id).unwrap();
     let _ = std::fs::remove_file(&handler_path);
+    let _ = std::fs::remove_file(&sentinel);
+}
+
+#[test]
+fn handler_bin_never_resolves_to_real_handler_in_test_builds() {
+    // With no `MOADIM_HANDLER_BIN` shim, a test build must never spawn the real
+    // resolved handler: the returned path differs from the resolved one and cannot
+    // exist, so the eventual spawn fails harmlessly (mirror of the crontab guard).
+    let saved = std::env::var_os("MOADIM_HANDLER_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::remove_var("MOADIM_HANDLER_BIN");
+    }
+    let resolved = crate::paths::handlers_dir().join("some-real-handler");
+    let bin = handler_bin(&resolved);
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_HANDLER_BIN", value),
+            None => std::env::remove_var("MOADIM_HANDLER_BIN"),
+        }
+    }
+    assert_ne!(bin, resolved, "test build must not spawn the real handler");
+    assert!(!bin.exists(), "guard path must not exist");
+}
+
+#[test]
+fn handler_bin_honours_shim_override() {
+    // The `MOADIM_HANDLER_BIN` shim is honoured first, so a test that needs a working
+    // spawn can point the handler at a harmless stand-in binary.
+    let saved = std::env::var_os("MOADIM_HANDLER_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HANDLER_BIN", "/some/shim/handler");
+    }
+    let bin = handler_bin(std::path::Path::new("/ignored/real/handler"));
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_HANDLER_BIN", value),
+            None => std::env::remove_var("MOADIM_HANDLER_BIN"),
+        }
+    }
+    assert_eq!(bin, std::path::PathBuf::from("/some/shim/handler"));
 }
 
 #[tokio::test]

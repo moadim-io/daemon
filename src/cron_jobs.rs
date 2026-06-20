@@ -324,6 +324,27 @@ pub fn svc_delete(
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
+/// Resolve the program actually spawned for a cron `handler`.
+///
+/// Mirrors the `crontab_bin()` structural guard (issues #217 / #175): the
+/// `MOADIM_HANDLER_BIN` shim is honoured first, and in **test builds** with no shim
+/// configured this never spawns the real resolved handler — it returns a path that
+/// cannot exist, so a test that drops a real executable into the handlers dir still
+/// cannot run it; the trigger only logs a warning. Production builds spawn the
+/// resolved handler unchanged.
+fn handler_bin(resolved: &std::path::Path) -> std::path::PathBuf {
+    if let Ok(bin) = std::env::var("MOADIM_HANDLER_BIN") {
+        return std::path::PathBuf::from(bin);
+    }
+    #[cfg(test)]
+    {
+        let _ = resolved;
+        std::path::PathBuf::from("/nonexistent/moadim-test-handler-guard")
+    }
+    #[cfg(not(test))]
+    resolved.to_path_buf()
+}
+
 /// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk,
 /// then spawn the handler script from the handlers directory if it exists.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
@@ -335,7 +356,7 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     write_job(&job).map_err(|_| AppError::Internal)?;
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
-        if let Err(err) = std::process::Command::new(&handler_path).spawn() {
+        if let Err(err) = std::process::Command::new(handler_bin(&handler_path)).spawn() {
             log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}");
         }
     } else {

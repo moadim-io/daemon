@@ -782,6 +782,50 @@ fn svc_trigger_warns_when_spawn_fails() {
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
+#[test]
+fn sh_bin_never_resolves_to_real_sh_in_test_builds() {
+    // Structural guard for #217: with no `MOADIM_SH_BIN` shim, a test build must never
+    // fall back to the real `sh`, so a trigger test that forgets to isolate the
+    // environment cannot execute a real agent command. The resolved path must not
+    // exist, so the eventual spawn fails harmlessly (mirror of the crontab guard).
+    let saved = std::env::var_os("MOADIM_SH_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::remove_var("MOADIM_SH_BIN");
+    }
+    let bin = sh_bin();
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
+            None => std::env::remove_var("MOADIM_SH_BIN"),
+        }
+    }
+    assert_ne!(bin, "sh", "test build must not fall back to the real sh");
+    assert!(
+        !std::path::Path::new(&bin).exists(),
+        "guard path must not exist"
+    );
+}
+
+#[test]
+fn sh_bin_honours_shim_override() {
+    // The `MOADIM_SH_BIN` shim is honoured first, so a test that needs a working spawn
+    // can point the shell at a harmless stand-in.
+    let saved = std::env::var_os("MOADIM_SH_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_SH_BIN", "/some/shim/sh");
+    }
+    let bin = sh_bin();
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
+            None => std::env::remove_var("MOADIM_SH_BIN"),
+        }
+    }
+    assert_eq!(bin, "/some/shim/sh");
+}
+
 /// Build a create request with the given title and an otherwise-valid body.
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {

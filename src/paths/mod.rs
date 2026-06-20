@@ -113,6 +113,18 @@ pub fn routine_state_path(id: &str) -> PathBuf {
     routine_dir(id).join("state.local.toml")
 }
 
+/// Returns the path to `{routines_dir}/{id}/scheduled.local.toml`, the gitignored sidecar that
+/// records `last_scheduled_trigger_at`.
+///
+/// Unlike [`routine_state_path`] this sidecar is written by the routine's generated `run.sh` at
+/// each scheduled cron firing (the daemon is not in the loop then), and is only ever *read* by the
+/// daemon — kept in its own file so a daemon-side re-persist of `state.local.toml` can't clobber
+/// the scheduler-written timestamp. The `.local.` infix matches the `*.local.*` `.gitignore`
+/// pattern, so scheduled-fire churn never produces version-control diffs.
+pub fn routine_scheduled_state_path(id: &str) -> PathBuf {
+    routine_dir(id).join("scheduled.local.toml")
+}
+
 /// Returns the path to `{routines_dir}/{id}/run.sh`, the generated launch script invoked by cron.
 pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")

@@ -1,0 +1,29 @@
+# EditorConfig — shared whitespace baseline for this polyglot tree.
+# https://editorconfig.org
+#
+# This complements (does not duplicate) rustfmt/clippy/typos: it pins the
+# editor-level whitespace rules those tools don't cover, and applies to the
+# YAML/JSON/TOML/MD/HTML files they never format. Values are chosen to agree
+# with the current rustfmt output and existing files, so adopting this file
+# produces no reformatting churn — it just keeps future edits (human and agent)
+# from drifting on indentation, final newlines, and trailing whitespace.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Match rustfmt's defaults so the two never conflict.
+[*.rs]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,toml,html}]
+indent_style = space
+indent_size = 2
+
+# In Markdown, two trailing spaces are a hard line break — don't strip them.
+[*.md]
+trim_trailing_whitespace = false

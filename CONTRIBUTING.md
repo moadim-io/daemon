@@ -46,6 +46,11 @@ Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
 `schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`
 flags, add it to `[default.extend-words]` there.
 
+## Reporting security issues
+
+Found a vulnerability? **Do not open a public issue.** See
+[`SECURITY.md`](SECURITY.md) for the private disclosure process.
+
 ## Architecture at a glance
 
 The daemon (`src/`) is an [Axum](https://github.com/tokio-rs/axum) server that

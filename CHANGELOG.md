@@ -18,6 +18,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   hour, prev/next/`TODAY` navigation, and the current hour highlighted and
   scrolled into view. Available alongside the routines `LIST`/`CALENDAR` toggle
   and as a new `LIST`/`DAY` toggle on the previously table-only cron-jobs page.
+- **Zoom into the day view.** The single-day timeline gains a `−`/`+` zoom
+  control with four per-hour heights. The compact level keeps the wrapped-chip
+  layout; deeper levels switch each hour into a minute-positioned timeline where
+  fire times float at their exact minute against quarter-hour guide lines and a
+  `:00/:15/:30/:45` ruler, so sub-hour timing is readable at a glance. Closes #591.
 - **Set machines from the web UI.** The routine and cron-job create/edit forms now
   expose a `MACHINES` input (comma-separated), so multi-machine targeting is settable
   without dropping to the CLI or REST. Blank preserves today's behavior (empty list =

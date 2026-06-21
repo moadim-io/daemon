@@ -1,5 +1,6 @@
 //! Store-mutating service functions: list, get, create, update, delete, trigger, and logs.
 
+use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::cron_jobs::{normalize_schedule, validate_cron};
@@ -9,7 +10,9 @@ use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
-use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
+use super::cleanup::{
+    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
+};
 use super::command::{build_routine_command, slugify};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
@@ -40,6 +43,23 @@ fn reject_zero_secs(field: &str, value: Option<u64>) -> Result<(), AppError> {
         return Err(AppError::BadRequest(format!(
             "routine {field} must be greater than zero"
         )));
+    }
+    Ok(())
+}
+
+/// Reject a duration cap that exceeds the cron-derived `ceiling` for the routine's schedule.
+///
+/// `effective_ttl_secs` / `effective_max_runtime_secs` clamp an explicit value to
+/// `min(MAX_*_SECS, cron interval)`, so a larger value is silently inert — accepted, persisted, and
+/// shown in the UI, yet never enforced. Rejecting it up front (naming the ceiling) keeps the stored
+/// config honest, mirroring the other `reject_*` / `validate_*` boundary checks (#468).
+fn reject_over_ceiling(field: &str, value: Option<u64>, ceiling: u64) -> Result<(), AppError> {
+    if let Some(secs) = value {
+        if secs > ceiling {
+            return Err(AppError::BadRequest(format!(
+                "routine {field} {secs} exceeds the ceiling of {ceiling}s derived from this routine's schedule"
+            )));
+        }
     }
     Ok(())
 }
@@ -86,7 +106,7 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
 /// reproduces the previous behaviour. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
 pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
     drop(lock);
 
@@ -126,8 +146,7 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
 /// Look up a routine by `id`, returning `NotFound` if it does not exist.
 pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
@@ -215,12 +234,23 @@ pub fn svc_create(
     reject_blank("prompt", &req.prompt)?;
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
+    let ceiling_schedule = normalize_schedule(&req.schedule);
+    reject_over_ceiling(
+        "ttl_secs",
+        req.ttl_secs,
+        ttl_ceiling_secs(&ceiling_schedule),
+    )?;
+    reject_over_ceiling(
+        "max_runtime_secs",
+        req.max_runtime_secs,
+        max_runtime_ceiling_secs(&ceiling_schedule),
+    )?;
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
     let slug = slugify(&req.title);
     {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         if lock.values().any(|routine| slugify(&routine.title) == slug) {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{slug}\" already exists"
@@ -240,13 +270,13 @@ pub fn svc_create(
         created_at: now,
         updated_at: now,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .insert(routine.id.clone(), routine.clone());
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine create failed: {err}");
@@ -279,7 +309,7 @@ pub fn svc_update(
         Some(ref repos) => Some(validate_repositories(repos)?),
         None => None,
     };
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
     if let Some(ref new_title) = req.title {
@@ -294,7 +324,24 @@ pub fn svc_update(
             )));
         }
     }
-    let routine = lock.get_mut(id).unwrap();
+    // Reject ttl/max-runtime above the cron-derived ceiling for the *effective* schedule (the new
+    // one if supplied, else the routine's current schedule) — before any mutation, so a rejected
+    // update leaves the in-memory store untouched (#468).
+    let effective_schedule = match req.schedule.as_deref() {
+        Some(schedule) => normalize_schedule(schedule),
+        None => lock.get(id).ok_or(AppError::NotFound)?.schedule.clone(),
+    };
+    reject_over_ceiling(
+        "ttl_secs",
+        req.ttl_secs,
+        ttl_ceiling_secs(&effective_schedule),
+    )?;
+    reject_over_ceiling(
+        "max_runtime_secs",
+        req.max_runtime_secs,
+        max_runtime_ceiling_secs(&effective_schedule),
+    )?;
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);
     }
@@ -335,7 +382,7 @@ pub fn svc_update(
 
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
-    let routine = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+    let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
     remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
@@ -345,7 +392,7 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
@@ -388,8 +435,7 @@ pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
 /// Return the contents of the newest workbench `agent.log` for routine `id`.
 pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;

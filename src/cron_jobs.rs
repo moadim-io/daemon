@@ -1,5 +1,6 @@
 //! Cron job data model, service functions, and Axum HTTP handlers.
 
+use crate::utils::lock::LockRecover;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -183,7 +184,7 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     let normalized = normalize_schedule(expr.trim());
     normalized
         .parse::<Cron>()
-        .map_err(|err| AppError::BadRequest(format!("invalid cron expression: {}", err)))?;
+        .map_err(|err| AppError::BadRequest(format!("invalid cron expression: {err}")))?;
     Ok(())
 }
 
@@ -228,7 +229,7 @@ pub struct UpdateRequest {
 
 /// Return all jobs sorted by creation time (oldest first).
 pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobResponse> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
     jobs.sort_by_key(|j| j.created_at);
     drop(lock);
@@ -244,8 +245,7 @@ pub fn svc_get(
     id: &str,
 ) -> Result<CronJobResponse, AppError> {
     let job = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
@@ -272,7 +272,7 @@ pub fn svc_create(
         last_manual_trigger_at: None,
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
-    store.lock().unwrap().insert(job.id.clone(), job.clone());
+    store.lock_recover().insert(job.id.clone(), job.clone());
     if let Err(err) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after create failed: {err}");
     }
@@ -289,7 +289,7 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(sched) = req.schedule {
         job.schedule = normalize_schedule(&sched);
@@ -319,7 +319,7 @@ pub fn svc_delete(
     handlers: &HandlerRegistry,
     id: &str,
 ) -> Result<CronJobResponse, AppError> {
-    let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+    let job = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after delete failed: {err}");
@@ -330,7 +330,7 @@ pub fn svc_delete(
 /// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk,
 /// then spawn the handler script from the handlers directory if it exists.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     job.last_manual_trigger_at = Some(now_secs());
     let job = job.clone();
@@ -339,10 +339,10 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
         if let Err(err) = std::process::Command::new(&handler_path).spawn() {
-            log::warn!("trigger: failed to spawn handler {:?}: {err}", handler_path);
+            log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}");
         }
     } else {
-        log::warn!("trigger: handler script not found at {:?}", handler_path);
+        log::warn!("trigger: handler script not found at {handler_path:?}");
     }
     Ok(job)
 }
@@ -431,10 +431,21 @@ pub async fn trigger(
 
 /// Return the log file path for job `id`, or `NotFound` if no such job exists.
 pub fn svc_logs_path(store: &CronStore, id: &str) -> Result<std::path::PathBuf, AppError> {
-    if !store.lock().unwrap().contains_key(id) {
+    if !store.lock_recover().contains_key(id) {
         return Err(AppError::NotFound);
     }
     Ok(crate::paths::job_log_path(id))
+}
+
+/// Read job `id`'s log file to a string, or `NotFound` if no such job exists. Returns an empty
+/// string when the job exists but has not produced a log file yet. Shared by the REST `get_logs`
+/// handler and the `cron_job_logs` MCP tool so both surfaces read logs identically.
+pub fn svc_logs(store: &CronStore, id: &str) -> Result<String, AppError> {
+    let log_path = svc_logs_path(store, id)?;
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// `GET /cron-jobs/{id}/logs` — return the contents of the job's log file as plain text.
@@ -445,13 +456,7 @@ pub async fn get_logs(
     State(store): State<CronStore>,
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
-    let log_path = svc_logs_path(&store, &id)?;
-    if !log_path.exists() {
-        return Ok(String::new());
-    }
-    tokio::fs::read_to_string(&log_path)
-        .await
-        .map_err(|_| AppError::Internal)
+    svc_logs(&store, &id)
 }
 
 #[cfg(test)]

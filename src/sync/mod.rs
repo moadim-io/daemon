@@ -14,7 +14,7 @@
 //! This is the only sync direction the daemon runs.
 //!
 //! **Reverse sync** (crontab → moadim) is *not* wired up. The functions that
-//! implement it ([`sync_from_crontab`] and its `parse_block` /
+//! implement it ([`sync_from_crontab`](crate::sync::sync_from_crontab) and its `parse_block` /
 //! `parse_moadim_line` / `to_moadim_schedule` / `handler_from_command` helpers)
 //! exist and are unit-tested, but no caller invokes them on any interval or at
 //! startup — see issue #218. As a result, manual edits to the block do **not**
@@ -23,6 +23,7 @@
 //! These helpers are kept (behind `#[allow(dead_code)]`) so reverse sync can be
 //! enabled later without re-deriving the parser.
 
+use crate::utils::lock::LockRecover;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -227,7 +228,7 @@ pub(crate) fn format_crontab_line(job: &CronJob, handlers: &Path) -> String {
 fn build_block(store: &CronStore) -> String {
     let dir = handlers_dir();
     let mut jobs: Vec<CronJob> = {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         lock.values()
             .filter(|j| j.source == "managed" && j.enabled)
             .cloned()
@@ -397,7 +398,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
     let mut changed = false;
 
     {
-        let mut lock = store.lock().unwrap();
+        let mut lock = store.lock_recover();
 
         // Update existing managed jobs whose schedule or handler changed in the block.
         for job in lock.values_mut().filter(|j| j.source == "managed") {

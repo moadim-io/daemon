@@ -1,6 +1,7 @@
 //! iCalendar (RFC 5545) export of routine schedules so upcoming fire times can be
 //! subscribed to in external calendars.
 
+use crate::utils::lock::LockRecover;
 use chrono::{DateTime, Duration, Local, Utc};
 use croner::Cron;
 
@@ -80,6 +81,11 @@ fn fold_line(line: &str) -> String {
 /// the host's local timezone (matching crontab semantics) and emitted as UTC instants so the feed
 /// needs no embedded `VTIMEZONE`. Disabled routines and unparseable schedules (e.g. `@reboot`)
 /// contribute nothing.
+///
+/// When a routine fires more often than the cap allows within the horizon, the count cap is hit
+/// before the horizon is exhausted. To keep that truncation from silently reading as "covered the
+/// whole 30 days", a trailing marker `VEVENT` (UID `…-truncated@moadim`) is appended at the first
+/// omitted fire time, telling subscribers the feed was capped and where the projection stops.
 pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
     let dtstamp = format_utc(now.with_timezone(&Utc));
     let horizon = now + Duration::days(HORIZON_DAYS);
@@ -99,11 +105,12 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
         };
         let summary = escape_text(&routine.title);
         let description = escape_text(&format!("{} (agent: {})", routine.prompt, routine.agent));
-        for fire in cron
-            .iter_after(now)
-            .take_while(|dt| *dt <= horizon)
-            .take(MAX_EVENTS_PER_ROUTINE)
-        {
+        // Fire times within the horizon, in order. Kept as a stateful iterator so that after the
+        // per-routine cap is spent we can peek whether more fires remain inside the horizon and, if
+        // so, surface the truncation rather than letting the feed silently stop short of 30 days.
+        let mut fires = cron.iter_after(now).take_while(|dt| *dt <= horizon);
+        let mut emitted = 0usize;
+        for fire in fires.by_ref().take(MAX_EVENTS_PER_ROUTINE) {
             let stamp = format_utc(fire.with_timezone(&Utc));
             lines.push("BEGIN:VEVENT".to_string());
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
@@ -111,7 +118,33 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
             lines.push(format!("DTSTART:{stamp}"));
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
+            // A fire time is a momentary trigger, not a block of busy time. Mark
+            // the event TRANSPARENT (RFC 5545 §3.8.2.7) so subscribing to the feed
+            // does not show the operator as BUSY at every scheduled run.
+            lines.push("TRANSP:TRANSPARENT".to_string());
             lines.push("END:VEVENT".to_string());
+            emitted += 1;
+        }
+        // Cap reached with fires still pending inside the horizon: append a marker VEVENT at the
+        // first omitted fire so subscribers see the projection was truncated and where it stops.
+        if emitted == MAX_EVENTS_PER_ROUTINE {
+            if let Some(next) = fires.next() {
+                let stamp = format_utc(next.with_timezone(&Utc));
+                let note = escape_text(&format!(
+                    "{}: schedule truncated — only the first {} of more upcoming runs through {} \
+                     are listed. Subscribe to the daemon directly for the full schedule.",
+                    routine.title,
+                    MAX_EVENTS_PER_ROUTINE,
+                    horizon.format("%Y-%m-%d")
+                ));
+                lines.push("BEGIN:VEVENT".to_string());
+                lines.push(format!("UID:{}-truncated@moadim", routine.id));
+                lines.push(format!("DTSTAMP:{dtstamp}"));
+                lines.push(format!("DTSTART:{stamp}"));
+                lines.push(format!("SUMMARY:⚠ {summary} (schedule truncated)"));
+                lines.push(format!("DESCRIPTION:{note}"));
+                lines.push("END:VEVENT".to_string());
+            }
         }
     }
     lines.push("END:VCALENDAR".to_string());
@@ -128,7 +161,7 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
 
 /// Build the iCalendar feed for every routine currently in `store`.
 pub fn svc_ical(store: &RoutineStore) -> String {
-    let routines: Vec<Routine> = store.lock().unwrap().values().cloned().collect();
+    let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     build_ical(&routines, Local::now())
 }
 

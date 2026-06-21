@@ -20,6 +20,33 @@ fn tmux_kill_session_is_best_effort_on_missing_session() {
 }
 
 #[test]
+fn tmux_bin_falls_back_to_a_nonexistent_path_under_cfg_test() {
+    // Without an override, the test-build fallback must NOT be the real `tmux` binary, and must
+    // point at a path that does not exist, so probes/kills are harmless no-ops (#215). This mirrors
+    // the crontab_bin guard (#211).
+    let previous = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::remove_var("MOADIM_TMUX_BIN");
+    }
+
+    let bin = super::session::tmux_bin();
+    assert_ne!(bin, "tmux", "test build must not spawn the real tmux");
+    assert!(
+        !std::path::Path::new(&bin).exists(),
+        "test fallback must point at a non-existent path: {bin}"
+    );
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+}
+
+#[test]
 fn parse_workbench_name_splits_slug_and_timestamp() {
     assert_eq!(parse_workbench_name("foo-123"), Some(("foo", 123)));
     // Slug may contain dashes; only the final all-digit segment is the timestamp.
@@ -315,6 +342,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs,
         max_runtime_secs: None,
     }

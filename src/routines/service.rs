@@ -231,7 +231,11 @@ pub fn svc_create(
     let routine = Routine {
         id: Uuid::new_v4().to_string(),
         schedule: normalize_schedule(&req.schedule),
-        title: req.title,
+        // Trim before persisting so a padded title (`"  Deploy  "`) is not rendered
+        // verbatim into the workbench `CLAUDE.md` disclosure, the iCal `SUMMARY`, and
+        // the UI rows. Mirrors `validate_repositories`, which already normalizes the
+        // repository fields, and `validate_title`, which length-checks the trimmed value.
+        title: req.title.trim().to_string(),
         agent: req.agent,
         prompt: req.prompt,
         repositories,
@@ -299,7 +303,8 @@ pub fn svc_update(
         routine.schedule = normalize_schedule(&schedule);
     }
     if let Some(title) = req.title {
-        routine.title = title;
+        // Trim on rename for the same reason as `svc_create` above.
+        routine.title = title.trim().to_string();
     }
     if let Some(agent) = req.agent {
         routine.agent = agent;

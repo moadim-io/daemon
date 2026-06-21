@@ -41,6 +41,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   and `release.yml` are now reusable (`workflow_call`) and keep their `v*` tag-push
   trigger as a hand-cut fallback.
 
+### Fixed
+
+- **Test isolation.** The routine service and storage unit tests no longer write
+  into the developer's real `~/.config/moadim` home. They resolved paths through
+  `paths::home()`, which falls back to the real home when `MOADIM_HOME_OVERRIDE`
+  is unset, so tests leaked routine dirs (and the migration tests even scanned real
+  state). Every test now runs against an isolated temp home.
+
 ## [0.14.0] - 2026-06-21
 
 ### Added

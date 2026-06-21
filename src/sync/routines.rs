@@ -80,14 +80,20 @@ pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Op
     ))
 }
 
-/// Build the full routines block from the enabled managed routines in `store`.
+/// Build the full routines block from the managed routines in `store` that are cleared to fire.
 ///
-/// Routines whose agent config is missing are skipped with a warning.
+/// A routine reaches the crontab only when it passes the combined execution guard (#95): it must be
+/// `enabled` (the user's intent) **and** not `power_saving` (the system's transient throttle). A
+/// power-saving routine is left out of the block so its schedule never fires while throttled, then
+/// re-added by the next sync once the throttle lifts — without ever rewriting the user's `enabled`
+/// flag. Routines whose agent config is missing are skipped with a warning.
 fn build_block(store: &RoutineStore) -> String {
     let mut routines: Vec<Routine> = {
         let lock = store.lock_recover();
         lock.values()
-            .filter(|routine| routine.source == "managed" && routine.enabled)
+            .filter(|routine| {
+                routine.source == "managed" && routine.enabled && !routine.power_saving
+            })
             .cloned()
             .collect()
     };

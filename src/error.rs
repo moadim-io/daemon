@@ -18,6 +18,13 @@ pub enum AppError {
     NotFound,
     /// 409 Conflict with a human-readable description.
     Conflict(String),
+    /// 409 Conflict: the routine is user-disabled, so a manual trigger will not launch it (#95).
+    /// Distinct from [`AppError::RoutinePowerSaving`] so callers can tell the deliberate user-off
+    /// state from the transient system throttle.
+    RoutineDisabled,
+    /// 503 Service Unavailable: the routine is transiently paused by the system's power-saving
+    /// throttle and will resume on its own (#95). Distinct from [`AppError::RoutineDisabled`].
+    RoutinePowerSaving,
 }
 
 impl fmt::Display for AppError {
@@ -27,6 +34,13 @@ impl fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "bad request: {msg}"),
             AppError::NotFound => write!(f, "not found"),
             AppError::Conflict(msg) => write!(f, "conflict: {msg}"),
+            AppError::RoutineDisabled => {
+                write!(f, "routine is disabled; enable it before triggering")
+            }
+            AppError::RoutinePowerSaving => write!(
+                f,
+                "routine is paused by power saving; it will resume automatically"
+            ),
         }
     }
 }
@@ -38,6 +52,8 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::RoutineDisabled => StatusCode::CONFLICT,
+            AppError::RoutinePowerSaving => StatusCode::SERVICE_UNAVAILABLE,
         };
         (
             status,

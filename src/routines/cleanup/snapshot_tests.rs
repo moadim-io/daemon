@@ -15,6 +15,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
+        power_saving: false,
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,

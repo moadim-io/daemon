@@ -34,6 +34,7 @@ fn from_routine_populates_derived_fields() {
         prompt: "p".into(),
         repositories: vec![],
         enabled: true,
+        power_saving: false,
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,

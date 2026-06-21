@@ -11,6 +11,21 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- Per-routine **power-saving mode**: a system-driven throttle that transiently pauses
+  a routine to conserve resources without touching the user's `enabled` intent. The
+  two signals are orthogonal — the combined execution guard is `enabled && !power_saving`.
+  A power-saving routine is excluded from the crontab block (so its schedule never
+  fires) and from the iCal feed, and a manual trigger is refused with a distinct status
+  (`409 Conflict` for user-disabled vs `503 Service Unavailable` for power-saving) so
+  callers can tell a deliberate user-off from an automatic, self-lifting throttle. The
+  flag is runtime state, stored in the gitignored `state.local.toml` sidecar (never the
+  tracked `routine.toml`) and never accepted on a create/update request, so toggling it
+  preserves the user's `enabled` choice and resumes cleanly. `svc_trigger` now also
+  enforces the long-missing `enabled` guard. The UI distinguishes user-disabled from
+  power-saving routines (separate row indicator, stat card, and trigger tooltip). (#95)
+
 ### Fixed
 
 - Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the

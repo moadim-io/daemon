@@ -922,6 +922,7 @@ async fn router_serves_routines_ical_feed() {
             prompt: "do the thing".to_string(),
             repositories: vec![],
             enabled: true,
+            power_saving: false,
             source: "managed".to_string(),
             created_at: 0,
             updated_at: 0,

@@ -428,7 +428,8 @@ fn create_get_update_trigger_delete_routine_success() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 
-    // update
+    // update (leave `enabled` set so the routine stays triggerable below — the disabled-trigger
+    // guard has its own dedicated test)
     let result = handler
         .update_routine(Parameters(UpdateRoutineInput {
             id: id.clone(),
@@ -437,7 +438,7 @@ fn create_get_update_trigger_delete_routine_success() {
             agent: None,
             prompt: None,
             repositories: None,
-            enabled: Some(false),
+            enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
         }))
@@ -455,6 +456,51 @@ fn create_get_update_trigger_delete_routine_success() {
         .delete_routine(Parameters(IdInput { id: id.clone() }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn trigger_routine_refuses_disabled_routine() {
+    // The combined execution guard (#95) surfaces over MCP too: triggering a user-disabled routine
+    // returns an error result rather than launching it.
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(
+        new_store(),
+        new_registry(),
+        routines.clone(),
+        0,
+        test_shutdown(),
+    );
+
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Disable, then trigger: the guard refuses it.
+    handler
+        .update_routine(Parameters(UpdateRoutineInput {
+            id: id.clone(),
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: None,
+            repositories: None,
+            enabled: Some(false),
+            ttl_secs: None,
+            max_runtime_secs: None,
+        }))
+        .unwrap();
+    let result = handler.trigger_routine(Parameters(IdInput { id })).unwrap();
+    assert!(result.is_error.unwrap_or(false));
 }
 
 #[test]

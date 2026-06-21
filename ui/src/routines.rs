@@ -39,6 +39,11 @@ pub struct Routine {
     #[serde(default)]
     pub repositories: Vec<Repository>,
     pub enabled: bool,
+    /// System-driven power-saving throttle (#95): when `true` the routine is transiently paused
+    /// (excluded from the schedule, manual triggers refused) without clearing the user's `enabled`
+    /// intent. Orthogonal to `enabled`; absent on the bare `/trigger` payload, so default to `false`.
+    #[serde(default)]
+    pub power_saving: bool,
     #[serde(default)]
     pub source: String,
     #[serde(default)]
@@ -682,6 +687,9 @@ pub fn routine_stats(props: &StatsProps) -> Html {
     let total = props.routines.len();
     let enabled = props.routines.iter().filter(|r| r.enabled).count();
     let disabled = total - enabled;
+    // Power saving is orthogonal to enabled/disabled (#95): a routine can be enabled yet currently
+    // throttled, so count it separately rather than folding it into the disabled tally.
+    let power_saving = props.routines.iter().filter(|r| r.power_saving).count();
     let unreg = props
         .routines
         .iter()
@@ -701,6 +709,10 @@ pub fn routine_stats(props: &StatsProps) -> Html {
             <div class="stat-card disabled">
                 <div class="stat-label">{"DISABLED"}</div>
                 <div class="stat-val c-amber">{disabled}</div>
+            </div>
+            <div class="stat-card power-saving">
+                <div class="stat-label">{"POWER SAVING"}</div>
+                <div class="stat-val c-amber">{power_saving}</div>
             </div>
             <div class="stat-card unreg">
                 <div class="stat-label">{"UNREGISTERED AGENT"}</div>
@@ -908,10 +920,16 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     let first = month_start(today, *offset);
     let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
 
-    // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
+    // Accumulate per-cell chips in routine order: only routines cleared to fire with a parseable
+    // schedule — enabled by the user and not throttled by power saving (#95), mirroring which
+    // routines the crontab block actually schedules.
     let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
     let mut scheduled = 0usize;
-    for r in props.routines.iter().filter(|r| r.enabled) {
+    for r in props
+        .routines
+        .iter()
+        .filter(|r| r.enabled && !r.power_saving)
+    {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;
             for (i, &c) in counts.iter().enumerate() {
@@ -1111,6 +1129,26 @@ pub fn routine_row(props: &RowProps) -> Html {
         "agent config missing"
     };
 
+    // Combined execution state (#95): the user's `enabled` intent and the system's power-saving
+    // throttle are orthogonal signals, so surface them as separate indicators. A power-saving routine
+    // is paused even while `enabled`; the trigger tooltip names whichever reason applies so a user who
+    // hovers a paused routine learns *why* it will not run.
+    let (run_title, paused_badge) = if !r.enabled {
+        ("Disabled — enable the routine to run it", html! {})
+    } else if r.power_saving {
+        (
+            "Paused by power saving — resumes automatically",
+            html! {
+                <span class="cell-meta" style="color:var(--c-amber, #d9a200)"
+                    title="paused by power saving (system-driven; resumes automatically)">
+                    {"⏻ SAVING"}
+                </span>
+            },
+        )
+    } else {
+        ("Run now", html! {})
+    };
+
     html! {
         <tr>
             <td>
@@ -1133,6 +1171,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <input type="checkbox" checked={r.enabled} onchange={on_toggle} />
                     <div class="toggle-track"></div>
                 </label>
+                { paused_badge }
             </td>
             <td>
                 <div class="cell-time">{updated}</div>
@@ -1142,7 +1181,7 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>
                 <div class="row-actions">
-                    <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn run" title={run_title} onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
                     <button class="act-btn del" onclick={on_delete}>{"✕"}</button>

@@ -97,6 +97,21 @@ fn reconcile_refreshes_content_but_keeps_identity() {
 }
 
 #[test]
+fn reconcile_preserves_power_saving_throttle() {
+    // The system-driven power-saving throttle (#95) is runtime state, carried over untouched when a
+    // drifted default is rewritten — just like the user's enable/disable choice.
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.power_saving = true;
+    cur.prompt = "stale prompt".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("drifted routine should be rewritten");
+    assert!(
+        updated.power_saving,
+        "must preserve the system power-saving throttle across a reconcile"
+    );
+}
+
+#[test]
 fn reconcile_keeps_enabled_default_enabled() {
     let spec = &DEFAULT_ROUTINES[0];
     let mut cur = materialize(spec, 100);

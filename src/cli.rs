@@ -363,12 +363,14 @@ fn status_json(running: bool, pid: Option<u32>) -> String {
     .to_string()
 }
 
-/// Render the `cleanup` result as a one-line JSON object: `{"running":bool,"removed":N}`. `removed`
-/// is `0` when the server is not running (`running:false`).
+/// Render the `cleanup` result as a one-line JSON object:
+/// `{"running":bool,"removed":N,"address":…}`. `removed` is `0` when the server is not running
+/// (`running:false`). `address` surfaces the bound endpoint, matching `status`/`stop`.
 fn cleanup_json(removed: usize, running: bool) -> String {
     serde_json::json!({
         "running": running,
         "removed": removed,
+        "address": bind_addr(),
     })
     .to_string()
 }

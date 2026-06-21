@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- `moadim cleanup --json` now includes the bound `address` field
+  (`{"running":bool,"removed":N,"address":…}`), so every `--json` command surfaces
+  the endpoint it talked to, matching `status --json` and `stop --json`.
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

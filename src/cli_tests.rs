@@ -126,10 +126,12 @@ fn cleanup_json_reports_removed_and_running() {
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["removed"], serde_json::json!(3));
+    assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
 
     let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+    assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
 #[test]

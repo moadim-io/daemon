@@ -15,6 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::AppError;
 use crate::paths::machine_config_path;
 use crate::utils::atomic::atomic_write;
 use crate::utils::lock::LockRecover;
@@ -143,6 +144,31 @@ pub fn referenced_machines() -> std::collections::BTreeSet<String> {
 /// explicitly names this machine. Shared by the routine and cron-job crontab sync filters.
 pub fn targets(machines: &[String], me: &str) -> bool {
     machines.iter().any(|name| name == me)
+}
+
+/// Reject `machines` entries that are empty or whitespace-only, and return a normalized copy with
+/// each entry trimmed and duplicates collapsed (first occurrence wins, order preserved).
+///
+/// Matching in [`targets`] is exact and case-sensitive (`name == me`), so an untrimmed or empty
+/// entry can never match the resolved machine name — yet a non-empty list slips past the
+/// dormant-routine warning, producing an entry that runs nowhere with no warning at all. Validating
+/// here is the authoritative server-side seam shared by the routine and cron-job create/update
+/// paths (mirroring `validate_repositories`/`validate_title`), so the REST API, the MCP tools, and a
+/// hand-edited `routine.toml`/`job.toml` all reject identically (#600).
+pub fn validate_machines(machines: &[String]) -> Result<Vec<String>, AppError> {
+    let mut normalized: Vec<String> = Vec::with_capacity(machines.len());
+    for (index, name) in machines.iter().enumerate() {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "machines[{index}] must not be empty or whitespace-only"
+            )));
+        }
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
+    }
+    Ok(normalized)
 }
 
 /// Run the `moadim machine` CLI subcommand, returning the process exit code.

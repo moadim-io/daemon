@@ -230,7 +230,7 @@ pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
         Err(_) => return,
     };
     for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let old = entry.path().join("prompt.txt");
@@ -269,7 +269,7 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
         Err(_) => return,
     };
     for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
@@ -321,7 +321,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
     let mut routines = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
                 let dir_name = entry.file_name().to_string_lossy().to_string();
                 if let Some(routine) = load_routine_from_dir(&dir_name) {
                     routines.insert(routine.id.clone(), routine);

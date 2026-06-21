@@ -1,8 +1,16 @@
 #![deny(warnings)]
+// Forbid `.unwrap()` in production code so a poisoned lock or other panic
+// cannot take the daemon down. Tests use `.unwrap()` freely (panicking is the
+// desired failure mode there), so the lint is scoped to non-test builds.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
+/// Compile-time build provenance (crate version + git commit/date).
+mod build_info;
 /// Command-line interface and background-process lifecycle.
 mod cli;
+/// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
+mod commands;
 mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
@@ -48,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
+        cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Foreground => run_server().await,
     }
 }
@@ -84,6 +93,14 @@ async fn run_server() -> anyhow::Result<()> {
     // create/update/delete, leaving scheduled routines silently un-fired.
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
+    }
+    // Likewise re-sync managed cron-jobs to the crontab on startup, mirroring the routines sync
+    // above; otherwise a lost or emptied block (manual `crontab -e`/`crontab -r`, an OS migration,
+    // or a marker collision) leaves every managed job silently un-fired until the next job
+    // create/update/delete. `sync_to_crontab` is idempotent, so this is a no-op read on a healthy
+    // crontab.
+    if let Err(err) = sync::sync_to_crontab(&store) {
+        log::warn!("startup crontab sync (cron-jobs) failed: {err}");
     }
     let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;

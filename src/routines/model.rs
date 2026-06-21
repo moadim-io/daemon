@@ -92,6 +92,17 @@ pub struct Routine {
     /// command directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.
     #[serde(alias = "last_triggered_at")]
     pub last_manual_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.
+    ///
+    /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
+    /// updates only the manual field, a scheduled firing updates only this one. The scheduler is
+    /// the host OS crontab, which runs the routine's generated `run.sh` directly without going
+    /// through the daemon — so the script itself stamps this timestamp into the gitignored
+    /// `scheduled.local.toml` sidecar at fire time, and the daemon reads it back on load. The
+    /// daemon never writes this field (it is absent from `routine.toml` and the daemon-owned
+    /// `state.local.toml`), so re-persisting a routine can't clobber it.
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are

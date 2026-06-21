@@ -23,6 +23,7 @@
 //! These helpers are kept (behind `#[allow(dead_code)]`) so reverse sync can be
 //! enabled later without re-deriving the parser.
 
+use crate::utils::lock::LockRecover;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -225,7 +226,7 @@ pub(crate) fn format_crontab_line(job: &CronJob, handlers: &Path) -> String {
 fn build_block(store: &CronStore) -> String {
     let dir = handlers_dir();
     let mut jobs: Vec<CronJob> = {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         lock.values()
             .filter(|j| j.source == "managed" && j.enabled)
             .cloned()
@@ -395,7 +396,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
     let mut changed = false;
 
     {
-        let mut lock = store.lock().unwrap();
+        let mut lock = store.lock_recover();
 
         // Update existing managed jobs whose schedule or handler changed in the block.
         for job in lock.values_mut().filter(|j| j.source == "managed") {

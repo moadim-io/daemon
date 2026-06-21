@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The generated routines crontab block is now deterministic when several
+  routines share the same `created_at`. The block is built from a `HashMap`,
+  whose iteration order is unspecified, so tied routines previously emitted in
+  an arbitrary, run-to-run order — churning the block across syncs and defeating
+  the idempotency guard, which forced a needless `crontab -` rewrite that
+  mutates the user's live crontab. Ties are now broken on the stable routine id.
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

@@ -295,6 +295,45 @@ fn sync_writes_block_for_a_loaded_store() {
 }
 
 #[test]
+fn build_block_orders_tied_created_at_by_id_deterministically() {
+    // Two enabled managed routines sharing a created_at must emit in a stable, id-ordered
+    // sequence regardless of HashMap iteration order, so the generated crontab block does not
+    // churn across syncs. Insert in id-descending order to prove the sort — not insertion or
+    // hash order — fixes the line order.
+    let agent_name = "test-sync-agent-tied-order";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let title_a = "Tied Order Alpha Routine";
+    let title_b = "Tied Order Beta Routine";
+    let slug_a = slugify(title_a);
+    let slug_b = slugify(title_b);
+
+    let store = new_store();
+    // id "b-tied" > "a-tied"; both created_at == 0 (the make_routine default).
+    store
+        .lock()
+        .unwrap()
+        .insert("b-tied".into(), make_routine("b-tied", title_b, agent_name));
+    store
+        .lock()
+        .unwrap()
+        .insert("a-tied".into(), make_routine("a-tied", title_a, agent_name));
+
+    let block = build_block(&store);
+    let pos_a = block.find("# moadim-routine:a-tied").unwrap();
+    let pos_b = block.find("# moadim-routine:b-tied").unwrap();
+    assert!(pos_a < pos_b, "lower id must sort first: {block}");
+    // Stable across repeated builds.
+    assert_eq!(block, build_block(&store));
+
+    std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug_a));
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug_b));
+}
+
+#[test]
 fn build_block_includes_routine_with_agent_config() {
     let agent_name = "test-sync-agent-build-block";
     let title = "Inc Sync Routine";

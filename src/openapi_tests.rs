@@ -14,3 +14,18 @@ fn committed_spec_is_current() {
         panic!("apis/openapi.json was stale — regenerated; re-run tests and commit the change");
     }
 }
+
+/// The `servers[0].url` must stay relative so Swagger UI "Try it out" resolves
+/// against the page's own origin (works on any `MOADIM_BIND_ADDR` / behind a
+/// proxy). Guards against re-introducing a hardcoded absolute address.
+#[test]
+fn server_url_is_relative() {
+    use utoipa::OpenApi as _;
+    let spec = ApiDoc::openapi();
+    let servers = spec.servers.expect("spec declares a servers list");
+    let url = &servers.first().expect("at least one server entry").url;
+    assert!(
+        url.starts_with('/'),
+        "servers[0].url must be relative (origin-resolved), got {url:?}"
+    );
+}

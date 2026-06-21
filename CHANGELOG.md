@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenAPI `servers[0].url` is now the relative `/api/v1` instead of the
+  hardcoded `http://127.0.0.1:5784/api/v1`, so Swagger UI "Try it out" resolves
+  against whatever origin served `/docs` (a custom `MOADIM_BIND_ADDR`, a reverse
+  proxy) rather than always firing at loopback `:5784`. (#385)
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

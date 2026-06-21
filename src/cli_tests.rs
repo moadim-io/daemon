@@ -221,7 +221,54 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+    assert_eq!(
+        parse(argv(&["restart"])),
+        Command::Restart {
+            json: false,
+            quiet: false
+        }
+    );
+}
+
+#[test]
+fn restart_json_and_quiet_flags_parse() {
+    assert_eq!(
+        parse(argv(&["restart", "--json"])),
+        Command::Restart {
+            json: true,
+            quiet: false
+        }
+    );
+    for flag in ["--quiet", "-q"] {
+        assert_eq!(
+            parse(argv(&["restart", flag])),
+            Command::Restart {
+                json: false,
+                quiet: true
+            },
+            "flag {flag}"
+        );
+    }
+    assert_eq!(
+        parse(argv(&["restart", "--json", "-q"])),
+        Command::Restart {
+            json: true,
+            quiet: true
+        }
+    );
+}
+
+#[test]
+fn restart_json_reports_old_new_pid_and_address() {
+    let rotated: serde_json::Value = serde_json::from_str(&restart_json(Some(123), 456)).unwrap();
+    assert_eq!(rotated["old"], 123);
+    assert_eq!(rotated["new"], 456);
+    assert_eq!(rotated["address"], bind_addr());
+
+    // `old` is null when nothing was running, mirroring the `none` rotation rendering.
+    let fresh: serde_json::Value = serde_json::from_str(&restart_json(None, 456)).unwrap();
+    assert!(fresh["old"].is_null());
+    assert_eq!(fresh["new"], 456);
 }
 
 #[test]
@@ -613,7 +660,7 @@ fn restart_starts_fresh_when_none_running() {
     let home = temp_home("restart-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart().unwrap();
+    restart(false, false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -627,7 +674,7 @@ fn restart_replaces_running_server() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart().unwrap();
+    restart(false, false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 

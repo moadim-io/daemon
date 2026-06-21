@@ -71,6 +71,39 @@ fn svc_list_sorts_by_title_case_insensitively() {
     assert_eq!(list[2].routine.id, "cherry");
 }
 
+#[test]
+fn svc_list_breaks_ties_on_id_deterministically() {
+    // Routines come off a `HashMap` (unspecified iteration order), so equal
+    // sort keys must be broken on the stable routine id for the listing to be
+    // deterministic. Three routines share a `created_at`; ascending lists them
+    // by id (A→Z) and descending reverses that, never an arbitrary order.
+    let tied = || {
+        store_with(vec![
+            make_routine("charlie", "C", 50, 0),
+            make_routine("alpha", "A", 50, 0),
+            make_routine("bravo", "B", 50, 0),
+        ])
+    };
+
+    let asc = svc_list(&tied(), &RoutineListQuery::default());
+    assert_eq!(
+        asc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
+        ["alpha", "bravo", "charlie"],
+    );
+
+    let desc = svc_list(
+        &tied(),
+        &RoutineListQuery {
+            order: SortOrder::Desc,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        desc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
+        ["charlie", "bravo", "alpha"],
+    );
+}
+
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {

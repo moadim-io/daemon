@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Routine listings (`GET /routines`) are now deterministic when several routines
+  share the same sort key. The list is built from a `HashMap`, whose iteration
+  order is unspecified, so equal-key routines previously came back in an
+  arbitrary, run-to-run order. Ties are now broken on the stable routine id, and
+  descending order reverses the comparison rather than the sorted vector so the
+  tiebreak stays consistent.
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

@@ -152,11 +152,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> CronStore {
     let mut jobs = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if entry
-                .file_type()
-                .map(|file_type| file_type.is_dir())
-                .unwrap_or(false)
-            {
+            if entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
                 let id = entry.file_name().to_string_lossy().to_string();
                 if let Some(job) = load_job_from_dir(&id) {
                     jobs.insert(id, job);

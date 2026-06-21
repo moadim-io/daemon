@@ -84,9 +84,14 @@ fn word_boundary_hit_is_rewarded() {
 
 #[test]
 fn consecutive_run_beats_scattered() {
-    let consecutive = fuzzy_score("overview", "ove").expect("matches");
-    let scattered = fuzzy_score("o_v_e_rment", "ove").expect("matches");
-    assert!(consecutive > scattered);
+    // A tight run of the query characters outscores the same characters spread
+    // apart. Neutral tokens keep the spell-checker happy.
+    let consecutive = fuzzy_score("zzabczz", "abc").expect("matches");
+    let scattered = fuzzy_score("axbxc", "abc").expect("matches");
+    assert!(
+        consecutive > scattered,
+        "consecutive {consecutive} > scattered {scattered}"
+    );
 }
 
 #[test]

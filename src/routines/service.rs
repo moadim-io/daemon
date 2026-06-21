@@ -205,6 +205,26 @@ fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppErr
     Ok(normalized)
 }
 
+/// Reject blank (empty/whitespace-only) `tags` entries and return a normalized copy with each tag
+/// trimmed.
+///
+/// Tags are free-form labels for grouping routines; an empty list is valid. This only guards the
+/// contents of non-empty entries, mirroring [`validate_repositories`]: a blank label carries no
+/// meaning and would render as an empty chip, so it is refused at edit time rather than stored.
+fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::with_capacity(tags.len());
+    for (index, tag) in tags.iter().enumerate() {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "tags[{index}] must not be empty or whitespace-only"
+            )));
+        }
+        normalized.push(trimmed.to_string());
+    }
+    Ok(normalized)
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
@@ -218,6 +238,7 @@ pub fn svc_create(
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
+    let tags = validate_tags(&req.tags)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -243,6 +264,7 @@ pub fn svc_create(
         last_scheduled_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
+        tags,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -277,6 +299,10 @@ pub fn svc_update(
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let repositories = match req.repositories {
         Some(ref repos) => Some(validate_repositories(repos)?),
+        None => None,
+    };
+    let tags = match req.tags {
+        Some(ref tags) => Some(validate_tags(tags)?),
         None => None,
     };
     let mut lock = store.lock_recover();
@@ -318,6 +344,9 @@ pub fn svc_update(
     }
     if let Some(max_runtime) = req.max_runtime_secs {
         routine.max_runtime_secs = Some(max_runtime);
+    }
+    if let Some(tags) = tags {
+        routine.tags = tags;
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();

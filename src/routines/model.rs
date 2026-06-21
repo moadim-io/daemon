@@ -116,6 +116,10 @@ pub struct Routine {
     /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
+    /// Defaults to empty; each entry is trimmed and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -225,6 +229,10 @@ pub struct CreateRoutineRequest {
     /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
+    /// and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -247,6 +255,8 @@ pub struct UpdateRoutineRequest {
     pub ttl_secs: Option<u64>,
     /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
     pub max_runtime_secs: Option<u64>,
+    /// New tags list, or `None` to keep the existing value.
+    pub tags: Option<Vec<String>>,
 }
 
 #[cfg(test)]

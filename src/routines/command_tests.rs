@@ -18,6 +18,7 @@ fn make_routine(title: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     }

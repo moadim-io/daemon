@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Optional `tags` for routines.** Routines can now carry a free-form list of
+  string labels for grouping and organization. Tags are optional (default empty),
+  persisted in the tracked `routine.toml`, and settable across every surface: REST
+  (`tags` on the create/update bodies), MCP (`create_routine`/`update_routine`),
+  the CLI (repeatable `--tag` flag on `routines create|replace|update`), and the
+  web UI (a comma-separated field in the routine form plus a column in the table).
+  Blank or whitespace-only tags are rejected with `400 Bad Request`. (#502)
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

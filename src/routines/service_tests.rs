@@ -6,6 +6,35 @@ use crate::routines::{new_store, slugify, Repository};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing the
+/// env var and the temp dir on drop. This keeps `svc_create`/`svc_update`/`write_routine` and the
+/// other disk-touching paths off the developer's real `~/.moadim`, so a panicking assertion can never
+/// leak test routines into the real home. Tests in this crate run single-threaded
+/// (`RUST_TEST_THREADS=1`), so the global env mutation is safe.
+struct TempHome(std::path::PathBuf);
+
+impl TempHome {
+    fn set() -> TempHome {
+        let dir = std::env::temp_dir().join(format!("moadim-svctest-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp home");
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+        }
+        TempHome(dir)
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::remove_var("MOADIM_HOME_OVERRIDE");
+        }
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// Build a routine with overridable identity, title, timestamps, and repository URL.
 fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Routine {
     Routine {
@@ -38,6 +67,7 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
 
 #[test]
 fn svc_list_sorts_by_updated_at() {
+    let _home = TempHome::set();
     // Covers the `RoutineSort::Updated` arm: sort by `updated_at` ascending.
     let store = store_with(vec![
         make_routine("late", "Zeta", 100, 300),
@@ -56,6 +86,7 @@ fn svc_list_sorts_by_updated_at() {
 
 #[test]
 fn svc_list_sorts_by_title_case_insensitively() {
+    let _home = TempHome::set();
     // Covers the `RoutineSort::Title` arm: sort by lowercased title.
     let store = store_with(vec![
         make_routine("banana", "banana", 0, 0),
@@ -104,6 +135,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
 
 #[test]
 fn svc_create_rejects_blank_title() {
+    let _home = TempHome::set();
     // Covers the `reject_blank("title", ..)` error arm in `svc_create`: a
     // whitespace-only title is refused before any slug/disk work (#226).
     let store = new_store();
@@ -119,6 +151,7 @@ fn svc_create_rejects_blank_title() {
 
 #[test]
 fn svc_create_rejects_blank_prompt() {
+    let _home = TempHome::set();
     // Covers the `reject_blank("prompt", ..)` error arm in `svc_create`: an empty
     // prompt would make the routine fire forever with no task (#224).
     let store = new_store();
@@ -134,6 +167,7 @@ fn svc_create_rejects_blank_prompt() {
 
 #[test]
 fn svc_create_rejects_zero_ttl_secs() {
+    let _home = TempHome::set();
     // Covers the `reject_zero_secs("ttl_secs", ..)` error arm in `svc_create`:
     // a zero TTL reaps finished-run logs instantly (#233).
     let store = new_store();
@@ -149,6 +183,7 @@ fn svc_create_rejects_zero_ttl_secs() {
 
 #[test]
 fn svc_create_rejects_zero_max_runtime_secs() {
+    let _home = TempHome::set();
     // Covers the `reject_zero_secs("max_runtime_secs", ..)` error arm in
     // `svc_create`: a zero cap self-kills the run immediately (#233).
     let store = new_store();
@@ -164,6 +199,7 @@ fn svc_create_rejects_zero_max_runtime_secs() {
 
 #[test]
 fn svc_create_persists_machines() {
+    let _home = TempHome::set();
     // Covers the `machines: req.machines` assignment in `svc_create`.
     let store = new_store();
     let resp = svc_create(
@@ -179,6 +215,7 @@ fn svc_create_persists_machines() {
 
 #[test]
 fn svc_update_sets_machines() {
+    let _home = TempHome::set();
     // Covers the `if let Some(machines) = req.machines` branch in `svc_update`.
     let store = store_with(vec![make_routine("upd-machines", "Keep", 1, 1)]);
     let resp = svc_update(
@@ -195,6 +232,7 @@ fn svc_update_sets_machines() {
 
 #[test]
 fn svc_update_rejects_blank_title() {
+    let _home = TempHome::set();
     // Covers the `reject_blank("title", ..)` error arm in `svc_update`.
     let store = store_with(vec![make_routine("upd-blank-title", "Keep", 1, 1)]);
     let result = svc_update(
@@ -210,6 +248,7 @@ fn svc_update_rejects_blank_title() {
 
 #[test]
 fn svc_update_rejects_blank_prompt() {
+    let _home = TempHome::set();
     // Covers the `reject_blank("prompt", ..)` error arm in `svc_update`.
     let store = store_with(vec![make_routine("upd-blank-prompt", "Keep", 1, 1)]);
     let result = svc_update(
@@ -225,6 +264,7 @@ fn svc_update_rejects_blank_prompt() {
 
 #[test]
 fn svc_update_rejects_zero_durations() {
+    let _home = TempHome::set();
     // Covers both `reject_zero_secs` error arms on the update path.
     let store = store_with(vec![make_routine("upd-zero-secs", "Keep", 1, 1)]);
     let ttl = svc_update(
@@ -249,6 +289,7 @@ fn svc_update_rejects_zero_durations() {
 
 #[test]
 fn svc_create_rejects_ttl_above_cron_ceiling() {
+    let _home = TempHome::set();
     // A `*/5 * * * *` routine has a ttl ceiling of min(3600, 300) = 300s. An explicit 1800 would be
     // silently clamped to 300, so it is rejected with `BadRequest` up front (#468).
     let store = new_store();
@@ -265,6 +306,7 @@ fn svc_create_rejects_ttl_above_cron_ceiling() {
 
 #[test]
 fn svc_create_rejects_max_runtime_above_cron_ceiling() {
+    let _home = TempHome::set();
     // Mirror of the ttl ceiling for the watchdog bound (#468).
     let store = new_store();
     let result = svc_create(
@@ -280,6 +322,7 @@ fn svc_create_rejects_max_runtime_above_cron_ceiling() {
 
 #[test]
 fn svc_create_accepts_secs_at_cron_ceiling() {
+    let _home = TempHome::set();
     // A value equal to the cron-derived ceiling (`*/5` -> 300s) is in force, not clamped, so it
     // passes `reject_over_ceiling` (covering the `secs <= ceiling` arm for both fields). A
     // duplicate-slug routine pre-seeded in the store makes the create fail *after* that check with a
@@ -307,6 +350,7 @@ fn svc_create_accepts_secs_at_cron_ceiling() {
 
 #[test]
 fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
+    let _home = TempHome::set();
     // No schedule supplied: the ceiling derives from the routine's *current* `*/5` schedule, so a
     // 1800s ttl exceeds the 300s ceiling and is rejected without mutating the store (#468).
     let store = store_with(vec![Routine {
@@ -336,6 +380,7 @@ fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
 
 #[test]
 fn svc_update_rejects_secs_above_new_schedule_ceiling() {
+    let _home = TempHome::set();
     // A supplied schedule is the *effective* schedule for the ceiling: tightening a `@daily` routine
     // to `*/5` while setting max_runtime 1800 exceeds the new 300s ceiling and is rejected (#468).
     let store = store_with(vec![make_routine("upd-new-sched", "Keep New Sched", 1, 1)]);
@@ -353,6 +398,7 @@ fn svc_update_rejects_secs_above_new_schedule_ceiling() {
 
 #[test]
 fn svc_create_rejects_duplicate_slug() {
+    let _home = TempHome::set();
     // Covers the slug-conflict branch in `svc_create`: an existing routine whose
     // title slugifies to the same value forces a `Conflict`.
     let title = "Svc Create Dup ZZZ";
@@ -395,11 +441,11 @@ fn svc_create_rejects_duplicate_slug() {
 
         svc_delete(&store, &first.routine.id).unwrap();
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_create_rejects_malformed_agent_config() {
+    let _home = TempHome::set();
     // A referenced agent whose `<name>.toml` is present but unparseable is rejected at create time
     // with `BadRequest` quoting the parse error — not silently skipped at fire time.
     let agent_name = "svc-create-malformed-agent-zzz";
@@ -426,12 +472,11 @@ fn svc_create_rejects_malformed_agent_config() {
         Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
         other => panic!("expected BadRequest, got {other:?}"),
     }
-
-    std::fs::remove_file(&cfg).unwrap();
 }
 
 #[test]
 fn svc_update_rejects_malformed_agent_config() {
+    let _home = TempHome::set();
     // The same rejection applies when an update switches a routine to a malformed agent.
     let agent_name = "svc-update-malformed-agent-zzz";
     std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
@@ -463,13 +508,11 @@ fn svc_update_rejects_malformed_agent_config() {
         Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
         other => panic!("expected BadRequest, got {other:?}"),
     }
-
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
-    std::fs::remove_file(&cfg).unwrap();
 }
 
 #[test]
 fn svc_update_rejects_renaming_into_existing_slug() {
+    let _home = TempHome::set();
     // Covers the slug-conflict branch in `svc_update`: renaming one routine to a
     // title that another routine already owns yields a `Conflict`.
     let title_keep = "Svc Update Keep ZZZ";
@@ -507,13 +550,11 @@ fn svc_update_rejects_renaming_into_existing_slug() {
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));
     });
-
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title_keep));
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title_other));
 }
 
 #[test]
 fn svc_update_sets_ttl_secs() {
+    let _home = TempHome::set();
     // Covers the `req.ttl_secs` apply branch in `svc_update`.
     let title = "Svc Update Ttl ZZZ";
     let store = new_store();
@@ -544,12 +585,11 @@ fn svc_update_sets_ttl_secs() {
         .unwrap();
         assert_eq!(updated.routine.ttl_secs, Some(1800));
     });
-
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_update_sets_max_runtime_secs() {
+    let _home = TempHome::set();
     // Covers the `req.max_runtime_secs` apply branch in `svc_update`.
     let title = "Svc Update Max Runtime ZZZ";
     let store = new_store();
@@ -581,12 +621,11 @@ fn svc_update_sets_max_runtime_secs() {
         .unwrap();
         assert_eq!(updated.routine.max_runtime_secs, Some(1234));
     });
-
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_logs_returns_newest_workbench_log() {
+    let _home = TempHome::set();
     // Covers the newest-workbench selection inside `svc_logs`: with two valid
     // `{slug}-{ts}` workbench directories, the higher timestamp wins and its
     // `agent.log` contents are returned.
@@ -611,13 +650,11 @@ fn svc_logs_returns_newest_workbench_log() {
 
     let logs = svc_logs(&store, "logs-id").unwrap();
     assert_eq!(logs, "new log contents");
-
-    let _ = std::fs::remove_dir_all(&older);
-    let _ = std::fs::remove_dir_all(&newer);
 }
 
 #[test]
 fn svc_logs_skips_foreign_and_unparseable_workbenches() {
+    let _home = TempHome::set();
     // Exercises the read_dir loop body across every arm: a workbench whose name
     // does not parse as `{slug}-{ts}` (parser returns None → skipped), a workbench
     // that parses but belongs to a different routine (`dir_slug != slug` → skipped),
@@ -651,18 +688,14 @@ fn svc_logs_skips_foreign_and_unparseable_workbenches() {
 
     let logs = svc_logs(&store, "logs-mixed-id").unwrap();
     assert_eq!(logs, "mine log contents");
-
-    let _ = std::fs::remove_dir_all(&unparseable);
-    let _ = std::fs::remove_dir_all(&foreign);
-    let _ = std::fs::remove_dir_all(&mine);
 }
 
 #[test]
 fn svc_logs_empty_when_workbenches_dir_absent() {
-    // Covers the `read_dir` error path in `svc_logs`: with `HOME` redirected to a fresh
-    // temp dir, `workbenches_dir()` does not exist, so `std::fs::read_dir` returns Err and
-    // the loop is skipped entirely. With no workbench found, the function returns an empty
-    // string.
+    let _home = TempHome::set();
+    // Covers the `read_dir` error path in `svc_logs`: the fresh temp home has no `workbenches`
+    // subdirectory, so `std::fs::read_dir` returns Err and the loop is skipped entirely. With no
+    // workbench found, the function returns an empty string.
     let title = "Svc Logs No Workbenches ZZQ";
     let store = new_store();
     store.lock().unwrap().insert(
@@ -670,29 +703,15 @@ fn svc_logs_empty_when_workbenches_dir_absent() {
         make_routine("logs-empty-id", title, 1, 1),
     );
 
-    let fresh_home = std::env::temp_dir().join(format!("moadim-no-wb-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&fresh_home).unwrap();
-    let saved = std::env::var_os("HOME");
-    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored immediately after.
-    unsafe {
-        std::env::set_var("HOME", &fresh_home);
-    }
     assert!(!crate::paths::workbenches_dir().exists());
 
     let logs = svc_logs(&store, "logs-empty-id").unwrap();
-
-    unsafe {
-        match saved {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
-    }
     assert_eq!(logs, "");
-    let _ = std::fs::remove_dir_all(&fresh_home);
 }
 
 #[test]
 fn svc_logs_missing_routine_not_found() {
+    let _home = TempHome::set();
     assert!(matches!(
         svc_logs(&new_store(), "nope"),
         Err(AppError::NotFound)
@@ -723,6 +742,7 @@ fn with_empty_path(body: impl FnOnce()) {
 
 #[test]
 fn svc_create_warns_when_crontab_sync_fails() {
+    let _home = TempHome::set();
     // With `PATH` cleared the `crontab` binary cannot be spawned, so
     // `sync_routines_to_crontab` errors and `svc_create` logs the warning but
     // still returns the created routine.
@@ -746,11 +766,11 @@ fn svc_create_warns_when_crontab_sync_fails() {
         .unwrap();
         assert_eq!(created.routine.title, title);
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_update_warns_when_crontab_sync_fails() {
+    let _home = TempHome::set();
     // Same crontab-spawn failure as above, on the update path.
     let title = "Svc Update Sync Fail ZZZ";
     let store = new_store();
@@ -776,11 +796,11 @@ fn svc_update_warns_when_crontab_sync_fails() {
         .unwrap();
         assert_eq!(updated.routine.prompt, "changed");
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_delete_warns_when_crontab_sync_fails() {
+    let _home = TempHome::set();
     // Same crontab-spawn failure, on the delete path.
     let title = "Svc Delete Sync Fail ZZZ";
     let store = new_store();
@@ -791,7 +811,6 @@ fn svc_delete_warns_when_crontab_sync_fails() {
         let deleted = svc_delete(&store, "del-sync-id").unwrap();
         assert_eq!(deleted.routine.title, title);
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 /// Run `body` with `MOADIM_CRONTAB_BIN` pointed at a shim that succeeds (`crontab -l` prints an
@@ -829,6 +848,7 @@ fn with_working_crontab(body: impl FnOnce()) {
 
 #[test]
 fn svc_create_syncs_crontab_on_success() {
+    let _home = TempHome::set();
     // A working crontab shim makes the post-create sync return `Ok`, covering the
     // non-error branch of the sync guard in `svc_create`.
     let title = "Svc Create Sync OK ZZZ";
@@ -851,11 +871,11 @@ fn svc_create_syncs_crontab_on_success() {
         .unwrap();
         assert_eq!(created.routine.title, title);
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_update_syncs_crontab_on_success() {
+    let _home = TempHome::set();
     let title = "Svc Update Sync OK ZZZ";
     let store = new_store();
     let routine = make_routine("upd-sync-ok-id", title, 1, 1);
@@ -883,11 +903,11 @@ fn svc_update_syncs_crontab_on_success() {
         .unwrap();
         assert_eq!(updated.routine.prompt, "changed");
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_delete_syncs_crontab_on_success() {
+    let _home = TempHome::set();
     let title = "Svc Delete Sync OK ZZZ";
     let store = new_store();
     let routine = make_routine("del-sync-ok-id", title, 1, 1);
@@ -900,11 +920,11 @@ fn svc_delete_syncs_crontab_on_success() {
         let deleted = svc_delete(&store, "del-sync-ok-id").unwrap();
         assert_eq!(deleted.routine.title, title);
     });
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_trigger_warns_when_spawn_fails() {
+    let _home = TempHome::set();
     // With `PATH` cleared and an agent config present, `build_routine_command`
     // produces a command that `sh -c` cannot run because `sh` itself is not on
     // `PATH`, so the spawn fails and the warning branch runs. The trigger still
@@ -928,13 +948,11 @@ fn svc_trigger_warns_when_spawn_fails() {
         let triggered = svc_trigger(&store, "trig-spawn-id").unwrap();
         assert!(triggered.last_manual_trigger_at.is_some());
     });
-
-    let _ = std::fs::remove_file(&cfg);
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_trigger_scheduled_missing_routine_not_found() {
+    let _home = TempHome::set();
     assert!(matches!(
         svc_trigger_scheduled(&new_store(), "nope"),
         Err(AppError::NotFound)
@@ -943,6 +961,7 @@ fn svc_trigger_scheduled_missing_routine_not_found() {
 
 #[test]
 fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
+    let _home = TempHome::set();
     // The scheduled path must leave `last_manual_trigger_at` untouched (it is for *manual* triggers
     // only); `with_empty_path` makes the spawn fail so the test never launches a real session, while
     // still exercising the spawn branch.
@@ -965,9 +984,6 @@ fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
         let triggered = svc_trigger_scheduled(&store, "trig-sched-id").unwrap();
         assert!(triggered.last_manual_trigger_at.is_none());
     });
-
-    let _ = std::fs::remove_file(&cfg);
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 /// Build a create request with the given title and an otherwise-valid body.
@@ -987,6 +1003,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
 
 #[test]
 fn svc_create_rejects_blank_and_punctuation_titles() {
+    let _home = TempHome::set();
     // Covers `validate_title`'s alphanumeric-required reject branch via `svc_create`:
     // empty, whitespace-only, and punctuation-only titles all 400 before any
     // persistence or crontab sync, leaving the store empty (issue #226).
@@ -1003,6 +1020,7 @@ fn svc_create_rejects_blank_and_punctuation_titles() {
 
 #[test]
 fn svc_create_rejects_overlong_title() {
+    let _home = TempHome::set();
     // Covers `validate_title`'s max-length reject branch: a title past
     // `MAX_TITLE_LEN` characters 400s even though it has alphanumerics.
     let store = new_store();
@@ -1014,6 +1032,7 @@ fn svc_create_rejects_overlong_title() {
 
 #[test]
 fn svc_create_rejects_unknown_agent() {
+    let _home = TempHome::set();
     // Covers the agent-validation branch in `svc_create`: an agent name that is
     // not in the registry must fail loud with `BadRequest` instead of being
     // persisted and silently skipped at fire time (#139).
@@ -1039,6 +1058,7 @@ fn svc_create_rejects_unknown_agent() {
 
 #[test]
 fn svc_update_rejects_blank_and_punctuation_titles() {
+    let _home = TempHome::set();
     // Covers the `req.title` validation branch in `svc_update`: renaming an
     // existing routine to an empty, whitespace-only, or punctuation-only title
     // 400s and leaves the stored title untouched (issue #226).
@@ -1076,11 +1096,11 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
             original
         );
     }
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(original));
 }
 
 #[test]
 fn svc_create_accepts_builtin_agent() {
+    let _home = TempHome::set();
     // Covers the success path of agent validation: a built-in agent
     // (`ensure_default_agents` seeds `claude`/`codex`) is accepted.
     crate::routines::ensure_default_agents();
@@ -1104,11 +1124,11 @@ fn svc_create_accepts_builtin_agent() {
     assert_eq!(created.routine.agent, "claude");
 
     svc_delete(&store, &created.routine.id).unwrap();
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_update_rejects_unknown_agent() {
+    let _home = TempHome::set();
     // Covers the agent-validation branch in `svc_update`: updating a routine's
     // agent to an unknown name must fail with `BadRequest` before persisting.
     let title = "Svc Update Unknown Agent ZZZ";
@@ -1138,12 +1158,11 @@ fn svc_update_rejects_unknown_agent() {
         store.lock().unwrap().get("upd-agent-id").unwrap().agent,
         "claude"
     );
-
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_create_rejects_blank_repository_url() {
+    let _home = TempHome::set();
     // Covers the repositories-validation branch in `svc_create` (#241): an entry
     // whose URL is empty or whitespace-only must fail loud with `BadRequest`
     // instead of being stored and rendered as a broken `- ` clone bullet.
@@ -1174,6 +1193,7 @@ fn svc_create_rejects_blank_repository_url() {
 
 #[test]
 fn svc_create_rejects_blank_repository_branch() {
+    let _home = TempHome::set();
     // Covers the optional-branch guard: a `Some` branch that is empty/whitespace
     // must be rejected so `compose_prompt` cannot emit `- url (branch )`.
     let store = new_store();
@@ -1200,6 +1220,7 @@ fn svc_create_rejects_blank_repository_branch() {
 
 #[test]
 fn svc_create_trims_repository_entries() {
+    let _home = TempHome::set();
     // Covers the normalization path: surrounding whitespace on a valid URL/branch
     // is trimmed before storing, so the rendered preamble bullet is clean.
     crate::routines::ensure_default_agents();
@@ -1228,11 +1249,11 @@ fn svc_create_trims_repository_entries() {
     assert_eq!(repo.branch.as_deref(), Some("main"));
 
     svc_delete(&store, &created.routine.id).unwrap();
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]
 fn svc_update_rejects_blank_repository_url() {
+    let _home = TempHome::set();
     // Covers the repositories-validation branch in `svc_update`: replacing the
     // list with a blank-URL entry must fail with `BadRequest` before persisting.
     let title = "Svc Update Blank Repo ZZZ";
@@ -1268,6 +1289,4 @@ fn svc_update_rejects_blank_repository_url() {
         .unwrap()
         .repositories
         .is_empty());
-
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

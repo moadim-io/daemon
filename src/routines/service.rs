@@ -10,7 +10,9 @@ use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
-use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
+use super::cleanup::{
+    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
+};
 use super::command::{build_routine_command, slugify};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
@@ -41,6 +43,23 @@ fn reject_zero_secs(field: &str, value: Option<u64>) -> Result<(), AppError> {
         return Err(AppError::BadRequest(format!(
             "routine {field} must be greater than zero"
         )));
+    }
+    Ok(())
+}
+
+/// Reject a duration cap that exceeds the cron-derived `ceiling` for the routine's schedule.
+///
+/// `effective_ttl_secs` / `effective_max_runtime_secs` clamp an explicit value to
+/// `min(MAX_*_SECS, cron interval)`, so a larger value is silently inert — accepted, persisted, and
+/// shown in the UI, yet never enforced. Rejecting it up front (naming the ceiling) keeps the stored
+/// config honest, mirroring the other `reject_*` / `validate_*` boundary checks (#468).
+fn reject_over_ceiling(field: &str, value: Option<u64>, ceiling: u64) -> Result<(), AppError> {
+    if let Some(secs) = value {
+        if secs > ceiling {
+            return Err(AppError::BadRequest(format!(
+                "routine {field} {secs} exceeds the ceiling of {ceiling}s derived from this routine's schedule"
+            )));
+        }
     }
     Ok(())
 }
@@ -215,6 +234,17 @@ pub fn svc_create(
     reject_blank("prompt", &req.prompt)?;
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
+    let ceiling_schedule = normalize_schedule(&req.schedule);
+    reject_over_ceiling(
+        "ttl_secs",
+        req.ttl_secs,
+        ttl_ceiling_secs(&ceiling_schedule),
+    )?;
+    reject_over_ceiling(
+        "max_runtime_secs",
+        req.max_runtime_secs,
+        max_runtime_ceiling_secs(&ceiling_schedule),
+    )?;
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
@@ -294,6 +324,23 @@ pub fn svc_update(
             )));
         }
     }
+    // Reject ttl/max-runtime above the cron-derived ceiling for the *effective* schedule (the new
+    // one if supplied, else the routine's current schedule) — before any mutation, so a rejected
+    // update leaves the in-memory store untouched (#468).
+    let effective_schedule = match req.schedule.as_deref() {
+        Some(schedule) => normalize_schedule(schedule),
+        None => lock.get(id).ok_or(AppError::NotFound)?.schedule.clone(),
+    };
+    reject_over_ceiling(
+        "ttl_secs",
+        req.ttl_secs,
+        ttl_ceiling_secs(&effective_schedule),
+    )?;
+    reject_over_ceiling(
+        "max_runtime_secs",
+        req.max_runtime_secs,
+        max_runtime_ceiling_secs(&effective_schedule),
+    )?;
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);

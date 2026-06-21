@@ -13,7 +13,7 @@ fn scratch_dir() -> PathBuf {
 fn tmp_residue(dir: &Path) -> usize {
     std::fs::read_dir(dir)
         .unwrap()
-        .filter_map(|entry| entry.ok())
+        .filter_map(Result::ok)
         .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
         .count()
 }

@@ -379,7 +379,7 @@ fn write_routine_leaves_no_tmp_residue() {
         write_routine(&make_routine(id, title)).unwrap();
         let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
             .unwrap()
-            .filter_map(|entry| entry.ok())
+            .filter_map(Result::ok)
             .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
             .count();
         assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");

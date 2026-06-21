@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Enabled the `clippy::redundant_closure_for_method_calls` lint and fixed the
+  violations, replacing closures that only forward their receiver to a method
+  (`|e| e.ok()`, `|s| s.to_string()`, `|p| p.into_inner()`) with the method
+  path itself (`Result::ok`, `ToString::to_string`,
+  `std::sync::PoisonError::into_inner`). No behavior change.
+
 ## [0.15.0] - 2026-06-21
 
 ### Added

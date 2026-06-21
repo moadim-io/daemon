@@ -19,7 +19,7 @@ const UNREACHABLE_ADDR: &str = "127.0.0.1:1";
 
 /// Build a `Vec<String>` argv from string literals.
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|arg| arg.to_string()).collect()
+    args.iter().map(ToString::to_string).collect()
 }
 
 /// Save an env var's prior value and restore it on drop so a test's override never leaks.

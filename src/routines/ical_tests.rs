@@ -75,7 +75,29 @@ fn unparseable_schedule_is_skipped() {
 #[test]
 fn high_frequency_schedule_is_capped() {
     let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
-    assert_eq!(count(&ics, "BEGIN:VEVENT"), 100);
+    // 100 real events plus one trailing truncation-marker VEVENT (see below).
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 101);
+}
+
+#[test]
+fn truncated_schedule_emits_marker_event() {
+    let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
+    // The cap is surfaced, not silent: a distinctly-UID'd marker VEVENT is appended.
+    assert!(ics.contains("UID:r1-truncated@moadim\r\n"));
+    assert!(ics.contains("SUMMARY:⚠ My Routine (schedule truncated)\r\n"));
+    // The DESCRIPTION is long enough to be line-folded; unfold before matching its prose.
+    let unfolded = ics.replace("\r\n ", "");
+    assert!(unfolded.contains("only the first 100 of more upcoming runs"));
+    // Exactly one marker, regardless of how far over the cap the routine fires.
+    assert_eq!(count(&ics, "-truncated@moadim"), 1);
+}
+
+#[test]
+fn untruncated_schedule_has_no_marker() {
+    // A daily routine stays well under the cap, so no truncation marker is emitted.
+    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    assert!(!ics.contains("-truncated@moadim"));
+    assert!(!ics.contains("schedule truncated"));
 }
 
 #[test]

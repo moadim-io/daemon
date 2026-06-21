@@ -11,14 +11,41 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim status --json` now folds the running server's `GET /health` details into
+  its object as `uptime_secs` and `version`, so a single call answers liveness
+  **and** age/version instead of forcing a second `curl /health`. Both fields are
+  `null` when no server answers or its `/health` body cannot be parsed; exit codes
+  and the human-readable `status` output are unchanged (#284).
+
 ### Changed
 
+- Enabled the `clippy::map_unwrap_or` lint and fixed the violations, replacing
+  `map(...).unwrap_or(...)` / `map(...).unwrap_or_else(...)` chains with the more
+  direct `map_or` / `map_or_else`. No behavior change. (#524)
 - Enabled the `clippy::semicolon_if_nothing_returned` lint and fixed the existing
   violations so statements that return `()` end with a trailing semicolon. No
   behavior change.
 
 ### Fixed
 
+- 6-field cron schedules (`sec min hour dom month dow`, accepted by `croner`)
+  are now projected to a valid 5-field OS crontab line instead of being written
+  verbatim. Previously only 7-field expressions had their leading seconds
+  stripped, so a valid 6-field schedule reached the crontab unchanged — where
+  vixie-cron/cronie either rejects the line (silently dropping every managed
+  job) or misreads seconds as minutes (shifting the schedule). `normalize_schedule`
+  and `to_os_schedule` now handle the 6-field form the same way as 7-field.
+- The iCal feed (`GET /routines.ics`) no longer silently stops short of its
+  advertised 30-day horizon for high-frequency routines. The per-routine
+  `MAX_EVENTS_PER_ROUTINE = 100` cap still bounds feed size, but when a routine
+  fires more often than the cap allows within the horizon, a trailing
+  truncation-marker `VEVENT` (UID `…-truncated@moadim`) is now appended at the
+  first omitted fire time, so calendar subscribers can see the projection was
+  capped and where it stops instead of the routine appearing to just end after a
+  few days (#251).
+- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

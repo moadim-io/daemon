@@ -334,6 +334,14 @@ on `$?` without parsing stdout: they exit `0` when a server is running (and `cle
 asked it to shut down) and `3` when no server is reachable. Any other failure exits non-zero (`1`)
 with a message on stderr.
 
+**Stop under a service install:** when moadim is installed as an OS service (`moadim install` — a
+systemd user unit on Linux, a launchd agent on macOS), `moadim stop` makes the daemon **stay
+stopped**. The supervisor restarts only on a *failure* exit (systemd `Restart=on-failure`, launchd
+`KeepAlive = { SuccessfulExit = false }`), so a clean shutdown — `moadim stop`, the UI STOP button,
+`POST /shutdown`, all of which exit `0` — is not resurrected, while a crash is still auto-restarted.
+To start the service again after a stop, use `moadim` (or your supervisor's `systemctl --user start`
+/ `launchctl` controls).
+
 ### Data commands
 
 Beyond lifecycle, the CLI exposes **every** cron-job and routine action the REST API and MCP tools

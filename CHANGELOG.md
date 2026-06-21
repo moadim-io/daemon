@@ -70,6 +70,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   persisted, and surviving entries are trimmed. Malformed `repositories` lists
   are now caught at the API boundary rather than surfacing later as a confusing
   run-time failure (#241).
+- Defense-in-depth security response headers are now injected on every HTTP
+  response served by the daemon (web UI + `/api/v1`): `X-Frame-Options: DENY`
+  and a `frame-ancestors 'none'` CSP block clickjacking of the dashboard's
+  destructive controls, `X-Content-Type-Options: nosniff` stops content
+  sniffing, and `Referrer-Policy: no-referrer` keeps the loopback URL from
+  leaking to third parties. The CSP is intentionally scoped to `frame-ancestors`
+  only so the existing inline + WASM SPA and Swagger UI keep working untouched
+  (#406).
 
 ### Changed
 

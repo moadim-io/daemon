@@ -368,9 +368,15 @@ pub fn shutdown_dialog(props: &ShutdownProps) -> Html {
 
     html! {
         <div class="overlay open">
-            <div class="confirm-dialog">
-                <div class="confirm-title">{"⏻ STOP SERVER"}</div>
-                <div class="confirm-msg">
+            <div
+                class="confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="shutdown-dialog-title"
+                aria-describedby="shutdown-dialog-msg"
+            >
+                <div id="shutdown-dialog-title" class="confirm-title">{"⏻ STOP SERVER"}</div>
+                <div id="shutdown-dialog-msg" class="confirm-msg">
                     { "Stop the moadim server? Scheduled jobs and routines will not run until it is started again." }
                 </div>
                 <div class="confirm-acts">

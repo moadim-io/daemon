@@ -11,8 +11,8 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:5784/api/v1",
-      "description": "Local development"
+      "url": "/api/v1",
+      "description": "This server"
     }
   ],
   "paths": {

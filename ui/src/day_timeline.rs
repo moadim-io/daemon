@@ -20,6 +20,12 @@ const MONTHS: [&str; 12] = [
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 ];
 
+/// Zoom levels: pixel height of one hour row. The first level keeps the original
+/// compact, chip-wrapping layout; the rest grow the hour tall enough to lay fire
+/// times out by their exact minute against quarter-hour guide lines, so you can
+/// read sub-hour timing instead of a single wrapped bucket.
+const ZOOM_LEVELS: [i32; 4] = [40, 140, 300, 600];
+
 /// One schedulable thing on the timeline: a display label and its cron schedule.
 #[derive(Clone, PartialEq)]
 pub struct TimelineItem {
@@ -67,6 +73,8 @@ pub struct DayTimelineProps {
 pub fn day_timeline(props: &DayTimelineProps) -> Html {
     // Day offset from today; negative = past, positive = future.
     let offset = use_state(|| 0i64);
+    // Zoom level index into ZOOM_LEVELS; 0 = compact, higher = deeper into the hour.
+    let zoom = use_state(|| 0usize);
     // Ref on the "now" hour row so we can scroll it into view when viewing today.
     let now_ref = use_node_ref();
 
@@ -82,11 +90,19 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
         let offset = offset.clone();
         Callback::from(move |_: MouseEvent| offset.set(0))
     };
+    let on_zoom_in = {
+        let zoom = zoom.clone();
+        Callback::from(move |_: MouseEvent| zoom.set((*zoom + 1).min(ZOOM_LEVELS.len() - 1)))
+    };
+    let on_zoom_out = {
+        let zoom = zoom.clone();
+        Callback::from(move |_: MouseEvent| zoom.set(zoom.saturating_sub(1)))
+    };
 
     // Scroll the current hour into view whenever we land on today.
     {
         let now_ref = now_ref.clone();
-        use_effect_with(*offset, move |_| {
+        use_effect_with((*offset, *zoom), move |_| {
             if let Some(el) = now_ref.cast::<Element>() {
                 el.scroll_into_view_with_bool(true);
             }
@@ -138,8 +154,17 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
             </div>
         }
     } else {
+        // Level 0 keeps the compact wrap layout; deeper levels switch to a
+        // minute-positioned timeline with quarter-hour guide lines.
+        let detailed = *zoom > 0;
+        let hour_px = ZOOM_LEVELS[*zoom];
+        let scroll_cls = if detailed {
+            "day-scroll detail"
+        } else {
+            "day-scroll"
+        };
         html! {
-            <div class="day-scroll">
+            <div class={scroll_cls} style={format!("--dh:{hour_px}px")}>
                 { for (0..24usize).map(|h| {
                     let slot = &buckets[h];
                     let mut cls = String::from("day-hour");
@@ -147,15 +172,36 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
                         cls.push_str(" now");
                     }
                     let row_ref = if h == now_hour { now_ref.clone() } else { NodeRef::default() };
+                    let label = if detailed {
+                        html! {
+                            <div class="day-hour-label">
+                                <span>{format!("{h:02}:00")}</span>
+                                <span class="qt">{format!("{h:02}:15")}</span>
+                                <span class="qt">{format!("{h:02}:30")}</span>
+                                <span class="qt">{format!("{h:02}:45")}</span>
+                                <span class="qt-end"></span>
+                            </div>
+                        }
+                    } else {
+                        html! { <div class="day-hour-label">{format!("{h:02}:00")}</div> }
+                    };
                     html! {
                         <div class={cls} ref={row_ref}>
-                            <div class="day-hour-label">{format!("{h:02}:00")}</div>
+                            {label}
                             <div class="day-hour-slot">
-                                { for slot.iter().map(|(t, label)| html! {
-                                    <div class="day-chip" title={label.clone()}>
-                                        <span class="day-chip-time">{format!("{:02}:{:02}", t.hour(), t.minute())}</span>
-                                        <span class="day-chip-label">{label.clone()}</span>
-                                    </div>
+                                { for slot.iter().map(|(t, lbl)| {
+                                    let frac = (t.minute() as f32 + t.second() as f32 / 60.0) / 60.0;
+                                    let style = if detailed {
+                                        Some(format!("top:{:.3}%", frac * 100.0))
+                                    } else {
+                                        None
+                                    };
+                                    html! {
+                                        <div class="day-chip" style={style} title={lbl.clone()}>
+                                            <span class="day-chip-time">{format!("{:02}:{:02}", t.hour(), t.minute())}</span>
+                                            <span class="day-chip-label">{lbl.clone()}</span>
+                                        </div>
+                                    }
                                 }) }
                             </div>
                         </div>
@@ -171,6 +217,13 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
                 <button class="btn-refresh" title="Previous day" aria-label="Previous day" onclick={on_prev}>{"‹"}</button>
                 <div class="day-date">{date_label}</div>
                 <button class="btn-refresh" title="Next day" aria-label="Next day" onclick={on_next}>{"›"}</button>
+                <div class="day-zoom">
+                    <button class="btn-refresh" title="Zoom out" aria-label="Zoom out"
+                        disabled={*zoom == 0} onclick={on_zoom_out}>{"−"}</button>
+                    <span class="day-zoom-level">{format!("{}×", *zoom + 1)}</span>
+                    <button class="btn-refresh" title="Zoom into the hour" aria-label="Zoom in"
+                        disabled={*zoom == ZOOM_LEVELS.len() - 1} onclick={on_zoom_in}>{"+"}</button>
+                </div>
                 <button class="btn btn-ghost btn-sm" onclick={on_today}>{"TODAY"}</button>
             </div>
             {body}

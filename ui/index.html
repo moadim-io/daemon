@@ -857,15 +857,26 @@
       text-align: center;
     }
     .day-nav .btn-ghost { margin-left: auto; }
+    .day-zoom { display: flex; align-items: center; gap: 4px; }
+    .day-zoom .btn-refresh { padding: 2px 8px; }
+    .day-zoom-level {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--text-ghost);
+      min-width: 22px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
 
     .day-scroll {
+      --dh: 40px;
       max-height: 60vh;
       overflow-y: auto;
     }
     .day-hour {
       display: grid;
       grid-template-columns: 64px 1fr;
-      min-height: 38px;
+      min-height: var(--dh);
       border-bottom: 1px solid var(--border);
     }
     .day-scroll > .day-hour:last-child { border-bottom: none; }
@@ -888,6 +899,47 @@
       gap: 4px;
       padding: 6px 8px;
     }
+
+    /* ── Detail (zoomed) mode: minute-positioned timeline ── */
+    /* Hour label becomes a quarter-hour ruler spanning the tall row. */
+    .day-scroll.detail .day-hour-label {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 0 10px;
+      text-align: right;
+    }
+    .day-scroll.detail .day-hour-label .qt { font-size: 9px; opacity: 0.45; }
+    .day-scroll.detail .day-hour-label .qt-end { height: 0; }
+    /* Slot is a positioning context with quarter-hour guide lines. */
+    .day-scroll.detail .day-hour-slot {
+      position: relative;
+      display: block;
+      padding: 0;
+    }
+    .day-scroll.detail .day-hour-slot::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        var(--border) 0,
+        var(--border) 1px,
+        transparent 1px,
+        transparent calc(var(--dh) / 4)
+      );
+      opacity: 0.5;
+    }
+    /* Each fire chip floats at its exact minute via inline top:%. */
+    .day-scroll.detail .day-chip {
+      position: absolute;
+      left: 8px;
+      max-width: calc(100% - 16px);
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+    .day-scroll.detail .day-chip:hover { z-index: 2; }
     .day-chip {
       display: inline-flex;
       align-items: baseline;

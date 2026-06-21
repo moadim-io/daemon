@@ -186,6 +186,10 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
 /// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
+///
+/// The agent invocation is suffixed with `; echo $? > exit_code` so each run records its terminal
+/// exit status into `$WB/exit_code` (see the inline note below), shared by the scheduled (crontab)
+/// and manual (`trigger`) launch paths since both build the command here.
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
@@ -200,7 +204,13 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     for arg in &agent.args {
         invocation.push(substitute(arg, workbench_ref, prompt_file_ref));
     }
-    let invocation = invocation.join(" ");
+    // Capture the agent's terminal exit status into `$WB/exit_code` when it finishes, so a
+    // finished-but-failed run is distinguishable from a successful one. The pane's cwd is `$WB`
+    // (set via `tmux -c "$WB"` below), so the relative `exit_code` lands in the run's workbench.
+    // `$?` is the agent process's exit code: `0` on success, non-zero on error (e.g. a crash, an
+    // auth failure, a panic). A watchdog-forced kill instead writes the `killed` sentinel (see
+    // `cleanup::session::note_forced_kill`), so the three outcomes never collapse into one.
+    let invocation = format!("{}; echo $? > exit_code", invocation.join(" "));
 
     let mut stmts = vec![
         // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see

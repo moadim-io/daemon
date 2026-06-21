@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- The routine-origin disclosure write into the workbench `CLAUDE.md` now
+  fail-fasts. Previously this `printf > "$WB/CLAUDE.md"` was `;`-joined with no
+  failure guard, so if the write failed (read-only/full `$HOME`, an unwritable
+  `$WB`, disk-quota/inode exhaustion) the launch fell through to `cp prompt.md`,
+  setup, and `tmux new-session`, starting the Claude agent with no `CLAUDE.md` —
+  hence no routine-origin disclosure mandate. It now aborts the launch (logging
+  to `agent.log` and stderr) exactly like the adjacent `cp prompt.md` guard. The
+  optional user-prompt append remains best-effort (#482).
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

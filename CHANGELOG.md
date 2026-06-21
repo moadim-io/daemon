@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- `moadim uninstall` now clears the managed crontab blocks (both
+  `# BEGIN MOADIM-ROUTINES` and `# BEGIN MOADIM`) in addition to removing the OS
+  service, so `cron` stops firing routines/jobs against a daemon you uninstalled.
+  The routines block is cleared first because its marker is a superstring of the
+  cron-jobs marker (avoids the #324 collision). Best-effort and idempotent — a
+  crontab with no managed block, no crontab at all, or a failed service-removal
+  step still completes the cleanup — and it reports how many managed entries were
+  removed. (#380)
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

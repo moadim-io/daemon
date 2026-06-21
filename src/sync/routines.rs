@@ -33,9 +33,9 @@ use crate::routines::{
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 
 /// Delimiter marking the start of the moadim routines crontab block.
-const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
+pub(crate) const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
 /// Delimiter marking the end of the moadim routines crontab block.
-const BLOCK_END: &str = "# END MOADIM-ROUTINES";
+pub(crate) const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
@@ -120,7 +120,7 @@ fn build_block(store: &RoutineStore) -> String {
 }
 
 /// Substring identifying a routine line inside the crontab block (`# moadim-routine:<id>`).
-const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
+pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 
 /// Write all enabled managed routines from `store` into the OS routines crontab block.
 ///

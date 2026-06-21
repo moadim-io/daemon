@@ -251,6 +251,53 @@ pub(crate) fn replace_block(crontab: &str, block: &str) -> String {
     replace_block_with(crontab, block, BLOCK_BEGIN, BLOCK_END)
 }
 
+/// Substring identifying a managed cron-job line inside the crontab block
+/// (`# moadim:<id>`). Distinct from the routines tag `# moadim-routine:<id>` —
+/// the character after `moadim` differs (`:` vs `-`), so neither matches the
+/// other by substring.
+const JOB_LINE_MARKER: &str = "# moadim:";
+
+/// Remove BOTH managed crontab blocks — routines (`# BEGIN MOADIM-ROUTINES`) and
+/// cron-jobs (`# BEGIN MOADIM`) — from the user's crontab, leaving every other
+/// entry untouched. Returns the number of managed schedule lines removed.
+///
+/// Used by `moadim uninstall`: install registers an OS service *and* sync writes
+/// these crontab blocks, so a clean teardown must clear both — otherwise `cron`
+/// keeps firing routines/jobs against a daemon the user removed.
+///
+/// Best-effort and idempotent: a crontab with no managed block (or no crontab at
+/// all) removes nothing and returns `0` without rewriting the crontab.
+pub fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
+    let current = read_crontab()?;
+
+    // Count managed schedule lines before removal for the user-facing report.
+    let removed = current
+        .lines()
+        .filter(|line| {
+            line.contains(routines::ROUTINE_LINE_MARKER) || line.contains(JOB_LINE_MARKER)
+        })
+        .count();
+
+    // Remove the routines block FIRST: its begin marker (`# BEGIN MOADIM-ROUTINES`)
+    // is a superstring of the cron-jobs begin marker (`# BEGIN MOADIM`), so
+    // clearing cron-jobs first could match the routines marker by substring and
+    // wipe the wrong block (#324). Each removal is gated on the block actually
+    // being present so the no-op path never rewrites (and thus never reshapes)
+    // an otherwise-clean crontab — keeping the operation idempotent.
+    let mut updated = current.clone();
+    if updated.contains(routines::BLOCK_BEGIN) {
+        updated = replace_block_with(&updated, "", routines::BLOCK_BEGIN, routines::BLOCK_END);
+    }
+    if updated.contains(BLOCK_BEGIN) {
+        updated = replace_block_with(&updated, "", BLOCK_BEGIN, BLOCK_END);
+    }
+
+    if updated != current {
+        write_crontab(&updated)?;
+    }
+    Ok(removed)
+}
+
 /// Replace (or insert) a delimited block (`begin_marker`..`end_marker`) inside `crontab` text.
 pub(crate) fn replace_block_with(
     crontab: &str,

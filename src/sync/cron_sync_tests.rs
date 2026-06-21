@@ -776,3 +776,73 @@ fn crontab_bin_never_resolves_to_real_crontab_in_test_builds() {
         "the test-build crontab guard path must not exist so the spawn fails: {bin}"
     );
 }
+
+// ─── clear_managed_crontab_blocks (moadim uninstall, #380) ───────────────────
+
+/// A user crontab line preceding the managed blocks.
+const USER_BEFORE: &str = "0 0 * * * /usr/bin/backup";
+/// A user crontab line following the managed blocks.
+const USER_AFTER: &str = "0 9 * * * /usr/bin/report";
+
+/// A crontab carrying both managed blocks (routines + cron-jobs) wrapped by two
+/// unmanaged user entries, mirroring a real install.
+fn crontab_with_both_blocks() -> String {
+    format!(
+        "{USER_BEFORE}\n\
+         # BEGIN MOADIM-ROUTINES\n\
+         # Managed by moadim — routines (agent tmux sessions)\n\
+         */5 * * * * /bin/sh -l '/x/run.sh' # moadim-routine:r1\n\
+         # END MOADIM-ROUTINES\n\
+         # BEGIN MOADIM\n\
+         # Managed by moadim — edits here are overwritten on the next sync\n\
+         30 9 * * * /handlers/h1 # moadim:j1\n\
+         # END MOADIM\n\
+         {USER_AFTER}\n"
+    )
+}
+
+#[test]
+fn clear_removes_both_blocks_and_preserves_user_entries() {
+    let shim = CronShim::new(Some(&crontab_with_both_blocks()));
+    let removed = clear_managed_crontab_blocks().unwrap();
+    assert_eq!(removed, 2, "one routine line + one cron-job line");
+    let after = shim.store_contents();
+    assert!(!after.contains("# BEGIN MOADIM-ROUTINES"));
+    assert!(!after.contains("# BEGIN MOADIM"));
+    assert!(!after.contains("# moadim-routine:"));
+    assert!(!after.contains("# moadim:"));
+    assert!(
+        after.contains(USER_BEFORE),
+        "user entry before the block survives"
+    );
+    assert!(
+        after.contains(USER_AFTER),
+        "user entry after the block survives"
+    );
+}
+
+#[test]
+fn clear_is_idempotent_on_an_already_clean_crontab() {
+    let shim = CronShim::new(Some(&crontab_with_both_blocks()));
+    assert_eq!(clear_managed_crontab_blocks().unwrap(), 2);
+    let after_first = shim.store_contents();
+    // A second uninstall has nothing managed to remove: returns 0 and leaves the
+    // crontab byte-for-byte unchanged (no spurious rewrite).
+    assert_eq!(clear_managed_crontab_blocks().unwrap(), 0);
+    assert_eq!(shim.store_contents(), after_first);
+}
+
+#[test]
+fn clear_on_a_crontab_without_managed_blocks_is_a_noop() {
+    let plain = format!("{USER_BEFORE}\n{USER_AFTER}\n");
+    let shim = CronShim::new(Some(&plain));
+    assert_eq!(clear_managed_crontab_blocks().unwrap(), 0);
+    assert_eq!(shim.store_contents(), plain, "untouched");
+}
+
+#[test]
+fn clear_on_an_absent_crontab_succeeds_with_zero() {
+    let shim = CronShim::new(None);
+    assert_eq!(clear_managed_crontab_blocks().unwrap(), 0);
+    assert_eq!(shim.store_contents(), "", "nothing was written");
+}

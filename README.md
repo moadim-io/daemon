@@ -281,7 +281,7 @@ GET    /routines.ics          # subscribe to fire times as a calendar feed
 
 **MCP** — the same operations are exposed as tools: `list_routines`,
 `get_routine`, `create_routine`, `update_routine`, `delete_routine`,
-`trigger_routine`, and `cleanup_routines`.
+`trigger_routine`, `routine_logs`, `list_agents`, and `cleanup_workbenches`.
 
 **Agents:** the `agent` field resolves to a config at
 `~/.config/moadim/agents/<agent>.toml`. API responses include

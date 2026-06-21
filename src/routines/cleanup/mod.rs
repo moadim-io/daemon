@@ -75,7 +75,7 @@ fn reap_dir(
     };
     let mut removed = 0;
     for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();

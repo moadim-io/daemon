@@ -900,10 +900,10 @@ pub fn job_row(props: &JobRowProps) -> Html {
             </td>
             <td>
                 <div class="row-actions">
-                    <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
-                    <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
+                    <button class="act-btn del" title="Delete job" aria-label="Delete job" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
         </tr>
@@ -1245,7 +1245,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             <div class="modal">
                 <div class="modal-hd">
                     <div class="modal-title">{"EDIT JOB"}</div>
-                    <button class="modal-x" onclick={on_close_click.clone()}>{"✕"}</button>
+                    <button class="modal-x" title="Close" aria-label="Close" onclick={on_close_click.clone()}>{"✕"}</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -1527,7 +1527,7 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.handler)}</div>
-                <button class="btn-refresh" title="Refresh" onclick={on_refresh}>{"↻"}</button>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             <div class="logs-wrap">
                 {body}

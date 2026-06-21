@@ -340,7 +340,7 @@ pub fn header(props: &HeaderProps) -> Html {
                     <span class="health-status">{status}</span>
                     <span class="health-uptime">{uptime}</span>
                 </div>
-                <button class="btn-refresh" title="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
                 <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
             </div>
         </header>

@@ -412,8 +412,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
 pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;

@@ -13,13 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
-- `moadim run <id>` triggers a routine to run immediately from the terminal,
+- `moadim trigger <id>` triggers a routine to run immediately from the terminal,
   outside its schedule — the same on-demand run the REST API
   (`POST /routines/{id}/trigger`) and the MCP tool already expose. Prints
   `triggered routine <id>` and exits `0` on success, errors with
   `no routine with id <id>` on a `404`, and prints `moadim is not running`
   (exit `3`) when no server is reachable, matching the `status`/`cleanup`
-  exit-code contract.
+  exit-code contract. (`moadim run <id>` is accepted as a hidden back-compat
+  alias.)
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

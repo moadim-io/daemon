@@ -165,18 +165,30 @@ fn install_and_uninstall_commands() {
 }
 
 #[test]
-fn run_command_carries_the_routine_id() {
+fn trigger_command_carries_the_routine_id() {
     assert_eq!(
-        parse(argv(&["run", "abc-123"])),
-        Command::Run {
+        parse(argv(&["trigger", "abc-123"])),
+        Command::Trigger {
             id: "abc-123".to_string()
         }
     );
 }
 
 #[test]
-fn run_without_an_id_falls_back_to_help() {
+fn run_is_a_back_compat_alias_for_trigger() {
+    // `run` was the original subcommand name; it stays as a hidden alias of `trigger`.
+    assert_eq!(
+        parse(argv(&["run", "abc-123"])),
+        Command::Trigger {
+            id: "abc-123".to_string()
+        }
+    );
+}
+
+#[test]
+fn trigger_without_an_id_falls_back_to_help() {
     // Nothing to trigger without an id, so it shows usage rather than silently no-op'ing.
+    assert_eq!(parse(argv(&["trigger"])), Command::Help);
     assert_eq!(parse(argv(&["run"])), Command::Help);
 }
 
@@ -501,32 +513,32 @@ fn cleanup_errors_on_unexpected_status() {
 }
 
 #[test]
-fn run_triggers_routine_when_server_responds() {
+fn trigger_triggers_routine_when_server_responds() {
     let server = FakeServer::start(200, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert_eq!(run("some-id".to_string()).unwrap(), 0);
+    assert_eq!(trigger("some-id".to_string()).unwrap(), 0);
 }
 
 #[test]
-fn run_reports_unknown_routine_on_404() {
+fn trigger_reports_unknown_routine_on_404() {
     // A 404 from the trigger route means no routine has that id — a user error, surfaced as a
     // non-zero exit via the bubbled `Err`, distinct from "server not running".
     let server = FakeServer::start(404, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert!(run("missing".to_string()).is_err());
+    assert!(trigger("missing".to_string()).is_err());
 }
 
 #[test]
-fn run_errors_on_unexpected_status() {
+fn trigger_errors_on_unexpected_status() {
     let server = FakeServer::start(500, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert!(run("some-id".to_string()).is_err());
+    assert!(trigger("some-id".to_string()).is_err());
 }
 
 #[test]
-fn run_reports_not_running_when_no_server() {
+fn trigger_reports_not_running_when_no_server() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(run("some-id".to_string()).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(trigger("some-id".to_string()).unwrap(), EXIT_NOT_RUNNING);
 }
 
 #[test]

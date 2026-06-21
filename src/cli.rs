@@ -70,7 +70,7 @@ pub enum Command {
         json: bool,
     },
     /// Trigger a routine to run immediately, outside its schedule, by UUID.
-    Run {
+    Trigger {
         /// UUID of the routine to trigger.
         id: String,
     },
@@ -103,10 +103,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         Some("cleanup") => Command::Cleanup {
             json: wants_json(&args[1..]),
         },
-        // `run <id>` triggers a single routine on demand. Without an id there is nothing to run, so
-        // fall back to help rather than silently no-op (mirrors the unknown-argument behavior).
-        Some("run") => match args.get(1) {
-            Some(id) => Command::Run { id: id.clone() },
+        // `trigger <id>` runs a single routine on demand. Without an id there is nothing to
+        // trigger, so fall back to help rather than silently no-op (mirrors the unknown-argument
+        // behavior). `run` is kept as a hidden back-compat alias of the original subcommand name.
+        Some("trigger" | "run") => match args.get(1) {
+            Some(id) => Command::Trigger { id: id.clone() },
             None => Command::Help,
         },
         Some("install") => Command::Install,
@@ -151,7 +152,7 @@ pub fn print_help() {
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
-         \x20   run <id>               trigger a routine to run now, outside its schedule\n\
+         \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration\n\
          \x20   help, -h, --help       show this help\n\
@@ -333,7 +334,7 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
 /// (`404`), and a "not running" hint when no server is reachable. Returns the process exit code to
 /// surface, mirroring the `status`/`cleanup` contract: `0` when the routine was triggered, and
 /// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
-pub fn run(id: String) -> anyhow::Result<i32> {
+pub fn trigger(id: String) -> anyhow::Result<i32> {
     match http_request("POST", &format!("/api/v1/routines/{id}/trigger")) {
         Ok(200) => {
             println!("triggered routine {id}");

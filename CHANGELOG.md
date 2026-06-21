@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- The served daemon UI now bundles its `Share Tech Mono` webfont inline (base64
+  woff2 in `ui/index.html`) instead of loading it from Google's font CDN at
+  runtime. The self-contained UI no longer makes a third-party request on each
+  load (privacy), renders its intended typeface offline, and no longer flashes a
+  fallback font on first paint (#467).
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

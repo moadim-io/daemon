@@ -45,7 +45,7 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
         for repo in &routine.repositories {
             match &repo.branch {
                 Some(branch) => {
-                    body.push_str(&format!("- {} (branch {})\n", repo.repository, branch))
+                    body.push_str(&format!("- {} (branch {})\n", repo.repository, branch));
                 }
                 None => body.push_str(&format!("- {}\n", repo.repository)),
             }

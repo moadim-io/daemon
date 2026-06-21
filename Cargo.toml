@@ -60,3 +60,6 @@ min_ident_chars = "deny"
 uninlined_format_args = "deny"
 # Reject leftover `dbg!` debugging macros so they never ship to production.
 dbg_macro = "deny"
+# Require a trailing `;` on the last statement of a `()`-returning block so
+# statement-only blocks read consistently and intent stays explicit.
+semicolon_if_nothing_returned = "deny"

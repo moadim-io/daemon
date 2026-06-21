@@ -47,6 +47,10 @@ pub struct Routine {
     pub updated_at: u64,
     #[serde(default)]
     pub last_manual_trigger_at: Option<u64>,
+    /// Last time the routine fired on its cron schedule (the scheduled-fire mirror of
+    /// `last_manual_trigger_at`). Absent on the bare `Routine` returned by `/trigger`.
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
@@ -1059,6 +1063,20 @@ pub struct RowProps {
     pub on_logs: Callback<String>,
 }
 
+/// Most-recent fire across the scheduled and manual trigger timestamps, tagged with a source
+/// icon (`⏱` scheduled, `↻` manual). Returns `None` only when the routine has never fired on
+/// schedule *and* was never manually triggered — the UI renders that case as a "never fired"
+/// badge so a dead schedule is visually distinct from a healthy one. Ties favor the scheduled
+/// source (a schedule that just fired is the operationally interesting signal).
+fn last_fired(scheduled: Option<u64>, manual: Option<u64>) -> Option<(&'static str, u64)> {
+    match (scheduled, manual) {
+        (Some(s), Some(m)) => Some(if s >= m { ("⏱", s) } else { ("↻", m) }),
+        (Some(s), None) => Some(("⏱", s)),
+        (None, Some(m)) => Some(("↻", m)),
+        (None, None) => None,
+    }
+}
+
 #[function_component(RoutineRow)]
 pub fn routine_row(props: &RowProps) -> Html {
     let r = &props.routine;
@@ -1094,10 +1112,10 @@ pub fn routine_row(props: &RowProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
 
-    let last_run = r
-        .last_manual_trigger_at
-        .map(|t| format!("↻ {}", reltime(t)))
-        .unwrap_or_default();
+    // Fold the scheduled and manual fire timestamps into a single "last run" cell, showing
+    // whichever is most recent with its source icon. A routine that has never fired either way
+    // is flagged so dead schedules stand out from healthy ones (see #487, completing #155).
+    let last_run = last_fired(r.last_scheduled_trigger_at, r.last_manual_trigger_at);
 
     let agent_dot = if r.agent_registered {
         "handler-dot ok"
@@ -1135,8 +1153,15 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>
                 <div class="cell-time">{updated}</div>
-                if !last_run.is_empty() {
-                    <div class="cell-triggered">{last_run}</div>
+                {
+                    match last_run {
+                        Some((icon, ts)) => html! {
+                            <div class="cell-triggered">{format!("{icon} {}", reltime(ts))}</div>
+                        },
+                        None => html! {
+                            <div class="cell-triggered never" title="this routine has never fired on schedule and was never triggered manually">{"never fired"}</div>
+                        },
+                    }
                 }
             </td>
             <td>

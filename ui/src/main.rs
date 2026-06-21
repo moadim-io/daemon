@@ -330,11 +330,11 @@ pub fn header(props: &HeaderProps) -> Html {
 
     html! {
         <header>
-            <div class="logo">
+            <h1 class="logo">
                 {"MOADIM"}
                 <span class="logo-sub">{"/ CONTROL"}</span>
                 <span class="logo-version">{version}</span>
-            </div>
+            </h1>
             <div class="header-right">
                 <div class="health">
                     <div class={dot_class}></div>

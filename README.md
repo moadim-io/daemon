@@ -26,7 +26,9 @@ AI agent), exposing both over three interfaces simultaneously:
 
 All three share the same port. Jobs and routines created through any interface are
 automatically synced to the OS crontab so they actually run on schedule. See
-[Routines](#routines) for the agent-loop engine.
+[Routines](#routines) for the agent-loop engine, or
+[`docs/comparison.md`](docs/comparison.md) for how moadim compares to cron,
+GitHub Actions, and other agent runners.
 
 ## Installation
 

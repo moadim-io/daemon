@@ -65,3 +65,7 @@ map_unwrap_or = "deny"
 # Require a trailing `;` on the last statement of a `()`-returning block so
 # statement-only blocks read consistently and intent stays explicit.
 semicolon_if_nothing_returned = "deny"
+# Prefer `let PATTERN = expr else { diverge }` over a `match` whose only
+# non-binding arm diverges (return/continue/break), keeping the happy path
+# unindented.
+manual_let_else = "deny"

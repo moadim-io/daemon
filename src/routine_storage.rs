@@ -231,9 +231,8 @@ pub fn migrate_prompt_files() {
 /// Extracted so tests can drive the migration against a controlled scratch directory, including the
 /// `read_dir` error-return branch and the per-entry rename-failure branch.
 pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
     };
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
@@ -270,9 +269,8 @@ pub fn migrate_routine_dirs() {
 /// `read_dir` error-return branch, the non-directory and unparsable-toml `continue` branches, and the
 /// `write_routine`/`remove_routine_dir` failure-log branches.
 pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
     };
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {

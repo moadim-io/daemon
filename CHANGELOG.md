@@ -11,8 +11,43 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
+  A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
+  (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to
+  wire up the `MOADIM_LAUNCHCTL_BIN` shim cannot mutate the developer's live
+  launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
+  guard from #211 (#213).
+- The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
+  hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
+  the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
+  port or a reverse proxy instead of failing against an address the daemon may not
+  be bound to. (#385)
+
+## [0.13.0] - 2026-06-21
+
 ### Added
 
+- **Full action parity across the CLI, REST, and MCP surfaces.** Every cron-job
+  and routine action is now reachable from all three.
+  - **New CLI data commands** (thin clients over the running server's REST API,
+    built on `clap`): `moadim cron-jobs <create|list|get|update|replace|delete|trigger|logs>`,
+    `moadim routines <create|list|get|update|replace|delete|trigger|logs|ical>`,
+    `moadim agents`, and `moadim echo <message>`. They print the server's JSON
+    response and exit `3` ("not running") when no daemon is reachable, matching
+    the existing `status`/`stop`/`cleanup` contract. (`cron`/`routine` are
+    accepted as aliases.)
+  - **New MCP tools** filling the gaps versus REST: `list_agents`,
+    `cron_job_logs`, `routine_logs`, `shutdown`, and `restart`.
+  - **New `POST /api/v1/restart` route** (plus the matching `restart` MCP tool):
+    stops the running server and starts a fresh instance via a detached helper
+    process, since an in-process server cannot rebind its own port. Documented in
+    the OpenAPI spec.
+- The MCP `health` tool now reports build provenance — `version`, `git_sha`, and
+  `build_date` — bringing it to parity with `GET /api/v1/health` and
+  `moadim --version`, so an MCP client can tell exactly which build is running
+  rather than only seeing status, uptime, and filesystem locations (#476).
 - The binary now embeds the git commit it was built from, so you can tell
   exactly which build is running rather than only the released crate version
   (which changes only on a `v*` tag). `moadim --version` prints
@@ -49,6 +84,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   persisted, and surviving entries are trimmed. Malformed `repositories` lists
   are now caught at the API boundary rather than surfacing later as a confusing
   run-time failure (#241).
+- Defense-in-depth security response headers are now injected on every HTTP
+  response served by the daemon (web UI + `/api/v1`): `X-Frame-Options: DENY`
+  and a `frame-ancestors 'none'` CSP block clickjacking of the dashboard's
+  destructive controls, `X-Content-Type-Options: nosniff` stops content
+  sniffing, and `Referrer-Policy: no-referrer` keeps the loopback URL from
+  leaking to third parties. The CSP is intentionally scoped to `frame-ancestors`
+  only so the existing inline + WASM SPA and Swagger UI keep working untouched
+  (#406).
 
 ### Changed
 
@@ -69,6 +112,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
+  again. The crate root's `#![deny(warnings)]` implies
+  `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or
+  the pre-push hook, so the rotted links sat on `main` and made `cargo doc` fail
+  with "could not document `moadim`". Links to private submodules in
+  `src/routines/mod.rs` were demoted to plain code spans, and the remaining
+  links in `cleanup`, `sync`, and `utils::atomic` were fully qualified. (#390)
+- The in-memory routine and cron-job stores no longer panic the request that
+  observes a poisoned lock. Every `Mutex::lock().unwrap()` on these stores was
+  replaced with a new `LockRecover::lock_recover()` extension that recovers the
+  guard from `PoisonError` (the protected `HashMap` is still structurally valid),
+  so one panicking handler can't cascade into every later request taking the same
+  lock. The two `get_mut(id).unwrap()` invariant unwraps in `svc_update`/
+  `svc_trigger` became `ok_or(AppError::NotFound)?`, removing the last panicking
+  unwraps from the production code paths. A new
+  `#![cfg_attr(not(test), deny(clippy::unwrap_used))]` crate lint now keeps
+  `.unwrap()` out of non-test code so the panic can't creep back in (tests still
+  use `.unwrap()` freely, where panicking is the intended failure mode).
 - Managed cron jobs are now re-synced to the OS crontab on daemon startup,
   mirroring the routines sync that already ran. Previously the cron-job block was
   only written on a job create/update/delete, so if it was lost or emptied
@@ -139,6 +200,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   harmless shim instead of signalling a real PID. The default stays the platform
   killer (`kill` / `taskkill`), so the existing self-contained test that kills
   its own spawned child still works. (#216)
+- The `ui` crate's `RAction::Upsert` variant now boxes its `Routine`
+  (`Upsert(Box<Routine>)`). The variant carried a ~272-byte `Routine` by value
+  while the next-largest variant was 48 bytes, tripping
+  `clippy::large_enum_variant` under the crate's `[lints.clippy] all = "deny"`,
+  so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
+  once before the existing upsert logic, and the construction sites wrap the
+  value.
 
 ## [0.12.0] - 2026-06-18
 
@@ -449,7 +517,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/moadim-io/daemon/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/moadim-io/daemon/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/moadim-io/daemon/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/moadim-io/daemon/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/moadim-io/daemon/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/moadim-io/daemon/compare/v0.8.0...v0.9.0

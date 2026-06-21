@@ -3,10 +3,14 @@
 #[derive(utoipa::OpenApi)]
 #[openapi(
     info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
-    servers((url = "http://127.0.0.1:5784/api/v1", description = "Local development")),
+    // Host-relative server URL: Swagger UI resolves "Try it out" requests against the origin the
+    // docs were loaded from, so it follows a custom MOADIM_BIND_ADDR port or a reverse proxy instead
+    // of a hardcoded 127.0.0.1:5784 that breaks the moment the daemon isn't bound there (issue #385).
+    servers((url = "/api/v1", description = "This server")),
     paths(
         crate::routes::http::health,
         crate::routes::http::shutdown,
+        crate::routes::http::restart,
         crate::routes::http::echo,
         crate::cron_jobs::list,
         crate::cron_jobs::create,
@@ -44,6 +48,7 @@
         crate::routines::SortOrder,
         crate::routes::http::HealthResponse,
         crate::routes::http::ShutdownResponse,
+        crate::routes::http::RestartResponse,
         crate::routes::http::EchoRequest,
         crate::routes::http::EchoResponse,
     ))

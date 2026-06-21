@@ -24,7 +24,8 @@ fn main() {
         git_output(&["show", "-s", "--format=%cs", "HEAD"])
     );
 
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is always set by cargo");
     build::run(&manifest_dir);
 }
 

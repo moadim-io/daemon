@@ -11,8 +11,8 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:5784/api/v1",
-      "description": "Local development"
+      "url": "/api/v1",
+      "description": "This server"
     }
   ],
   "paths": {
@@ -370,6 +370,31 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/restart": {
+      "post": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`POST /restart` — stop this server and start a fresh instance.",
+        "description": "The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper\nthat stops it and starts a new process, mirroring the `moadim restart` CLI command and the\n`restart` MCP tool. Responds with the helper's PID before the restart completes.",
+        "operationId": "restart",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestartResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "could not spawn the restart helper"
           }
         }
       }
@@ -1035,6 +1060,26 @@
           "repository": {
             "type": "string",
             "description": "Git remote URL."
+          }
+        }
+      },
+      "RestartResponse": {
+        "type": "object",
+        "description": "Response body for `POST /restart`.",
+        "required": [
+          "status",
+          "helper_pid"
+        ],
+        "properties": {
+          "helper_pid": {
+            "type": "integer",
+            "format": "int32",
+            "description": "PID of the detached helper process performing the stop-old-then-start-new restart.",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "Acknowledgement status (always `\"restarting\"`)."
           }
         }
       },

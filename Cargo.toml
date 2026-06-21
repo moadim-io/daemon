@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 description = "Moadim.io MCP/REST server for managing cron jobs"
 license = "MIT"
@@ -22,6 +22,7 @@ categories = ["command-line-utilities", "web-programming::http-server"]
 anyhow = "1"
 axum = "0.8"
 chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
 croner = "3"
 dirs = "6"
 env_logger = "0.11"

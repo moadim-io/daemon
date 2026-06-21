@@ -17,6 +17,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -53,6 +54,10 @@ fn enabled_daily_routine_yields_events_within_horizon() {
     assert!(ics.contains("@moadim\r\n"));
     assert!(ics.contains("DTSTART:"));
     assert!(ics.contains("DTSTAMP:"));
+    // Fire times are momentary triggers, not busy blocks: every event is
+    // TRANSPARENT so subscribers aren't marked BUSY (one per VEVENT).
+    assert!(ics.contains("TRANSP:TRANSPARENT\r\n"));
+    assert_eq!(count(&ics, "TRANSP:TRANSPARENT"), events);
 }
 
 #[test]

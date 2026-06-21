@@ -20,6 +20,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         created_at,
         updated_at,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -213,6 +214,110 @@ fn svc_update_rejects_zero_durations() {
 }
 
 #[test]
+fn svc_create_rejects_ttl_above_cron_ceiling() {
+    // A `*/5 * * * *` routine has a ttl ceiling of min(3600, 300) = 300s. An explicit 1800 would be
+    // silently clamped to 300, so it is rejected with `BadRequest` up front (#468).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "*/5 * * * *".into(),
+            ttl_secs: Some(1800),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_rejects_max_runtime_above_cron_ceiling() {
+    // Mirror of the ttl ceiling for the watchdog bound (#468).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "*/5 * * * *".into(),
+            max_runtime_secs: Some(1800),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_accepts_secs_at_cron_ceiling() {
+    // A value equal to the cron-derived ceiling (`*/5` -> 300s) is in force, not clamped, so it
+    // passes `reject_over_ceiling` (covering the `secs <= ceiling` arm for both fields). A
+    // duplicate-slug routine pre-seeded in the store makes the create fail *after* that check with a
+    // `Conflict`, so the assertion proves the ceiling check did not reject — without performing any
+    // crontab/disk mutation.
+    let store = store_with(vec![make_routine(
+        "at-ceiling-dupe",
+        "At Ceiling ZZZ",
+        1,
+        1,
+    )]);
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "*/5 * * * *".into(),
+            // Same slug as the pre-seeded routine.
+            title: "  at   ceiling ZZZ ".into(),
+            ttl_secs: Some(300),
+            max_runtime_secs: Some(300),
+            ..valid_create_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::Conflict(_))));
+}
+
+#[test]
+fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
+    // No schedule supplied: the ceiling derives from the routine's *current* `*/5` schedule, so a
+    // 1800s ttl exceeds the 300s ceiling and is rejected without mutating the store (#468).
+    let store = store_with(vec![Routine {
+        schedule: "*/5 * * * *".to_string(),
+        ..make_routine("upd-ttl-ceiling", "Keep Ceiling", 1, 1)
+    }]);
+    let result = svc_update(
+        &store,
+        "upd-ttl-ceiling",
+        UpdateRoutineRequest {
+            ttl_secs: Some(1800),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // The store value is untouched by the rejected update.
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .get("upd-ttl-ceiling")
+            .unwrap()
+            .ttl_secs,
+        None
+    );
+}
+
+#[test]
+fn svc_update_rejects_secs_above_new_schedule_ceiling() {
+    // A supplied schedule is the *effective* schedule for the ceiling: tightening a `@daily` routine
+    // to `*/5` while setting max_runtime 1800 exceeds the new 300s ceiling and is rejected (#468).
+    let store = store_with(vec![make_routine("upd-new-sched", "Keep New Sched", 1, 1)]);
+    let result = svc_update(
+        &store,
+        "upd-new-sched",
+        UpdateRoutineRequest {
+            schedule: Some("*/5 * * * *".into()),
+            max_runtime_secs: Some(1800),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
 fn svc_create_rejects_duplicate_slug() {
     // Covers the slug-conflict branch in `svc_create`: an existing routine whose
     // title slugifies to the same value forces a `Conflict`.
@@ -255,6 +360,74 @@ fn svc_create_rejects_duplicate_slug() {
         svc_delete(&store, &first.routine.id).unwrap();
     });
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_rejects_malformed_agent_config() {
+    // A referenced agent whose `<name>.toml` is present but unparseable is rejected at create time
+    // with `BadRequest` quoting the parse error — not silently skipped at fire time.
+    let agent_name = "svc-create-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Malformed ZZZ".into(),
+            agent: agent_name.into(),
+            prompt: "p".into(),
+            repositories: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn svc_update_rejects_malformed_agent_config() {
+    // The same rejection applies when an update switches a routine to a malformed agent.
+    let agent_name = "svc-update-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let title = "Svc Update Malformed ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-mal-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-mal-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-mal-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: Some(agent_name.into()),
+            prompt: None,
+            repositories: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    std::fs::remove_file(&cfg).unwrap();
 }
 
 #[test]
@@ -311,6 +484,8 @@ fn svc_update_sets_ttl_secs() {
 
     // `with_empty_path` keeps the post-update crontab sync from touching the real
     // crontab (issue #175): the update succeeds, the sync just warns.
+    // 1800 < the @daily routine's ttl ceiling (min(MAX_TTL_SECS=3600, interval)), so it is a value
+    // that is actually in force rather than one silently clamped down (#468).
     with_empty_path(|| {
         let updated = svc_update(
             &store,
@@ -322,12 +497,12 @@ fn svc_update_sets_ttl_secs() {
                 prompt: None,
                 repositories: None,
                 enabled: None,
-                ttl_secs: Some(4242),
+                ttl_secs: Some(1800),
                 max_runtime_secs: None,
             },
         )
         .unwrap();
-        assert_eq!(updated.routine.ttl_secs, Some(4242));
+        assert_eq!(updated.routine.ttl_secs, Some(1800));
     });
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
@@ -876,6 +1051,132 @@ fn svc_update_rejects_unknown_agent() {
         store.lock().unwrap().get("upd-agent-id").unwrap().agent,
         "claude"
     );
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_rejects_blank_repository_url() {
+    // Covers the repositories-validation branch in `svc_create` (#241): an entry
+    // whose URL is empty or whitespace-only must fail loud with `BadRequest`
+    // instead of being stored and rendered as a broken `- ` clone bullet.
+    let store = new_store();
+    for url in ["", "   "] {
+        let result = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: "Svc Create Blank Repo ZZZ".into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![Repository {
+                    repository: url.into(),
+                    branch: None,
+                }],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        );
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+    // Nothing should have been persisted.
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_blank_repository_branch() {
+    // Covers the optional-branch guard: a `Some` branch that is empty/whitespace
+    // must be rejected so `compose_prompt` cannot emit `- url (branch )`.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Blank Branch ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "p".into(),
+            repositories: vec![Repository {
+                repository: "https://github.com/octocat/Hello-World".into(),
+                branch: Some("  ".into()),
+            }],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_trims_repository_entries() {
+    // Covers the normalization path: surrounding whitespace on a valid URL/branch
+    // is trimmed before storing, so the rendered preamble bullet is clean.
+    crate::routines::ensure_default_agents();
+    let title = "Svc Create Trim Repo ZZZ";
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: title.into(),
+            agent: "claude".into(),
+            prompt: "p".into(),
+            repositories: vec![Repository {
+                repository: "  https://github.com/octocat/Hello-World  ".into(),
+                branch: Some("  main  ".into()),
+            }],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    )
+    .unwrap();
+    let repo = &created.routine.repositories[0];
+    assert_eq!(repo.repository, "https://github.com/octocat/Hello-World");
+    assert_eq!(repo.branch.as_deref(), Some("main"));
+
+    svc_delete(&store, &created.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_rejects_blank_repository_url() {
+    // Covers the repositories-validation branch in `svc_update`: replacing the
+    // list with a blank-URL entry must fail with `BadRequest` before persisting.
+    let title = "Svc Update Blank Repo ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-repo-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-repo-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-repo-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: None,
+            repositories: Some(vec![Repository {
+                repository: " ".into(),
+                branch: None,
+            }]),
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // The stored routine keeps its original (empty) repository list.
+    assert!(store
+        .lock()
+        .unwrap()
+        .get("upd-repo-id")
+        .unwrap()
+        .repositories
+        .is_empty());
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

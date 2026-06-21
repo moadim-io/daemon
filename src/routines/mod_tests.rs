@@ -18,6 +18,7 @@ fn make_routine(id: &str) -> Routine {
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -55,6 +56,19 @@ fn compose_prompt_repo_without_branch() {
     }];
     let prompt = compose_prompt(&routine);
     assert!(prompt.contains("- git@example.com:a/b\n"));
+}
+
+#[test]
+fn compose_prompt_without_repositories_omits_clone_header() {
+    let mut routine = make_routine("x");
+    routine.repositories = vec![];
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Workbench"));
+    assert!(prompt.contains("You are working in an empty directory.\n"));
+    // No dangling "clone any you need:" header (and no empty bullet list) when there are no repos.
+    assert!(!prompt.contains("clone any you need"));
+    assert!(!prompt.contains("\n- "));
+    assert!(prompt.contains("do the thing"));
 }
 
 #[test]
@@ -539,8 +553,11 @@ fn svc_trigger_records_time_without_agent_config() {
 }
 
 #[test]
-fn load_agent_command_missing_returns_none() {
-    assert!(load_agent_command("definitely-not-an-agent-zzz").is_none());
+fn load_agent_command_missing_returns_missing_error() {
+    assert!(matches!(
+        load_agent_command("definitely-not-an-agent-zzz"),
+        Err(crate::routines::AgentLoadError::Missing)
+    ));
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! iCalendar (RFC 5545) export of routine schedules so upcoming fire times can be
 //! subscribed to in external calendars.
 
+use crate::utils::lock::LockRecover;
 use chrono::{DateTime, Duration, Local, Utc};
 use croner::Cron;
 
@@ -117,6 +118,10 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
             lines.push(format!("DTSTART:{stamp}"));
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
+            // A fire time is a momentary trigger, not a block of busy time. Mark
+            // the event TRANSPARENT (RFC 5545 §3.8.2.7) so subscribing to the feed
+            // does not show the operator as BUSY at every scheduled run.
+            lines.push("TRANSP:TRANSPARENT".to_string());
             lines.push("END:VEVENT".to_string());
             emitted += 1;
         }
@@ -156,7 +161,7 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
 
 /// Build the iCalendar feed for every routine currently in `store`.
 pub fn svc_ical(store: &RoutineStore) -> String {
-    let routines: Vec<Routine> = store.lock().unwrap().values().cloned().collect();
+    let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     build_ical(&routines, Local::now())
 }
 

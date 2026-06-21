@@ -335,10 +335,10 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
 /// Returns the process exit code to surface: `0` when a server is reachable, and
 /// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout.
 pub fn status(json: bool) -> anyhow::Result<i32> {
-    let running = is_running();
+    let (running, uptime_secs) = probe_health();
     let pid = read_pid_file();
     if json {
-        println!("{}", status_json(running, pid));
+        println!("{}", status_json(running, pid, uptime_secs));
         return Ok(liveness_exit_code(running));
     }
     if running {
@@ -352,13 +352,17 @@ pub fn status(json: bool) -> anyhow::Result<i32> {
     Ok(liveness_exit_code(running))
 }
 
-/// Render the `status` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`.
-/// `pid` is `null` when no pid file is present (or the server is down).
-fn status_json(running: bool, pid: Option<u32>) -> String {
+/// Render the `status` result as a one-line JSON object:
+/// `{"running":bool,"pid":N|null,"address":…,"uptime_secs":N|null}`. `pid` is `null` when no pid
+/// file is present (or the server is down); `uptime_secs` carries the running server's reported
+/// age from `GET /health`, and is `null` when the server is down or did not report one — so a
+/// single `status --json` call returns running-state, local pid, and server age together.
+fn status_json(running: bool, pid: Option<u32>, uptime_secs: Option<u64>) -> String {
     serde_json::json!({
         "running": running,
         "pid": pid,
         "address": bind_addr(),
+        "uptime_secs": uptime_secs,
     })
     .to_string()
 }
@@ -414,6 +418,26 @@ fn paths_daemon_log() -> String {
 /// Returns `true` if a server answers `GET /health` on [`BIND_ADDR`].
 pub(crate) fn is_running() -> bool {
     matches!(http_request("GET", "/api/v1/health"), Ok(200))
+}
+
+/// Probe `GET /health` once and report `(running, uptime_secs)`. `running` is `true` only when the
+/// server answers `200`; `uptime_secs` is the age it reports in the response body, or `None` when
+/// the server is down or the body carries no parseable `uptime_secs`. Lets `status` surface the
+/// server's age alongside its liveness from a single probe.
+fn probe_health() -> (bool, Option<u64>) {
+    match http_request_with_body("GET", "/api/v1/health") {
+        Ok((200, body)) => (true, parse_uptime_secs(&body)),
+        _ => (false, None),
+    }
+}
+
+/// Extract `uptime_secs` from a `GET /health` JSON body, or `None` if the body is not JSON or has
+/// no numeric `uptime_secs` field — so a malformed or future-shaped response degrades gracefully.
+fn parse_uptime_secs(body: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()?
+        .get("uptime_secs")?
+        .as_u64()
 }
 
 /// Send a minimal HTTP/1.1 request to the local server and return the response status code.

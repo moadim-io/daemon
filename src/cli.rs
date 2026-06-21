@@ -338,7 +338,11 @@ pub fn status(json: bool) -> anyhow::Result<i32> {
     let running = is_running();
     let pid = read_pid_file();
     if json {
-        println!("{}", status_json(running, pid));
+        // Fold the server's own /health (uptime + version) into the object so a single
+        // `status --json` answers liveness *and* age/version without a second call. When the
+        // server is down (or answers unparseably) these fields are emitted as null.
+        let health = if running { fetch_health() } else { None };
+        println!("{}", status_json(running, pid, health));
         return Ok(liveness_exit_code(running));
     }
     if running {
@@ -352,15 +356,51 @@ pub fn status(json: bool) -> anyhow::Result<i32> {
     Ok(liveness_exit_code(running))
 }
 
-/// Render the `status` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`.
-/// `pid` is `null` when no pid file is present (or the server is down).
-fn status_json(running: bool, pid: Option<u32>) -> String {
+/// Server-sourced liveness details pulled from `GET /health` to enrich `status --json`.
+#[derive(Debug, PartialEq, Eq)]
+struct HealthInfo {
+    /// Seconds the server reports it has been up.
+    uptime_secs: u64,
+    /// The daemon version the server reports.
+    version: String,
+}
+
+/// Render the `status` result as a one-line JSON object:
+/// `{"running":bool,"pid":N|null,"address":…,"uptime_secs":N|null,"version":S|null}`.
+///
+/// `pid` is `null` when no pid file is present (or the server is down). `uptime_secs`/`version`
+/// carry the running server's self-reported `/health` details (via `health`), and are `null` when
+/// no server answers or its `/health` body could not be parsed.
+fn status_json(running: bool, pid: Option<u32>, health: Option<HealthInfo>) -> String {
+    let uptime_secs = health.as_ref().map(|info| info.uptime_secs);
+    let version = health.as_ref().map(|info| info.version.as_str());
     serde_json::json!({
         "running": running,
         "pid": pid,
         "address": bind_addr(),
+        "uptime_secs": uptime_secs,
+        "version": version,
     })
     .to_string()
+}
+
+/// Probe the running server's `GET /health` and return its uptime/version, or `None` when the
+/// request fails, the status is not `200`, or the body is not the expected JSON shape.
+fn fetch_health() -> Option<HealthInfo> {
+    let (status, body) = http_request_with_body("GET", "/api/v1/health").ok()?;
+    (status == 200).then(|| parse_health(&body)).flatten()
+}
+
+/// Extract `uptime_secs` and `version` from a [`HealthResponse`](crate::routes::http::HealthResponse)
+/// JSON body. Returns `None` if either field is missing or the wrong type.
+fn parse_health(body: &str) -> Option<HealthInfo> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let uptime_secs = value.get("uptime_secs")?.as_u64()?;
+    let version = value.get("version")?.as_str()?.to_string();
+    Some(HealthInfo {
+        uptime_secs,
+        version,
+    })
 }
 
 /// Render the `cleanup` result as a one-line JSON object: `{"running":bool,"removed":N}`. `removed`

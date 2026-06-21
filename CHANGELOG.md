@@ -21,6 +21,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- 6-field cron schedules (`sec min hour dom month dow`, accepted by `croner`)
+  are now projected to a valid 5-field OS crontab line instead of being written
+  verbatim. Previously only 7-field expressions had their leading seconds
+  stripped, so a valid 6-field schedule reached the crontab unchanged — where
+  vixie-cron/cronie either rejects the line (silently dropping every managed
+  job) or misreads seconds as minutes (shifting the schedule). `normalize_schedule`
+  and `to_os_schedule` now handle the 6-field form the same way as 7-field.
 - The iCal feed (`GET /routines.ics`) no longer silently stops short of its
   advertised 30-day horizon for high-frequency routines. The per-routine
   `MAX_EVENTS_PER_ROUTINE = 100` cap still bounds feed size, but when a routine

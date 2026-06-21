@@ -127,6 +127,14 @@ fn to_os_schedule_7field_drops_sec_and_year() {
 }
 
 #[test]
+fn to_os_schedule_6field_drops_seconds() {
+    // croner accepts 6-field `sec min hour dom month dow`; the OS crontab has no
+    // seconds column, so the leading field is dropped to a valid 5-field line.
+    assert_eq!(to_os_schedule("0 30 9 * * 1-5"), "30 9 * * 1-5");
+    assert_eq!(to_os_schedule("*/30 * * * * *"), "* * * * *");
+}
+
+#[test]
 fn to_os_schedule_passthrough_keyword() {
     assert_eq!(to_os_schedule("@daily"), "@daily");
     assert_eq!(to_os_schedule("@reboot"), "@reboot");

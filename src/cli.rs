@@ -85,7 +85,14 @@ pub enum Command {
 
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
 /// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
-pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "agents", "echo"];
+pub(crate) const DATA_COMMANDS: &[&str] = &[
+    "cron-jobs",
+    "routines",
+    "agents",
+    "echo",
+    "enable",
+    "disable",
+];
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
@@ -157,6 +164,8 @@ pub fn print_help() {
          DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
          \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
          \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
+         \x20   enable <routine> [--json]   turn a routine on (set enabled=true) by id or slug\n\
+         \x20   disable <routine> [--json]  turn a routine off (set enabled=false) by id or slug\n\
          \x20   agents                 list available agent keys\n\
          \x20   echo <message>         echo a message via the server\n\
          \n\

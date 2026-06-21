@@ -64,7 +64,7 @@ attached to your terminal instead, use `moadim --interactive`.
 - Handlers are executable scripts in `~/.config/moadim/handlers/` — any language, also git-trackable
 - **Routines** schedule an AI agent instead of a script — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines))
 - **Agents** are a registry of coding agents (`claude`, …) under `~/.config/moadim/agents/<name>.toml`, referenced by routines
-- Each routine run executes in a throwaway **workbench** under `~/.config/moadim/workbenches/`, reaped on an hourly cleanup sweep
+- Each routine run executes in a throwaway **workbench** under `~/.moadim/workbenches/` (a separate tree from the config dir), reaped on an hourly cleanup sweep
 - `job.local.toml` per job for secrets and machine-specific overrides that stay off-git
 - Same REST and MCP interface — no logic duplication between protocols
 - API spec auto-generated at build time into `apis/`
@@ -96,6 +96,9 @@ attached to your terminal instead, use `moadim --interactive`.
 │       └── .gitignore         # generated — excludes *.local.* and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
+└── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
+
+~/.moadim/                     # runtime tree, separate from the config dir above
 └── workbenches/               # per-run throwaway dirs, reaped on the hourly sweep
 ```
 
@@ -284,6 +287,23 @@ Both are present by default on most developer machines; install them explicitly
 on a minimal host (e.g. a CI runner or fresh container) before relying on the
 built-in `claude` agent.
 
+### Global user prompt
+
+An optional `~/.config/moadim/user_prompt.md` lets you inject persistent,
+host-wide instructions into **every** routine. At launch each run renders a
+`CLAUDE.md` in its workbench from two layers:
+
+1. **Moadim preamble** — the daemon-managed header, the routine-origin
+   disclosure (naming the routine), and the run-date/timezone stamp.
+2. **Your user prompt** — if `user_prompt.md` exists, its contents are appended
+   below a `---` separator.
+
+Use it for standing guidance that should apply to all routines regardless of
+their individual `prompt` — coding conventions, who to tag, tone, or a default
+identity. It is purely additive: a missing file is skipped silently, and it
+never replaces a routine's own `prompt`. Because it is user-scope (not per
+routine), it lives at the config root rather than inside a routine folder.
+
 ## Running
 
 Moadim runs as a local daemon. By default it starts **in the background**:
@@ -313,6 +333,43 @@ moadim stop --json     # same, as a machine-readable JSON object
 on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`
 asked it to shut down) and `3` when no server is reachable. Any other failure exits non-zero (`1`)
 with a message on stderr.
+
+### Data commands
+
+Beyond lifecycle, the CLI exposes **every** cron-job and routine action the REST API and MCP tools
+do — they are thin clients that send the same JSON to the running server and print its response
+(pretty-printed JSON, or raw text for logs / the iCalendar feed). Like `status`/`stop`/`cleanup`,
+they exit `3` when no server is reachable and `1` on a non-2xx response.
+
+```sh
+# Cron jobs (alias: `cron`)
+moadim cron-jobs create --schedule "0 9 * * *" --handler send-report
+moadim cron-jobs list
+moadim cron-jobs get <id>
+moadim cron-jobs update <id> --schedule "0 10 * * *" --enabled false
+moadim cron-jobs replace <id> --schedule "0 9 * * *" --handler send-report
+moadim cron-jobs trigger <id>
+moadim cron-jobs logs <id>
+moadim cron-jobs delete <id>
+
+# Routines (alias: `routine`)
+moadim routines create --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..." \
+  --repositories '[{"repository":"https://github.com/me/repo","branch":"main"}]'
+moadim routines list
+moadim routines update <id> --title "Renamed" --ttl-secs 3600
+moadim routines trigger <id>
+moadim routines logs <id>
+moadim routines ical          # iCalendar feed of upcoming fire times
+moadim routines delete <id>
+
+# Misc
+moadim agents                 # list available agent keys
+moadim echo "hello"           # echo via the server (with a server timestamp)
+```
+
+Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.
+`--metadata` (cron) and `--repositories` (routines) take raw JSON. Optional flags map to a PATCH so
+only what you pass changes; `create`/`replace` send the full object.
 
 ### Scripting
 
@@ -351,9 +408,37 @@ the foreground.)
 
 Starts on `http://127.0.0.1:5784`. On startup the server:
 
-1. Loads all jobs from `~/.config/moadim/jobs/`.
-2. Reads your crontab and applies any changes made to the moadim block while the server was stopped.
-3. Writes all enabled managed jobs back into the crontab block.
+1. Loads all managed jobs from `~/.config/moadim/jobs/`.
+2. Loads all routines, seeds any missing built-in default routines, and rewrites
+   the **routines** crontab block — so a block that went stale while the server
+   was stopped (e.g. emptied by an earlier run) is regenerated and scheduled
+   routines keep firing.
+
+The **job** crontab block is _not_ rewritten at startup; it is kept current on
+each job create/update/delete (see [Crontab sync](#crontab-sync)). Reverse sync
+(crontab → moadim) is not run in either direction, so manual edits inside the
+managed blocks are never imported — they are overwritten by the next forward
+sync.
+
+### Bind address
+
+The server binds to `127.0.0.1:5784` by default — the same address every client command
+(`status`, `stop`, `cleanup`, …) probes. Override it with the `MOADIM_BIND_ADDR` environment
+variable, set identically for the server and any client you run against it:
+
+```sh
+# Bind the server to a different port (or interface)…
+MOADIM_BIND_ADDR=127.0.0.1:7000 moadim
+
+# …and point client commands at the same address.
+MOADIM_BIND_ADDR=127.0.0.1:7000 moadim status
+```
+
+Because the override changes both the bind and the probe target, a client started without it
+keeps looking at the default `127.0.0.1:5784` and will report the relocated server as not running.
+Export the variable in your shell profile to make the change stick across commands. All the
+`127.0.0.1:5784` addresses shown above and in the `--json` payloads reflect the default; they
+follow `MOADIM_BIND_ADDR` when it is set.
 
 ## MCP usage
 

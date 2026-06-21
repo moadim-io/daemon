@@ -1,5 +1,6 @@
 //! TOML-backed persistence for routines, plus the composed `prompt.md` sidecar file.
 
+use crate::utils::lock::LockRecover;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -299,7 +300,7 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
 /// the sidecar was lost) would fail the cron `cp prompt.md`. Re-persisting from the in-memory store
 /// heals those dirs. Idempotent; safe to call on every startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
-    let routines: Vec<Routine> = store.lock().unwrap().values().cloned().collect();
+    let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     for routine in &routines {
         if let Err(err) = write_routine(routine) {
             log::warn!(

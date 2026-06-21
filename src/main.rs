@@ -1,10 +1,16 @@
 #![deny(warnings)]
+// Forbid `.unwrap()` in production code so a poisoned lock or other panic
+// cannot take the daemon down. Tests use `.unwrap()` freely (panicking is the
+// desired failure mode there), so the lint is scoped to non-test builds.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
 /// Compile-time build provenance (crate version + git commit/date).
 mod build_info;
 /// Command-line interface and background-process lifecycle.
 mod cli;
+/// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
+mod commands;
 mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
@@ -50,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
+        cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Foreground => run_server().await,
     }
 }

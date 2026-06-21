@@ -33,6 +33,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (`|e| e.ok()`, `|s| s.to_string()`, `|p| p.into_inner()`) with the method
   path itself (`Result::ok`, `ToString::to_string`,
   `std::sync::PoisonError::into_inner`). No behavior change.
+- Pinned the `AppError` HTTP response **body** contract: tests now assert that
+  every variant serializes to `{"error": <message>}`, not just the right status
+  code, so the JSON error envelope clients parse can't silently regress. Tests
+  only; no behavior change.
 
 ### Fixed
 

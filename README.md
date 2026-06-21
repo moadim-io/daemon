@@ -55,6 +55,22 @@ This starts the server **in the background** and returns control to your shell.
 Stop it later with `moadim stop` (or the STOP button in the UI). To run it
 attached to your terminal instead, use `moadim --interactive`.
 
+### Man page
+
+A Unix man page ships in [`docs/moadim.1`](docs/moadim.1), mirroring the
+built-in `moadim --help`. View it without installing:
+
+```sh
+man ./docs/moadim.1
+```
+
+Or install it so `man moadim` works system-wide (packagers can drop it into
+`share/man/man1/`):
+
+```sh
+install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
+```
+
 ## Features
 
 > _Close the loop. Skip the keyboard. Loop engineering, shipped as a daemon._

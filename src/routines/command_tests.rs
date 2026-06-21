@@ -13,6 +13,7 @@ fn make_routine(title: &str) -> Routine {
         prompt: "do it".to_string(),
         repositories: vec![],
         enabled: true,
+        power_saving: false,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,

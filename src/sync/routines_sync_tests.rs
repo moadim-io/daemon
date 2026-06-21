@@ -12,6 +12,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         prompt: "p".to_string(),
         repositories: vec![],
         enabled: true,
+        power_saving: false,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
@@ -311,6 +312,30 @@ fn build_block_includes_routine_with_agent_config() {
     let block = build_block(&store);
     assert!(block.contains("# moadim-routine:inc"));
     assert!(block.contains(&format!("/{slug}/run.sh")));
+
+    std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}
+
+#[test]
+fn build_block_skips_power_saving_routine() {
+    // Power saving (#95) is a transient, system-driven throttle: a routine with a valid agent config
+    // that would otherwise be scheduled is left out of the crontab block while throttled, so its
+    // schedule never fires — without the user's `enabled` flag being touched.
+    let agent_name = "test-sync-agent-power-saving";
+    let title = "Power Saving Sync Routine";
+    let slug = slugify(title);
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("ps", title, agent_name);
+    routine.power_saving = true;
+    assert!(routine.enabled, "throttle is orthogonal to enabled");
+    store.lock().unwrap().insert("ps".into(), routine);
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
 
     std::fs::remove_file(&cfg).unwrap();
     let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));

@@ -15,6 +15,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
             branch: Some("main".to_string()),
         }],
         enabled: true,
+        power_saving: false,
         source: "managed".to_string(),
         created_at: 5,
         updated_at: 6,
@@ -221,6 +222,70 @@ fn write_routine_clears_stale_sidecar_when_untriggered() {
         load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
         None
     );
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn power_saving_persists_to_sidecar_not_routine_toml_and_round_trips() {
+    // The system-driven power-saving throttle (#95) is runtime state: it goes to the gitignored
+    // `state.local.toml` sidecar, never the tracked `routine.toml`, and round-trips through load —
+    // even when the routine has never been manually triggered.
+    let title = "Rs Power Saving Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("rs-power-id", title);
+    routine.power_saving = true;
+    write_routine(&routine).unwrap();
+
+    let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+    assert!(
+        !toml_text.contains("power_saving"),
+        "routine.toml must not carry the power-saving throttle: {toml_text}"
+    );
+    assert!(crate::paths::routine_state_path(&slug).exists());
+    let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
+    assert!(state_text.contains("power_saving"));
+    assert!(load_routine_from_dir(&slug).unwrap().power_saving);
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn power_saving_defaults_false_with_no_sidecar() {
+    // A routine with neither runtime signal set writes no sidecar at all, and loads back with the
+    // throttle defaulting to `false`.
+    let title = "Rs No Sidecar Routine";
+    let slug = slugify(title);
+    let routine = make_routine("rs-nosidecar-id", title);
+    write_routine(&routine).unwrap();
+
+    assert!(
+        !crate::paths::routine_state_path(&slug).exists(),
+        "no sidecar should be written when all runtime state is at its default"
+    );
+    assert!(!load_routine_from_dir(&slug).unwrap().power_saving);
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn write_routine_clears_sidecar_when_power_saving_lifts() {
+    // Lifting the throttle (with no manual-trigger state either) removes the now-all-default sidecar,
+    // so the on-disk state mirrors the in-memory routine and load reports the throttle cleared.
+    let title = "Rs Power Saving Lift Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("rs-power-lift-id", title);
+    routine.power_saving = true;
+    write_routine(&routine).unwrap();
+    assert!(crate::paths::routine_state_path(&slug).exists());
+
+    routine.power_saving = false;
+    write_routine(&routine).unwrap();
+    assert!(
+        !crate::paths::routine_state_path(&slug).exists(),
+        "sidecar should be removed once no runtime state remains"
+    );
+    assert!(!load_routine_from_dir(&slug).unwrap().power_saving);
 
     remove_routine_dir(&slug).unwrap();
 }

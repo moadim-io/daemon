@@ -56,11 +56,24 @@ struct RoutineToml {
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
 /// sidecar so it never appears in the version-controlled `routine.toml`.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct RuntimeState {
     /// Unix timestamp of the last manual trigger, or `None` if it has never been triggered.
     #[serde(default)]
     last_manual_trigger_at: Option<u64>,
+    /// System-driven power-saving throttle (#95). Lives here, in daemon-owned runtime state, rather
+    /// than in `routine.toml` so toggling the throttle never churns the user's tracked config and the
+    /// user's `enabled` intent is preserved across a power-saving pause/resume. Defaults to `false`.
+    #[serde(default)]
+    power_saving: bool,
+}
+
+impl RuntimeState {
+    /// Whether any field carries non-default runtime state worth persisting. When everything is at
+    /// its default, the sidecar is removed instead of written so the on-disk state stays minimal.
+    fn is_empty(&self) -> bool {
+        self.last_manual_trigger_at.is_none() && !self.power_saving
+    }
 }
 
 /// Scheduler-written runtime state for a routine, persisted to the gitignored
@@ -82,13 +95,12 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar, returning `None` when
-/// the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
-fn read_runtime_state(dir_name: &str) -> Option<u64> {
+/// Read the daemon-owned [`RuntimeState`] from a routine's `state.local.toml` sidecar, returning
+/// `None` when the sidecar is absent or unparsable (e.g. before the routine has ever accrued any
+/// runtime state).
+fn read_runtime_state(dir_name: &str) -> Option<RuntimeState> {
     let text = std::fs::read_to_string(routine_state_path(dir_name)).ok()?;
-    toml::from_str::<RuntimeState>(&text)
-        .ok()?
-        .last_manual_trigger_at
+    toml::from_str::<RuntimeState>(&text).ok()
 }
 
 /// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar, returning
@@ -112,7 +124,15 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     let toml = read_routine_toml(&routine_toml_path(dir_name))?;
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
-    let last_manual_trigger_at = read_runtime_state(dir_name).or(toml.last_manual_trigger_at);
+    let runtime = read_runtime_state(dir_name);
+    // `last_manual_trigger_at` migrates from the legacy `routine.toml` field for routines written
+    // before the runtime state was split into the sidecar; `power_saving` is sidecar-only (it never
+    // existed in `routine.toml`) and defaults to `false` when no sidecar is present (#95).
+    let last_manual_trigger_at = runtime
+        .as_ref()
+        .and_then(|state| state.last_manual_trigger_at)
+        .or(toml.last_manual_trigger_at);
+    let power_saving = runtime.as_ref().is_some_and(|state| state.power_saving);
     let last_scheduled_trigger_at = read_scheduled_state(dir_name);
     Some(Routine {
         id,
@@ -122,6 +142,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         prompt: toml.prompt.unwrap_or_default(),
         repositories: toml.repositories,
         enabled: toml.enabled.unwrap_or(true),
+        power_saving,
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),
         updated_at: toml.updated_at.unwrap_or(0),
@@ -175,29 +196,28 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         &routine_prompt_path(&slug),
         compose_prompt(routine).as_bytes(),
     )?;
-    write_runtime_state(&slug, routine.last_manual_trigger_at)?;
+    let runtime = RuntimeState {
+        last_manual_trigger_at: routine.last_manual_trigger_at,
+        power_saving: routine.power_saving,
+    };
+    write_runtime_state(&slug, runtime)?;
     Ok(())
 }
 
-/// Persist a routine's runtime state to its gitignored `state.local.toml` sidecar.
+/// Persist a routine's daemon-owned runtime state to its gitignored `state.local.toml` sidecar.
 ///
-/// Writes the sidecar (atomically) when `last_manual_trigger_at` is set, and removes any stale
-/// sidecar when it is `None`, so the on-disk state always mirrors the in-memory routine.
-fn write_runtime_state(slug: &str, last_manual_trigger_at: Option<u64>) -> std::io::Result<()> {
+/// Writes the sidecar (atomically) when `state` carries any non-default field, and removes any stale
+/// sidecar when every field is at its default, so the on-disk state always mirrors the in-memory
+/// routine without leaving an all-defaults file behind.
+fn write_runtime_state(slug: &str, state: RuntimeState) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    match last_manual_trigger_at {
-        Some(_) => {
-            let state = RuntimeState {
-                last_manual_trigger_at,
-            };
-            let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
-            atomic_write(&path, text.as_bytes())?;
+    if state.is_empty() {
+        if path.exists() {
+            std::fs::remove_file(&path)?;
         }
-        None => {
-            if path.exists() {
-                std::fs::remove_file(&path)?;
-            }
-        }
+    } else {
+        let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
+        atomic_write(&path, text.as_bytes())?;
     }
     Ok(())
 }

@@ -13,6 +13,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         prompt: "do the thing".to_string(),
         repositories: vec![],
         enabled,
+        power_saving: false,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
@@ -59,6 +60,16 @@ fn enabled_daily_routine_yields_events_within_horizon() {
 #[test]
 fn disabled_routine_contributes_nothing() {
     let ics = build_ical(&[routine_with("r1", "@daily", false)], fixed_now());
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
+}
+
+#[test]
+fn power_saving_routine_contributes_nothing() {
+    // A power-saving routine (#95) will not fire while throttled, so it produces no calendar events
+    // even though it is enabled — mirroring its exclusion from the crontab block.
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.power_saving = true;
+    let ics = build_ical(&[routine], fixed_now());
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
 }
 

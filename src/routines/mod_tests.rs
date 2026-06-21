@@ -14,6 +14,7 @@ fn make_routine(id: &str) -> Routine {
             branch: Some("master".to_string()),
         }],
         enabled: true,
+        power_saving: false,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,

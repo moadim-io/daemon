@@ -1110,7 +1110,7 @@
           },
           "enabled": {
             "type": "boolean",
-            "description": "Whether the routine is active."
+            "description": "Whether the routine is active. The **user's** explicit on/off intent: it persists until the\nuser changes it and is the only execution signal a create/update request can set."
           },
           "id": {
             "type": "string",
@@ -1142,6 +1142,10 @@
             "format": "int64",
             "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module.",
             "minimum": 0
+          },
+          "power_saving": {
+            "type": "boolean",
+            "description": "System-driven power-saving throttle (#95). When `true` the routine is *transiently* skipped to\nconserve resources — excluded from the crontab block so its schedule never fires, and refused\nby a manual trigger — **without** touching the user's [`Routine::enabled`] intent, so it\nresumes cleanly when the throttle lifts. Orthogonal to `enabled`: the combined execution guard\nis `enabled && !power_saving`. This is runtime state owned by the system, not the user, so it\nlives in the gitignored `state.local.toml` sidecar (never the tracked `routine.toml`) and is\nnever accepted on a create/update request. Defaults to `false` (no throttle)."
           },
           "prompt": {
             "type": "string",

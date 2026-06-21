@@ -62,3 +62,35 @@ fn into_response_conflict_is_409() {
         StatusCode::CONFLICT
     );
 }
+
+#[test]
+fn display_routine_disabled() {
+    assert_eq!(
+        AppError::RoutineDisabled.to_string(),
+        "routine is disabled; enable it before triggering"
+    );
+}
+
+#[test]
+fn display_routine_power_saving() {
+    assert_eq!(
+        AppError::RoutinePowerSaving.to_string(),
+        "routine is paused by power saving; it will resume automatically"
+    );
+}
+
+#[test]
+fn into_response_routine_disabled_is_409() {
+    assert_eq!(
+        AppError::RoutineDisabled.into_response().status(),
+        StatusCode::CONFLICT
+    );
+}
+
+#[test]
+fn into_response_routine_power_saving_is_503() {
+    assert_eq!(
+        AppError::RoutinePowerSaving.into_response().status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}

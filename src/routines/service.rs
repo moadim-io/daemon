@@ -266,6 +266,9 @@ pub fn svc_create(
         prompt: req.prompt,
         repositories,
         enabled: req.enabled,
+        // System-driven throttle (#95); a freshly created routine is never power-saving — the field
+        // is owned by the system at runtime, not set via the create request.
+        power_saving: false,
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
@@ -391,9 +394,22 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 }
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
+///
+/// Applies the combined execution guard (#95) before doing anything: a routine the user has disabled
+/// (`enabled == false`) or one the system has transiently paused for power saving is never launched,
+/// and each refusal is reported with its own [`AppError`] variant so callers can tell a deliberate
+/// user-off ([`AppError::RoutineDisabled`]) from an automatic, self-lifting throttle
+/// ([`AppError::RoutinePowerSaving`]). The guard runs first so a refused trigger leaves
+/// `last_manual_trigger_at` untouched — it records launches, not rejected attempts.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    if !routine.enabled {
+        return Err(AppError::RoutineDisabled);
+    }
+    if routine.power_saving {
+        return Err(AppError::RoutinePowerSaving);
+    }
     routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
     drop(lock);

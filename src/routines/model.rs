@@ -78,8 +78,18 @@ pub struct Routine {
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
-    /// Whether the routine is active.
+    /// Whether the routine is active. The **user's** explicit on/off intent: it persists until the
+    /// user changes it and is the only execution signal a create/update request can set.
     pub enabled: bool,
+    /// System-driven power-saving throttle (#95). When `true` the routine is *transiently* skipped to
+    /// conserve resources — excluded from the crontab block so its schedule never fires, and refused
+    /// by a manual trigger — **without** touching the user's [`Routine::enabled`] intent, so it
+    /// resumes cleanly when the throttle lifts. Orthogonal to `enabled`: the combined execution guard
+    /// is `enabled && !power_saving`. This is runtime state owned by the system, not the user, so it
+    /// lives in the gitignored `state.local.toml` sidecar (never the tracked `routine.toml`) and is
+    /// never accepted on a create/update request. Defaults to `false` (no throttle).
+    #[serde(default)]
+    pub power_saving: bool,
     /// `"managed"` for routines owned by this server.
     pub source: String,
     /// Unix timestamp (seconds) when the routine was created.

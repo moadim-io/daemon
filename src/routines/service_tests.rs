@@ -16,6 +16,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         prompt: "do the thing".to_string(),
         repositories: vec![],
         enabled: true,
+        power_saving: false,
         source: "managed".to_string(),
         created_at,
         updated_at,
@@ -886,6 +887,53 @@ fn svc_trigger_warns_when_spawn_fails() {
 
     let _ = std::fs::remove_file(&cfg);
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_trigger_refuses_disabled_routine_without_stamping() {
+    // The combined execution guard (#95): a user-disabled routine is refused with the distinct
+    // `RoutineDisabled` status and never has its trigger timestamp stamped (the guard runs before any
+    // mutation), so a rejected attempt leaves the routine untouched.
+    let store = store_with(vec![Routine {
+        enabled: false,
+        ..make_routine("trig-disabled", "Disabled", 1, 1)
+    }]);
+    let result = svc_trigger(&store, "trig-disabled");
+    assert!(matches!(result, Err(AppError::RoutineDisabled)));
+    assert!(store.lock_recover()["trig-disabled"]
+        .last_manual_trigger_at
+        .is_none());
+}
+
+#[test]
+fn svc_trigger_refuses_power_saving_routine_without_stamping() {
+    // An enabled routine that the system has throttled for power saving is refused with the distinct
+    // `RoutinePowerSaving` status — separate from the user-disabled case — and is likewise not stamped.
+    let store = store_with(vec![Routine {
+        enabled: true,
+        power_saving: true,
+        ..make_routine("trig-saving", "Saving", 1, 1)
+    }]);
+    let result = svc_trigger(&store, "trig-saving");
+    assert!(matches!(result, Err(AppError::RoutinePowerSaving)));
+    assert!(store.lock_recover()["trig-saving"]
+        .last_manual_trigger_at
+        .is_none());
+}
+
+#[test]
+fn svc_trigger_disabled_takes_precedence_over_power_saving() {
+    // When both signals apply, the user-disabled state is reported first: `enabled` is the user's
+    // explicit intent, so it is the more informative reason to surface.
+    let store = store_with(vec![Routine {
+        enabled: false,
+        power_saving: true,
+        ..make_routine("trig-both", "Both", 1, 1)
+    }]);
+    assert!(matches!(
+        svc_trigger(&store, "trig-both"),
+        Err(AppError::RoutineDisabled)
+    ));
 }
 
 /// Build a create request with the given title and an otherwise-valid body.

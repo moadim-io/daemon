@@ -76,11 +76,12 @@ fn fold_line(line: &str) -> String {
 
 /// Render upcoming fire times of every enabled routine as an iCalendar (`.ics`) feed.
 ///
-/// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
+/// Each routine cleared to fire with a parseable schedule contributes one `VEVENT` per fire time in
 /// `(now, now + HORIZON_DAYS]`, capped at [`MAX_EVENTS_PER_ROUTINE`]. Fire times are evaluated in
 /// the host's local timezone (matching crontab semantics) and emitted as UTC instants so the feed
-/// needs no embedded `VTIMEZONE`. Disabled routines and unparseable schedules (e.g. `@reboot`)
-/// contribute nothing.
+/// needs no embedded `VTIMEZONE`. Routines that will not fire — disabled, or transiently throttled by
+/// power saving (#95) — and unparseable schedules (e.g. `@reboot`) contribute nothing, mirroring the
+/// crontab block.
 pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
     let dtstamp = format_utc(now.with_timezone(&Utc));
     let horizon = now + Duration::days(HORIZON_DAYS);
@@ -92,7 +93,7 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
         "X-WR-CALNAME:Moadim Routines".to_string(),
     ];
     for routine in routines {
-        if !routine.enabled {
+        if !routine.enabled || routine.power_saving {
             continue;
         }
         let Ok(cron) = routine.schedule.parse::<Cron>() else {

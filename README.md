@@ -250,6 +250,10 @@ hourly sweep so they don't accumulate; trigger a sweep on demand with
 **REST** — under the `/api/v1` prefix:
 
 ```
+GET    /health                # liveness, uptime, and build provenance
+POST   /shutdown              # ask the server to stop gracefully
+POST   /restart               # rotate the daemon to a fresh process
+
 GET    /routines              # list (filter by ?repository=, sort by ?sort=/&order=)
 POST   /routines              # create
 GET    /routines/{id}         # fetch one
@@ -261,6 +265,15 @@ GET    /routines/{id}/logs    # run output
 POST   /routines/cleanup      # reap expired workbenches now
 GET    /agents                # list registered agents
 GET    /routines.ics          # subscribe to fire times as a calendar feed
+
+GET    /cron-jobs             # list raw cron jobs
+POST   /cron-jobs             # create
+GET    /cron-jobs/{id}        # fetch one
+PUT    /cron-jobs/{id}        # replace
+PATCH  /cron-jobs/{id}        # update fields
+DELETE /cron-jobs/{id}        # delete
+POST   /cron-jobs/{id}/trigger # run the job's handler now
+GET    /cron-jobs/{id}/logs   # handler output
 ```
 
 **MCP** — the same operations are exposed as tools: `list_routines`,

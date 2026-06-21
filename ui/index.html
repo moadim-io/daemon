@@ -835,6 +835,20 @@
       .cal-chip { font-size: 8px; }
     }
 
+    /* ── Reduced motion ── */
+    /* Honor the user's OS/browser "reduce motion" preference: settle the
+       decorative, continuous animations (glow pulse, refresh/loader spin) and
+       hover transitions near-instantly. Gated behind the user's own opt-in, so
+       default motion is unchanged for everyone else. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar       { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }

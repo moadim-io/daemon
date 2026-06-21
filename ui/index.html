@@ -255,6 +255,29 @@
     .stat-val.c-accent { color: var(--accent); }
     .stat-val.c-amber  { color: var(--amber); }
     .stat-val.c-red    { color: var(--red); }
+    /* Time strings ("in 4m", "tomorrow 09:00") are textual, not a single
+       glyph, so the NEXT RUN tile uses a smaller, baseline-aligned size. */
+    .stat-val.stat-val-sm { font-size: 18px; color: var(--text-hi); padding-top: 8px; }
+
+    /* ── Overview: type badge + name link ── */
+    .kind-badge {
+      display: inline-block;
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      padding: 2px 7px;
+      border: 1px solid var(--border-hi);
+      color: var(--text-mid);
+    }
+    .kind-badge.cron    { border-color: var(--border-hi); color: var(--text-mid); }
+    .kind-badge.routine { border-color: #3a4d7c; color: #9fb0e0; }
+
+    .ov-name-link {
+      color: var(--text-hi);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .ov-name-link:hover { color: var(--accent); border-bottom-color: var(--accent-dim); }
 
     /* ── Section header ── */
     .section-hd {

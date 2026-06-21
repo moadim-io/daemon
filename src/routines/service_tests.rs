@@ -21,6 +21,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         updated_at,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -82,6 +83,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: vec![],
     }
 }
 
@@ -96,6 +98,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: None,
     }
 }
 
@@ -153,6 +156,7 @@ fn svc_create_rejects_zero_max_runtime_secs() {
         &store,
         CreateRoutineRequest {
             max_runtime_secs: Some(0),
+            tags: vec![],
             ..valid_create_request()
         },
     );
@@ -207,6 +211,7 @@ fn svc_update_rejects_zero_durations() {
         "upd-zero-secs",
         UpdateRoutineRequest {
             max_runtime_secs: Some(0),
+            tags: None,
             ..empty_update_request()
         },
     );
@@ -233,6 +238,7 @@ fn svc_create_rejects_duplicate_slug() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: vec![],
             },
         )
         .unwrap();
@@ -249,6 +255,7 @@ fn svc_create_rejects_duplicate_slug() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: vec![],
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));
@@ -279,6 +286,7 @@ fn svc_create_rejects_malformed_agent_config() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: vec![],
         },
     );
     match result {
@@ -315,6 +323,7 @@ fn svc_update_rejects_malformed_agent_config() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: None,
         },
     );
     match result {
@@ -360,6 +369,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: None,
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));
@@ -393,6 +403,7 @@ fn svc_update_sets_ttl_secs() {
                 enabled: None,
                 ttl_secs: Some(4242),
                 max_runtime_secs: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -429,6 +440,7 @@ fn svc_update_sets_max_runtime_secs() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: Some(1234),
+                tags: None,
             },
         )
         .unwrap();
@@ -593,6 +605,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: vec![],
             },
         )
         .unwrap();
@@ -622,6 +635,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -696,6 +710,7 @@ fn svc_create_syncs_crontab_on_success() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: vec![],
             },
         )
         .unwrap();
@@ -727,6 +742,7 @@ fn svc_update_syncs_crontab_on_success() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -793,6 +809,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: vec![],
     }
 }
 
@@ -840,6 +857,7 @@ fn svc_create_rejects_unknown_agent() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: vec![],
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -874,6 +892,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: None,
             },
         );
         assert!(
@@ -906,6 +925,7 @@ fn svc_create_accepts_builtin_agent() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: vec![],
         },
     )
     .unwrap();
@@ -937,6 +957,7 @@ fn svc_update_rejects_unknown_agent() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -970,6 +991,7 @@ fn svc_create_rejects_blank_repository_url() {
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                tags: vec![],
             },
         );
         assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -997,6 +1019,7 @@ fn svc_create_rejects_blank_repository_branch() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: vec![],
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -1024,6 +1047,7 @@ fn svc_create_trims_repository_entries() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: vec![],
         },
     )
     .unwrap();
@@ -1060,6 +1084,7 @@ fn svc_update_rejects_blank_repository_url() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -1071,6 +1096,84 @@ fn svc_update_rejects_blank_repository_url() {
         .unwrap()
         .repositories
         .is_empty());
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_rejects_blank_tag() {
+    // Covers the tags-validation error branch in `svc_create`: a blank or
+    // whitespace-only tag must 400 before anything is persisted. `ensure_default_agents`
+    // makes the agent check pass so validation reaches `validate_tags`.
+    crate::routines::ensure_default_agents();
+    let store = new_store();
+    for tag in ["", "   "] {
+        let result = svc_create(
+            &store,
+            CreateRoutineRequest {
+                tags: vec![tag.to_string()],
+                ..valid_create_request()
+            },
+        );
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_trims_and_stores_tags() {
+    // Covers the normalize/Ok path of `validate_tags` and the `tags` assignment in
+    // `svc_create`: surrounding whitespace is trimmed and the tags are stored.
+    crate::routines::ensure_default_agents();
+    let title = "Svc Create Tags ZZZ";
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        CreateRoutineRequest {
+            tags: vec!["  triage  ".into(), "nightly".into()],
+            ..create_req_with_title(title)
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        created.routine.tags,
+        vec!["triage".to_string(), "nightly".to_string()]
+    );
+
+    svc_delete(&store, &created.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_rejects_and_sets_tags() {
+    // Covers both the error and the apply arms of the `tags` handling in `svc_update`:
+    // a blank tag is rejected, while a valid (trimmed) list replaces the routine's tags.
+    let title = "Svc Update Tags ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-tags-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-tags-id".into(), routine);
+
+    let bad = svc_update(
+        &store,
+        "upd-tags-id",
+        UpdateRoutineRequest {
+            tags: Some(vec![" ".into()]),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(bad, Err(AppError::BadRequest(_))));
+
+    let updated = svc_update(
+        &store,
+        "upd-tags-id",
+        UpdateRoutineRequest {
+            tags: Some(vec!["  ops  ".into()]),
+            ..empty_update_request()
+        },
+    )
+    .unwrap();
+    assert_eq!(updated.routine.tags, vec!["ops".to_string()]);
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

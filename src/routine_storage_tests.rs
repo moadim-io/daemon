@@ -20,6 +20,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         updated_at: 6,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -67,6 +68,27 @@ fn write_then_load_round_trips() {
 
     remove_routine_dir(&slug).unwrap();
     assert!(!crate::paths::routine_dir(&slug).exists());
+}
+
+#[test]
+fn tags_round_trip_through_routine_toml() {
+    // Tags are persisted to the tracked `routine.toml` and read back on load.
+    let title = "Rs Tags Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("rs-tags-id", title);
+    routine.tags = vec!["triage".to_string(), "nightly".to_string()];
+    write_routine(&routine).unwrap();
+
+    let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+    assert!(toml_text.contains("tags"), "routine.toml should carry tags");
+
+    let loaded = load_routine_from_dir(&slug).unwrap();
+    assert_eq!(
+        loaded.tags,
+        vec!["triage".to_string(), "nightly".to_string()]
+    );
+
+    remove_routine_dir(&slug).unwrap();
 }
 
 #[test]

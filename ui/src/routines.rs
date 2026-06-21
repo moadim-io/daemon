@@ -50,6 +50,9 @@ pub struct Routine {
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Free-form labels for the routine.
+    #[serde(default)]
+    pub tags: Vec<String>,
     // Derived (absent on the bare Routine returned by /trigger — default to safe values).
     #[serde(default)]
     pub agent_registered: bool,
@@ -69,6 +72,8 @@ pub struct CreateRoutineRequest {
     pub enabled: bool,
     /// Workbench retention (seconds); `None` lets the server apply its default.
     pub ttl_secs: Option<u64>,
+    /// Free-form labels for the routine.
+    pub tags: Vec<String>,
 }
 
 /// Result of `POST /routines/cleanup` (mirrors the server `CleanupResponse`).
@@ -93,6 +98,8 @@ pub struct UpdateRoutineRequest {
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 // ─── API layer ────────────────────────────────────────────────────────────────
@@ -514,6 +521,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         repositories: Some(req.repositories),
                         enabled: Some(req.enabled),
                         ttl_secs: req.ttl_secs,
+                        tags: Some(req.tags),
                     };
                     match api_update(id, &upd).await {
                         Ok(r) => {
@@ -1025,6 +1033,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <th>{"SCHEDULE"}</th>
                         <th>{"AGENT"}</th>
                         <th>{"REPOS"}</th>
+                        <th>{"TAGS"}</th>
                         <th>{"TTL"}</th>
                         <th>{"ENABLED"}</th>
                         <th>{"UPDATED"}</th>
@@ -1126,6 +1135,17 @@ pub fn routine_row(props: &RowProps) -> Html {
                 </span>
             </td>
             <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
+            <td>
+                {
+                    if r.tags.is_empty() {
+                        html! { <span class="cell-meta">{"—"}</span> }
+                    } else {
+                        html! {
+                            <span class="cell-meta" title={r.tags.join(", ")}>{ r.tags.join(", ") }</span>
+                        }
+                    }
+                }
+            </td>
             <td><span class="cell-meta" title="workbench retention for finished runs">{ format_ttl(r.ttl_secs) }</span></td>
             <td>
                 <label class="toggle">
@@ -1181,6 +1201,20 @@ fn text_to_repos(text: &str) -> Vec<Repository> {
             let branch = it.next().map(|s| s.to_string());
             Some(Repository { repository, branch })
         })
+        .collect()
+}
+
+/// Join tags into a single comma-separated string for the input field.
+fn tags_to_text(tags: &[String]) -> String {
+    tags.join(", ")
+}
+
+/// Split a comma-separated input into trimmed, non-empty tags.
+fn text_to_tags(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
         .collect()
 }
 
@@ -1265,6 +1299,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             .unwrap_or_default()
     });
     let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
+    // Comma-separated tags; blank means no tags.
+    let tags_raw = use_state(|| {
+        editing
+            .as_ref()
+            .map(|r| tags_to_text(&r.tags))
+            .unwrap_or_default()
+    });
     // Blank means "use the server default"; otherwise the workbench TTL in seconds.
     let ttl_raw = use_state(|| {
         editing
@@ -1326,6 +1367,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             ttl_raw.set(i.value());
         })
     };
+    let on_tags = {
+        let tags_raw = tags_raw.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            tags_raw.set(i.value());
+        })
+    };
 
     let set_preset = |val: &'static str| {
         let schedule = schedule.clone();
@@ -1350,6 +1398,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let repos_raw = repos_raw.clone();
         let enabled = enabled.clone();
         let ttl_raw = ttl_raw.clone();
+        let tags_raw = tags_raw.clone();
         let saving = saving.clone();
         let cb = props.on_save.clone();
         Callback::from(move |_: MouseEvent| {
@@ -1365,6 +1414,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 repositories: text_to_repos(&repos_raw),
                 enabled: *enabled,
                 ttl_secs: parse_ttl(&ttl_raw),
+                tags: text_to_tags(&tags_raw),
             });
         })
     };
@@ -1428,6 +1478,14 @@ pub fn routine_form(props: &FormProps) -> Html {
                 </label>
                 <textarea class="form-input" placeholder={"https://github.com/org/repo main"}
                     value={(*repos_raw).clone()} oninput={on_repos} />
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    {"TAGS "}
+                    <span style="color:var(--text-ghost)">{"(comma-separated)"}</span>
+                </label>
+                <input class="form-input" type="text" placeholder="triage, nightly"
+                    value={(*tags_raw).clone()} oninput={on_tags} autocomplete="off" spellcheck="false" />
             </div>
             <div class="form-group">
                 <label class="form-label">

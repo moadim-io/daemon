@@ -24,9 +24,13 @@ Run the checks the pre-push hook enforces before any push:
 
 ```sh
 cargo fmt --check
-cargo clippy
+cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+Use `--all-targets -- -D warnings` for clippy, exactly as the pre-push hook and
+the CI lint gate do — bare `cargo clippy` skips test/example/bench code and only
+warns, so it can pass locally yet fail the hook and CI.
 
 Enable the bundled git hooks once per clone:
 

@@ -10,20 +10,37 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use super::{fs_location, inject_headers_from_value};
+use super::{fs_location, inject_headers_from_value, DEBUG_FS_HEADERS_ENV};
 
-#[tokio::test]
-async fn fs_location_middleware_adds_headers() {
+async fn fs_location_response() -> Response {
     let app = Router::new()
         .route("/", get(|| async { "ok" }))
         .layer(middleware::from_fn(fs_location));
 
-    let resp = app
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+    app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
-        .unwrap();
+        .unwrap()
+}
 
+/// The middleware is the sole reader of `DEBUG_FS_HEADERS_ENV`, but env vars are
+/// process-global, so the default-off and opt-in cases share one test to avoid
+/// racing each other under parallel test execution.
+#[tokio::test]
+async fn fs_location_headers_off_by_default_on_when_opted_in() {
+    // Default: no env var → no x-server-* headers leak on a normal response.
+    std::env::remove_var(DEBUG_FS_HEADERS_ENV);
+    let resp = fs_location_response().await;
     assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.headers().get("x-server-root").is_none());
+    assert!(resp.headers().get("x-server-exe-dir").is_none());
+
+    // Opt-in: a truthy env var re-enables the debug headers.
+    std::env::set_var(DEBUG_FS_HEADERS_ENV, "1");
+    let resp = fs_location_response().await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.headers().get("x-server-root").is_some());
+
+    std::env::remove_var(DEBUG_FS_HEADERS_ENV);
 }
 
 #[test]

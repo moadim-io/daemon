@@ -19,6 +19,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   wire up the `MOADIM_LAUNCHCTL_BIN` shim cannot mutate the developer's live
   launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
   guard from #211 (#213).
+- The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
+  hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
+  the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
+  port or a reverse proxy instead of failing against an address the daemon may not
+  be bound to. (#385)
 
 ## [0.13.0] - 2026-06-21
 

@@ -99,6 +99,22 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
    [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format).
 4. Open a PR against `main`; fill in what changed and why.
 
+## Releasing
+
+Releases are automated. To cut one, open a PR that bumps the package version:
+
+1. Bump `version` in `Cargo.toml` (and `Cargo.lock`).
+2. Promote the `## [Unreleased]` entries in [`CHANGELOG.md`](CHANGELOG.md) to a
+   `## [x.y.z] - YYYY-MM-DD` section and add the compare link.
+3. Merge to `main`.
+
+On merge, [`auto-release.yml`](.github/workflows/auto-release.yml) detects the
+new version, pushes the `vx.y.z` tag, then publishes to crates.io
+([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
+([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag
+must not already exist, and `Cargo.toml`'s version must match the topmost
+changelog heading. Pushing a `v*` tag by hand still works as a fallback.
+
 ## Code conventions
 
 - New REST routes go in `src/routes/http.rs`; register them in the router

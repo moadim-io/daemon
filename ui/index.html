@@ -849,6 +849,24 @@
       }
     }
 
+    /* ── Keyboard focus ── */
+    /* Give every interactive control a clear, consistent focus ring for
+       keyboard users. :focus-visible only fires for keyboard/programmatic
+       focus, so mouse users see no change. Mirrors the accent ring already
+       used by .row-check. */
+    .btn:focus-visible,
+    .btn-refresh:focus-visible,
+    .btn-stop:focus-visible,
+    .tab-btn:focus-visible,
+    .act-btn:focus-visible,
+    .view-btn:focus-visible,
+    .preset-btn:focus-visible,
+    .modal-x:focus-visible,
+    .toggle input:focus-visible + .toggle-track {
+      outline: 1px solid var(--accent);
+      outline-offset: 1px;
+    }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar       { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }

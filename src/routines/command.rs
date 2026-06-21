@@ -215,12 +215,13 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
-        // Record this scheduled firing. The daemon never sees a cron run (the OS crontab executes
-        // this script directly), so the script itself stamps the fire time into the routine's
+        // Record this scheduled firing. This command stamps the fire time into the routine's
         // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
-        // `last_scheduled_trigger_at` on load. Written before the prompt-copy guard below so an
-        // aborted run still records that the schedule fired, and best-effort (`|| true`) so a
-        // sidecar write failure never blocks launching the agent.
+        // `last_scheduled_trigger_at` on load. (The cron line calls `moadim schedule trigger`, which
+        // spawns this command via the daemon's scheduled-trigger path without recording a *manual*
+        // trigger.) Written before the prompt-copy guard below so an aborted run still records that
+        // the schedule fired, and best-effort (`|| true`) so a sidecar write failure never blocks
+        // launching the agent.
         format!(
             r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
             shell_quote(&scheduled_state_path)

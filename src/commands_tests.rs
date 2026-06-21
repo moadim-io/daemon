@@ -321,6 +321,9 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["routines", "trigger", "rid"],
         &["routines", "logs", "rid"],
         &["routines", "ical"],
+        // schedule (posts to the routine scheduled-trigger route)
+        &["schedule", "trigger", "sid"],
+        &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
         &["echo", "hello"],
@@ -365,6 +368,11 @@ fn no_server_returns_not_running_exit_code() {
     let _addr = EnvGuard::set(BIND_ENV, UNREACHABLE_ADDR);
     assert_eq!(
         run(argv(&["cron-jobs", "list"])),
+        crate::cli::EXIT_NOT_RUNNING
+    );
+    // `schedule trigger` reaches the same not-running path.
+    assert_eq!(
+        run(argv(&["schedule", "trigger", "sid"])),
         crate::cli::EXIT_NOT_RUNNING
     );
 }

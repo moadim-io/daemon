@@ -73,20 +73,21 @@ async fn run_server() -> anyhow::Result<()> {
         .try_init();
     routines::ensure_default_agents();
     let store = storage::load_store();
-    // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the
-    // first cron trigger after upgrade would fail on the cp step.
+    // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
+    // cron trigger after upgrade would fail on the launch command's `cp prompt.md` step.
     routine_storage::migrate_prompt_files();
     // Move legacy UUID-named routine dirs to the current slug-based layout before loading, so the
-    // store reflects the canonical dirs the crontab sync and run.sh `cp prompt.md` both target.
+    // store reflects the canonical dirs the crontab sync and the launch command's `cp prompt.md`
+    // both target.
     routine_storage::migrate_routine_dirs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // The crontab sync writes only run.sh; re-persist so every routine also has its routine.toml +
-    // prompt.md sidecar in the slug dir, healing dirs left with run.sh but no prompt (otherwise the
-    // cron `cp prompt.md` fails and the agent launches with an empty prompt).
+    // Re-persist so every routine has its routine.toml + prompt.md sidecar in the slug dir (and any
+    // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
+    // command's `cp prompt.md` fails and the agent launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next

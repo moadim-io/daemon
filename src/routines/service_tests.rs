@@ -888,6 +888,43 @@ fn svc_trigger_warns_when_spawn_fails() {
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
+#[test]
+fn svc_trigger_scheduled_missing_routine_not_found() {
+    assert!(matches!(
+        svc_trigger_scheduled(&new_store(), "nope"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
+    // The scheduled path must leave `last_manual_trigger_at` untouched (it is for *manual* triggers
+    // only); `with_empty_path` makes the spawn fail so the test never launches a real session, while
+    // still exercising the spawn branch.
+    let agent_name = "svc-trigger-scheduled-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"true\"\nargs = []\n").unwrap();
+
+    let title = "Svc Trigger Scheduled ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("trig-sched-id", title, 1, 1);
+    routine.agent = agent_name.into();
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-sched-id".into(), routine);
+
+    with_empty_path(|| {
+        let triggered = svc_trigger_scheduled(&store, "trig-sched-id").unwrap();
+        assert!(triggered.last_manual_trigger_at.is_none());
+    });
+
+    let _ = std::fs::remove_file(&cfg);
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
 /// Build a create request with the given title and an otherwise-valid body.
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {

@@ -398,12 +398,38 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
+    spawn_routine_command(&routine);
+    Ok(routine)
+}
+
+/// Run a routine on its schedule: spawn the command the crontab line invokes, without recording a
+/// *manual* trigger.
+///
+/// This is the daemon-side endpoint that the generated crontab line drives
+/// (`moadim schedule trigger <id>`). Unlike [`svc_trigger`] it leaves `last_manual_trigger_at`
+/// untouched — the spawned command records `last_scheduled_trigger_at` in the routine's
+/// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
+/// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
+pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    spawn_routine_command(&routine);
+    Ok(routine)
+}
+
+/// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
+/// the agent config cannot be loaded or the process cannot be spawned.
+///
+/// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
+/// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
+/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths.
+fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
-            let cmd = build_routine_command(&routine, &agent);
-            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
-            // manual trigger sources the user's `~/.profile` and the agent gets the same
-            // environment whether fired by cron or on demand.
+            let cmd = build_routine_command(routine, &agent);
             if let Err(err) = std::process::Command::new("sh")
                 .arg("-lc")
                 .arg(&cmd)
@@ -419,7 +445,6 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
             routine.id
         ),
     }
-    Ok(routine)
 }
 
 /// Reap finished, expired run workbenches immediately, returning how many were removed.

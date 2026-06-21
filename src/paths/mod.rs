@@ -116,16 +116,20 @@ pub fn routine_state_path(id: &str) -> PathBuf {
 /// Returns the path to `{routines_dir}/{id}/scheduled.local.toml`, the gitignored sidecar that
 /// records `last_scheduled_trigger_at`.
 ///
-/// Unlike [`routine_state_path`] this sidecar is written by the routine's generated `run.sh` at
-/// each scheduled cron firing (the daemon is not in the loop then), and is only ever *read* by the
-/// daemon — kept in its own file so a daemon-side re-persist of `state.local.toml` can't clobber
-/// the scheduler-written timestamp. The `.local.` infix matches the `*.local.*` `.gitignore`
-/// pattern, so scheduled-fire churn never produces version-control diffs.
+/// Unlike [`routine_state_path`] this sidecar is written by the routine's launch command (the
+/// `printf` step of [`crate::routines::build_routine_command`]) at each scheduled cron firing, and is
+/// only ever *read* by the daemon — kept in its own file so a daemon-side re-persist of
+/// `state.local.toml` can't clobber the scheduler-written timestamp. The `.local.` infix matches the
+/// `*.local.*` `.gitignore` pattern, so scheduled-fire churn never produces version-control diffs.
 pub fn routine_scheduled_state_path(id: &str) -> PathBuf {
     routine_dir(id).join("scheduled.local.toml")
 }
 
-/// Returns the path to `{routines_dir}/{id}/run.sh`, the generated launch script invoked by cron.
+/// Returns the path to `{routines_dir}/{id}/run.sh`, a legacy per-routine launch script.
+///
+/// No longer generated — the crontab line now invokes `moadim schedule trigger <id>` directly. The
+/// path is retained so [`crate::routine_storage::write_routine`] can delete any stale script left by
+/// an older daemon.
 pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")
 }

@@ -34,6 +34,9 @@ enum DataCommand {
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
     #[command(subcommand, visible_alias = "routine")]
     Routines(RoutineCmd),
+    /// Trigger a routine on its schedule by ID (invoked by the generated crontab line).
+    #[command(subcommand, visible_alias = "sched")]
+    Schedule(ScheduleCmd),
     /// List the available agent registry keys.
     Agents,
     /// Echo a message back via the server, with a server timestamp.
@@ -115,6 +118,20 @@ enum CronCmd {
     /// Print a cron job's log file.
     Logs {
         /// UUID of the cron job whose logs to print.
+        id: String,
+    },
+}
+
+/// Schedule operations driven by the OS crontab, keyed only by ID.
+#[derive(Subcommand)]
+enum ScheduleCmd {
+    /// Run a routine on its schedule by ID.
+    ///
+    /// This is what the generated crontab line invokes at each fire time. It records a *scheduled*
+    /// trigger (not a manual one), so it maps to the routine's `scheduled-trigger` route rather than
+    /// the manual `trigger` route.
+    Trigger {
+        /// UUID of the routine to trigger.
         id: String,
     },
 }
@@ -257,6 +274,11 @@ fn dispatch(command: DataCommand) -> i32 {
     match command {
         DataCommand::CronJobs(cmd) => dispatch_cron(cmd),
         DataCommand::Routines(cmd) => dispatch_routine(cmd),
+        DataCommand::Schedule(ScheduleCmd::Trigger { id }) => request(
+            "POST",
+            &format!("{}/scheduled-trigger", routine_path(&id)),
+            None,
+        ),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
         DataCommand::Echo { message } => {
             let body = object([("message", Value::String(message))]);

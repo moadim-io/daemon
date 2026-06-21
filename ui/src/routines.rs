@@ -801,7 +801,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                     } else {
                         html! {
                             <button class="btn btn-ghost btn-sm" onclick={on_clear}
-                                title="Clear repository filter">{"✕"}</button>
+                                aria-label="Clear repository filter" title="Clear repository filter">{"✕"}</button>
                         }
                     }
                 }
@@ -975,9 +975,9 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     html! {
         <div class="cal-wrap">
             <div class="cal-nav">
-                <button class="btn-refresh" title="Previous month" onclick={on_prev}>{"‹"}</button>
+                <button class="btn-refresh" aria-label="Previous month" title="Previous month" onclick={on_prev}>{"‹"}</button>
                 <div class="cal-month">{month_label}</div>
-                <button class="btn-refresh" title="Next month" onclick={on_next}>{"›"}</button>
+                <button class="btn-refresh" aria-label="Next month" title="Next month" onclick={on_next}>{"›"}</button>
                 <button class="btn btn-ghost btn-sm" onclick={on_today}>{"TODAY"}</button>
             </div>
             {body}
@@ -1142,10 +1142,10 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>
                 <div class="row-actions">
-                    <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn run" aria-label="Run now" title="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
-                    <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
+                    <button class="act-btn del" aria-label="Delete routine" title="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
         </tr>
@@ -1465,7 +1465,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 <div class="modal">
                     <div class="modal-hd">
                         <div class="modal-title">{"EDIT ROUTINE"}</div>
-                        <button class="modal-x" onclick={on_cancel_click}>{"✕"}</button>
+                        <button class="modal-x" aria-label="Close" title="Close" onclick={on_cancel_click}>{"✕"}</button>
                     </div>
                     {body}
                     {footer}
@@ -1600,7 +1600,7 @@ pub fn routine_logs(props: &LogsProps) -> Html {
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.title)}</div>
-                <button class="btn-refresh" title="Refresh" onclick={on_refresh}>{"↻"}</button>
+                <button class="btn-refresh" aria-label="Refresh" title="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             <div class="logs-wrap">
                 {body}

@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The built-in `codex` agent default now enables sandbox network access
+  (`codex exec -s workspace-write -c sandbox_workspace_write.network_access=true`).
+  `codex exec`'s default workspace-write sandbox blocks the network, so a
+  codex-backed routine could not clone the remote repo or push / open a PR — it
+  would silently no-op while still showing a healthy routine. This brings codex
+  to parity with the `claude` default's unattended-access baseline; the setting
+  is overridable in `~/.config/moadim/agents/codex.toml`. (#449)
 - The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
   hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
   the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`

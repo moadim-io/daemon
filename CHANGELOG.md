@@ -13,6 +13,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
+  cron-derived ceiling for the *effective* schedule (the new schedule if supplied,
+  otherwise the routine's current one). The check runs before any mutation, so a
+  rejected update leaves the in-memory store untouched. (#468)
 - `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
   A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
   (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to

@@ -107,18 +107,35 @@ fn json_flag_only_applies_to_its_command() {
 
 #[test]
 fn status_json_reports_running_pid_and_address() {
-    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(42))).unwrap();
+    let value: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(42), Some(3600))).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["pid"], serde_json::json!(42));
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+    assert_eq!(value["uptime_secs"], serde_json::json!(3600));
 }
 
 #[test]
 fn status_json_null_pid_when_unknown_or_down() {
-    let value: serde_json::Value = serde_json::from_str(&status_json(false, None)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&status_json(false, None, None)).unwrap();
     assert_eq!(value["running"], serde_json::json!(false));
     assert!(value["pid"].is_null());
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+    // A down server reports no age, so `uptime_secs` is null rather than absent.
+    assert!(value["uptime_secs"].is_null());
+}
+
+#[test]
+fn parse_uptime_secs_reads_numeric_field() {
+    assert_eq!(parse_uptime_secs(r#"{"uptime_secs":7200}"#), Some(7200));
+}
+
+#[test]
+fn parse_uptime_secs_none_when_field_absent_or_malformed() {
+    // Valid JSON without the field, a non-numeric field, and non-JSON all degrade to None.
+    assert_eq!(parse_uptime_secs(r#"{"status":"ok"}"#), None);
+    assert_eq!(parse_uptime_secs(r#"{"uptime_secs":"soon"}"#), None);
+    assert_eq!(parse_uptime_secs("not json"), None);
 }
 
 #[test]
@@ -403,7 +420,8 @@ fn bind_addr_honors_override() {
 #[test]
 fn status_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
-    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    let value: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), Some(1))).unwrap();
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 

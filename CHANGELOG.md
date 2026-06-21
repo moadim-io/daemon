@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim status --json` now includes an `uptime_secs` field carrying the running
+  server's age, read from `GET /health` in the same probe that determines liveness.
+  A single `status --json` call now returns running-state, local pid, and server age
+  together; `uptime_secs` is `null` when the server is down or reports no parseable
+  age.
+
 ### Fixed
 
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default

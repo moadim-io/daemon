@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- The generated routine launch command now derives the workbench base directory
+  from `paths::workbenches_dir()` (the single source of truth) instead of a
+  hardcoded `$HOME/.moadim/workbenches` shell literal. The create-side path now
+  honors the `MOADIM_HOME_OVERRIDE` seam, so it can no longer drift from the
+  path the TTL reaper and the LOGS view scan. No behavior change for the default
+  install (`~/.moadim/workbenches/{slug}-{ts}`). Closes #601.
+
 ### Changed
 
 - Enabled the `clippy::redundant_closure_for_method_calls` lint and fixed the

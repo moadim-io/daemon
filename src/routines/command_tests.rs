@@ -132,6 +132,53 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
 }
 
 #[test]
+fn build_routine_command_workbench_path_honors_home_override() {
+    // Regression for #601: the generated launch command must create the workbench under the SAME
+    // base the TTL reaper (cleanup) and the LOGS view (service) scan — `paths::workbenches_dir()` —
+    // not a hardcoded `$HOME/.moadim/workbenches` literal that ignores the MOADIM_HOME_OVERRIDE
+    // seam. With the override set, assert the WB= line is anchored under the overridden base so the
+    // create-side and read/reap-side can't silently drift.
+    let home = std::env::temp_dir().join(format!("moadim-wb-override-{}", uuid::Uuid::new_v4()));
+    let saved = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: single-threaded test harness; restored immediately below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    let expected_base = crate::paths::workbenches_dir()
+        .to_string_lossy()
+        .into_owned();
+    let routine = make_routine("Cmd Override Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // The single-source base resolves under the override...
+    assert!(
+        expected_base.starts_with(&*home.to_string_lossy()),
+        "workbenches_dir() should resolve under the override, got: {expected_base}"
+    );
+    // ...and the WB= line is anchored at exactly that base, with $SLUG-$TS appended at run time.
+    assert!(
+        cmd.contains(&format!(
+            r#"WB={}/"$SLUG-$TS""#,
+            shell_quote(&expected_base)
+        )),
+        "expected WB anchored under workbenches_dir() base in: {cmd}"
+    );
+
+    unsafe {
+        match saved {
+            Some(prev) => std::env::set_var("MOADIM_HOME_OVERRIDE", prev),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+}
+
+#[test]
 fn bin_dir_returns_none_when_path_unset() {
     // With PATH removed entirely, `std::env::var("PATH").ok()?` short-circuits to None.
     let saved = std::env::var_os("PATH");

@@ -333,7 +333,12 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
-    let handler_path = crate::paths::handlers_dir().join(&job.handler);
+    // Resolve the handler the same way the scheduled run does (exact match, then
+    // common script extensions) so a handler stored without an extension but
+    // backed by e.g. `<name>.sh` is found here too — see issue #440. A bare
+    // `join(&job.handler)` would miss extensioned scripts that fire on schedule.
+    let handler_path =
+        crate::sync::resolve_handler_path(&job.handler, &crate::paths::handlers_dir());
     if handler_path.exists() {
         if let Err(err) = std::process::Command::new(&handler_path).spawn() {
             log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}");

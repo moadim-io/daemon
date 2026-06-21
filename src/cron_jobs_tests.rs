@@ -736,6 +736,68 @@ fn svc_trigger_spawns_existing_handler_script() {
     let _ = std::fs::remove_file(&handler_path);
 }
 
+#[test]
+#[cfg(unix)]
+fn svc_trigger_resolves_extensioned_handler() {
+    // Regression test for #440: a job whose `handler` is stored without an
+    // extension but is backed by `<name>.sh` on disk must still be found and
+    // spawned by the manual trigger — the scheduled run resolves it via
+    // `resolve_handler_path`, so the manual path must too. Before the fix,
+    // `svc_trigger` joined the bare name (`handlers/<name>`, no extension),
+    // found nothing, and silently no-opped.
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let handlers = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers).unwrap();
+    let stem = format!("cov-ext-handler-{}", uuid::Uuid::new_v4());
+    let script_path = handlers.join(format!("{stem}.sh"));
+    let sentinel = handlers.join(format!("{stem}.fired"));
+    // The script touches a sentinel so we can observe that it actually ran.
+    std::fs::write(
+        &script_path,
+        format!("#!/bin/sh\ntouch {}\n", sentinel.display()),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script_path, perms).unwrap();
+
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            // Stored WITHOUT the `.sh` extension — exactly the case #440 missed.
+            handler: stem.clone(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    svc_trigger(&store, &id).unwrap();
+
+    // The spawn is async; poll briefly for the sentinel the script creates.
+    let mut fired = false;
+    for _ in 0..50 {
+        if sentinel.exists() {
+            fired = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(
+        fired,
+        "manual trigger did not resolve/spawn the extensioned handler {script_path:?}"
+    );
+
+    crate::storage::remove_job_dir(&id).unwrap();
+    let _ = std::fs::remove_file(&script_path);
+    let _ = std::fs::remove_file(&sentinel);
+}
+
 #[tokio::test]
 async fn replace_handler_updates_job() {
     use axum::extract::{Path, State};

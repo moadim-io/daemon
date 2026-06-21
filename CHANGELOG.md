@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
+  A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
+  (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to
+  wire up the `MOADIM_LAUNCHCTL_BIN` shim cannot mutate the developer's live
+  launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
+  guard from #211 (#213).
 - The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
   hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
   the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`

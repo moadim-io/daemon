@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`moadim stop --json` now reports the real bound `address`.** Under a
+  `MOADIM_BIND_ADDR` override, `stop --json` emitted the hardcoded default
+  `127.0.0.1:5784` while `status --json` reported the actual address, so the two
+  `--json` objects disagreed despite the documented "identical shape" contract.
+  `stop_json` now uses `bind_addr()` like `status_json`. Added a regression test
+  plus a guard asserting `status`/`stop` produce the same object.
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

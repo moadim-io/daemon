@@ -408,6 +408,24 @@ fn status_json_address_reflects_bind_override() {
 }
 
 #[test]
+fn stop_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+/// `status --json` and `stop --json` advertise the same `{running,pid,address}` contract, so a
+/// client can parse either uniformly. Guard the whole object (keys *and* the override-aware
+/// `address` value) so the two shapes can't silently drift apart again as fields are added.
+#[test]
+fn status_and_stop_json_share_the_same_shape() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    assert_eq!(status, stop);
+}
+
+#[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();
     print_version();

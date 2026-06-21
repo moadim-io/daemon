@@ -295,6 +295,10 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "--disabled",
             "--repositories",
             "[]",
+            "--tag",
+            "triage",
+            "--tag",
+            "nightly",
         ],
         &["routines", "list"],
         &["routines", "get", "rid"],
@@ -312,6 +316,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "10",
             "--max-runtime-secs",
             "20",
+            "--tag",
+            "ops",
         ],
         &[
             "routines",
@@ -442,6 +448,7 @@ fn routine_body_serializes_all_fields() {
             Some("[\"work\"]".into()),
             Some(30),
             Some(60),
+            vec!["triage".to_string(), "nightly".to_string()],
             false,
         )
         .unwrap(),
@@ -454,6 +461,13 @@ fn routine_body_serializes_all_fields() {
         Value::Array(vec![Value::String("work".to_string())])
     );
     assert_eq!(value["ttl_secs"], Value::from(30));
+    assert_eq!(
+        value["tags"],
+        Value::Array(vec![
+            Value::String("triage".to_string()),
+            Value::String("nightly".to_string()),
+        ])
+    );
     assert_eq!(value["enabled"], Value::Bool(true));
 }
 
@@ -469,6 +483,7 @@ fn routine_body_rejects_bad_repositories() {
             None,
             None,
             None,
+            vec![],
             false,
         ),
         Err(2)
@@ -503,6 +518,7 @@ fn routine_body_rejects_bad_machines() {
             Some("{bad".into()),
             None,
             None,
+            vec![],
             false,
         ),
         Err(2)

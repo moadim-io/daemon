@@ -176,6 +176,9 @@ enum RoutineCmd {
         /// Max runtime in seconds before the watchdog kills a run.
         #[arg(long)]
         max_runtime_secs: Option<u64>,
+        /// Tag for the routine; repeat the flag to add several.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Create the routine disabled instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -218,6 +221,10 @@ enum RoutineCmd {
         /// New max runtime in seconds.
         #[arg(long)]
         max_runtime_secs: Option<u64>,
+        /// Replacement tag; repeat the flag to set several. Passing any `--tag` replaces the whole
+        /// tag list; omit it to keep the existing tags.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
     },
     /// Replace a routine wholesale (all fields, like create but for an existing ID).
     Replace {
@@ -247,6 +254,9 @@ enum RoutineCmd {
         /// Max runtime in seconds before the watchdog kills a run.
         #[arg(long)]
         max_runtime_secs: Option<u64>,
+        /// Tag for the routine; repeat the flag to add several.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Replace into a disabled state instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -373,6 +383,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         } => match routine_body(
             schedule,
@@ -383,6 +394,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         ) {
             Ok(body) => request("POST", "/api/v1/routines", Some(&body)),
@@ -401,6 +413,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             enabled,
             ttl_secs,
             max_runtime_secs,
+            tags,
         } => {
             let mut map = Map::new();
             insert_opt(&mut map, "schedule", schedule.map(Value::String));
@@ -422,6 +435,12 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
                 "max_runtime_secs",
                 max_runtime_secs.map(Value::from),
             );
+            // Any `--tag` replaces the whole list; no `--tag` leaves tags untouched (key absent).
+            insert_opt(
+                &mut map,
+                "tags",
+                (!tags.is_empty()).then(|| tags_value(tags)),
+            );
             request("PATCH", &routine_path(&id), Some(&to_body(map)))
         }
         RoutineCmd::Replace {
@@ -434,6 +453,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         } => match routine_body(
             schedule,
@@ -444,6 +464,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         ) {
             Ok(body) => request("PUT", &routine_path(&id), Some(&body)),
@@ -498,6 +519,7 @@ fn routine_body(
     machines: Option<String>,
     ttl_secs: Option<u64>,
     max_runtime_secs: Option<u64>,
+    tags: Vec<String>,
     disabled: bool,
 ) -> Result<String, i32> {
     let mut map = Map::new();
@@ -513,8 +535,14 @@ fn routine_body(
         "max_runtime_secs",
         max_runtime_secs.map(Value::from),
     );
+    map.insert("tags".to_string(), tags_value(tags));
     map.insert("enabled".to_string(), Value::Bool(!disabled));
     Ok(to_body(map))
+}
+
+/// Convert a list of CLI `--tag` values into a JSON array of strings.
+fn tags_value(tags: Vec<String>) -> Value {
+    Value::Array(tags.into_iter().map(Value::String).collect())
 }
 
 /// Insert `key => value` into `map` only when `value` is `Some`, leaving the key absent otherwise so

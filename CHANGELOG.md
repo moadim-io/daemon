@@ -13,6 +13,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+  OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
+  every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)
 - Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
   cron-derived ceiling for the *effective* schedule (the new schedule if supplied,
   otherwise the routine's current one). The check runs before any mutation, so a

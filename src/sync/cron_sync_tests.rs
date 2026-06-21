@@ -105,6 +105,7 @@ fn make_managed_job(id: &str, schedule: &str, handler: &str, created_at: u64) ->
         schedule: schedule.to_string(),
         handler: handler.to_string(),
         metadata: serde_json::json!({}),
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at,
@@ -218,6 +219,7 @@ fn make_job(id: &str, schedule: &str, handler: &str) -> CronJob {
         schedule: schedule.to_string(),
         handler: handler.to_string(),
         metadata: serde_json::json!({}),
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
@@ -436,6 +438,24 @@ fn build_block_empty_store_emits_header_only() {
     // Covers the `lines.is_empty()` branch of build_block: an empty store yields the
     // begin/header/end markers with no managed job lines between them.
     let block = build_block(&store_with(vec![]));
+    assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
+}
+
+#[test]
+fn build_block_excludes_job_targeting_another_machine() {
+    let mut job = make_managed_job("other", "0 9 * * *", "h", 0);
+    job.machines = vec!["definitely-not-this-host-zzz".to_string()];
+    let block = build_block(&store_with(vec![job]));
+    // Targeted at a different machine → not scheduled here.
+    assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
+}
+
+#[test]
+fn build_block_skips_job_with_no_machine_assignment() {
+    let mut job = make_managed_job("dormant", "0 9 * * *", "h", 0);
+    // Empty `machines` → dormant: excluded and logged via `warn_dormant_jobs`.
+    job.machines = vec![];
+    let block = build_block(&store_with(vec![job]));
     assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
 }
 

@@ -17,6 +17,11 @@ struct JobToml {
     handler: Option<String>,
     /// Whether the job is enabled.
     enabled: Option<bool>,
+    /// Machines this job is assigned to run on (empty = nowhere). Read from the tracked base
+    /// `job.toml` only — targeting is the shared decision, not a per-machine `job.local.toml`
+    /// override.
+    #[serde(default)]
+    machines: Vec<String>,
     /// Unix creation timestamp.
     created_at: Option<u64>,
     /// Unix last-updated timestamp.
@@ -100,6 +105,7 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
         id: id.to_string(),
         schedule,
         handler,
+        machines: base.machines,
         enabled,
         source: "managed".to_string(),
         created_at,
@@ -122,6 +128,7 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
     let toml_job = JobToml {
         schedule: Some(job.schedule.clone()),
         handler: Some(job.handler.clone()),
+        machines: job.machines.clone(),
         enabled: Some(job.enabled),
         created_at: Some(job.created_at),
         updated_at: Some(job.updated_at),

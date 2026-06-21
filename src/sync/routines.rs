@@ -55,8 +55,13 @@ pub(crate) fn format_routine_line(routine: &Routine) -> String {
 
 /// Build the full routines block from the enabled managed routines in `store`.
 ///
-/// Routines whose agent config is missing are skipped with a warning.
+/// Only routines assigned to *this* machine ([`crate::machine::current_machine`]) are scheduled: a
+/// shared config repo can drive different routines on different machines. A routine with an empty
+/// `machines` list runs nowhere — these are logged once as dormant so the operator notices an
+/// unassigned routine instead of it silently never firing. Routines whose agent config is missing
+/// are skipped with a warning.
 fn build_block(store: &RoutineStore) -> String {
+    let me = crate::machine::current_machine();
     let mut routines: Vec<Routine> = {
         let lock = store.lock_recover();
         lock.values()
@@ -64,6 +69,8 @@ fn build_block(store: &RoutineStore) -> String {
             .cloned()
             .collect()
     };
+    warn_dormant_routines(&routines);
+    routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
     routines.sort_by_key(|routine| routine.created_at);
 
     let lines: Vec<String> = routines
@@ -91,6 +98,27 @@ fn build_block(store: &RoutineStore) -> String {
             "{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{}\n{BLOCK_END}",
             lines.join("\n")
         )
+    }
+}
+
+/// Log a single warning naming enabled routines with no machine assignment (empty `machines`).
+///
+/// With "unset targeting = runs nowhere", such routines never schedule on any machine. Surfacing
+/// them once at sync time makes that visible (e.g. after an upgrade from a version without
+/// targeting) instead of leaving the operator to wonder why a routine never fires.
+fn warn_dormant_routines(routines: &[Routine]) {
+    let dormant: Vec<&str> = routines
+        .iter()
+        .filter(|routine| routine.machines.is_empty())
+        .map(|routine| routine.title.as_str())
+        .collect();
+    if !dormant.is_empty() {
+        log::warn!(
+            "{} enabled routine(s) have no machine assignment and will not be scheduled on any \
+             machine: {}; assign with `moadim routines update <id> --machines '[\"<name>\"]'`",
+            dormant.len(),
+            dormant.join(", ")
+        );
     }
 }
 

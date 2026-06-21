@@ -15,6 +15,8 @@ mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
 mod filesystem;
+/// Machine identity for multi-machine deployments (per-machine routine/job targeting).
+mod machine;
 /// Axum middleware stack.
 mod middlewares;
 mod openapi;
@@ -57,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
+        cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
         cli::Command::Foreground => run_server().await,
     }
 }

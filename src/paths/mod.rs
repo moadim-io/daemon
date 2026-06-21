@@ -184,6 +184,22 @@ pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
 }
 
+/// Returns the path to `~/.config/moadim/machine.local.toml`, the gitignored, per-machine file
+/// that records this install's machine identity (the `name` used to match a routine/job's
+/// `machines` targeting list). The `.local.` infix matches the `*.local.*` pattern seeded into the
+/// config `.gitignore`, so a machine name set on one host never leaks into the shared config repo.
+pub fn machine_config_path() -> PathBuf {
+    machine_config_path_from_home(home())
+}
+
+/// Returns the machine-config path under `home`, or `.` if `home` is `None`.
+pub(crate) fn machine_config_path_from_home(home: Option<PathBuf>) -> PathBuf {
+    home.unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("moadim")
+        .join("machine.local.toml")
+}
+
 // ─── System prompts ──────────────────────────────────────────────────────────
 
 /// Returns the path to `~/.config/moadim/user_prompt.md`, where the user writes a persistent

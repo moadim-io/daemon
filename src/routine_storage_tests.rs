@@ -14,6 +14,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
             repository: "https://example.com/r.git".to_string(),
             branch: Some("main".to_string()),
         }],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 5,

@@ -935,6 +935,7 @@ async fn router_serves_routines_ical_feed() {
             agent: "claude".to_string(),
             prompt: "do the thing".to_string(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             source: "managed".to_string(),
             created_at: 0,

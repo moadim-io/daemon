@@ -78,6 +78,12 @@ pub struct Routine {
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines this routine runs on. Each daemon schedules a routine only when this list names its
+    /// own machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so
+    /// a routine is dormant until explicitly assigned. Lets one shared config repo drive different
+    /// routines on different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the routine is active.
     pub enabled: bool,
     /// `"managed"` for routines owned by this server.
@@ -214,6 +220,9 @@ pub struct CreateRoutineRequest {
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines to run this routine on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -241,6 +250,8 @@ pub struct UpdateRoutineRequest {
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.

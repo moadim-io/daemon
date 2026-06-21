@@ -13,6 +13,19 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Multi-machine targeting.** Routines and cron jobs now carry a `machines` list,
+  so one shared `~/.config/moadim` config repo can drive different routines/jobs on
+  different machines (e.g. a laptop, a work box, a server). Each daemon resolves its
+  own machine identity — `MOADIM_MACHINE` env, else the `name` in the gitignored
+  `~/.config/moadim/machine.local.toml`, else the system hostname — and its crontab
+  sync schedules only the entries naming that machine. A new `moadim machine`
+  command (`show` / `set <name>` / `list`) inspects and sets the identity. The
+  `machines` field is settable via REST, the MCP `create_*`/`update_*` tools, and
+  the `--machines '["work","server"]'` CLI flag.
+  **Note:** an empty `machines` list runs **nowhere** — an entry is dormant until
+  assigned, so routines/jobs created before this change stop scheduling until you
+  assign them (the daemon logs each unassigned entry once at sync time). The
+  built-in default routine self-assigns to the machine that first seeds it.
 - `moadim status --json` now folds the running server's `GET /health` details into
   its object as `uptime_secs` and `version`, so a single call answers liveness
   **and** age/version instead of forcing a second `curl /health`. Both fields are

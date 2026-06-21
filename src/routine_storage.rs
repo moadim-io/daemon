@@ -29,6 +29,10 @@ struct RoutineToml {
     /// Context repositories.
     #[serde(default)]
     repositories: Vec<Repository>,
+    /// Machines this routine is assigned to run on (empty = nowhere). Tracked config: the
+    /// targeting decision is authored once in the shared repo, not per-machine sidecar state.
+    #[serde(default)]
+    machines: Vec<String>,
     /// Whether the routine is enabled.
     enabled: Option<bool>,
     /// Unix creation timestamp.
@@ -122,6 +126,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         agent: toml.agent?,
         prompt: toml.prompt.unwrap_or_default(),
         repositories: toml.repositories,
+        machines: toml.machines,
         enabled: toml.enabled.unwrap_or(true),
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),
@@ -162,6 +167,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         agent: Some(routine.agent.clone()),
         prompt: Some(routine.prompt.clone()),
         repositories: routine.repositories.clone(),
+        machines: routine.machines.clone(),
         enabled: Some(routine.enabled),
         created_at: Some(routine.created_at),
         updated_at: Some(routine.updated_at),

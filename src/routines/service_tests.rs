@@ -15,6 +15,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at,
@@ -79,6 +80,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         agent: "claude".into(),
         prompt: "do the thing".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -93,6 +95,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         agent: None,
         prompt: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -157,6 +160,37 @@ fn svc_create_rejects_zero_max_runtime_secs() {
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_persists_machines() {
+    // Covers the `machines: req.machines` assignment in `svc_create`.
+    let store = new_store();
+    let resp = svc_create(
+        &store,
+        CreateRoutineRequest {
+            machines: vec!["alpha".into(), "beta".into()],
+            ..valid_create_request()
+        },
+    )
+    .expect("create");
+    assert_eq!(resp.routine.machines, vec!["alpha", "beta"]);
+}
+
+#[test]
+fn svc_update_sets_machines() {
+    // Covers the `if let Some(machines) = req.machines` branch in `svc_update`.
+    let store = store_with(vec![make_routine("upd-machines", "Keep", 1, 1)]);
+    let resp = svc_update(
+        &store,
+        "upd-machines",
+        UpdateRoutineRequest {
+            machines: Some(vec!["server".into()]),
+            ..empty_update_request()
+        },
+    )
+    .expect("update");
+    assert_eq!(resp.routine.machines, vec!["server"]);
 }
 
 #[test]
@@ -334,6 +368,7 @@ fn svc_create_rejects_duplicate_slug() {
                 agent: "claude".into(),
                 prompt: "p".into(),
                 repositories: vec![],
+                machines: vec![crate::machine::current_machine()],
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -350,6 +385,7 @@ fn svc_create_rejects_duplicate_slug() {
                 agent: "claude".into(),
                 prompt: "p".into(),
                 repositories: vec![],
+                machines: vec![crate::machine::current_machine()],
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -380,6 +416,7 @@ fn svc_create_rejects_malformed_agent_config() {
             agent: agent_name.into(),
             prompt: "p".into(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -416,6 +453,7 @@ fn svc_update_rejects_malformed_agent_config() {
             agent: Some(agent_name.into()),
             prompt: None,
             repositories: None,
+            machines: None,
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -461,6 +499,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
                 agent: None,
                 prompt: None,
                 repositories: None,
+                machines: None,
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -496,6 +535,7 @@ fn svc_update_sets_ttl_secs() {
                 agent: None,
                 prompt: None,
                 repositories: None,
+                machines: None,
                 enabled: None,
                 ttl_secs: Some(1800),
                 max_runtime_secs: None,
@@ -532,6 +572,7 @@ fn svc_update_sets_max_runtime_secs() {
                 agent: None,
                 prompt: None,
                 repositories: None,
+                machines: None,
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: Some(1234),
@@ -696,6 +737,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 agent: "claude".into(),
                 prompt: "p".into(),
                 repositories: vec![],
+                machines: vec![crate::machine::current_machine()],
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -725,6 +767,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 agent: None,
                 prompt: Some("changed".into()),
                 repositories: None,
+                machines: None,
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -799,6 +842,7 @@ fn svc_create_syncs_crontab_on_success() {
                 agent: "claude".into(),
                 prompt: "p".into(),
                 repositories: vec![],
+                machines: vec![crate::machine::current_machine()],
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -830,6 +874,7 @@ fn svc_update_syncs_crontab_on_success() {
                 agent: None,
                 prompt: Some("changed".into()),
                 repositories: None,
+                machines: None,
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -933,6 +978,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -980,6 +1026,7 @@ fn svc_create_rejects_unknown_agent() {
             agent: "no-such-agent-zzz".into(),
             prompt: "p".into(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -1014,6 +1061,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 agent: None,
                 prompt: None,
                 repositories: None,
+                machines: None,
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -1046,6 +1094,7 @@ fn svc_create_accepts_builtin_agent() {
             agent: "claude".into(),
             prompt: "p".into(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -1077,6 +1126,7 @@ fn svc_update_rejects_unknown_agent() {
             agent: Some("no-such-agent-zzz".into()),
             prompt: None,
             repositories: None,
+            machines: None,
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -1110,6 +1160,7 @@ fn svc_create_rejects_blank_repository_url() {
                     repository: url.into(),
                     branch: None,
                 }],
+                machines: vec![crate::machine::current_machine()],
                 enabled: true,
                 ttl_secs: None,
                 max_runtime_secs: None,
@@ -1137,6 +1188,7 @@ fn svc_create_rejects_blank_repository_branch() {
                 repository: "https://github.com/octocat/Hello-World".into(),
                 branch: Some("  ".into()),
             }],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -1164,6 +1216,7 @@ fn svc_create_trims_repository_entries() {
                 repository: "  https://github.com/octocat/Hello-World  ".into(),
                 branch: Some("  main  ".into()),
             }],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -1200,6 +1253,7 @@ fn svc_update_rejects_blank_repository_url() {
                 repository: " ".into(),
                 branch: None,
             }]),
+            machines: None,
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,

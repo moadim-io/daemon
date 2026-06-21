@@ -265,6 +265,7 @@ pub fn svc_create(
         agent: req.agent,
         prompt: req.prompt,
         repositories,
+        machines: req.machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -356,6 +357,9 @@ pub fn svc_update(
     }
     if let Some(repositories) = repositories {
         routine.repositories = repositories;
+    }
+    if let Some(machines) = req.machines {
+        routine.machines = machines;
     }
     if let Some(enabled) = req.enabled {
         routine.enabled = enabled;

@@ -13,6 +13,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

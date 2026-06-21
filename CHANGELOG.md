@@ -98,6 +98,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
+  again. The crate root's `#![deny(warnings)]` implies
+  `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or
+  the pre-push hook, so the rotted links sat on `main` and made `cargo doc` fail
+  with "could not document `moadim`". Links to private submodules in
+  `src/routines/mod.rs` were demoted to plain code spans, and the remaining
+  links in `cleanup`, `sync`, and `utils::atomic` were fully qualified. (#390)
 - The in-memory routine and cron-job stores no longer panic the request that
   observes a poisoned lock. Every `Mutex::lock().unwrap()` on these stores was
   replaced with a new `LockRecover::lock_recover()` extension that recovers the

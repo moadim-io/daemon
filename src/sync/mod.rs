@@ -14,7 +14,7 @@
 //! This is the only sync direction the daemon runs.
 //!
 //! **Reverse sync** (crontab → moadim) is *not* wired up. The functions that
-//! implement it ([`sync_from_crontab`] and its `parse_block` /
+//! implement it ([`sync_from_crontab`](crate::sync::sync_from_crontab) and its `parse_block` /
 //! `parse_moadim_line` / `to_moadim_schedule` / `handler_from_command` helpers)
 //! exist and are unit-tested, but no caller invokes them on any interval or at
 //! startup — see issue #218. As a result, manual edits to the block do **not**

@@ -122,14 +122,30 @@ fn status_json_null_pid_when_unknown_or_down() {
 }
 
 #[test]
-fn cleanup_json_reports_removed_and_running() {
-    let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
+fn cleanup_json_reports_removed_freed_and_running() {
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, 13_000_000, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["removed"], serde_json::json!(3));
+    assert_eq!(value["freed_bytes"], serde_json::json!(13_000_000));
 
-    let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
+    let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, 0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+    assert_eq!(down["freed_bytes"], serde_json::json!(0));
+}
+
+#[test]
+fn humanize_bytes_scales_units() {
+    assert_eq!(humanize_bytes(0), "0 B");
+    assert_eq!(humanize_bytes(512), "512 B");
+    assert_eq!(humanize_bytes(1023), "1023 B");
+    assert_eq!(humanize_bytes(1024), "1.0 KB");
+    assert_eq!(humanize_bytes(1536), "1.5 KB");
+    assert_eq!(humanize_bytes(13_000_000), "12.4 MB");
+    assert_eq!(humanize_bytes(5 * 1024 * 1024 * 1024), "5.0 GB");
+    assert_eq!(humanize_bytes(2 * 1024 * 1024 * 1024 * 1024), "2.0 TB");
+    // Beyond the unit table stays in TB rather than panicking on an out-of-range index.
+    assert_eq!(humanize_bytes(3072_u64 * 1024 * 1024 * 1024 * 1024), "3072.0 TB");
 }
 
 #[test]
@@ -250,6 +266,15 @@ fn rejects_non_cleanup_body() {
     assert_eq!(parse_removed_count(""), None);
     assert_eq!(parse_removed_count("not json"), None);
     assert_eq!(parse_removed_count("{\"other\":1}"), None);
+}
+
+#[test]
+fn parses_freed_bytes_from_cleanup_body() {
+    assert_eq!(parse_freed_bytes("{\"removed\":2,\"freed_bytes\":4096}"), Some(4096));
+    assert_eq!(parse_freed_bytes("{\"freed_bytes\":0}"), Some(0));
+    // Absent field (older server) and malformed bodies degrade to None -> caller treats as 0.
+    assert_eq!(parse_freed_bytes("{\"removed\":2}"), None);
+    assert_eq!(parse_freed_bytes("not json"), None);
 }
 
 // ─── Lifecycle / HTTP-client integration tests ───────────────────────────────

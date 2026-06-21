@@ -75,6 +75,10 @@ pub struct CreateRoutineRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CleanupResponse {
     pub removed: usize,
+    /// Disk space reclaimed by the sweep, in bytes. `#[serde(default)]` so a response from an older
+    /// server that predates this field still deserializes (freed reads as 0).
+    #[serde(default)]
+    pub freed_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -166,7 +170,7 @@ async fn api_trigger(id: &str) -> Result<Routine, String> {
     resp.json::<Routine>().await.map_err(|e| e.to_string())
 }
 
-async fn api_cleanup() -> Result<usize, String> {
+async fn api_cleanup() -> Result<(usize, u64), String> {
     let resp = Request::post("/api/v1/routines/cleanup")
         .send()
         .await
@@ -176,8 +180,25 @@ async fn api_cleanup() -> Result<usize, String> {
     }
     resp.json::<CleanupResponse>()
         .await
-        .map(|r| r.removed)
+        .map(|r| (r.removed, r.freed_bytes))
         .map_err(|e| e.to_string())
+}
+
+/// Render a byte count as a short human-readable size (`B`/`KB`/`MB`/`GB`/`TB`, 1024-based): values
+/// under 1 KiB show as a bare integer, larger ones with one decimal (`12.4 MB`). Mirrors the CLI
+/// helper so the UI cleanup toast and `moadim cleanup` report the freed size identically.
+fn humanize_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    format!("{size:.1} {}", UNITS[unit])
 }
 
 async fn api_logs(id: &str) -> Result<String, String> {
@@ -437,9 +458,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             let ok = ok.clone();
             spawn_local(async move {
                 match api_cleanup().await {
-                    Ok(n) => ok(&format!(
-                        "Cleanup removed {n} workbench{}",
-                        if n == 1 { "" } else { "es" }
+                    Ok((n, freed_bytes)) => ok(&format!(
+                        "Cleanup removed {n} workbench{} (freed {})",
+                        if n == 1 { "" } else { "es" },
+                        humanize_bytes(freed_bytes)
                     )),
                     Err(e) => toast.emit((format!("Cleanup failed: {e}"), ToastKind::Err)),
                 }

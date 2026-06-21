@@ -307,11 +307,15 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
             let removed = parse_removed_count(&body).unwrap_or(0);
+            let freed_bytes = parse_freed_bytes(&body).unwrap_or(0);
             if json {
-                println!("{}", cleanup_json(removed, true));
+                println!("{}", cleanup_json(removed, freed_bytes, true));
             } else {
                 let plural = if removed == 1 { "" } else { "es" };
-                println!("cleanup removed {removed} workbench{plural}");
+                println!(
+                    "cleanup removed {removed} workbench{plural} (freed {})",
+                    humanize_bytes(freed_bytes)
+                );
             }
             Ok(liveness_exit_code(true))
         }
@@ -320,7 +324,7 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
         }
         Err(_) => {
             if json {
-                println!("{}", cleanup_json(0, false));
+                println!("{}", cleanup_json(0, 0, false));
             } else {
                 println!("moadim is not running");
             }
@@ -363,14 +367,34 @@ fn status_json(running: bool, pid: Option<u32>) -> String {
     .to_string()
 }
 
-/// Render the `cleanup` result as a one-line JSON object: `{"running":bool,"removed":N}`. `removed`
-/// is `0` when the server is not running (`running:false`).
-fn cleanup_json(removed: usize, running: bool) -> String {
+/// Render the `cleanup` result as a one-line JSON object:
+/// `{"running":bool,"removed":N,"freed_bytes":N}`. `removed`/`freed_bytes` are `0` when the server is
+/// not running (`running:false`). The pre-existing `running`/`removed` keys are preserved; `freed_bytes`
+/// is additive.
+fn cleanup_json(removed: usize, freed_bytes: u64, running: bool) -> String {
     serde_json::json!({
         "running": running,
         "removed": removed,
+        "freed_bytes": freed_bytes,
     })
     .to_string()
+}
+
+/// Render a byte count as a short human-readable size using 1024-based units. Values under 1 KiB are
+/// shown as a bare integer (`512 B`); larger values use one decimal place (`12.4 MB`). Caps at TB so
+/// the unit table can't be indexed out of range.
+fn humanize_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    format!("{size:.1} {}", UNITS[unit])
 }
 
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
@@ -495,6 +519,13 @@ fn parse_body(resp: &str) -> String {
 fn parse_removed_count(body: &str) -> Option<usize> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     value.get("removed")?.as_u64().map(|n| n as usize)
+}
+
+/// Extract the `freed_bytes` total from a [`CleanupResponse`](crate::routines::CleanupResponse) JSON
+/// body. Returns `None` for a body lacking the (additive) field, so older servers degrade to `0`.
+fn parse_freed_bytes(body: &str) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value.get("freed_bytes")?.as_u64()
 }
 
 /// Spawn a detached copy of this binary running the server in the foreground, returning its PID.

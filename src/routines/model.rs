@@ -183,6 +183,9 @@ impl RoutineResponse {
 pub struct CleanupResponse {
     /// Number of finished, expired run workbenches removed by this sweep.
     pub removed: usize,
+    /// Total disk space reclaimed, in bytes, summed across the removed workbench trees. Additive
+    /// field: existing `{"removed": N}` consumers are unaffected.
+    pub freed_bytes: u64,
 }
 
 /// Thread-safe shared store of routines keyed by ID.

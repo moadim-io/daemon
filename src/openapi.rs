@@ -10,6 +10,7 @@
     paths(
         crate::routes::http::health,
         crate::routes::http::shutdown,
+        crate::routes::http::restart,
         crate::routes::http::echo,
         crate::cron_jobs::list,
         crate::cron_jobs::create,
@@ -47,6 +48,7 @@
         crate::routines::SortOrder,
         crate::routes::http::HealthResponse,
         crate::routes::http::ShutdownResponse,
+        crate::routes::http::RestartResponse,
         crate::routes::http::EchoRequest,
         crate::routes::http::EchoResponse,
     ))

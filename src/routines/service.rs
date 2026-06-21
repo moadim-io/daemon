@@ -1,5 +1,6 @@
 //! Store-mutating service functions: list, get, create, update, delete, trigger, and logs.
 
+use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::cron_jobs::{normalize_schedule, validate_cron};
@@ -86,7 +87,7 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
 /// reproduces the previous behaviour. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
 pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
     drop(lock);
 
@@ -126,8 +127,7 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
 /// Look up a routine by `id`, returning `NotFound` if it does not exist.
 pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
@@ -220,7 +220,7 @@ pub fn svc_create(
     let repositories = validate_repositories(&req.repositories)?;
     let slug = slugify(&req.title);
     {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         if lock.values().any(|routine| slugify(&routine.title) == slug) {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{slug}\" already exists"
@@ -240,13 +240,13 @@ pub fn svc_create(
         created_at: now,
         updated_at: now,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .insert(routine.id.clone(), routine.clone());
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine create failed: {err}");
@@ -279,7 +279,7 @@ pub fn svc_update(
         Some(ref repos) => Some(validate_repositories(repos)?),
         None => None,
     };
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
     if let Some(ref new_title) = req.title {
@@ -294,7 +294,7 @@ pub fn svc_update(
             )));
         }
     }
-    let routine = lock.get_mut(id).unwrap();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);
     }
@@ -335,7 +335,7 @@ pub fn svc_update(
 
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
-    let routine = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+    let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
     remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
@@ -345,7 +345,7 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
@@ -388,8 +388,7 @@ pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
 /// Return the contents of the newest workbench `agent.log` for routine `id`.
 pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;

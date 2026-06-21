@@ -19,6 +19,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         created_at: 5,
         updated_at: 6,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -267,6 +268,87 @@ fn load_routine_ignores_unparsable_sidecar() {
     );
 
     remove_routine_dir(slug).unwrap();
+}
+
+#[test]
+fn load_routine_reads_scheduled_trigger_from_sidecar() {
+    // `last_scheduled_trigger_at` lives in its own gitignored `scheduled.local.toml` sidecar,
+    // written by the routine's `run.sh` at cron fire time, and is read back on load — independently
+    // of the manual-trigger sidecar.
+    let title = "Rs Scheduled Sidecar Routine";
+    let slug = slugify(title);
+    write_routine(&make_routine("rs-scheduled-id", title)).unwrap();
+    std::fs::write(
+        crate::paths::routine_scheduled_state_path(&slug),
+        "last_scheduled_trigger_at = 4242\n",
+    )
+    .unwrap();
+
+    let loaded = load_routine_from_dir(&slug).unwrap();
+    assert_eq!(loaded.last_scheduled_trigger_at, Some(4242));
+    // The scheduled timestamp is distinct from the (unset) manual one.
+    assert_eq!(loaded.last_manual_trigger_at, None);
+
+    remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn load_routine_ignores_unparsable_scheduled_sidecar() {
+    // A malformed `scheduled.local.toml` parses to `None` rather than crashing the load.
+    let slug = "rs-bad-scheduled-sidecar-routine";
+    let dir = crate::paths::routine_dir(slug);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        crate::paths::routine_toml_path(slug),
+        "schedule = \"@daily\"\ntitle = \"Rs Bad Scheduled Sidecar\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        crate::paths::routine_scheduled_state_path(slug),
+        "= not valid toml =",
+    )
+    .unwrap();
+
+    assert_eq!(
+        load_routine_from_dir(slug)
+            .unwrap()
+            .last_scheduled_trigger_at,
+        None
+    );
+
+    remove_routine_dir(slug).unwrap();
+}
+
+#[test]
+fn write_routine_preserves_scheduler_written_scheduled_sidecar() {
+    // The daemon never writes the scheduled sidecar, so re-persisting a routine (e.g. on startup or
+    // an update) must leave the scheduler-stamped `scheduled.local.toml` untouched — the bug this
+    // separate-file design exists to prevent.
+    let title = "Rs Preserve Scheduled Routine";
+    let slug = slugify(title);
+    let mut routine = make_routine("rs-preserve-scheduled-id", title);
+    write_routine(&routine).unwrap();
+
+    // Simulate a scheduled cron firing stamping the sidecar.
+    std::fs::write(
+        crate::paths::routine_scheduled_state_path(&slug),
+        "last_scheduled_trigger_at = 55\n",
+    )
+    .unwrap();
+
+    // A subsequent daemon-side write (manual trigger recorded, routine updated, repersist, …).
+    routine.last_manual_trigger_at = Some(7);
+    write_routine(&routine).unwrap();
+
+    assert!(
+        crate::paths::routine_scheduled_state_path(&slug).exists(),
+        "daemon write must not remove the scheduler-owned sidecar"
+    );
+    let loaded = load_routine_from_dir(&slug).unwrap();
+    assert_eq!(loaded.last_scheduled_trigger_at, Some(55));
+    assert_eq!(loaded.last_manual_trigger_at, Some(7));
+
+    remove_routine_dir(&slug).unwrap();
 }
 
 #[test]

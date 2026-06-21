@@ -67,7 +67,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             args: vec![],
             setup: None,
         };
-        let cmd = build_routine_command(&routine, &agent);
+        let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
         // The resolved tmux dir is baked into the exported PATH.
         assert!(
             cmd.contains(&dir_str),
@@ -89,7 +89,7 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         args: vec![],
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
         .to_string_lossy()
         .into_owned();
@@ -104,6 +104,29 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
     let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
     let copy = cmd.find("/prompt.md\"").unwrap();
     assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
+}
+
+#[test]
+fn build_routine_command_manual_omits_scheduled_trigger_sidecar() {
+    // A manual trigger reuses the same launch command, but the daemon records it separately as
+    // `last_manual_trigger_at`. The generated script must therefore NOT stamp the scheduled-fire
+    // sidecar, or an on-demand run would masquerade as a scheduled firing.
+    let routine = make_routine("Cmd Manual Trigger Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Manual);
+    assert!(
+        !cmd.contains("last_scheduled_trigger_at"),
+        "manual trigger must not stamp the scheduled-fire sidecar: {cmd}"
+    );
+    // The rest of the launch is unaffected — it still creates the workbench and starts the session.
+    assert!(
+        cmd.contains("tmux new-session"),
+        "manual launch missing: {cmd}"
+    );
 }
 
 #[test]

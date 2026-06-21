@@ -180,13 +180,34 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
     ]
 }
 
+/// What will invoke a generated routine command — and thus whether it should stamp the
+/// scheduled-fire sidecar.
+///
+/// The same launch command is shared by the OS crontab and the on-demand trigger, but only a
+/// crontab firing is a *scheduled* run. A manual trigger is recorded by the daemon itself as
+/// `last_manual_trigger_at`, so its command must not also write `last_scheduled_trigger_at` —
+/// otherwise the two are conflated and a manual run looks like a scheduled fire.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TriggerSource {
+    /// Fired by the OS crontab on schedule; stamps the `scheduled.local.toml` sidecar.
+    Scheduled,
+    /// Fired on demand (API/MCP/CLI); leaves the scheduled-fire sidecar untouched.
+    Manual,
+}
+
 /// Build the single-line shell command that creates a workbench and launches the agent in tmux.
 ///
 /// The agent's cwd is the workbench (via `tmux -c`), so `{prompt_file}` resolves to `prompt.md`,
 /// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
-pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
+///
+/// `source` controls whether the script stamps the scheduled-fire sidecar (see [`TriggerSource`]).
+pub(crate) fn build_routine_command(
+    routine: &Routine,
+    agent: &AgentCommand,
+    source: TriggerSource,
+) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
     let scheduled_state_path = routine_scheduled_state_path(&slug)
@@ -215,21 +236,29 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
+    ];
+    if source == TriggerSource::Scheduled {
         // Record this scheduled firing. The daemon never sees a cron run (the OS crontab executes
         // this script directly), so the script itself stamps the fire time into the routine's
         // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
         // `last_scheduled_trigger_at` on load. Written before the prompt-copy guard below so an
         // aborted run still records that the schedule fired, and best-effort (`|| true`) so a
         // sidecar write failure never blocks launching the agent.
-        format!(
+        //
+        // Skipped for a manual trigger: that run is recorded by the daemon as
+        // `last_manual_trigger_at`, so stamping the scheduled-fire sidecar would conflate an
+        // on-demand run with a real scheduled fire.
+        stmts.push(format!(
             r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
             shell_quote(&scheduled_state_path)
-        ),
+        ));
+    }
+    stmts.extend([
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
-    ];
+    ]);
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
         &routine.title,

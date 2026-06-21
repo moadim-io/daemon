@@ -9,9 +9,11 @@ use yew_router::prelude::*;
 mod cron_jobs;
 mod day_timeline;
 mod machines;
+mod overview;
 mod routines;
 mod schedule;
 use cron_jobs::CronJobsPage;
+use overview::OverviewPage;
 use routines::RoutinesPage;
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -240,10 +242,10 @@ pub fn shell() -> Html {
     let switch = {
         let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
-            Route::Home => html! { <Redirect<Route> to={Route::CronJobs} /> },
+            Route::Home => html! { <OverviewPage /> },
             Route::CronJobs => html! { <CronJobsPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
-            Route::NotFound => html! { <Redirect<Route> to={Route::CronJobs} /> },
+            Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
     };
 
@@ -279,10 +281,8 @@ pub fn shell() -> Html {
 #[function_component(Nav)]
 pub fn nav() -> Html {
     let route = use_route::<Route>().unwrap_or(Route::Home);
-    // Home redirects to CronJobs, so treat it as the cron-jobs tab for highlighting.
     let cls = |target: &Route| {
-        let active = route == *target || (route == Route::Home && *target == Route::CronJobs);
-        if active {
+        if route == *target {
             "tab-btn active"
         } else {
             "tab-btn"
@@ -290,6 +290,9 @@ pub fn nav() -> Html {
     };
     html! {
         <nav class="tabs">
+            <Link<Route> classes={classes!(cls(&Route::Home))} to={Route::Home}>
+                { "OVERVIEW" }
+            </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::CronJobs))} to={Route::CronJobs}>
                 { "CRON JOBS" }
             </Link<Route>>

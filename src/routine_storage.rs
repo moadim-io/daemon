@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths::{
     routine_dir, routine_gitignore_path, routine_prompt_path, routine_scheduled_state_path,
-    routine_state_path, routine_toml_path, routines_dir,
+    routine_script_path, routine_state_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -66,9 +66,9 @@ struct RuntimeState {
 /// Scheduler-written runtime state for a routine, persisted to the gitignored
 /// `scheduled.local.toml` sidecar.
 ///
-/// Written by the routine's generated `run.sh` at each scheduled cron firing (the daemon is not in
-/// the loop then) and only ever read here — kept separate from [`RuntimeState`] so a daemon-side
-/// re-persist of `state.local.toml` can never clobber the scheduler's timestamp.
+/// Written by the routine's launch command (the `printf` step of `build_routine_command`) at each
+/// scheduled cron firing and only ever read here — kept separate from [`RuntimeState`] so a
+/// daemon-side re-persist of `state.local.toml` can never clobber the scheduler's timestamp.
 #[derive(Debug, Deserialize, Serialize)]
 struct ScheduledState {
     /// Unix timestamp of the last scheduled (cron) firing, or `None` if it has never fired.
@@ -93,7 +93,8 @@ fn read_runtime_state(dir_name: &str) -> Option<u64> {
 
 /// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar, returning
 /// `None` when the sidecar is absent or unparsable (e.g. before the routine's schedule has ever
-/// fired). The daemon only reads this file; it is written by the routine's `run.sh` at fire time.
+/// fired). The daemon only reads this file; it is written by the routine's launch command at fire
+/// time.
 fn read_scheduled_state(dir_name: &str) -> Option<u64> {
     let text = std::fs::read_to_string(routine_scheduled_state_path(dir_name)).ok()?;
     toml::from_str::<ScheduledState>(&text)
@@ -148,6 +149,11 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     if !gitignore.exists() {
         std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
     }
+
+    // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
+    // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a
+    // missing file is fine. Startup re-persists every routine, so this heals existing installs.
+    let _ = std::fs::remove_file(routine_script_path(&slug));
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
@@ -295,10 +301,10 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
 /// Re-persist every loaded routine to disk, recreating `routine.toml`, `prompt.md`, and `.gitignore`
 /// in its canonical slug directory.
 ///
-/// The crontab sync writes only `run.sh`; nothing else rewrites the prompt sidecar on startup. So a
-/// slug dir that ends up with `run.sh` but no `prompt.md` (e.g. after the UUID→slug migration, or if
-/// the sidecar was lost) would fail the cron `cp prompt.md`. Re-persisting from the in-memory store
-/// heals those dirs. Idempotent; safe to call on every startup after [`load_store`].
+/// Nothing else rewrites the prompt sidecar on startup, so a slug dir missing its `prompt.md` (e.g.
+/// after the UUID→slug migration, or if the sidecar was lost) would fail the launch command's
+/// `cp prompt.md`. Re-persisting from the in-memory store heals those dirs (and removes any stale
+/// legacy `run.sh`). Idempotent; safe to call on every startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     for routine in &routines {

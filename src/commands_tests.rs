@@ -321,7 +321,7 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["routines", "trigger", "rid"],
         &["routines", "logs", "rid"],
         &["routines", "ical"],
-        // schedule (routine trigger succeeds on the first try; fallback never reached)
+        // schedule (posts to the routine scheduled-trigger route)
         &["schedule", "trigger", "sid"],
         &["sched", "trigger", "sid"],
         // top-level
@@ -370,29 +370,11 @@ fn no_server_returns_not_running_exit_code() {
         run(argv(&["cron-jobs", "list"])),
         crate::cli::EXIT_NOT_RUNNING
     );
-    // `schedule trigger` reaches the same not-running path on its first (routine) request.
+    // `schedule trigger` reaches the same not-running path.
     assert_eq!(
         run(argv(&["schedule", "trigger", "sid"])),
         crate::cli::EXIT_NOT_RUNNING
     );
-}
-
-#[test]
-fn schedule_trigger_falls_back_to_cron_on_routine_404() {
-    // The routine trigger 404s (no routine with that ID), so `schedule trigger` retries against the
-    // cron-job route. The fake server 404s both, so the fallback's non-2xx maps to exit 1 — but the
-    // fallback request branch is what we exercise here.
-    let server = FakeServer::start(404, "{\"error\":\"not found\"}");
-    let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-    assert_eq!(run(argv(&["schedule", "trigger", "sid"])), 1);
-}
-
-#[test]
-fn schedule_trigger_surfaces_non_404_routine_error() {
-    // A non-404 routine error must not fall back to cron; it maps straight to exit 1.
-    let server = FakeServer::start(500, "");
-    let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-    assert_eq!(run(argv(&["schedule", "trigger", "sid"])), 1);
 }
 
 // ─── Body-builder unit tests ─────────────────────────────────────────────────

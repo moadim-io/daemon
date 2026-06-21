@@ -28,6 +28,7 @@
         crate::routines::update,
         crate::routines::delete,
         crate::routines::trigger,
+        crate::routines::scheduled_trigger,
         crate::routines::cleanup,
         crate::routines::get_logs,
         crate::routines::ical_feed,

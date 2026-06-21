@@ -682,6 +682,19 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // scheduled-trigger (the crontab-invoked path; runs the routine and returns OK)
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/routines/{id}/scheduled-trigger"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
     // logs (empty)
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
@@ -733,6 +746,7 @@ async fn router_routine_not_found_paths() {
         ("GET", ""),
         ("DELETE", ""),
         ("POST", "/trigger"),
+        ("POST", "/scheduled-trigger"),
         ("GET", "/logs"),
     ] {
         let resp = build_app(new_store(), crate::routines::new_store())

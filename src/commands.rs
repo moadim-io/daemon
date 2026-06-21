@@ -34,7 +34,7 @@ enum DataCommand {
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
     #[command(subcommand, visible_alias = "routine")]
     Routines(RoutineCmd),
-    /// Trigger a scheduled routine or cron job by ID (used by generated run.sh wrappers).
+    /// Trigger a routine on its schedule by ID (invoked by the generated crontab line).
     #[command(subcommand, visible_alias = "sched")]
     Schedule(ScheduleCmd),
     /// List the available agent registry keys.
@@ -122,15 +122,16 @@ enum CronCmd {
     },
 }
 
-/// Schedule operations spanning both routines and cron jobs, keyed only by ID.
+/// Schedule operations driven by the OS crontab, keyed only by ID.
 #[derive(Subcommand)]
 enum ScheduleCmd {
-    /// Trigger a routine or cron job by ID, whichever it names.
+    /// Run a routine on its schedule by ID.
     ///
-    /// Used by generated `run.sh` wrappers so cron need not know whether the ID is a routine or a
-    /// cron job: the routine trigger route is tried first, and a 404 falls back to the cron-job one.
+    /// This is what the generated crontab line invokes at each fire time. It records a *scheduled*
+    /// trigger (not a manual one), so it maps to the routine's `scheduled-trigger` route rather than
+    /// the manual `trigger` route.
     Trigger {
-        /// UUID of the routine or cron job to trigger.
+        /// UUID of the routine to trigger.
         id: String,
     },
 }
@@ -273,7 +274,11 @@ fn dispatch(command: DataCommand) -> i32 {
     match command {
         DataCommand::CronJobs(cmd) => dispatch_cron(cmd),
         DataCommand::Routines(cmd) => dispatch_routine(cmd),
-        DataCommand::Schedule(ScheduleCmd::Trigger { id }) => trigger_schedule(&id),
+        DataCommand::Schedule(ScheduleCmd::Trigger { id }) => request(
+            "POST",
+            &format!("{}/scheduled-trigger", routine_path(&id)),
+            None,
+        ),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
         DataCommand::Echo { message } => {
             let body = object([("message", Value::String(message))]);
@@ -518,14 +523,7 @@ fn to_body(map: Map<String, Value>) -> String {
 /// it to a process exit code: `0` on a 2xx, `1` on any other HTTP status (the server's error body is
 /// printed to stderr), and [`crate::cli::EXIT_NOT_RUNNING`] when no server is reachable.
 fn request(method: &str, path: &str, body: Option<&str>) -> i32 {
-    handle_response(crate::cli::http_request_json(method, path, body))
-}
-
-/// Print an HTTP response and map it to a process exit code, shared by [`request`] and
-/// [`trigger_schedule`]: `0` on a 2xx, `1` on any other status (printing the server's error body to
-/// stderr), and [`crate::cli::EXIT_NOT_RUNNING`] when no server is reachable.
-fn handle_response(result: std::io::Result<(u16, String)>) -> i32 {
-    match result {
+    match crate::cli::http_request_json(method, path, body) {
         Ok((status, resp)) if (200..300).contains(&status) => {
             print_body(&resp);
             0
@@ -541,20 +539,6 @@ fn handle_response(result: std::io::Result<(u16, String)>) -> i32 {
             eprintln!("moadim is not running");
             crate::cli::EXIT_NOT_RUNNING
         }
-    }
-}
-
-/// Trigger a routine or cron job by `id`, whichever store owns it.
-///
-/// The routine trigger route is tried first; a 404 (no routine with that ID) falls back to the
-/// cron-job trigger route. UUIDs do not collide across the two stores, so at most one ever matches.
-/// This lets a generated `run.sh` wrapper trigger its target without knowing which kind it is.
-fn trigger_schedule(id: &str) -> i32 {
-    let routine =
-        crate::cli::http_request_json("POST", &format!("{}/trigger", routine_path(id)), None);
-    match routine {
-        Ok((404, _)) => request("POST", &format!("{}/trigger", cron_path(id)), None),
-        other => handle_response(other),
     }
 }
 

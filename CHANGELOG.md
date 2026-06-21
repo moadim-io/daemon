@@ -71,9 +71,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
     accepted as aliases.)
   - **New MCP tools** filling the gaps versus REST: `list_agents`,
     `cron_job_logs`, `routine_logs`, `shutdown`, and `restart`.
-- **New `moadim schedule trigger <id>` CLI command.** Triggers a routine or cron
-  job by ID, whichever owns it (the routine route is tried first, falling back to
-  the cron-job route on a 404). Generated routine `run.sh` wrappers use it.
+- **New `moadim schedule trigger <id>` CLI command** and matching
+  `POST /api/v1/routines/{id}/scheduled-trigger` route. Runs a routine on its
+  schedule, recording a *scheduled* (not manual) trigger. The generated crontab
+  line invokes it directly at each fire time.
   - **New `POST /api/v1/restart` route** (plus the matching `restart` MCP tool):
     stops the running server and starts a fresh instance via a detached helper
     process, since an in-process server cannot rebind its own port. Documented in
@@ -140,13 +141,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
-- Routine `run.sh` scripts are now thin wrappers that re-invoke the daemon via
-  `moadim schedule trigger <id>` instead of inlining the full launch command. The
-  daemon is the single source of truth for launch logic, eliminating the
-  duplication between the cron path and the manual-trigger path. **Scheduled
-  routines now require the daemon to be running** (it is installed as an OS
-  service for this reason); the agent still inherits the user's login environment
-  via the daemon's `sh -lc` spawn.
+- Routines no longer generate a per-routine `run.sh` launch script. The crontab
+  line now invokes the `moadim` binary directly
+  (`<schedule> <moadim> schedule trigger <id>`), and the running daemon is the
+  single source of truth for launch logic — eliminating the duplication between
+  the cron path and the manual-trigger path. Stale `run.sh` files left by older
+  daemons are removed on the next persist. **Scheduled routines now require the
+  daemon to be running** (it is installed as an OS service for this reason); the
+  agent still inherits the user's login environment via the daemon's `sh -lc`
+  spawn.
 - Enabled the `clippy::uninlined_format_args` lint (deny) and inlined the
   existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
   error messages read more directly. No behavior change.

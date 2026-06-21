@@ -45,10 +45,15 @@ const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux session
 /// line that calls it stays short regardless of how long the command is.
 fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
     let path = routine_script_path(&slugify(&routine.title));
-    std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("routine script path has a parent dir"),
+    )?;
     let command = build_routine_command(routine, agent);
     std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    // Owner-only: the crontab invokes the script as `/bin/sh -l '<run.sh>'`, so the execute bit is
+    // unnecessary, and the script can embed sensitive command lines — keep it unreadable by other
+    // local accounts (was world-readable+executable 0755).
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
     Ok(path)
 }
 

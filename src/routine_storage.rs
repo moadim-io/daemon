@@ -142,7 +142,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
-    std::fs::create_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
 
     let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {

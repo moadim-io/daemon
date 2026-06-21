@@ -203,6 +203,12 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![
+        // Owner-only umask for everything this run creates: the workbench dir, the copied
+        // `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` (which captures the
+        // full agent transcript — cloned repo contents, command output, any printed secrets). Set
+        // before the first `mkdir`/`cp`/`tmux` so those artifacts land `0700`/`0600` instead of the
+        // login shell's default world-readable umask, matching the daemon's own on-disk posture.
+        "umask 077".to_string(),
         // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see
         // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced first and
         // the agent inherits their environment — GH_TOKEN, API keys and the like — which cron's

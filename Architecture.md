@@ -172,6 +172,16 @@ Invalid or missing `job.toml` → directory silently skipped.
 
 `storage::write_job` creates the job directory if absent, writes a fresh `.gitignore` (`*.local.*\n*.log\n`) if none exists, then serializes to `job.toml`. The `.gitignore` ensures secrets in `job.local.toml` and logs are never accidentally committed.
 
+### Filesystem permissions
+
+The daemon's on-disk tree is a secret/transcript store (agent.log transcripts, prompt.md instructions, token-referencing routine state), so on unix it is created **owner-only**:
+
+- Directories under `~/.config/moadim/` are made `0700` via `utils::fs_perms::create_private_dir_all`.
+- Files published by `utils::atomic::atomic_write` (routine state, the `prompt.md` sidecar) are created `0600` before the rename, so they are never briefly world-readable.
+- Each routine's `run.sh` is `0600` (no execute bit — it is invoked as `/bin/sh -l '<run.sh>'`) and begins with `umask 077`, so the workbench dir it creates (`0700`) and everything written inside it — the copied `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` — stays unreadable by other local accounts.
+
+Pre-existing files from older installs are tightened on their next write (the modes are not retroactively migrated). Non-unix builds fall back to default permissions.
+
 ### File layout
 
 ```

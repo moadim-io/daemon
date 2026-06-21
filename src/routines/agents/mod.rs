@@ -119,7 +119,7 @@ pub fn ensure_default_agents() {
 
 /// Write missing built-in agent configs into `dir`. See [`ensure_default_agents`].
 pub(crate) fn ensure_default_agents_in(dir: &Path) {
-    if let Err(err) = std::fs::create_dir_all(dir) {
+    if let Err(err) = crate::utils::fs_perms::create_private_dir_all(dir) {
         log::warn!("ensure_default_agents: failed to create {dir:?}: {err}");
         return;
     }

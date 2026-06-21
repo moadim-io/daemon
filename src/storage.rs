@@ -112,7 +112,7 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
 /// Write `job` to `{jobs_dir}/{job.id}/job.toml`, creating the directory and `.gitignore` if needed.
 pub fn write_job(job: &CronJob) -> std::io::Result<()> {
     let dir = job_dir(&job.id);
-    std::fs::create_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
 
     let gitignore = job_gitignore_path(&job.id);
     if !gitignore.exists() {

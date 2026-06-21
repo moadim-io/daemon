@@ -11,6 +11,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Security
+
+- The daemon's on-disk tree is now created **owner-only** on unix instead of at
+  the default world-readable umask, closing a local information-disclosure vector
+  on shared hosts. Config directories under `~/.config/moadim/` are `0700`;
+  `atomic_write` publishes files (routine state, the `prompt.md` sidecar) `0600`;
+  and each routine's `run.sh` is `0600` (execute bit dropped) and runs `umask 077`
+  first, so the workbench dir (`0700`) and its contents — copied `prompt.md`,
+  appended `CLAUDE.md`, and the tmux-piped `agent.log` transcript — are no longer
+  readable by other local accounts. Pre-existing files are tightened on next
+  write; non-unix builds are unchanged. (#382)
+
 ### Fixed
 
 - `moadim uninstall` now clears the managed crontab blocks (both

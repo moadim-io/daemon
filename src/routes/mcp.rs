@@ -377,11 +377,9 @@ impl MoadimMcp {
     )]
     fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         log::info!("restart requested via MCP");
-        Ok(crate::cli::spawn_restart()
-            .map(|helper_pid| {
-                ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
-            })
-            .unwrap_or_else(err))
+        Ok(crate::cli::spawn_restart().map_or_else(err, |helper_pid| {
+            ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
+        }))
     }
 }
 

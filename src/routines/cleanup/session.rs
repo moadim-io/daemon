@@ -33,8 +33,7 @@ pub(super) fn tmux_session_alive(session: &str) -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+        .is_ok_and(|status| status.success())
 }
 
 /// Force-kill the tmux session named `session` (best-effort).

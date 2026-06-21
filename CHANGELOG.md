@@ -13,6 +13,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Loading a routine whose `routine.toml` is unparsable or missing a required
+  field (title, schedule, or agent) now logs a `warn` naming the directory,
+  instead of silently dropping the routine from the store, UI, API, and crontab
+  with no trace. Directories with no `routine.toml` are still skipped quietly.
+  (#530)
 - Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
   cron-derived ceiling for the *effective* schedule (the new schedule if supplied,
   otherwise the routine's current one). The check runs before any mutation, so a

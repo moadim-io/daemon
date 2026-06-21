@@ -192,6 +192,15 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let scheduled_state_path = routine_scheduled_state_path(&slug)
         .to_string_lossy()
         .into_owned();
+    // Resolve the workbench base from the single source of truth (`paths::workbenches_dir()`) so the
+    // path a run is *created* at can't drift from the path the TTL reaper and the LOGS view *scan*.
+    // Crucially this honors the `MOADIM_HOME_OVERRIDE` seam: a hardcoded `$HOME/.moadim/workbenches`
+    // literal here would ignore the override (see #601). The absolute base is shell-quoted and
+    // `$SLUG-$TS` appended at run time, so the default install still lands at
+    // `~/.moadim/workbenches/{slug}-{ts}`.
+    let workbenches_base = crate::paths::workbenches_dir()
+        .to_string_lossy()
+        .into_owned();
 
     let prompt_file_ref = "prompt.md";
     let workbench_ref = ".";
@@ -227,7 +236,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
             shell_quote(&scheduled_state_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
-        r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
+        format!(r#"WB={}/"$SLUG-$TS""#, shell_quote(&workbenches_base)),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
     ];

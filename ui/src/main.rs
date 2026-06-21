@@ -392,7 +392,7 @@ pub struct ToastStackProps {
 #[function_component(ToastStack)]
 pub fn toast_stack(props: &ToastStackProps) -> Html {
     html! {
-        <div class="toast-wrap">
+        <div class="toast-wrap" role="status" aria-live="polite" aria-atomic="false">
             { for props.toasts.iter().map(|t| {
                 let cls = match t.kind { ToastKind::Ok => "toast ok", ToastKind::Err => "toast err" };
                 html! {

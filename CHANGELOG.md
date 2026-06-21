@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- The routines table now surfaces the **last scheduled fire** in its "last run"
+  cell, not just manual triggers. The UI `Routine` deserializes the
+  `last_scheduled_trigger_at` field (added to the API in #155) and folds it with
+  `last_manual_trigger_at`, showing whichever is most recent with a source icon
+  (`⏱` scheduled, `↻` manual). A routine that has never fired on schedule and was
+  never triggered manually is flagged with a muted "never fired" badge, so a dead
+  schedule is visually distinct from a healthy one rather than showing a blank
+  cell (#487).
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

@@ -405,6 +405,26 @@ each job create/update/delete (see [Crontab sync](#crontab-sync)). Reverse sync
 managed blocks are never imported — they are overwritten by the next forward
 sync.
 
+### Bind address
+
+The server binds to `127.0.0.1:5784` by default — the same address every client command
+(`status`, `stop`, `cleanup`, …) probes. Override it with the `MOADIM_BIND_ADDR` environment
+variable, set identically for the server and any client you run against it:
+
+```sh
+# Bind the server to a different port (or interface)…
+MOADIM_BIND_ADDR=127.0.0.1:7000 moadim
+
+# …and point client commands at the same address.
+MOADIM_BIND_ADDR=127.0.0.1:7000 moadim status
+```
+
+Because the override changes both the bind and the probe target, a client started without it
+keeps looking at the default `127.0.0.1:5784` and will report the relocated server as not running.
+Export the variable in your shell profile to make the change stick across commands. All the
+`127.0.0.1:5784` addresses shown above and in the `--json` payloads reflect the default; they
+follow `MOADIM_BIND_ADDR` when it is set.
+
 ## MCP usage
 
 > _This is where the loop closes: your agent reads, schedules, and re-fires its own jobs. Loop engineering with a daemon in the middle._

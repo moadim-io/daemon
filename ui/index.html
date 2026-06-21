@@ -167,6 +167,113 @@
     }
     .btn-refresh:hover { color: var(--accent); border-color: var(--border-hi); }
     .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
+
+    .btn-cmdk {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      padding: 4px 9px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1;
+    }
+    .btn-cmdk:hover { color: var(--accent); border-color: var(--border-hi); }
+
+    /* ── Command palette (⌘K) ── */
+    .cmdk {
+      align-self: flex-start;
+      margin-top: 11vh;
+      width: 560px;
+      max-width: 92vw;
+      background: var(--bg-2);
+      border: 1px solid var(--border-hi);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      transform: translateY(10px);
+      transition: transform 0.18s;
+      display: flex;
+      flex-direction: column;
+      max-height: 70vh;
+    }
+    .overlay.open .cmdk { transform: translateY(0); }
+
+    .cmdk-search {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .cmdk-prompt { color: var(--accent); font-size: 15px; line-height: 1; }
+    .cmdk-input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text-hi);
+      font-family: var(--mono);
+      font-size: 14px;
+    }
+    .cmdk-input::placeholder { color: var(--text-ghost); }
+    .cmdk-hint {
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      color: var(--text-ghost);
+      border: 1px solid var(--border);
+      padding: 2px 5px;
+    }
+
+    .cmdk-list {
+      list-style: none;
+      margin: 0;
+      padding: 6px;
+      overflow-y: auto;
+    }
+    .cmdk-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .cmdk-row.active { background: var(--bg-3); border-color: var(--border-hi); }
+    .cmdk-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .cmdk-row-title {
+      color: var(--text-hi);
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cmdk-row-sub {
+      color: var(--text-dim);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kind-badge.nav { border-color: var(--border-hi); color: var(--accent); }
+    .kind-badge.action { border-color: var(--amber); color: var(--amber); }
+
+    .cmdk-empty { padding: 30px 18px; text-align: center; }
+
+    .cmdk-foot {
+      display: flex;
+      gap: 16px;
+      padding: 9px 14px;
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--text-ghost);
+    }
+    .cmdk-key {
+      color: var(--text-mid);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      margin-right: 4px;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .btn-stop {

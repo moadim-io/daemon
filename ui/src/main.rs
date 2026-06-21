@@ -2,16 +2,20 @@ use croner::Cron;
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::Deserialize;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+mod command_palette;
 mod cron_jobs;
 mod day_timeline;
 mod machines;
 mod overview;
 mod routines;
 mod schedule;
+use command_palette::CommandPalette;
 use cron_jobs::CronJobsPage;
 use overview::OverviewPage;
 use routines::RoutinesPage;
@@ -67,6 +71,7 @@ pub struct ShellState {
     pub toasts: Vec<Toast>,
     pub next_toast: u32,
     pub show_shutdown: bool,
+    pub show_palette: bool,
 }
 
 pub enum ShellAction {
@@ -74,6 +79,8 @@ pub enum ShellAction {
     AddToast { msg: String, kind: ToastKind },
     OpenShutdown,
     CloseShutdown,
+    TogglePalette,
+    ClosePalette,
 }
 
 impl Reducible for ShellState {
@@ -97,6 +104,8 @@ impl Reducible for ShellState {
             }
             ShellAction::OpenShutdown => s.show_shutdown = true,
             ShellAction::CloseShutdown => s.show_shutdown = false,
+            ShellAction::TogglePalette => s.show_palette = !s.show_palette,
+            ShellAction::ClosePalette => s.show_palette = false,
         }
         s.into()
     }
@@ -182,11 +191,65 @@ pub fn shell() -> Html {
         });
     }
 
+    // Global ⌘K / Ctrl-K listener that toggles the command palette from any
+    // page. Registered once on mount and torn down on unmount.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            let on_key =
+                Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if (event.meta_key() || event.ctrl_key())
+                        && event.key().eq_ignore_ascii_case("k")
+                    {
+                        event.prevent_default();
+                        state.dispatch(ShellAction::TogglePalette);
+                    }
+                }));
+            let window = web_sys::window().expect("window exists");
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("keydown listener attaches");
+            move || {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        on_key.as_ref().unchecked_ref(),
+                    );
+                }
+                drop(on_key);
+            }
+        });
+    }
+
     let on_toast = {
         let state = state.clone();
         Callback::from(move |(msg, kind): (String, ToastKind)| {
             state.dispatch(ShellAction::AddToast { msg, kind })
         })
+    };
+
+    let on_close_palette = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ClosePalette))
+    };
+
+    let on_open_palette = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::TogglePalette))
+    };
+
+    // Palette "Refresh" / "Stop Server" actions mirror the header buttons but
+    // take the `()` payload the palette emits.
+    let on_palette_refresh = {
+        let state = state.clone();
+        Callback::from(move |_: ()| {
+            let state = state.clone();
+            spawn_local(async move { poll_health(state).await });
+        })
+    };
+    let on_palette_stop = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
     };
 
     let on_refresh = {
@@ -253,12 +316,19 @@ pub fn shell() -> Html {
     let health_ok = state.health_ok;
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
+    let show_palette = state.show_palette;
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} />
+            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} />
             <Nav />
             <Switch<Route> render={switch} />
+            <CommandPalette
+                open={show_palette}
+                on_close={on_close_palette}
+                on_refresh={on_palette_refresh}
+                on_stop={on_palette_stop}
+            />
             {
                 if show_shutdown {
                     html! {
@@ -311,6 +381,7 @@ pub struct HeaderProps {
     pub ok: bool,
     pub on_refresh: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
+    pub on_palette: Callback<MouseEvent>,
 }
 
 #[function_component(Header)]
@@ -346,6 +417,9 @@ pub fn header(props: &HeaderProps) -> Html {
                     <span class="health-status">{status}</span>
                     <span class="health-uptime">{uptime}</span>
                 </div>
+                <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
+                    {"⌘K"}
+                </button>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
                 <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
             </div>

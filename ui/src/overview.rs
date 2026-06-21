@@ -169,7 +169,7 @@ fn sources_of(crons: &[CronJob], routines: &[Routine]) -> Vec<SchedSource> {
         .collect()
 }
 
-async fn fetch_crons() -> Result<Vec<CronJob>, String> {
+pub(crate) async fn fetch_crons() -> Result<Vec<CronJob>, String> {
     Request::get("/api/v1/cron-jobs")
         .send()
         .await
@@ -179,7 +179,7 @@ async fn fetch_crons() -> Result<Vec<CronJob>, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn fetch_routines() -> Result<Vec<Routine>, String> {
+pub(crate) async fn fetch_routines() -> Result<Vec<Routine>, String> {
     Request::get("/api/v1/routines")
         .send()
         .await

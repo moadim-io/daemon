@@ -305,6 +305,57 @@ Both are present by default on most developer machines; install them explicitly
 on a minimal host (e.g. a CI runner or fresh container) before relying on the
 built-in `claude` agent.
 
+### Agent configuration
+
+Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
+`<name>` is the registry key a routine's `agent` field references (the filename
+stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
+defaults (`claude`, `codex`, `hermes`) into this directory **only if the file is
+absent** — your edits are never overwritten — so you can both tweak a default and
+register a brand-new agent by dropping in another `<name>.toml`.
+
+| Field     | Type           | Required | Description                                                                                                                   |
+| --------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `command` | string         | yes      | Executable to run (resolved on `PATH`), e.g. `"claude"`.                                                                       |
+| `args`    | array<string>  | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.                                            |
+| `setup`   | string         | no       | Shell command run in the workbench **before** the agent launches, inserted verbatim into the cron line. See the variables below. |
+
+**Placeholders** (substituted in each `args` entry at launch):
+
+- `{workbench}` — absolute path to the run's workbench directory.
+- `{prompt_file}` — path to the composed prompt file (the rendered `CLAUDE.md`
+  plus the routine's `prompt`). Pass this when the CLI reads its prompt from a
+  file (e.g. `codex exec {prompt_file}`).
+- `{prompt}` — the composed prompt inlined as a single shell-quoted argument.
+  Pass this when the CLI takes the prompt as a positional argument.
+
+**`setup` variables** — the `setup` command runs with two shell variables in
+scope, so it can prepare per-run state before the agent starts:
+
+- `$WB` — absolute workbench path.
+- `$SESS` — the tmux session name for the run.
+
+Examples — the headless `codex`/`hermes` form, and the interactive `claude` form
+(the real default's `setup` step also pre-seeds `~/.claude.json`; see the
+prerequisites above):
+
+```toml
+# ~/.config/moadim/agents/codex.toml
+command = "codex"
+args = ["exec", "{prompt_file}"]
+```
+
+```toml
+# ~/.config/moadim/agents/claude.toml
+command = "claude"
+args = ["--permission-mode", "auto", "{prompt}"]
+# setup = '''...optional pre-launch shell command, runs with $WB and $SESS in scope...'''
+```
+
+A routine whose `agent` names a file that is missing or whose TOML is malformed
+fails to launch; `GET /routines` reports `agent_registered: false` for the former
+so you can spot an unconfigured agent before it fires.
+
 ### Global user prompt
 
 An optional `~/.config/moadim/user_prompt.md` lets you inject persistent,

@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Enabled the `clippy::map_unwrap_or` lint at `deny` and rewrote the violations to
+  use `map_or`/`map_or_else`/`is_ok_and` instead of `map(..).unwrap_or(..)`. The
+  rewrites are behavior-preserving; the lint keeps the clearer combinators from
+  regressing. (#524)
+
 ### Fixed
 
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default

@@ -19,6 +19,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `null` when no server answers or its `/health` body cannot be parsed; exit codes
   and the human-readable `status` output are unchanged (#284).
 
+### Changed
+
+- Enabled the `clippy::map_unwrap_or` lint and fixed the violations, replacing
+  `map(...).unwrap_or(...)` / `map(...).unwrap_or_else(...)` chains with the more
+  direct `map_or` / `map_or_else`. No behavior change. (#524)
+
 ### Fixed
 
 - 6-field cron schedules (`sec min hour dom month dow`, accepted by `croner`)

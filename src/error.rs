@@ -24,9 +24,9 @@ impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AppError::Internal => write!(f, "internal server error"),
-            AppError::BadRequest(msg) => write!(f, "bad request: {}", msg),
+            AppError::BadRequest(msg) => write!(f, "bad request: {msg}"),
             AppError::NotFound => write!(f, "not found"),
-            AppError::Conflict(msg) => write!(f, "conflict: {}", msg),
+            AppError::Conflict(msg) => write!(f, "conflict: {msg}"),
         }
     }
 }

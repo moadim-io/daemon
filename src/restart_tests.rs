@@ -137,12 +137,15 @@ fn stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down() {
     let home = temp_home("kill-success");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "80");
-    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "300");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "15");
     let mut child = spawn_dummy_with_pid_file();
-    // The first wait (80ms) times out with the server still up, then the server is taken down
-    // at 130ms — well inside the post-kill wait's window — so that wait observes it stopped.
-    server.stop_after(Duration::from_millis(130));
+    // The first wait (300ms) times out with the server still up, then the server is taken down
+    // at 450ms — well inside the post-kill wait's window — so that wait observes it stopped.
+    // The ~150ms of slack on each side of the post-kill deadline keeps the test off the timing
+    // knife-edge it used to sit on (80ms timeout / 130ms drop left only ~35ms of margin, which
+    // a coverage-instrumented or otherwise loaded CI run could blow, flaking this assertion).
+    server.stop_after(Duration::from_millis(450));
     stop_running_and_wait().expect("server stops after force-kill -> success");
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&home);
@@ -178,6 +181,38 @@ fn kill_pid_terminates_a_live_process() {
         !status.success(),
         "force-killed process exits unsuccessfully"
     );
+}
+
+/// `MOADIM_KILL_BIN` diverts `kill_pid` away from the real killer: a shim shell script records
+/// that it was invoked (proving the seam fired) and a never-spawned victim PID is never signalled.
+#[cfg(unix)]
+#[test]
+fn kill_pid_honors_kill_bin_override() {
+    let dir = temp_home("kill-bin-seam");
+    let marker = dir.join("ran.txt");
+    let script = dir.join("fake-kill.sh");
+    // Shim records its args and exits 0 — it never signals any process.
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\nexit 0\n",
+            marker.display()
+        ),
+    )
+    .expect("write shim");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("chmod shim");
+
+    let _kill = EnvGuard::set("MOADIM_KILL_BIN", script.to_str().unwrap());
+    // A PID that does not exist: if the real `kill` ran it would error, but we never invoke it.
+    kill_pid(424242);
+
+    let recorded = std::fs::read_to_string(&marker).expect("shim ran and wrote its args");
+    assert!(
+        recorded.contains("424242"),
+        "shim received the pid, proving the override diverted the call: {recorded:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

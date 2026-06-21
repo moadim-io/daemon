@@ -42,7 +42,7 @@ fn liveness_exit_code(running: bool) -> i32 {
 }
 
 /// The action the user asked for on the command line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Run the server in the foreground, attached to the terminal (interactive mode).
     Foreground,
@@ -54,6 +54,9 @@ pub enum Command {
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
+        /// Suppress the human-readable status line so scripts that branch on `$?` get no stdout
+        /// noise. Ignored under `json`, which always prints its single object.
+        quiet: bool,
     },
     /// Report whether a server is currently running. `json` requests machine-readable output.
     Status {
@@ -74,7 +77,15 @@ pub enum Command {
     Help,
     /// Print the binary version.
     Version,
+    /// A data-plane subcommand (`cron-jobs`, `routines`, `agents`, `echo`) handled by the clap-based
+    /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
+    /// argv (including the subcommand keyword) for clap to parse.
+    Data(Vec<String>),
 }
+
+/// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
+/// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
+pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "agents", "echo"];
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
@@ -84,9 +95,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
         None => Command::Background,
+        Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("restart") => Command::Restart,
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
+            quiet: wants_quiet(&args[1..]),
         },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
@@ -110,8 +123,15 @@ fn wants_json(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--json")
 }
 
+/// Whether a `--quiet`/`-q` flag appears among a command's trailing arguments, requesting that
+/// `stop` suppress its human-readable status line.
+fn wants_quiet(rest: &[String]) -> bool {
+    rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
+}
+
 /// Print usage help to stdout.
 pub fn print_help() {
+    let bind_addr = bind_addr();
     println!(
         "moadim — cron/MCP/REST server with a web control panel\n\
          \n\
@@ -126,7 +146,7 @@ pub fn print_help() {
          \n\
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
-         \x20   stop [--json]          stop a running background server\n\
+         \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
@@ -134,18 +154,25 @@ pub fn print_help() {
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
+         DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
+         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
+         \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
+         \x20   agents                 list available agent keys\n\
+         \x20   echo <message>         echo a message via the server\n\
+         \n\
          Pass --json to `stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
          can branch on $? without parsing stdout.\n\
          \n\
-         Once running, manage the server from the web client at http://{BIND_ADDR}\n\
+         Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
     );
 }
 
-/// Print the binary version to stdout.
+/// Print the binary version to stdout, including the git commit and date it was
+/// built from when available (e.g. `moadim 0.1.0 (a1b2c3d 2026-06-19)`).
 pub fn print_version() {
-    println!("moadim {}", env!("CARGO_PKG_VERSION"));
+    println!("moadim {}", crate::build_info::long_version());
 }
 
 /// Start the server as a detached background process and return immediately.
@@ -202,25 +229,30 @@ fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
 /// `verb` describes how the process came to be ("started" / "restarted") for the first line.
 fn start_detached_and_report(verb: &str) -> anyhow::Result<()> {
     let pid = spawn_detached()?;
-    println!("moadim {verb} in the background (pid {pid}) at http://{BIND_ADDR}");
+    println!(
+        "moadim {verb} in the background (pid {pid}) at http://{}",
+        bind_addr()
+    );
     report_endpoints();
     Ok(())
 }
 
 /// Print the reach/manage hints (UI, stop, logs) shared by every detached-launch report.
 fn report_endpoints() {
-    println!("  UI    http://{BIND_ADDR}");
+    println!("  UI    http://{}", bind_addr());
     println!("  stop  moadim stop   (or use the STOP button in the UI)");
     println!("  logs  {}", paths_daemon_log());
 }
 
 /// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
-/// machine-readable object (`{"running":bool,"pid":N|null}`) instead of the human-readable line.
+/// machine-readable object (`{"running":bool,"pid":N|null,"address":…}`, matching `status --json`'s
+/// shape) instead of the human-readable line. With `quiet`, the human-readable line is suppressed
+/// entirely (ignored under `json`), so scripts that branch on `$?` alone get no stdout noise.
 ///
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
-pub fn stop(json: bool) -> anyhow::Result<i32> {
+pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
     // Read the PID before asking the server to stop: a graceful shutdown clears the pid file, so
     // the only reliable moment to capture which process we stopped is *before* the request.
     let pid = read_pid_file();
@@ -228,7 +260,7 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
         Ok(200) => {
             if json {
                 println!("{}", stop_json(true, pid));
-            } else {
+            } else if !quiet {
                 println!("moadim is shutting down");
             }
             Ok(liveness_exit_code(true))
@@ -239,7 +271,7 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
         Err(_) => {
             if json {
                 println!("{}", stop_json(false, pid));
-            } else {
+            } else if !quiet {
                 println!("moadim is not running");
             }
             Ok(liveness_exit_code(false))
@@ -247,14 +279,17 @@ pub fn stop(json: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null}`, mirroring
-/// `status --json`'s `pid` field. `running` is `true` when a running server was asked to shut down,
-/// and `false` when none was reachable. `pid` is the process that was stopped (read from the pid
-/// file before the shutdown request), or `null` when no pid file was present.
+/// Render the `stop` result as a one-line JSON object:
+/// `{"running":bool,"pid":N|null,"address":…}`, matching `status --json`'s shape exactly so both
+/// can be parsed uniformly. `running` is `true` when a running server was asked to shut down, and
+/// `false` when none was reachable. `pid` is the process that was stopped (read from the pid file
+/// before the shutdown request), or `null` when no pid file was present. `address` is the bound
+/// [`BIND_ADDR`] the request was sent to.
 fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
         "pid": pid,
+        "address": BIND_ADDR,
     })
     .to_string()
 }
@@ -310,7 +345,7 @@ pub fn status(json: bool) -> anyhow::Result<i32> {
         let pid_suffix = pid
             .map(|process_id| format!(" (pid {process_id})"))
             .unwrap_or_default();
-        println!("moadim is running{pid_suffix} at http://{BIND_ADDR}");
+        println!("moadim is running{pid_suffix} at http://{}", bind_addr());
     } else {
         println!("moadim is not running");
     }
@@ -323,7 +358,7 @@ fn status_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
         "pid": pid,
-        "address": BIND_ADDR,
+        "address": bind_addr(),
     })
     .to_string()
 }
@@ -386,17 +421,49 @@ pub(crate) fn http_request(method: &str, path: &str) -> std::io::Result<u16> {
     http_request_with_body(method, path).map(|(status, _)| status)
 }
 
-/// Send a minimal HTTP/1.1 request and return the response status code together with its body.
+/// How long to wait on a data-plane request (`create`/`trigger`/etc.). More generous than
+/// [`PROBE_TIMEOUT`] because these routes can do real work (crontab sync, workbench spawn) before
+/// responding, whereas a liveness probe only needs the server to answer `GET /health` promptly.
+const DATA_OP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Send a minimal HTTP/1.1 request (no body) and return the response status code with its body.
 fn http_request_with_body(method: &str, path: &str) -> std::io::Result<(u16, String)> {
+    http_request_core(method, path, None, PROBE_TIMEOUT)
+}
+
+/// Send a minimal HTTP/1.1 request with an optional JSON `body` and return the response status code
+/// together with its body, using the generous [`DATA_OP_TIMEOUT`]. Data-plane CLI subcommands
+/// ([`crate::commands`]) use this to drive the running server's `/api/v1` routes over the same
+/// loopback client the lifecycle commands use.
+pub(crate) fn http_request_json(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> std::io::Result<(u16, String)> {
+    http_request_core(method, path, body, DATA_OP_TIMEOUT)
+}
+
+/// Core minimal HTTP/1.1 client: connect to the local server, send `method path` with an optional
+/// JSON `body`, and return the response status code together with its body. `timeout` bounds the
+/// connect/read/write so a hung or absent server fails fast.
+fn http_request_core(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    timeout: Duration,
+) -> std::io::Result<(u16, String)> {
     let addr_str = bind_addr();
     let addr: SocketAddr = addr_str
         .parse()
         .expect("bind address is a valid socket address");
-    let mut stream = std::net::TcpStream::connect_timeout(&addr, PROBE_TIMEOUT)?;
-    stream.set_read_timeout(Some(PROBE_TIMEOUT))?;
-    stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, timeout)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let payload = body.unwrap_or_default();
     let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
     );
     stream.write_all(req.as_bytes())?;
     let mut resp = String::new();
@@ -435,6 +502,30 @@ fn parse_removed_count(body: &str) -> Option<usize> {
 /// The child runs with `--interactive` (so it actually serves), in its own process group so a
 /// terminal SIGINT to the launcher does not reach it, with stdio redirected to the daemon log.
 fn spawn_detached() -> anyhow::Result<u32> {
+    spawn_detached_with(|cmd| {
+        cmd.arg("--interactive").env(DAEMONIZED_ENV, "1");
+    })
+}
+
+/// Spawn a detached helper that stops the currently-running server and starts a fresh one,
+/// returning the helper's PID. Used by the `/api/v1/restart` route and the `restart` MCP tool so the
+/// daemon can be cycled from any surface, not just the CLI: the in-process server cannot rebind its
+/// own port, so it delegates the stop-old-then-start-new dance to this separate process.
+///
+/// The helper is launched with the `--background` flag rather than the `restart` subcommand on
+/// purpose: `moadim --background` ([`run_background`]) already stops a running instance before
+/// starting a fresh one, and passing a flag (not a bare positional) means that under the test
+/// harness — where `current_exe` is the test binary — the child is rejected immediately instead of
+/// being interpreted as a test-name filter that would re-enter these very tests.
+pub fn spawn_restart() -> anyhow::Result<u32> {
+    spawn_detached_with(|cmd| {
+        cmd.arg("--background");
+    })
+}
+
+/// Spawn a detached copy of this binary with stdio redirected to the daemon log and its own process
+/// group, applying `configure` to set the subcommand/flags before launch. Returns the child PID.
+fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
     use std::process::{Command as Proc, Stdio};
 
     let exe = std::env::current_exe()?;
@@ -447,11 +538,10 @@ fn spawn_detached() -> anyhow::Result<u32> {
     let err = out.try_clone()?;
 
     let mut cmd = Proc::new(exe);
-    cmd.arg("--interactive")
-        .env(DAEMONIZED_ENV, "1")
-        .stdin(Stdio::null())
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::from(out))
         .stderr(Stdio::from(err));
+    configure(&mut cmd);
     detach(&mut cmd);
 
     let child = cmd.spawn()?;

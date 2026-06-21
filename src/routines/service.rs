@@ -78,6 +78,11 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
             "agent {agent:?} has a malformed config: {err}"
         ))),
+        // An existing-but-unreadable config (e.g. permissions) would otherwise pass validation and
+        // leave a green-dot routine that never fires; surface it now instead of silently dropping it.
+        Err(AgentLoadError::Unreadable(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} has an unreadable config: {err}"
+        ))),
     }
 }
 

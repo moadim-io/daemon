@@ -21,6 +21,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The iCal feed (`GET /routines.ics`) no longer silently stops short of its
+  advertised 30-day horizon for high-frequency routines. The per-routine
+  `MAX_EVENTS_PER_ROUTINE = 100` cap still bounds feed size, but when a routine
+  fires more often than the cap allows within the horizon, a trailing
+  truncation-marker `VEVENT` (UID `…-truncated@moadim`) is now appended at the
+  first omitted fire time, so calendar subscribers can see the projection was
+  capped and where it stops instead of the routine appearing to just end after a
+  few days (#251).
 - Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at

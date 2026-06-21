@@ -948,6 +948,11 @@
     }
 
     /* ── Scrollbar ── */
+    /* Firefox / standard properties mirror the WebKit dark, thin scrollbar
+       below. They inherit, so this root declaration also styles the nested
+       scroll containers (logs, modal, day timeline) to match the WebKit rules,
+       which apply globally. Reuses the theme tokens so colors stay in sync. */
+    html { scrollbar-width: thin; scrollbar-color: var(--border-hi) var(--bg); }
     ::-webkit-scrollbar       { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border-hi); }

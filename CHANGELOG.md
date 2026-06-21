@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- A workspace `xtask` crate with a **`cargo xtask spellcheck`** task that installs
+  `typos-cli` (if the `typos` binary is missing) and runs it over the repo, reusing
+  the existing `typos.toml`. Contributors no longer need to know the crate is
+  `typos-cli` while the binary is `typos`; the pre-commit hook hint and
+  `CONTRIBUTING.md` now point at the wrapper. `xtask` is the home for future
+  tooling wrappers (#483).
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- `sync_to_crontab` now refuses to overwrite a populated cron-jobs block when the
+  in-memory store is empty, mirroring the guard already on
+  `sync_routines_to_crontab`. An empty store at sync time means the store failed
+  to load (or a second daemon is racing this one), not a genuine "no jobs" state;
+  without the guard the next mutation wrote a bare block and silently dropped
+  every managed job's cron line. A store that loaded but holds only
+  disabled/unmanaged jobs is not empty, so clearing the last job still works. (#450)
+
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

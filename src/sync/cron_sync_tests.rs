@@ -540,6 +540,36 @@ fn sync_to_crontab_writes_block_and_is_idempotent() {
     drop(shim);
 }
 
+#[test]
+fn sync_refuses_to_wipe_job_lines_when_store_is_empty() {
+    // Footgun guard: an empty store must NOT overwrite a populated job block — that would silently
+    // drop every managed job's cron line (a load failure or concurrent daemon, not a real "no jobs"
+    // state).
+    let populated = "\
+# BEGIN MOADIM
+# Managed by moadim — edits here are overwritten on the next sync
+30 9 * * 1-5 /handlers/keep-me # moadim:keep-me
+# END MOADIM
+";
+    let shim = CronShim::new(Some(populated));
+    sync_to_crontab(&store_with(vec![])).unwrap();
+    // The crontab is left untouched: the job line survives.
+    assert_eq!(shim.store_contents(), populated);
+    assert!(shim.store_contents().contains("# moadim:keep-me"));
+    drop(shim);
+}
+
+#[test]
+fn sync_proceeds_when_store_empty_but_no_job_lines() {
+    // Guard's second operand is false (no job marker present), so sync proceeds; the block is
+    // already empty so the result equals the input and the idempotent check returns without writing.
+    let empty_block = "# BEGIN MOADIM\n# Managed by moadim — edits here are overwritten on the next sync\n# END MOADIM\n";
+    let shim = CronShim::new(Some(empty_block));
+    sync_to_crontab(&store_with(vec![])).unwrap();
+    assert!(!shim.store_contents().contains("# moadim:"));
+    drop(shim);
+}
+
 // ─── sync_from_crontab ───────────────────────────────────────────────────────
 
 #[test]

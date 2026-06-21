@@ -13,6 +13,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The pid file is now reconciled against process liveness before it is reported
+  or acted on. After a `kill -9`, panic, OOM kill, or power loss the graceful
+  shutdown path never runs, so the pid file lingers with a now-dead PID.
+  `read_pid_file()` now treats a recorded PID that is not a live process
+  (`kill -0` probe on Unix) as absent and cleans the stale file up best-effort.
+  `status`/`stop --json` therefore emit `pid: null` consistently with
+  `running: false` instead of a dead-or-PID-reused number, and `restart` never
+  force-kills a stale PID. (#315)
+
 - `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
   A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
   (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to

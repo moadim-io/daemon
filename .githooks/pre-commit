@@ -8,8 +8,8 @@ set -e
 if ! command -v typos >/dev/null 2>&1; then
   echo ""
   echo "typos is not installed. Run:"
-  echo "  cargo install typos-cli"
-  echo "(or 'brew install typos-cli'), then commit again."
+  echo "  cargo xtask spellcheck   # installs typos-cli for you, then checks"
+  echo "(or 'cargo install typos-cli' / 'brew install typos-cli'), then commit again."
   exit 1
 fi
 

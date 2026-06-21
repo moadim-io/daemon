@@ -7,7 +7,7 @@
 | [Rust stable](https://rustup.rs/) | Build the daemon |
 | [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
-| [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`cargo install typos-cli`) |
+| [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (or `cargo xtask spellcheck`, which installs it for you) |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
 (`ui/`). The daemon itself is a native binary and builds without them.
@@ -39,8 +39,12 @@ The **pre-commit** hook spell-checks the tree with
 format/lint/coverage gates below. Spell-check the tree on demand with:
 
 ```sh
-typos
+cargo xtask spellcheck
 ```
+
+That wrapper installs `typos-cli` if the `typos` binary is missing and then runs
+it against the repo, so you don't have to remember that the crate is `typos-cli`
+while the binary is `typos`. (You can still run `typos` directly once installed.)
 
 Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
 `schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`

@@ -31,6 +31,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
   port or a reverse proxy instead of failing against an address the daemon may not
   be bound to. (#385)
+- Manually triggering a routine no longer stamps its scheduled-fire sidecar
+  (`scheduled.local.toml`). The on-demand trigger reused the cron launch script,
+  which unconditionally recorded `last_scheduled_trigger_at`, so a manual run was
+  reported as a scheduled fire in the UI/API. The manual run is already tracked
+  separately via `last_manual_trigger_at`; the scheduled stamp is now emitted only
+  for cron-driven runs. (#478)
 
 ## [0.13.0] - 2026-06-21
 

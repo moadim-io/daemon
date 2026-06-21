@@ -835,6 +835,86 @@
       .cal-chip { font-size: 8px; }
     }
 
+    /* ── Day timeline ── */
+    .day-wrap {
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      overflow: hidden;
+    }
+    .day-nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-3);
+    }
+    .day-date {
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      color: var(--text-hi);
+      min-width: 180px;
+      text-align: center;
+    }
+    .day-nav .btn-ghost { margin-left: auto; }
+
+    .day-scroll {
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    .day-hour {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      min-height: 38px;
+      border-bottom: 1px solid var(--border);
+    }
+    .day-scroll > .day-hour:last-child { border-bottom: none; }
+    .day-hour.now { background: var(--accent-dim); }
+
+    .day-hour-label {
+      padding: 8px 10px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--text-ghost);
+      border-right: 1px solid var(--border);
+      text-align: right;
+    }
+    .day-hour.now .day-hour-label { color: var(--accent); }
+
+    .day-hour-slot {
+      display: flex;
+      flex-wrap: wrap;
+      align-content: flex-start;
+      gap: 4px;
+      padding: 6px 8px;
+    }
+    .day-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 10px;
+      padding: 2px 7px;
+      background: var(--bg-3);
+      border-left: 2px solid var(--accent);
+      color: var(--text);
+      max-width: 100%;
+    }
+    .day-chip-time {
+      font-variant-numeric: tabular-nums;
+      color: var(--text-hi);
+      letter-spacing: 0.02em;
+    }
+    .day-chip-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 640px) {
+      .day-hour { grid-template-columns: 52px 1fr; }
+      .day-chip { font-size: 9px; }
+    }
+
     /* ── Reduced motion ── */
     /* Honor the user's OS/browser "reduce motion" preference: settle the
        decorative, continuous animations (glow pulse, refresh/loader spin) and

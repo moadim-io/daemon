@@ -179,6 +179,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   harmless shim instead of signalling a real PID. The default stays the platform
   killer (`kill` / `taskkill`), so the existing self-contained test that kills
   its own spawned child still works. (#216)
+- The `ui` crate's `RAction::Upsert` variant now boxes its `Routine`
+  (`Upsert(Box<Routine>)`). The variant carried a ~272-byte `Routine` by value
+  while the next-largest variant was 48 bytes, tripping
+  `clippy::large_enum_variant` under the crate's `[lints.clippy] all = "deny"`,
+  so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
+  once before the existing upsert logic, and the construction sites wrap the
+  value.
 
 ## [0.12.0] - 2026-06-18
 

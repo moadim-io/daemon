@@ -217,7 +217,7 @@ fn referenced_machines_unions_routines_and_jobs() {
     let names = referenced_machines();
     let expected: std::collections::BTreeSet<String> = ["laptop", "server", "work"]
         .iter()
-        .map(|name| name.to_string())
+        .map(ToString::to_string)
         .collect();
     assert_eq!(names, expected);
     let _ = std::fs::remove_dir_all(&home);

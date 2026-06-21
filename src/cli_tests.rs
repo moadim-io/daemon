@@ -4,7 +4,7 @@ use super::*;
 
 /// Build a `Vec<String>` from string literals for [`parse`].
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|arg| arg.to_string()).collect()
+    args.iter().map(ToString::to_string).collect()
 }
 
 #[test]

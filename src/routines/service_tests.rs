@@ -729,7 +729,7 @@ static PATH_GUARD: Mutex<()> = Mutex::new(());
 fn with_empty_path(body: impl FnOnce()) {
     let guard = PATH_GUARD
         .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let saved = std::env::var_os("PATH");
     std::env::set_var("PATH", "");
     body();
@@ -823,7 +823,7 @@ fn with_working_crontab(body: impl FnOnce()) {
 
     let guard = PATH_GUARD
         .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let base = std::env::temp_dir().join(format!("moadim-routcronok-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&base).unwrap();
     let script = base.join("crontab-ok.sh");

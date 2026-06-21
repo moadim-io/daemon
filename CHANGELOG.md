@@ -24,6 +24,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Enabled the `clippy::map_unwrap_or` lint and fixed the violations, replacing
   `map(...).unwrap_or(...)` / `map(...).unwrap_or_else(...)` chains with the more
   direct `map_or` / `map_or_else`. No behavior change. (#524)
+- Enabled the `clippy::semicolon_if_nothing_returned` lint and fixed the existing
+  violations so statements that return `()` end with a trailing semicolon. No
+  behavior change.
 
 ### Fixed
 

@@ -10,6 +10,7 @@ mod cron_jobs;
 mod day_timeline;
 mod machines;
 mod routines;
+mod schedule;
 use cron_jobs::CronJobsPage;
 use routines::RoutinesPage;
 

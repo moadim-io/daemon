@@ -6,7 +6,9 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use chrono::{DateTime, Duration, Local};
 use gloo_net::http::Request;
+use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use wasm_bindgen_futures::spawn_local;
@@ -15,7 +17,14 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::machines::MachinesPicker;
+use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{describe_cron_live, reltime, ToastKind};
+
+/// How long ahead a job's next fire counts as "due soon" for the KPI tile.
+const DUE_SOON_WINDOW_SECS: i64 = 3_600;
+/// Cadence of the live tick that keeps next-run countdowns and the due-soon
+/// count current without a manual reload.
+const NEXT_RUN_TICK_MS: u32 = 30_000;
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
@@ -333,6 +342,22 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let state = use_reducer(CState::default);
     let toast = props.on_toast.clone();
 
+    // Live "now", advanced on a fixed tick so next-run countdowns and the
+    // due-soon KPI stay current without a manual reload. Both the stats bar and
+    // the table read this same instant so the view is internally consistent.
+    let now = use_state(Local::now);
+    {
+        let now = now.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                loop {
+                    TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
+                    now.set(Local::now());
+                }
+            });
+        });
+    }
+
     let ok_toast = {
         let toast = toast.clone();
         move |msg: &str| toast.emit((msg.to_string(), ToastKind::Ok))
@@ -616,6 +641,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
 
     let jobs = state.jobs.clone();
     let loading = state.loading;
+    let now_val = *now;
     let view = state.view;
     let page = state.page.clone();
     let modal = state.modal.clone();
@@ -644,7 +670,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                     },
                     CPage::List => html! {
                         <main>
-                            <StatsBar jobs={jobs.clone()} />
+                            <StatsBar jobs={jobs.clone()} now={now_val} />
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED JOBS"}</div>
                                 <div class="section-acts">
@@ -666,6 +692,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                             <JobTable
                                                 jobs={jobs}
                                                 loading={loading}
+                                                now={now_val}
                                                 selected={selected}
                                                 on_edit={on_edit}
                                                 on_delete={on_ask_delete}
@@ -758,6 +785,8 @@ pub fn cron_view_toggle(props: &CronViewToggleProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct StatsProps {
     pub jobs: Vec<CronJob>,
+    /// Reference instant for the "due soon" computation; advanced on a live tick.
+    pub now: DateTime<Local>,
 }
 
 #[function_component(StatsBar)]
@@ -765,6 +794,14 @@ pub fn stats_bar(props: &StatsProps) -> Html {
     let total = props.jobs.len();
     let enabled = props.jobs.iter().filter(|j| j.enabled).count();
     let disabled = total - enabled;
+    // Enabled jobs whose next fire is within the due-soon window — the most
+    // operationally urgent fact, surfaced as a first-class KPI tile.
+    let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
+    let due_soon = props
+        .jobs
+        .iter()
+        .filter(|j| j.enabled && fires_within(&j.schedule, props.now, window))
+        .count();
 
     html! {
         <div class="stats">
@@ -775,6 +812,10 @@ pub fn stats_bar(props: &StatsProps) -> Html {
             <div class="stat-card enabled">
                 <div class="stat-label">{"ENABLED"}</div>
                 <div class="stat-val c-accent">{enabled}</div>
+            </div>
+            <div class="stat-card due">
+                <div class="stat-label">{"DUE SOON"}</div>
+                <div class="stat-val c-red">{due_soon}</div>
             </div>
             <div class="stat-card disabled">
                 <div class="stat-label">{"DISABLED"}</div>
@@ -790,6 +831,8 @@ pub fn stats_bar(props: &StatsProps) -> Html {
 pub struct JobTableProps {
     pub jobs: Vec<CronJob>,
     pub loading: bool,
+    /// Reference instant for next-run cells; advanced on a live tick.
+    pub now: DateTime<Local>,
     pub selected: HashSet<String>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
@@ -844,6 +887,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                         </th>
                         <th>{"ID"}</th>
                         <th>{"SCHEDULE"}</th>
+                        <th>{"NEXT RUN"}</th>
                         <th>{"HANDLER"}</th>
                         <th>{"METADATA"}</th>
                         <th>{"ENABLED"}</th>
@@ -856,6 +900,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                         <JobRow
                             key={job.id.clone()}
                             job={job.clone()}
+                            now={props.now}
                             selected={props.selected.contains(&job.id)}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
@@ -876,6 +921,8 @@ pub fn job_table(props: &JobTableProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct JobRowProps {
     pub job: CronJob,
+    /// Reference instant for this row's next-run cell; advanced on a live tick.
+    pub now: DateTime<Local>,
     pub selected: bool,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
@@ -883,6 +930,33 @@ pub struct JobRowProps {
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
     pub on_select: Callback<(String, SelectKind)>,
+}
+
+/// Render a job's NEXT RUN cell: `paused` when disabled, an absolute *when* plus
+/// a relative countdown when its schedule fires again, or `—` when the schedule
+/// is invalid or never fires. The countdown gets a `soon` accent once the fire
+/// falls inside the due-soon window, matching the DUE SOON KPI tile.
+fn next_run_cell(job: &CronJob, now: DateTime<Local>) -> Html {
+    if !job.enabled {
+        return html! { <span class="cell-next muted">{"paused"}</span> };
+    }
+    match next_fire_after(&job.schedule, now) {
+        Some(then) => {
+            let soon = then - now <= Duration::seconds(DUE_SOON_WINDOW_SECS);
+            let until_cls = if soon {
+                "cell-next-until soon"
+            } else {
+                "cell-next-until"
+            };
+            html! {
+                <div class="cell-next">
+                    <div class="cell-next-when">{fmt_when(now, then)}</div>
+                    <div class={until_cls}>{fmt_until(now, then)}</div>
+                </div>
+            }
+        }
+        None => html! { <span class="cell-next muted">{"—"}</span> },
+    }
 }
 
 #[function_component(JobRow)]
@@ -896,6 +970,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
         .to_string();
     let meta = meta_preview(&job.metadata);
     let updated = reltime(job.updated_at);
+    let next_run = next_run_cell(job, props.now);
 
     let on_edit = {
         let cb = props.on_edit.clone();
@@ -962,6 +1037,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
                 <div class="cell-schedule">{&job.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
+            <td>{next_run}</td>
             <td><span class="cell-handler">{&job.handler}</span></td>
             <td><span class="cell-meta">{meta}</span></td>
             <td>

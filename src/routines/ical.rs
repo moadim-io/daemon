@@ -112,6 +112,10 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
             lines.push(format!("DTSTART:{stamp}"));
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
+            // A fire time is a momentary trigger, not a block of busy time. Mark
+            // the event TRANSPARENT (RFC 5545 §3.8.2.7) so subscribing to the feed
+            // does not show the operator as BUSY at every scheduled run.
+            lines.push("TRANSP:TRANSPARENT".to_string());
             lines.push("END:VEVENT".to_string());
         }
     }

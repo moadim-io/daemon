@@ -246,6 +246,12 @@ fn build_block(store: &CronStore) -> String {
     }
 }
 
+/// Substring identifying a managed job line inside the crontab block (`# moadim:<id>`).
+///
+/// Distinct from the routines block's `# moadim-routine:` marker — `# moadim:` requires the
+/// colon immediately after `moadim`, so it never matches a routine line.
+const JOB_LINE_MARKER: &str = "# moadim:";
+
 /// Replace (or insert) the moadim handler block inside `crontab` text.
 pub(crate) fn replace_block(crontab: &str, block: &str) -> String {
     replace_block_with(crontab, block, BLOCK_BEGIN, BLOCK_END)
@@ -365,8 +371,23 @@ pub(crate) fn parse_block(crontab: &str) -> HashMap<String, (String, String)> {
 ///
 /// Idempotent: skips the `crontab -` call when the crontab would not change.
 /// Call this after every job mutation. Errors are logged by the caller.
+///
+/// Footgun guard: refuses to overwrite a populated job block when the store is *empty*. An empty
+/// store at sync time means the store never loaded (or a second daemon is racing this one), not a
+/// genuine "no jobs" state — startup reseeds the store from disk, so the steady state is never an
+/// empty in-memory store. Without this guard such a sync would write a bare block and silently drop
+/// every managed job's cron line. A store that loaded fine but holds only disabled/unmanaged jobs is
+/// *not* empty, so legitimately clearing the last job still works. Mirrors the same guard on
+/// [`routines::sync_routines_to_crontab`].
 pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
     let current = read_crontab()?;
+    if store.lock_recover().is_empty() && current.contains(JOB_LINE_MARKER) {
+        log::warn!(
+            "cron sync: store is empty but the crontab still has job lines; refusing to wipe the \
+             moadim block (suspected load failure or a concurrent daemon)"
+        );
+        return Ok(());
+    }
     let block = build_block(store);
     let new_crontab = replace_block(&current, &block);
     if new_crontab == current {

@@ -461,6 +461,131 @@ impl Drop for FailingCrontabShim {
     }
 }
 
+/// Points `MOADIM_CRONTAB_BIN` at a shim that *succeeds*: `crontab -l` prints an empty crontab and
+/// exits 0, and `crontab -` swallows stdin and exits 0. With it installed, `sync_to_crontab`
+/// returns `Ok`, so the `if let Err(..) = sync_to_crontab(..)` guard takes its non-error path —
+/// exercising the success branch of `svc_create`/`svc_update`/`svc_delete` without touching the
+/// developer's real crontab. The previous env value is restored and the temp dir removed on drop.
+struct WorkingCrontabShim {
+    /// Temp dir holding the shim script; removed on drop.
+    base: std::path::PathBuf,
+    /// Saved prior value of `MOADIM_CRONTAB_BIN` to restore on drop.
+    previous: Option<std::ffi::OsString>,
+}
+
+impl WorkingCrontabShim {
+    fn install() -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronok-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let script = base.join("crontab-ok.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\nexit 0\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+        }
+        Self { base, previous }
+    }
+}
+
+impl Drop for WorkingCrontabShim {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test harness; restore the saved value.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+                None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+#[test]
+fn svc_create_syncs_crontab_on_success() {
+    // A working crontab shim makes `sync_to_crontab` return `Ok`, covering the
+    // non-error branch of the post-create sync guard.
+    let _shim = WorkingCrontabShim::install();
+    let store = new_store();
+    let resp = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-ok-create".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .expect("create succeeds when crontab sync succeeds");
+    assert!(store.lock().unwrap().contains_key(&resp.job.id));
+    crate::storage::remove_job_dir(&resp.job.id).unwrap();
+}
+
+#[test]
+fn svc_update_syncs_crontab_on_success() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-ok-update".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let _shim = WorkingCrontabShim::install();
+    let updated = svc_update(
+        &store,
+        &new_registry(),
+        &id,
+        UpdateRequest {
+            schedule: Some("@weekly".into()),
+            handler: None,
+            metadata: None,
+            enabled: None,
+        },
+    )
+    .expect("update succeeds when crontab sync succeeds");
+    assert_eq!(updated.job.schedule, "@weekly");
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
+fn svc_delete_syncs_crontab_on_success() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-ok-delete".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let _shim = WorkingCrontabShim::install();
+    svc_delete(&store, &new_registry(), &id).expect("delete succeeds when crontab sync succeeds");
+    assert!(!store.lock().unwrap().contains_key(&id));
+}
+
 #[test]
 fn svc_create_succeeds_despite_crontab_sync_failure() {
     let _shim = FailingCrontabShim::install();

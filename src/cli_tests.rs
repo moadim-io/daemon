@@ -262,6 +262,24 @@ fn unknown_arg_falls_back_to_help() {
 }
 
 #[test]
+fn data_keywords_route_to_data_command_with_full_argv() {
+    for keyword in DATA_COMMANDS {
+        let args = argv(&[keyword, "list"]);
+        assert_eq!(
+            parse(args.clone()),
+            Command::Data(args),
+            "keyword {keyword}"
+        );
+    }
+    // The keyword itself with no further args still routes to the data dispatcher (which then
+    // surfaces clap's usage error), rather than the lifecycle parser.
+    assert_eq!(
+        parse(argv(&["cron-jobs"])),
+        Command::Data(argv(&["cron-jobs"]))
+    );
+}
+
+#[test]
 fn parses_http_status_code() {
     assert_eq!(parse_status_code("HTTP/1.1 200 OK\r\n\r\n"), Some(200));
     assert_eq!(
@@ -610,5 +628,18 @@ fn restart_replaces_running_server() {
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
     restart().unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn spawn_restart_launches_a_detached_helper() {
+    // The helper is `current_exe --background`; under the test harness that exe is the test binary,
+    // which rejects `--background` and exits immediately, so this only verifies the spawn succeeds
+    // and returns a PID without leaving a real server behind.
+    let home = temp_home("spawn-restart");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    let pid = spawn_restart().unwrap();
+    assert!(pid > 0);
     let _ = std::fs::remove_dir_all(&home);
 }

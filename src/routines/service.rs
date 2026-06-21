@@ -1,5 +1,6 @@
 //! Store-mutating service functions: list, get, create, update, delete, trigger, and logs.
 
+use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::cron_jobs::{normalize_schedule, validate_cron};
@@ -8,12 +9,12 @@ use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::time::now_secs;
 
-use super::agents::{available_agents, load_agent_command};
+use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
 use super::command::{build_routine_command, slugify};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
-    RoutineStore, SortOrder, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
+    RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
 /// Reject a blank (empty or whitespace-only) required text field.
@@ -53,13 +54,40 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
     }
 }
 
+/// Reject a referenced agent that is unknown or whose `<name>.toml` is present but unparseable.
+///
+/// Two failures are surfaced at edit time (REST 400 / MCP) instead of slipping through to fire time,
+/// where they would only be logged and the routine silently skipped:
+///
+/// * An agent not present in the registry resolves to no command at fire time (#139). Mirrors the
+///   `validate_cron` / slug-conflict guards.
+/// * An agent whose config is present on disk but cannot be parsed (#189).
+///
+/// A *missing* config for a registered agent is intentionally allowed: the file may be created later,
+/// and the missing-file case is handled (warned + skipped) downstream exactly as before.
+fn validate_agent(agent: &str) -> Result<(), AppError> {
+    let agents = available_agents();
+    if !agents.iter().any(|known| known == agent) {
+        return Err(AppError::BadRequest(format!(
+            "unknown agent \"{agent}\"; valid agents: {}",
+            agents.join(", ")
+        )));
+    }
+    match load_agent_command(agent) {
+        Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
+        Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} has a malformed config: {err}"
+        ))),
+    }
+}
+
 /// Return the routines matching `query`, filtered and sorted as requested.
 ///
 /// The default query (no repository filter, sort by creation time ascending)
 /// reproduces the previous behaviour. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
 pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
     drop(lock);
 
@@ -99,8 +127,7 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
 /// Look up a routine by `id`, returning `NotFound` if it does not exist.
 pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
@@ -142,21 +169,40 @@ fn validate_title(title: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Reject an `agent` that is not present in the agent registry.
+/// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
+/// normalized copy with surrounding whitespace trimmed.
 ///
-/// An unknown agent resolves to no command at fire time and the routine is silently
-/// skipped (see #139), so failing loud here — at create/update — surfaces the typo to
-/// the caller instead. Mirrors the `validate_cron` / slug-conflict guards.
-fn validate_agent(agent: &str) -> Result<(), AppError> {
-    let agents = available_agents();
-    if agents.iter().any(|known| known == agent) {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest(format!(
-            "unknown agent \"{agent}\"; valid agents: {}",
-            agents.join(", ")
-        )))
+/// `repository` is a free-form string rendered verbatim into the agent's `prompt.md` preamble by
+/// `compose_prompt` (see #241), so a blank or padded entry yields a broken `- ` clone bullet. An
+/// empty list is valid — this only guards the contents of non-empty entries. Mirrors the
+/// `validate_cron` / `validate_agent` boundary checks for the other routine fields (#224/#226).
+fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppError> {
+    let mut normalized = Vec::with_capacity(repos.len());
+    for (index, repo) in repos.iter().enumerate() {
+        let repository = repo.repository.trim();
+        if repository.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "repositories[{index}].repository must not be empty or whitespace-only"
+            )));
+        }
+        let branch = match &repo.branch {
+            Some(branch) => {
+                let trimmed = branch.trim();
+                if trimmed.is_empty() {
+                    return Err(AppError::BadRequest(format!(
+                        "repositories[{index}].branch must not be empty or whitespace-only when set"
+                    )));
+                }
+                Some(trimmed.to_string())
+            }
+            None => None,
+        };
+        normalized.push(Repository {
+            repository: repository.to_string(),
+            branch,
+        });
     }
+    Ok(normalized)
 }
 
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
@@ -171,9 +217,10 @@ pub fn svc_create(
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
+    let repositories = validate_repositories(&req.repositories)?;
     let slug = slugify(&req.title);
     {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         if lock.values().any(|routine| slugify(&routine.title) == slug) {
             return Err(AppError::Conflict(format!(
                 "a routine with the name \"{slug}\" already exists"
@@ -187,19 +234,19 @@ pub fn svc_create(
         title: req.title,
         agent: req.agent,
         prompt: req.prompt,
-        repositories: req.repositories,
+        repositories,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .insert(routine.id.clone(), routine.clone());
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine create failed: {err}");
@@ -228,7 +275,11 @@ pub fn svc_update(
     }
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
-    let mut lock = store.lock().unwrap();
+    let repositories = match req.repositories {
+        Some(ref repos) => Some(validate_repositories(repos)?),
+        None => None,
+    };
+    let mut lock = store.lock_recover();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
     if let Some(ref new_title) = req.title {
@@ -243,7 +294,7 @@ pub fn svc_update(
             )));
         }
     }
-    let routine = lock.get_mut(id).unwrap();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);
     }
@@ -256,7 +307,7 @@ pub fn svc_update(
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;
     }
-    if let Some(repositories) = req.repositories {
+    if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
     if let Some(enabled) = req.enabled {
@@ -284,7 +335,7 @@ pub fn svc_update(
 
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
-    let routine = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+    let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
     remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
@@ -294,14 +345,14 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     routine.last_manual_trigger_at = Some(now_secs());
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     match load_agent_command(&routine.agent) {
-        Some(agent) => {
+        Ok(agent) => {
             let cmd = build_routine_command(&routine, &agent);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
@@ -314,10 +365,11 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
                 log::warn!("trigger: failed to spawn routine command: {err}");
             }
         }
-        None => log::warn!(
-            "trigger: agent config not found for routine {:?} (agent {:?})",
-            routine.id,
-            routine.agent
+        Err(err) => log::warn!(
+            "trigger: cannot load agent {:?} ({}) for routine {:?}",
+            routine.agent,
+            err,
+            routine.id
         ),
     }
     Ok(routine)
@@ -336,8 +388,7 @@ pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
 /// Return the contents of the newest workbench `agent.log` for routine `id`.
 pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     let routine = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;

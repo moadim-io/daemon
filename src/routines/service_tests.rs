@@ -20,6 +20,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         created_at,
         updated_at,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -255,6 +256,74 @@ fn svc_create_rejects_duplicate_slug() {
         svc_delete(&store, &first.routine.id).unwrap();
     });
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_rejects_malformed_agent_config() {
+    // A referenced agent whose `<name>.toml` is present but unparseable is rejected at create time
+    // with `BadRequest` quoting the parse error — not silently skipped at fire time.
+    let agent_name = "svc-create-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Malformed ZZZ".into(),
+            agent: agent_name.into(),
+            prompt: "p".into(),
+            repositories: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn svc_update_rejects_malformed_agent_config() {
+    // The same rejection applies when an update switches a routine to a malformed agent.
+    let agent_name = "svc-update-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let title = "Svc Update Malformed ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-mal-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-mal-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-mal-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: Some(agent_name.into()),
+            prompt: None,
+            repositories: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    std::fs::remove_file(&cfg).unwrap();
 }
 
 #[test]
@@ -576,6 +645,113 @@ fn svc_delete_warns_when_crontab_sync_fails() {
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
+/// Run `body` with `MOADIM_CRONTAB_BIN` pointed at a shim that succeeds (`crontab -l` prints an
+/// empty crontab and exits 0; `crontab -` swallows stdin and exits 0), so the crontab sync returns
+/// `Ok` and the non-error branch of `svc_create`/`svc_update`/`svc_delete` is exercised without
+/// touching the developer's real crontab. The prior env value is restored and the temp dir removed.
+fn with_working_crontab(body: impl FnOnce()) {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let guard = PATH_GUARD
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let base = std::env::temp_dir().join(format!("moadim-routcronok-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let script = base.join("crontab-ok.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let saved = std::env::var_os("MOADIM_CRONTAB_BIN");
+    std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+    body();
+    match saved {
+        Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+        None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    drop(guard);
+}
+
+#[test]
+fn svc_create_syncs_crontab_on_success() {
+    // A working crontab shim makes the post-create sync return `Ok`, covering the
+    // non-error branch of the sync guard in `svc_create`.
+    let title = "Svc Create Sync OK ZZZ";
+    let store = new_store();
+    with_working_crontab(|| {
+        let created = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: title.into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(created.routine.title, title);
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_syncs_crontab_on_success() {
+    let title = "Svc Update Sync OK ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-sync-ok-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("upd-sync-ok-id".into(), routine);
+    with_working_crontab(|| {
+        let updated = svc_update(
+            &store,
+            "upd-sync-ok-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: None,
+                agent: None,
+                prompt: Some("changed".into()),
+                repositories: None,
+                enabled: None,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.prompt, "changed");
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_delete_syncs_crontab_on_success() {
+    let title = "Svc Delete Sync OK ZZZ";
+    let store = new_store();
+    let routine = make_routine("del-sync-ok-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("del-sync-ok-id".into(), routine);
+    with_working_crontab(|| {
+        let deleted = svc_delete(&store, "del-sync-ok-id").unwrap();
+        assert_eq!(deleted.routine.title, title);
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
 #[test]
 fn svc_trigger_warns_when_spawn_fails() {
     // With `PATH` cleared and an agent config present, `build_routine_command`
@@ -769,6 +945,132 @@ fn svc_update_rejects_unknown_agent() {
         store.lock().unwrap().get("upd-agent-id").unwrap().agent,
         "claude"
     );
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_rejects_blank_repository_url() {
+    // Covers the repositories-validation branch in `svc_create` (#241): an entry
+    // whose URL is empty or whitespace-only must fail loud with `BadRequest`
+    // instead of being stored and rendered as a broken `- ` clone bullet.
+    let store = new_store();
+    for url in ["", "   "] {
+        let result = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: "Svc Create Blank Repo ZZZ".into(),
+                agent: "claude".into(),
+                prompt: "p".into(),
+                repositories: vec![Repository {
+                    repository: url.into(),
+                    branch: None,
+                }],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+            },
+        );
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+    // Nothing should have been persisted.
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_blank_repository_branch() {
+    // Covers the optional-branch guard: a `Some` branch that is empty/whitespace
+    // must be rejected so `compose_prompt` cannot emit `- url (branch )`.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Blank Branch ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "p".into(),
+            repositories: vec![Repository {
+                repository: "https://github.com/octocat/Hello-World".into(),
+                branch: Some("  ".into()),
+            }],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_trims_repository_entries() {
+    // Covers the normalization path: surrounding whitespace on a valid URL/branch
+    // is trimmed before storing, so the rendered preamble bullet is clean.
+    crate::routines::ensure_default_agents();
+    let title = "Svc Create Trim Repo ZZZ";
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: title.into(),
+            agent: "claude".into(),
+            prompt: "p".into(),
+            repositories: vec![Repository {
+                repository: "  https://github.com/octocat/Hello-World  ".into(),
+                branch: Some("  main  ".into()),
+            }],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    )
+    .unwrap();
+    let repo = &created.routine.repositories[0];
+    assert_eq!(repo.repository, "https://github.com/octocat/Hello-World");
+    assert_eq!(repo.branch.as_deref(), Some("main"));
+
+    svc_delete(&store, &created.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_update_rejects_blank_repository_url() {
+    // Covers the repositories-validation branch in `svc_update`: replacing the
+    // list with a blank-URL entry must fail with `BadRequest` before persisting.
+    let title = "Svc Update Blank Repo ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-repo-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-repo-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-repo-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: None,
+            repositories: Some(vec![Repository {
+                repository: " ".into(),
+                branch: None,
+            }]),
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // The stored routine keeps its original (empty) repository list.
+    assert!(store
+        .lock()
+        .unwrap()
+        .get("upd-repo-id")
+        .unwrap()
+        .repositories
+        .is_empty());
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

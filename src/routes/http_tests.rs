@@ -12,6 +12,34 @@ use super::{build_app, echo, health, run_with_listener_until, write_openapi_spec
 use crate::cron_jobs::{new_registry, new_store, AppState};
 use crate::utils::time::now_secs;
 
+/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
+/// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
+/// `"claude"` is accepted) while `load_agent_command` finds no config — exercising the trigger
+/// "no spawn" path without launching a real agent or writing into the user's real home. Tests in
+/// this crate run single-threaded per binary, so the global env mutation is safe.
+struct TempHome;
+
+impl TempHome {
+    fn set() -> TempHome {
+        let dir = std::env::temp_dir().join(format!("moadim-httptest-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp home");
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+        }
+        TempHome
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            std::env::remove_var("MOADIM_HOME_OVERRIDE");
+        }
+    }
+}
+
 // ── openapi spec writer ──────────────────────────────────────────────────────
 
 #[test]
@@ -51,6 +79,31 @@ async fn build_app_serves_root() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn build_app_sets_security_headers_on_ui_and_api() {
+    // The whole router carries the security headers (issue #406): assert on a representative
+    // UI response (the SPA at `/`) and a representative API response (`/api/v1/health`).
+    for uri in ["/", "/api/v1/health"] {
+        let resp = build_app(new_store(), crate::routines::new_store())
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(
+            resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            resp.headers().get("referrer-policy").unwrap(),
+            "no-referrer"
+        );
+        assert_eq!(
+            resp.headers().get("content-security-policy").unwrap(),
+            "frame-ancestors 'none'"
+        );
+    }
 }
 
 #[tokio::test]
@@ -541,6 +594,7 @@ async fn router_get_logs_returns_file_content() {
 
 #[tokio::test]
 async fn router_routine_full_lifecycle() {
+    let _home = TempHome::set();
     let store = new_store();
     let routines = crate::routines::new_store();
 
@@ -764,6 +818,32 @@ async fn build_app_shutdown_route_acknowledges() {
 }
 
 #[tokio::test]
+async fn build_app_restart_route_acknowledges() {
+    // The route spawns a detached `current_exe --background` helper; under the test harness that exe
+    // is the test binary, which rejects `--background` and exits at once, so no real server starts.
+    // TempHome keeps the helper's log file out of the real home.
+    let _home = TempHome::set();
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/restart")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["status"], "restarting");
+    assert!(json["helper_pid"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
 async fn shutdown_route_stops_the_serving_loop() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -846,6 +926,7 @@ async fn router_serves_routines_ical_feed() {
             created_at: 0,
             updated_at: 0,
             last_manual_trigger_at: None,
+            last_scheduled_trigger_at: None,
             ttl_secs: None,
             max_runtime_secs: None,
         },

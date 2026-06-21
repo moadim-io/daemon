@@ -14,6 +14,7 @@ use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::machines::MachinesPicker;
 use crate::{describe_cron_live, reltime, ToastKind};
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
@@ -59,20 +60,6 @@ pub struct UpdateRequest {
     pub machines: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-}
-
-/// Render a machines list as a comma-separated string for the form input.
-fn machines_to_text(machines: &[String]) -> String {
-    machines.join(", ")
-}
-
-/// Parse a comma-separated machines input into a list, trimming blanks and dropping empties.
-fn text_to_machines(text: &str) -> Vec<String> {
-    text.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect()
 }
 
 // ─── API layer ────────────────────────────────────────────────────────────────
@@ -1014,7 +1001,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
     let schedule = use_state(String::new);
     let handler = use_state(String::new);
     let meta_raw = use_state(String::new);
-    let machines_raw = use_state(String::new);
+    let machines = use_state(Vec::<String>::new);
     let enabled = use_state(|| true);
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
@@ -1052,11 +1039,8 @@ pub fn create_page(props: &CreatePageProps) -> Html {
         })
     };
     let on_machines = {
-        let machines_raw = machines_raw.clone();
-        Callback::from(move |e: InputEvent| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            machines_raw.set(input.value());
-        })
+        let machines = machines.clone();
+        Callback::from(move |next: Vec<String>| machines.set(next))
     };
     let on_enabled = {
         let enabled = enabled.clone();
@@ -1079,7 +1063,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
         let schedule = schedule.clone();
         let handler = handler.clone();
         let meta_raw = meta_raw.clone();
-        let machines_raw = machines_raw.clone();
+        let machines = machines.clone();
         let meta_err = meta_err.clone();
         let enabled = enabled.clone();
         let saving = saving.clone();
@@ -1098,7 +1082,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
                 schedule: (*schedule).clone(),
                 handler: (*handler).clone(),
                 metadata,
-                machines: text_to_machines(&machines_raw),
+                machines: (*machines).clone(),
                 enabled: *enabled,
             });
         })
@@ -1184,21 +1168,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
                             <div class="field-err">{(*meta_err).clone()}</div>
                         }
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">
-                            {"MACHINES "}
-                            <span style="color:var(--text-ghost)">{"(comma-separated; blank = runs nowhere)"}</span>
-                        </label>
-                        <input
-                            class="form-input"
-                            type="text"
-                            placeholder="laptop, work, server"
-                            value={(*machines_raw).clone()}
-                            oninput={on_machines}
-                            autocomplete="off"
-                            spellcheck="false"
-                        />
-                    </div>
+                    <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
                     <div class="form-group" style="margin-bottom:0">
                         <div class="toggle-row">
                             <span class="toggle-row-label">{"ENABLED"}</span>
@@ -1262,11 +1232,11 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             })
             .unwrap_or_default()
     });
-    let machines_raw = use_state(|| {
+    let machines = use_state(|| {
         props
             .editing
             .as_ref()
-            .map(|j| machines_to_text(&j.machines))
+            .map(|j| j.machines.clone())
             .unwrap_or_default()
     });
     let enabled = use_state(|| props.editing.as_ref().map(|j| j.enabled).unwrap_or(true));
@@ -1319,11 +1289,8 @@ pub fn job_modal(props: &JobModalProps) -> Html {
     };
 
     let on_machines = {
-        let machines_raw = machines_raw.clone();
-        Callback::from(move |e: InputEvent| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            machines_raw.set(input.value());
-        })
+        let machines = machines.clone();
+        Callback::from(move |next: Vec<String>| machines.set(next))
     };
 
     let on_close_click = {
@@ -1334,7 +1301,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
         let schedule = schedule.clone();
         let handler = handler.clone();
         let meta_raw = meta_raw.clone();
-        let machines_raw = machines_raw.clone();
+        let machines = machines.clone();
         let meta_err = meta_err.clone();
         let enabled = enabled.clone();
         let saving = saving.clone();
@@ -1353,7 +1320,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                 schedule: (*schedule).clone(),
                 handler: (*handler).clone(),
                 metadata,
-                machines: text_to_machines(&machines_raw),
+                machines: (*machines).clone(),
                 enabled: *enabled,
             });
         })
@@ -1439,21 +1406,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                             <div class="field-err">{(*meta_err).clone()}</div>
                         }
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">
-                            {"MACHINES "}
-                            <span style="color:var(--text-ghost)">{"(comma-separated; blank = runs nowhere)"}</span>
-                        </label>
-                        <input
-                            class="form-input"
-                            type="text"
-                            placeholder="laptop, work, server"
-                            value={(*machines_raw).clone()}
-                            oninput={on_machines}
-                            autocomplete="off"
-                            spellcheck="false"
-                        />
-                    </div>
+                    <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
                     <div class="form-group" style="margin-bottom:0">
                         <div class="toggle-row">
                             <span class="toggle-row-label">{"ENABLED"}</span>

@@ -8,6 +8,7 @@ use yew_router::prelude::*;
 
 mod cron_jobs;
 mod day_timeline;
+mod machines;
 mod routines;
 use cron_jobs::CronJobsPage;
 use routines::RoutinesPage;

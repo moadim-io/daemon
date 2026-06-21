@@ -27,6 +27,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   expose a `MACHINES` input (comma-separated), so multi-machine targeting is settable
   without dropping to the CLI or REST. Blank preserves today's behavior (empty list =
   runs nowhere). Closes #580.
+- **Machine picker.** The `MACHINES` field in the routine and cron-job forms is now a
+  picker: it fetches the daemon's known machine names from the new `GET /api/v1/machines`
+  endpoint (every name referenced by a routine or cron job, plus this machine's own
+  identity) and renders them as toggleable chips, while still allowing a brand-new name
+  to be typed and added. Closes #586.
 
 ### Changed
 

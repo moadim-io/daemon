@@ -12,6 +12,7 @@
         crate::routes::http::shutdown,
         crate::routes::http::restart,
         crate::routes::http::echo,
+        crate::routes::http::list_machines,
         crate::cron_jobs::list,
         crate::cron_jobs::create,
         crate::cron_jobs::get,

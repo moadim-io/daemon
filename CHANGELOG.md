@@ -11,6 +11,21 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Operations overview landing page.** The root `/` route now serves a single-pane
+  OVERVIEW summary that aggregates both cron jobs and routines, so an operator sees
+  whole-system state at a glance: five cross-entity KPI tiles (`SCHEDULED`, `ENABLED`,
+  `DUE SOON`, `DISABLED`, `NEXT RUN` with a live countdown) and an UPCOMING RUNS table
+  of the next 8 fires across every enabled job and routine, each tagged `CRON`/`ROUTINE`.
+  Closes #606.
+- **`NEXT RUN` column and `DUE SOON` KPI tile.** The scheduled-jobs table gains a
+  `NEXT RUN` column showing the absolute next fire time plus a relative countdown
+  (`in 5m`, `in 2h 10m`, `tomorrow 09:00`); disabled jobs read `paused` and the countdown
+  turns red once a fire lands inside the due-soon window. A new `DUE SOON` KPI tile counts
+  enabled jobs firing within the next hour, and a 30 s tick keeps countdowns live without
+  a manual reload. Closes #597.
+
 ### Changed
 
 - Enabled the `clippy::redundant_closure_for_method_calls` lint and fixed the
@@ -18,6 +33,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (`|e| e.ok()`, `|s| s.to_string()`, `|p| p.into_inner()`) with the method
   path itself (`Result::ok`, `ToString::to_string`,
   `std::sync::PoisonError::into_inner`). No behavior change.
+
+### Fixed
+
+- Removed a duplicate `.logo { font-weight }` declaration in `ui/index.html` left by
+  the concurrent merge of #595 and #596; identical rendering, cleaner CSS. Closes #599.
 
 ## [0.15.0] - 2026-06-21
 

@@ -523,6 +523,29 @@
     }
     .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* machines picker */
+    .machine-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .machine-chip {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 9px;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      background: transparent;
+      transition: all 0.1s;
+      letter-spacing: 0.04em;
+    }
+    .machine-chip:hover { border-color: var(--accent); color: var(--accent); }
+    .machine-chip.on {
+      border-color: var(--accent);
+      color: var(--bg-1);
+      background: var(--accent);
+    }
+    .machine-empty { font-size: 10px; color: var(--text-ghost); margin-bottom: 6px; }
+    .machine-add { display: flex; gap: 6px; align-items: stretch; }
+    .machine-add .form-input { flex: 1; }
+
     /* cron preview */
     .cron-preview {
       margin-top: 6px;

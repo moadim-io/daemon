@@ -127,6 +127,73 @@ async fn build_app_serves_agents() {
 }
 
 #[tokio::test]
+async fn build_app_serves_machines() {
+    // Seed a cron job and a routine whose targeting lists overlap (`shared`) so the response
+    // exercises de-duplication across both stores, plus the implicit local-identity entry.
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "j1".to_string(),
+        crate::cron_jobs::CronJob {
+            id: "j1".to_string(),
+            schedule: "@daily".to_string(),
+            handler: "h".to_string(),
+            metadata: serde_json::Value::Null,
+            machines: vec!["zeta-box".to_string(), "shared".to_string()],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_manual_trigger_at: None,
+        },
+    );
+    let routines = crate::routines::new_store();
+    routines.lock().unwrap().insert(
+        "r1".to_string(),
+        crate::routines::Routine {
+            id: "r1".to_string(),
+            schedule: "@daily".to_string(),
+            title: "R".to_string(),
+            agent: "claude".to_string(),
+            prompt: "p".to_string(),
+            repositories: vec![],
+            machines: vec!["alpha-box".to_string(), "shared".to_string()],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_manual_trigger_at: None,
+            last_scheduled_trigger_at: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    let resp = build_app(store, routines)
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/machines")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let machines: Vec<String> = serde_json::from_slice(&bytes).unwrap();
+
+    let mut expected = vec![
+        crate::machine::current_machine(),
+        "alpha-box".to_string(),
+        "shared".to_string(),
+        "zeta-box".to_string(),
+    ];
+    expected.sort();
+    expected.dedup();
+    assert_eq!(machines, expected);
+}
+
+#[tokio::test]
 async fn build_app_serves_health() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app

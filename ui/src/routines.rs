@@ -13,6 +13,7 @@ use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::machines::MachinesPicker;
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -1203,20 +1204,6 @@ fn text_to_repos(text: &str) -> Vec<Repository> {
         .collect()
 }
 
-/// Render a machines list as a comma-separated string for the form input.
-fn machines_to_text(machines: &[String]) -> String {
-    machines.join(", ")
-}
-
-/// Parse a comma-separated machines input into a list, trimming blanks and dropping empties.
-fn text_to_machines(text: &str) -> Vec<String> {
-    text.split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
 /// Parse a TTL textarea value into seconds. Blank/whitespace → `None` (use the server default);
 /// a valid non-negative integer → `Some(secs)`; anything else → `None`.
 fn parse_ttl(raw: &str) -> Option<u64> {
@@ -1297,10 +1284,10 @@ pub fn routine_form(props: &FormProps) -> Html {
             .map(|r| repos_to_text(&r.repositories))
             .unwrap_or_default()
     });
-    let machines_raw = use_state(|| {
+    let machines = use_state(|| {
         editing
             .as_ref()
-            .map(|r| machines_to_text(&r.machines))
+            .map(|r| r.machines.clone())
             .unwrap_or_default()
     });
     let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
@@ -1352,11 +1339,8 @@ pub fn routine_form(props: &FormProps) -> Html {
         })
     };
     let on_machines = {
-        let machines_raw = machines_raw.clone();
-        Callback::from(move |e: InputEvent| {
-            let i: HtmlInputElement = e.target_unchecked_into();
-            machines_raw.set(i.value());
-        })
+        let machines = machines.clone();
+        Callback::from(move |next: Vec<String>| machines.set(next))
     };
     let on_enabled = {
         let enabled = enabled.clone();
@@ -1394,7 +1378,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let agent = agent.clone();
         let prompt = prompt.clone();
         let repos_raw = repos_raw.clone();
-        let machines_raw = machines_raw.clone();
+        let machines = machines.clone();
         let enabled = enabled.clone();
         let ttl_raw = ttl_raw.clone();
         let saving = saving.clone();
@@ -1410,7 +1394,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 agent: (*agent).clone(),
                 prompt: (*prompt).clone(),
                 repositories: text_to_repos(&repos_raw),
-                machines: text_to_machines(&machines_raw),
+                machines: (*machines).clone(),
                 enabled: *enabled,
                 ttl_secs: parse_ttl(&ttl_raw),
             });
@@ -1477,14 +1461,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 <textarea class="form-input" placeholder={"https://github.com/org/repo main"}
                     value={(*repos_raw).clone()} oninput={on_repos} />
             </div>
-            <div class="form-group">
-                <label class="form-label">
-                    {"MACHINES "}
-                    <span style="color:var(--text-ghost)">{"(comma-separated; blank = runs nowhere)"}</span>
-                </label>
-                <input class="form-input" type="text" placeholder="laptop, work, server"
-                    value={(*machines_raw).clone()} oninput={on_machines} autocomplete="off" spellcheck="false" />
-            </div>
+            <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
             <div class="form-group">
                 <label class="form-label">
                     {"WORKBENCH TTL "}

@@ -374,6 +374,31 @@
         }
       }
     },
+    "/machines": {
+      "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /machines` — distinct machine names this daemon knows about.",
+        "description": "There is no central machine registry, so the \"known\" set is the union of every `machines`\ntargeting list declared by a routine or cron job, plus this machine's own resolved identity\n([`crate::machine::current_machine`]) so the local machine is always pickable even before\nanything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the\n`moadim machine list` CLI but reads the live in-memory stores instead of disk.",
+        "operationId": "list_machines",
+        "responses": {
+          "200": {
+            "description": "Known machine names, sorted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/restart": {
       "post": {
         "tags": [

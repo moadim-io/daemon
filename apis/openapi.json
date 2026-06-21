@@ -374,6 +374,31 @@
         }
       }
     },
+    "/restart": {
+      "post": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`POST /restart` — stop this server and start a fresh instance.",
+        "description": "The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper\nthat stops it and starts a new process, mirroring the `moadim restart` CLI command and the\n`restart` MCP tool. Responds with the helper's PID before the restart completes.",
+        "operationId": "restart",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestartResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "could not spawn the restart helper"
+          }
+        }
+      }
+    },
     "/routines": {
       "get": {
         "tags": [
@@ -871,13 +896,13 @@
             "type": "string",
             "description": "Unique identifier (UUID v4)."
           },
-          "last_triggered_at": {
+          "last_manual_trigger_at": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.",
+            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.\n\nOnly manual triggers update this; scheduled cron firings run the built command directly and\ndo not. Accepts the legacy `last_triggered_at` key on deserialize.",
             "minimum": 0
           },
           "metadata": {
@@ -984,9 +1009,20 @@
         "required": [
           "status",
           "uptime_secs",
-          "running"
+          "running",
+          "version",
+          "git_sha",
+          "build_date"
         ],
         "properties": {
+          "build_date": {
+            "type": "string",
+            "description": "Committer date (`YYYY-MM-DD`) of the build commit, or `\"unknown\"` outside a git checkout."
+          },
+          "git_sha": {
+            "type": "string",
+            "description": "Short git commit SHA the daemon was built from, or `\"unknown\"` outside a git checkout."
+          },
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."
@@ -1000,6 +1036,10 @@
             "format": "int64",
             "description": "Seconds elapsed since the server started.",
             "minimum": 0
+          },
+          "version": {
+            "type": "string",
+            "description": "Daemon version (from `CARGO_PKG_VERSION`)."
           }
         }
       },
@@ -1020,6 +1060,26 @@
           "repository": {
             "type": "string",
             "description": "Git remote URL."
+          }
+        }
+      },
+      "RestartResponse": {
+        "type": "object",
+        "description": "Response body for `POST /restart`.",
+        "required": [
+          "status",
+          "helper_pid"
+        ],
+        "properties": {
+          "helper_pid": {
+            "type": "integer",
+            "format": "int32",
+            "description": "PID of the detached helper process performing the stop-old-then-start-new restart.",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "Acknowledgement status (always `\"restarting\"`)."
           }
         }
       },
@@ -1056,13 +1116,22 @@
             "type": "string",
             "description": "Unique identifier (UUID v4)."
           },
-          "last_triggered_at": {
+          "last_manual_trigger_at": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.",
+            "description": "Unix timestamp (seconds) when the routine was last manually triggered, if ever.\n\nOnly manual triggers (`trigger_routine`) update this; scheduled cron firings run the built\ncommand directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.",
+            "minimum": 0
+          },
+          "last_scheduled_trigger_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The scheduler is\nthe host OS crontab, which runs the routine's generated `run.sh` directly without going\nthrough the daemon — so the script itself stamps this timestamp into the gitignored\n`scheduled.local.toml` sidecar at fire time, and the daemon reads it back on load. The\ndaemon never writes this field (it is absent from `routine.toml` and the daemon-owned\n`state.local.toml`), so re-persisting a routine can't clobber it.",
             "minimum": 0
           },
           "max_runtime_secs": {

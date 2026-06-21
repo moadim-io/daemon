@@ -34,8 +34,11 @@ pub(super) fn xml_escape(text: &str) -> String {
 }
 
 /// Absolute path to the per-user LaunchAgents plist for the moadim service.
+///
+/// Resolves home through [`crate::paths::home`] so the `MOADIM_HOME_OVERRIDE` test seam redirects
+/// the plist under a tempdir instead of the developer's real `~/Library/LaunchAgents`.
 pub(super) fn plist_path() -> anyhow::Result<PathBuf> {
-    plist_path_from_home(dirs::home_dir())
+    plist_path_from_home(crate::paths::home())
 }
 
 /// Resolve the LaunchAgents plist path under `home`, erroring when the home directory is unknown.

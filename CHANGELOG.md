@@ -20,6 +20,189 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
   guard from #211 (#213).
 
+## [0.13.0] - 2026-06-21
+
+### Added
+
+- **Full action parity across the CLI, REST, and MCP surfaces.** Every cron-job
+  and routine action is now reachable from all three.
+  - **New CLI data commands** (thin clients over the running server's REST API,
+    built on `clap`): `moadim cron-jobs <create|list|get|update|replace|delete|trigger|logs>`,
+    `moadim routines <create|list|get|update|replace|delete|trigger|logs|ical>`,
+    `moadim agents`, and `moadim echo <message>`. They print the server's JSON
+    response and exit `3` ("not running") when no daemon is reachable, matching
+    the existing `status`/`stop`/`cleanup` contract. (`cron`/`routine` are
+    accepted as aliases.)
+  - **New MCP tools** filling the gaps versus REST: `list_agents`,
+    `cron_job_logs`, `routine_logs`, `shutdown`, and `restart`.
+  - **New `POST /api/v1/restart` route** (plus the matching `restart` MCP tool):
+    stops the running server and starts a fresh instance via a detached helper
+    process, since an in-process server cannot rebind its own port. Documented in
+    the OpenAPI spec.
+- The MCP `health` tool now reports build provenance — `version`, `git_sha`, and
+  `build_date` — bringing it to parity with `GET /api/v1/health` and
+  `moadim --version`, so an MCP client can tell exactly which build is running
+  rather than only seeing status, uptime, and filesystem locations (#476).
+- The binary now embeds the git commit it was built from, so you can tell
+  exactly which build is running rather than only the released crate version
+  (which changes only on a `v*` tag). `moadim --version` prints
+  `moadim <version> (<short-sha> <date>)`, and the `GET /api/v1/health` response
+  gained `git_sha` and `build_date` fields alongside `version`. `build.rs`
+  resolves the fields from git at compile time and falls back to `"unknown"`
+  when the source isn't a git checkout (e.g. a crates.io tarball), so published
+  builds still compile and report sensibly (#367).
+- Routines now track **`last_scheduled_trigger_at`** (Unix seconds), the mirror of
+  `last_manual_trigger_at` for scheduled cron firings, surfaced in the REST/OpenAPI
+  routine response. Because the OS crontab runs a routine's generated `run.sh`
+  directly — the daemon never observes a scheduled fire — the script itself stamps
+  the fire time into a new gitignored `scheduled.local.toml` sidecar, which the
+  daemon reads back on load. The sidecar is daemon-read-only and kept separate from
+  the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
+  scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
+  and lets you spot schedules that have never actually fired (#155).
+
+- `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
+  status line (`moadim is shutting down` / `moadim is not running`) while keeping
+  the exit-code contract (`0` when a server was stopped, `3` when none was
+  running), so scripts that branch on `$?` alone get no stdout noise. The flag is
+  ignored under `--json`, which always prints its single machine-readable object.
+- `moadim stop --json` now includes the bound `address` field
+  (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
+  `status --json`'s object shape exactly so both can be parsed uniformly.
+- The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
+  next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
+  a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
+  request surfaces, so no extra request is made.
+- Routine create/update now validates and normalizes `repositories` entries:
+  blank or whitespace-only `repository` values (and blank `branch` values when
+  set) are rejected with a `400 Bad Request` instead of being silently
+  persisted, and surviving entries are trimmed. Malformed `repositories` lists
+  are now caught at the API boundary rather than surfacing later as a confusing
+  run-time failure (#241).
+- Defense-in-depth security response headers are now injected on every HTTP
+  response served by the daemon (web UI + `/api/v1`): `X-Frame-Options: DENY`
+  and a `frame-ancestors 'none'` CSP block clickjacking of the dashboard's
+  destructive controls, `X-Content-Type-Options: nosniff` stops content
+  sniffing, and `Referrer-Policy: no-referrer` keeps the loopback URL from
+  leaking to third parties. The CSP is intentionally scoped to `frame-ancestors`
+  only so the existing inline + WASM SPA and Swagger UI keep working untouched
+  (#406).
+
+### Changed
+
+- Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
+  on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
+  the web UI). The field was only ever updated by *manual* triggers, never by
+  scheduled cron firings, so the old name wrongly read as "never ran" for a
+  routine that fires on schedule but was never triggered by hand. Deserialization
+  accepts the legacy `last_triggered_at` key via a serde alias, so existing
+  `routine.toml` / job files still load.
+- Service tests no longer touch the real user crontab; they run against an
+  isolated test crontab seam.
+- moadim-generated `.gitignore` files (job and routine) now ignore
+  user-specific `run.sh` scripts.
+- Enabled the `clippy::uninlined_format_args` lint (deny) and inlined the
+  existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
+  error messages read more directly. No behavior change.
+
+### Fixed
+
+- Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
+  again. The crate root's `#![deny(warnings)]` implies
+  `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or
+  the pre-push hook, so the rotted links sat on `main` and made `cargo doc` fail
+  with "could not document `moadim`". Links to private submodules in
+  `src/routines/mod.rs` were demoted to plain code spans, and the remaining
+  links in `cleanup`, `sync`, and `utils::atomic` were fully qualified. (#390)
+- The in-memory routine and cron-job stores no longer panic the request that
+  observes a poisoned lock. Every `Mutex::lock().unwrap()` on these stores was
+  replaced with a new `LockRecover::lock_recover()` extension that recovers the
+  guard from `PoisonError` (the protected `HashMap` is still structurally valid),
+  so one panicking handler can't cascade into every later request taking the same
+  lock. The two `get_mut(id).unwrap()` invariant unwraps in `svc_update`/
+  `svc_trigger` became `ok_or(AppError::NotFound)?`, removing the last panicking
+  unwraps from the production code paths. A new
+  `#![cfg_attr(not(test), deny(clippy::unwrap_used))]` crate lint now keeps
+  `.unwrap()` out of non-test code so the panic can't creep back in (tests still
+  use `.unwrap()` freely, where panicking is the intended failure mode).
+- Managed cron jobs are now re-synced to the OS crontab on daemon startup,
+  mirroring the routines sync that already ran. Previously the cron-job block was
+  only written on a job create/update/delete, so if it was lost or emptied
+  (manual `crontab -e`/`crontab -r`, an OS migration, or a marker collision) every
+  managed job stayed silently un-fired until the next mutation — even across a
+  restart, while routines self-healed. The startup sync is idempotent, so it is a
+  no-op read on a healthy crontab. (#394)
+- The generated `prompt.md` no longer emits a dangling "These repositories are
+  relevant — clone any you need:" header with an empty bullet list when a routine
+  has no `repositories`. `compose_prompt` now writes a plain "You are working in
+  an empty directory." preamble in that case, so the agent isn't promised a repo
+  list with nothing under it.
+- Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:
+  the test raced a ~35ms window between the restart timeout (80ms) and the server
+  drop (130ms), so a coverage-instrumented or loaded CI run could miss the post-kill
+  `wait_until_stopped` window and fail the assertion. The margins are now 300ms /
+  450ms, giving ~150ms of slack on each side of the deadline while still exercising
+  the same force-kill-then-stops path.
+- A malformed (present-but-unparseable) agent TOML is no longer misreported as
+  "agent config not found". `load_agent_command` now returns a `Result` with a
+  distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics
+  name the agent and quote the underlying `toml` parse error. Creating or
+  updating a routine that references a malformed agent config is now rejected
+  with `400 Bad Request` (REST + MCP) at edit time instead of being silently
+  skipped at fire time. The missing-file case is unchanged (still skipped and
+  warned, with an accurate message). (#189)
+- Unknown paths under `/api/v1` now return a JSON **404** instead of the SPA
+  `index.html` with `200`. The nested API router had no fallback of its own, so
+  in axum 0.8 it inherited the outer SPA `.fallback(get(index))` — a typo'd or
+  removed endpoint answered with HTML/200, surfacing as a confusing downstream
+  parse error rather than a clear not-found. The API router now owns a JSON 404
+  fallback while the SPA fallback still serves UI routes (#270).
+- Crontab docs no longer claim reverse sync (crontab → moadim) runs. It is
+  implemented but never wired to a poller or startup hook, so manual edits to
+  the moadim block do not round-trip and are overwritten by the next forward
+  sync. The in-crontab header, README "Crontab sync" section, and module/`main`
+  docs now say so instead of promising automatic sync-back (#218).
+- `uptime_secs` is now clamped against backward clock skew (saturating
+  subtraction) so it never underflows.
+- Routine create/update now validates the configured agent, rejecting unknown agents.
+- The daemon now installs a logging backend at startup so `log` calls
+  actually emit output instead of being silently dropped.
+- `moadim status` now reports the effective bind address instead of the
+  hardcoded default when a custom bind address is configured.
+- iCal `escape_text` now normalizes carriage returns (CR and CRLF) to `\n`
+  per RFC 5545, so generated calendar feeds no longer emit raw control
+  characters in escaped text.
+- Cron `@keyword` documentation now matches the actual validation contract,
+  aligning the documented and accepted set of `@`-keywords.
+- Routine create/update now reject nonsensical field values with `400 Bad
+  Request` instead of silently persisting a broken routine. A blank
+  (empty/whitespace-only) `title` previously produced an empty routine-origin
+  disclosure name and a bare `"routine"` slug (#226); a blank `prompt` made the
+  routine fire forever with no task (#224); and a zero `ttl_secs` /
+  `max_runtime_secs` instantly reaped the run's logs or self-killed the session
+  (#233). All four are validated up front on both `POST` (create) and `PATCH`
+  (update), before anything is written to disk or the crontab.
+- Routine **create/update now reject a blank or unusable `title`** with
+  `400 Bad Request`. A title must contain at least one alphanumeric character
+  (so empty, whitespace-only, and punctuation-only titles like `"!!!"` are
+  refused) and is capped at 200 characters. Previously such a title was accepted,
+  producing a nameless routine-origin disclosure (`Routine name:` with nothing
+  after it) in the workbench `CLAUDE.md` and a silent `"routine"` slug the user
+  never chose.
+- Route the macOS LaunchAgent `plist_path()` through the `MOADIM_HOME_OVERRIDE` home seam so service install/uninstall tests can no longer write to or delete the developer's real `~/Library/LaunchAgents/io.moadim.daemon.plist` (#214).
+- `kill_pid` (the force-kill fallback in the restart path) now resolves its
+  executable through an opt-in `MOADIM_KILL_BIN` seam, letting tests inject a
+  harmless shim instead of signalling a real PID. The default stays the platform
+  killer (`kill` / `taskkill`), so the existing self-contained test that kills
+  its own spawned child still works. (#216)
+- The `ui` crate's `RAction::Upsert` variant now boxes its `Routine`
+  (`Upsert(Box<Routine>)`). The variant carried a ~272-byte `Routine` by value
+  while the next-largest variant was 48 bytes, tripping
+  `clippy::large_enum_variant` under the crate's `[lints.clippy] all = "deny"`,
+  so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
+  once before the existing upsert logic, and the construction sites wrap the
+  value.
+
 ## [0.12.0] - 2026-06-18
 
 ### Added
@@ -329,7 +512,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/moadim-io/daemon/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/moadim-io/daemon/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/moadim-io/daemon/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/moadim-io/daemon/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/moadim-io/daemon/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/moadim-io/daemon/compare/v0.8.0...v0.9.0

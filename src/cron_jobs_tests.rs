@@ -12,7 +12,7 @@ fn make_job(id: &str) -> CronJob {
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 
@@ -44,6 +44,33 @@ fn validate_cron_rejects_invalid() {
 }
 
 #[test]
+fn validate_cron_accepts_all_documented_keywords() {
+    for kw in [
+        "@hourly",
+        "@daily",
+        "@weekly",
+        "@monthly",
+        "@yearly",
+        "@annually",
+    ] {
+        assert!(validate_cron(kw).is_ok(), "{kw} should be accepted");
+    }
+}
+
+#[test]
+fn validate_cron_rejects_unsupported_keywords() {
+    // @reboot and @midnight are documented as unsupported via the API.
+    for kw in ["@reboot", "@midnight", "@nonsense"] {
+        let err = validate_cron(kw);
+        assert!(err.is_err(), "{kw} should be rejected");
+        assert!(
+            matches!(err, Err(AppError::BadRequest(_))),
+            "{kw} should be rejected with BadRequest"
+        );
+    }
+}
+
+#[test]
 fn cron_job_serializes() {
     let job = CronJob {
         id: "abc".to_string(),
@@ -54,7 +81,7 @@ fn cron_job_serializes() {
         source: "managed".to_string(),
         created_at: 1000,
         updated_at: 1000,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     };
     let json = serde_json::to_string(&job).unwrap();
     assert!(json.contains("\"id\":\"abc\""));
@@ -163,14 +190,14 @@ fn svc_trigger_not_found() {
 }
 
 #[test]
-fn svc_trigger_sets_last_triggered_at() {
+fn svc_trigger_sets_last_manual_trigger_at() {
     let store = make_store_with("id");
     assert!(store
         .lock()
         .unwrap()
         .get("id")
         .unwrap()
-        .last_triggered_at
+        .last_manual_trigger_at
         .is_none());
     // Call trigger directly on store without disk I/O
     store
@@ -178,9 +205,14 @@ fn svc_trigger_sets_last_triggered_at() {
         .unwrap()
         .get_mut("id")
         .unwrap()
-        .last_triggered_at = Some(9999);
+        .last_manual_trigger_at = Some(9999);
     assert_eq!(
-        store.lock().unwrap().get("id").unwrap().last_triggered_at,
+        store
+            .lock()
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .last_manual_trigger_at,
         Some(9999)
     );
 }
@@ -295,7 +327,7 @@ fn svc_delete_removes_from_store_and_disk() {
 }
 
 #[test]
-fn svc_trigger_persists_last_triggered_at() {
+fn svc_trigger_persists_last_manual_trigger_at() {
     let store = new_store();
     let created = svc_create(
         &store,
@@ -309,10 +341,10 @@ fn svc_trigger_persists_last_triggered_at() {
     )
     .unwrap();
     let id = created.job.id.clone();
-    assert!(created.job.last_triggered_at.is_none());
+    assert!(created.job.last_manual_trigger_at.is_none());
 
     let triggered = svc_trigger(&store, &id).unwrap();
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     crate::storage::remove_job_dir(&id).unwrap();
 }
@@ -429,6 +461,131 @@ impl Drop for FailingCrontabShim {
     }
 }
 
+/// Points `MOADIM_CRONTAB_BIN` at a shim that *succeeds*: `crontab -l` prints an empty crontab and
+/// exits 0, and `crontab -` swallows stdin and exits 0. With it installed, `sync_to_crontab`
+/// returns `Ok`, so the `if let Err(..) = sync_to_crontab(..)` guard takes its non-error path —
+/// exercising the success branch of `svc_create`/`svc_update`/`svc_delete` without touching the
+/// developer's real crontab. The previous env value is restored and the temp dir removed on drop.
+struct WorkingCrontabShim {
+    /// Temp dir holding the shim script; removed on drop.
+    base: std::path::PathBuf,
+    /// Saved prior value of `MOADIM_CRONTAB_BIN` to restore on drop.
+    previous: Option<std::ffi::OsString>,
+}
+
+impl WorkingCrontabShim {
+    fn install() -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronok-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let script = base.join("crontab-ok.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\nexit 0\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+        }
+        Self { base, previous }
+    }
+}
+
+impl Drop for WorkingCrontabShim {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test harness; restore the saved value.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+                None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+#[test]
+fn svc_create_syncs_crontab_on_success() {
+    // A working crontab shim makes `sync_to_crontab` return `Ok`, covering the
+    // non-error branch of the post-create sync guard.
+    let _shim = WorkingCrontabShim::install();
+    let store = new_store();
+    let resp = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-ok-create".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .expect("create succeeds when crontab sync succeeds");
+    assert!(store.lock().unwrap().contains_key(&resp.job.id));
+    crate::storage::remove_job_dir(&resp.job.id).unwrap();
+}
+
+#[test]
+fn svc_update_syncs_crontab_on_success() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-ok-update".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let _shim = WorkingCrontabShim::install();
+    let updated = svc_update(
+        &store,
+        &new_registry(),
+        &id,
+        UpdateRequest {
+            schedule: Some("@weekly".into()),
+            handler: None,
+            metadata: None,
+            enabled: None,
+        },
+    )
+    .expect("update succeeds when crontab sync succeeds");
+    assert_eq!(updated.job.schedule, "@weekly");
+    crate::storage::remove_job_dir(&id).unwrap();
+}
+
+#[test]
+fn svc_delete_syncs_crontab_on_success() {
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "sync-ok-delete".into(),
+            metadata: serde_json::Value::Null,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+
+    let _shim = WorkingCrontabShim::install();
+    svc_delete(&store, &new_registry(), &id).expect("delete succeeds when crontab sync succeeds");
+    assert!(!store.lock().unwrap().contains_key(&id));
+}
+
 #[test]
 fn svc_create_succeeds_despite_crontab_sync_failure() {
     let _shim = FailingCrontabShim::install();
@@ -535,7 +692,7 @@ fn svc_trigger_logs_when_handler_spawn_fails() {
     let id = created.job.id.clone();
 
     let triggered = svc_trigger(&store, &id).expect("trigger succeeds despite spawn failure");
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     crate::storage::remove_job_dir(&id).unwrap();
     let _ = std::fs::remove_file(&handler_path);
@@ -573,7 +730,7 @@ fn svc_trigger_spawns_existing_handler_script() {
     let id = created.job.id.clone();
 
     let triggered = svc_trigger(&store, &id).unwrap();
-    assert!(triggered.last_triggered_at.is_some());
+    assert!(triggered.last_manual_trigger_at.is_some());
 
     crate::storage::remove_job_dir(&id).unwrap();
     let _ = std::fs::remove_file(&handler_path);

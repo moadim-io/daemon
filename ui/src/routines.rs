@@ -46,7 +46,7 @@ pub struct Routine {
     #[serde(default)]
     pub updated_at: u64,
     #[serde(default)]
-    pub last_triggered_at: Option<u64>,
+    pub last_manual_trigger_at: Option<u64>,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
@@ -290,7 +290,7 @@ pub enum RAction {
     SetRepoFilter(String),
     SetSort(RSort),
     ToggleSortDir,
-    Upsert(Routine),
+    Upsert(Box<Routine>),
     Remove(String),
 }
 
@@ -317,6 +317,7 @@ impl Reducible for RState {
             RAction::SetSort(sort) => s.sort = sort,
             RAction::ToggleSortDir => s.sort_desc = !s.sort_desc,
             RAction::Upsert(routine) => {
+                let routine = *routine;
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
                     s.routines[i] = routine;
                 } else {
@@ -418,7 +419,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             spawn_local(async move {
                 match api_create(&req).await {
                     Ok(r) => {
-                        state.dispatch(RAction::Upsert(r));
+                        state.dispatch(RAction::Upsert(Box::new(r)));
                         state.dispatch(RAction::GoToList);
                         ok("Routine created");
                     }
@@ -457,7 +458,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             spawn_local(async move {
                 match api_trigger(&id).await {
                     Ok(r) => {
-                        state.dispatch(RAction::Upsert(r));
+                        state.dispatch(RAction::Upsert(Box::new(r)));
                         ok("Routine triggered");
                     }
                     Err(e) => toast.emit((format!("Trigger failed: {e}"), ToastKind::Err)),
@@ -481,7 +482,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                 };
                 match api_update(&id, &req).await {
                     Ok(r) => {
-                        state.dispatch(RAction::Upsert(r));
+                        state.dispatch(RAction::Upsert(Box::new(r)));
                         ok(if enabled {
                             "Routine enabled"
                         } else {
@@ -517,7 +518,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     };
                     match api_update(id, &upd).await {
                         Ok(r) => {
-                            state.dispatch(RAction::Upsert(r));
+                            state.dispatch(RAction::Upsert(Box::new(r)));
                             state.dispatch(RAction::CloseModal);
                             ok("Routine updated");
                         }
@@ -1095,7 +1096,7 @@ pub fn routine_row(props: &RowProps) -> Html {
     };
 
     let last_run = r
-        .last_triggered_at
+        .last_manual_trigger_at
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 

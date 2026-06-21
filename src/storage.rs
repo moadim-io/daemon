@@ -21,8 +21,10 @@ struct JobToml {
     created_at: Option<u64>,
     /// Unix last-updated timestamp.
     updated_at: Option<u64>,
-    /// Unix timestamp of last manual trigger.
-    last_triggered_at: Option<u64>,
+    /// Unix timestamp of last manual trigger. Accepts the legacy `last_triggered_at` key so
+    /// job toml files written before the rename still load.
+    #[serde(alias = "last_triggered_at")]
+    last_manual_trigger_at: Option<u64>,
     /// Arbitrary metadata key/value pairs.
     #[serde(default)]
     metadata: toml::Table,
@@ -59,7 +61,7 @@ fn json_to_toml_table(val: &serde_json::Value) -> toml::Table {
 fn load_job_from_dir(id: &str) -> Option<CronJob> {
     let base = read_job_toml(&job_toml_path(id))?;
     let local = read_job_toml(&job_local_toml_path(id));
-    let (schedule, handler, enabled, created_at, updated_at, last_triggered_at, mut meta) = (
+    let (schedule, handler, enabled, created_at, updated_at, last_manual_trigger_at, mut meta) = (
         local
             .as_ref()
             .and_then(|local_job| local_job.schedule.clone())
@@ -85,8 +87,8 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
             .unwrap_or(0),
         local
             .as_ref()
-            .and_then(|local_job| local_job.last_triggered_at)
-            .or(base.last_triggered_at),
+            .and_then(|local_job| local_job.last_manual_trigger_at)
+            .or(base.last_manual_trigger_at),
         base.metadata,
     );
     if let Some(local_meta) = local.as_ref().map(|local_job| &local_job.metadata) {
@@ -102,7 +104,7 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
         source: "managed".to_string(),
         created_at,
         updated_at,
-        last_triggered_at,
+        last_manual_trigger_at,
         metadata: metadata_to_json(&meta),
     })
 }
@@ -114,7 +116,7 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
 
     let gitignore = job_gitignore_path(&job.id);
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\n")?;
+        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
     }
 
     let toml_job = JobToml {
@@ -123,7 +125,7 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
         enabled: Some(job.enabled),
         created_at: Some(job.created_at),
         updated_at: Some(job.updated_at),
-        last_triggered_at: job.last_triggered_at,
+        last_manual_trigger_at: job.last_manual_trigger_at,
         metadata: json_to_toml_table(&job.metadata),
     };
     let text = toml::to_string_pretty(&toml_job).map_err(std::io::Error::other)?;

@@ -1,6 +1,7 @@
 //! iCalendar (RFC 5545) export of routine schedules so upcoming fire times can be
 //! subscribed to in external calendars.
 
+use crate::utils::lock::LockRecover;
 use chrono::{DateTime, Duration, Local, Utc};
 use croner::Cron;
 
@@ -16,12 +17,22 @@ const PRODID: &str = "-//moadim//routines//EN";
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
 fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             '\\' => out.push_str("\\\\"),
             ';' => out.push_str("\\;"),
             ',' => out.push_str("\\,"),
             '\n' => out.push_str("\\n"),
+            // RFC 5545 §3.3.11: a TEXT value must not contain a raw CR. Normalize
+            // both CRLF and a lone CR to a single escaped newline so they match the
+            // `\n` handling and never leak a stray `\r` into a content line.
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push_str("\\n");
+            }
             _ => out.push(ch),
         }
     }
@@ -118,7 +129,7 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
 
 /// Build the iCalendar feed for every routine currently in `store`.
 pub fn svc_ical(store: &RoutineStore) -> String {
-    let routines: Vec<Routine> = store.lock().unwrap().values().cloned().collect();
+    let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     build_ical(&routines, Local::now())
 }
 

@@ -13,7 +13,7 @@ fn test_job(id: &str) -> CronJob {
         source: "managed".to_string(),
         created_at: 1000,
         updated_at: 2000,
-        last_triggered_at: Some(3000),
+        last_manual_trigger_at: Some(3000),
     }
 }
 
@@ -67,7 +67,7 @@ fn write_and_load_roundtrip() {
     assert_eq!(loaded.enabled, job.enabled);
     assert_eq!(loaded.created_at, job.created_at);
     assert_eq!(loaded.updated_at, job.updated_at);
-    assert_eq!(loaded.last_triggered_at, job.last_triggered_at);
+    assert_eq!(loaded.last_manual_trigger_at, job.last_manual_trigger_at);
     assert_eq!(loaded.metadata["key"], "val");
 
     remove_job_dir(id).expect("cleanup failed");
@@ -115,6 +115,7 @@ fn write_job_creates_gitignore() {
     assert!(gitignore.exists());
     let content = std::fs::read_to_string(&gitignore).unwrap();
     assert!(content.contains("*.local.*"));
+    assert!(content.contains("run.sh"));
 
     remove_job_dir(id).expect("cleanup failed");
 }

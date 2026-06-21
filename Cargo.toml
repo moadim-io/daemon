@@ -9,19 +9,23 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 description = "Moadim.io MCP/REST server for managing cron jobs"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
 homepage = "https://github.com/moadim-io/daemon"
+keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
 anyhow = "1"
 axum = "0.8"
 chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
 croner = "3"
 dirs = "6"
+env_logger = "0.11"
 iana-time-zone = "0.1"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
@@ -52,3 +56,7 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Require inline format args (`{x}`) over positional (`{}`, x) where possible.
+uninlined_format_args = "deny"
+# Reject leftover `dbg!` debugging macros so they never ship to production.
+dbg_macro = "deny"

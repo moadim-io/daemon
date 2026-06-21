@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Enabled the `clippy::semicolon_if_nothing_returned` lint and fixed the existing
+  violations so statements that return `()` end with a trailing semicolon. No
+  behavior change.
+
 ### Fixed
 
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default

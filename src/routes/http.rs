@@ -285,6 +285,21 @@ pub async fn run_with_listener_until(
             .await;
         }
     });
+    // Force-kill hung runs on a much shorter cadence than the hourly reap above, so a sub-hour
+    // `max_runtime_secs` is enforced near its bound instead of waiting up to ~1h for the next sweep.
+    // This tick only evaluates the kill branch; TTL reaping of the killed workbench still happens in
+    // the hourly sweep.
+    let watchdog_store = routines.clone();
+    let watchdog_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::routines::WATCHDOG_INTERVAL);
+        loop {
+            tick.tick().await;
+            let store = watchdog_store.clone();
+            let _ =
+                tokio::task::spawn_blocking(move || crate::routines::kill_hung_sessions(&store))
+                    .await;
+        }
+    });
     let app = build_app_with_shutdown(store, routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
@@ -299,6 +314,7 @@ pub async fn run_with_listener_until(
         .with_graceful_shutdown(combined)
         .await?;
     cleanup_task.abort();
+    watchdog_task.abort();
     Ok(())
 }
 

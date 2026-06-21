@@ -7,7 +7,7 @@
 | [Rust stable](https://rustup.rs/) | Build the daemon |
 | [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
-| [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`cargo install typos-cli`) |
+| [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`cargo xtask spellcheck` installs it for you) |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
 (`ui/`). The daemon itself is a native binary and builds without them.
@@ -36,11 +36,17 @@ git config core.hooksPath .githooks
 
 The **pre-commit** hook spell-checks the tree with
 [`typos`](https://github.com/crate-ci/typos); the **pre-push** hook runs the
-format/lint/coverage gates below. Spell-check the tree on demand with:
+format/lint/coverage gates below. Spell-check the tree on demand with the repo
+task runner — it installs `typos` (the `typos-cli` crate) for you if it's
+missing, so you don't need to know the crate/binary name:
 
 ```sh
-typos
+cargo xtask spellcheck
 ```
+
+This reuses the same `typos.toml` config as the pre-commit hook and the
+spellcheck CI workflow, so all three stay in lockstep. (If `typos` is already on
+your `PATH`, running it directly works too.)
 
 Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
 `schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`

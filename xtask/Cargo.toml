@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+description = "Repo task runner (run via `cargo xtask <task>`); home for tooling wrappers."
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"

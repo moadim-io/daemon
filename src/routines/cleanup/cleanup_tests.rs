@@ -75,11 +75,51 @@ fn reap_dir_removes_only_finished_and_expired() {
         &noop_kill,
     );
 
-    assert_eq!(removed, 1);
+    assert_eq!(removed.removed, 1);
     assert!(!base.join("expired-100").exists());
     assert!(base.join("fresh-900").exists());
     assert!(base.join("running-100").exists());
     assert!(base.join("notawb").exists());
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn reap_dir_accumulates_freed_bytes_for_removed_trees_only() {
+    let base = std::env::temp_dir().join(format!(
+        "moadim-cleanup-freed-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+
+    // Expired + dead -> removed; its tree (a top-level file + a nested file) is summed.
+    touch_dir(&base, "expired-100");
+    std::fs::write(base.join("expired-100").join("agent.log"), vec![b'a'; 1000]).unwrap();
+    std::fs::create_dir_all(base.join("expired-100").join("repo")).unwrap();
+    std::fs::write(base.join("expired-100").join("repo").join("file"), vec![b'b'; 24]).unwrap();
+    // Fresh -> kept, so its bytes must NOT be counted.
+    touch_dir(&base, "fresh-900");
+    std::fs::write(base.join("fresh-900").join("big"), vec![b'c'; 9999]).unwrap();
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 500u64;
+    let dead = |_session: &str| false;
+
+    let stats = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &never_expires_runtime,
+        &dead,
+        &noop_kill,
+    );
+
+    // Only the removed tree contributes: 1000 + 24 bytes (nested file included), kept tree excluded.
+    assert_eq!(stats.removed, 1);
+    assert_eq!(stats.freed_bytes, 1024);
+    assert!(!base.join("expired-100").exists());
+    assert!(base.join("fresh-900").exists());
 
     std::fs::remove_dir_all(&base).unwrap();
 }
@@ -107,7 +147,7 @@ fn reap_dir_uses_per_slug_ttl() {
         &noop_kill,
     );
 
-    assert_eq!(removed, 1);
+    assert_eq!(removed.removed, 1);
     assert!(!base.join("short-500").exists());
     assert!(base.join("long-500").exists());
 
@@ -130,7 +170,7 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
 
     let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
 
-    assert_eq!(removed, 1, "hung-then-killed workbench is reaped");
+    assert_eq!(removed.removed, 1, "hung-then-killed workbench is reaped");
     assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
     assert!(!base.join("hung-100").exists());
 
@@ -153,8 +193,7 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
 
     let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
 
-    assert_eq!(
-        removed, 0,
+    assert_eq!(removed.removed, 0,
         "killed but TTL not elapsed -> left for a later sweep"
     );
     assert_eq!(killed.into_inner(), vec!["moadim-hung-900".to_string()]);
@@ -183,7 +222,7 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
 
     let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &dead, &kill);
 
-    assert_eq!(removed, 1);
+    assert_eq!(removed.removed, 1);
     assert!(
         killed.into_inner().is_empty(),
         "no kill for an already-dead session"
@@ -210,7 +249,7 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
             &dead,
             &noop_kill
         ),
-        0
+        ReapStats::default()
     );
 }
 
@@ -250,7 +289,7 @@ fn reap_dir_counts_zero_when_remove_fails() {
     // the directory survives and the Err arm runs (0 removed). Root bypasses the
     // permission check; tolerate that by only asserting consistency.
     if base.join("expired-100").exists() {
-        assert_eq!(removed, 0);
+        assert_eq!(removed.removed, 0);
     }
 
     // Restore permissions so cleanup can proceed.
@@ -287,7 +326,7 @@ fn cleanup_expired_workbenches_scans_real_workbenches_dir() {
     let removed = cleanup_expired_workbenches(&store);
 
     // The orphaned, expired, session-less workbench is removed; the others survive.
-    assert!(removed >= 1, "expected at least the orphan to be reaped");
+    assert!(removed.removed >= 1, "expected at least the orphan to be reaped");
     assert!(!workbenches.join("orphan-1").exists());
     assert!(workbenches.join(format!("recent-{fresh_ts}")).exists());
     assert!(workbenches.join("notawb").exists());

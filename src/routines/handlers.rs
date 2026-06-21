@@ -121,7 +121,7 @@ pub async fn ical_feed(State(store): State<RoutineStore>) -> impl IntoResponse {
 
 /// `POST /routines/cleanup` — reap finished, expired run workbenches on demand.
 #[utoipa::path(post, path = "/routines/cleanup",
-    responses((status = 200, body = CleanupResponse, description = "Number of workbenches removed")))]
+    responses((status = 200, body = CleanupResponse, description = "Workbenches removed and bytes freed")))]
 pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse> {
     Json(svc_cleanup(&store))
 }

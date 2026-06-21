@@ -427,8 +427,10 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// Runs the same sweep as the hourly background task ([`cleanup_expired_workbenches`]) but on
 /// demand, so callers need not wait for the next tick. Still-running sessions are never touched.
 pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
+    let stats = cleanup_expired_workbenches(store);
     CleanupResponse {
-        removed: cleanup_expired_workbenches(store),
+        removed: stats.removed,
+        freed_bytes: stats.freed_bytes,
     }
 }
 

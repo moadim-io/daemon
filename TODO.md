@@ -25,7 +25,6 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Add a `moadim restart --interactive` (or `-i`) flavor that restarts the daemon in the foreground attached to the terminal instead of detached, mirroring `moadim -i`
 - Have `moadim restart` emit its PID-rotation summary as a `--json` object (`{"old":N|null,"new":M}`) too, mirroring the `status`/`cleanup` `--json` contract
 - Give `moadim restart` a `--quiet`/`-q` flag that prints only the rotation line (`restarted: pid <old> -> <new>`) and suppresses the UI/stop/logs hint block, for script consumption
-- Return the freed disk bytes alongside `removed` in `CleanupResponse` and surface "removed N (freed 12.4 MB)" in the UI cleanup toast
 - Auto-refresh the routine LOGS view (or show a removed badge) after a CLEANUP NOW sweep so stale run output isn't shown for reaped workbenches
 - Add the option to filter routines by repositories in the ui
 - Run the README's fenced `sh`/`json` blocks through a docs lint in CI (e.g. a `markdownlint`/`mdsh` check or a `--json | jq -e` smoke test) so the documented JSON shapes can't drift from the actual CLI output silently

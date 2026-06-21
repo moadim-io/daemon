@@ -27,6 +27,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Enabled the `clippy::semicolon_if_nothing_returned` lint and fixed the existing
   violations so statements that return `()` end with a trailing semicolon. No
   behavior change.
+- Enabled the `clippy::manual_let_else` lint and rewrote the `match` guards
+  whose only non-binding arm diverged (`return`/`continue`) as
+  `let ... else { ... }`, keeping the happy path unindented. No behavior change.
 
 ### Fixed
 

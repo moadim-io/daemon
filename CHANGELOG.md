@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Manually triggering a cron job (`POST /cron-jobs/{id}/trigger`) now resolves
+  the handler the same way the scheduled run does — exact match first, then
+  common script extensions (`.sh`, `.py`, …) — via `resolve_handler_path`.
+  Previously the trigger joined the bare handler name, so a job stored as
+  `send-report` but backed by `send-report.sh` fired fine on schedule yet the
+  manual trigger reported "handler script not found" and silently no-opped. (#440)
+
 - `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
   A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
   (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to

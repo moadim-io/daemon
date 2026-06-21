@@ -23,6 +23,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   without dropping to the CLI or REST. Blank preserves today's behavior (empty list =
   runs nowhere). Closes #580.
 
+### Changed
+
+- **Releases are automated on version bump.** Merging a `Cargo.toml` version bump to
+  `main` now auto-pushes the matching `vx.y.z` tag and runs the crates.io publish and
+  GitHub Release workflows (new `auto-release.yml`). No more manual tag push; `publish.yml`
+  and `release.yml` are now reusable (`workflow_call`) and keep their `v*` tag-push
+  trigger as a hand-cut fallback.
+
 ## [0.14.0] - 2026-06-21
 
 ### Added

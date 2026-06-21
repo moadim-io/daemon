@@ -1,14 +1,26 @@
 name: Publish to crates.io
 
+# Publish the crate. Triggered two ways:
+#   * `workflow_call` from auto-release.yml on a version bump (automated path).
+#   * a manual `v*` tag push (escape hatch for hotfixes cut by hand).
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to publish (e.g. v0.14.0)
+        required: true
+        type: string
 
 jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -52,7 +64,7 @@ jobs:
       - name: Verify tag matches Cargo.toml version
         run: |
           CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          TAG_VERSION=${GITHUB_REF_NAME#v}
+          TAG_VERSION=${TAG#v}
           if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
             echo "Version mismatch: Cargo.toml=$CARGO_VERSION, tag=$TAG_VERSION"
             exit 1

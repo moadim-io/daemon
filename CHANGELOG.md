@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- `moadim stop` now sticks under a service install. The systemd unit and launchd
+  agent restarted on *any* exit (`Restart=always` / unconditional `KeepAlive`),
+  so a clean shutdown was resurrected by the supervisor ~5s later and `stop`
+  reported a false success. Restart is now failure-only (`Restart=on-failure` /
+  `KeepAlive = { SuccessfulExit = false }`): a crash is still auto-restarted, but
+  a clean stop stays stopped. (#444)
 - Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)

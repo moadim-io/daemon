@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- `moadim status` accepts a **`--wait[=SECS]`** flag that blocks until the daemon
+  is reachable (polling `GET /health`) before reporting, instead of probing once.
+  Bare `--wait` uses a bounded default timeout (30s) so it never blocks forever;
+  `--wait=SECS` overrides it. It keeps the existing exit-code contract — `0` once
+  the server answers, `3` (the not-running code) on timeout — so a freshly started
+  background/`restart`ed daemon can be waited on with `moadim status --wait`
+  instead of a hand-rolled `until moadim status; do sleep 1; done` loop. Composes
+  with `--json` (#254).
+
 ### Fixed
 
 - Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the

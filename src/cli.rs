@@ -7,7 +7,7 @@
 
 use std::io::{Read as _, Write as _};
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Address the server binds to and that the client talks to.
 pub const BIND_ADDR: &str = "127.0.0.1:5784";
@@ -23,6 +23,13 @@ pub fn bind_addr() -> String {
 
 /// How long to wait when probing or signalling a running server over HTTP.
 const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
+
+/// Default timeout (seconds) for a bare `status --wait` with no explicit `=SECS`, so the command
+/// never blocks indefinitely.
+const DEFAULT_WAIT_SECS: u64 = 30;
+
+/// Interval between health probes while `status --wait` blocks for the daemon to become reachable.
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
@@ -62,6 +69,9 @@ pub enum Command {
     Status {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
+        /// Block until the server is reachable before reporting. `None` reports once and returns;
+        /// `Some(None)` waits up to [`DEFAULT_WAIT_SECS`]; `Some(Some(secs))` waits up to `secs`.
+        wait: Option<Option<u64>>,
     },
     /// Ask a running server to reap finished, expired routine run workbenches now. `json` requests
     /// machine-readable output.
@@ -103,6 +113,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
+            wait: parse_wait(&args[1..]),
         },
         Some("cleanup") => Command::Cleanup {
             json: wants_json(&args[1..]),
@@ -129,6 +140,23 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
+/// Parse a `--wait[=SECS]` flag for `status` from a command's trailing arguments.
+///
+/// Returns `None` when absent, `Some(None)` for a bare `--wait` (use [`DEFAULT_WAIT_SECS`]), and
+/// `Some(Some(secs))` for `--wait=SECS`. A non-numeric `=SECS` falls back to the default, so a
+/// fat-fingered value still bounds the wait rather than erroring.
+fn parse_wait(rest: &[String]) -> Option<Option<u64>> {
+    rest.iter().find_map(|arg| {
+        if arg == "--wait" {
+            // Bare `--wait`: wait with the default timeout.
+            Some(None)
+        } else {
+            // `--wait=SECS`: an unparseable value falls back to the default (`Some(None)`).
+            arg.strip_prefix("--wait=").map(|secs| secs.parse().ok())
+        }
+    })
+}
+
 /// Print usage help to stdout.
 pub fn print_help() {
     let bind_addr = bind_addr();
@@ -147,7 +175,7 @@ pub fn print_help() {
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
-         \x20   status [--json]        show whether a server is running\n\
+         \x20   status [--json] [--wait[=SECS]]  show whether a server is running (--wait blocks until it is, up to SECS)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration\n\
@@ -329,12 +357,34 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     }
 }
 
+/// Block until the server answers `GET /health` or `timeout` elapses.
+///
+/// Polls every [`WAIT_POLL_INTERVAL`] and returns as soon as a probe succeeds, so a freshly
+/// started daemon is detected promptly. Returns nothing — the caller re-probes to render the
+/// final status — so a timeout is indistinguishable from "came up just after"; both fall through
+/// to a single authoritative `is_running()` check.
+fn wait_until_running(timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while !is_running() {
+        if Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(WAIT_POLL_INTERVAL);
+    }
+}
+
 /// Report whether a server is running, with its PID when known. With `json`, emits a single
-/// machine-readable object instead of the human-readable line.
+/// machine-readable object instead of the human-readable line. With `wait`, blocks until the
+/// server is reachable (or the timeout elapses) before reporting.
 ///
 /// Returns the process exit code to surface: `0` when a server is reachable, and
-/// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout.
-pub fn status(json: bool) -> anyhow::Result<i32> {
+/// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout. A
+/// `--wait` timeout therefore exits `EXIT_NOT_RUNNING`, the same as "never came up".
+pub fn status(json: bool, wait: Option<Option<u64>>) -> anyhow::Result<i32> {
+    if let Some(timeout) = wait {
+        let secs = timeout.unwrap_or(DEFAULT_WAIT_SECS);
+        wait_until_running(Duration::from_secs(secs));
+    }
     let running = is_running();
     let pid = read_pid_file();
     if json {

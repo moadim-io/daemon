@@ -313,6 +313,8 @@ moadim                 # start detached, print the PID, return to the shell
 moadim --interactive   # run in the foreground, attached to the terminal (Ctrl-C to stop)
 moadim status          # report whether a server is running
 moadim status --json   # same, as a machine-readable JSON object
+moadim status --wait    # block until a server is reachable (default 30s), then report
+moadim status --wait=5  # block up to 5s for a server, then report
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
 moadim restart         # stop a running server (if any) and start a fresh one
@@ -326,7 +328,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (matching `status --json`'s shape; the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
-| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. |
+| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. Add `--wait[=SECS]` to block until the server is reachable (polling `GET /health`) before reporting — useful right after a background start/restart; it exits `0` once reachable or `3` if still down at the timeout (default 30s when no `=SECS`), so `$?`-branching callers need no new logic. Composes with `--json`. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. Exits `0` when running, `3` when not. |
 
 `status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch

@@ -12,6 +12,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
         repositories: vec![],
+        machines: vec![],
         enabled,
         source: "managed".to_string(),
         created_at: 0,

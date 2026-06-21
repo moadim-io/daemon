@@ -11,6 +11,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         agent: agent.to_string(),
         prompt: "p".to_string(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
@@ -234,4 +235,34 @@ fn build_block_includes_routine_with_agent_config() {
 
     std::fs::remove_file(&cfg).unwrap();
     let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}
+
+#[test]
+fn build_block_excludes_routine_targeting_another_machine() {
+    let agent_name = "test-sync-agent-other-machine";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("other", "Other Machine Routine", agent_name);
+    // Assigned to a machine that is not this host: it must not be scheduled here.
+    routine.machines = vec!["definitely-not-this-host-zzz".to_string()];
+    store.lock().unwrap().insert("other".into(), routine);
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn build_block_skips_routine_with_no_machine_assignment() {
+    let store = new_store();
+    // Empty `machines` means the routine runs nowhere — it is dormant and excluded (and logged as
+    // such via `warn_dormant_routines`).
+    let mut routine = make_routine("dormant", "Dormant Routine", "claude");
+    routine.machines = vec![];
+    store.lock().unwrap().insert("dormant".into(), routine);
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
 }

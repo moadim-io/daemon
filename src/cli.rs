@@ -81,6 +81,10 @@ pub enum Command {
     /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
     /// argv (including the subcommand keyword) for clap to parse.
     Data(Vec<String>),
+    /// A `machine` subcommand (`show`/`set`/`list`) handled locally by [`crate::machine`] — it reads
+    /// or writes this install's machine identity without a running server. Carries the args *after*
+    /// the `machine` keyword.
+    Machine(Vec<String>),
 }
 
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
@@ -96,6 +100,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     match args.first().map(String::as_str) {
         None => Command::Background,
         Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
+        Some("machine") => Command::Machine(args[1..].to_vec()),
         Some("restart") => Command::Restart,
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
@@ -151,6 +156,7 @@ pub fn print_help() {
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration\n\
+         \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
@@ -423,13 +429,14 @@ pub fn write_pid_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Write a `.gitignore` into the config dir so generated runtime files (`*.pid`, `*.log`)
-/// stay out of version control when users track `~/.config/moadim` in a dotfiles repo.
+/// Write a `.gitignore` into the config dir so generated runtime files (`*.pid`, `*.log`) and
+/// per-machine state (`*.local.*`, e.g. `machine.local.toml`) stay out of version control when users
+/// track `~/.config/moadim` in a dotfiles repo shared across machines.
 /// Best-effort: failure to write it is not fatal to starting the daemon.
 fn ensure_config_gitignore() {
     let gitignore = crate::paths::config_gitignore_path();
     if !gitignore.exists() {
-        let _ = std::fs::write(&gitignore, "*.pid\n*.log\n");
+        let _ = std::fs::write(&gitignore, "*.pid\n*.log\n*.local.*\n");
     }
 }
 

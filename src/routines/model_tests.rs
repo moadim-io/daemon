@@ -33,6 +33,7 @@ fn from_routine_populates_derived_fields() {
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
         created_at: 0,

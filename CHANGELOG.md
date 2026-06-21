@@ -18,6 +18,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   hour, prev/next/`TODAY` navigation, and the current hour highlighted and
   scrolled into view. Available alongside the routines `LIST`/`CALENDAR` toggle
   and as a new `LIST`/`DAY` toggle on the previously table-only cron-jobs page.
+- **Set machines from the web UI.** The routine and cron-job create/edit forms now
+  expose a `MACHINES` input (comma-separated), so multi-machine targeting is settable
+  without dropping to the CLI or REST. Blank preserves today's behavior (empty list =
+  runs nowhere). Closes #580.
 
 ## [0.14.0] - 2026-06-21
 

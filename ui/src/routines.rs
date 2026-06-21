@@ -12,6 +12,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
+use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -214,6 +215,7 @@ pub enum RView {
     #[default]
     Table,
     Calendar,
+    Day,
 }
 
 /// Field the routine table is sorted by.
@@ -644,6 +646,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                     RView::Calendar => html! {
                                         <RoutineCalendar routines={visible} loading={loading} />
                                     },
+                                    RView::Day => {
+                                        let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
+                                            label: r.title.clone(),
+                                            schedule: r.schedule.clone(),
+                                        }).collect::<Vec<_>>();
+                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                    },
                                 }
                             }
                         </main>
@@ -737,6 +746,7 @@ pub fn view_toggle(props: &ViewToggleProps) -> Html {
         <div class="view-toggle">
             { mk(RView::Table, "LIST") }
             { mk(RView::Calendar, "CALENDAR") }
+            { mk(RView::Day, "DAY") }
         </div>
     }
 }

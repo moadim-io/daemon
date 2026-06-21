@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Day calendar view.** Routines and cron jobs gain a scrollable single-day
+  timeline: 24 hour rows with each fire time rendered as an `HH:MM` chip in its
+  hour, prev/next/`TODAY` navigation, and the current hour highlighted and
+  scrolled into view. Available alongside the routines `LIST`/`CALENDAR` toggle
+  and as a new `LIST`/`DAY` toggle on the previously table-only cron-jobs page.
+
 ## [0.14.0] - 2026-06-21
 
 ### Added

@@ -13,6 +13,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::{describe_cron_live, reltime, ToastKind};
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
@@ -135,6 +136,14 @@ pub enum CPage {
     Logs(String),
 }
 
+/// How the list page presents jobs: a table, or a scrollable single-day timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CView {
+    #[default]
+    Table,
+    Day,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CModal {
     None,
@@ -161,6 +170,7 @@ pub struct CState {
     pub loading: bool,
     pub page: CPage,
     pub modal: CModal,
+    pub view: CView,
     /// IDs of currently selected jobs (multiselect).
     pub selected: HashSet<String>,
     /// Anchor row for `Shift`+click range selection.
@@ -174,6 +184,7 @@ impl Default for CState {
             loading: true,
             page: CPage::List,
             modal: CModal::None,
+            view: CView::default(),
             selected: HashSet::new(),
             select_anchor: None,
         }
@@ -192,6 +203,7 @@ pub enum CAction {
     },
     OpenConfirmBulkDelete,
     CloseModal,
+    SetView(CView),
     Upsert(CronJob),
     Remove(String),
     RemoveMany(Vec<String>),
@@ -235,6 +247,7 @@ impl Reducible for CState {
                 }
             }
             CAction::CloseModal => s.modal = CModal::None,
+            CAction::SetView(view) => s.view = view,
             CAction::Upsert(job) => {
                 if let Some(i) = s.jobs.iter().position(|j| j.id == job.id) {
                     s.jobs[i] = job;
@@ -587,8 +600,14 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         })
     };
 
+    let on_set_view = {
+        let state = state.clone();
+        Callback::from(move |view: CView| state.dispatch(CAction::SetView(view)))
+    };
+
     let jobs = state.jobs.clone();
     let loading = state.loading;
+    let view = state.view;
     let page = state.page.clone();
     let modal = state.modal.clone();
     let selected = state.selected.clone();
@@ -619,27 +638,45 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                             <StatsBar jobs={jobs.clone()} />
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED JOBS"}</div>
-                                <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
+                                <div class="section-acts">
+                                    <CronViewToggle view={view} on_set_view={on_set_view} />
+                                    <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
+                                </div>
                             </div>
-                            <BulkBar
-                                count={selected.len()}
-                                on_enable={on_bulk_enable}
-                                on_disable={on_bulk_disable}
-                                on_delete={on_bulk_delete}
-                                on_clear={on_clear_selection}
-                            />
-                            <JobTable
-                                jobs={jobs}
-                                loading={loading}
-                                selected={selected}
-                                on_edit={on_edit}
-                                on_delete={on_ask_delete}
-                                on_toggle={on_toggle}
-                                on_trigger={on_trigger}
-                                on_logs={on_logs}
-                                on_select={on_select}
-                                on_select_all={on_select_all}
-                            />
+                            {
+                                match view {
+                                    CView::Table => html! {
+                                        <>
+                                            <BulkBar
+                                                count={selected.len()}
+                                                on_enable={on_bulk_enable}
+                                                on_disable={on_bulk_disable}
+                                                on_delete={on_bulk_delete}
+                                                on_clear={on_clear_selection}
+                                            />
+                                            <JobTable
+                                                jobs={jobs}
+                                                loading={loading}
+                                                selected={selected}
+                                                on_edit={on_edit}
+                                                on_delete={on_ask_delete}
+                                                on_toggle={on_toggle}
+                                                on_trigger={on_trigger}
+                                                on_logs={on_logs}
+                                                on_select={on_select}
+                                                on_select_all={on_select_all}
+                                            />
+                                        </>
+                                    },
+                                    CView::Day => {
+                                        let items = jobs.iter().filter(|j| j.enabled).map(|j| TimelineItem {
+                                            label: j.handler.clone(),
+                                            schedule: j.schedule.clone(),
+                                        }).collect::<Vec<_>>();
+                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                    },
+                                }
+                            }
                         </main>
                     },
                 }
@@ -672,6 +709,38 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                 }
             }
         </>
+    }
+}
+
+// ─── View toggle ──────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct CronViewToggleProps {
+    pub view: CView,
+    pub on_set_view: Callback<CView>,
+}
+
+/// Table / Day switch for the cron-jobs list page.
+#[function_component(CronViewToggle)]
+pub fn cron_view_toggle(props: &CronViewToggleProps) -> Html {
+    let mk = |view: CView, label: &'static str| {
+        let cb = props.on_set_view.clone();
+        let cls = if props.view == view {
+            "view-btn active"
+        } else {
+            "view-btn"
+        };
+        html! {
+            <button class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(view))}>
+                { label }
+            </button>
+        }
+    };
+    html! {
+        <div class="view-toggle">
+            { mk(CView::Table, "LIST") }
+            { mk(CView::Day, "DAY") }
+        </div>
     }
 }
 

@@ -115,20 +115,33 @@ fn run_errors_when_program_is_missing() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn launchctl_bin_defaults_to_launchctl_when_unset() {
-    // Covers the `unwrap_or_else` default arm of the `MOADIM_LAUNCHCTL_BIN` seam.
+fn launchctl_bin_never_resolves_to_real_launchctl_in_test_builds() {
+    // Structural guard for issue #213: in a test build, with no `MOADIM_LAUNCHCTL_BIN`
+    // shim configured, `launchctl_bin()` must never fall back to the real `launchctl`,
+    // so a test that forgets to isolate launchctl cannot mutate the developer's live
+    // launchd session. The resolved path must also not exist, so the eventual spawn
+    // fails harmlessly. Mirrors `crontab_bin_never_resolves_to_real_crontab_in_test_builds`.
     let previous = std::env::var_os("MOADIM_LAUNCHCTL_BIN");
     // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); restored below.
     unsafe {
         std::env::remove_var("MOADIM_LAUNCHCTL_BIN");
     }
-    assert_eq!(launchctl_bin(), "launchctl");
+    let bin = launchctl_bin();
     // SAFETY: single-threaded harness; restore the saved value if any.
     unsafe {
-        if let Some(value) = previous {
-            std::env::set_var("MOADIM_LAUNCHCTL_BIN", value);
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_LAUNCHCTL_BIN", value),
+            None => std::env::remove_var("MOADIM_LAUNCHCTL_BIN"),
         }
     }
+    assert_ne!(
+        bin, "launchctl",
+        "test build must not fall back to the real launchctl"
+    );
+    assert!(
+        !std::path::Path::new(&bin).exists(),
+        "the test-build launchctl guard path must not exist so the spawn fails: {bin}"
+    );
 }
 
 #[cfg(target_os = "macos")]

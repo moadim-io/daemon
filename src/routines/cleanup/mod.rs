@@ -27,6 +27,9 @@ mod ttl;
 
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
+pub(crate) use runtime::max_runtime_ceiling_secs;
+pub(crate) use ttl::ttl_ceiling_secs;
+
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 

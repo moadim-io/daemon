@@ -19,6 +19,27 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `null` when no server answers or its `/health` body cannot be parsed; exit codes
   and the human-readable `status` output are unchanged (#284).
 
+### Fixed
+
+- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+  OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
+  every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)
+- Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
+  cron-derived ceiling for the *effective* schedule (the new schedule if supplied,
+  otherwise the routine's current one). The check runs before any mutation, so a
+  rejected update leaves the in-memory store untouched. (#468)
+- `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
+  A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
+  (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to
+  wire up the `MOADIM_LAUNCHCTL_BIN` shim cannot mutate the developer's live
+  launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
+  guard from #211 (#213).
+- The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
+  hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
+  the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
+  port or a reverse proxy instead of failing against an address the daemon may not
+  be bound to. (#385)
+
 ## [0.13.0] - 2026-06-21
 
 ### Added

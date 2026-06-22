@@ -16,10 +16,12 @@ mod overview;
 mod refresh;
 mod routines;
 mod schedule;
+mod schedule_heatmap;
 use command_palette::CommandPalette;
 use cron_jobs::CronJobsPage;
 use overview::OverviewPage;
 use routines::RoutinesPage;
+use schedule_heatmap::HeatmapPage;
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -58,6 +60,8 @@ pub enum Route {
     CronJobs,
     #[at("/routines")]
     Routines,
+    #[at("/heatmap")]
+    Heatmap,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -309,6 +313,7 @@ pub fn shell() -> Html {
             Route::Home => html! { <OverviewPage /> },
             Route::CronJobs => html! { <CronJobsPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
+            Route::Heatmap => html! { <HeatmapPage /> },
             Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
     };
@@ -369,6 +374,9 @@ pub fn nav() -> Html {
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Routines))} to={Route::Routines}>
                 { "ROUTINES" }
+            </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Heatmap))} to={Route::Heatmap}>
+                { "HEATMAP" }
             </Link<Route>>
         </nav>
     }

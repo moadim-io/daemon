@@ -96,7 +96,12 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 1. Branch from `main` — name it `feat/...`, `fix/...`, `chore/...`, or `docs/...`.
 2. Keep commits focused; one logical change per commit.
 3. Note user-facing changes under `## [Unreleased]` in
-   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format).
+   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format). The pre-push hook
+   (and the CI `unreleased-entry` check) reject a push that touches `src/` or
+   `ui/` without a matching `CHANGELOG.md` edit. For a deliberately undocumented
+   change — e.g. a pure internal refactor with no user-facing effect — bypass
+   the local hook with `SKIP_CHANGELOG=1 git push`; the in-repo equivalent on
+   the PR is the `skip-changelog` label.
 4. Open a PR against `main`; fill in what changed and why.
 
 ## Releasing

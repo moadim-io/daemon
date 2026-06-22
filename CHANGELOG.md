@@ -61,6 +61,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- The max-runtime watchdog now runs on its own 30s cadence instead of riding the
+  hourly cleanup sweep, so a hung run is force-killed within ~30s of its
+  `effective_max_runtime_secs` rather than surviving up to ~1h past its bound. A
+  sub-hour `max_runtime_secs` (or a sub-hour cron interval) is now actually
+  enforceable. TTL-reaping of finished workbenches stays on the hourly sweep.
+  (#436)
+
 - Removed a duplicate `.logo { font-weight }` declaration in `ui/index.html` left by
   the concurrent merge of #595 and #596; identical rendering, cleaner CSS. Closes #599.
 

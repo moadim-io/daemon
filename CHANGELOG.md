@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
+  7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
+  enabled cron job and routine into one color-coded matrix, so an operator can see
+  fleet-wide busy windows, scheduling collisions, and open time slots at a glance.
+  Three toggle buttons filter the grid to ALL / CRON / ROUTINES, and the current day
+  and hour are highlighted. The grid auto-refreshes every 30 s and the "now" column
+  advances every minute. Pure host-testable aggregation math; no backend change.
+  Closes #625.
 - **Live auto-refresh for the cron-jobs & routines tables.** Each list's action row
   gains a Grafana/Datadog-style refresh-interval selector (`Off` default, `5s`, `15s`,
   `30s`, `60s`) plus an "updated Ns ago" freshness cue, so an operator can keep the data

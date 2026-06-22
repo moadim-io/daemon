@@ -62,6 +62,12 @@ pub(crate) struct SchedSource {
     pub human: Option<String>,
     /// Whether the entity is currently enabled (disabled ones never fire).
     pub enabled: bool,
+    /// `true` when the entity targets no machine (empty or all-blank list), so
+    /// it is scheduled but fires nowhere. Drives the "dormant" triage rule.
+    pub machines_empty: bool,
+    /// Whether the routine's agent is registered. `None` for cron jobs (which
+    /// have no agent), `Some(false)` for a routine whose agent is missing.
+    pub agent_registered: Option<bool>,
 }
 
 /// Aggregate counts shown as the KPI tile row.
@@ -75,6 +81,62 @@ pub(crate) struct Kpis {
     pub disabled: usize,
     /// Enabled entities firing within [`DUE_SOON_WINDOW_SECS`].
     pub due_soon: usize,
+    /// Enabled-but-misconfigured entities (see [`attention_items`]).
+    pub attention: usize,
+}
+
+/// Why an enabled entity needs attention. Listed in triage priority order: a
+/// dormant entity outranks a dead schedule, which outranks a missing agent, so
+/// each entity surfaces its single most fundamental fault (see [`attention_reason`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum AttentionReason {
+    /// Enabled but assigned to no machine — it fires nowhere.
+    Dormant,
+    /// Targets a machine, but the schedule yields no future fire (empty,
+    /// invalid, or a one-shot already in the past) — it never runs again.
+    DeadSchedule,
+    /// A routine whose agent is not registered — every run errors out.
+    AgentUnregistered,
+}
+
+impl AttentionReason {
+    /// Triage priority; lower sorts first.
+    pub(crate) fn rank(self) -> u8 {
+        match self {
+            AttentionReason::Dormant => 0,
+            AttentionReason::DeadSchedule => 1,
+            AttentionReason::AgentUnregistered => 2,
+        }
+    }
+
+    /// Short uppercase badge label for the ISSUE column.
+    pub(crate) fn badge(self) -> &'static str {
+        match self {
+            AttentionReason::Dormant => "DORMANT",
+            AttentionReason::DeadSchedule => "DEAD SCHEDULE",
+            AttentionReason::AgentUnregistered => "AGENT MISSING",
+        }
+    }
+
+    /// Human explanation of the operational consequence.
+    pub(crate) fn detail(self) -> &'static str {
+        match self {
+            AttentionReason::Dormant => "assigned to no machine — fires nowhere",
+            AttentionReason::DeadSchedule => "schedule has no future fire — never runs again",
+            AttentionReason::AgentUnregistered => "agent not registered — every run errors",
+        }
+    }
+}
+
+/// One enabled-but-misconfigured entity surfaced in the NEEDS ATTENTION panel.
+#[derive(Clone, PartialEq, Debug)]
+pub(crate) struct AttentionItem {
+    /// Cron job or routine.
+    pub kind: Kind,
+    /// Display name.
+    pub label: String,
+    /// The single most fundamental fault to fix.
+    pub reason: AttentionReason,
 }
 
 /// One entry in the merged upcoming-runs timeline.
@@ -106,7 +168,52 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         enabled,
         disabled: total - enabled,
         due_soon,
+        attention: attention_items(sources, now).len(),
     }
+}
+
+/// The single most fundamental fault for an enabled `source`, or `None` when it
+/// is healthy. Disabled entities are intentional and never flagged. Faults are
+/// checked in priority order so each entity reports exactly one reason.
+pub(crate) fn attention_reason(
+    source: &SchedSource,
+    now: DateTime<Local>,
+) -> Option<AttentionReason> {
+    if !source.enabled {
+        return None;
+    }
+    if source.machines_empty {
+        return Some(AttentionReason::Dormant);
+    }
+    if next_fire_after(&source.schedule, now).is_none() {
+        return Some(AttentionReason::DeadSchedule);
+    }
+    if source.agent_registered == Some(false) {
+        return Some(AttentionReason::AgentUnregistered);
+    }
+    None
+}
+
+/// All enabled-but-misconfigured entities, worst fault first, ties broken by
+/// label for a stable order.
+pub(crate) fn attention_items(sources: &[SchedSource], now: DateTime<Local>) -> Vec<AttentionItem> {
+    let mut items: Vec<AttentionItem> = sources
+        .iter()
+        .filter_map(|s| {
+            attention_reason(s, now).map(|reason| AttentionItem {
+                kind: s.kind,
+                label: s.label.clone(),
+                reason,
+            })
+        })
+        .collect();
+    items.sort_by(|a, b| {
+        a.reason
+            .rank()
+            .cmp(&b.reason.rank())
+            .then_with(|| a.label.cmp(&b.label))
+    });
+    items
 }
 
 /// The merged, soonest-first list of the next [`UPCOMING_LIMIT`] fires across
@@ -138,6 +245,12 @@ pub(crate) fn next_run_summary(runs: &[UpcomingRun], now: DateTime<Local>) -> Op
     runs.first().map(|r| fmt_until(now, r.at))
 }
 
+/// `true` when no entry names a real machine — an empty list, or one holding
+/// only blank/whitespace entries (which the scheduler silently ignores).
+fn targets_no_machine(machines: &[String]) -> bool {
+    machines.iter().all(|m| m.trim().is_empty())
+}
+
 /// Map a cron job onto the shared schedule abstraction.
 fn from_cron(job: &CronJob) -> SchedSource {
     SchedSource {
@@ -146,6 +259,8 @@ fn from_cron(job: &CronJob) -> SchedSource {
         schedule: job.schedule.clone(),
         human: job.schedule_description.clone(),
         enabled: job.enabled,
+        machines_empty: targets_no_machine(&job.machines),
+        agent_registered: None,
     }
 }
 
@@ -157,6 +272,8 @@ fn from_routine(routine: &Routine) -> SchedSource {
         schedule: routine.schedule.clone(),
         human: routine.schedule_description.clone(),
         enabled: routine.enabled,
+        machines_empty: targets_no_machine(&routine.machines),
+        agent_registered: Some(routine.agent_registered),
     }
 }
 
@@ -258,12 +375,29 @@ pub fn overview_page() -> Html {
     let now_val = *now;
     let sources = sources_of(&data.crons, &data.routines);
     let kpis = compute_kpis(&sources, now_val);
+    let attention = attention_items(&sources, now_val);
     let runs = upcoming_runs(&sources, now_val);
     let next_run = next_run_summary(&runs, now_val);
 
     html! {
         <main>
             <OverviewStats kpis={kpis} next_run={next_run} />
+            {
+                // Only render the triage panel when something is actually broken,
+                // so a healthy fleet stays uncluttered.
+                if !attention.is_empty() {
+                    html! {
+                        <>
+                            <div class="section-hd">
+                                <span class="section-label attn">{"NEEDS ATTENTION"}</span>
+                            </div>
+                            <AttentionTable items={attention} />
+                        </>
+                    }
+                } else {
+                    html! {}
+                }
+            }
             <div class="section-hd">
                 <span class="section-label">{"UPCOMING RUNS"}</span>
             </div>
@@ -310,6 +444,12 @@ fn overview_stats(props: &OverviewStatsProps) -> Html {
                 <div class="stat-label">{"DUE SOON"}</div>
                 <div class="stat-val c-red">{k.due_soon}</div>
             </div>
+            <div class="stat-card attention">
+                <div class="stat-label">{"ATTENTION"}</div>
+                <div class={classes!("stat-val", if k.attention > 0 { "c-red" } else { "c-accent" })}>
+                    {k.attention}
+                </div>
+            </div>
             <div class="stat-card disabled">
                 <div class="stat-label">{"DISABLED"}</div>
                 <div class="stat-val c-amber">{k.disabled}</div>
@@ -318,6 +458,52 @@ fn overview_stats(props: &OverviewStatsProps) -> Html {
                 <div class="stat-label">{"NEXT RUN"}</div>
                 <div class="stat-val stat-val-sm">{next}</div>
             </div>
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct AttentionTableProps {
+    items: Vec<AttentionItem>,
+}
+
+/// The NEEDS ATTENTION triage table: one row per enabled-but-broken entity,
+/// worst fault first. Rendered only when `items` is non-empty (see the page),
+/// so this component never has to handle the loading/empty states.
+#[function_component(AttentionTable)]
+fn attention_table(props: &AttentionTableProps) -> Html {
+    html! {
+        <div class="table-wrap attn-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{"TYPE"}</th>
+                        <th>{"NAME"}</th>
+                        <th>{"ISSUE"}</th>
+                        <th>{"DETAIL"}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    { for props.items.iter().enumerate().map(|(i, item)| {
+                        let (badge, badge_cls, to) = match item.kind {
+                            Kind::Cron => ("CRON", "kind-badge cron", Route::CronJobs),
+                            Kind::Routine => ("ROUTINE", "kind-badge routine", Route::Routines),
+                        };
+                        html! {
+                            <tr key={i.to_string()}>
+                                <td><span class={badge_cls}>{badge}</span></td>
+                                <td>
+                                    <Link<Route> classes={classes!("ov-name-link")} to={to}>
+                                        {item.label.clone()}
+                                    </Link<Route>>
+                                </td>
+                                <td><span class="attn-badge">{item.reason.badge()}</span></td>
+                                <td class="attn-detail">{item.reason.detail()}</td>
+                            </tr>
+                        }
+                    }) }
+                </tbody>
+            </table>
         </div>
     }
 }

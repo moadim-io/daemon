@@ -169,8 +169,15 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
     let title = shell_quote(routine_title);
     let uq = shell_quote(user_prompt_path);
     vec![
+        // Fail-fast if the disclosure write fails. The statements are `;`-joined, so a bare
+        // redirection failure (read-only/full $HOME, an unwritable $WB, disk-quota/inode
+        // exhaustion) would be ignored and the agent would launch with no `CLAUDE.md` — hence no
+        // routine-origin disclosure mandate, the central transparency guarantee of this project.
+        // Abort instead, mirroring the `cp prompt.md` guard below: record the reason in the
+        // workbench's agent.log (already created via mkdir) and on stderr. Only this primary write
+        // is guarded; the optional user-prompt append below stays best-effort (`|| true`).
         format!(
-            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md" || {{ echo "moadim: failed to write CLAUDE.md disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
             header, disclosure, title
         ),
         format!(

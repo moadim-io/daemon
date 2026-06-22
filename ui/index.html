@@ -1216,6 +1216,95 @@
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border-hi); }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* ── Schedule heatmap ── */
+    .hm-filter { display: flex; gap: 6px; }
+    .hm-filter-btn {
+      font-family: var(--mono);
+      font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+      padding: 5px 11px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+    .hm-filter-btn:hover { color: var(--accent); border-color: var(--border-hi); }
+    .hm-filter-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+    .hm-filter-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+    .hm-wrap {
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      overflow-x: auto;
+      padding: 6px;
+    }
+    table.heatmap {
+      border-collapse: separate;
+      border-spacing: 2px;
+      width: 100%;
+      min-width: 720px;
+      table-layout: fixed;
+    }
+    table.heatmap th, table.heatmap td { padding: 0; }
+    .hm-corner, .hm-hcol {
+      font-size: 8px; letter-spacing: 0.04em;
+      color: var(--text-ghost);
+      font-weight: 400;
+      text-align: center;
+      padding: 4px 0;
+    }
+    .hm-corner { text-align: right; padding-right: 8px; }
+    .hm-hcol.now { color: var(--accent); }
+    .hm-daylabel {
+      font-size: 9px; letter-spacing: 0.1em;
+      color: var(--text-dim);
+      font-weight: 400;
+      text-align: right;
+      padding-right: 8px;
+      white-space: nowrap;
+      width: 62px;
+    }
+    .hm-row.today .hm-daylabel { color: var(--accent); }
+    .hm-cell {
+      height: 22px;
+      border: 1px solid var(--border);
+      text-align: center;
+      vertical-align: middle;
+      font-size: 9px;
+      color: var(--text-hi);
+    }
+    .hm-cell.lvl-0 { background: var(--bg-3); }
+    .hm-cell.lvl-1 { background: #103a22; }
+    .hm-cell.lvl-2 { background: #1c6b3a; }
+    .hm-cell.lvl-3 { background: #2fa058; }
+    .hm-cell.lvl-4 { background: var(--accent); color: var(--bg); }
+    .hm-cell.now  { outline: 1px solid var(--text-mid); outline-offset: -1px; }
+    .hm-cell.peak { outline: 2px solid var(--amber); outline-offset: -1px; }
+    .hm-n { font-family: var(--mono); }
+    .hm-rowtot {
+      font-size: 9px;
+      color: var(--text-mid);
+      text-align: center;
+      background: var(--bg-3);
+      padding: 0 2px;
+    }
+    .hm-rowtot.grand { color: var(--text-hi); }
+    table.heatmap tfoot .hm-rowtot { border-top: 1px solid var(--border-hi); }
+
+    .hm-legend {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      margin-top: 12px;
+      font-size: 9px; letter-spacing: 0.12em;
+      color: var(--text-dim);
+    }
+    .hm-legend-swatch {
+      display: inline-block; width: 16px; height: 14px;
+      border: 1px solid var(--border);
+    }
+    .hm-legend-note {
+      margin-left: 10px; letter-spacing: 0.06em;
+      color: var(--text-ghost); text-transform: none;
+    }
   </style>
 </head>
 <body></body>

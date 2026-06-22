@@ -3,6 +3,7 @@
 //! Self-contained like [`crate::routines::RoutinesPage`]: owns its own reducer state and talks to
 //! the `/cron-jobs` API. Toasts bubble up to the shell via the `on_toast` callback.
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
 
@@ -19,6 +20,7 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::machines::MachinesPicker;
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{describe_cron_live, reltime, ToastKind};
 
@@ -545,6 +547,11 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         });
     }
 
+    // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
+    // (ms) of the last successful list load that drives the freshness cue.
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
+
     let ok_toast = {
         let toast = toast.clone();
         move |msg: &str| toast.emit((msg.to_string(), ToastKind::Ok))
@@ -554,15 +561,64 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     {
         let state = state.clone();
         let toast = toast.clone();
+        let updated_at = updated_at.clone();
         use_effect_with((), move |_| {
             spawn_local(async move {
                 match api_list().await {
-                    Ok(jobs) => state.dispatch(CAction::Loaded(jobs)),
+                    Ok(jobs) => {
+                        state.dispatch(CAction::Loaded(jobs));
+                        updated_at.set(js_sys::Date::now());
+                    }
                     Err(e) => toast.emit((format!("Failed to load jobs: {e}"), ToastKind::Err)),
                 }
             });
         });
     }
+
+    // Auto-refresh loop, re-armed whenever the chosen interval changes. `Off`
+    // installs no loop (today's load-once behaviour); any cadence re-fetches the
+    // list on that period via the existing endpoint. The cleanup flag stops the
+    // running loop when the interval changes or the page unmounts.
+    {
+        let state = state.clone();
+        let toast = toast.clone();
+        let updated_at = updated_at.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        match api_list().await {
+                            Ok(jobs) => {
+                                if cancelled.get() {
+                                    break;
+                                }
+                                state.dispatch(CAction::Loaded(jobs));
+                                updated_at.set(js_sys::Date::now());
+                            }
+                            Err(e) => {
+                                toast.emit((format!("Auto-refresh failed: {e}"), ToastKind::Err));
+                            }
+                        }
+                    }
+                });
+            }
+            move || cancelled.set(true)
+        });
+    }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     let on_new = {
         let state = state.clone();
@@ -949,6 +1005,11 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED JOBS"}</div>
                                 <div class="section-acts">
+                                    <RefreshControl
+                                        interval={*interval}
+                                        updated_at_ms={*updated_at}
+                                        on_change={on_set_interval}
+                                    />
                                     <CronViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
                                 </div>

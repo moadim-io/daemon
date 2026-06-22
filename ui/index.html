@@ -349,6 +349,7 @@
     .stat-card.disabled { border-left-color: var(--amber); }
     .stat-card.due      { border-left-color: var(--red); }
     .stat-card.unreg    { border-left-color: var(--red); }
+    .stat-card.attention { border-left-color: var(--red); }
     .stat-card.system   { border-left-color: #7c8fc9; }
 
     .stat-label {
@@ -377,6 +378,26 @@
     }
     .kind-badge.cron    { border-color: var(--border-hi); color: var(--text-mid); }
     .kind-badge.routine { border-color: #3a4d7c; color: #9fb0e0; }
+
+    /* ── Overview: NEEDS ATTENTION triage panel ── */
+    .section-label.attn { color: var(--red); }
+    /* Red-accented frame + faint wash so broken items read as urgent. */
+    .attn-wrap {
+      border-color: var(--red);
+      box-shadow: inset 3px 0 0 var(--red);
+    }
+    .attn-wrap table thead th { color: var(--red); }
+    .attn-badge {
+      display: inline-block;
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      padding: 2px 7px;
+      border: 1px solid var(--red);
+      color: var(--red);
+      background: var(--red-dim);
+      white-space: nowrap;
+    }
+    .attn-detail { color: var(--text-mid); }
 
     .ov-name-link {
       color: var(--text-hi);

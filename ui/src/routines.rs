@@ -3,10 +3,12 @@
 //! Mirrors the cron-jobs UI but targets the `/routines` API. A routine launches an AI agent
 //! (claude, codex, …) on a schedule instead of running a handler script.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
+use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
@@ -14,6 +16,7 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::machines::MachinesPicker;
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -352,6 +355,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let state = use_reducer(RState::default);
     let toast = props.on_toast.clone();
 
+    // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
+    // (ms) of the last successful list load that drives the freshness cue.
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
+
     let ok_toast = {
         let toast = toast.clone();
         move |msg: &str| toast.emit((msg.to_string(), ToastKind::Ok))
@@ -361,15 +369,64 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     {
         let state = state.clone();
         let toast = toast.clone();
+        let updated_at = updated_at.clone();
         use_effect_with((), move |_| {
             spawn_local(async move {
                 match api_list().await {
-                    Ok(r) => state.dispatch(RAction::Loaded(r)),
+                    Ok(r) => {
+                        state.dispatch(RAction::Loaded(r));
+                        updated_at.set(js_sys::Date::now());
+                    }
                     Err(e) => toast.emit((format!("Failed to load routines: {e}"), ToastKind::Err)),
                 }
             });
         });
     }
+
+    // Auto-refresh loop, re-armed whenever the chosen interval changes. `Off`
+    // installs no loop (today's load-once behaviour); any cadence re-fetches the
+    // list on that period via the existing endpoint. The cleanup flag stops the
+    // running loop when the interval changes or the page unmounts.
+    {
+        let state = state.clone();
+        let toast = toast.clone();
+        let updated_at = updated_at.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        match api_list().await {
+                            Ok(r) => {
+                                if cancelled.get() {
+                                    break;
+                                }
+                                state.dispatch(RAction::Loaded(r));
+                                updated_at.set(js_sys::Date::now());
+                            }
+                            Err(e) => {
+                                toast.emit((format!("Auto-refresh failed: {e}"), ToastKind::Err));
+                            }
+                        }
+                    }
+                });
+            }
+            move || cancelled.set(true)
+        });
+    }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     let on_new = {
         let state = state.clone();
@@ -625,6 +682,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED ROUTINES"}</div>
                                 <div class="section-acts">
+                                    <RefreshControl
+                                        interval={*interval}
+                                        updated_at_ms={*updated_at}
+                                        on_change={on_set_interval}
+                                    />
                                     <ViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-ghost btn-sm" onclick={on_cleanup}
                                         title="Reap finished, expired run workbenches now">{"CLEANUP NOW"}</button>

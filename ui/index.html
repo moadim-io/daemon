@@ -896,6 +896,35 @@
     /* ── View toggle ── */
     .section-acts { display: flex; align-items: center; gap: 10px; }
 
+    /* ── Auto-refresh control ── */
+    .refresh-control { display: flex; align-items: center; gap: 7px; }
+    .refresh-lbl {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .refresh-select {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 4px 8px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.12s;
+    }
+    .refresh-select:focus { border-color: var(--accent); }
+    .refresh-fresh {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      color: var(--text-ghost);
+      white-space: nowrap;
+    }
+
     .view-toggle { display: flex; border: 1px solid var(--border); }
 
     .view-btn {

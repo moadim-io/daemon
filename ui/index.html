@@ -361,6 +361,22 @@
 
     .stat-val { font-size: 30px; color: var(--text-hi); line-height: 1.1; }
     .stat-val.c-accent { color: var(--accent); }
+
+    /* Cross-filtering KPI tiles: the cron StatsBar renders each card as a button
+       that applies its status facet. Reset native button chrome and add a
+       pressed/active state; non-clickable StatsBars (overview/routines) keep the
+       plain <div>. */
+    button.stat-card {
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    button.stat-card:hover { border-color: var(--border-hi); background: var(--bg-3); }
+    button.stat-card:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+    .stat-card.active { background: var(--accent-dim); }
+    .stat-card.active .stat-label { color: var(--text-mid); }
     .stat-val.c-amber  { color: var(--amber); }
     .stat-val.c-red    { color: var(--red); }
     /* Time strings ("in 4m", "tomorrow 09:00") are textual, not a single
@@ -940,6 +956,13 @@
       transition: border-color 0.12s;
     }
     .filter-select:focus { border-color: var(--accent); }
+    .filter-count {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
 
     /* ── Calendar ── */
     .cal-wrap {

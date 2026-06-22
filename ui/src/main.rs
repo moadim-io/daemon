@@ -13,6 +13,7 @@ mod cron_jobs;
 mod day_timeline;
 mod machines;
 mod overview;
+mod refresh;
 mod routines;
 mod schedule;
 mod schedule_heatmap;

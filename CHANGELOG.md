@@ -21,6 +21,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   and hour are highlighted. The grid auto-refreshes every 30 s and the "now" column
   advances every minute. Pure host-testable aggregation math; no backend change.
   Closes #625.
+- **Live auto-refresh for the cron-jobs & routines tables.** Each list's action row
+  gains a Grafana/Datadog-style refresh-interval selector (`Off` default, `5s`, `15s`,
+  `30s`, `60s`) plus an "updated Ns ago" freshness cue, so an operator can keep the data
+  current on a cadence they choose instead of reloading the SPA. The choice persists to
+  `localStorage` under a shared key, so it is consistent across both pages and survives
+  navigation and reload; `Off` preserves the historical load-once behaviour (no background
+  traffic until opted in). Re-fetches use the existing `GET /api/v1/cron-jobs` /
+  `GET /api/v1/routines` endpoints — no backend change. Closes #618.
 - **Operations overview landing page.** The root `/` route now serves a single-pane
   OVERVIEW summary that aggregates both cron jobs and routines, so an operator sees
   whole-system state at a glance: five cross-entity KPI tiles (`SCHEDULED`, `ENABLED`,

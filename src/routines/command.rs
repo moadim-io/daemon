@@ -227,8 +227,21 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
             shell_quote(&scheduled_state_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
-        r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
-        r#"SESS="moadim-$SLUG-$TS""#.to_string(),
+        // Collision-resistant run id. `$TS` alone has one-second granularity, so two runs of the
+        // *same* routine in the same wall-clock second (a double-clicked "Run now", a `trigger`
+        // retry, or a manual trigger landing on the scheduled cron fire) would derive an identical
+        // `$WB` and `$SESS`: the second `tmux new-session` fails with "duplicate session" and that
+        // run silently no-ops while both clobber the shared workbench files. `$$` is the launching
+        // shell's PID — distinct across concurrently-live processes — so each run gets a unique id
+        // even within the same second. POSIX-portable (works under `/bin/sh`/dash), filesystem- and
+        // shell-safe, and short enough to stay within the single crontab line. `$TS` is kept
+        // unchanged above for the scheduled-fire sidecar. The PID is joined with `_` (not `-`) so
+        // `parse_workbench_name` can still recover the slug and the trailing-timestamp: slugs are
+        // `[a-z0-9-]` only, so `_` is an unambiguous boundary and legacy `{slug}-{secs}` dirs keep
+        // parsing. (#411)
+        r#"RID="${TS}_$$""#.to_string(),
+        r#"WB="$HOME/.moadim/workbenches/$SLUG-$RID""#.to_string(),
+        r#"SESS="moadim-$SLUG-$RID""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
     ];
     stmts.extend(system_prompt_stmts(
@@ -249,8 +262,12 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
         stmts.push(setup.clone());
     }
+    // Fail loudly if the session can't start — most likely a residual `$SESS` collision. Without
+    // this guard a `duplicate session` error from tmux is swallowed by the `;`-join and the trigger
+    // returns success while launching nothing (the silent no-op #411 hardens against). Mirror the
+    // prompt-copy guard: record the reason in agent.log and on stderr, then exit non-zero.
     stmts.push(format!(
-        r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
+        r#"tmux new-session -d -s "$SESS" -c "$WB" {} || {{ echo "moadim: failed to start tmux session $SESS (already exists?); aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
         shell_quote(&invocation)
     ));
     stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());

@@ -35,11 +35,16 @@ pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 /// Split a workbench directory name into its `(slug, trigger_timestamp)`.
 ///
-/// Names are `{slug}-{unix_secs}`; the timestamp is the trailing all-digit segment after the final
-/// `-`. Returns `None` when the name has no such suffix or an empty slug (so unrelated directories
-/// are skipped rather than reaped).
+/// Names are `{slug}-{unix_secs}` or, since #411, `{slug}-{unix_secs}_{pid}` — a PID suffix joined
+/// with `_` makes the run id collision-resistant for two same-second runs of one routine. The
+/// timestamp is the all-digit `{unix_secs}` segment after the final `-` (with any trailing `_{pid}`
+/// stripped). Slugs are `[a-z0-9-]` only, so the `_` boundary is unambiguous and legacy
+/// `{slug}-{unix_secs}` names keep parsing. Returns `None` when the name has no such suffix or an
+/// empty slug (so unrelated directories are skipped rather than reaped).
 pub(super) fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
-    let (slug, ts) = name.rsplit_once('-')?;
+    let (slug, rest) = name.rsplit_once('-')?;
+    // Drop the optional `_{pid}` run-id suffix; the leading segment is the trigger timestamp.
+    let ts = rest.split_once('_').map_or(rest, |(secs, _pid)| secs);
     if slug.is_empty() || ts.is_empty() || !ts.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }

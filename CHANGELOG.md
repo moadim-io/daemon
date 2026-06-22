@@ -56,6 +56,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Removed a duplicate `.logo { font-weight }` declaration in `ui/index.html` left by
   the concurrent merge of #595 and #596; identical rendering, cleaner CSS. Closes #599.
 
+### Fixed
+
+- The generated routine launch script now anchors each workbench under
+  `paths::workbenches_dir()` (which honours `MOADIM_HOME_OVERRIDE`) instead of
+  hardcoding `$HOME/.moadim/workbenches`, so the launch path no longer drifts
+  from the reaper and the LOGS view when the home override is set. Closes #601.
+
 ## [0.15.0] - 2026-06-21
 
 ### Added

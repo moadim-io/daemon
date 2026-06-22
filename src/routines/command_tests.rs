@@ -108,6 +108,48 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
 }
 
 #[test]
+fn build_routine_command_anchors_workbench_under_workbenches_dir() {
+    // The launch script must derive the workbench root from `paths::workbenches_dir()` (which
+    // honours MOADIM_HOME_OVERRIDE) rather than hardcoding `$HOME/.moadim/workbenches`, so the
+    // path stays in lockstep with the reaper and LOGS view. Point the override at a temp home and
+    // assert the resolved root — quoted, with the run-time `$SLUG-$TS` suffix — is what gets baked in.
+    let home = std::env::temp_dir().join(format!("moadim-wb-{}", uuid::Uuid::new_v4()));
+    let saved = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: single-threaded test harness; the value is restored immediately after.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    let routine = make_routine("Cmd Workbench Root Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    let expected = format!(
+        r#"WB={}/"$SLUG-$TS""#,
+        shell_quote(&crate::paths::workbenches_dir().to_string_lossy())
+    );
+
+    unsafe {
+        match saved {
+            Some(prev) => std::env::set_var("MOADIM_HOME_OVERRIDE", prev),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+
+    assert!(
+        cmd.contains(&expected),
+        "expected override-anchored workbench root {expected} in: {cmd}"
+    );
+    assert!(
+        !cmd.contains("$HOME/.moadim/workbenches"),
+        "workbench root must not be hardcoded to $HOME: {cmd}"
+    );
+}
+
+#[test]
 fn cron_path_falls_back_to_root_home_when_home_unset() {
     // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
     // fallback arm, so the `~/.local/bin` etc. entries are anchored under `/root`.

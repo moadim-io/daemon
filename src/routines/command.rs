@@ -227,7 +227,16 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
             shell_quote(&scheduled_state_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
-        r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
+        // Anchor the workbench under `paths::workbenches_dir()` (resolved in the daemon process,
+        // so it honours MOADIM_HOME_OVERRIDE) instead of hardcoding `$HOME/.moadim/workbenches`.
+        // Baking the resolved root keeps the launch path in lockstep with the reaper and the LOGS
+        // view, which both derive directories from `workbenches_dir()`. The root is single-quoted
+        // (a shell literal) and placed adjacent to the double-quoted `$SLUG-$TS`, so the shell
+        // concatenates the two while still expanding the run-time slug and timestamp.
+        format!(
+            r#"WB={}/"$SLUG-$TS""#,
+            shell_quote(&crate::paths::workbenches_dir().to_string_lossy())
+        ),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
     ];

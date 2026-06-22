@@ -37,6 +37,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   every variant serializes to `{"error": <message>}`, not just the right status
   code, so the JSON error envelope clients parse can't silently regress. Tests
   only; no behavior change.
+- Marked every public path builder in `paths` (`jobs_dir`, `routine_toml_path`,
+  `pid_file`, `moadim_home`, …) `#[must_use]`. These functions are pure and the
+  returned `PathBuf` is the whole point of calling them, so discarding it is
+  always a mistake; the attribute lets clippy flag such a call at compile time
+  instead of letting it silently no-op. No behavior change.
 
 ### Fixed
 

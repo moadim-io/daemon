@@ -38,6 +38,8 @@ pub(crate) enum CmdKind {
     NavCronJobs,
     /// Jump to the ROUTINES page.
     NavRoutines,
+    /// Jump to the HEATMAP page.
+    NavHeatmap,
     /// A specific cron job (lands on the CRON JOBS page).
     Cron,
     /// A specific routine (lands on the ROUTINES page).
@@ -58,6 +60,8 @@ pub(crate) enum RouteKind {
     CronJobs,
     /// The ROUTINES page (`/routines`).
     Routines,
+    /// The HEATMAP page (`/heatmap`).
+    Heatmap,
 }
 
 /// One searchable destination in the palette.
@@ -81,6 +85,7 @@ pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
         CmdKind::NavOverview => Some(RouteKind::Home),
         CmdKind::NavCronJobs | CmdKind::Cron => Some(RouteKind::CronJobs),
         CmdKind::NavRoutines | CmdKind::Routine => Some(RouteKind::Routines),
+        CmdKind::NavHeatmap => Some(RouteKind::Heatmap),
         CmdKind::ActionRefresh | CmdKind::ActionStop => None,
     }
 }
@@ -89,7 +94,10 @@ pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
 /// group separator label).
 pub(crate) fn badge_for(kind: CmdKind) -> &'static str {
     match kind {
-        CmdKind::NavOverview | CmdKind::NavCronJobs | CmdKind::NavRoutines => "GO",
+        CmdKind::NavOverview
+        | CmdKind::NavCronJobs
+        | CmdKind::NavRoutines
+        | CmdKind::NavHeatmap => "GO",
         CmdKind::Cron => "CRON",
         CmdKind::Routine => "ROUTINE",
         CmdKind::ActionRefresh | CmdKind::ActionStop => "ACTION",
@@ -191,6 +199,12 @@ pub(crate) fn build_commands(crons: &[CronJob], routines: &[Routine]) -> Vec<Com
             title: "Routines".into(),
             subtitle: "Manage agent-driven routines".into(),
             keywords: "agents automation".into(),
+        },
+        Command {
+            kind: CmdKind::NavHeatmap,
+            title: "Heatmap".into(),
+            subtitle: "7-day × 24-hour fire-density grid".into(),
+            keywords: "schedule density grid busy collisions calendar".into(),
         },
         Command {
             kind: CmdKind::ActionRefresh,
@@ -349,6 +363,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                                 RouteKind::Home => Route::Home,
                                 RouteKind::CronJobs => Route::CronJobs,
                                 RouteKind::Routines => Route::Routines,
+                                RouteKind::Heatmap => Route::Heatmap,
                             };
                             nav.push(&route);
                         }

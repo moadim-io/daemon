@@ -8,6 +8,7 @@ fn make_job(id: &str) -> CronJob {
         schedule: "@daily".to_string(),
         handler: "h".to_string(),
         metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
@@ -44,6 +45,24 @@ fn validate_cron_rejects_invalid() {
 }
 
 #[test]
+fn validate_cron_accepts_6_field() {
+    // croner accepts 6-field `sec min hour dom month dow`; validate_cron
+    // normalizes it down before parsing, so it must be accepted.
+    assert!(validate_cron("0 30 9 * * 1-5").is_ok());
+    assert!(validate_cron("*/30 * * * * *").is_ok());
+}
+
+#[test]
+fn normalize_schedule_projects_to_5_field() {
+    // 6- and 7-field schedules both lose their leading seconds (and trailing
+    // year) so the stored/crontab form is a valid 5-field expression.
+    assert_eq!(normalize_schedule("0 30 9 * * 1-5"), "30 9 * * 1-5");
+    assert_eq!(normalize_schedule("0 30 9 * * 1-5 *"), "30 9 * * 1-5");
+    assert_eq!(normalize_schedule("30 9 * * 1-5"), "30 9 * * 1-5");
+    assert_eq!(normalize_schedule("@daily"), "@daily");
+}
+
+#[test]
 fn validate_cron_accepts_all_documented_keywords() {
     for kw in [
         "@hourly",
@@ -77,6 +96,7 @@ fn cron_job_serializes() {
         schedule: "0 * * * * * *".to_string(),
         handler: "my-handler".to_string(),
         metadata: serde_json::json!({}),
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 1000,
@@ -162,11 +182,28 @@ fn svc_update_enabled_override() {
 }
 
 #[test]
+fn svc_update_sets_machines() {
+    // Covers the `if let Some(machines) = req.machines` branch in `svc_update`.
+    let store = make_store_with("mach-id");
+    let req = UpdateRequest {
+        schedule: None,
+        handler: None,
+        metadata: None,
+        machines: Some(vec!["server".into()]),
+        enabled: None,
+    };
+    let resp = svc_update(&store, &new_registry(), "mach-id", req).unwrap();
+    assert_eq!(resp.job.machines, vec!["server"]);
+    crate::storage::remove_job_dir("mach-id").unwrap();
+}
+
+#[test]
 fn svc_update_not_found() {
     let req = UpdateRequest {
         schedule: None,
         handler: Some("new".into()),
         metadata: None,
+        machines: None,
         enabled: None,
     };
     assert!(svc_update(&new_store(), &new_registry(), "missing", req).is_err());
@@ -179,6 +216,7 @@ fn svc_update_invalid_cron_rejected() {
         schedule: Some("not-a-cron".into()),
         handler: None,
         metadata: None,
+        machines: None,
         enabled: None,
     };
     assert!(svc_update(&store, &new_registry(), "id", req).is_err());
@@ -251,11 +289,13 @@ fn svc_create_adds_to_store_and_disk() {
         schedule: "@daily".into(),
         handler: "cov-handler".into(),
         metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
     };
     let resp = svc_create(&store, &new_registry(), req).unwrap();
     assert!(!resp.job.id.is_empty());
     assert_eq!(resp.job.handler, "cov-handler");
+    assert_eq!(resp.job.machines, vec![crate::machine::current_machine()]);
     assert!(store.lock().unwrap().contains_key(&resp.job.id));
     assert!(crate::paths::job_toml_path(&resp.job.id).exists());
     crate::storage::remove_job_dir(&resp.job.id).unwrap();
@@ -268,6 +308,7 @@ fn svc_create_invalid_cron_returns_err() {
         schedule: "not-a-cron".into(),
         handler: "h".into(),
         metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
     };
     assert!(svc_create(&store, &new_registry(), req).is_err());
@@ -283,6 +324,7 @@ fn svc_update_changes_all_fields() {
             schedule: "@daily".into(),
             handler: "old".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -293,6 +335,7 @@ fn svc_update_changes_all_fields() {
         schedule: Some("@weekly".into()),
         handler: Some("new".into()),
         metadata: Some(serde_json::json!({"k": "v"})),
+        machines: None,
         enabled: Some(false),
     };
     let updated = svc_update(&store, &new_registry(), &id, req).unwrap();
@@ -313,6 +356,7 @@ fn svc_delete_removes_from_store_and_disk() {
             schedule: "@daily".into(),
             handler: "h".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -336,6 +380,7 @@ fn svc_trigger_persists_last_manual_trigger_at() {
             schedule: "@daily".into(),
             handler: "h".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -524,6 +569,7 @@ fn svc_create_syncs_crontab_on_success() {
             schedule: "@daily".into(),
             handler: "sync-ok-create".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -542,6 +588,7 @@ fn svc_update_syncs_crontab_on_success() {
             schedule: "@daily".into(),
             handler: "sync-ok-update".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -557,6 +604,7 @@ fn svc_update_syncs_crontab_on_success() {
             schedule: Some("@weekly".into()),
             handler: None,
             metadata: None,
+            machines: None,
             enabled: None,
         },
     )
@@ -575,6 +623,7 @@ fn svc_delete_syncs_crontab_on_success() {
             schedule: "@daily".into(),
             handler: "sync-ok-delete".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -597,6 +646,7 @@ fn svc_create_succeeds_despite_crontab_sync_failure() {
             schedule: "@daily".into(),
             handler: "sync-fail-create".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -615,6 +665,7 @@ fn svc_update_succeeds_despite_crontab_sync_failure() {
             schedule: "@daily".into(),
             handler: "sync-fail-update".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -630,6 +681,7 @@ fn svc_update_succeeds_despite_crontab_sync_failure() {
             schedule: Some("@weekly".into()),
             handler: None,
             metadata: None,
+            machines: None,
             enabled: None,
         },
     )
@@ -648,6 +700,7 @@ fn svc_delete_succeeds_despite_crontab_sync_failure() {
             schedule: "@daily".into(),
             handler: "sync-fail-delete".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -685,6 +738,7 @@ fn svc_trigger_logs_when_handler_spawn_fails() {
             schedule: "@daily".into(),
             handler: handler_name.clone(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -723,6 +777,7 @@ fn svc_trigger_spawns_existing_handler_script() {
             schedule: "@daily".into(),
             handler: handler_name.clone(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -749,6 +804,7 @@ async fn replace_handler_updates_job() {
             schedule: "@daily".into(),
             handler: "before".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -766,6 +822,7 @@ async fn replace_handler_updates_job() {
         schedule: None,
         handler: Some("after".into()),
         metadata: None,
+        machines: None,
         enabled: None,
     };
     let resp = replace(State(state), Path(id.clone()), Json(body))

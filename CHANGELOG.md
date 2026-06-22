@@ -11,8 +11,170 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
+  7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
+  enabled cron job and routine into one color-coded matrix, so an operator can see
+  fleet-wide busy windows, scheduling collisions, and open time slots at a glance.
+  Three toggle buttons filter the grid to ALL / CRON / ROUTINES, and the current day
+  and hour are highlighted. The grid auto-refreshes every 30 s and the "now" column
+  advances every minute. Pure host-testable aggregation math; no backend change.
+  Closes #625.
+- **Live auto-refresh for the cron-jobs & routines tables.** Each list's action row
+  gains a Grafana/Datadog-style refresh-interval selector (`Off` default, `5s`, `15s`,
+  `30s`, `60s`) plus an "updated Ns ago" freshness cue, so an operator can keep the data
+  current on a cadence they choose instead of reloading the SPA. The choice persists to
+  `localStorage` under a shared key, so it is consistent across both pages and survives
+  navigation and reload; `Off` preserves the historical load-once behaviour (no background
+  traffic until opted in). Re-fetches use the existing `GET /api/v1/cron-jobs` /
+  `GET /api/v1/routines` endpoints — no backend change. Closes #618.
+- **Operations overview landing page.** The root `/` route now serves a single-pane
+  OVERVIEW summary that aggregates both cron jobs and routines, so an operator sees
+  whole-system state at a glance: five cross-entity KPI tiles (`SCHEDULED`, `ENABLED`,
+  `DUE SOON`, `DISABLED`, `NEXT RUN` with a live countdown) and an UPCOMING RUNS table
+  of the next 8 fires across every enabled job and routine, each tagged `CRON`/`ROUTINE`.
+  Closes #606.
+- **`NEXT RUN` column and `DUE SOON` KPI tile.** The scheduled-jobs table gains a
+  `NEXT RUN` column showing the absolute next fire time plus a relative countdown
+  (`in 5m`, `in 2h 10m`, `tomorrow 09:00`); disabled jobs read `paused` and the countdown
+  turns red once a fire lands inside the due-soon window. A new `DUE SOON` KPI tile counts
+  enabled jobs firing within the next hour, and a 30 s tick keeps countdowns live without
+  a manual reload. Closes #597.
+
+### Changed
+
+- Enabled the `clippy::redundant_closure_for_method_calls` lint and fixed the
+  violations, replacing closures that only forward their receiver to a method
+  (`|e| e.ok()`, `|s| s.to_string()`, `|p| p.into_inner()`) with the method
+  path itself (`Result::ok`, `ToString::to_string`,
+  `std::sync::PoisonError::into_inner`). No behavior change.
+- Pinned the `AppError` HTTP response **body** contract: tests now assert that
+  every variant serializes to `{"error": <message>}`, not just the right status
+  code, so the JSON error envelope clients parse can't silently regress. Tests
+  only; no behavior change.
+- Marked every public path builder in `paths` (`jobs_dir`, `routine_toml_path`,
+  `pid_file`, `moadim_home`, …) `#[must_use]`. These functions are pure and the
+  returned `PathBuf` is the whole point of calling them, so discarding it is
+  always a mistake; the attribute lets clippy flag such a call at compile time
+  instead of letting it silently no-op. No behavior change.
+
 ### Fixed
 
+- Removed a duplicate `.logo { font-weight }` declaration in `ui/index.html` left by
+  the concurrent merge of #595 and #596; identical rendering, cleaner CSS. Closes #599.
+
+## [0.15.0] - 2026-06-21
+
+### Added
+
+- **Day calendar view.** Routines and cron jobs gain a scrollable single-day
+  timeline: 24 hour rows with each fire time rendered as an `HH:MM` chip in its
+  hour, prev/next/`TODAY` navigation, and the current hour highlighted and
+  scrolled into view. Available alongside the routines `LIST`/`CALENDAR` toggle
+  and as a new `LIST`/`DAY` toggle on the previously table-only cron-jobs page.
+- **Zoom into the day view.** The single-day timeline gains a `−`/`+` zoom
+  control with four per-hour heights. The compact level keeps the wrapped-chip
+  layout; deeper levels switch each hour into a minute-positioned timeline where
+  fire times float at their exact minute against quarter-hour guide lines and a
+  `:00/:15/:30/:45` ruler, so sub-hour timing is readable at a glance. Closes #591.
+- **Set machines from the web UI.** The routine and cron-job create/edit forms now
+  expose a `MACHINES` input (comma-separated), so multi-machine targeting is settable
+  without dropping to the CLI or REST. Blank preserves today's behavior (empty list =
+  runs nowhere). Closes #580.
+- **Machine picker.** The `MACHINES` field in the routine and cron-job forms is now a
+  picker: it fetches the daemon's known machine names from the new `GET /api/v1/machines`
+  endpoint (every name referenced by a routine or cron job, plus this machine's own
+  identity) and renders them as toggleable chips, while still allowing a brand-new name
+  to be typed and added. Closes #586.
+
+### Changed
+
+- **Releases are automated on version bump.** Merging a `Cargo.toml` version bump to
+  `main` now auto-pushes the matching `vx.y.z` tag and runs the crates.io publish and
+  GitHub Release workflows (new `auto-release.yml`). No more manual tag push; `publish.yml`
+  and `release.yml` are now reusable (`workflow_call`) and keep their `v*` tag-push
+  trigger as a hand-cut fallback.
+
+### Fixed
+
+- **Test isolation.** The routine service and storage unit tests no longer write
+  into the developer's real `~/.config/moadim` home. They resolved paths through
+  `paths::home()`, which falls back to the real home when `MOADIM_HOME_OVERRIDE`
+  is unset, so tests leaked routine dirs (and the migration tests even scanned real
+  state). Every test now runs against an isolated temp home.
+
+## [0.14.0] - 2026-06-21
+
+### Added
+
+- **Multi-machine targeting.** Routines and cron jobs now carry a `machines` list,
+  so one shared `~/.config/moadim` config repo can drive different routines/jobs on
+  different machines (e.g. a laptop, a work box, a server). Each daemon resolves its
+  own machine identity — `MOADIM_MACHINE` env, else the `name` in the gitignored
+  `~/.config/moadim/machine.local.toml`, else the system hostname — and its crontab
+  sync schedules only the entries naming that machine. A new `moadim machine`
+  command (`show` / `set <name>` / `list`) inspects and sets the identity. The
+  `machines` field is settable via REST, the MCP `create_*`/`update_*` tools, and
+  the `--machines '["work","server"]'` CLI flag.
+  **Note:** an empty `machines` list runs **nowhere** — an entry is dormant until
+  assigned, so routines/jobs created before this change stop scheduling until you
+  assign them (the daemon logs each unassigned entry once at sync time). The
+  built-in default routine self-assigns to the machine that first seeds it.
+- `moadim status --json` now folds the running server's `GET /health` details into
+  its object as `uptime_secs` and `version`, so a single call answers liveness
+  **and** age/version instead of forcing a second `curl /health`. Both fields are
+  `null` when no server answers or its `/health` body cannot be parsed; exit codes
+  and the human-readable `status` output are unchanged (#284).
+
+### Changed
+
+- Enabled the `clippy::map_unwrap_or` lint and fixed the violations, replacing
+  `map(...).unwrap_or(...)` / `map(...).unwrap_or_else(...)` chains with the more
+  direct `map_or` / `map_or_else`. No behavior change. (#524)
+- Enabled the `clippy::semicolon_if_nothing_returned` lint and fixed the existing
+  violations so statements that return `()` end with a trailing semicolon. No
+  behavior change.
+- Enabled the `clippy::manual_let_else` lint and rewrote the `match` guards
+  whose only non-binding arm diverged (`return`/`continue`) as
+  `let ... else { ... }`, keeping the happy path unindented. No behavior change.
+
+### Fixed
+
+- 6-field cron schedules (`sec min hour dom month dow`, accepted by `croner`)
+  are now projected to a valid 5-field OS crontab line instead of being written
+  verbatim. Previously only 7-field expressions had their leading seconds
+  stripped, so a valid 6-field schedule reached the crontab unchanged — where
+  vixie-cron/cronie either rejects the line (silently dropping every managed
+  job) or misreads seconds as minutes (shifting the schedule). `normalize_schedule`
+  and `to_os_schedule` now handle the 6-field form the same way as 7-field.
+- The iCal feed (`GET /routines.ics`) no longer silently stops short of its
+  advertised 30-day horizon for high-frequency routines. The per-routine
+  `MAX_EVENTS_PER_ROUTINE = 100` cap still bounds feed size, but when a routine
+  fires more often than the cap allows within the horizon, a trailing
+  truncation-marker `VEVENT` (UID `…-truncated@moadim`) is now appended at the
+  first omitted fire time, so calendar subscribers can see the projection was
+  capped and where it stops instead of the routine appearing to just end after a
+  few days (#251).
+- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
+- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+  OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
+  every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)
+- Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
+  cron-derived ceiling for the *effective* schedule (the new schedule if supplied,
+  otherwise the routine's current one). The check runs before any mutation, so a
+  rejected update leaves the in-memory store untouched. (#468)
+- `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
+  A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
+  (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to
+  wire up the `MOADIM_LAUNCHCTL_BIN` shim cannot mutate the developer's live
+  launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
+  guard from #211 (#213).
+- The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
+  hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
+  the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
+  port or a reverse proxy instead of failing against an address the daemon may not
+  be bound to. (#385)
 - The routine-origin disclosure write into the workbench `CLAUDE.md` now
   fail-fasts. Previously this `printf > "$WB/CLAUDE.md"` was `;`-joined with no
   failure guard, so if the write failed (read-only/full `$HOME`, an unwritable
@@ -37,6 +199,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
     accepted as aliases.)
   - **New MCP tools** filling the gaps versus REST: `list_agents`,
     `cron_job_logs`, `routine_logs`, `shutdown`, and `restart`.
+- **New `moadim schedule trigger <id>` CLI command** and matching
+  `POST /api/v1/routines/{id}/scheduled-trigger` route. Runs a routine on its
+  schedule, recording a *scheduled* (not manual) trigger. The generated crontab
+  line invokes it directly at each fire time.
   - **New `POST /api/v1/restart` route** (plus the matching `restart` MCP tool):
     stops the running server and starts a fresh instance via a detached helper
     process, since an in-process server cannot rebind its own port. Documented in
@@ -81,6 +247,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   persisted, and surviving entries are trimmed. Malformed `repositories` lists
   are now caught at the API boundary rather than surfacing later as a confusing
   run-time failure (#241).
+- Defense-in-depth security response headers are now injected on every HTTP
+  response served by the daemon (web UI + `/api/v1`): `X-Frame-Options: DENY`
+  and a `frame-ancestors 'none'` CSP block clickjacking of the dashboard's
+  destructive controls, `X-Content-Type-Options: nosniff` stops content
+  sniffing, and `Referrer-Policy: no-referrer` keeps the loopback URL from
+  leaking to third parties. The CSP is intentionally scoped to `frame-ancestors`
+  only so the existing inline + WASM SPA and Swagger UI keep working untouched
+  (#406).
 
 ### Changed
 
@@ -95,12 +269,28 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- Routines no longer generate a per-routine `run.sh` launch script. The crontab
+  line now invokes the `moadim` binary directly
+  (`<schedule> <moadim> schedule trigger <id>`), and the running daemon is the
+  single source of truth for launch logic — eliminating the duplication between
+  the cron path and the manual-trigger path. Stale `run.sh` files left by older
+  daemons are removed on the next persist. **Scheduled routines now require the
+  daemon to be running** (it is installed as an OS service for this reason); the
+  agent still inherits the user's login environment via the daemon's `sh -lc`
+  spawn.
 - Enabled the `clippy::uninlined_format_args` lint (deny) and inlined the
   existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
   error messages read more directly. No behavior change.
 
 ### Fixed
 
+- Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
+  again. The crate root's `#![deny(warnings)]` implies
+  `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or
+  the pre-push hook, so the rotted links sat on `main` and made `cargo doc` fail
+  with "could not document `moadim`". Links to private submodules in
+  `src/routines/mod.rs` were demoted to plain code spans, and the remaining
+  links in `cleanup`, `sync`, and `utils::atomic` were fully qualified. (#390)
 - The in-memory routine and cron-job stores no longer panic the request that
   observes a poisoned lock. Every `Mutex::lock().unwrap()` on these stores was
   replaced with a new `LockRecover::lock_recover()` extension that recovers the
@@ -182,6 +372,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   harmless shim instead of signalling a real PID. The default stays the platform
   killer (`kill` / `taskkill`), so the existing self-contained test that kills
   its own spawned child still works. (#216)
+- The `ui` crate's `RAction::Upsert` variant now boxes its `Routine`
+  (`Upsert(Box<Routine>)`). The variant carried a ~272-byte `Routine` by value
+  while the next-largest variant was 48 bytes, tripping
+  `clippy::large_enum_variant` under the crate's `[lints.clippy] all = "deny"`,
+  so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
+  once before the existing upsert logic, and the construction sites wrap the
+  value.
 
 ## [0.12.0] - 2026-06-18
 
@@ -492,7 +689,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/moadim-io/daemon/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/moadim-io/daemon/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/moadim-io/daemon/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/moadim-io/daemon/compare/v0.11.1...v0.11.2

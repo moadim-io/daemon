@@ -3,17 +3,32 @@
 //! Self-contained like [`crate::routines::RoutinesPage`]: owns its own reducer state and talks to
 //! the `/cron-jobs` API. Toasts bubble up to the shell via the `on_toast` callback.
 
-use std::collections::HashSet;
+use std::cell::Cell;
+use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
 
+use chrono::{DateTime, Duration, Local};
 use gloo_net::http::Request;
+use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::HtmlInputElement;
+use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, KeyboardEvent};
 use yew::prelude::*;
 
+use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::machines::MachinesPicker;
+use crate::refresh::{RefreshControl, RefreshInterval};
+use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{describe_cron_live, reltime, ToastKind};
+
+/// How long ahead a job's next fire counts as "due soon" for the KPI tile.
+const DUE_SOON_WINDOW_SECS: i64 = 3_600;
+/// Cadence of the live tick that keeps next-run countdowns and the due-soon
+/// count current without a manual reload.
+const NEXT_RUN_TICK_MS: u32 = 30_000;
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
@@ -23,6 +38,9 @@ pub struct CronJob {
     pub schedule: String,
     pub handler: String,
     pub metadata: Json,
+    /// Machines this job runs on. An empty list runs nowhere (dormant until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     pub enabled: bool,
     pub created_at: u64,
     pub updated_at: u64,
@@ -38,6 +56,8 @@ pub struct CreateRequest {
     pub schedule: String,
     pub handler: String,
     pub metadata: Json,
+    /// Machines to run this job on (empty = runs nowhere until assigned).
+    pub machines: Vec<String>,
     pub enabled: bool,
 }
 
@@ -50,7 +70,182 @@ pub struct UpdateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub machines: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+}
+
+// ─── Faceted filter ─────────────────────────────────────────────────────────
+//
+// Pure, host-testable filtering of the loaded jobs. The view binds a search box,
+// a status facet, and a machine facet to a `JobFilter`; the table and day
+// timeline render `filter_jobs(...)` instead of the raw list. Best-practice
+// (Datadog/Grafana/BI dashboards): free-text + facets narrow a dense list, a
+// live result count keeps the active filter legible, and clicking a summary KPI
+// cross-filters the detail list.
+
+/// Enabled/disabled/due-soon status facet. `DueSoon` reuses the same
+/// `fires_within` window that backs the DUE SOON KPI tile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StatusFacet {
+    #[default]
+    All,
+    Enabled,
+    Disabled,
+    DueSoon,
+}
+
+impl StatusFacet {
+    /// Stable token used as the cross-filter id and the segmented-control value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StatusFacet::All => "all",
+            StatusFacet::Enabled => "enabled",
+            StatusFacet::Disabled => "disabled",
+            StatusFacet::DueSoon => "due",
+        }
+    }
+
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "enabled" => StatusFacet::Enabled,
+            "disabled" => StatusFacet::Disabled,
+            "due" => StatusFacet::DueSoon,
+            _ => StatusFacet::All,
+        }
+    }
+}
+
+/// Sentinel select values for the machine facet's non-machine choices. Real
+/// machine ids never collide with these (they carry no leading NUL).
+const MACHINE_ANY: &str = "\u{0}any";
+const MACHINE_UNASSIGNED: &str = "\u{0}unassigned";
+
+/// Machine facet: any machine, the dormant (no-machine) jobs, or one specific
+/// machine drawn from the distinct machines across the loaded jobs.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum MachineFacet {
+    #[default]
+    Any,
+    Unassigned,
+    Machine(String),
+}
+
+impl MachineFacet {
+    /// Encode for the `<select>` option value.
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            MachineFacet::Any => MACHINE_ANY.to_string(),
+            MachineFacet::Unassigned => MACHINE_UNASSIGNED.to_string(),
+            MachineFacet::Machine(m) => m.clone(),
+        }
+    }
+
+    /// Decode from a selected `<select>` option value.
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        match v {
+            MACHINE_ANY => MachineFacet::Any,
+            MACHINE_UNASSIGNED => MachineFacet::Unassigned,
+            other => MachineFacet::Machine(other.to_string()),
+        }
+    }
+}
+
+/// Combined free-text + facet filter applied client-side to the loaded jobs.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct JobFilter {
+    pub query: String,
+    pub status: StatusFacet,
+    pub machine: MachineFacet,
+}
+
+impl JobFilter {
+    /// Whether any facet is narrowing the list — drives the "Clear filters"
+    /// affordance and the filter-aware empty state.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        !self.query.trim().is_empty()
+            || self.status != StatusFacet::All
+            || self.machine != MachineFacet::Any
+    }
+
+    /// Does this job survive the filter? Facets AND together; free-text matches
+    /// across id, handler, schedule, the human description, and metadata.
+    #[must_use]
+    pub fn matches(&self, job: &CronJob, now: DateTime<Local>, window: Duration) -> bool {
+        match self.status {
+            StatusFacet::All => {}
+            StatusFacet::Enabled if !job.enabled => return false,
+            StatusFacet::Disabled if job.enabled => return false,
+            StatusFacet::DueSoon if !(job.enabled && fires_within(&job.schedule, now, window)) => {
+                return false
+            }
+            _ => {}
+        }
+        match &self.machine {
+            MachineFacet::Any => {}
+            MachineFacet::Unassigned if !job.machines.is_empty() => return false,
+            MachineFacet::Machine(m) if !job.machines.iter().any(|x| x == m) => return false,
+            _ => {}
+        }
+        let q = self.query.trim().to_lowercase();
+        if !q.is_empty() {
+            let desc = job
+                .schedule_description
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase();
+            let hay = format!(
+                "{} {} {} {} {}",
+                job.id.to_lowercase(),
+                job.handler.to_lowercase(),
+                job.schedule.to_lowercase(),
+                desc,
+                job.metadata.to_string().to_lowercase(),
+            );
+            if !hay.contains(&q) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// Jobs surviving `filter`, preserving the input order.
+#[must_use]
+pub fn filter_jobs(
+    jobs: &[CronJob],
+    filter: &JobFilter,
+    now: DateTime<Local>,
+    window: Duration,
+) -> Vec<CronJob> {
+    jobs.iter()
+        .filter(|j| filter.matches(j, now, window))
+        .cloned()
+        .collect()
+}
+
+/// Distinct machine ids across all jobs, sorted, for the machine-facet options.
+#[must_use]
+pub fn distinct_machines(jobs: &[CronJob]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for j in jobs {
+        for m in &j.machines {
+            set.insert(m.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Count of dormant jobs (no machine assigned) — surfaced as the "Unassigned"
+/// machine-facet option only when at least one such job exists.
+#[must_use]
+pub fn unassigned_count(jobs: &[CronJob]) -> usize {
+    jobs.iter().filter(|j| j.machines.is_empty()).count()
 }
 
 // ─── API layer ────────────────────────────────────────────────────────────────
@@ -135,6 +330,14 @@ pub enum CPage {
     Logs(String),
 }
 
+/// How the list page presents jobs: a table, or a scrollable single-day timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CView {
+    #[default]
+    Table,
+    Day,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CModal {
     None,
@@ -161,10 +364,13 @@ pub struct CState {
     pub loading: bool,
     pub page: CPage,
     pub modal: CModal,
+    pub view: CView,
     /// IDs of currently selected jobs (multiselect).
     pub selected: HashSet<String>,
     /// Anchor row for `Shift`+click range selection.
     pub select_anchor: Option<String>,
+    /// Active faceted filter applied to the list/day views.
+    pub filter: JobFilter,
 }
 
 impl Default for CState {
@@ -174,8 +380,10 @@ impl Default for CState {
             loading: true,
             page: CPage::List,
             modal: CModal::None,
+            view: CView::default(),
             selected: HashSet::new(),
             select_anchor: None,
+            filter: JobFilter::default(),
         }
     }
 }
@@ -192,6 +400,7 @@ pub enum CAction {
     },
     OpenConfirmBulkDelete,
     CloseModal,
+    SetView(CView),
     Upsert(CronJob),
     Remove(String),
     RemoveMany(Vec<String>),
@@ -200,8 +409,13 @@ pub enum CAction {
         id: String,
         kind: SelectKind,
     },
-    SelectAll,
+    /// Select exactly the given (visible/filtered) ids.
+    SelectAll(Vec<String>),
     ClearSelection,
+    SetQuery(String),
+    SetStatus(StatusFacet),
+    SetMachineFacet(MachineFacet),
+    ClearFilters,
 }
 
 impl Reducible for CState {
@@ -235,6 +449,7 @@ impl Reducible for CState {
                 }
             }
             CAction::CloseModal => s.modal = CModal::None,
+            CAction::SetView(view) => s.view = view,
             CAction::Upsert(job) => {
                 if let Some(i) = s.jobs.iter().position(|j| j.id == job.id) {
                     s.jobs[i] = job;
@@ -288,13 +503,17 @@ impl Reducible for CState {
                     // Anchor stays put so further Shift+clicks re-anchor from it.
                 }
             },
-            CAction::SelectAll => {
-                s.selected = s.jobs.iter().map(|j| j.id.clone()).collect();
+            CAction::SelectAll(ids) => {
+                s.selected = ids.into_iter().collect();
             }
             CAction::ClearSelection => {
                 s.selected.clear();
                 s.select_anchor = None;
             }
+            CAction::SetQuery(q) => s.filter.query = q,
+            CAction::SetStatus(status) => s.filter.status = status,
+            CAction::SetMachineFacet(m) => s.filter.machine = m,
+            CAction::ClearFilters => s.filter = JobFilter::default(),
         }
         s.into()
     }
@@ -312,6 +531,27 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let state = use_reducer(CState::default);
     let toast = props.on_toast.clone();
 
+    // Live "now", advanced on a fixed tick so next-run countdowns and the
+    // due-soon KPI stay current without a manual reload. Both the stats bar and
+    // the table read this same instant so the view is internally consistent.
+    let now = use_state(Local::now);
+    {
+        let now = now.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                loop {
+                    TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
+                    now.set(Local::now());
+                }
+            });
+        });
+    }
+
+    // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
+    // (ms) of the last successful list load that drives the freshness cue.
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
+
     let ok_toast = {
         let toast = toast.clone();
         move |msg: &str| toast.emit((msg.to_string(), ToastKind::Ok))
@@ -321,15 +561,64 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     {
         let state = state.clone();
         let toast = toast.clone();
+        let updated_at = updated_at.clone();
         use_effect_with((), move |_| {
             spawn_local(async move {
                 match api_list().await {
-                    Ok(jobs) => state.dispatch(CAction::Loaded(jobs)),
+                    Ok(jobs) => {
+                        state.dispatch(CAction::Loaded(jobs));
+                        updated_at.set(js_sys::Date::now());
+                    }
                     Err(e) => toast.emit((format!("Failed to load jobs: {e}"), ToastKind::Err)),
                 }
             });
         });
     }
+
+    // Auto-refresh loop, re-armed whenever the chosen interval changes. `Off`
+    // installs no loop (today's load-once behaviour); any cadence re-fetches the
+    // list on that period via the existing endpoint. The cleanup flag stops the
+    // running loop when the interval changes or the page unmounts.
+    {
+        let state = state.clone();
+        let toast = toast.clone();
+        let updated_at = updated_at.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        match api_list().await {
+                            Ok(jobs) => {
+                                if cancelled.get() {
+                                    break;
+                                }
+                                state.dispatch(CAction::Loaded(jobs));
+                                updated_at.set(js_sys::Date::now());
+                            }
+                            Err(e) => {
+                                toast.emit((format!("Auto-refresh failed: {e}"), ToastKind::Err));
+                            }
+                        }
+                    }
+                });
+            }
+            move || cancelled.set(true)
+        });
+    }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     let on_new = {
         let state = state.clone();
@@ -447,6 +736,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                         schedule: Some(req.schedule),
                         handler: Some(req.handler),
                         metadata: Some(req.metadata),
+                        machines: Some(req.machines),
                         enabled: Some(req.enabled),
                     };
                     match api_update(id, &upd).await {
@@ -491,14 +781,22 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         })
     };
 
-    // Header checkbox toggles between "all selected" and "none selected".
+    // Header checkbox toggles between "all visible selected" and "none". Operates
+    // over the filtered rows, so select-all never reaches hidden jobs.
     let on_select_all = {
         let state = state.clone();
+        let now = now.clone();
         Callback::from(move |_: ()| {
-            if state.selected.len() == state.jobs.len() && !state.jobs.is_empty() {
+            let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
+            let visible = filter_jobs(&state.jobs, &state.filter, *now, window);
+            let all_visible_selected =
+                !visible.is_empty() && visible.iter().all(|j| state.selected.contains(&j.id));
+            if all_visible_selected {
                 state.dispatch(CAction::ClearSelection);
             } else {
-                state.dispatch(CAction::SelectAll);
+                state.dispatch(CAction::SelectAll(
+                    visible.into_iter().map(|j| j.id).collect(),
+                ));
             }
         })
     };
@@ -507,6 +805,70 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(CAction::ClearSelection))
     };
+
+    // ── Faceted filter ──
+    let on_set_query = {
+        let state = state.clone();
+        Callback::from(move |q: String| state.dispatch(CAction::SetQuery(q)))
+    };
+    let on_set_status = {
+        let state = state.clone();
+        Callback::from(move |status: StatusFacet| state.dispatch(CAction::SetStatus(status)))
+    };
+    let on_set_machine = {
+        let state = state.clone();
+        Callback::from(move |m: MachineFacet| state.dispatch(CAction::SetMachineFacet(m)))
+    };
+    let on_clear_filters = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(CAction::ClearFilters))
+    };
+
+    // `/` focuses the search box from anywhere on the page (skipped while the
+    // user is already typing in a field), matching the GitHub/Slack convention
+    // and complementing the ⌘K command palette.
+    let search_ref = use_node_ref();
+    {
+        let search_ref = search_ref.clone();
+        use_effect_with((), move |_| {
+            let on_key =
+                Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if event.key() != "/" || event.meta_key() || event.ctrl_key() || event.alt_key()
+                    {
+                        return;
+                    }
+                    // Don't steal "/" while the user is typing in another control.
+                    let typing = event
+                        .target()
+                        .and_then(|t| t.dyn_into::<HtmlElement>().ok())
+                        .map(|el| {
+                            let tag = el.tag_name();
+                            tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT"
+                        })
+                        .unwrap_or(false);
+                    if typing {
+                        return;
+                    }
+                    if let Some(input) = search_ref.cast::<HtmlInputElement>() {
+                        event.prevent_default();
+                        let _ = input.focus();
+                    }
+                }));
+            let window = web_sys::window().expect("window exists");
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("keydown listener attaches");
+            move || {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        on_key.as_ref().unchecked_ref(),
+                    );
+                }
+                drop(on_key);
+            }
+        });
+    }
 
     // Bulk enable/disable: update each selected job, surface one summary toast.
     let bulk_set_enabled = {
@@ -587,11 +949,29 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         })
     };
 
+    let on_set_view = {
+        let state = state.clone();
+        Callback::from(move |view: CView| state.dispatch(CAction::SetView(view)))
+    };
+
     let jobs = state.jobs.clone();
     let loading = state.loading;
+    let now_val = *now;
+    let view = state.view;
     let page = state.page.clone();
     let modal = state.modal.clone();
     let selected = state.selected.clone();
+    let filter = state.filter.clone();
+
+    // Faceted view of the list: the table and day timeline render the filtered
+    // set; the KPI tiles stay over the full fleet.
+    let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
+    let filtered = filter_jobs(&jobs, &filter, now_val, window);
+    let total_jobs = jobs.len();
+    let shown = filtered.len();
+    let machine_options = distinct_machines(&jobs);
+    let has_unassigned = unassigned_count(&jobs) > 0;
+    let filter_active = filter.is_active();
 
     let edit_job = match &modal {
         CModal::Edit(id) => jobs.iter().find(|j| j.id == *id).cloned(),
@@ -616,30 +996,73 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                     },
                     CPage::List => html! {
                         <main>
-                            <StatsBar jobs={jobs.clone()} />
+                            <StatsBar
+                                jobs={jobs.clone()}
+                                now={now_val}
+                                active={filter.status}
+                                on_status={on_set_status.clone()}
+                            />
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED JOBS"}</div>
-                                <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
+                                <div class="section-acts">
+                                    <RefreshControl
+                                        interval={*interval}
+                                        updated_at_ms={*updated_at}
+                                        on_change={on_set_interval}
+                                    />
+                                    <CronViewToggle view={view} on_set_view={on_set_view} />
+                                    <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
+                                </div>
                             </div>
-                            <BulkBar
-                                count={selected.len()}
-                                on_enable={on_bulk_enable}
-                                on_disable={on_bulk_disable}
-                                on_delete={on_bulk_delete}
-                                on_clear={on_clear_selection}
+                            <CronFilterBar
+                                filter={filter.clone()}
+                                machines={machine_options}
+                                has_unassigned={has_unassigned}
+                                shown={shown}
+                                total={total_jobs}
+                                search_ref={search_ref.clone()}
+                                on_query={on_set_query}
+                                on_status={on_set_status}
+                                on_machine={on_set_machine}
+                                on_clear={on_clear_filters.clone()}
                             />
-                            <JobTable
-                                jobs={jobs}
-                                loading={loading}
-                                selected={selected}
-                                on_edit={on_edit}
-                                on_delete={on_ask_delete}
-                                on_toggle={on_toggle}
-                                on_trigger={on_trigger}
-                                on_logs={on_logs}
-                                on_select={on_select}
-                                on_select_all={on_select_all}
-                            />
+                            {
+                                match view {
+                                    CView::Table => html! {
+                                        <>
+                                            <BulkBar
+                                                count={selected.len()}
+                                                on_enable={on_bulk_enable}
+                                                on_disable={on_bulk_disable}
+                                                on_delete={on_bulk_delete}
+                                                on_clear={on_clear_selection}
+                                            />
+                                            <JobTable
+                                                jobs={filtered}
+                                                loading={loading}
+                                                now={now_val}
+                                                selected={selected}
+                                                filter_active={filter_active}
+                                                on_edit={on_edit}
+                                                on_delete={on_ask_delete}
+                                                on_toggle={on_toggle}
+                                                on_trigger={on_trigger}
+                                                on_logs={on_logs}
+                                                on_select={on_select}
+                                                on_select_all={on_select_all}
+                                                on_clear_filters={on_clear_filters}
+                                            />
+                                        </>
+                                    },
+                                    CView::Day => {
+                                        let items = filtered.iter().filter(|j| j.enabled).map(|j| TimelineItem {
+                                            label: j.handler.clone(),
+                                            schedule: j.schedule.clone(),
+                                        }).collect::<Vec<_>>();
+                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                    },
+                                }
+                            }
                         </main>
                     },
                 }
@@ -675,11 +1098,50 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     }
 }
 
+// ─── View toggle ──────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct CronViewToggleProps {
+    pub view: CView,
+    pub on_set_view: Callback<CView>,
+}
+
+/// Table / Day switch for the cron-jobs list page.
+#[function_component(CronViewToggle)]
+pub fn cron_view_toggle(props: &CronViewToggleProps) -> Html {
+    let mk = |view: CView, label: &'static str| {
+        let cb = props.on_set_view.clone();
+        let cls = if props.view == view {
+            "view-btn active"
+        } else {
+            "view-btn"
+        };
+        html! {
+            <button class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(view))}>
+                { label }
+            </button>
+        }
+    };
+    html! {
+        <div class="view-toggle">
+            { mk(CView::Table, "LIST") }
+            { mk(CView::Day, "DAY") }
+        </div>
+    }
+}
+
 // ─── Stats bar ────────────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
 pub struct StatsProps {
     pub jobs: Vec<CronJob>,
+    /// Reference instant for the "due soon" computation; advanced on a live tick.
+    pub now: DateTime<Local>,
+    /// Currently active status facet, so the matching tile reads as selected.
+    pub active: StatusFacet,
+    /// Cross-filter: clicking a tile applies its status facet (or clears it when
+    /// the tile is already active).
+    pub on_status: Callback<StatusFacet>,
 }
 
 #[function_component(StatsBar)]
@@ -687,20 +1149,161 @@ pub fn stats_bar(props: &StatsProps) -> Html {
     let total = props.jobs.len();
     let enabled = props.jobs.iter().filter(|j| j.enabled).count();
     let disabled = total - enabled;
+    // Enabled jobs whose next fire is within the due-soon window — the most
+    // operationally urgent fact, surfaced as a first-class KPI tile.
+    let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
+    let due_soon = props
+        .jobs
+        .iter()
+        .filter(|j| j.enabled && fires_within(&j.schedule, props.now, window))
+        .count();
+
+    // Render one tile. Clicking toggles the status facet; the active tile (and
+    // TOTAL while no facet is active) reads as pressed for a clear cross-filter.
+    let active = props.active;
+    let tile = |facet: StatusFacet,
+                extra: &'static str,
+                label: &'static str,
+                val: usize,
+                val_cls: &'static str| {
+        let on_status = props.on_status.clone();
+        let onclick = Callback::from(move |_: MouseEvent| {
+            // Re-clicking the active facet clears it back to All.
+            let next = if active == facet {
+                StatusFacet::All
+            } else {
+                facet
+            };
+            on_status.emit(next);
+        });
+        let is_active = active == facet;
+        let cls = if is_active {
+            format!("stat-card {extra} active")
+        } else {
+            format!("stat-card {extra}")
+        };
+        html! {
+            <button type="button" class={cls} onclick={onclick}
+                aria-pressed={is_active.to_string()}
+                title={format!("Filter: {label}")}>
+                <div class="stat-label">{label}</div>
+                <div class={classes!("stat-val", val_cls)}>{val}</div>
+            </button>
+        }
+    };
 
     html! {
         <div class="stats">
-            <div class="stat-card all">
-                <div class="stat-label">{"TOTAL JOBS"}</div>
-                <div class="stat-val">{total}</div>
+            { tile(StatusFacet::All, "all", "TOTAL JOBS", total, "") }
+            { tile(StatusFacet::Enabled, "enabled", "ENABLED", enabled, "c-accent") }
+            { tile(StatusFacet::DueSoon, "due", "DUE SOON", due_soon, "c-red") }
+            { tile(StatusFacet::Disabled, "disabled", "DISABLED", disabled, "c-amber") }
+        </div>
+    }
+}
+
+// ─── Filter bar ───────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct CronFilterBarProps {
+    pub filter: JobFilter,
+    /// Distinct machines across all jobs, for the machine-facet options.
+    pub machines: Vec<String>,
+    /// Whether at least one dormant (no-machine) job exists.
+    pub has_unassigned: bool,
+    /// Count after filtering / total loaded — rendered as "Showing N of M".
+    pub shown: usize,
+    pub total: usize,
+    pub search_ref: NodeRef,
+    pub on_query: Callback<String>,
+    pub on_status: Callback<StatusFacet>,
+    pub on_machine: Callback<MachineFacet>,
+    pub on_clear: Callback<()>,
+}
+
+#[function_component(CronFilterBar)]
+pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
+    let on_input = {
+        let cb = props.on_query.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            cb.emit(input.value());
+        })
+    };
+    let on_status_change = {
+        let cb = props.on_status.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(StatusFacet::from_str(&select.value()));
+        })
+    };
+    let on_machine_change = {
+        let cb = props.on_machine.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(MachineFacet::from_value(&select.value()));
+        })
+    };
+    let on_clear = {
+        let cb = props.on_clear.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
+    let status = props.filter.status.as_str();
+    let machine_val = props.filter.machine.as_value();
+    let active = props.filter.is_active();
+
+    html! {
+        <div class="filter-bar">
+            <div class="filter-field">
+                <input
+                    ref={props.search_ref.clone()}
+                    type="text"
+                    class="filter-input"
+                    placeholder="Search jobs…  ( / )"
+                    aria-label="Search jobs"
+                    value={props.filter.query.clone()}
+                    oninput={on_input}
+                />
+                <span class="filter-label">{"STATUS"}</span>
+                <select class="filter-select" aria-label="Status filter" onchange={on_status_change}>
+                    <option value="all" selected={status == "all"}>{"All"}</option>
+                    <option value="enabled" selected={status == "enabled"}>{"Enabled"}</option>
+                    <option value="disabled" selected={status == "disabled"}>{"Disabled"}</option>
+                    <option value="due" selected={status == "due"}>{"Due soon"}</option>
+                </select>
+                <span class="filter-label">{"MACHINE"}</span>
+                <select class="filter-select" aria-label="Machine filter" onchange={on_machine_change}>
+                    <option value={MACHINE_ANY} selected={machine_val == MACHINE_ANY}>{"Any"}</option>
+                    {
+                        if props.has_unassigned {
+                            html! {
+                                <option value={MACHINE_UNASSIGNED}
+                                    selected={machine_val == MACHINE_UNASSIGNED}>{"Unassigned"}</option>
+                            }
+                        } else {
+                            html! {}
+                        }
+                    }
+                    { for props.machines.iter().map(|m| html! {
+                        <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
+                    }) }
+                </select>
             </div>
-            <div class="stat-card enabled">
-                <div class="stat-label">{"ENABLED"}</div>
-                <div class="stat-val c-accent">{enabled}</div>
-            </div>
-            <div class="stat-card disabled">
-                <div class="stat-label">{"DISABLED"}</div>
-                <div class="stat-val c-amber">{disabled}</div>
+            <div class="filter-field">
+                <span class="filter-count">
+                    {format!("Showing {} of {}", props.shown, props.total)}
+                </span>
+                {
+                    if active {
+                        html! {
+                            <button class="btn btn-ghost btn-sm" onclick={on_clear}
+                                title="Clear all filters">{"CLEAR"}</button>
+                        }
+                    } else {
+                        html! {}
+                    }
+                }
             </div>
         </div>
     }
@@ -712,7 +1315,11 @@ pub fn stats_bar(props: &StatsProps) -> Html {
 pub struct JobTableProps {
     pub jobs: Vec<CronJob>,
     pub loading: bool,
+    /// Reference instant for next-run cells; advanced on a live tick.
+    pub now: DateTime<Local>,
     pub selected: HashSet<String>,
+    /// Whether a filter is narrowing the list — selects the filtered-empty state.
+    pub filter_active: bool,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -720,6 +1327,7 @@ pub struct JobTableProps {
     pub on_logs: Callback<String>,
     pub on_select: Callback<(String, SelectKind)>,
     pub on_select_all: Callback<()>,
+    pub on_clear_filters: Callback<()>,
 }
 
 #[function_component(JobTable)]
@@ -732,6 +1340,25 @@ pub fn job_table(props: &JobTableProps) -> Html {
         };
     }
     if props.jobs.is_empty() {
+        // Filter-aware empty state: "no matches" (with a clear action) is a
+        // different message from the genuine "nothing scheduled" zero state, so
+        // an operator is never left wondering "is it broken or just filtered?".
+        if props.filter_active {
+            let on_clear = {
+                let cb = props.on_clear_filters.clone();
+                Callback::from(move |_: MouseEvent| cb.emit(()))
+            };
+            return html! {
+                <div class="table-wrap">
+                    <div class="empty">
+                        <div class="empty-icon">{"⦰"}</div>
+                        <div class="empty-msg">{"NO MATCHING JOBS"}</div>
+                        <div class="empty-sub">{"no jobs match the active filter"}</div>
+                        <button class="btn btn-ghost btn-sm" onclick={on_clear}>{"CLEAR FILTERS"}</button>
+                    </div>
+                </div>
+            };
+        }
         return html! {
             <div class="table-wrap">
                 <div class="empty">
@@ -766,6 +1393,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                         </th>
                         <th>{"ID"}</th>
                         <th>{"SCHEDULE"}</th>
+                        <th>{"NEXT RUN"}</th>
                         <th>{"HANDLER"}</th>
                         <th>{"METADATA"}</th>
                         <th>{"ENABLED"}</th>
@@ -778,6 +1406,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                         <JobRow
                             key={job.id.clone()}
                             job={job.clone()}
+                            now={props.now}
                             selected={props.selected.contains(&job.id)}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
@@ -798,6 +1427,8 @@ pub fn job_table(props: &JobTableProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct JobRowProps {
     pub job: CronJob,
+    /// Reference instant for this row's next-run cell; advanced on a live tick.
+    pub now: DateTime<Local>,
     pub selected: bool,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
@@ -805,6 +1436,33 @@ pub struct JobRowProps {
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
     pub on_select: Callback<(String, SelectKind)>,
+}
+
+/// Render a job's NEXT RUN cell: `paused` when disabled, an absolute *when* plus
+/// a relative countdown when its schedule fires again, or `—` when the schedule
+/// is invalid or never fires. The countdown gets a `soon` accent once the fire
+/// falls inside the due-soon window, matching the DUE SOON KPI tile.
+fn next_run_cell(job: &CronJob, now: DateTime<Local>) -> Html {
+    if !job.enabled {
+        return html! { <span class="cell-next muted">{"paused"}</span> };
+    }
+    match next_fire_after(&job.schedule, now) {
+        Some(then) => {
+            let soon = then - now <= Duration::seconds(DUE_SOON_WINDOW_SECS);
+            let until_cls = if soon {
+                "cell-next-until soon"
+            } else {
+                "cell-next-until"
+            };
+            html! {
+                <div class="cell-next">
+                    <div class="cell-next-when">{fmt_when(now, then)}</div>
+                    <div class={until_cls}>{fmt_until(now, then)}</div>
+                </div>
+            }
+        }
+        None => html! { <span class="cell-next muted">{"—"}</span> },
+    }
 }
 
 #[function_component(JobRow)]
@@ -818,6 +1476,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
         .to_string();
     let meta = meta_preview(&job.metadata);
     let updated = reltime(job.updated_at);
+    let next_run = next_run_cell(job, props.now);
 
     let on_edit = {
         let cb = props.on_edit.clone();
@@ -884,6 +1543,7 @@ pub fn job_row(props: &JobRowProps) -> Html {
                 <div class="cell-schedule">{&job.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
+            <td>{next_run}</td>
             <td><span class="cell-handler">{&job.handler}</span></td>
             <td><span class="cell-meta">{meta}</span></td>
             <td>
@@ -900,10 +1560,10 @@ pub fn job_row(props: &JobRowProps) -> Html {
             </td>
             <td>
                 <div class="row-actions">
-                    <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
-                    <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
+                    <button class="act-btn del" title="Delete job" aria-label="Delete job" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
         </tr>
@@ -923,6 +1583,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
     let schedule = use_state(String::new);
     let handler = use_state(String::new);
     let meta_raw = use_state(String::new);
+    let machines = use_state(Vec::<String>::new);
     let enabled = use_state(|| true);
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
@@ -959,6 +1620,10 @@ pub fn create_page(props: &CreatePageProps) -> Html {
             meta_raw.set(val);
         })
     };
+    let on_machines = {
+        let machines = machines.clone();
+        Callback::from(move |next: Vec<String>| machines.set(next))
+    };
     let on_enabled = {
         let enabled = enabled.clone();
         Callback::from(move |e: Event| {
@@ -980,6 +1645,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
         let schedule = schedule.clone();
         let handler = handler.clone();
         let meta_raw = meta_raw.clone();
+        let machines = machines.clone();
         let meta_err = meta_err.clone();
         let enabled = enabled.clone();
         let saving = saving.clone();
@@ -998,6 +1664,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
                 schedule: (*schedule).clone(),
                 handler: (*handler).clone(),
                 metadata,
+                machines: (*machines).clone(),
                 enabled: *enabled,
             });
         })
@@ -1083,6 +1750,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
                             <div class="field-err">{(*meta_err).clone()}</div>
                         }
                     </div>
+                    <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
                     <div class="form-group" style="margin-bottom:0">
                         <div class="toggle-row">
                             <span class="toggle-row-label">{"ENABLED"}</span>
@@ -1146,6 +1814,13 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             })
             .unwrap_or_default()
     });
+    let machines = use_state(|| {
+        props
+            .editing
+            .as_ref()
+            .map(|j| j.machines.clone())
+            .unwrap_or_default()
+    });
     let enabled = use_state(|| props.editing.as_ref().map(|j| j.enabled).unwrap_or(true));
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
@@ -1195,6 +1870,11 @@ pub fn job_modal(props: &JobModalProps) -> Html {
         Callback::from(move |_: MouseEvent| schedule.set(val.to_string()))
     };
 
+    let on_machines = {
+        let machines = machines.clone();
+        Callback::from(move |next: Vec<String>| machines.set(next))
+    };
+
     let on_close_click = {
         let cb = props.on_close.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -1203,6 +1883,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
         let schedule = schedule.clone();
         let handler = handler.clone();
         let meta_raw = meta_raw.clone();
+        let machines = machines.clone();
         let meta_err = meta_err.clone();
         let enabled = enabled.clone();
         let saving = saving.clone();
@@ -1221,6 +1902,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                 schedule: (*schedule).clone(),
                 handler: (*handler).clone(),
                 metadata,
+                machines: (*machines).clone(),
                 enabled: *enabled,
             });
         })
@@ -1245,7 +1927,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             <div class="modal">
                 <div class="modal-hd">
                     <div class="modal-title">{"EDIT JOB"}</div>
-                    <button class="modal-x" onclick={on_close_click.clone()}>{"✕"}</button>
+                    <button class="modal-x" title="Close" aria-label="Close" onclick={on_close_click.clone()}>{"✕"}</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -1306,6 +1988,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                             <div class="field-err">{(*meta_err).clone()}</div>
                         }
                     </div>
+                    <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
                     <div class="form-group" style="margin-bottom:0">
                         <div class="toggle-row">
                             <span class="toggle-row-label">{"ENABLED"}</span>
@@ -1527,7 +2210,7 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.handler)}</div>
-                <button class="btn-refresh" title="Refresh" onclick={on_refresh}>{"↻"}</button>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             <div class="logs-wrap">
                 {body}
@@ -1553,3 +2236,7 @@ fn meta_preview(v: &Json) -> String {
         other => other.to_string().chars().take(24).collect(),
     }
 }
+
+#[cfg(test)]
+#[path = "cron_jobs_tests.rs"]
+mod cron_jobs_tests;

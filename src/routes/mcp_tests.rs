@@ -167,6 +167,7 @@ fn create_cron_job_tool_invalid_cron_is_error() {
         schedule: "not-a-cron".into(),
         handler: "h".into(),
         metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
     };
     let result = handler.create_cron_job(Parameters(req)).unwrap();
@@ -189,6 +190,7 @@ fn update_cron_job_tool_not_found_is_error() {
             schedule: None,
             handler: Some("h".into()),
             metadata: None,
+            machines: None,
             enabled: None,
         }))
         .unwrap();
@@ -206,6 +208,7 @@ fn delete_cron_job_tool_success() {
             schedule: "@daily".into(),
             handler: "h".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -233,6 +236,7 @@ fn trigger_cron_job_tool_success() {
             schedule: "@daily".into(),
             handler: "h".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -267,6 +271,7 @@ fn create_cron_job_tool_success() {
         schedule: "@daily".into(),
         handler: "mcp-handler".into(),
         metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
     };
     let result = handler.create_cron_job(Parameters(req)).unwrap();
@@ -290,6 +295,7 @@ fn get_cron_job_tool_success() {
         schedule: "@daily".into(),
         handler: "h".into(),
         metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
         created_at: 0,
@@ -331,6 +337,7 @@ fn update_cron_job_tool_success() {
             schedule: "@daily".into(),
             handler: "old".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )
@@ -343,6 +350,7 @@ fn update_cron_job_tool_success() {
             schedule: None,
             handler: Some("new".into()),
             metadata: None,
+            machines: None,
             enabled: None,
         }))
         .unwrap();
@@ -360,6 +368,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -437,6 +446,7 @@ fn create_get_update_trigger_delete_routine_success() {
             agent: None,
             prompt: None,
             repositories: None,
+            machines: None,
             enabled: Some(false),
             ttl_secs: None,
             max_runtime_secs: None,
@@ -482,6 +492,7 @@ fn update_routine_tool_not_found_is_error() {
             agent: None,
             prompt: None,
             repositories: None,
+            machines: None,
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -541,6 +552,7 @@ fn cron_job_logs_tool_returns_logs_for_existing_job() {
             schedule: "@daily".into(),
             handler: "h".into(),
             metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
         },
     )

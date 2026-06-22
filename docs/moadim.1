@@ -1,0 +1,138 @@
+.\" Man page for moadim.
+.\" Mirrors the built-in `moadim --help` output (src/cli.rs::print_help).
+.\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
+.TH MOADIM 1 "2026-06-21" "moadim 0.14.0" "Moadim Manual"
+.SH NAME
+moadim \- cron/MCP/REST server with a web control panel
+.SH SYNOPSIS
+.B moadim
+.RI [ MODE ]
+.br
+.B moadim
+.I COMMAND
+.RI [ args ...]
+.SH DESCRIPTION
+.B moadim
+is a loop engine for AI agents: it runs scheduled routines and cron jobs,
+exposing them over a REST API, an MCP server, and a web control panel.
+.PP
+Run with no arguments,
+.B moadim
+starts the server in the background and returns control to your shell.
+Once running, manage it from the web client (the STOP button) or with
+.BR "moadim stop" .
+.SH MODES
+.TP
+.B (default)
+Start the server in the background and exit.
+.TP
+.BR \-i ", " \-\-interactive
+Run in the foreground, attached to the terminal (Ctrl-C to stop).
+.TP
+.BR \-b ", " \-\-background
+Start the server detached in the background (the explicit default).
+.SH COMMANDS
+.TP
+.B restart
+Stop a running server (if any) and start a fresh background one.
+.TP
+.BR "stop " [ \-\-json "] [" \-q ]
+Stop a running background server.
+.B \-q
+/
+.B \-\-quiet
+suppresses the human-readable status line.
+.TP
+.BR "status " [ \-\-json ]
+Show whether a server is running.
+.TP
+.BR "cleanup " [ \-\-json ]
+Reap finished, expired routine workbenches now.
+.TP
+.B install
+Register moadim as an OS service (launchd / systemd user).
+.TP
+.B uninstall
+Remove the OS service registration.
+.TP
+.B machine <show|set|list>
+Show or set this machine's identity, or list the machines referenced by
+routines and cron jobs.
+.TP
+.BR "help" ", " \-h ", " \-\-help
+Show usage help.
+.TP
+.BR "version" ", " \-V ", " \-\-version
+Show the version.
+.SH DATA COMMANDS
+These talk to the running server over HTTP. Pass
+.B \-\-help
+to any of them (e.g.
+.BR "moadim routines create --help" )
+for the full flag list.
+.TP
+.B cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...
+Manage cron jobs (alias:
+.BR cron ).
+.TP
+.B routines <create|list|get|update|replace|delete|trigger|logs|ical> ...
+Manage routines (alias:
+.BR routine ).
+.TP
+.B schedule trigger <id>
+Trigger a routine or cron job by ID (used by the generated
+.B run.sh
+wrappers).
+.TP
+.B agents
+List available agent keys.
+.TP
+.B echo <message>
+Echo a message via the server.
+.SH OPTIONS
+.TP
+.B \-\-json
+Pass to
+.BR stop ", " status ", or " cleanup
+for a single-line, machine-readable object on stdout.
+.TP
+.BR \-q ", " \-\-quiet
+Pass to
+.B stop
+to suppress its human-readable status line.
+.SH EXIT STATUS
+.B status
+,
+.B cleanup
+, and
+.B stop
+exit
+.B 0
+when a server is running and
+.B 3
+when none is, so scripts can branch on
+.B $?
+without parsing stdout.
+.SH ENVIRONMENT
+.TP
+.B MOADIM_BIND_ADDR
+Address the server binds to and that client commands target. Defaults to
+.BR 127.0.0.1:5784 .
+Set it (e.g.
+.BR 127.0.0.1:8080 )
+before starting the server, and point client commands at the same address.
+.SH FILES
+.TP
+.B ~/.config/moadim/
+Configuration tree (cron jobs, routines, handlers, agents).
+.SH WEB INTERFACE
+Once running, the control panel is served at
+.B http://127.0.0.1:5784
+(or the
+.B MOADIM_BIND_ADDR
+override).
+.SH SEE ALSO
+Project documentation and the REST/MCP API reference:
+.I https://github.com/moadim-io/daemon
+.SH AUTHOR
+Moadim contributors.

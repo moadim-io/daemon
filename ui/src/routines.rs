@@ -3,15 +3,20 @@
 //! Mirrors the cron-jobs UI but targets the `/routines` API. A routine launches an AI agent
 //! (claude, codex, …) on a schedule instead of running a handler script.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
+use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
+use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::machines::MachinesPicker;
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -38,6 +43,9 @@ pub struct Routine {
     pub prompt: String,
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines this routine runs on. An empty list runs nowhere (dormant until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     pub enabled: bool,
     #[serde(default)]
     pub source: String,
@@ -66,6 +74,8 @@ pub struct CreateRoutineRequest {
     pub agent: String,
     pub prompt: String,
     pub repositories: Vec<Repository>,
+    /// Machines to run this routine on (empty = runs nowhere until assigned).
+    pub machines: Vec<String>,
     pub enabled: bool,
     /// Workbench retention (seconds); `None` lets the server apply its default.
     pub ttl_secs: Option<u64>,
@@ -89,6 +99,8 @@ pub struct UpdateRoutineRequest {
     pub prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repositories: Option<Vec<Repository>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub machines: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -214,6 +226,7 @@ pub enum RView {
     #[default]
     Table,
     Calendar,
+    Day,
 }
 
 /// Field the routine table is sorted by.
@@ -290,7 +303,7 @@ pub enum RAction {
     SetRepoFilter(String),
     SetSort(RSort),
     ToggleSortDir,
-    Upsert(Routine),
+    Upsert(Box<Routine>),
     Remove(String),
 }
 
@@ -317,6 +330,7 @@ impl Reducible for RState {
             RAction::SetSort(sort) => s.sort = sort,
             RAction::ToggleSortDir => s.sort_desc = !s.sort_desc,
             RAction::Upsert(routine) => {
+                let routine = *routine;
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
                     s.routines[i] = routine;
                 } else {
@@ -341,6 +355,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let state = use_reducer(RState::default);
     let toast = props.on_toast.clone();
 
+    // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
+    // (ms) of the last successful list load that drives the freshness cue.
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
+
     let ok_toast = {
         let toast = toast.clone();
         move |msg: &str| toast.emit((msg.to_string(), ToastKind::Ok))
@@ -350,15 +369,64 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     {
         let state = state.clone();
         let toast = toast.clone();
+        let updated_at = updated_at.clone();
         use_effect_with((), move |_| {
             spawn_local(async move {
                 match api_list().await {
-                    Ok(r) => state.dispatch(RAction::Loaded(r)),
+                    Ok(r) => {
+                        state.dispatch(RAction::Loaded(r));
+                        updated_at.set(js_sys::Date::now());
+                    }
                     Err(e) => toast.emit((format!("Failed to load routines: {e}"), ToastKind::Err)),
                 }
             });
         });
     }
+
+    // Auto-refresh loop, re-armed whenever the chosen interval changes. `Off`
+    // installs no loop (today's load-once behaviour); any cadence re-fetches the
+    // list on that period via the existing endpoint. The cleanup flag stops the
+    // running loop when the interval changes or the page unmounts.
+    {
+        let state = state.clone();
+        let toast = toast.clone();
+        let updated_at = updated_at.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        match api_list().await {
+                            Ok(r) => {
+                                if cancelled.get() {
+                                    break;
+                                }
+                                state.dispatch(RAction::Loaded(r));
+                                updated_at.set(js_sys::Date::now());
+                            }
+                            Err(e) => {
+                                toast.emit((format!("Auto-refresh failed: {e}"), ToastKind::Err));
+                            }
+                        }
+                    }
+                });
+            }
+            move || cancelled.set(true)
+        });
+    }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     let on_new = {
         let state = state.clone();
@@ -418,7 +486,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             spawn_local(async move {
                 match api_create(&req).await {
                     Ok(r) => {
-                        state.dispatch(RAction::Upsert(r));
+                        state.dispatch(RAction::Upsert(Box::new(r)));
                         state.dispatch(RAction::GoToList);
                         ok("Routine created");
                     }
@@ -457,7 +525,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             spawn_local(async move {
                 match api_trigger(&id).await {
                     Ok(r) => {
-                        state.dispatch(RAction::Upsert(r));
+                        state.dispatch(RAction::Upsert(Box::new(r)));
                         ok("Routine triggered");
                     }
                     Err(e) => toast.emit((format!("Trigger failed: {e}"), ToastKind::Err)),
@@ -481,7 +549,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                 };
                 match api_update(&id, &req).await {
                     Ok(r) => {
-                        state.dispatch(RAction::Upsert(r));
+                        state.dispatch(RAction::Upsert(Box::new(r)));
                         ok(if enabled {
                             "Routine enabled"
                         } else {
@@ -512,12 +580,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         agent: Some(req.agent),
                         prompt: Some(req.prompt),
                         repositories: Some(req.repositories),
+                        machines: Some(req.machines),
                         enabled: Some(req.enabled),
                         ttl_secs: req.ttl_secs,
                     };
                     match api_update(id, &upd).await {
                         Ok(r) => {
-                            state.dispatch(RAction::Upsert(r));
+                            state.dispatch(RAction::Upsert(Box::new(r)));
                             state.dispatch(RAction::CloseModal);
                             ok("Routine updated");
                         }
@@ -613,6 +682,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED ROUTINES"}</div>
                                 <div class="section-acts">
+                                    <RefreshControl
+                                        interval={*interval}
+                                        updated_at_ms={*updated_at}
+                                        on_change={on_set_interval}
+                                    />
                                     <ViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-ghost btn-sm" onclick={on_cleanup}
                                         title="Reap finished, expired run workbenches now">{"CLEANUP NOW"}</button>
@@ -642,6 +716,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                     },
                                     RView::Calendar => html! {
                                         <RoutineCalendar routines={visible} loading={loading} />
+                                    },
+                                    RView::Day => {
+                                        let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
+                                            label: r.title.clone(),
+                                            schedule: r.schedule.clone(),
+                                        }).collect::<Vec<_>>();
+                                        html! { <DayTimeline items={items} loading={loading} /> }
                                     },
                                 }
                             }
@@ -736,6 +817,7 @@ pub fn view_toggle(props: &ViewToggleProps) -> Html {
         <div class="view-toggle">
             { mk(RView::Table, "LIST") }
             { mk(RView::Calendar, "CALENDAR") }
+            { mk(RView::Day, "DAY") }
         </div>
     }
 }
@@ -800,7 +882,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                     } else {
                         html! {
                             <button class="btn btn-ghost btn-sm" onclick={on_clear}
-                                title="Clear repository filter">{"✕"}</button>
+                                title="Clear repository filter" aria-label="Clear repository filter">{"✕"}</button>
                         }
                     }
                 }
@@ -974,9 +1056,9 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     html! {
         <div class="cal-wrap">
             <div class="cal-nav">
-                <button class="btn-refresh" title="Previous month" onclick={on_prev}>{"‹"}</button>
+                <button class="btn-refresh" title="Previous month" aria-label="Previous month" onclick={on_prev}>{"‹"}</button>
                 <div class="cal-month">{month_label}</div>
-                <button class="btn-refresh" title="Next month" onclick={on_next}>{"›"}</button>
+                <button class="btn-refresh" title="Next month" aria-label="Next month" onclick={on_next}>{"›"}</button>
                 <button class="btn btn-ghost btn-sm" onclick={on_today}>{"TODAY"}</button>
             </div>
             {body}
@@ -1141,10 +1223,10 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>
                 <div class="row-actions">
-                    <button class="act-btn run" title="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
-                    <button class="act-btn del" onclick={on_delete}>{"✕"}</button>
+                    <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
         </tr>
@@ -1264,6 +1346,12 @@ pub fn routine_form(props: &FormProps) -> Html {
             .map(|r| repos_to_text(&r.repositories))
             .unwrap_or_default()
     });
+    let machines = use_state(|| {
+        editing
+            .as_ref()
+            .map(|r| r.machines.clone())
+            .unwrap_or_default()
+    });
     let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
     // Blank means "use the server default"; otherwise the workbench TTL in seconds.
     let ttl_raw = use_state(|| {
@@ -1312,6 +1400,10 @@ pub fn routine_form(props: &FormProps) -> Html {
             repos_raw.set(i.value());
         })
     };
+    let on_machines = {
+        let machines = machines.clone();
+        Callback::from(move |next: Vec<String>| machines.set(next))
+    };
     let on_enabled = {
         let enabled = enabled.clone();
         Callback::from(move |e: Event| {
@@ -1348,6 +1440,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let agent = agent.clone();
         let prompt = prompt.clone();
         let repos_raw = repos_raw.clone();
+        let machines = machines.clone();
         let enabled = enabled.clone();
         let ttl_raw = ttl_raw.clone();
         let saving = saving.clone();
@@ -1363,6 +1456,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 agent: (*agent).clone(),
                 prompt: (*prompt).clone(),
                 repositories: text_to_repos(&repos_raw),
+                machines: (*machines).clone(),
                 enabled: *enabled,
                 ttl_secs: parse_ttl(&ttl_raw),
             });
@@ -1429,6 +1523,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 <textarea class="form-input" placeholder={"https://github.com/org/repo main"}
                     value={(*repos_raw).clone()} oninput={on_repos} />
             </div>
+            <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
             <div class="form-group">
                 <label class="form-label">
                     {"WORKBENCH TTL "}
@@ -1464,7 +1559,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 <div class="modal">
                     <div class="modal-hd">
                         <div class="modal-title">{"EDIT ROUTINE"}</div>
-                        <button class="modal-x" onclick={on_cancel_click}>{"✕"}</button>
+                        <button class="modal-x" title="Close" aria-label="Close" onclick={on_cancel_click}>{"✕"}</button>
                     </div>
                     {body}
                     {footer}
@@ -1599,7 +1694,7 @@ pub fn routine_logs(props: &LogsProps) -> Html {
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.title)}</div>
-                <button class="btn-refresh" title="Refresh" onclick={on_refresh}>{"↻"}</button>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             <div class="logs-wrap">
                 {body}

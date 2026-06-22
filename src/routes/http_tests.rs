@@ -82,6 +82,31 @@ async fn build_app_serves_root() {
 }
 
 #[tokio::test]
+async fn build_app_sets_security_headers_on_ui_and_api() {
+    // The whole router carries the security headers (issue #406): assert on a representative
+    // UI response (the SPA at `/`) and a representative API response (`/api/v1/health`).
+    for uri in ["/", "/api/v1/health"] {
+        let resp = build_app(new_store(), crate::routines::new_store())
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(
+            resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            resp.headers().get("referrer-policy").unwrap(),
+            "no-referrer"
+        );
+        assert_eq!(
+            resp.headers().get("content-security-policy").unwrap(),
+            "frame-ancestors 'none'"
+        );
+    }
+}
+
+#[tokio::test]
 async fn build_app_serves_agents() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
@@ -99,6 +124,73 @@ async fn build_app_serves_agents() {
         .unwrap();
     let agents: Vec<String> = serde_json::from_slice(&bytes).unwrap();
     assert!(!agents.is_empty(), "agents list should never be empty");
+}
+
+#[tokio::test]
+async fn build_app_serves_machines() {
+    // Seed a cron job and a routine whose targeting lists overlap (`shared`) so the response
+    // exercises de-duplication across both stores, plus the implicit local-identity entry.
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "j1".to_string(),
+        crate::cron_jobs::CronJob {
+            id: "j1".to_string(),
+            schedule: "@daily".to_string(),
+            handler: "h".to_string(),
+            metadata: serde_json::Value::Null,
+            machines: vec!["zeta-box".to_string(), "shared".to_string()],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_manual_trigger_at: None,
+        },
+    );
+    let routines = crate::routines::new_store();
+    routines.lock().unwrap().insert(
+        "r1".to_string(),
+        crate::routines::Routine {
+            id: "r1".to_string(),
+            schedule: "@daily".to_string(),
+            title: "R".to_string(),
+            agent: "claude".to_string(),
+            prompt: "p".to_string(),
+            repositories: vec![],
+            machines: vec!["alpha-box".to_string(), "shared".to_string()],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_manual_trigger_at: None,
+            last_scheduled_trigger_at: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    let resp = build_app(store, routines)
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/machines")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let machines: Vec<String> = serde_json::from_slice(&bytes).unwrap();
+
+    let mut expected = vec![
+        crate::machine::current_machine(),
+        "alpha-box".to_string(),
+        "shared".to_string(),
+        "zeta-box".to_string(),
+    ];
+    expected.sort();
+    expected.dedup();
+    assert_eq!(machines, expected);
 }
 
 #[tokio::test]
@@ -657,6 +749,19 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // scheduled-trigger (the crontab-invoked path; runs the routine and returns OK)
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/routines/{id}/scheduled-trigger"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
     // logs (empty)
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
@@ -708,6 +813,7 @@ async fn router_routine_not_found_paths() {
         ("GET", ""),
         ("DELETE", ""),
         ("POST", "/trigger"),
+        ("POST", "/scheduled-trigger"),
         ("GET", "/logs"),
     ] {
         let resp = build_app(new_store(), crate::routines::new_store())
@@ -896,6 +1002,7 @@ async fn router_serves_routines_ical_feed() {
             agent: "claude".to_string(),
             prompt: "do the thing".to_string(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             source: "managed".to_string(),
             created_at: 0,

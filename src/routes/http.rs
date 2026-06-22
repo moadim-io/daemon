@@ -142,6 +142,28 @@ pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::h
     }))
 }
 
+/// `GET /machines` — distinct machine names this daemon knows about.
+///
+/// There is no central machine registry, so the "known" set is the union of every `machines`
+/// targeting list declared by a routine or cron job, plus this machine's own resolved identity
+/// ([`crate::machine::current_machine`]) so the local machine is always pickable even before
+/// anything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the
+/// `moadim machine list` CLI but reads the live in-memory stores instead of disk.
+#[utoipa::path(get, path = "/machines",
+    responses((status = 200, body = Vec<String>, description = "Known machine names, sorted")))]
+pub async fn list_machines(State(state): State<AppState>) -> Json<Vec<String>> {
+    use crate::utils::lock::LockRecover;
+    let mut names = std::collections::BTreeSet::new();
+    names.insert(crate::machine::current_machine());
+    for routine in state.routines.lock_recover().values() {
+        names.extend(routine.machines.iter().cloned());
+    }
+    for job in state.store.lock_recover().values() {
+        names.extend(job.machines.iter().cloned());
+    }
+    Json(names.into_iter().collect())
+}
+
 /// Build the Axum router with all routes, middleware, and state wired up.
 ///
 /// The shutdown signal is created internally; callers that need to trigger shutdown out of band
@@ -195,6 +217,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/shutdown", post(shutdown))
         .route("/restart", post(restart))
         .route("/echo", post(echo))
+        .route("/machines", get(list_machines))
         .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(
             "/cron-jobs/{id}",
@@ -217,6 +240,10 @@ pub(crate) fn build_app_with_shutdown(
                 .delete(routines::delete),
         )
         .route("/routines/{id}/trigger", post(routines::trigger))
+        .route(
+            "/routines/{id}/scheduled-trigger",
+            post(routines::scheduled_trigger),
+        )
         .route("/routines/{id}/logs", get(routines::get_logs))
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
@@ -238,6 +265,9 @@ pub(crate) fn build_app_with_shutdown(
         // SPA fallback: client-routed pages (`/cron-jobs`, `/routines`) and refreshes on them return
         // the app HTML so the Yew router can resolve the path on load.
         .fallback(get(index))
+        .layer(middleware::from_fn(
+            middlewares::security_headers::security_headers,
+        ))
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         .with_state(app_state)

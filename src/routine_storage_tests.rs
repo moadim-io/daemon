@@ -14,6 +14,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
             repository: "https://example.com/r.git".to_string(),
             branch: Some("main".to_string()),
         }],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 5,
@@ -45,40 +46,43 @@ fn load_store_from_dir_inserts_written_routines() {
 
 #[test]
 fn write_then_load_round_trips() {
-    let id = "rs-roundtrip-id";
-    let title = "Rs Roundtrip Routine";
-    let slug = slugify(title);
-    let routine = make_routine(id, title);
-    write_routine(&routine).unwrap();
+    with_override_home(|_home| {
+        let id = "rs-roundtrip-id";
+        let title = "Rs Roundtrip Routine";
+        let slug = slugify(title);
+        let routine = make_routine(id, title);
+        write_routine(&routine).unwrap();
 
-    assert!(crate::paths::routine_toml_path(&slug).exists());
-    assert!(crate::paths::routine_prompt_path(&slug).exists());
-    assert!(crate::paths::routine_gitignore_path(&slug).exists());
+        assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(crate::paths::routine_prompt_path(&slug).exists());
+        assert!(crate::paths::routine_gitignore_path(&slug).exists());
 
-    let loaded = load_routine_from_dir(&slug).unwrap();
-    assert_eq!(loaded.id, id);
-    assert_eq!(loaded.schedule, "@daily");
-    assert_eq!(loaded.title, title);
-    assert_eq!(loaded.agent, "claude");
-    assert_eq!(loaded.prompt, "task");
-    assert_eq!(loaded.repositories.len(), 1);
-    assert_eq!(loaded.repositories[0].branch.as_deref(), Some("main"));
-    assert!(loaded.enabled);
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.id, id);
+        assert_eq!(loaded.schedule, "@daily");
+        assert_eq!(loaded.title, title);
+        assert_eq!(loaded.agent, "claude");
+        assert_eq!(loaded.prompt, "task");
+        assert_eq!(loaded.repositories.len(), 1);
+        assert_eq!(loaded.repositories[0].branch.as_deref(), Some("main"));
+        assert!(loaded.enabled);
 
-    remove_routine_dir(&slug).unwrap();
-    assert!(!crate::paths::routine_dir(&slug).exists());
+        remove_routine_dir(&slug).unwrap();
+        assert!(!crate::paths::routine_dir(&slug).exists());
+    });
 }
 
 #[test]
 fn prompt_file_contains_composed_prompt() {
-    let title = "Rs Prompt Routine";
-    let slug = slugify(title);
-    write_routine(&make_routine("rs-prompt-id", title)).unwrap();
-    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
-    assert!(prompt.contains("# Workbench"));
-    assert!(prompt.contains("https://example.com/r.git (branch main)"));
-    assert!(prompt.contains("task"));
-    remove_routine_dir(&slug).unwrap();
+    with_override_home(|_home| {
+        let title = "Rs Prompt Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine("rs-prompt-id", title)).unwrap();
+        let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+        assert!(prompt.contains("# Workbench"));
+        assert!(prompt.contains("https://example.com/r.git (branch main)"));
+        assert!(prompt.contains("task"));
+    });
 }
 
 #[test]
@@ -86,31 +90,31 @@ fn write_routine_persists_composed_prompt_sidecar_with_repos() {
     // Focused coverage for the `atomic_write(routine_prompt_path, compose_prompt(..))`
     // call in `write_routine`: a routine with a non-empty prompt AND repositories runs
     // `compose_prompt` fully, and the composed body lands in prompt.md on disk.
-    let id = "rs-prompt-sidecar-id";
-    let title = "Rs Prompt Sidecar Routine";
-    let slug = slugify(title);
-    let mut routine = make_routine(id, title);
-    routine.prompt = "line one\nline two".to_string();
-    routine.repositories = vec![
-        Repository {
-            repository: "https://example.com/a.git".to_string(),
-            branch: Some("dev".to_string()),
-        },
-        Repository {
-            repository: "https://example.com/b.git".to_string(),
-            branch: None,
-        },
-    ];
+    with_override_home(|_home| {
+        let id = "rs-prompt-sidecar-id";
+        let title = "Rs Prompt Sidecar Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine(id, title);
+        routine.prompt = "line one\nline two".to_string();
+        routine.repositories = vec![
+            Repository {
+                repository: "https://example.com/a.git".to_string(),
+                branch: Some("dev".to_string()),
+            },
+            Repository {
+                repository: "https://example.com/b.git".to_string(),
+                branch: None,
+            },
+        ];
 
-    write_routine(&routine).unwrap();
+        write_routine(&routine).unwrap();
 
-    let written = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
-    assert_eq!(written, compose_prompt(&routine));
-    assert!(written.contains("https://example.com/a.git (branch dev)"));
-    assert!(written.contains("https://example.com/b.git\n"));
-    assert!(written.contains("line one\nline two"));
-
-    remove_routine_dir(&slug).unwrap();
+        let written = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+        assert_eq!(written, compose_prompt(&routine));
+        assert!(written.contains("https://example.com/a.git (branch dev)"));
+        assert!(written.contains("https://example.com/b.git\n"));
+        assert!(written.contains("line one\nline two"));
+    });
 }
 
 #[test]
@@ -119,27 +123,27 @@ fn write_routine_errors_when_prompt_sidecar_write_fails() {
     // the routine dir, gitignore, and `routine.toml` all write successfully, but a
     // non-empty directory occupies the `prompt.md` path, so the atomic rename over it
     // fails and `write_routine` returns that error.
-    let id = "rs-prompt-write-fail-id";
-    let title = "Rs Prompt Write Fail Routine";
-    let slug = slugify(title);
-    let dir = crate::paths::routine_dir(&slug);
-    std::fs::create_dir_all(&dir).unwrap();
-    // Block prompt.md with a *non-empty* directory so the atomic rename over it fails.
-    let prompt_dir = crate::paths::routine_prompt_path(&slug);
-    std::fs::create_dir_all(&prompt_dir).unwrap();
-    std::fs::write(prompt_dir.join("occupant"), "keep me non-empty").unwrap();
+    with_override_home(|_home| {
+        let id = "rs-prompt-write-fail-id";
+        let title = "Rs Prompt Write Fail Routine";
+        let slug = slugify(title);
+        let dir = crate::paths::routine_dir(&slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Block prompt.md with a *non-empty* directory so the atomic rename over it fails.
+        let prompt_dir = crate::paths::routine_prompt_path(&slug);
+        std::fs::create_dir_all(&prompt_dir).unwrap();
+        std::fs::write(prompt_dir.join("occupant"), "keep me non-empty").unwrap();
 
-    let err = write_routine(&make_routine(id, title)).unwrap_err();
-    let _ = err;
+        let err = write_routine(&make_routine(id, title)).unwrap_err();
+        let _ = err;
 
-    // routine.toml was written successfully before the prompt step failed.
-    assert!(crate::paths::routine_toml_path(&slug).exists());
-    assert!(
-        prompt_dir.is_dir(),
-        "the blocking prompt dir is left in place"
-    );
-
-    remove_routine_dir(&slug).unwrap();
+        // routine.toml was written successfully before the prompt step failed.
+        assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(
+            prompt_dir.is_dir(),
+            "the blocking prompt dir is left in place"
+        );
+    });
 }
 
 #[test]
@@ -147,127 +151,129 @@ fn load_routine_from_dir_applies_defaults_for_absent_optional_fields() {
     // A minimal routine.toml that omits prompt, enabled, timestamps, and id exercises the
     // default-fallback arms in load_routine_from_dir: prompt -> "", enabled -> true,
     // created_at/updated_at -> 0, and id -> dir_name (legacy fallback).
-    let slug = "rs-defaults-routine";
-    let dir = crate::paths::routine_dir(slug);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        crate::paths::routine_toml_path(slug),
-        "schedule = \"@daily\"\ntitle = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
-    )
-    .unwrap();
+    with_override_home(|_home| {
+        let slug = "rs-defaults-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "schedule = \"@daily\"\ntitle = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
 
-    let loaded = load_routine_from_dir(slug).unwrap();
-    assert_eq!(loaded.id, slug, "absent id falls back to the dir name");
-    assert_eq!(loaded.prompt, "", "absent prompt defaults to empty");
-    assert!(loaded.enabled, "absent enabled defaults to true");
-    assert_eq!(loaded.created_at, 0);
-    assert_eq!(loaded.updated_at, 0);
-    assert!(loaded.repositories.is_empty());
-
-    remove_routine_dir(slug).unwrap();
+        let loaded = load_routine_from_dir(slug).unwrap();
+        assert_eq!(loaded.id, slug, "absent id falls back to the dir name");
+        assert_eq!(loaded.prompt, "", "absent prompt defaults to empty");
+        assert!(loaded.enabled, "absent enabled defaults to true");
+        assert_eq!(loaded.created_at, 0);
+        assert_eq!(loaded.updated_at, 0);
+        assert!(loaded.repositories.is_empty());
+    });
 }
 
 #[test]
 fn load_routine_from_dir_missing_returns_none() {
-    assert!(load_routine_from_dir("rs-does-not-exist-zzz").is_none());
+    with_override_home(|_home| {
+        assert!(load_routine_from_dir("rs-does-not-exist-zzz").is_none());
+    });
 }
 
 #[test]
 fn last_manual_trigger_at_persists_to_sidecar_not_routine_toml() {
     // Runtime trigger state is written to the gitignored `state.local.toml` sidecar and kept out
     // of the version-controlled `routine.toml`, then read back from the sidecar on load.
-    let title = "Rs Sidecar Routine";
-    let slug = slugify(title);
-    let mut routine = make_routine("rs-sidecar-id", title);
-    routine.last_manual_trigger_at = Some(12345);
-    write_routine(&routine).unwrap();
+    with_override_home(|_home| {
+        let title = "Rs Sidecar Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-sidecar-id", title);
+        routine.last_manual_trigger_at = Some(12345);
+        write_routine(&routine).unwrap();
 
-    // The tracked config file does not carry the runtime timestamp...
-    let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
-    assert!(
-        !toml_text.contains("last_manual_trigger_at"),
-        "routine.toml must not carry runtime trigger state: {toml_text}"
-    );
-    // ...the gitignored sidecar does, and it round-trips through load.
-    assert!(crate::paths::routine_state_path(&slug).exists());
-    let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
-    assert!(state_text.contains("last_manual_trigger_at"));
-    assert_eq!(
-        load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
-        Some(12345)
-    );
-
-    remove_routine_dir(&slug).unwrap();
+        // The tracked config file does not carry the runtime timestamp...
+        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+        assert!(
+            !toml_text.contains("last_manual_trigger_at"),
+            "routine.toml must not carry runtime trigger state: {toml_text}"
+        );
+        // ...the gitignored sidecar does, and it round-trips through load.
+        assert!(crate::paths::routine_state_path(&slug).exists());
+        let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
+        assert!(state_text.contains("last_manual_trigger_at"));
+        assert_eq!(
+            load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
+            Some(12345)
+        );
+    });
 }
 
 #[test]
 fn write_routine_clears_stale_sidecar_when_untriggered() {
     // Re-writing a routine whose trigger state has been cleared removes the now-stale sidecar, so
     // the on-disk state mirrors the in-memory `None`.
-    let title = "Rs Clear Sidecar Routine";
-    let slug = slugify(title);
-    let mut routine = make_routine("rs-clear-id", title);
-    routine.last_manual_trigger_at = Some(999);
-    write_routine(&routine).unwrap();
-    assert!(crate::paths::routine_state_path(&slug).exists());
+    with_override_home(|_home| {
+        let title = "Rs Clear Sidecar Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-clear-id", title);
+        routine.last_manual_trigger_at = Some(999);
+        write_routine(&routine).unwrap();
+        assert!(crate::paths::routine_state_path(&slug).exists());
 
-    routine.last_manual_trigger_at = None;
-    write_routine(&routine).unwrap();
-    assert!(
-        !crate::paths::routine_state_path(&slug).exists(),
-        "sidecar should be removed when there is no trigger state"
-    );
-    assert_eq!(
-        load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
-        None
-    );
-
-    remove_routine_dir(&slug).unwrap();
+        routine.last_manual_trigger_at = None;
+        write_routine(&routine).unwrap();
+        assert!(
+            !crate::paths::routine_state_path(&slug).exists(),
+            "sidecar should be removed when there is no trigger state"
+        );
+        assert_eq!(
+            load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
+            None
+        );
+    });
 }
 
 #[test]
 fn load_routine_falls_back_to_legacy_last_triggered_in_routine_toml() {
     // A routine written by an older daemon stored `last_triggered_at` inside `routine.toml` and
     // has no sidecar. Load still surfaces the timestamp via the legacy-field fallback.
-    let slug = "rs-legacy-trigger-routine";
-    let dir = crate::paths::routine_dir(slug);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        crate::paths::routine_toml_path(slug),
-        "schedule = \"@daily\"\ntitle = \"Rs Legacy Trigger\"\nagent = \"claude\"\nlast_triggered_at = 777\n",
-    )
-    .unwrap();
-    // No sidecar exists yet.
-    assert!(!crate::paths::routine_state_path(slug).exists());
+    with_override_home(|_home| {
+        let slug = "rs-legacy-trigger-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "schedule = \"@daily\"\ntitle = \"Rs Legacy Trigger\"\nagent = \"claude\"\nlast_triggered_at = 777\n",
+        )
+        .unwrap();
+        // No sidecar exists yet.
+        assert!(!crate::paths::routine_state_path(slug).exists());
 
-    assert_eq!(
-        load_routine_from_dir(slug).unwrap().last_manual_trigger_at,
-        Some(777)
-    );
-
-    remove_routine_dir(slug).unwrap();
+        assert_eq!(
+            load_routine_from_dir(slug).unwrap().last_manual_trigger_at,
+            Some(777)
+        );
+    });
 }
 
 #[test]
 fn load_routine_ignores_unparsable_sidecar() {
     // A malformed `state.local.toml` parses to `None` (rather than crashing the load), and with no
     // legacy field in `routine.toml` the routine loads with no trigger timestamp.
-    let slug = "rs-bad-sidecar-routine";
-    let dir = crate::paths::routine_dir(slug);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        crate::paths::routine_toml_path(slug),
-        "schedule = \"@daily\"\ntitle = \"Rs Bad Sidecar\"\nagent = \"claude\"\n",
-    )
-    .unwrap();
-    std::fs::write(crate::paths::routine_state_path(slug), "= not valid toml =").unwrap();
+    with_override_home(|_home| {
+        let slug = "rs-bad-sidecar-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "schedule = \"@daily\"\ntitle = \"Rs Bad Sidecar\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        std::fs::write(crate::paths::routine_state_path(slug), "= not valid toml =").unwrap();
 
-    assert_eq!(
-        load_routine_from_dir(slug).unwrap().last_manual_trigger_at,
-        None
-    );
-
-    remove_routine_dir(slug).unwrap();
+        assert_eq!(
+            load_routine_from_dir(slug).unwrap().last_manual_trigger_at,
+            None
+        );
+    });
 }
 
 #[test]
@@ -275,48 +281,48 @@ fn load_routine_reads_scheduled_trigger_from_sidecar() {
     // `last_scheduled_trigger_at` lives in its own gitignored `scheduled.local.toml` sidecar,
     // written by the routine's `run.sh` at cron fire time, and is read back on load — independently
     // of the manual-trigger sidecar.
-    let title = "Rs Scheduled Sidecar Routine";
-    let slug = slugify(title);
-    write_routine(&make_routine("rs-scheduled-id", title)).unwrap();
-    std::fs::write(
-        crate::paths::routine_scheduled_state_path(&slug),
-        "last_scheduled_trigger_at = 4242\n",
-    )
-    .unwrap();
+    with_override_home(|_home| {
+        let title = "Rs Scheduled Sidecar Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine("rs-scheduled-id", title)).unwrap();
+        std::fs::write(
+            crate::paths::routine_scheduled_state_path(&slug),
+            "last_scheduled_trigger_at = 4242\n",
+        )
+        .unwrap();
 
-    let loaded = load_routine_from_dir(&slug).unwrap();
-    assert_eq!(loaded.last_scheduled_trigger_at, Some(4242));
-    // The scheduled timestamp is distinct from the (unset) manual one.
-    assert_eq!(loaded.last_manual_trigger_at, None);
-
-    remove_routine_dir(&slug).unwrap();
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.last_scheduled_trigger_at, Some(4242));
+        // The scheduled timestamp is distinct from the (unset) manual one.
+        assert_eq!(loaded.last_manual_trigger_at, None);
+    });
 }
 
 #[test]
 fn load_routine_ignores_unparsable_scheduled_sidecar() {
     // A malformed `scheduled.local.toml` parses to `None` rather than crashing the load.
-    let slug = "rs-bad-scheduled-sidecar-routine";
-    let dir = crate::paths::routine_dir(slug);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        crate::paths::routine_toml_path(slug),
-        "schedule = \"@daily\"\ntitle = \"Rs Bad Scheduled Sidecar\"\nagent = \"claude\"\n",
-    )
-    .unwrap();
-    std::fs::write(
-        crate::paths::routine_scheduled_state_path(slug),
-        "= not valid toml =",
-    )
-    .unwrap();
+    with_override_home(|_home| {
+        let slug = "rs-bad-scheduled-sidecar-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "schedule = \"@daily\"\ntitle = \"Rs Bad Scheduled Sidecar\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            crate::paths::routine_scheduled_state_path(slug),
+            "= not valid toml =",
+        )
+        .unwrap();
 
-    assert_eq!(
-        load_routine_from_dir(slug)
-            .unwrap()
-            .last_scheduled_trigger_at,
-        None
-    );
-
-    remove_routine_dir(slug).unwrap();
+        assert_eq!(
+            load_routine_from_dir(slug)
+                .unwrap()
+                .last_scheduled_trigger_at,
+            None
+        );
+    });
 }
 
 #[test]
@@ -324,69 +330,71 @@ fn write_routine_preserves_scheduler_written_scheduled_sidecar() {
     // The daemon never writes the scheduled sidecar, so re-persisting a routine (e.g. on startup or
     // an update) must leave the scheduler-stamped `scheduled.local.toml` untouched — the bug this
     // separate-file design exists to prevent.
-    let title = "Rs Preserve Scheduled Routine";
-    let slug = slugify(title);
-    let mut routine = make_routine("rs-preserve-scheduled-id", title);
-    write_routine(&routine).unwrap();
+    with_override_home(|_home| {
+        let title = "Rs Preserve Scheduled Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-preserve-scheduled-id", title);
+        write_routine(&routine).unwrap();
 
-    // Simulate a scheduled cron firing stamping the sidecar.
-    std::fs::write(
-        crate::paths::routine_scheduled_state_path(&slug),
-        "last_scheduled_trigger_at = 55\n",
-    )
-    .unwrap();
+        // Simulate a scheduled cron firing stamping the sidecar.
+        std::fs::write(
+            crate::paths::routine_scheduled_state_path(&slug),
+            "last_scheduled_trigger_at = 55\n",
+        )
+        .unwrap();
 
-    // A subsequent daemon-side write (manual trigger recorded, routine updated, repersist, …).
-    routine.last_manual_trigger_at = Some(7);
-    write_routine(&routine).unwrap();
+        // A subsequent daemon-side write (manual trigger recorded, routine updated, repersist, …).
+        routine.last_manual_trigger_at = Some(7);
+        write_routine(&routine).unwrap();
 
-    assert!(
-        crate::paths::routine_scheduled_state_path(&slug).exists(),
-        "daemon write must not remove the scheduler-owned sidecar"
-    );
-    let loaded = load_routine_from_dir(&slug).unwrap();
-    assert_eq!(loaded.last_scheduled_trigger_at, Some(55));
-    assert_eq!(loaded.last_manual_trigger_at, Some(7));
-
-    remove_routine_dir(&slug).unwrap();
+        assert!(
+            crate::paths::routine_scheduled_state_path(&slug).exists(),
+            "daemon write must not remove the scheduler-owned sidecar"
+        );
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.last_scheduled_trigger_at, Some(55));
+        assert_eq!(loaded.last_manual_trigger_at, Some(7));
+    });
 }
 
 #[test]
 fn torn_routine_toml_loads_as_none() {
     // A truncated/garbage routine.toml (e.g. left by a crash mid-write) must not panic or load a
     // half-baked routine; the loader returns None and the routine is simply absent.
-    let slug = "rs-torn-toml-routine";
-    let dir = crate::paths::routine_dir(slug);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(crate::paths::routine_toml_path(slug), "id = \"x\"\nschedu").unwrap();
-    assert!(load_routine_from_dir(slug).is_none());
-    remove_routine_dir(slug).unwrap();
+    with_override_home(|_home| {
+        let slug = "rs-torn-toml-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(crate::paths::routine_toml_path(slug), "id = \"x\"\nschedu").unwrap();
+        assert!(load_routine_from_dir(slug).is_none());
+    });
 }
 
 #[test]
 fn write_routine_leaves_no_tmp_residue() {
-    let id = "rs-no-residue-id";
-    let title = "Rs No Residue Routine";
-    let slug = slugify(title);
-    write_routine(&make_routine(id, title)).unwrap();
-    let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
-        .unwrap()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
-        .count();
-    assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
-    remove_routine_dir(&slug).unwrap();
+    with_override_home(|_home| {
+        let id = "rs-no-residue-id";
+        let title = "Rs No Residue Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine(id, title)).unwrap();
+        let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
+            .count();
+        assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
+    });
 }
 
 #[test]
 fn load_store_includes_written_routine() {
-    let id = "rs-loadstore-id";
-    let title = "Rs Loadstore Routine";
-    let slug = slugify(title);
-    write_routine(&make_routine(id, title)).unwrap();
-    let store = load_store();
-    assert!(store.lock().unwrap().contains_key(id));
-    remove_routine_dir(&slug).unwrap();
+    with_override_home(|_home| {
+        let id = "rs-loadstore-id";
+        let title = "Rs Loadstore Routine";
+        write_routine(&make_routine(id, title)).unwrap();
+        let store = load_store();
+        assert!(store.lock().unwrap().contains_key(id));
+    });
 }
 
 #[test]
@@ -397,55 +405,58 @@ fn load_store_from_dir_missing_dir_empty() {
 
 #[test]
 fn remove_routine_dir_noop_when_absent() {
-    remove_routine_dir("rs-never-created-zzz").unwrap();
+    with_override_home(|_home| {
+        remove_routine_dir("rs-never-created-zzz").unwrap();
+    });
 }
 
 #[test]
 fn migrate_routine_dirs_moves_legacy_uuid_dir_to_slug() {
-    let id = "rs-legacy-uuid-1234";
-    let title = "Rs Legacy Migrate Routine";
-    let slug = slugify(title);
-    let legacy_dir = crate::paths::routine_dir(id);
-    std::fs::create_dir_all(&legacy_dir).unwrap();
-    // Legacy layout: routine.toml + prompt.md live under the UUID-named dir.
-    let toml = format!(
-        "id = \"{id}\"\nschedule = \"@daily\"\ntitle = \"{title}\"\nagent = \"claude\"\nprompt = \"task\"\nenabled = true\n"
-    );
-    std::fs::write(legacy_dir.join("routine.toml"), toml).unwrap();
-    std::fs::write(legacy_dir.join("prompt.md"), "legacy prompt").unwrap();
+    with_override_home(|_home| {
+        let id = "rs-legacy-uuid-1234";
+        let title = "Rs Legacy Migrate Routine";
+        let slug = slugify(title);
+        let legacy_dir = crate::paths::routine_dir(id);
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        // Legacy layout: routine.toml + prompt.md live under the UUID-named dir.
+        let toml = format!(
+            "id = \"{id}\"\nschedule = \"@daily\"\ntitle = \"{title}\"\nagent = \"claude\"\nprompt = \"task\"\nenabled = true\n"
+        );
+        std::fs::write(legacy_dir.join("routine.toml"), toml).unwrap();
+        std::fs::write(legacy_dir.join("prompt.md"), "legacy prompt").unwrap();
 
-    migrate_routine_dirs();
+        migrate_routine_dirs();
 
-    // Legacy dir removed; canonical slug dir now holds toml + prompt.
-    assert!(!legacy_dir.exists(), "legacy UUID dir should be removed");
-    assert!(crate::paths::routine_toml_path(&slug).exists());
-    assert!(crate::paths::routine_prompt_path(&slug).exists());
-    let loaded = load_routine_from_dir(&slug).unwrap();
-    assert_eq!(loaded.id, id, "UUID id preserved across the dir migration");
-
-    remove_routine_dir(&slug).unwrap();
+        // Legacy dir removed; canonical slug dir now holds toml + prompt.
+        assert!(!legacy_dir.exists(), "legacy UUID dir should be removed");
+        assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(crate::paths::routine_prompt_path(&slug).exists());
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.id, id, "UUID id preserved across the dir migration");
+    });
 }
 
 #[test]
 fn repersist_routines_recreates_missing_prompt_sidecar() {
-    let id = "rs-repersist-id";
-    let title = "Rs Repersist Routine";
-    let slug = slugify(title);
-    write_routine(&make_routine(id, title)).unwrap();
-    // Simulate the sync-only state: prompt.md gone, only run.sh-style dir remains.
-    std::fs::remove_file(crate::paths::routine_prompt_path(&slug)).unwrap();
-    assert!(!crate::paths::routine_prompt_path(&slug).exists());
+    with_override_home(|_home| {
+        let id = "rs-repersist-id";
+        let title = "Rs Repersist Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine(id, title)).unwrap();
+        // Simulate the sync-only state: prompt.md gone, only run.sh-style dir remains.
+        std::fs::remove_file(crate::paths::routine_prompt_path(&slug)).unwrap();
+        assert!(!crate::paths::routine_prompt_path(&slug).exists());
 
-    let mut map = HashMap::new();
-    map.insert(id.to_string(), make_routine(id, title));
-    let store = Arc::new(Mutex::new(map));
-    repersist_routines(&store);
+        let mut map = HashMap::new();
+        map.insert(id.to_string(), make_routine(id, title));
+        let store = Arc::new(Mutex::new(map));
+        repersist_routines(&store);
 
-    assert!(
-        crate::paths::routine_prompt_path(&slug).exists(),
-        "repersist should recreate the prompt sidecar"
-    );
-    remove_routine_dir(&slug).unwrap();
+        assert!(
+            crate::paths::routine_prompt_path(&slug).exists(),
+            "repersist should recreate the prompt sidecar"
+        );
+    });
 }
 
 /// A unique, not-yet-created scratch directory under the system temp dir.
@@ -580,6 +591,29 @@ fn migrate_routine_dirs_from_dir_skips_non_dir_and_unparsable() {
         // Neither entry was migrated away; both are left exactly as they were.
         assert!(routines.join("stray.txt").exists());
         assert!(garbage.join("routine.toml").exists());
+    });
+}
+
+#[test]
+fn migrate_routine_dirs_from_dir_skips_already_canonical_dir() {
+    // A routine dir whose name already equals its slug needs no migration: the
+    // `slug == dir_name` guard short-circuits with `continue`, leaving the dir untouched.
+    with_override_home(|_home| {
+        let routines = crate::paths::routines_dir();
+        std::fs::create_dir_all(&routines).unwrap();
+
+        // write_routine lays the routine down under its canonical slug-named dir.
+        let title = "Rs Canonical Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine("rs-canonical-id", title)).unwrap();
+        // The on-disk dir name already equals the slug, so the scan hits the no-op guard.
+        assert!(routines.join(&slug).is_dir());
+
+        migrate_routine_dirs_from_dir(&routines);
+
+        // Already canonical, so the dir stays exactly where it was.
+        assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert_eq!(load_routine_from_dir(&slug).unwrap().id, "rs-canonical-id");
     });
 }
 

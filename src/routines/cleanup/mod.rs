@@ -4,8 +4,10 @@
 //! agent in a tmux session named `moadim-{slug}-{ts}`. When the agent exits the session ends, but
 //! the workbench (prompt, logs, cloned repos) lingers forever. This module reaps those leftovers: a
 //! workbench is removed once its run has *finished* (no live tmux session) **and** it is older than
-//! the owning routine's [`Routine::effective_ttl_secs`]. A still-running session within its
-//! [`Routine::effective_max_runtime_secs`] is never touched; one that has *exceeded* that bound is
+//! the owning routine's [`Routine::effective_ttl_secs`](crate::routines::Routine::effective_ttl_secs).
+//! A still-running session within its
+//! [`Routine::effective_max_runtime_secs`](crate::routines::Routine::effective_max_runtime_secs)
+//! is never touched; one that has *exceeded* that bound is
 //! a hung run, so a watchdog force-kills its tmux session (recording the reason in the run's
 //! `agent.log`), after which the workbench is reaped under the normal TTL rules. Orphaned
 //! workbenches (routine since deleted) fall back to `MAX_TTL_SECS` / `MAX_RUNTIME_SECS`.
@@ -24,6 +26,9 @@ mod snapshot;
 mod ttl;
 
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
+
+pub(crate) use runtime::max_runtime_ceiling_secs;
+pub(crate) use ttl::ttl_ceiling_secs;
 
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -70,7 +75,7 @@ fn reap_dir(
     };
     let mut removed = 0;
     for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();

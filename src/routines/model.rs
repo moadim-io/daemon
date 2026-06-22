@@ -78,6 +78,12 @@ pub struct Routine {
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines this routine runs on. Each daemon schedules a routine only when this list names its
+    /// own machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so
+    /// a routine is dormant until explicitly assigned. Lets one shared config repo drive different
+    /// routines on different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the routine is active.
     pub enabled: bool,
     /// `"managed"` for routines owned by this server.
@@ -95,12 +101,12 @@ pub struct Routine {
     /// Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.
     ///
     /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
-    /// updates only the manual field, a scheduled firing updates only this one. The scheduler is
-    /// the host OS crontab, which runs the routine's generated `run.sh` directly without going
-    /// through the daemon — so the script itself stamps this timestamp into the gitignored
-    /// `scheduled.local.toml` sidecar at fire time, and the daemon reads it back on load. The
-    /// daemon never writes this field (it is absent from `routine.toml` and the daemon-owned
-    /// `state.local.toml`), so re-persisting a routine can't clobber it.
+    /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
+    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns stamps this
+    /// timestamp into the gitignored `scheduled.local.toml` sidecar at fire time (via its `printf`
+    /// step); the daemon reads it back on load. The daemon never writes this field directly (it is
+    /// absent from `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a
+    /// routine can't clobber it.
     #[serde(default)]
     pub last_scheduled_trigger_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
@@ -214,6 +220,9 @@ pub struct CreateRoutineRequest {
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines to run this routine on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -241,6 +250,8 @@ pub struct UpdateRoutineRequest {
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.

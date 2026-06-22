@@ -24,6 +24,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
   port or a reverse proxy instead of failing against an address the daemon may not
   be bound to. (#385)
+- An agent config that exists on disk but cannot be read (due to a permissions
+  error or path collision) is now reported as `AgentLoadError::Unreadable` rather
+  than `AgentLoadError::Missing`. Previously, any `read_to_string` failure was
+  silently mapped to `Missing`, causing `validate_agent` to accept the broken
+  config (it tolerates `Missing` for configs not yet created), leaving a
+  green-dot routine that silently never fires. The new `Unreadable` variant is
+  rejected at create/update time with a `BadRequest`, so the operator learns the
+  real cause immediately. (#445)
 
 ## [0.13.0] - 2026-06-21
 

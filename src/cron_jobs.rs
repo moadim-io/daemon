@@ -53,6 +53,12 @@ pub struct CronJob {
     pub handler: String,
     /// Arbitrary JSON metadata attached to the job.
     pub metadata: serde_json::Value,
+    /// Machines this job runs on. Each daemon schedules the job only when this list names its own
+    /// machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so a
+    /// job is dormant until explicitly assigned. Lets one shared config repo drive different jobs on
+    /// different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the job is active.
     pub enabled: bool,
     /// `"managed"` for jobs owned by this server; `"system:*"` for read-only system cron entries.
@@ -159,7 +165,10 @@ pub fn new_registry() -> HandlerRegistry {
 
 /// Normalize `expr` to 5-field OS cron format for consistent storage.
 ///
-/// Strips the seconds (field 0) and year (field 6) from any 7-field expression.
+/// Both the 6-field (`sec min hour dom month dow`) and 7-field
+/// (`sec min hour dom month dow year`) forms accepted by `croner` carry a
+/// leading seconds field that the OS crontab cannot express; it is dropped (as
+/// is the trailing year), projecting onto the 5-field `min hour dom month dow`.
 /// `@keyword` schedules and already-5-field expressions are returned unchanged.
 pub(crate) fn normalize_schedule(expr: &str) -> String {
     let trimmed = expr.trim();
@@ -168,7 +177,7 @@ pub(crate) fn normalize_schedule(expr: &str) -> String {
     }
     let fields: Vec<&str> = trimmed.split_ascii_whitespace().collect();
     match fields.len() {
-        7 => fields[1..6].join(" "),
+        6 | 7 => fields[1..6].join(" "),
         _ => trimmed.to_string(),
     }
 }
@@ -197,6 +206,9 @@ pub struct CreateRequest {
     #[serde(default)]
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: serde_json::Value,
+    /// Machines to run this job on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the job in an enabled state (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -218,6 +230,8 @@ pub struct UpdateRequest {
     /// New metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: Option<serde_json::Value>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
 }
@@ -262,6 +276,7 @@ pub fn svc_create(
         schedule: normalize_schedule(&req.schedule),
         handler: req.handler,
         metadata: req.metadata,
+        machines: req.machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -296,6 +311,9 @@ pub fn svc_update(
     }
     if let Some(metadata) = req.metadata {
         job.metadata = metadata;
+    }
+    if let Some(machines) = req.machines {
+        job.machines = machines;
     }
     if let Some(enabled) = req.enabled {
         job.enabled = enabled;

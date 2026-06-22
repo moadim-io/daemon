@@ -67,6 +67,11 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         agent: spec.agent.to_string(),
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
+        // Self-assign a fresh default to the machine seeding it, so it actually runs out of the box
+        // (an empty `machines` list would leave the default dormant on every machine). On a shared
+        // config repo the default is seeded once, on whichever machine starts first; the user can
+        // reassign it with `moadim routines update`.
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: now,
@@ -101,7 +106,9 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         agent: spec.agent.to_string(),
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
-        // Never override the user's enable/disable choice on an existing default.
+        // Machine targeting is user-owned, like `enabled`: carry the existing choice across a
+        // spec-driven reconcile so a default reassigned (or unassigned) by the user stays that way.
+        machines: cur.machines.clone(),
         enabled: cur.enabled,
         source: "managed".to_string(),
         created_at: cur.created_at,

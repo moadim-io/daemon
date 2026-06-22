@@ -15,7 +15,8 @@ use super::model::{
     RoutineStore, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger, svc_update,
+    svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger,
+    svc_trigger_scheduled, svc_update,
 };
 
 /// `POST /routines` — create a new routine.
@@ -104,6 +105,21 @@ pub async fn trigger(
     Path(id): Path<String>,
 ) -> Result<Json<Routine>, AppError> {
     Ok(Json(svc_trigger(&store, &id)?))
+}
+
+/// `POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.
+///
+/// The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).
+/// Unlike [`trigger`] it does not record a manual trigger; the spawned command records the scheduled
+/// timestamp itself. See [`svc_trigger_scheduled`].
+#[utoipa::path(post, path = "/routines/{id}/scheduled-trigger",
+    params(("id" = String, Path, description = "Routine UUID")),
+    responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
+pub async fn scheduled_trigger(
+    State(store): State<RoutineStore>,
+    Path(id): Path<String>,
+) -> Result<Json<Routine>, AppError> {
+    Ok(Json(svc_trigger_scheduled(&store, &id)?))
 }
 
 /// `GET /routines.ics` — iCalendar feed of every enabled routine's upcoming fire times.

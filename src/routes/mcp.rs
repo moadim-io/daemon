@@ -57,6 +57,8 @@ struct UpdateInput {
     /// New metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     metadata: Option<serde_json::Value>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
 }
@@ -77,6 +79,8 @@ struct UpdateRoutineInput {
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     repositories: Option<Vec<crate::routines::Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
     /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
@@ -199,6 +203,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             handler: input.handler,
             metadata: input.metadata,
+            machines: input.machines,
             enabled: input.enabled,
         };
         Ok(
@@ -286,6 +291,7 @@ impl MoadimMcp {
             agent: input.agent,
             prompt: input.prompt,
             repositories: input.repositories,
+            machines: input.machines,
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
             max_runtime_secs: input.max_runtime_secs,
@@ -377,11 +383,9 @@ impl MoadimMcp {
     )]
     fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         log::info!("restart requested via MCP");
-        Ok(crate::cli::spawn_restart()
-            .map(|helper_pid| {
-                ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
-            })
-            .unwrap_or_else(err))
+        Ok(crate::cli::spawn_restart().map_or_else(err, |helper_pid| {
+            ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
+        }))
     }
 }
 

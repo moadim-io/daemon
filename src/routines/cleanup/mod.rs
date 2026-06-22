@@ -27,6 +27,9 @@ mod ttl;
 
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
+pub(crate) use runtime::max_runtime_ceiling_secs;
+pub(crate) use ttl::ttl_ceiling_secs;
+
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
@@ -152,7 +155,7 @@ fn reap_dir(
     };
     let mut removed = 0;
     for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();

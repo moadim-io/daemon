@@ -425,7 +425,9 @@ moadim cron-jobs delete <id>
 moadim routines create --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..." \
   --repositories '[{"repository":"https://github.com/me/repo","branch":"main"}]'
 moadim routines list
+moadim routines get <id>
 moadim routines update <id> --title "Renamed" --ttl-secs 3600
+moadim routines replace <id> --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..."
 moadim routines trigger <id>
 moadim routines logs <id>
 moadim routines ical          # iCalendar feed of upcoming fire times

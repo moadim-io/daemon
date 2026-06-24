@@ -249,6 +249,88 @@ pub fn unassigned_count(jobs: &[CronJob]) -> usize {
     jobs.iter().filter(|j| j.machines.is_empty()).count()
 }
 
+// ─── Column sort ──────────────────────────────────────────────────────────────
+//
+// Client-side sort applied to the filtered job list before rendering.
+// Best practice (Grafana / Datadog / GitHub CI): sortable column headers let
+// operators quickly order by urgency (NEXT RUN), status (ENABLED), recency
+// (UPDATED), or name (ID / HANDLER). Click once → ascending (▲); click again
+// → descending (▼). Pure, host-testable; no backend call required.
+
+/// The column currently used to sort the job table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortCol {
+    Id,
+    Handler,
+    NextRun,
+    Enabled,
+    Updated,
+}
+
+/// Sort direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortDir {
+    #[default]
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    /// Toggle to the opposite direction.
+    #[must_use]
+    pub fn flip(self) -> Self {
+        match self {
+            SortDir::Asc => SortDir::Desc,
+            SortDir::Desc => SortDir::Asc,
+        }
+    }
+}
+
+/// Return `jobs` sorted by `col` in `dir` order. When `col` is `None` the
+/// server/insertion order is preserved. Ties break by id for a stable sort.
+#[must_use]
+pub fn sort_jobs(
+    mut jobs: Vec<CronJob>,
+    col: Option<SortCol>,
+    dir: SortDir,
+    now: DateTime<Local>,
+) -> Vec<CronJob> {
+    let col = match col {
+        Some(c) => c,
+        None => return jobs,
+    };
+    jobs.sort_by(|a, b| {
+        let primary = match col {
+            SortCol::Id => a.id.cmp(&b.id),
+            SortCol::Handler => a.handler.cmp(&b.handler),
+            SortCol::NextRun => {
+                let next_of = |j: &CronJob| {
+                    if j.enabled {
+                        next_fire_after(&j.schedule, now)
+                    } else {
+                        None
+                    }
+                };
+                match (next_of(a), next_of(b)) {
+                    (Some(ta), Some(tb)) => ta.cmp(&tb),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                }
+            }
+            SortCol::Enabled => a.enabled.cmp(&b.enabled),
+            SortCol::Updated => a.updated_at.cmp(&b.updated_at),
+        };
+        let directed = if dir == SortDir::Desc {
+            primary.reverse()
+        } else {
+            primary
+        };
+        directed.then_with(|| a.id.cmp(&b.id))
+    });
+    jobs
+}
+
 // ─── API layer ────────────────────────────────────────────────────────────────
 
 async fn api_list() -> Result<Vec<CronJob>, String> {
@@ -372,6 +454,10 @@ pub struct CState {
     pub select_anchor: Option<String>,
     /// Active faceted filter applied to the list/day views.
     pub filter: JobFilter,
+    /// Column the table is currently sorted by (`None` = natural order).
+    pub sort_col: Option<SortCol>,
+    /// Direction of the active column sort.
+    pub sort_dir: SortDir,
 }
 
 impl Default for CState {
@@ -385,6 +471,8 @@ impl Default for CState {
             selected: HashSet::new(),
             select_anchor: None,
             filter: JobFilter::default(),
+            sort_col: None,
+            sort_dir: SortDir::default(),
         }
     }
 }
@@ -417,6 +505,8 @@ pub enum CAction {
     SetStatus(StatusFacet),
     SetMachineFacet(MachineFacet),
     ClearFilters,
+    /// Sort by `col`; re-clicking the active column reverses direction.
+    SetSort(SortCol),
 }
 
 impl Reducible for CState {
@@ -515,6 +605,14 @@ impl Reducible for CState {
             CAction::SetStatus(status) => s.filter.status = status,
             CAction::SetMachineFacet(m) => s.filter.machine = m,
             CAction::ClearFilters => s.filter = JobFilter::default(),
+            CAction::SetSort(col) => {
+                if s.sort_col == Some(col) {
+                    s.sort_dir = s.sort_dir.flip();
+                } else {
+                    s.sort_col = Some(col);
+                    s.sort_dir = SortDir::Asc;
+                }
+            }
         }
         s.into()
     }
@@ -955,6 +1053,11 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         Callback::from(move |view: CView| state.dispatch(CAction::SetView(view)))
     };
 
+    let on_sort = {
+        let state = state.clone();
+        Callback::from(move |col: SortCol| state.dispatch(CAction::SetSort(col)))
+    };
+
     let jobs = state.jobs.clone();
     let loading = state.loading;
     let now_val = *now;
@@ -963,13 +1066,16 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let modal = state.modal.clone();
     let selected = state.selected.clone();
     let filter = state.filter.clone();
+    let sort_col = state.sort_col;
+    let sort_dir = state.sort_dir;
 
-    // Faceted view of the list: the table and day timeline render the filtered
-    // set; the KPI tiles stay over the full fleet.
+    // Faceted view of the list: filter first, then sort. The KPI tiles and
+    // result count stay over the filtered set (unaffected by sort order).
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let filtered = filter_jobs(&jobs, &filter, now_val, window);
-    let total_jobs = jobs.len();
     let shown = filtered.len();
+    let displayed = sort_jobs(filtered, sort_col, sort_dir, now_val);
+    let total_jobs = jobs.len();
     let machine_options = distinct_machines(&jobs);
     let has_unassigned = unassigned_count(&jobs) > 0;
     let filter_active = filter.is_active();
@@ -1039,11 +1145,14 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                                 on_clear={on_clear_selection}
                                             />
                                             <JobTable
-                                                jobs={filtered}
+                                                jobs={displayed}
                                                 loading={loading}
                                                 now={now_val}
                                                 selected={selected}
                                                 filter_active={filter_active}
+                                                sort_col={sort_col}
+                                                sort_dir={sort_dir}
+                                                on_sort={on_sort}
                                                 on_edit={on_edit}
                                                 on_delete={on_ask_delete}
                                                 on_toggle={on_toggle}
@@ -1056,7 +1165,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                         </>
                                     },
                                     CView::Day => {
-                                        let items = filtered.iter().filter(|j| j.enabled).map(|j| TimelineItem {
+                                        let items = displayed.iter().filter(|j| j.enabled).map(|j| TimelineItem {
                                             label: j.handler.clone(),
                                             schedule: j.schedule.clone(),
                                         }).collect::<Vec<_>>();
@@ -1312,6 +1421,30 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
 
 // ─── Job table ────────────────────────────────────────────────────────────────
 
+/// Render a sortable `<th>` cell. Active column shows ▲ / ▼; inactive columns
+/// are plain clickable headers. Clicking the active column reverses direction.
+fn sort_th(
+    label: &'static str,
+    col: SortCol,
+    current: Option<SortCol>,
+    dir: SortDir,
+    on_sort: &Callback<SortCol>,
+) -> Html {
+    let active = current == Some(col);
+    let indicator = if active {
+        if dir == SortDir::Asc { " ▲" } else { " ▼" }
+    } else {
+        ""
+    };
+    let cls = if active { "th-sort th-sort-active" } else { "th-sort" };
+    let cb = on_sort.clone();
+    html! {
+        <th class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(col))}>
+            { format!("{label}{indicator}") }
+        </th>
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub struct JobTableProps {
     pub jobs: Vec<CronJob>,
@@ -1321,6 +1454,12 @@ pub struct JobTableProps {
     pub selected: HashSet<String>,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    /// Active sort column (`None` = natural order).
+    pub sort_col: Option<SortCol>,
+    /// Direction of the active column sort.
+    pub sort_dir: SortDir,
+    /// Fired when the user clicks a sortable column header.
+    pub on_sort: Callback<SortCol>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1392,13 +1531,13 @@ pub fn job_table(props: &JobTableProps) -> Html {
                                 onclick={on_select_all}
                             />
                         </th>
-                        <th>{"ID"}</th>
+                        { sort_th("ID", SortCol::Id, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"SCHEDULE"}</th>
-                        <th>{"NEXT RUN"}</th>
-                        <th>{"HANDLER"}</th>
+                        { sort_th("NEXT RUN", SortCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("HANDLER", SortCol::Handler, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"METADATA"}</th>
-                        <th>{"ENABLED"}</th>
-                        <th>{"UPDATED"}</th>
+                        { sort_th("ENABLED", SortCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("UPDATED", SortCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
                     </tr>
                 </thead>

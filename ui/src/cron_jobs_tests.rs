@@ -300,3 +300,170 @@ fn unassigned_count_tallies_dormant_jobs() {
     ];
     assert_eq!(unassigned_count(&jobs), 2);
 }
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+
+#[test]
+fn sort_dir_flip_cycles() {
+    assert_eq!(SortDir::Asc.flip(), SortDir::Desc);
+    assert_eq!(SortDir::Desc.flip(), SortDir::Asc);
+}
+
+#[test]
+fn sort_dir_default_is_asc() {
+    assert_eq!(SortDir::default(), SortDir::Asc);
+}
+
+#[test]
+fn sort_jobs_none_preserves_input_order() {
+    let jobs = vec![
+        job("c", "h", "0 * * * *", &[], true),
+        job("a", "h", "0 * * * *", &[], true),
+        job("b", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs.clone(), None, SortDir::Asc, now());
+    assert_eq!(out, jobs);
+}
+
+#[test]
+fn sort_jobs_by_id_ascending() {
+    let jobs = vec![
+        job("c-job", "h", "0 * * * *", &[], true),
+        job("a-job", "h", "0 * * * *", &[], true),
+        job("b-job", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Id), SortDir::Asc, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, vec!["a-job", "b-job", "c-job"]);
+}
+
+#[test]
+fn sort_jobs_by_id_descending() {
+    let jobs = vec![
+        job("a-job", "h", "0 * * * *", &[], true),
+        job("b-job", "h", "0 * * * *", &[], true),
+        job("c-job", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Id), SortDir::Desc, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, vec!["c-job", "b-job", "a-job"]);
+}
+
+#[test]
+fn sort_jobs_by_handler_ascending() {
+    let jobs = vec![
+        job("j1", "zap", "0 * * * *", &[], true),
+        job("j2", "alpha", "0 * * * *", &[], true),
+        job("j3", "beta", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Handler), SortDir::Asc, now());
+    let handlers: Vec<&str> = out.iter().map(|j| j.handler.as_str()).collect();
+    assert_eq!(handlers, vec!["alpha", "beta", "zap"]);
+}
+
+#[test]
+fn sort_jobs_by_handler_descending() {
+    let jobs = vec![
+        job("j1", "alpha", "0 * * * *", &[], true),
+        job("j2", "zap", "0 * * * *", &[], true),
+        job("j3", "beta", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Handler), SortDir::Desc, now());
+    let handlers: Vec<&str> = out.iter().map(|j| j.handler.as_str()).collect();
+    assert_eq!(handlers, vec!["zap", "beta", "alpha"]);
+}
+
+#[test]
+fn sort_jobs_by_enabled_asc_disabled_first() {
+    let jobs = vec![
+        job("j1", "h", "0 * * * *", &[], true),
+        job("j2", "h", "0 * * * *", &[], false),
+        job("j3", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Enabled), SortDir::Asc, now());
+    // false < true → disabled rows first in Asc
+    assert!(!out[0].enabled);
+    assert!(out[1].enabled);
+    assert!(out[2].enabled);
+}
+
+#[test]
+fn sort_jobs_by_enabled_desc_enabled_first() {
+    let jobs = vec![
+        job("j1", "h", "0 * * * *", &[], false),
+        job("j2", "h", "0 * * * *", &[], true),
+        job("j3", "h", "0 * * * *", &[], false),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Enabled), SortDir::Desc, now());
+    assert!(out[0].enabled);
+    assert!(!out[1].enabled);
+    assert!(!out[2].enabled);
+}
+
+#[test]
+fn sort_jobs_by_updated_ascending() {
+    let mut j1 = job("j1", "h", "0 * * * *", &[], true);
+    j1.updated_at = 300;
+    let mut j2 = job("j2", "h", "0 * * * *", &[], true);
+    j2.updated_at = 100;
+    let mut j3 = job("j3", "h", "0 * * * *", &[], true);
+    j3.updated_at = 200;
+    let out = sort_jobs(vec![j1, j2, j3], Some(SortCol::Updated), SortDir::Asc, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, vec!["j2", "j3", "j1"]);
+}
+
+#[test]
+fn sort_jobs_by_updated_descending() {
+    let mut j1 = job("j1", "h", "0 * * * *", &[], true);
+    j1.updated_at = 100;
+    let mut j2 = job("j2", "h", "0 * * * *", &[], true);
+    j2.updated_at = 300;
+    let mut j3 = job("j3", "h", "0 * * * *", &[], true);
+    j3.updated_at = 200;
+    let out = sort_jobs(vec![j1, j2, j3], Some(SortCol::Updated), SortDir::Desc, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, vec!["j2", "j3", "j1"]);
+}
+
+#[test]
+fn sort_jobs_by_next_run_enabled_before_disabled() {
+    // Disabled jobs have no next-run time → sort to end in Asc.
+    let enabled = job("j1", "h", "0 * * * *", &[], true);
+    let disabled = job("j2", "h", "0 * * * *", &[], false);
+    let out = sort_jobs(
+        vec![disabled.clone(), enabled.clone()],
+        Some(SortCol::NextRun),
+        SortDir::Asc,
+        now(),
+    );
+    assert_eq!(out[0].id, enabled.id);
+    assert_eq!(out[1].id, disabled.id);
+}
+
+#[test]
+fn sort_jobs_by_next_run_desc_disabled_before_enabled() {
+    // Desc reverses: disabled (None) sorts before the enabled job.
+    let enabled = job("j1", "h", "0 * * * *", &[], true);
+    let disabled = job("j2", "h", "0 * * * *", &[], false);
+    let out = sort_jobs(
+        vec![enabled.clone(), disabled.clone()],
+        Some(SortCol::NextRun),
+        SortDir::Desc,
+        now(),
+    );
+    assert_eq!(out[0].id, disabled.id);
+    assert_eq!(out[1].id, enabled.id);
+}
+
+#[test]
+fn sort_jobs_stable_tiebreak_by_id() {
+    // Equal handlers → tiebreak by id ascending.
+    let jobs = vec![
+        job("beta", "same-handler", "0 * * * *", &[], true),
+        job("alpha", "same-handler", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(jobs, Some(SortCol::Handler), SortDir::Asc, now());
+    assert_eq!(out[0].id, "alpha");
+    assert_eq!(out[1].id, "beta");
+}

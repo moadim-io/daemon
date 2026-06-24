@@ -7,17 +7,20 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{HtmlInputElement, HtmlSelectElement};
+use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
+use crate::schedule::fires_within;
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -213,8 +216,14 @@ async fn api_logs(id: &str) -> Result<String, String> {
 // narrow a dense list, a live result count keeps the active filter legible, and
 // clicking a KPI tile cross-filters the detail table.
 
-/// Enabled / disabled / dormant status facet for routines.
+/// How far ahead a routine's next fire counts as "due soon" for the KPI tile.
+pub(crate) const DUE_SOON_WINDOW_SECS: i64 = 3_600;
+/// Tick cadence for the live "now" handle (keeps DueSoon count fresh between fetches).
+const NEXT_RUN_TICK_MS: u32 = 30_000;
+
+/// Enabled / disabled / dormant / due-soon status facet for routines.
 /// `Dormant` means enabled but with an empty machines list — it will never fire.
+/// `DueSoon` means enabled with a next fire within [`DUE_SOON_WINDOW_SECS`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoutineStatusFacet {
     #[default]
@@ -222,6 +231,7 @@ pub enum RoutineStatusFacet {
     Enabled,
     Disabled,
     Dormant,
+    DueSoon,
 }
 
 impl RoutineStatusFacet {
@@ -232,6 +242,7 @@ impl RoutineStatusFacet {
             RoutineStatusFacet::Enabled => "enabled",
             RoutineStatusFacet::Disabled => "disabled",
             RoutineStatusFacet::Dormant => "dormant",
+            RoutineStatusFacet::DueSoon => "due",
         }
     }
 
@@ -241,6 +252,7 @@ impl RoutineStatusFacet {
             "enabled" => RoutineStatusFacet::Enabled,
             "disabled" => RoutineStatusFacet::Disabled,
             "dormant" => RoutineStatusFacet::Dormant,
+            "due" => RoutineStatusFacet::DueSoon,
             _ => RoutineStatusFacet::All,
         }
     }
@@ -331,13 +343,19 @@ impl RoutineFilter {
     }
 
     /// Does this routine survive the filter? Facets AND together.
+    /// `now` and `window` are used only when the `DueSoon` status facet is active.
     #[must_use]
-    pub fn matches(&self, r: &Routine) -> bool {
+    pub fn matches(&self, r: &Routine, now: DateTime<Local>, window: Duration) -> bool {
         match self.status {
             RoutineStatusFacet::All => {}
             RoutineStatusFacet::Enabled if !r.enabled => return false,
             RoutineStatusFacet::Disabled if r.enabled => return false,
             RoutineStatusFacet::Dormant if !(r.enabled && r.machines.is_empty()) => return false,
+            RoutineStatusFacet::DueSoon
+                if !(r.enabled && fires_within(&r.schedule, now, window)) =>
+            {
+                return false
+            }
             _ => {}
         }
         match &self.agent {
@@ -382,10 +400,15 @@ impl RoutineFilter {
 
 /// Routines surviving `filter`, preserving the input order.
 #[must_use]
-pub fn filter_routines(routines: &[Routine], filter: &RoutineFilter) -> Vec<Routine> {
+pub fn filter_routines(
+    routines: &[Routine],
+    filter: &RoutineFilter,
+    now: DateTime<Local>,
+    window: Duration,
+) -> Vec<Routine> {
     routines
         .iter()
-        .filter(|r| filter.matches(r))
+        .filter(|r| filter.matches(r, now, window))
         .cloned()
         .collect()
 }
@@ -578,6 +601,20 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let state = use_reducer(RState::default);
     let toast = props.on_toast.clone();
 
+    // Live "now" advanced on a fixed tick so DUE SOON counts stay current.
+    let now = use_state(Local::now);
+    {
+        let now = now.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                loop {
+                    TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
+                    now.set(Local::now());
+                }
+            });
+        });
+    }
+
     // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
     // (ms) of the last successful list load that drives the freshness cue.
     let interval = use_state(crate::refresh::load_interval);
@@ -705,6 +742,54 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(RAction::ClearFilters))
     };
+
+    // `/` focuses the search box (while not already typing in another field),
+    // matching the GitHub/Slack convention and complementing the ⌘K palette.
+    let search_ref = use_node_ref();
+    {
+        let search_ref = search_ref.clone();
+        use_effect_with((), move |_| {
+            let on_key =
+                Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if event.key() != "/"
+                        || event.meta_key()
+                        || event.ctrl_key()
+                        || event.alt_key()
+                    {
+                        return;
+                    }
+                    let typing = event
+                        .target()
+                        .and_then(|t| t.dyn_into::<HtmlElement>().ok())
+                        .map(|el| {
+                            let tag = el.tag_name();
+                            tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT"
+                        })
+                        .unwrap_or(false);
+                    if typing {
+                        return;
+                    }
+                    if let Some(input) = search_ref.cast::<HtmlInputElement>() {
+                        event.prevent_default();
+                        let _ = input.focus();
+                    }
+                }));
+            let window = web_sys::window().expect("window exists");
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("keydown listener attaches");
+            move || {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        on_key.as_ref().unchecked_ref(),
+                    );
+                }
+                drop(on_key);
+            }
+        });
+    }
+
     let on_set_sort = {
         let state = state.clone();
         Callback::from(move |sort: RSort| state.dispatch(RAction::SetSort(sort)))
@@ -867,13 +952,15 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let sort_desc = state.sort_desc;
 
     // Faceted filter + sort applied client-side.
+    let now_val = *now;
+    let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
     let machine_options = distinct_machines_r(&routines);
     let has_unassigned = unassigned_routines_count(&routines) > 0;
     let filter_active = filter.is_active();
     let visible = {
-        let mut v = filter_routines(&routines, &filter);
+        let mut v = filter_routines(&routines, &filter, now_val, window);
         match sort {
             RSort::Created => v.sort_by_key(|r| r.created_at),
             RSort::Updated => v.sort_by_key(|r| r.updated_at),
@@ -911,7 +998,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     },
                     RPage::List => html! {
                         <main>
-                            <RoutineStats routines={routines.clone()} />
+                            <RoutineStatsBar
+                                routines={routines.clone()}
+                                now={now_val}
+                                active={filter.status}
+                                on_status={on_set_status.clone()}
+                            />
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED ROUTINES"}</div>
                                 <div class="section-acts">
@@ -935,6 +1027,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 total={total_routines}
                                 sort={sort}
                                 sort_desc={sort_desc}
+                                search_ref={search_ref.clone()}
                                 on_query={on_set_query}
                                 on_status={on_set_status}
                                 on_agent={on_set_agent}
@@ -997,35 +1090,63 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
-pub struct StatsProps {
+pub struct StatsBarProps {
     pub routines: Vec<Routine>,
+    /// "Now" used to compute the DueSoon count.
+    pub now: DateTime<Local>,
+    /// Currently active status facet — drives `aria-pressed`.
+    pub active: RoutineStatusFacet,
+    /// Fired when the user clicks a tile; pass `All` to clear the facet.
+    pub on_status: Callback<RoutineStatusFacet>,
 }
 
-#[function_component(RoutineStats)]
-pub fn routine_stats(props: &StatsProps) -> Html {
+/// Cross-filterable KPI stat tiles for the Routines page.
+///
+/// Clicking ENABLED / DISABLED / DUE SOON applies (or clears, if already active)
+/// the matching status facet on the list below, matching the Cron Jobs page pattern.
+#[function_component(RoutineStatsBar)]
+pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
+    let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total = props.routines.len();
     let enabled = props.routines.iter().filter(|r| r.enabled).count();
     let disabled = total - enabled;
+    let due_soon = props
+        .routines
+        .iter()
+        .filter(|r| r.enabled && fires_within(&r.schedule, props.now, window))
+        .count();
     let unreg = props
         .routines
         .iter()
         .filter(|r| !r.agent_registered)
         .count();
 
+    let mk = |facet: RoutineStatusFacet, label: &'static str, val: usize, extra_cls: &'static str| {
+        let cb = props.on_status.clone();
+        let active = props.active;
+        let pressed = active == facet;
+        // Toggle: clicking the active tile clears the filter (resets to All).
+        let target = if pressed { RoutineStatusFacet::All } else { facet };
+        let mut cls = format!("stat-card {extra_cls}");
+        if pressed {
+            cls.push_str(" active");
+        }
+        html! {
+            <button type="button" class={cls}
+                aria-pressed={pressed.to_string()}
+                onclick={Callback::from(move |_: MouseEvent| cb.emit(target))}>
+                <div class="stat-label">{label}</div>
+                <div class="stat-val">{val}</div>
+            </button>
+        }
+    };
+
     html! {
         <div class="stats">
-            <div class="stat-card all">
-                <div class="stat-label">{"TOTAL"}</div>
-                <div class="stat-val">{total}</div>
-            </div>
-            <div class="stat-card enabled">
-                <div class="stat-label">{"ENABLED"}</div>
-                <div class="stat-val c-accent">{enabled}</div>
-            </div>
-            <div class="stat-card disabled">
-                <div class="stat-label">{"DISABLED"}</div>
-                <div class="stat-val c-amber">{disabled}</div>
-            </div>
+            { mk(RoutineStatusFacet::All, "TOTAL", total, "all") }
+            { mk(RoutineStatusFacet::Enabled, "ENABLED", enabled, "enabled") }
+            { mk(RoutineStatusFacet::Disabled, "DISABLED", disabled, "disabled") }
+            { mk(RoutineStatusFacet::DueSoon, "DUE SOON", due_soon, "due") }
             <div class="stat-card unreg">
                 <div class="stat-label">{"UNREGISTERED AGENT"}</div>
                 <div class="stat-val">{unreg}</div>
@@ -1082,6 +1203,8 @@ pub struct FilterSortBarProps {
     pub total: usize,
     pub sort: RSort,
     pub sort_desc: bool,
+    /// NodeRef forwarded from the page so the `/` shortcut can focus this input.
+    pub search_ref: NodeRef,
     pub on_query: Callback<String>,
     pub on_status: Callback<RoutineStatusFacet>,
     pub on_agent: Callback<AgentFacet>,
@@ -1153,6 +1276,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
         <div class="filter-bar">
             <div class="filter-field">
                 <input
+                    ref={props.search_ref.clone()}
                     type="text"
                     class="filter-input"
                     placeholder="Search routines…  ( / )"
@@ -1166,6 +1290,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                     <option value="enabled" selected={status_val == "enabled"}>{"Enabled"}</option>
                     <option value="disabled" selected={status_val == "disabled"}>{"Disabled"}</option>
                     <option value="dormant" selected={status_val == "dormant"}>{"Dormant"}</option>
+                    <option value="due" selected={status_val == "due"}>{"Due soon"}</option>
                 </select>
                 <span class="filter-label">{"AGENT"}</span>
                 <select class="filter-select" aria-label="Agent filter" onchange={on_agent_change}>

@@ -300,3 +300,143 @@ fn unassigned_count_tallies_dormant_jobs() {
     ];
     assert_eq!(unassigned_count(&jobs), 2);
 }
+
+// ── sort_jobs ─────────────────────────────────────────────────────────────────
+
+fn job_with_updated(id: &str, handler: &str, updated_at: u64, enabled: bool) -> CronJob {
+    let mut j = job(id, handler, "0 * * * *", &[], enabled);
+    j.updated_at = updated_at;
+    j
+}
+
+#[test]
+fn sort_by_id_ascending() {
+    let jobs = vec![
+        job("zeta", "h", "0 * * * *", &[], true),
+        job("alpha", "h", "0 * * * *", &[], true),
+        job("beta", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Id, false, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, ["alpha", "beta", "zeta"]);
+}
+
+#[test]
+fn sort_by_id_descending() {
+    let jobs = vec![
+        job("alpha", "h", "0 * * * *", &[], true),
+        job("zeta", "h", "0 * * * *", &[], true),
+        job("beta", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Id, true, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, ["zeta", "beta", "alpha"]);
+}
+
+#[test]
+fn sort_by_id_is_case_insensitive() {
+    let jobs = vec![
+        job("Beta", "h", "0 * * * *", &[], true),
+        job("alpha", "h", "0 * * * *", &[], true),
+        job("Zeta", "h", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Id, false, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, ["alpha", "Beta", "Zeta"]);
+}
+
+#[test]
+fn sort_by_handler_ascending() {
+    let jobs = vec![
+        job("j1", "run-z", "0 * * * *", &[], true),
+        job("j2", "run-a", "0 * * * *", &[], true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Handler, false, now());
+    let handlers: Vec<&str> = out.iter().map(|j| j.handler.as_str()).collect();
+    assert_eq!(handlers, ["run-a", "run-z"]);
+}
+
+#[test]
+fn sort_by_enabled_ascending_puts_disabled_first() {
+    let jobs = vec![
+        job_with_updated("a", "h", 0, true),
+        job_with_updated("b", "h", 0, false),
+        job_with_updated("c", "h", 0, true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Enabled, false, now());
+    let enabled: Vec<bool> = out.iter().map(|j| j.enabled).collect();
+    // ascending: false < true → disabled first
+    assert_eq!(enabled, [false, true, true]);
+}
+
+#[test]
+fn sort_by_enabled_descending_puts_enabled_first() {
+    let jobs = vec![
+        job_with_updated("a", "h", 0, false),
+        job_with_updated("b", "h", 0, true),
+        job_with_updated("c", "h", 0, false),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Enabled, true, now());
+    let enabled: Vec<bool> = out.iter().map(|j| j.enabled).collect();
+    assert_eq!(enabled, [true, false, false]);
+}
+
+#[test]
+fn sort_by_updated_ascending() {
+    let jobs = vec![
+        job_with_updated("a", "h", 300, true),
+        job_with_updated("b", "h", 100, true),
+        job_with_updated("c", "h", 200, true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Updated, false, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, ["b", "c", "a"]);
+}
+
+#[test]
+fn sort_by_updated_descending() {
+    let jobs = vec![
+        job_with_updated("a", "h", 100, true),
+        job_with_updated("b", "h", 300, true),
+        job_with_updated("c", "h", 200, true),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::Updated, true, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    assert_eq!(ids, ["b", "c", "a"]);
+}
+
+#[test]
+fn sort_by_next_run_soonest_first() {
+    // Hourly fires soonest; annual fires last; disabled pushed to end.
+    let hourly = job("hourly", "h", "0 * * * *", &[], true);
+    let annual = job("annual", "h", "0 0 1 1 *", &[], true);
+    let disabled = job("disabled", "h", "0 * * * *", &[], false);
+    let jobs = vec![annual.clone(), disabled.clone(), hourly.clone()];
+    let out = sort_jobs(&jobs, CJobSort::NextRun, false, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    // hourly (soonest) → annual → disabled (no next run)
+    assert_eq!(ids, ["hourly", "annual", "disabled"]);
+}
+
+#[test]
+fn sort_by_next_run_desc_pushes_disabled_last() {
+    let hourly = job("hourly", "h", "0 * * * *", &[], true);
+    let annual = job("annual", "h", "0 0 1 1 *", &[], true);
+    let disabled = job("disabled", "h", "0 * * * *", &[], false);
+    let jobs = vec![hourly.clone(), annual.clone(), disabled.clone()];
+    let out = sort_jobs(&jobs, CJobSort::NextRun, true, now());
+    let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
+    // desc reverses the non-None entries but disabled still last
+    assert_eq!(ids[2], "disabled");
+}
+
+#[test]
+fn sort_by_next_run_all_disabled_stable() {
+    let jobs = vec![
+        job("a", "h", "0 * * * *", &[], false),
+        job("b", "h", "0 * * * *", &[], false),
+    ];
+    let out = sort_jobs(&jobs, CJobSort::NextRun, false, now());
+    // All equal (None, None) — no crash, count preserved.
+    assert_eq!(out.len(), 2);
+}

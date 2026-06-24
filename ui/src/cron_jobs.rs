@@ -249,6 +249,62 @@ pub fn unassigned_count(jobs: &[CronJob]) -> usize {
     jobs.iter().filter(|j| j.machines.is_empty()).count()
 }
 
+// ─── Sort ────────────────────────────────────────────────────────────────────
+//
+// Best-practice (GitHub Actions, Grafana, Linear): clicking a column header
+// sorts that column ascending; clicking the same header again toggles to
+// descending. The active column shows ▲/▼; inactive columns show ⇅.
+
+/// Field the cron-job table is sorted by. `Id` is the default (preserves the
+/// server-supplied order which is creation-time by id).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CJobSort {
+    #[default]
+    Id,
+    Handler,
+    Enabled,
+    NextRun,
+    Updated,
+}
+
+/// Return `jobs` sorted by `sort`, ascending unless `desc`.
+///
+/// For `NextRun`: disabled jobs and ones with no future fire are always pushed
+/// to the end regardless of direction (same convention as GitHub Actions and
+/// Grafana for null sort keys), so the list naturally surfaces what is about
+/// to fire and the dormant tail stays out of the way.
+#[must_use]
+pub fn sort_jobs(jobs: &[CronJob], sort: CJobSort, desc: bool, now: DateTime<Local>) -> Vec<CronJob> {
+    let mut v = jobs.to_vec();
+    if sort == CJobSort::NextRun {
+        // Partition into jobs that have a known next fire and those that don't.
+        // The "no next fire" group always ends up at the tail in both directions.
+        let (mut have, tail): (Vec<CronJob>, Vec<CronJob>) = v
+            .into_iter()
+            .partition(|j| j.enabled && next_fire_after(&j.schedule, now).is_some());
+        have.sort_by_key(|j| {
+            next_fire_after(&j.schedule, now)
+                .map(|t| t.timestamp())
+                .unwrap_or(i64::MAX)
+        });
+        if desc {
+            have.reverse();
+        }
+        return have.into_iter().chain(tail).collect();
+    }
+    match sort {
+        CJobSort::Id => v.sort_by_key(|j| j.id.to_lowercase()),
+        CJobSort::Handler => v.sort_by_key(|j| j.handler.to_lowercase()),
+        CJobSort::Enabled => v.sort_by_key(|j| j.enabled as u8),
+        CJobSort::Updated => v.sort_by_key(|j| j.updated_at),
+        CJobSort::NextRun => unreachable!(),
+    }
+    if desc {
+        v.reverse();
+    }
+    v
+}
+
 // ─── API layer ────────────────────────────────────────────────────────────────
 
 async fn api_list() -> Result<Vec<CronJob>, String> {
@@ -372,6 +428,10 @@ pub struct CState {
     pub select_anchor: Option<String>,
     /// Active faceted filter applied to the list/day views.
     pub filter: JobFilter,
+    /// Column the table is sorted by.
+    pub sort: CJobSort,
+    /// `true` sorts descending.
+    pub sort_desc: bool,
 }
 
 impl Default for CState {
@@ -385,6 +445,8 @@ impl Default for CState {
             selected: HashSet::new(),
             select_anchor: None,
             filter: JobFilter::default(),
+            sort: CJobSort::default(),
+            sort_desc: false,
         }
     }
 }
@@ -417,6 +479,8 @@ pub enum CAction {
     SetStatus(StatusFacet),
     SetMachineFacet(MachineFacet),
     ClearFilters,
+    /// Click a column header: switch to that column (asc) or toggle direction if already active.
+    SetSort(CJobSort),
 }
 
 impl Reducible for CState {
@@ -515,6 +579,14 @@ impl Reducible for CState {
             CAction::SetStatus(status) => s.filter.status = status,
             CAction::SetMachineFacet(m) => s.filter.machine = m,
             CAction::ClearFilters => s.filter = JobFilter::default(),
+            CAction::SetSort(col) => {
+                if s.sort == col {
+                    s.sort_desc = !s.sort_desc;
+                } else {
+                    s.sort = col;
+                    s.sort_desc = false;
+                }
+            }
         }
         s.into()
     }
@@ -824,6 +896,10 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(CAction::ClearFilters))
     };
+    let on_sort = {
+        let state = state.clone();
+        Callback::from(move |col: CJobSort| state.dispatch(CAction::SetSort(col)))
+    };
 
     // `/` focuses the search box from anywhere on the page (skipped while the
     // user is already typing in a field), matching the GitHub/Slack convention
@@ -963,11 +1039,14 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let modal = state.modal.clone();
     let selected = state.selected.clone();
     let filter = state.filter.clone();
+    let sort = state.sort;
+    let sort_desc = state.sort_desc;
 
     // Faceted view of the list: the table and day timeline render the filtered
     // set; the KPI tiles stay over the full fleet.
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let filtered = filter_jobs(&jobs, &filter, now_val, window);
+    let sorted = sort_jobs(&filtered, sort, sort_desc, now_val);
     let total_jobs = jobs.len();
     let shown = filtered.len();
     let machine_options = distinct_machines(&jobs);
@@ -1039,11 +1118,14 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                                 on_clear={on_clear_selection}
                                             />
                                             <JobTable
-                                                jobs={filtered}
+                                                jobs={sorted}
                                                 loading={loading}
                                                 now={now_val}
                                                 selected={selected}
                                                 filter_active={filter_active}
+                                                sort={sort}
+                                                sort_desc={sort_desc}
+                                                on_sort={on_sort}
                                                 on_edit={on_edit}
                                                 on_delete={on_ask_delete}
                                                 on_toggle={on_toggle}
@@ -1321,6 +1403,13 @@ pub struct JobTableProps {
     pub selected: HashSet<String>,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    /// Active sort column.
+    pub sort: CJobSort,
+    /// `true` when sorted descending.
+    pub sort_desc: bool,
+    /// Called with the column the user clicked; the reducer toggles direction
+    /// if already active or resets to ascending for a new column.
+    pub on_sort: Callback<CJobSort>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1377,6 +1466,26 @@ pub fn job_table(props: &JobTableProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
 
+    // Helpers for sortable column headers.
+    let sort_cls = |col: CJobSort| -> &'static str {
+        if props.sort == col {
+            "th-sort th-sort-active"
+        } else {
+            "th-sort"
+        }
+    };
+    let sort_arrow = |col: CJobSort| -> &'static str {
+        if props.sort == col {
+            if props.sort_desc { " ▼" } else { " ▲" }
+        } else {
+            " ⇅"
+        }
+    };
+    let mk_sort = |col: CJobSort| -> Callback<MouseEvent> {
+        let cb = props.on_sort.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(col))
+    };
+
     html! {
         <div class="table-wrap">
             <table>
@@ -1392,13 +1501,28 @@ pub fn job_table(props: &JobTableProps) -> Html {
                                 onclick={on_select_all}
                             />
                         </th>
-                        <th>{"ID"}</th>
+                        <th class={sort_cls(CJobSort::Id)} onclick={mk_sort(CJobSort::Id)}
+                            title="Sort by ID">
+                            {format!("ID{}", sort_arrow(CJobSort::Id))}
+                        </th>
                         <th>{"SCHEDULE"}</th>
-                        <th>{"NEXT RUN"}</th>
-                        <th>{"HANDLER"}</th>
+                        <th class={sort_cls(CJobSort::NextRun)} onclick={mk_sort(CJobSort::NextRun)}
+                            title="Sort by next scheduled fire">
+                            {format!("NEXT RUN{}", sort_arrow(CJobSort::NextRun))}
+                        </th>
+                        <th class={sort_cls(CJobSort::Handler)} onclick={mk_sort(CJobSort::Handler)}
+                            title="Sort by handler">
+                            {format!("HANDLER{}", sort_arrow(CJobSort::Handler))}
+                        </th>
                         <th>{"METADATA"}</th>
-                        <th>{"ENABLED"}</th>
-                        <th>{"UPDATED"}</th>
+                        <th class={sort_cls(CJobSort::Enabled)} onclick={mk_sort(CJobSort::Enabled)}
+                            title="Sort by enabled status">
+                            {format!("ENABLED{}", sort_arrow(CJobSort::Enabled))}
+                        </th>
+                        <th class={sort_cls(CJobSort::Updated)} onclick={mk_sort(CJobSort::Updated)}
+                            title="Sort by last-updated time">
+                            {format!("UPDATED{}", sort_arrow(CJobSort::Updated))}
+                        </th>
                         <th></th>
                     </tr>
                 </thead>

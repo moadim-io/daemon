@@ -13,6 +13,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Sortable column headers for the Cron Jobs table.** Clicking a column
+  header sorts the table by that field; clicking the same header again
+  toggles ascending ↔ descending. Sortable columns: ID, HANDLER, NEXT RUN,
+  ENABLED, UPDATED. Each active header shows ▲/▼; inactive sortable columns
+  show ⇅ for discoverability. For NEXT RUN, disabled jobs and ones with no
+  future fire always sort to the end (same convention as GitHub Actions and
+  Grafana for null sort keys), so ascending NEXT RUN naturally surfaces
+  what is about to fire. Sort state lives in the page reducer alongside the
+  existing faceted filter; a new pure `sort_jobs()` helper is covered by 11
+  new host-side unit tests. Zero backend change. Closes #657.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

@@ -527,6 +527,11 @@
     .toggle input:checked + .toggle-track              { border-color: var(--accent); background: var(--accent-dim); }
     .toggle input:checked + .toggle-track::after       { transform: translateX(16px); background: var(--accent); }
 
+    /* ── Sortable column headers ── */
+    .th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+    .th-sort:hover { color: var(--text-primary); background: var(--bg-2); }
+    .th-sort-active { color: var(--accent) !important; }
+
     /* ── Multiselect ── */
     .th-select, .td-select { width: 28px; text-align: center; padding-right: 0; }
     tbody tr.row-selected { background: var(--accent-dim); }

@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **NEXT RUN countdown column in the Routines table.** The Routines table gains a
+  live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
+  matching the already-shipped column on the Cron Jobs page, so operators see per-routine
+  next-fire times at a glance without navigating to the Overview. Disabled routines show
+  `paused`; invalid or exhausted schedules show `—`; countdowns turn green inside the
+  1-hour due-soon window. A 30 s background tick keeps countdowns live between data
+  fetches. Pure client-side computation from the existing `schedule` field — no backend
+  change. Closes #653.
 - **Cross-filterable KPI tiles + DueSoon facet for Routines page.** The Routines
   page's static stat cards are replaced by clickable `<button>` tiles with
   `aria-pressed`; clicking ENABLED, DISABLED, or DUE SOON applies that status

@@ -248,6 +248,7 @@ pub fn svc_create(
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
+    let machines = crate::machine::validate_machines(&req.machines)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -265,7 +266,7 @@ pub fn svc_create(
         agent: req.agent,
         prompt: req.prompt,
         repositories,
-        machines: req.machines,
+        machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -308,6 +309,10 @@ pub fn svc_update(
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let repositories = match req.repositories {
         Some(ref repos) => Some(validate_repositories(repos)?),
+        None => None,
+    };
+    let machines = match req.machines {
+        Some(ref machines) => Some(crate::machine::validate_machines(machines)?),
         None => None,
     };
     let mut lock = store.lock_recover();
@@ -358,7 +363,7 @@ pub fn svc_update(
     if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
-    if let Some(machines) = req.machines {
+    if let Some(machines) = machines {
         routine.machines = machines;
     }
     if let Some(enabled) = req.enabled {

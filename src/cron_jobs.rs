@@ -270,13 +270,14 @@ pub fn svc_create(
     req: CreateRequest,
 ) -> Result<CronJobResponse, AppError> {
     validate_cron(&req.schedule)?;
+    let machines = crate::machine::validate_machines(&req.machines)?;
     let now = now_secs();
     let job = CronJob {
         id: Uuid::new_v4().to_string(),
         schedule: normalize_schedule(&req.schedule),
         handler: req.handler,
         metadata: req.metadata,
-        machines: req.machines,
+        machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -301,6 +302,10 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
+    let machines = match req.machines {
+        Some(ref machines) => Some(crate::machine::validate_machines(machines)?),
+        None => None,
+    };
     let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(sched) = req.schedule {
@@ -312,7 +317,7 @@ pub fn svc_update(
     if let Some(metadata) = req.metadata {
         job.metadata = metadata;
     }
-    if let Some(machines) = req.machines {
+    if let Some(machines) = machines {
         job.machines = machines;
     }
     if let Some(enabled) = req.enabled {

@@ -1,3 +1,8 @@
+[alias]
+# Run repo tasks via `cargo xtask <task>` (the task runner lives in the `xtask`
+# workspace member). Keeps tooling wrappers discoverable without a Makefile.
+xtask = "run --quiet --package xtask --"
+
 [env]
 # Test isolation: several tests mutate process-global state — the `PATH`, the `MOADIM_*` env
 # seams (home/bind-address/crontab overrides), and the crontab binary — to exercise the

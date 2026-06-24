@@ -1,5 +1,5 @@
 [workspace]
-members = ["ui"]
+members = ["ui", "xtask"]
 
 # Profiles must live at the workspace root; a `[profile.*]` in a member crate
 # (ui/Cargo.toml) is silently ignored by Cargo. Scope the size optimization to

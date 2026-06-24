@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Enhanced log viewer.** Both the routines and cron-jobs log pages now render
+  line numbers, a sticky keyword search bar with live `N / total` match count,
+  per-line keyword highlighting (amber on dark amber-dim), and auto-tail behaviour
+  that scrolls to the bottom on every load so the latest entry is always visible.
+  The filter/count logic lives in pure, host-testable helpers (`filter_lines`,
+  `match_count`) covered by 15 new unit tests.  Zero backend changes.  Closes #646.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

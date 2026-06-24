@@ -21,7 +21,7 @@ use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::schedule::fires_within;
+use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -1043,6 +1043,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             routines={visible}
                                             loading={loading}
                                             filter_active={filter_active}
+                                            now={now_val}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
@@ -1522,6 +1523,8 @@ pub struct TableProps {
     pub loading: bool,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    /// Reference instant used to compute next-fire countdowns.
+    pub now: chrono::DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1579,6 +1582,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                     <tr>
                         <th>{"TITLE"}</th>
                         <th>{"SCHEDULE"}</th>
+                        <th>{"NEXT RUN"}</th>
                         <th>{"AGENT"}</th>
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
@@ -1592,6 +1596,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <RoutineRow
                             key={r.id.clone()}
                             routine={r.clone()}
+                            now={props.now}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
@@ -1605,9 +1610,38 @@ pub fn routine_table(props: &TableProps) -> Html {
     }
 }
 
+/// Render a routine's NEXT RUN cell: "paused" when disabled, an absolute time
+/// plus a relative countdown when its schedule has a future fire, or "—" for
+/// an invalid/exhausted schedule. The countdown gets a `soon` accent inside the
+/// due-soon window, matching the Overview KPI tile.
+pub(crate) fn next_routine_run_cell(routine: &Routine, now: chrono::DateTime<Local>) -> Html {
+    if !routine.enabled {
+        return html! { <span class="cell-next muted">{"paused"}</span> };
+    }
+    match next_fire_after(&routine.schedule, now) {
+        Some(then) => {
+            let soon = then - now <= Duration::seconds(DUE_SOON_WINDOW_SECS);
+            let until_cls = if soon {
+                "cell-next-until soon"
+            } else {
+                "cell-next-until"
+            };
+            html! {
+                <div class="cell-next">
+                    <div class="cell-next-when">{fmt_when(now, then)}</div>
+                    <div class={until_cls}>{fmt_until(now, then)}</div>
+                </div>
+            }
+        }
+        None => html! { <span class="cell-next muted">{"—"}</span> },
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub struct RowProps {
     pub routine: Routine,
+    /// Reference instant for the NEXT RUN countdown.
+    pub now: chrono::DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1683,6 +1717,8 @@ pub fn routine_row(props: &RowProps) -> Html {
         "agent config missing"
     };
 
+    let next_run = next_routine_run_cell(r, props.now);
+
     html! {
         <tr>
             <td>
@@ -1692,6 +1728,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="cell-schedule">{&r.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
+            <td>{next_run}</td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>

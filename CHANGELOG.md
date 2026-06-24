@@ -22,6 +22,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   tick keeps the DueSoon count current between data fetches. The STATUS dropdown
   in the filter bar gains a "Due soon" option. The `/` key shortcut focuses the
   search box when the user is not already typing in a field. Closes #652.
+- **NEXT RUN countdown column in the Routines table.** The Routines table gains a
+  live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
+  matching the already-shipped column on the Cron Jobs page, so operators see per-routine
+  next-fire times at a glance without navigating to the Overview. Disabled routines show
+  `paused`; invalid or exhausted schedules show `—`; countdowns turn green inside the
+  1-hour due-soon window. A 30 s background tick keeps countdowns live between data
+  fetches. Pure client-side computation from the existing `schedule` field — no backend
+  change. Closes #653.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

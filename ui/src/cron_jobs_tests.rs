@@ -408,7 +408,12 @@ fn sort_jobs_by_updated_ascending() {
     j2.updated_at = 100;
     let mut j3 = job("j3", "h", "0 * * * *", &[], true);
     j3.updated_at = 200;
-    let out = sort_jobs(vec![j1, j2, j3], Some(SortCol::Updated), SortDir::Asc, now());
+    let out = sort_jobs(
+        vec![j1, j2, j3],
+        Some(SortCol::Updated),
+        SortDir::Asc,
+        now(),
+    );
     let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
     assert_eq!(ids, vec!["j2", "j3", "j1"]);
 }
@@ -421,7 +426,12 @@ fn sort_jobs_by_updated_descending() {
     j2.updated_at = 300;
     let mut j3 = job("j3", "h", "0 * * * *", &[], true);
     j3.updated_at = 200;
-    let out = sort_jobs(vec![j1, j2, j3], Some(SortCol::Updated), SortDir::Desc, now());
+    let out = sort_jobs(
+        vec![j1, j2, j3],
+        Some(SortCol::Updated),
+        SortDir::Desc,
+        now(),
+    );
     let ids: Vec<&str> = out.iter().map(|j| j.id.as_str()).collect();
     assert_eq!(ids, vec!["j2", "j3", "j1"]);
 }

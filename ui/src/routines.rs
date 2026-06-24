@@ -751,10 +751,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         use_effect_with((), move |_| {
             let on_key =
                 Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
-                    if event.key() != "/"
-                        || event.meta_key()
-                        || event.ctrl_key()
-                        || event.alt_key()
+                    if event.key() != "/" || event.meta_key() || event.ctrl_key() || event.alt_key()
                     {
                         return;
                     }
@@ -1121,25 +1118,30 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
         .filter(|r| !r.agent_registered)
         .count();
 
-    let mk = |facet: RoutineStatusFacet, label: &'static str, val: usize, extra_cls: &'static str| {
-        let cb = props.on_status.clone();
-        let active = props.active;
-        let pressed = active == facet;
-        // Toggle: clicking the active tile clears the filter (resets to All).
-        let target = if pressed { RoutineStatusFacet::All } else { facet };
-        let mut cls = format!("stat-card {extra_cls}");
-        if pressed {
-            cls.push_str(" active");
-        }
-        html! {
-            <button type="button" class={cls}
-                aria-pressed={pressed.to_string()}
-                onclick={Callback::from(move |_: MouseEvent| cb.emit(target))}>
-                <div class="stat-label">{label}</div>
-                <div class="stat-val">{val}</div>
-            </button>
-        }
-    };
+    let mk =
+        |facet: RoutineStatusFacet, label: &'static str, val: usize, extra_cls: &'static str| {
+            let cb = props.on_status.clone();
+            let active = props.active;
+            let pressed = active == facet;
+            // Toggle: clicking the active tile clears the filter (resets to All).
+            let target = if pressed {
+                RoutineStatusFacet::All
+            } else {
+                facet
+            };
+            let mut cls = format!("stat-card {extra_cls}");
+            if pressed {
+                cls.push_str(" active");
+            }
+            html! {
+                <button type="button" class={cls}
+                    aria-pressed={pressed.to_string()}
+                    onclick={Callback::from(move |_: MouseEvent| cb.emit(target))}>
+                    <div class="stat-label">{label}</div>
+                    <div class="stat-val">{val}</div>
+                </button>
+            }
+        };
 
     html! {
         <div class="stats">

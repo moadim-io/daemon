@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
+use crate::schedule::{fmt_until, fmt_when, next_fire_after};
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
@@ -24,6 +25,9 @@ use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
 pub const AVAILABLE_AGENTS: &[&str] = &["claude", "codex"];
+
+const DUE_SOON_WINDOW_SECS: i64 = 3_600;
+const NEXT_RUN_TICK_MS: u32 = 30_000;
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
@@ -581,6 +585,21 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let state = use_reducer(RState::default);
     let toast = props.on_toast.clone();
 
+    // Live "now", advanced on a fixed tick so next-run countdowns stay current
+    // without a manual reload. Matches the 30s cadence used by the Cron Jobs page.
+    let now = use_state(Local::now);
+    {
+        let now = now.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                loop {
+                    TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
+                    now.set(Local::now());
+                }
+            });
+        });
+    }
+
     // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
     // (ms) of the last successful list load that drives the freshness cue.
     let interval = use_state(crate::refresh::load_interval);
@@ -892,6 +911,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         v
     };
     let shown = visible.len();
+    let now_val = *now;
 
     let edit_routine = match &modal {
         RModal::Edit(id) => routines.iter().find(|r| r.id == *id).cloned(),
@@ -953,6 +973,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             routines={visible}
                                             loading={loading}
                                             filter_active={filter_active}
+                                            now={now_val}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
@@ -1387,6 +1408,63 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     }
 }
 
+// ─── Next-run helpers ─────────────────────────────────────────────────────────
+
+/// Pure classification of a routine's next-fire status — host-testable with no DOM dependency.
+#[derive(Debug, PartialEq)]
+pub(crate) enum NextRunStatus {
+    /// Routine is disabled and will never fire.
+    Paused,
+    /// Next fire is within the due-soon window (accent colour).
+    Soon { when: String, until: String },
+    /// Next fire is farther out.
+    Later { when: String, until: String },
+    /// Schedule is absent or unparseable.
+    Invalid,
+}
+
+pub(crate) fn next_run_status(routine: &Routine, now: DateTime<Local>) -> NextRunStatus {
+    if !routine.enabled {
+        return NextRunStatus::Paused;
+    }
+    match next_fire_after(&routine.schedule, now) {
+        Some(then) => {
+            let soon = then - now <= Duration::seconds(DUE_SOON_WINDOW_SECS);
+            if soon {
+                NextRunStatus::Soon {
+                    when: fmt_when(now, then),
+                    until: fmt_until(now, then),
+                }
+            } else {
+                NextRunStatus::Later {
+                    when: fmt_when(now, then),
+                    until: fmt_until(now, then),
+                }
+            }
+        }
+        None => NextRunStatus::Invalid,
+    }
+}
+
+fn next_run_cell(routine: &Routine, now: DateTime<Local>) -> Html {
+    match next_run_status(routine, now) {
+        NextRunStatus::Paused => html! { <span class="cell-next muted">{"paused"}</span> },
+        NextRunStatus::Invalid => html! { <span class="cell-next muted">{"—"}</span> },
+        NextRunStatus::Soon { when, until } => html! {
+            <div class="cell-next">
+                <div class="cell-next-when">{when}</div>
+                <div class="cell-next-until soon">{until}</div>
+            </div>
+        },
+        NextRunStatus::Later { when, until } => html! {
+            <div class="cell-next">
+                <div class="cell-next-when">{when}</div>
+                <div class="cell-next-until">{until}</div>
+            </div>
+        },
+    }
+}
+
 // ─── Table ────────────────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
@@ -1395,6 +1473,7 @@ pub struct TableProps {
     pub loading: bool,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    pub now: DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1452,6 +1531,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                     <tr>
                         <th>{"TITLE"}</th>
                         <th>{"SCHEDULE"}</th>
+                        <th>{"NEXT RUN"}</th>
                         <th>{"AGENT"}</th>
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
@@ -1465,6 +1545,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <RoutineRow
                             key={r.id.clone()}
                             routine={r.clone()}
+                            now={props.now}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
@@ -1481,6 +1562,7 @@ pub fn routine_table(props: &TableProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct RowProps {
     pub routine: Routine,
+    pub now: DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1494,6 +1576,7 @@ pub fn routine_row(props: &RowProps) -> Html {
     let cron_text = r.schedule_description.as_deref().unwrap_or("—").to_string();
     let updated = reltime(r.updated_at);
     let repos = r.repositories.len();
+    let next_run = next_run_cell(r, props.now);
 
     let on_edit = {
         let cb = props.on_edit.clone();
@@ -1565,6 +1648,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="cell-schedule">{&r.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
+            <td>{next_run}</td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>

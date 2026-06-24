@@ -33,6 +33,7 @@ fn routine(
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         agent_registered: false,
         file_path: String::new(),
@@ -374,4 +375,62 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
         routine("c", "t", "claude", "0 * * * *", &[], &[], false),
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
+}
+
+// ── next_run_status ────────────────────────────────────────────────────────────
+
+#[test]
+fn next_run_status_disabled_routine_is_paused() {
+    let r = routine("x", "t", "claude", "0 * * * *", &[], &[], false);
+    let now = Local.with_ymd_and_hms(2026, 1, 1, 10, 0, 0).unwrap();
+    assert_eq!(next_run_status(&r, now), NextRunStatus::Paused);
+}
+
+#[test]
+fn next_run_status_invalid_schedule_is_invalid() {
+    let r = routine("x", "t", "claude", "not-a-cron", &[], &[], true);
+    let now = Local.with_ymd_and_hms(2026, 1, 1, 10, 0, 0).unwrap();
+    assert_eq!(next_run_status(&r, now), NextRunStatus::Invalid);
+}
+
+#[test]
+fn next_run_status_fire_within_window_is_soon() {
+    // "0 10 * * *" fires at 10:00. With now = 09:30, delta = 30 min < 1h.
+    let r = routine("x", "t", "claude", "0 10 * * *", &[], &[], true);
+    let now = Local.with_ymd_and_hms(2026, 1, 1, 9, 30, 0).unwrap();
+    assert!(matches!(next_run_status(&r, now), NextRunStatus::Soon { .. }));
+}
+
+#[test]
+fn next_run_status_fire_outside_window_is_later() {
+    // "0 22 * * *" fires at 22:00. With now = 09:30, delta = 12.5 h > 1h.
+    let r = routine("x", "t", "claude", "0 22 * * *", &[], &[], true);
+    let now = Local.with_ymd_and_hms(2026, 1, 1, 9, 30, 0).unwrap();
+    assert!(matches!(next_run_status(&r, now), NextRunStatus::Later { .. }));
+}
+
+#[test]
+fn next_run_status_soon_has_non_empty_when_and_until() {
+    let r = routine("x", "t", "claude", "0 10 * * *", &[], &[], true);
+    let now = Local.with_ymd_and_hms(2026, 1, 1, 9, 45, 0).unwrap();
+    match next_run_status(&r, now) {
+        NextRunStatus::Soon { when, until } => {
+            assert!(!when.is_empty(), "when must be non-empty");
+            assert!(!until.is_empty(), "until must be non-empty");
+        }
+        other => panic!("expected Soon, got {other:?}"),
+    }
+}
+
+#[test]
+fn next_run_status_later_has_non_empty_when_and_until() {
+    let r = routine("x", "t", "claude", "0 22 * * *", &[], &[], true);
+    let now = Local.with_ymd_and_hms(2026, 1, 1, 9, 0, 0).unwrap();
+    match next_run_status(&r, now) {
+        NextRunStatus::Later { when, until } => {
+            assert!(!when.is_empty(), "when must be non-empty");
+            assert!(!until.is_empty(), "until must be non-empty");
+        }
+        other => panic!("expected Later, got {other:?}"),
+    }
 }

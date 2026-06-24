@@ -434,12 +434,17 @@ fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
             let cmd = build_routine_command(routine, &agent);
-            if let Err(err) = std::process::Command::new("sh")
+            match std::process::Command::new("sh")
                 .arg("-lc")
                 .arg(&cmd)
                 .spawn()
             {
-                log::warn!("trigger: failed to spawn routine command: {err}");
+                Ok(mut child) => {
+                    std::thread::spawn(move || {
+                        let _ = child.wait();
+                    });
+                }
+                Err(err) => log::warn!("trigger: failed to spawn routine command: {err}"),
             }
         }
         Err(err) => log::warn!(

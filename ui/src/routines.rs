@@ -1138,7 +1138,11 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
 
-    let dir_label = if props.sort_desc { "↓ DESC" } else { "↑ ASC" };
+    let dir_label = if props.sort_desc {
+        "↓ DESC"
+    } else {
+        "↑ ASC"
+    };
     let current_sort = props.sort.as_str();
     let status_val = props.filter.status.as_str();
     let agent_val = props.filter.agent.as_value();
@@ -1421,7 +1425,11 @@ pub fn routine_table(props: &TableProps) -> Html {
                 </div>
             };
         } else {
-            ("⧗", "NO ROUTINES SCHEDULED", "press + NEW ROUTINE to create one")
+            (
+                "⧗",
+                "NO ROUTINES SCHEDULED",
+                "press + NEW ROUTINE to create one",
+            )
         };
         return html! {
             <div class="table-wrap">

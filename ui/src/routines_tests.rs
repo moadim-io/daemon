@@ -52,7 +52,10 @@ fn status_facet_roundtrips_and_defaults_to_all() {
     ] {
         assert_eq!(RoutineStatusFacet::from_str(f.as_str()), f);
     }
-    assert_eq!(RoutineStatusFacet::from_str("nonsense"), RoutineStatusFacet::All);
+    assert_eq!(
+        RoutineStatusFacet::from_str("nonsense"),
+        RoutineStatusFacet::All
+    );
     assert_eq!(RoutineStatusFacet::default(), RoutineStatusFacet::All);
 }
 
@@ -83,8 +86,14 @@ fn machine_facet_roundtrips_through_select_value() {
     let unassigned = RoutineMachineFacet::Unassigned;
     let specific = RoutineMachineFacet::Machine("alpha".into());
     assert_eq!(RoutineMachineFacet::from_value(&any.as_value()), any);
-    assert_eq!(RoutineMachineFacet::from_value(&unassigned.as_value()), unassigned);
-    assert_eq!(RoutineMachineFacet::from_value(&specific.as_value()), specific);
+    assert_eq!(
+        RoutineMachineFacet::from_value(&unassigned.as_value()),
+        unassigned
+    );
+    assert_eq!(
+        RoutineMachineFacet::from_value(&specific.as_value()),
+        specific
+    );
     assert_eq!(RoutineMachineFacet::default(), RoutineMachineFacet::Any);
 }
 
@@ -283,7 +292,15 @@ fn query_matches_repository_url() {
         &["https://github.com/acme/backend"],
         true,
     );
-    let miss = routine("b", "t", "claude", "0 * * * *", &[], &["https://github.com/other/foo"], true);
+    let miss = routine(
+        "b",
+        "t",
+        "claude",
+        "0 * * * *",
+        &[],
+        &["https://github.com/other/foo"],
+        true,
+    );
     assert!(f.matches(&hit));
     assert!(!f.matches(&miss));
 }

@@ -16,6 +16,7 @@ use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
@@ -2019,20 +2020,6 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         Callback::from(move |_: MouseEvent| load())
     };
 
-    let body = if *loading {
-        html! { <div class="empty"><div class="spinner"></div></div> }
-    } else if let Some(e) = (*err).clone() {
-        html! { <div class="logs-error">{format!("Error: {e}")}</div> }
-    } else if let Some(text) = (*content).clone() {
-        if text.is_empty() {
-            html! { <div class="logs-empty">{"— no logs yet —"}</div> }
-        } else {
-            html! { <pre class="logs-content">{text}</pre> }
-        }
-    } else {
-        html! {}
-    };
-
     html! {
         <main class="logs-page">
             <div class="page-hd">
@@ -2040,9 +2027,11 @@ pub fn routine_logs(props: &LogsProps) -> Html {
                 <div class="page-title">{format!("LOGS / {}", props.title)}</div>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
-            <div class="logs-wrap">
-                {body}
-            </div>
+            <LogViewer
+                content={(*content).clone()}
+                loading={*loading}
+                err={(*err).clone()}
+            />
         </main>
     }
 }

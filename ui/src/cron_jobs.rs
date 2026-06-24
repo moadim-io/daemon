@@ -19,6 +19,7 @@ use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
@@ -2187,24 +2188,6 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
         })
     };
 
-    let is_loading = *loading;
-    let err_msg = (*err).clone();
-    let log_text = (*content).clone();
-
-    let body = if is_loading {
-        html! { <div class="empty"><div class="spinner"></div></div> }
-    } else if let Some(e) = err_msg {
-        html! { <div class="logs-error">{format!("Error: {e}")}</div> }
-    } else if let Some(text) = log_text {
-        if text.is_empty() {
-            html! { <div class="logs-empty">{"— no logs yet —"}</div> }
-        } else {
-            html! { <pre class="logs-content">{text}</pre> }
-        }
-    } else {
-        html! {}
-    };
-
     html! {
         <main class="logs-page">
             <div class="page-hd">
@@ -2212,9 +2195,11 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
                 <div class="page-title">{format!("LOGS / {}", props.handler)}</div>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
-            <div class="logs-wrap">
-                {body}
-            </div>
+            <LogViewer
+                content={(*content).clone()}
+                loading={*loading}
+                err={(*err).clone()}
+            />
         </main>
     }
 }

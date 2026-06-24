@@ -11,6 +11,7 @@ use yew_router::prelude::*;
 mod command_palette;
 mod cron_jobs;
 mod day_timeline;
+mod log_viewer;
 mod machines;
 mod overview;
 mod refresh;

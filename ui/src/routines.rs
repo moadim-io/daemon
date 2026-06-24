@@ -55,6 +55,8 @@ pub struct Routine {
     pub updated_at: u64,
     #[serde(default)]
     pub last_manual_trigger_at: Option<u64>,
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
@@ -1176,10 +1178,27 @@ pub fn routine_row(props: &RowProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
 
-    let last_run = r
-        .last_manual_trigger_at
-        .map(|t| format!("↻ {}", reltime(t)))
-        .unwrap_or_default();
+    let last_run: Html = {
+        let manual = r.last_manual_trigger_at;
+        let scheduled = r.last_scheduled_trigger_at;
+        match (manual, scheduled) {
+            (None, None) => html! {
+                <div class="cell-triggered" style="color:var(--text-ghost)">{"never fired"}</div>
+            },
+            (Some(m), Some(s)) if m >= s => html! {
+                <div class="cell-triggered">{format!("↻ {}", reltime(m))}</div>
+            },
+            (Some(_m), Some(s)) => html! {
+                <div class="cell-triggered">{format!("⏱ {}", reltime(s))}</div>
+            },
+            (Some(m), None) => html! {
+                <div class="cell-triggered">{format!("↻ {}", reltime(m))}</div>
+            },
+            (None, Some(s)) => html! {
+                <div class="cell-triggered">{format!("⏱ {}", reltime(s))}</div>
+            },
+        }
+    };
 
     let agent_dot = if r.agent_registered {
         "handler-dot ok"
@@ -1217,9 +1236,7 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>
                 <div class="cell-time">{updated}</div>
-                if !last_run.is_empty() {
-                    <div class="cell-triggered">{last_run}</div>
-                }
+                {last_run}
             </td>
             <td>
                 <div class="row-actions">

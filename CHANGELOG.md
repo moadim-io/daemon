@@ -30,6 +30,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   tick keeps the DueSoon count current between data fetches. The STATUS dropdown
   in the filter bar gains a "Due soon" option. The `/` key shortcut focuses the
   search box when the user is not already typing in a field. Closes #652.
+- **Enhanced log viewer.** The per-job and per-routine log panel gains line numbers,
+  a keyword search bar with match highlighting and navigation arrows, and an
+  auto-tail toggle that keeps the viewport pinned to the last line as new output
+  arrives. Closes #646.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

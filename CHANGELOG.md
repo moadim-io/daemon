@@ -13,6 +13,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Cross-filterable KPI tiles + DueSoon facet for Routines page.** The Routines
+  page's static stat cards are replaced by clickable `<button>` tiles with
+  `aria-pressed`; clicking ENABLED, DISABLED, or DUE SOON applies that status
+  filter to the list, and clicking the active tile clears it. A new `DueSoon`
+  status facet selects routines whose next scheduled fire lands within the next
+  hour (same 1-hour window used by the Cron Jobs page). A live 30-second `now`
+  tick keeps the DueSoon count current between data fetches. The STATUS dropdown
+  in the filter bar gains a "Due soon" option. The `/` key shortcut focuses the
+  search box when the user is not already typing in a field. Closes #652.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

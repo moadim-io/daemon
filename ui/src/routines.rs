@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,7 @@ use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
+use crate::schedule::{fmt_until, fmt_when, next_fire_after};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
@@ -57,6 +58,9 @@ pub struct Routine {
     pub updated_at: u64,
     #[serde(default)]
     pub last_manual_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) when this routine last fired on its cron schedule, if ever.
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
@@ -445,6 +449,11 @@ pub enum RView {
     Day,
 }
 
+/// How long ahead a routine's next fire counts as "due soon" for the NEXT RUN cell.
+const DUE_SOON_SECS: i64 = 3_600;
+/// Cadence of the live tick that keeps next-run cells and the due-soon accent fresh.
+const NEXT_RUN_TICK_MS: u32 = 30_000;
+
 /// Field the routine table is sorted by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RSort {
@@ -453,26 +462,34 @@ pub enum RSort {
     Updated,
     Title,
     Repository,
+    /// Sort by `last_scheduled_trigger_at` (when the routine last fired on schedule).
+    LastScheduledFire,
+    /// Sort by when each routine next fires (soonest first; no-fire entries last).
+    NextRun,
 }
 
 impl RSort {
     /// Parse the value of the sort `<select>`.
-    fn from_str(s: &str) -> Self {
+    pub fn from_str(s: &str) -> Self {
         match s {
             "updated" => RSort::Updated,
             "title" => RSort::Title,
             "repository" => RSort::Repository,
+            "last-fire" => RSort::LastScheduledFire,
+            "next-run" => RSort::NextRun,
             _ => RSort::Created,
         }
     }
 
     /// `<option>` value for this sort field.
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             RSort::Created => "created",
             RSort::Updated => "updated",
             RSort::Title => "title",
             RSort::Repository => "repository",
+            RSort::LastScheduledFire => "last-fire",
+            RSort::NextRun => "next-run",
         }
     }
 }
@@ -583,6 +600,21 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     // (ms) of the last successful list load that drives the freshness cue.
     let interval = use_state(crate::refresh::load_interval);
     let updated_at = use_state(|| 0.0_f64);
+
+    // Live "now", advanced on a fixed tick so next-run cells and due-soon
+    // accents stay fresh between full data reloads.
+    let now = use_state(Local::now);
+    {
+        let now = now.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                loop {
+                    TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
+                    now.set(Local::now());
+                }
+            });
+        });
+    }
 
     let ok_toast = {
         let toast = toast.clone();
@@ -883,6 +915,22 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                 Some(repo) => (false, repo.repository.to_lowercase()),
                 None => (true, String::new()),
             }),
+            RSort::LastScheduledFire => {
+                v.sort_by_key(|r| r.last_scheduled_trigger_at.unwrap_or(0));
+            }
+            RSort::NextRun => {
+                let now_val = *now;
+                v.sort_by(|a, b| {
+                    let a_next = next_fire_after(&a.schedule, now_val);
+                    let b_next = next_fire_after(&b.schedule, now_val);
+                    match (a_next, b_next) {
+                        (Some(at), Some(bt)) => at.cmp(&bt),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    }
+                });
+            }
         }
         if sort_desc {
             v.reverse();
@@ -951,6 +999,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             routines={visible}
                                             loading={loading}
                                             filter_active={filter_active}
+                                            now={*now}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
@@ -1213,6 +1262,8 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                     <option value="updated" selected={current_sort == "updated"}>{"Updated"}</option>
                     <option value="title" selected={current_sort == "title"}>{"Title"}</option>
                     <option value="repository" selected={current_sort == "repository"}>{"Repository"}</option>
+                    <option value="last-fire" selected={current_sort == "last-fire"}>{"Last Fire"}</option>
+                    <option value="next-run" selected={current_sort == "next-run"}>{"Next Run"}</option>
                 </select>
                 <button class="btn btn-ghost btn-sm" onclick={on_dir}
                     title="Toggle sort direction">{dir_label}</button>
@@ -1393,6 +1444,8 @@ pub struct TableProps {
     pub loading: bool,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    /// Reference instant for NEXT RUN cells; advanced by a live tick.
+    pub now: DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1450,10 +1503,12 @@ pub fn routine_table(props: &TableProps) -> Html {
                     <tr>
                         <th>{"TITLE"}</th>
                         <th>{"SCHEDULE"}</th>
+                        <th>{"NEXT RUN"}</th>
                         <th>{"AGENT"}</th>
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
                         <th>{"ENABLED"}</th>
+                        <th>{"LAST FIRE"}</th>
                         <th>{"UPDATED"}</th>
                         <th></th>
                     </tr>
@@ -1463,6 +1518,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <RoutineRow
                             key={r.id.clone()}
                             routine={r.clone()}
+                            now={props.now}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
@@ -1479,6 +1535,8 @@ pub fn routine_table(props: &TableProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct RowProps {
     pub routine: Routine,
+    /// Reference instant for the NEXT RUN cell; advanced by the page's live tick.
+    pub now: DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1526,6 +1584,31 @@ pub fn routine_row(props: &RowProps) -> Html {
         .map(|t| format!("↻ {}", reltime(t)))
         .unwrap_or_default();
 
+    // LAST FIRE: when this routine was last triggered by its cron schedule.
+    let last_fire_text = match r.last_scheduled_trigger_at {
+        Some(t) if t > 0 => reltime(t),
+        _ => "never".into(),
+    };
+
+    // NEXT RUN: when this routine will next fire on its schedule.
+    let next_run_cell = if !r.enabled {
+        html! { <span class="cell-next muted">{"paused"}</span> }
+    } else {
+        match next_fire_after(&r.schedule, props.now) {
+            Some(then) => {
+                let soon = then - props.now <= Duration::seconds(DUE_SOON_SECS);
+                let until_cls = if soon { "cell-next-until soon" } else { "cell-next-until" };
+                html! {
+                    <div class="cell-next">
+                        <div class="cell-next-when">{fmt_when(props.now, then)}</div>
+                        <div class={until_cls}>{fmt_until(props.now, then)}</div>
+                    </div>
+                }
+            }
+            None => html! { <span class="cell-next muted">{"—"}</span> },
+        }
+    };
+
     let agent_dot = if r.agent_registered {
         "handler-dot ok"
     } else {
@@ -1546,6 +1629,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="cell-schedule">{&r.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
+            <td>{next_run_cell}</td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>
@@ -1560,6 +1644,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <div class="toggle-track"></div>
                 </label>
             </td>
+            <td><span class="cell-meta">{last_fire_text}</span></td>
             <td>
                 <div class="cell-time">{updated}</div>
                 if !last_run.is_empty() {

@@ -33,6 +33,7 @@ fn routine(
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         agent_registered: false,
         file_path: String::new(),
@@ -374,4 +375,36 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
         routine("c", "t", "claude", "0 * * * *", &[], &[], false),
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
+}
+
+// ── RSort codecs ──────────────────────────────────────────────────────────────
+
+#[test]
+fn rsort_roundtrips_all_variants() {
+    for sort in [
+        RSort::Created,
+        RSort::Updated,
+        RSort::Title,
+        RSort::Repository,
+        RSort::LastScheduledFire,
+        RSort::NextRun,
+    ] {
+        assert_eq!(RSort::from_str(sort.as_str()), sort);
+    }
+}
+
+#[test]
+fn rsort_defaults_to_created_for_unknown_input() {
+    assert_eq!(RSort::from_str("nonsense"), RSort::Created);
+    assert_eq!(RSort::default(), RSort::Created);
+}
+
+// ── last_scheduled_trigger_at deserialization ─────────────────────────────────
+
+#[test]
+fn routine_last_scheduled_trigger_at_defaults_to_none() {
+    let mut r = routine("x", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(r.last_scheduled_trigger_at, None);
+    r.last_scheduled_trigger_at = Some(1_000_000);
+    assert_eq!(r.last_scheduled_trigger_at, Some(1_000_000));
 }

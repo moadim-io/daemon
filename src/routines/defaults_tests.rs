@@ -190,10 +190,7 @@ fn ensure_default_routines_skips_up_to_date_existing() {
         // The existing up-to-date routine must not be duplicated (still exactly one entry with that
         // slug). Other defaults may have been seeded alongside it.
         let slug = slugify(spec.title);
-        let slug_count = after
-            .values()
-            .filter(|r| slugify(&r.title) == slug)
-            .count();
+        let slug_count = after.values().filter(|r| slugify(&r.title) == slug).count();
         assert_eq!(slug_count, 1, "up-to-date default must not be duplicated");
         assert!(
             after.contains_key(&existing_id),
@@ -221,10 +218,7 @@ fn ensure_default_routines_rewrites_drifted_existing() {
         // The drifted routine must be updated in-place, not duplicated (still exactly one entry
         // with that slug). Other defaults may have been seeded alongside it.
         let slug = slugify(spec.title);
-        let slug_count = after
-            .values()
-            .filter(|r| slugify(&r.title) == slug)
-            .count();
+        let slug_count = after.values().filter(|r| slugify(&r.title) == slug).count();
         assert_eq!(slug_count, 1, "drifted default must not be duplicated");
         let refreshed = after
             .get(&existing_id)

@@ -4,12 +4,14 @@
 //! (claude, codex, …) on a schedule instead of running a handler script.
 
 use std::cell::Cell;
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
@@ -261,6 +263,206 @@ impl RSort {
     }
 }
 
+// ─── Faceted filter ───────────────────────────────────────────────────────────
+//
+// Pure, host-testable filtering. The view binds a search box, a status facet,
+// an agent facet, and a machine facet to a `RoutineFilter`; the table renders
+// `filter_routines(...)` instead of the raw list. Pattern from Datadog/Grafana:
+// free-text + facets narrow a dense list, a live count keeps the filter legible,
+// and `'/'` focuses the search box keyboard-first.
+
+/// Enabled/disabled status facet for the routines list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RoutineStatusFacet {
+    #[default]
+    All,
+    Enabled,
+    Disabled,
+}
+
+impl RoutineStatusFacet {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RoutineStatusFacet::All => "all",
+            RoutineStatusFacet::Enabled => "enabled",
+            RoutineStatusFacet::Disabled => "disabled",
+        }
+    }
+
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "enabled" => RoutineStatusFacet::Enabled,
+            "disabled" => RoutineStatusFacet::Disabled,
+            _ => RoutineStatusFacet::All,
+        }
+    }
+}
+
+/// Sentinel select values for non-machine choices.
+const RMACHINE_ANY: &str = "\u{0}any";
+const RMACHINE_UNASSIGNED: &str = "\u{0}unassigned";
+/// Sentinel select value for the "any agent" option.
+const RAGENT_ANY: &str = "\u{0}any";
+
+/// Machine facet: any machine, dormant (no-machine) routines, or one specific machine.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RoutineMachineFacet {
+    #[default]
+    Any,
+    Unassigned,
+    Machine(String),
+}
+
+impl RoutineMachineFacet {
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            RoutineMachineFacet::Any => RMACHINE_ANY.to_string(),
+            RoutineMachineFacet::Unassigned => RMACHINE_UNASSIGNED.to_string(),
+            RoutineMachineFacet::Machine(m) => m.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        match v {
+            RMACHINE_ANY => RoutineMachineFacet::Any,
+            RMACHINE_UNASSIGNED => RoutineMachineFacet::Unassigned,
+            other => RoutineMachineFacet::Machine(other.to_string()),
+        }
+    }
+}
+
+/// Agent facet: any agent, or a specific registered agent name.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum AgentFacet {
+    #[default]
+    Any,
+    Agent(String),
+}
+
+impl AgentFacet {
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            AgentFacet::Any => RAGENT_ANY.to_string(),
+            AgentFacet::Agent(a) => a.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        match v {
+            RAGENT_ANY => AgentFacet::Any,
+            other => AgentFacet::Agent(other.to_string()),
+        }
+    }
+}
+
+/// Combined free-text + facet filter applied client-side.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RoutineFilter {
+    pub query: String,
+    pub status: RoutineStatusFacet,
+    pub agent: AgentFacet,
+    pub machine: RoutineMachineFacet,
+}
+
+impl RoutineFilter {
+    /// Whether any facet is narrowing the list.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        !self.query.trim().is_empty()
+            || self.status != RoutineStatusFacet::All
+            || self.agent != AgentFacet::Any
+            || self.machine != RoutineMachineFacet::Any
+    }
+
+    /// Does this routine survive the filter? Facets AND together; free-text
+    /// matches title, agent name, schedule, and the human schedule description.
+    #[must_use]
+    pub fn matches(&self, routine: &Routine) -> bool {
+        match self.status {
+            RoutineStatusFacet::All => {}
+            RoutineStatusFacet::Enabled if !routine.enabled => return false,
+            RoutineStatusFacet::Disabled if routine.enabled => return false,
+            _ => {}
+        }
+        match &self.agent {
+            AgentFacet::Any => {}
+            AgentFacet::Agent(a) if routine.agent != *a => return false,
+            _ => {}
+        }
+        match &self.machine {
+            RoutineMachineFacet::Any => {}
+            RoutineMachineFacet::Unassigned if !routine.machines.is_empty() => return false,
+            RoutineMachineFacet::Machine(m) if !routine.machines.iter().any(|x| x == m) => {
+                return false
+            }
+            _ => {}
+        }
+        let q = self.query.trim().to_lowercase();
+        if !q.is_empty() {
+            let desc = routine
+                .schedule_description
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase();
+            let hay = format!(
+                "{} {} {} {}",
+                routine.title.to_lowercase(),
+                routine.agent.to_lowercase(),
+                routine.schedule.to_lowercase(),
+                desc,
+            );
+            if !hay.contains(&q) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// Routines surviving `filter`, preserving input order.
+#[must_use]
+pub fn filter_routines(routines: &[Routine], filter: &RoutineFilter) -> Vec<Routine> {
+    routines.iter().filter(|r| filter.matches(r)).cloned().collect()
+}
+
+/// Distinct agent names across all routines, sorted.
+#[must_use]
+pub fn distinct_agents(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        if !r.agent.is_empty() {
+            set.insert(r.agent.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Distinct machine ids across all routines, sorted.
+#[must_use]
+pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        for m in &r.machines {
+            if !m.trim().is_empty() {
+                set.insert(m.clone());
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Count of routines with no machine assigned.
+#[must_use]
+pub fn unassigned_count_r(routines: &[Routine]) -> usize {
+    routines.iter().filter(|r| r.machines.is_empty()).count()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RState {
     pub routines: Vec<Routine>,
@@ -268,8 +470,8 @@ pub struct RState {
     pub page: RPage,
     pub modal: RModal,
     pub view: RView,
-    /// Case-insensitive repository-URL substring filter for the table.
-    pub repo_filter: String,
+    /// Active faceted filter applied to the list view.
+    pub filter: RoutineFilter,
     /// Field the table is sorted by.
     pub sort: RSort,
     /// `true` sorts descending (newest / Z→A first).
@@ -284,7 +486,7 @@ impl Default for RState {
             page: RPage::List,
             modal: RModal::None,
             view: RView::default(),
-            repo_filter: String::new(),
+            filter: RoutineFilter::default(),
             sort: RSort::default(),
             sort_desc: false,
         }
@@ -300,7 +502,11 @@ pub enum RAction {
     OpenConfirmDelete { id: String, title: String },
     CloseModal,
     SetView(RView),
-    SetRepoFilter(String),
+    SetQuery(String),
+    SetStatus(RoutineStatusFacet),
+    SetAgent(AgentFacet),
+    SetMachine(RoutineMachineFacet),
+    ClearFilters,
     SetSort(RSort),
     ToggleSortDir,
     Upsert(Box<Routine>),
@@ -326,7 +532,11 @@ impl Reducible for RState {
             }
             RAction::CloseModal => s.modal = RModal::None,
             RAction::SetView(view) => s.view = view,
-            RAction::SetRepoFilter(f) => s.repo_filter = f,
+            RAction::SetQuery(q) => s.filter.query = q,
+            RAction::SetStatus(status) => s.filter.status = status,
+            RAction::SetAgent(agent) => s.filter.agent = agent,
+            RAction::SetMachine(machine) => s.filter.machine = machine,
+            RAction::ClearFilters => s.filter = RoutineFilter::default(),
             RAction::SetSort(sort) => s.sort = sort,
             RAction::ToggleSortDir => s.sort_desc = !s.sort_desc,
             RAction::Upsert(routine) => {
@@ -462,9 +672,25 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |view: RView| state.dispatch(RAction::SetView(view)))
     };
-    let on_repo_filter = {
+    let on_set_query = {
         let state = state.clone();
-        Callback::from(move |f: String| state.dispatch(RAction::SetRepoFilter(f)))
+        Callback::from(move |q: String| state.dispatch(RAction::SetQuery(q)))
+    };
+    let on_set_status = {
+        let state = state.clone();
+        Callback::from(move |status: RoutineStatusFacet| state.dispatch(RAction::SetStatus(status)))
+    };
+    let on_set_agent = {
+        let state = state.clone();
+        Callback::from(move |agent: AgentFacet| state.dispatch(RAction::SetAgent(agent)))
+    };
+    let on_set_machine = {
+        let state = state.clone();
+        Callback::from(move |machine: RoutineMachineFacet| state.dispatch(RAction::SetMachine(machine)))
+    };
+    let on_clear_filters = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(RAction::ClearFilters))
     };
     let on_set_sort = {
         let state = state.clone();
@@ -623,24 +849,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let page = state.page.clone();
     let modal = state.modal.clone();
     let view = state.view;
-    let repo_filter = state.repo_filter.clone();
+    let filter = state.filter.clone();
     let sort = state.sort;
     let sort_desc = state.sort_desc;
 
-    // Repository filter + sort applied client-side; mirrors the `repository`/`sort`/`order`
-    // query params the `/routines` API accepts.
+    // Faceted filter + sort applied client-side.
     let visible = {
-        let needle = repo_filter.trim().to_lowercase();
-        let mut v: Vec<Routine> = routines
-            .iter()
-            .filter(|r| {
-                needle.is_empty()
-                    || r.repositories
-                        .iter()
-                        .any(|repo| repo.repository.to_lowercase().contains(&needle))
-            })
-            .cloned()
-            .collect();
+        let mut v = filter_routines(&routines, &filter);
         match sort {
             RSort::Created => v.sort_by_key(|r| r.created_at),
             RSort::Updated => v.sort_by_key(|r| r.updated_at),
@@ -656,6 +871,51 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         }
         v
     };
+
+    // Precompute filter-bar options from the full (unfiltered) list.
+    let agents = distinct_agents(&routines);
+    let machines = distinct_machines_r(&routines);
+    let has_unassigned = unassigned_count_r(&routines) > 0;
+    let search_ref = use_node_ref();
+
+    // '/' focuses the search input from anywhere on the page.
+    {
+        let search_ref = search_ref.clone();
+        use_effect_with((), move |_| {
+            let on_key =
+                wasm_bindgen::closure::Closure::<dyn Fn(web_sys::KeyboardEvent)>::wrap(Box::new(
+                    move |event: web_sys::KeyboardEvent| {
+                        let tag = event
+                            .target()
+                            .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
+                            .map(|el| el.tag_name().to_lowercase())
+                            .unwrap_or_default();
+                        if tag == "input" || tag == "textarea" || tag == "select" {
+                            return;
+                        }
+                        if event.key() == "/" {
+                            event.prevent_default();
+                            if let Some(input) = search_ref.cast::<HtmlInputElement>() {
+                                let _ = input.focus();
+                            }
+                        }
+                    },
+                ));
+            let window = web_sys::window().expect("window exists");
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("keydown listener attaches");
+            move || {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        on_key.as_ref().unchecked_ref(),
+                    );
+                }
+                drop(on_key);
+            }
+        });
+    }
 
     let edit_routine = match &modal {
         RModal::Edit(id) => routines.iter().find(|r| r.id == *id).cloned(),
@@ -694,10 +954,20 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 </div>
                             </div>
                             <FilterSortBar
-                                repo_filter={repo_filter}
+                                filter={filter.clone()}
+                                agents={agents.clone()}
+                                machines={machines.clone()}
+                                has_unassigned={has_unassigned}
+                                shown={visible.len()}
+                                total={routines.len()}
                                 sort={sort}
                                 sort_desc={sort_desc}
-                                on_repo_filter={on_repo_filter}
+                                search_ref={search_ref.clone()}
+                                on_query={on_set_query.clone()}
+                                on_status={on_set_status.clone()}
+                                on_agent={on_set_agent.clone()}
+                                on_machine={on_set_machine.clone()}
+                                on_clear={on_clear_filters.clone()}
                                 on_set_sort={on_set_sort}
                                 on_toggle_sort_dir={on_toggle_sort_dir}
                             />
@@ -707,11 +977,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         <RoutineTable
                                             routines={visible}
                                             loading={loading}
+                                            filter_active={filter.is_active()}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
+                                            on_clear_filters={on_clear_filters.clone()}
                                         />
                                     },
                                     RView::Calendar => html! {
@@ -826,27 +1098,62 @@ pub fn view_toggle(props: &ViewToggleProps) -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct FilterSortBarProps {
-    pub repo_filter: String,
+    pub filter: RoutineFilter,
+    /// Distinct agent names across all routines, for agent-facet options.
+    pub agents: Vec<String>,
+    /// Distinct machine ids across all routines, for machine-facet options.
+    pub machines: Vec<String>,
+    /// Whether at least one dormant (no-machine) routine exists.
+    pub has_unassigned: bool,
+    /// Visible count after filtering / total loaded.
+    pub shown: usize,
+    pub total: usize,
     pub sort: RSort,
     pub sort_desc: bool,
-    pub on_repo_filter: Callback<String>,
+    pub search_ref: NodeRef,
+    pub on_query: Callback<String>,
+    pub on_status: Callback<RoutineStatusFacet>,
+    pub on_agent: Callback<AgentFacet>,
+    pub on_machine: Callback<RoutineMachineFacet>,
+    pub on_clear: Callback<()>,
     pub on_set_sort: Callback<RSort>,
     pub on_toggle_sort_dir: Callback<()>,
 }
 
-/// Repository filter input plus a sort-field dropdown and direction toggle for the routine table.
+/// Faceted search + filter bar with status/agent/machine dropdowns, live count, and CLEAR.
 #[function_component(FilterSortBar)]
 pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
     let on_input = {
-        let cb = props.on_repo_filter.clone();
+        let cb = props.on_query.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             cb.emit(input.value());
         })
     };
+    let on_status_change = {
+        let cb = props.on_status.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(RoutineStatusFacet::from_str(&select.value()));
+        })
+    };
+    let on_agent_change = {
+        let cb = props.on_agent.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(AgentFacet::from_value(&select.value()));
+        })
+    };
+    let on_machine_change = {
+        let cb = props.on_machine.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(RoutineMachineFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
-        let cb = props.on_repo_filter.clone();
-        Callback::from(move |_: MouseEvent| cb.emit(String::new()))
+        let cb = props.on_clear.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
     };
     let on_sort_change = {
         let cb = props.on_set_sort.clone();
@@ -859,41 +1166,77 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
         let cb = props.on_toggle_sort_dir.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
-    let dir_label = if props.sort_desc {
-        "↓ DESC"
-    } else {
-        "↑ ASC"
-    };
-    let current = props.sort.as_str();
+
+    let status = props.filter.status.as_str();
+    let agent_val = props.filter.agent.as_value();
+    let machine_val = props.filter.machine.as_value();
+    let active = props.filter.is_active();
+    let dir_label = if props.sort_desc { "↓ DESC" } else { "↑ ASC" };
+    let current_sort = props.sort.as_str();
 
     html! {
         <div class="filter-bar">
             <div class="filter-field">
                 <input
+                    ref={props.search_ref.clone()}
                     type="text"
                     class="filter-input"
-                    placeholder="Filter by repository…"
-                    value={props.repo_filter.clone()}
+                    placeholder="Search routines…  ( / )"
+                    aria-label="Search routines"
+                    value={props.filter.query.clone()}
                     oninput={on_input}
                 />
-                {
-                    if props.repo_filter.is_empty() {
-                        html! {}
-                    } else {
-                        html! {
-                            <button class="btn btn-ghost btn-sm" onclick={on_clear}
-                                title="Clear repository filter" aria-label="Clear repository filter">{"✕"}</button>
+                <span class="filter-label">{"STATUS"}</span>
+                <select class="filter-select" aria-label="Status filter" onchange={on_status_change}>
+                    <option value="all" selected={status == "all"}>{"All"}</option>
+                    <option value="enabled" selected={status == "enabled"}>{"Enabled"}</option>
+                    <option value="disabled" selected={status == "disabled"}>{"Disabled"}</option>
+                </select>
+                <span class="filter-label">{"AGENT"}</span>
+                <select class="filter-select" aria-label="Agent filter" onchange={on_agent_change}>
+                    <option value={RAGENT_ANY} selected={agent_val == RAGENT_ANY}>{"Any"}</option>
+                    { for props.agents.iter().map(|a| html! {
+                        <option value={a.clone()} selected={agent_val == *a}>{a.clone()}</option>
+                    }) }
+                </select>
+                <span class="filter-label">{"MACHINE"}</span>
+                <select class="filter-select" aria-label="Machine filter" onchange={on_machine_change}>
+                    <option value={RMACHINE_ANY} selected={machine_val == RMACHINE_ANY}>{"Any"}</option>
+                    {
+                        if props.has_unassigned {
+                            html! {
+                                <option value={RMACHINE_UNASSIGNED}
+                                    selected={machine_val == RMACHINE_UNASSIGNED}>{"Unassigned"}</option>
+                            }
+                        } else {
+                            html! {}
                         }
                     }
-                }
+                    { for props.machines.iter().map(|m| html! {
+                        <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
+                    }) }
+                </select>
             </div>
             <div class="filter-field">
+                <span class="filter-count">
+                    {format!("Showing {} of {}", props.shown, props.total)}
+                </span>
+                {
+                    if active {
+                        html! {
+                            <button class="btn btn-ghost btn-sm" onclick={on_clear}
+                                title="Clear all filters">{"CLEAR"}</button>
+                        }
+                    } else {
+                        html! {}
+                    }
+                }
                 <span class="filter-label">{"SORT"}</span>
                 <select class="filter-select" onchange={on_sort_change}>
-                    <option value="created" selected={current == "created"}>{"Created"}</option>
-                    <option value="updated" selected={current == "updated"}>{"Updated"}</option>
-                    <option value="title" selected={current == "title"}>{"Title"}</option>
-                    <option value="repository" selected={current == "repository"}>{"Repository"}</option>
+                    <option value="created" selected={current_sort == "created"}>{"Created"}</option>
+                    <option value="updated" selected={current_sort == "updated"}>{"Updated"}</option>
+                    <option value="title" selected={current_sort == "title"}>{"Title"}</option>
+                    <option value="repository" selected={current_sort == "repository"}>{"Repository"}</option>
                 </select>
                 <button class="btn btn-ghost btn-sm" onclick={on_dir}
                     title="Toggle sort direction">{dir_label}</button>
@@ -1072,11 +1415,14 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
 pub struct TableProps {
     pub routines: Vec<Routine>,
     pub loading: bool,
+    /// Whether a filter is narrowing the list — selects the filtered-empty state.
+    pub filter_active: bool,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_clear_filters: Callback<()>,
 }
 
 #[function_component(RoutineTable)]
@@ -1087,6 +1433,22 @@ pub fn routine_table(props: &TableProps) -> Html {
         };
     }
     if props.routines.is_empty() {
+        if props.filter_active {
+            let on_clear = {
+                let cb = props.on_clear_filters.clone();
+                Callback::from(move |_: MouseEvent| cb.emit(()))
+            };
+            return html! {
+                <div class="table-wrap">
+                    <div class="empty">
+                        <div class="empty-icon">{"⦰"}</div>
+                        <div class="empty-msg">{"NO MATCHING ROUTINES"}</div>
+                        <div class="empty-sub">{"no routines match the active filter"}</div>
+                        <button class="btn btn-ghost btn-sm" onclick={on_clear}>{"CLEAR FILTERS"}</button>
+                    </div>
+                </div>
+            };
+        }
         return html! {
             <div class="table-wrap">
                 <div class="empty">
@@ -1702,3 +2064,7 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         </main>
     }
 }
+
+#[cfg(test)]
+#[path = "routines_tests.rs"]
+mod routines_tests;

@@ -15,6 +15,7 @@ use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::logs::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
@@ -190,17 +191,6 @@ async fn api_cleanup() -> Result<usize, String> {
         .await
         .map(|r| r.removed)
         .map_err(|e| e.to_string())
-}
-
-async fn api_logs(id: &str) -> Result<String, String> {
-    let resp = Request::get(&format!("/api/v1/routines/{id}/logs"))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !resp.ok() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    resp.text().await.map_err(|e| e.to_string())
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -674,7 +664,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             .find(|r| r.id == id)
                             .map(|r| r.title.clone())
                             .unwrap_or_default();
-                        html! { <RoutineLogs id={id} title={title} on_back={on_back} /> }
+                        html! {
+                            <LogViewer
+                                fetch_url={format!("/api/v1/routines/{id}/logs")}
+                                title={title}
+                                on_back={on_back}
+                            />
+                        }
                     },
                     RPage::List => html! {
                         <main>
@@ -1620,85 +1616,3 @@ pub fn confirm_delete(props: &ConfirmProps) -> Html {
     }
 }
 
-// ─── Logs page ────────────────────────────────────────────────────────────────
-
-#[derive(Properties, PartialEq)]
-pub struct LogsProps {
-    pub id: String,
-    pub title: String,
-    pub on_back: Callback<()>,
-}
-
-#[function_component(RoutineLogs)]
-pub fn routine_logs(props: &LogsProps) -> Html {
-    let content: UseStateHandle<Option<String>> = use_state(|| None);
-    let loading = use_state(|| true);
-    let err: UseStateHandle<Option<String>> = use_state(|| None);
-
-    let load = {
-        let id = props.id.clone();
-        let content = content.clone();
-        let loading = loading.clone();
-        let err = err.clone();
-        move || {
-            let id = id.clone();
-            let content = content.clone();
-            let loading = loading.clone();
-            let err = err.clone();
-            loading.set(true);
-            spawn_local(async move {
-                match api_logs(&id).await {
-                    Ok(text) => {
-                        content.set(Some(text));
-                        err.set(None);
-                    }
-                    Err(e) => err.set(Some(e)),
-                }
-                loading.set(false);
-            });
-        }
-    };
-
-    {
-        let load = load.clone();
-        use_effect_with(props.id.clone(), move |_| {
-            load();
-        });
-    }
-
-    let on_back = {
-        let cb = props.on_back.clone();
-        Callback::from(move |_: MouseEvent| cb.emit(()))
-    };
-    let on_refresh = {
-        let load = load.clone();
-        Callback::from(move |_: MouseEvent| load())
-    };
-
-    let body = if *loading {
-        html! { <div class="empty"><div class="spinner"></div></div> }
-    } else if let Some(e) = (*err).clone() {
-        html! { <div class="logs-error">{format!("Error: {e}")}</div> }
-    } else if let Some(text) = (*content).clone() {
-        if text.is_empty() {
-            html! { <div class="logs-empty">{"— no logs yet —"}</div> }
-        } else {
-            html! { <pre class="logs-content">{text}</pre> }
-        }
-    } else {
-        html! {}
-    };
-
-    html! {
-        <main class="logs-page">
-            <div class="page-hd">
-                <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
-                <div class="page-title">{format!("LOGS / {}", props.title)}</div>
-                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
-            </div>
-            <div class="logs-wrap">
-                {body}
-            </div>
-        </main>
-    }
-}

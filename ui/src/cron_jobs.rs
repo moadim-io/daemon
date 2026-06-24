@@ -19,6 +19,7 @@ use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
+use crate::logs::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
@@ -307,17 +308,6 @@ async fn api_trigger(id: &str) -> Result<CronJob, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.json::<CronJob>().await.map_err(|e| e.to_string())
-}
-
-async fn api_logs(id: &str) -> Result<String, String> {
-    let resp = Request::get(&format!("/api/v1/cron-jobs/{id}/logs"))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !resp.ok() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    resp.text().await.map_err(|e| e.to_string())
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -991,7 +981,11 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                             .map(|j| j.handler.clone())
                             .unwrap_or_default();
                         html! {
-                            <LogsPage job_id={id} handler={handler} on_back={on_back} />
+                            <LogViewer
+                                fetch_url={format!("/api/v1/cron-jobs/{id}/logs")}
+                                title={handler}
+                                on_back={on_back}
+                            />
                         }
                     },
                     CPage::List => html! {
@@ -2117,105 +2111,6 @@ pub fn bulk_delete_dialog(props: &BulkDeleteProps) -> Html {
                 </div>
             </div>
         </div>
-    }
-}
-
-// ─── Logs page ────────────────────────────────────────────────────────────────
-
-#[derive(Properties, PartialEq)]
-pub struct LogsPageProps {
-    pub job_id: String,
-    pub handler: String,
-    pub on_back: Callback<()>,
-}
-
-#[function_component(LogsPage)]
-pub fn logs_page(props: &LogsPageProps) -> Html {
-    let content: UseStateHandle<Option<String>> = use_state(|| None);
-    let loading = use_state(|| true);
-    let err: UseStateHandle<Option<String>> = use_state(|| None);
-
-    {
-        let id = props.job_id.clone();
-        let content = content.clone();
-        let loading = loading.clone();
-        let err = err.clone();
-        use_effect_with(id.clone(), move |id| {
-            let id = id.clone();
-            let content = content.clone();
-            let loading = loading.clone();
-            let err = err.clone();
-            spawn_local(async move {
-                match api_logs(&id).await {
-                    Ok(text) => {
-                        content.set(Some(text));
-                        err.set(None);
-                    }
-                    Err(e) => err.set(Some(e)),
-                }
-                loading.set(false);
-            });
-        });
-    }
-
-    let on_back = {
-        let cb = props.on_back.clone();
-        Callback::from(move |_: MouseEvent| cb.emit(()))
-    };
-
-    let on_refresh = {
-        let id = props.job_id.clone();
-        let content = content.clone();
-        let loading = loading.clone();
-        let err = err.clone();
-        Callback::from(move |_: MouseEvent| {
-            let id = id.clone();
-            let content = content.clone();
-            let loading = loading.clone();
-            let err = err.clone();
-            loading.set(true);
-            spawn_local(async move {
-                match api_logs(&id).await {
-                    Ok(text) => {
-                        content.set(Some(text));
-                        err.set(None);
-                    }
-                    Err(e) => err.set(Some(e)),
-                }
-                loading.set(false);
-            });
-        })
-    };
-
-    let is_loading = *loading;
-    let err_msg = (*err).clone();
-    let log_text = (*content).clone();
-
-    let body = if is_loading {
-        html! { <div class="empty"><div class="spinner"></div></div> }
-    } else if let Some(e) = err_msg {
-        html! { <div class="logs-error">{format!("Error: {e}")}</div> }
-    } else if let Some(text) = log_text {
-        if text.is_empty() {
-            html! { <div class="logs-empty">{"— no logs yet —"}</div> }
-        } else {
-            html! { <pre class="logs-content">{text}</pre> }
-        }
-    } else {
-        html! {}
-    };
-
-    html! {
-        <main class="logs-page">
-            <div class="page-hd">
-                <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
-                <div class="page-title">{format!("LOGS / {}", props.handler)}</div>
-                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
-            </div>
-            <div class="logs-wrap">
-                {body}
-            </div>
-        </main>
     }
 }
 

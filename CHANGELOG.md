@@ -41,6 +41,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   turns red once a fire lands inside the due-soon window. A new `DUE SOON` KPI tile counts
   enabled jobs firing within the next hour, and a 30 s tick keeps countdowns live without
   a manual reload. Closes #597.
+- **Faceted filter toolbar for the Routines page.** The single repository-URL
+  substring filter is replaced with a multi-facet toolbar matching the Cron Jobs
+  page (Airflow / GitHub Actions / Buildkite best practice: free-text + facets +
+  live result count). New facets: full-text search across title, agent, schedule,
+  schedule description, and repository URLs; status (All / Enabled / Disabled /
+  Dormant); agent (Any / claude / codex / …); machine (Any / Unassigned / specific).
+  A live "Showing N of M" count updates with each keystroke, a CLEAR button appears
+  when any filter is active, and the empty state distinguishes "no routines yet"
+  from "no matches — clear filters". Pure filter logic is extracted to free
+  functions with 31 new host-side unit tests. Closes #642.
 
 ### Changed
 

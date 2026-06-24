@@ -187,7 +187,14 @@ fn ensure_default_routines_skips_up_to_date_existing() {
         ensure_default_routines(&store);
 
         let after = store.lock().unwrap();
-        assert_eq!(after.len(), 1, "up-to-date default must not be duplicated");
+        // The existing up-to-date routine must not be duplicated (still exactly one entry with that
+        // slug). Other defaults may have been seeded alongside it.
+        let slug = slugify(spec.title);
+        let slug_count = after
+            .values()
+            .filter(|r| slugify(&r.title) == slug)
+            .count();
+        assert_eq!(slug_count, 1, "up-to-date default must not be duplicated");
         assert!(
             after.contains_key(&existing_id),
             "the original entry must be preserved unchanged"
@@ -211,7 +218,14 @@ fn ensure_default_routines_rewrites_drifted_existing() {
         ensure_default_routines(&store);
 
         let after = store.lock().unwrap();
-        assert_eq!(after.len(), 1, "drifted default must not be duplicated");
+        // The drifted routine must be updated in-place, not duplicated (still exactly one entry
+        // with that slug). Other defaults may have been seeded alongside it.
+        let slug = slugify(spec.title);
+        let slug_count = after
+            .values()
+            .filter(|r| slugify(&r.title) == slug)
+            .count();
+        assert_eq!(slug_count, 1, "drifted default must not be duplicated");
         let refreshed = after
             .get(&existing_id)
             .expect("drifted default keeps its id");
@@ -233,12 +247,13 @@ fn ensure_default_routines_logs_and_skips_on_write_failure() {
     // `create_dir_all` inside write_routine errors. The failure is logged and skipped, so an empty
     // store stays empty (the routine is never inserted).
     with_redirected_home(|_home| {
-        let spec = &DEFAULT_ROUTINES[0];
-        let slug = slugify(spec.title);
         let routines = crate::paths::routines_dir();
         std::fs::create_dir_all(&routines).unwrap();
-        // Occupy the routine's directory path with a regular file so create_dir_all fails.
-        std::fs::write(routines.join(&slug), "i am a file, not a dir").unwrap();
+        // Block every default's directory path with a regular file so create_dir_all fails for all.
+        for spec in DEFAULT_ROUTINES {
+            let slug = slugify(spec.title);
+            std::fs::write(routines.join(&slug), "i am a file, not a dir").unwrap();
+        }
 
         let store = empty_store();
         ensure_default_routines(&store);
@@ -247,7 +262,9 @@ fn ensure_default_routines_logs_and_skips_on_write_failure() {
             store.lock().unwrap().is_empty(),
             "a write failure must not insert the routine into the store"
         );
-        // The blocking path remains a regular file (the write never overwrote it).
-        assert!(routines.join(&slug).is_file());
+        // Every blocking path must still be a regular file (no write overwrote any of them).
+        for spec in DEFAULT_ROUTINES {
+            assert!(routines.join(slugify(spec.title)).is_file());
+        }
     });
 }

@@ -17,6 +17,15 @@ fn first_default_updates_moadim_cargo_package() {
 }
 
 #[test]
+fn second_default_is_the_1_percent() {
+    let spec = &DEFAULT_ROUTINES[1];
+    assert_eq!(spec.title, "The 1 Percent");
+    assert!(spec.prompt.contains("list_routines"));
+    assert!(spec.prompt.contains("update_routine"));
+    assert!(spec.prompt.contains("NOT_REPO"));
+}
+
+#[test]
 fn every_schedule_is_a_valid_cron() {
     for spec in DEFAULT_ROUTINES {
         let normalized = normalize_schedule(spec.schedule);

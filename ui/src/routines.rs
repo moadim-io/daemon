@@ -18,7 +18,7 @@ use yew::prelude::*;
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
+use crate::{ToastKind, describe_cron_live, parse_cron, reltime};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.

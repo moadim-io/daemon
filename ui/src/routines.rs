@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,13 @@ use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
+use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
+
+/// Routines whose next fire lands within this window are "due soon".
+const DUE_SOON_WINDOW_SECS: i64 = 3_600;
+/// Cadence of the live tick that keeps next-run countdowns and the due-soon count current.
+const NEXT_RUN_TICK_MS: u32 = 30_000;
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
@@ -214,8 +220,9 @@ async fn api_logs(id: &str) -> Result<String, String> {
 // narrow a dense list, a live result count keeps the active filter legible, and
 // clicking a KPI tile cross-filters the detail table.
 
-/// Enabled / disabled / dormant status facet for routines.
+/// Enabled / disabled / dormant / due-soon status facet for routines.
 /// `Dormant` means enabled but with an empty machines list — it will never fire.
+/// `DueSoon` means enabled and firing within the next [`DUE_SOON_WINDOW_SECS`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoutineStatusFacet {
     #[default]
@@ -223,6 +230,7 @@ pub enum RoutineStatusFacet {
     Enabled,
     Disabled,
     Dormant,
+    DueSoon,
 }
 
 impl RoutineStatusFacet {
@@ -233,6 +241,7 @@ impl RoutineStatusFacet {
             RoutineStatusFacet::Enabled => "enabled",
             RoutineStatusFacet::Disabled => "disabled",
             RoutineStatusFacet::Dormant => "dormant",
+            RoutineStatusFacet::DueSoon => "due",
         }
     }
 
@@ -242,6 +251,7 @@ impl RoutineStatusFacet {
             "enabled" => RoutineStatusFacet::Enabled,
             "disabled" => RoutineStatusFacet::Disabled,
             "dormant" => RoutineStatusFacet::Dormant,
+            "due" => RoutineStatusFacet::DueSoon,
             _ => RoutineStatusFacet::All,
         }
     }
@@ -333,12 +343,17 @@ impl RoutineFilter {
 
     /// Does this routine survive the filter? Facets AND together.
     #[must_use]
-    pub fn matches(&self, r: &Routine) -> bool {
+    pub fn matches(&self, r: &Routine, now: DateTime<Local>, window: Duration) -> bool {
         match self.status {
             RoutineStatusFacet::All => {}
             RoutineStatusFacet::Enabled if !r.enabled => return false,
             RoutineStatusFacet::Disabled if r.enabled => return false,
             RoutineStatusFacet::Dormant if !(r.enabled && r.machines.is_empty()) => return false,
+            RoutineStatusFacet::DueSoon
+                if !(r.enabled && fires_within(&r.schedule, now, window)) =>
+            {
+                return false
+            }
             _ => {}
         }
         match &self.agent {
@@ -383,10 +398,15 @@ impl RoutineFilter {
 
 /// Routines surviving `filter`, preserving the input order.
 #[must_use]
-pub fn filter_routines(routines: &[Routine], filter: &RoutineFilter) -> Vec<Routine> {
+pub fn filter_routines(
+    routines: &[Routine],
+    filter: &RoutineFilter,
+    now: DateTime<Local>,
+    window: Duration,
+) -> Vec<Routine> {
     routines
         .iter()
-        .filter(|r| filter.matches(r))
+        .filter(|r| filter.matches(r, now, window))
         .cloned()
         .collect()
 }
@@ -578,6 +598,21 @@ pub struct RoutinesPageProps {
 pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let state = use_reducer(RState::default);
     let toast = props.on_toast.clone();
+
+    // Live "now", advanced on a fixed tick so next-run countdowns and the
+    // due-soon count stay current without a manual reload.
+    let now = use_state(Local::now);
+    {
+        let now = now.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                loop {
+                    TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
+                    now.set(Local::now());
+                }
+            });
+        });
+    }
 
     // Operator-chosen auto-refresh cadence (persisted), and the `Date.now()`
     // (ms) of the last successful list load that drives the freshness cue.
@@ -866,15 +901,17 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let filter = state.filter.clone();
     let sort = state.sort;
     let sort_desc = state.sort_desc;
+    let now_val = *now;
 
     // Faceted filter + sort applied client-side.
+    let due_window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
     let machine_options = distinct_machines_r(&routines);
     let has_unassigned = unassigned_routines_count(&routines) > 0;
     let filter_active = filter.is_active();
     let visible = {
-        let mut v = filter_routines(&routines, &filter);
+        let mut v = filter_routines(&routines, &filter, now_val, due_window);
         match sort {
             RSort::Created => v.sort_by_key(|r| r.created_at),
             RSort::Updated => v.sort_by_key(|r| r.updated_at),
@@ -912,7 +949,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     },
                     RPage::List => html! {
                         <main>
-                            <RoutineStats routines={routines.clone()} />
+                            <RoutineStatsBar
+                                routines={routines.clone()}
+                                now={now_val}
+                                active={filter.status}
+                                on_status={on_set_status.clone()}
+                            />
                             <div class="section-hd">
                                 <div class="section-label">{"SCHEDULED ROUTINES"}</div>
                                 <div class="section-acts">
@@ -951,6 +993,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             routines={visible}
                                             loading={loading}
                                             filter_active={filter_active}
+                                            now={now_val}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
@@ -995,38 +1038,74 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     }
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
+// ─── Stats bar ────────────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
-pub struct StatsProps {
+pub struct StatsBarProps {
     pub routines: Vec<Routine>,
+    /// Reference instant for the "due soon" computation; advanced on a live tick.
+    pub now: DateTime<Local>,
+    /// Currently active status facet, so the matching tile reads as selected.
+    pub active: RoutineStatusFacet,
+    /// Cross-filter: clicking a tile applies its status facet (or clears it when
+    /// the tile is already active).
+    pub on_status: Callback<RoutineStatusFacet>,
 }
 
-#[function_component(RoutineStats)]
-pub fn routine_stats(props: &StatsProps) -> Html {
+#[function_component(RoutineStatsBar)]
+pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
     let total = props.routines.len();
     let enabled = props.routines.iter().filter(|r| r.enabled).count();
     let disabled = total - enabled;
+    let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
+    let due_soon = props
+        .routines
+        .iter()
+        .filter(|r| r.enabled && fires_within(&r.schedule, props.now, window))
+        .count();
     let unreg = props
         .routines
         .iter()
         .filter(|r| !r.agent_registered)
         .count();
 
+    let active = props.active;
+    let tile = |facet: RoutineStatusFacet,
+                extra: &'static str,
+                label: &'static str,
+                val: usize,
+                val_cls: &'static str| {
+        let on_status = props.on_status.clone();
+        let onclick = Callback::from(move |_: MouseEvent| {
+            let next = if active == facet {
+                RoutineStatusFacet::All
+            } else {
+                facet
+            };
+            on_status.emit(next);
+        });
+        let is_active = active == facet;
+        let cls = if is_active {
+            format!("stat-card {extra} active")
+        } else {
+            format!("stat-card {extra}")
+        };
+        html! {
+            <button type="button" class={cls} onclick={onclick}
+                aria-pressed={is_active.to_string()}
+                title={format!("Filter: {label}")}>
+                <div class="stat-label">{label}</div>
+                <div class={classes!("stat-val", val_cls)}>{val}</div>
+            </button>
+        }
+    };
+
     html! {
         <div class="stats">
-            <div class="stat-card all">
-                <div class="stat-label">{"TOTAL"}</div>
-                <div class="stat-val">{total}</div>
-            </div>
-            <div class="stat-card enabled">
-                <div class="stat-label">{"ENABLED"}</div>
-                <div class="stat-val c-accent">{enabled}</div>
-            </div>
-            <div class="stat-card disabled">
-                <div class="stat-label">{"DISABLED"}</div>
-                <div class="stat-val c-amber">{disabled}</div>
-            </div>
+            { tile(RoutineStatusFacet::All, "all", "TOTAL", total, "") }
+            { tile(RoutineStatusFacet::Enabled, "enabled", "ENABLED", enabled, "c-accent") }
+            { tile(RoutineStatusFacet::DueSoon, "due", "DUE SOON", due_soon, "c-red") }
+            { tile(RoutineStatusFacet::Disabled, "disabled", "DISABLED", disabled, "c-amber") }
             <div class="stat-card unreg">
                 <div class="stat-label">{"UNREGISTERED AGENT"}</div>
                 <div class="stat-val">{unreg}</div>
@@ -1167,6 +1246,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                     <option value="enabled" selected={status_val == "enabled"}>{"Enabled"}</option>
                     <option value="disabled" selected={status_val == "disabled"}>{"Disabled"}</option>
                     <option value="dormant" selected={status_val == "dormant"}>{"Dormant"}</option>
+                    <option value="due" selected={status_val == "due"}>{"Due soon"}</option>
                 </select>
                 <span class="filter-label">{"AGENT"}</span>
                 <select class="filter-select" aria-label="Agent filter" onchange={on_agent_change}>
@@ -1393,6 +1473,8 @@ pub struct TableProps {
     pub loading: bool,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    /// Reference instant for next-run cells; advanced on a live tick.
+    pub now: DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1450,6 +1532,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                     <tr>
                         <th>{"TITLE"}</th>
                         <th>{"SCHEDULE"}</th>
+                        <th>{"NEXT RUN"}</th>
                         <th>{"AGENT"}</th>
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
@@ -1463,6 +1546,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <RoutineRow
                             key={r.id.clone()}
                             routine={r.clone()}
+                            now={props.now}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
@@ -1476,9 +1560,38 @@ pub fn routine_table(props: &TableProps) -> Html {
     }
 }
 
+/// Render a routine's NEXT RUN cell: `paused` when disabled, an absolute *when* plus
+/// a relative countdown when its schedule fires again, or `—` when the schedule is
+/// invalid or never fires. The countdown gets a `soon` accent when within the due-soon
+/// window, matching the DUE SOON KPI tile.
+pub(crate) fn next_run_cell(routine: &Routine, now: DateTime<Local>) -> Html {
+    if !routine.enabled {
+        return html! { <span class="cell-next muted">{"paused"}</span> };
+    }
+    match next_fire_after(&routine.schedule, now) {
+        Some(then) => {
+            let soon = then - now <= Duration::seconds(DUE_SOON_WINDOW_SECS);
+            let until_cls = if soon {
+                "cell-next-until soon"
+            } else {
+                "cell-next-until"
+            };
+            html! {
+                <div class="cell-next">
+                    <div class="cell-next-when">{fmt_when(now, then)}</div>
+                    <div class={until_cls}>{fmt_until(now, then)}</div>
+                </div>
+            }
+        }
+        None => html! { <span class="cell-next muted">{"—"}</span> },
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub struct RowProps {
     pub routine: Routine,
+    /// Reference instant for the next-run cell; advanced on a live tick.
+    pub now: DateTime<Local>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1492,6 +1605,7 @@ pub fn routine_row(props: &RowProps) -> Html {
     let cron_text = r.schedule_description.as_deref().unwrap_or("—").to_string();
     let updated = reltime(r.updated_at);
     let repos = r.repositories.len();
+    let next_run = next_run_cell(r, props.now);
 
     let on_edit = {
         let cb = props.on_edit.clone();
@@ -1546,6 +1660,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="cell-schedule">{&r.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
+            <td>{next_run}</td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>

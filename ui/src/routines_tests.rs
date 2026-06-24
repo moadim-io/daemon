@@ -3,6 +3,17 @@
 //! + list helpers. No DOM/wasm dependency (mirrors the `cron_jobs_tests.rs` convention).
 
 use super::*;
+use chrono::{Local, TimeZone};
+
+/// A fixed reference instant 30s past the top of the hour so a top-of-hour
+/// schedule's next fire lands ~59.5m out — inside a 1h "due soon" window.
+fn now() -> DateTime<Local> {
+    Local.with_ymd_and_hms(2026, 6, 22, 12, 0, 30).unwrap()
+}
+
+fn window() -> Duration {
+    Duration::seconds(DUE_SOON_WINDOW_SECS)
+}
 
 /// Build a routine with the fields the filter reads; the rest are inert.
 fn routine(
@@ -49,6 +60,7 @@ fn status_facet_roundtrips_and_defaults_to_all() {
         RoutineStatusFacet::Enabled,
         RoutineStatusFacet::Disabled,
         RoutineStatusFacet::Dormant,
+        RoutineStatusFacet::DueSoon,
     ] {
         assert_eq!(RoutineStatusFacet::from_str(f.as_str()), f);
     }
@@ -152,8 +164,8 @@ fn status_all_matches_regardless_of_enabled() {
     let f = RoutineFilter::default();
     let on = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let off = routine("b", "t", "claude", "0 * * * *", &["m1"], &[], false);
-    assert!(f.matches(&on));
-    assert!(f.matches(&off));
+    assert!(f.matches(&on, now(), window()));
+    assert!(f.matches(&off, now(), window()));
 }
 
 #[test]
@@ -168,10 +180,10 @@ fn status_enabled_and_disabled_partition() {
         status: RoutineStatusFacet::Disabled,
         ..Default::default()
     };
-    assert!(enabled.matches(&on));
-    assert!(!enabled.matches(&off));
-    assert!(disabled.matches(&off));
-    assert!(!disabled.matches(&on));
+    assert!(enabled.matches(&on, now(), window()));
+    assert!(!enabled.matches(&off, now(), window()));
+    assert!(disabled.matches(&off, now(), window()));
+    assert!(!disabled.matches(&on, now(), window()));
 }
 
 #[test]
@@ -182,13 +194,13 @@ fn status_dormant_requires_enabled_and_no_machines() {
     };
     // Enabled, no machines → dormant.
     let dormant = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
-    assert!(f.matches(&dormant));
+    assert!(f.matches(&dormant, now(), window()));
     // Enabled WITH machines → not dormant.
     let active = routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true);
-    assert!(!f.matches(&active));
+    assert!(!f.matches(&active, now(), window()));
     // Disabled, no machines → also not dormant (disabled, not "waiting for machines").
     let disabled_no_machine = routine("c", "t", "claude", "0 * * * *", &[], &[], false);
-    assert!(!f.matches(&disabled_no_machine));
+    assert!(!f.matches(&disabled_no_machine, now(), window()));
 }
 
 // ── Agent facet matching ──────────────────────────────────────────────────────
@@ -198,8 +210,8 @@ fn agent_all_matches_any_agent() {
     let f = RoutineFilter::default();
     let c = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let cx = routine("b", "t", "codex", "0 * * * *", &["m1"], &[], true);
-    assert!(f.matches(&c));
-    assert!(f.matches(&cx));
+    assert!(f.matches(&c, now(), window()));
+    assert!(f.matches(&cx, now(), window()));
 }
 
 #[test]
@@ -210,8 +222,8 @@ fn agent_named_filters_by_exact_agent() {
     };
     let claude = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let codex = routine("b", "t", "codex", "0 * * * *", &["m1"], &[], true);
-    assert!(f.matches(&claude));
-    assert!(!f.matches(&codex));
+    assert!(f.matches(&claude, now(), window()));
+    assert!(!f.matches(&codex, now(), window()));
 }
 
 // ── Machine facet matching ────────────────────────────────────────────────────
@@ -221,8 +233,8 @@ fn machine_any_matches_regardless_of_machines() {
     let f = RoutineFilter::default();
     let with = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
-    assert!(f.matches(&with));
-    assert!(f.matches(&without));
+    assert!(f.matches(&with, now(), window()));
+    assert!(f.matches(&without, now(), window()));
 }
 
 #[test]
@@ -233,8 +245,8 @@ fn machine_unassigned_matches_only_empty_machines() {
     };
     let with = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
-    assert!(!f.matches(&with));
-    assert!(f.matches(&without));
+    assert!(!f.matches(&with, now(), window()));
+    assert!(f.matches(&without, now(), window()));
 }
 
 #[test]
@@ -246,9 +258,9 @@ fn machine_specific_matches_only_that_machine() {
     let m1 = routine("a", "t", "claude", "0 * * * *", &["m1", "m2"], &[], true);
     let m2_only = routine("b", "t", "claude", "0 * * * *", &["m2"], &[], true);
     let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
-    assert!(f.matches(&m1));
-    assert!(!f.matches(&m2_only));
-    assert!(!f.matches(&none));
+    assert!(f.matches(&m1, now(), window()));
+    assert!(!f.matches(&m2_only, now(), window()));
+    assert!(!f.matches(&none, now(), window()));
 }
 
 // ── Free-text search ──────────────────────────────────────────────────────────
@@ -261,8 +273,8 @@ fn query_matches_title() {
     };
     let hit = routine("a", "Deploy prod", "claude", "0 * * * *", &[], &[], true);
     let miss = routine("b", "Build images", "claude", "0 * * * *", &[], &[], true);
-    assert!(f.matches(&hit));
-    assert!(!f.matches(&miss));
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&miss, now(), window()));
 }
 
 #[test]
@@ -273,8 +285,8 @@ fn query_matches_agent() {
     };
     let hit = routine("a", "t", "codex", "0 * * * *", &[], &[], true);
     let miss = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
-    assert!(f.matches(&hit));
-    assert!(!f.matches(&miss));
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&miss, now(), window()));
 }
 
 #[test]
@@ -301,8 +313,8 @@ fn query_matches_repository_url() {
         &["https://github.com/other/foo"],
         true,
     );
-    assert!(f.matches(&hit));
-    assert!(!f.matches(&miss));
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&miss, now(), window()));
 }
 
 #[test]
@@ -312,7 +324,7 @@ fn query_is_case_insensitive() {
         ..Default::default()
     };
     let hit = routine("a", "deploy staging", "claude", "0 * * * *", &[], &[], true);
-    assert!(f.matches(&hit));
+    assert!(f.matches(&hit, now(), window()));
 }
 
 #[test]
@@ -322,7 +334,7 @@ fn empty_query_matches_all() {
         ..Default::default()
     };
     let r = routine("a", "anything", "claude", "0 * * * *", &["m"], &[], true);
-    assert!(f.matches(&r));
+    assert!(f.matches(&r, now(), window()));
 }
 
 // ── filter_routines helper ────────────────────────────────────────────────────
@@ -338,7 +350,7 @@ fn filter_routines_returns_only_matching() {
         status: RoutineStatusFacet::Enabled,
         ..Default::default()
     };
-    let got = filter_routines(&routines, &f);
+    let got = filter_routines(&routines, &f, now(), window());
     assert_eq!(got.len(), 2);
     assert!(got.iter().all(|r| r.enabled));
 }
@@ -374,4 +386,55 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
         routine("c", "t", "claude", "0 * * * *", &[], &[], false),
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
+}
+
+// ── DueSoon facet ─────────────────────────────────────────────────────────────
+
+#[test]
+fn due_soon_matches_enabled_routine_firing_within_window() {
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::DueSoon,
+        ..Default::default()
+    };
+    // Top-of-hour schedule fires at 13:00 — ~59.5 min from now() at 12:00:30, inside the 1h window.
+    let due = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    assert!(f.matches(&due, now(), window()));
+}
+
+#[test]
+fn due_soon_excludes_disabled_routine() {
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::DueSoon,
+        ..Default::default()
+    };
+    let paused = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], false);
+    assert!(!f.matches(&paused, now(), window()));
+}
+
+#[test]
+fn due_soon_excludes_routine_not_firing_within_window() {
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::DueSoon,
+        ..Default::default()
+    };
+    // A 5m window excludes a routine whose next fire is ~59.5m out.
+    let small_window = Duration::seconds(300);
+    let r = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    assert!(!f.matches(&r, now(), small_window));
+}
+
+// ── next_run_cell (pure logic via fires_within) ───────────────────────────────
+
+#[test]
+fn disabled_routine_is_not_due_soon() {
+    let disabled = routine("a", "t", "claude", "0 * * * *", &[], &[], false);
+    let w = window();
+    // Disabled routines never count as "due soon" regardless of schedule.
+    assert!(!fires_within(&disabled.schedule, now(), w) || !disabled.enabled);
+}
+
+#[test]
+fn enabled_routine_with_hourly_schedule_is_due_soon() {
+    let r = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    assert!(r.enabled && fires_within(&r.schedule, now(), window()));
 }

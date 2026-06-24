@@ -1203,6 +1203,81 @@
       .day-chip { font-size: 9px; }
     }
 
+    /* ── Enhanced log viewer ── */
+    /* Search bar — sticky so it stays visible while scrolling long logs. */
+    .log-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-3);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .log-search-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 5px 9px;
+      outline: none;
+      min-width: 0;
+      transition: border-color 0.12s;
+    }
+    .log-search-input:focus { border-color: var(--accent); }
+    .log-search-input::placeholder { color: var(--text-ghost); }
+    /* Search clear button — type=search gives a native clear affordance but
+       we keep our styled button for visual consistency. */
+    input[type="search"]::-webkit-search-cancel-button { display: none; }
+    .log-match-count {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--text-ghost);
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    /* Numbered lines */
+    .log-lines { padding: 6px 0; }
+    .log-line {
+      display: flex;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .log-line:hover { background: var(--bg-3); }
+    .log-ln {
+      min-width: 44px;
+      padding: 0 8px 0 12px;
+      text-align: right;
+      color: var(--text-ghost);
+      user-select: none;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    .log-lc {
+      padding: 0 12px;
+      color: var(--text-mid);
+      flex: 1;
+      min-width: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    /* Keyword highlight — amber on dark amber-dim, amber border, no border-radius
+       keeps the terminal aesthetic. */
+    mark.log-hl {
+      background: var(--amber-dim);
+      color: var(--amber);
+      border: 1px solid var(--amber);
+      padding: 0 1px;
+      border-radius: 0;
+    }
+    mark.log-hl:focus-visible { outline: 1px solid var(--accent); }
+
     /* ── Reduced motion ── */
     /* Honor the user's OS/browser "reduce motion" preference: settle the
        decorative, continuous animations (glow pulse, refresh/loader spin) and

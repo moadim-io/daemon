@@ -205,6 +205,22 @@ pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
 }
 
+/// Returns the path to `~/.config/moadim/.lock`, a committed global lock that halts all routine
+/// scheduling and manual triggers when present. Checked into version control so the lock can be
+/// shared across machines via a git push/pull.
+#[must_use]
+pub fn global_lock_path() -> PathBuf {
+    config_dir().join(".lock")
+}
+
+/// Returns the path to `~/.config/moadim/.local.lock`, a machine-local global lock that halts all
+/// routine scheduling and manual triggers when present. The `.local.` infix matches the `*.local.*`
+/// pattern seeded into the config `.gitignore`, so this sentinel never leaks into version control.
+#[must_use]
+pub fn global_local_lock_path() -> PathBuf {
+    config_dir().join(".local.lock")
+}
+
 /// Returns the path to `~/.config/moadim/machine.local.toml`, the gitignored, per-machine file
 /// that records this install's machine identity (the `name` used to match a routine/job's
 /// `machines` targeting list). The `.local.` infix matches the `*.local.*` pattern seeded into the

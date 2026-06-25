@@ -63,6 +63,30 @@ fn into_response_conflict_is_409() {
     );
 }
 
+#[test]
+fn display_locked() {
+    assert_eq!(
+        AppError::Locked("routines are globally locked".into()).to_string(),
+        "locked: routines are globally locked"
+    );
+}
+
+#[test]
+fn into_response_locked_is_423() {
+    assert_eq!(
+        AppError::Locked("x".into()).into_response().status(),
+        StatusCode::LOCKED
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_locked_message() {
+    assert_eq!(
+        response_error_field(AppError::Locked("paused".into())).await,
+        "locked: paused"
+    );
+}
+
 /// Decode an [`AppError`] response body into its `{"error": ...}` JSON.
 async fn response_error_field(err: AppError) -> String {
     let body = err.into_response().into_body();

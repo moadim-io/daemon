@@ -266,3 +266,35 @@ fn build_block_skips_routine_with_no_machine_assignment() {
     let block = build_block(&store);
     assert!(!block.contains("moadim-routine:"));
 }
+
+#[test]
+fn build_block_empty_when_globally_locked() {
+    let agent_name = "test-sync-agent-global-lock";
+    let title = "Global Lock Sync Routine";
+    let slug = crate::routines::slugify(title);
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("lock-test".into(), make_routine("lock-test", title, agent_name));
+
+    // Create the shared lock sentinel and verify it suppresses all crontab lines.
+    let lock_path = crate::paths::global_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&lock_path, b"").unwrap();
+
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"), "locked block must have no routine lines");
+    assert!(block.contains(BLOCK_BEGIN));
+    assert!(block.contains(BLOCK_END));
+
+    std::fs::remove_file(&lock_path).unwrap();
+    std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}

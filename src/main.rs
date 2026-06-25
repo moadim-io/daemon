@@ -15,6 +15,9 @@ mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
 mod filesystem;
+/// Global lock sentinel that halts all routine scheduling and triggers without modifying routine
+/// enabled states.
+mod global_lock;
 /// Machine identity for multi-machine deployments (per-machine routine/job targeting).
 mod machine;
 /// Axum middleware stack.

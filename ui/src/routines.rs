@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -21,8 +21,11 @@ use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
-use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
+use crate::schedule::{
+    fires_within, fmt_until, fmt_when, month_start, next_fire_after, occurrences_per_day,
+    CAL_MONTHS, GRID_CELLS, WEEKDAYS,
+};
+use crate::{describe_cron_live, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
@@ -1654,58 +1657,6 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 
-const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const MONTHS: [&str; 12] = [
-    "JANUARY",
-    "FEBRUARY",
-    "MARCH",
-    "APRIL",
-    "MAY",
-    "JUNE",
-    "JULY",
-    "AUGUST",
-    "SEPTEMBER",
-    "OCTOBER",
-    "NOVEMBER",
-    "DECEMBER",
-];
-/// Cells in the month grid: 6 weeks × 7 days, always, so the layout never reflows.
-const GRID_CELLS: usize = 42;
-/// Upper bound on fire-time iterations per routine across the visible grid. A `@hourly`
-/// routine fires ~1008 times across 42 days; this leaves headroom while bounding cost.
-const MAX_OCCURRENCES: usize = 4000;
-
-/// First day of the month `offset` months away from the month containing `today`.
-fn month_start(today: NaiveDate, offset: i32) -> NaiveDate {
-    let total = today.year() * 12 + today.month0() as i32 + offset;
-    let year = total.div_euclid(12);
-    let month0 = total.rem_euclid(12) as u32;
-    NaiveDate::from_ymd_opt(year, month0 + 1, 1).unwrap_or(today)
-}
-
-/// One routine's fire counts per grid cell over `[grid_start, grid_start + 42 days)`.
-fn occurrences_per_day(schedule: &str, grid_start: NaiveDate) -> Option<[u32; GRID_CELLS]> {
-    let cron = parse_cron(schedule)?;
-    let start_naive = grid_start.and_hms_opt(0, 0, 0)?;
-    // Step back one second so an occurrence exactly at midnight on the first cell counts.
-    let start = Local
-        .from_local_datetime(&start_naive)
-        .earliest()?
-        .checked_sub_signed(Duration::seconds(1))?;
-    let mut counts = [0u32; GRID_CELLS];
-    for dt in cron.iter_after(start).take(MAX_OCCURRENCES) {
-        let day = (dt.date_naive() - grid_start).num_days();
-        if day < 0 {
-            continue;
-        }
-        if day as usize >= GRID_CELLS {
-            break;
-        }
-        counts[day as usize] += 1;
-    }
-    Some(counts)
-}
-
 #[derive(Properties, PartialEq)]
 pub struct CalendarProps {
     pub routines: Vec<Routine>,
@@ -1753,7 +1704,7 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
         }
     }
 
-    let month_label = format!("{} {}", MONTHS[first.month0() as usize], first.year());
+    let month_label = format!("{} {}", CAL_MONTHS[first.month0() as usize], first.year());
 
     let body = if scheduled == 0 {
         html! {

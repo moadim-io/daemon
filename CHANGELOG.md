@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Dedicated LAST FIRE column in the Routines table.** The most-recent trigger
+  timestamp is now shown in its own **LAST FIRE** column directly beside NEXT RUN,
+  matching the side-by-side "last run / next run" pattern standard in Airflow, Temporal,
+  and Kubernetes CronJob dashboards. A ↻ prefix marks manual triggers; ⏱ marks
+  scheduled fires; routines that have never been triggered show `—`. The trigger data
+  was already returned by the API — it was previously buried as a sub-line under the
+  UPDATED cell where it was easy to miss. Pure frontend — no backend change.
+  Closes #660. Closes #688.
 - **Global routine lock — UI banner and REST API.** The Routines page shows an amber banner
   when a global lock is active, listing which sentinel(s) are present (SHARED / LOCAL) with an
   **UNLOCK ALL** button that removes both via `DELETE /api/v1/routines/lock?scope=all`. Three

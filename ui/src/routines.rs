@@ -430,6 +430,20 @@ impl RoutineFilter {
     }
 }
 
+/// Returns the most-recent trigger timestamp across both manual and scheduled fires.
+/// `None` means the routine has never been triggered.
+///
+/// Uses the max of the two Optional timestamps so that whichever kind fired most
+/// recently is what the LAST FIRE column shows.
+pub(crate) fn last_fire_at(r: &Routine) -> Option<u64> {
+    match (r.last_manual_trigger_at, r.last_scheduled_trigger_at) {
+        (None, None) => None,
+        (Some(m), None) => Some(m),
+        (None, Some(s)) => Some(s),
+        (Some(m), Some(s)) => Some(m.max(s)),
+    }
+}
+
 /// Routines surviving `filter`, preserving the input order.
 #[must_use]
 pub fn filter_routines(
@@ -1933,6 +1947,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         { sort_th("TITLE", RCol::Title, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"SCHEDULE"}</th>
                         { sort_th("NEXT RUN", RCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
+                        <th>{"LAST FIRE"}</th>
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
@@ -2046,25 +2061,19 @@ pub fn routine_row(props: &RowProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
 
-    let last_run: Html = {
-        let manual = r.last_manual_trigger_at;
-        let scheduled = r.last_scheduled_trigger_at;
-        match (manual, scheduled) {
-            (None, None) => html! {
-                <div class="cell-triggered" style="color:var(--text-ghost)">{"never fired"}</div>
-            },
-            (Some(m), Some(s)) if m >= s => html! {
-                <div class="cell-triggered">{format!("↻ {}", reltime(m))}</div>
-            },
-            (Some(_m), Some(s)) => html! {
-                <div class="cell-triggered">{format!("⏱ {}", reltime(s))}</div>
-            },
-            (Some(m), None) => html! {
-                <div class="cell-triggered">{format!("↻ {}", reltime(m))}</div>
-            },
-            (None, Some(s)) => html! {
-                <div class="cell-triggered">{format!("⏱ {}", reltime(s))}</div>
-            },
+    // LAST FIRE: most-recent trigger timestamp from last_fire_at, icon chosen by type.
+    // ↻ = the most-recent fire was a manual trigger; ⏱ = it was a scheduled fire.
+    let last_fire: Html = match last_fire_at(r) {
+        None => html! { <span class="muted">{"—"}</span> },
+        Some(ts) => {
+            let manual = r.last_manual_trigger_at;
+            let scheduled = r.last_scheduled_trigger_at;
+            let icon = if manual.is_some_and(|m| scheduled.is_none_or(|s| m >= s)) {
+                "↻"
+            } else {
+                "⏱"
+            };
+            html! { <div class="cell-triggered">{format!("{icon} {}", reltime(ts))}</div> }
         }
     };
 
@@ -2095,6 +2104,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="cell-schedule-human">{cron_text}</div>
             </td>
             <td>{next_run}</td>
+            <td>{last_fire}</td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>
@@ -2109,10 +2119,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <div class="toggle-track"></div>
                 </label>
             </td>
-            <td>
-                <div class="cell-time">{updated}</div>
-                {last_run}
-            </td>
+            <td><div class="cell-time">{updated}</div></td>
             <td>
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>

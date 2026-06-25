@@ -56,9 +56,7 @@ pub fn set_lock(scope: LockScope, locked: bool) -> io::Result<()> {
         LockScope::Local => crate::paths::global_local_lock_path(),
     };
     if locked {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        std::fs::create_dir_all(crate::paths::config_dir())?;
         std::fs::write(&path, b"")?;
     } else if path.exists() {
         std::fs::remove_file(&path)?;

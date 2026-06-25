@@ -809,6 +809,52 @@ fn unlock_routines_unknown_scope_is_error() {
     assert!(result.is_error.unwrap_or(false));
 }
 
+/// A crontab shim for tests: accepts `-l` (prints empty) and `-` (swallows stdin), making
+/// `sync_routines_to_crontab` succeed and exercising the fall-through path after the `if let Err`.
+struct SucceedingCronShim {
+    base: std::path::PathBuf,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl SucceedingCronShim {
+    fn new() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("moadim-scshim-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let store = base.join("store");
+        std::fs::write(&store, "").unwrap();
+        let store_display = store.to_string_lossy().into_owned();
+        let script = base.join("crontab-ok.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-l\" ]; then cat \"$STORE\"; elif [ \"$1\" = \"-\" ]; then cat > \"$STORE\"; fi\n"
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: single-threaded test execution (RUST_TEST_THREADS=1).
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+        }
+        Self { base, previous }
+    }
+}
+
+impl Drop for SucceedingCronShim {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            match self.previous.take() {
+                Some(val) => std::env::set_var("MOADIM_CRONTAB_BIN", val),
+                None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
 /// A crontab shim for tests: always exits non-zero so `sync_routines_to_crontab` returns `Err`,
 /// exercising the `log::warn!` paths in `lock_routines` / `unlock_routines`.
 struct FailingCronShim {
@@ -844,6 +890,35 @@ impl Drop for FailingCronShim {
         }
         let _ = std::fs::remove_dir_all(&self.base);
     }
+}
+
+#[test]
+fn lock_routines_succeeds_when_crontab_sync_passes() {
+    // Covers the success fall-through `}` of `if let Err(sync_err) = sync_routines_to_crontab`.
+    let _home = TempHome::set();
+    let _shim = SucceedingCronShim::new();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "local".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
+}
+
+#[test]
+fn unlock_routines_succeeds_when_crontab_sync_passes() {
+    // Covers the success fall-through `}` of `if let Err(sync_err) = sync_routines_to_crontab`.
+    let _home = TempHome::set();
+    let _shim = SucceedingCronShim::new();
+    let handler = make_handler();
+    let result = handler
+        .unlock_routines(Parameters(UnlockRoutinesInput {
+            scope: "all".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
 }
 
 #[test]

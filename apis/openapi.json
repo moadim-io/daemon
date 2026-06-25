@@ -545,6 +545,98 @@
         }
       }
     },
+    "/routines/lock": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/lock` — return the current global lock status.",
+        "operationId": "get_lock_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.",
+        "operationId": "lock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown scope"
+          },
+          "500": {
+            "description": "IO error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`DELETE /routines/lock` — remove lock sentinel(s), restoring routine scheduling.",
+        "operationId": "unlock",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Which sentinel(s) to remove: `\"shared\"`, `\"local\"`, or `\"all\"`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown scope"
+          },
+          "500": {
+            "description": "IO error"
+          }
+        }
+      }
+    },
     "/routines/{id}": {
       "get": {
         "tags": [
@@ -1122,6 +1214,42 @@
           "version": {
             "type": "string",
             "description": "Daemon version (from `CARGO_PKG_VERSION`)."
+          }
+        }
+      },
+      "LockRequest": {
+        "type": "object",
+        "description": "Request body for `POST /routines/lock`.",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "Which sentinel to create: `\"shared\"` (committed `.lock`) or `\"local\"` (gitignored `.local.lock`)."
+          }
+        }
+      },
+      "LockStatus": {
+        "type": "object",
+        "description": "Current state of both lock sentinels.",
+        "required": [
+          "shared",
+          "local",
+          "locked"
+        ],
+        "properties": {
+          "local": {
+            "type": "boolean",
+            "description": "Whether the gitignored `.local.lock` file is present."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "`true` if either sentinel is present (all routine scheduling and triggers halted)."
+          },
+          "shared": {
+            "type": "boolean",
+            "description": "Whether the committed `.lock` file is present."
           }
         }
       },

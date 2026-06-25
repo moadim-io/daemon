@@ -233,6 +233,12 @@ pub(crate) fn build_app_with_shutdown(
         .route("/routines", get(routines::list).post(routines::create))
         .route("/routines/cleanup", post(routines::cleanup))
         .route(
+            "/routines/lock",
+            get(routines::get_lock_status)
+                .post(routines::lock)
+                .delete(routines::unlock),
+        )
+        .route(
             "/routines/{id}",
             get(routines::get)
                 .put(routines::replace)

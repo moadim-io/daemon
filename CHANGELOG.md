@@ -19,6 +19,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Schedule fire preview panel.** A ▸ FIRES button on every cron job and routine
+  row expands an inline panel listing the next 10 upcoming fire times with a
+  human-readable "in X h Y m" countdown for each. Implements the "next run
+  preview" pattern recommended by leading cron managers (Nomad, Temporal) for
+  at-a-glance schedule verification without leaving the dashboard. Pure frontend
+  — no backend change. Closes #704.
 - **Dedicated LAST FIRE column in the Routines table.** The most-recent trigger
   timestamp is now shown in its own **LAST FIRE** column directly beside NEXT RUN,
   matching the side-by-side "last run / next run" pattern standard in Airflow, Temporal,

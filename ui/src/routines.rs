@@ -507,7 +507,22 @@ pub enum RCol {
     NextRun,
     Agent,
     Enabled,
+    /// Most-recent fire timestamp (manual or scheduled); never-fired rows sort last.
+    LastFire,
     Updated,
+}
+
+/// Return the most-recent trigger timestamp for `r` (seconds since epoch).
+/// Takes the later of `last_manual_trigger_at` and `last_scheduled_trigger_at`.
+/// Returns `0` when the routine has never fired, so never-fired rows sort first
+/// in ascending order (before any positive timestamp).
+pub(crate) fn last_fire_of(r: &Routine) -> u64 {
+    match (r.last_manual_trigger_at, r.last_scheduled_trigger_at) {
+        (Some(m), Some(s)) => m.max(s),
+        (Some(m), None) => m,
+        (None, Some(s)) => s,
+        (None, None) => 0,
+    }
 }
 
 /// Sort direction for the routine table.
@@ -547,6 +562,7 @@ pub fn sort_routines(
             RCol::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
             RCol::Agent => a.agent.to_lowercase().cmp(&b.agent.to_lowercase()),
             RCol::Enabled => a.enabled.cmp(&b.enabled),
+            RCol::LastFire => last_fire_of(a).cmp(&last_fire_of(b)),
             RCol::Updated => a.updated_at.cmp(&b.updated_at),
             RCol::NextRun => {
                 let next_of = |r: &Routine| {
@@ -1937,6 +1953,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
                         { sort_th("ENABLED", RCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("UPDATED", RCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
                     </tr>
@@ -2109,10 +2126,8 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <div class="toggle-track"></div>
                 </label>
             </td>
-            <td>
-                <div class="cell-time">{updated}</div>
-                {last_run}
-            </td>
+            <td>{last_run}</td>
+            <td><div class="cell-time">{updated}</div></td>
             <td>
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>

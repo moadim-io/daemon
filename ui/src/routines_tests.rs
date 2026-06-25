@@ -531,6 +531,42 @@ fn remove_also_clears_from_selection() {
     assert_eq!(s.routines.len(), 1);
 }
 
+// ── last_fire_of ──────────────────────────────────────────────────────────────
+
+#[test]
+fn last_fire_of_returns_zero_when_never_fired() {
+    let r = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(last_fire_of(&r), 0);
+}
+
+#[test]
+fn last_fire_of_returns_manual_when_only_manual() {
+    let mut r = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = Some(1_000);
+    assert_eq!(last_fire_of(&r), 1_000);
+}
+
+#[test]
+fn last_fire_of_returns_scheduled_when_only_scheduled() {
+    let mut r = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    r.last_scheduled_trigger_at = Some(2_000);
+    assert_eq!(last_fire_of(&r), 2_000);
+}
+
+#[test]
+fn last_fire_of_returns_max_when_both_present() {
+    let mut r = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = Some(5_000);
+    r.last_scheduled_trigger_at = Some(3_000);
+    // manual is later
+    assert_eq!(last_fire_of(&r), 5_000);
+
+    r.last_manual_trigger_at = Some(1_000);
+    r.last_scheduled_trigger_at = Some(9_000);
+    // scheduled is later
+    assert_eq!(last_fire_of(&r), 9_000);
+}
+
 // ── sort_routines ─────────────────────────────────────────────────────────────
 
 fn routine_sort(id: &str, title: &str, agent: &str, enabled: bool, updated_at: u64) -> Routine {
@@ -654,4 +690,37 @@ fn sort_routines_title_is_case_insensitive() {
     let sorted = sort_routines(rs, Some(RCol::Title), RDir::Asc, now());
     assert_eq!(sorted[0].title, "ALPHA");
     assert_eq!(sorted[1].title, "zebra");
+}
+
+#[test]
+fn sort_routines_by_last_fire_ascending_never_fired_first() {
+    let mut r1 = routine_sort("a", "A", "claude", true, 1);
+    r1.last_scheduled_trigger_at = Some(2_000);
+    let mut r2 = routine_sort("b", "B", "claude", true, 2);
+    r2.last_scheduled_trigger_at = Some(1_000);
+    let mut r3 = routine_sort("c", "C", "claude", true, 3); // never fired
+    let sorted = sort_routines(vec![r1, r2, r3], Some(RCol::LastFire), RDir::Asc, now());
+    // 0 (never fired) < 1000 < 2000
+    assert_eq!(sorted[0].id, "c");
+    assert_eq!(sorted[1].id, "b");
+    assert_eq!(sorted[2].id, "a");
+}
+
+#[test]
+fn sort_routines_by_last_fire_descending_most_recent_first() {
+    let mut r1 = routine_sort("a", "A", "claude", true, 1);
+    r1.last_scheduled_trigger_at = Some(2_000);
+    let mut r2 = routine_sort("b", "B", "claude", true, 2);
+    r2.last_scheduled_trigger_at = Some(1_000);
+    let sorted = sort_routines(vec![r1, r2], Some(RCol::LastFire), RDir::Desc, now());
+    assert_eq!(sorted[0].id, "a");
+    assert_eq!(sorted[1].id, "b");
+}
+
+#[test]
+fn last_fire_of_prefers_manual_over_scheduled_when_manual_is_later() {
+    let mut r = routine("x", "t", "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = Some(100);
+    r.last_scheduled_trigger_at = Some(50);
+    assert_eq!(last_fire_of(&r), 100);
 }

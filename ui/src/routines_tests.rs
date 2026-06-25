@@ -655,3 +655,113 @@ fn sort_routines_title_is_case_insensitive() {
     assert_eq!(sorted[0].title, "ALPHA");
     assert_eq!(sorted[1].title, "zebra");
 }
+
+// ── routine_health ────────────────────────────────────────────────────────────
+
+#[test]
+fn health_disabled_routine_is_disabled() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn health_enabled_no_machines_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &[], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_dead_schedule_is_dead() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "not-a-valid-cron", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::DeadSchedule);
+}
+
+#[test]
+fn health_missing_agent_is_agent_missing() {
+    // agent_registered defaults to false in routine()
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::AgentMissing);
+}
+
+#[test]
+fn health_fully_configured_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+// ── last_fire_timestamp ───────────────────────────────────────────────────────
+
+#[test]
+fn last_fire_none_when_both_absent() {
+    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(last_fire_timestamp(&r), None);
+}
+
+#[test]
+fn last_fire_returns_max_when_both_present() {
+    let mut r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = Some(100);
+    r.last_scheduled_trigger_at = Some(200);
+    assert_eq!(last_fire_timestamp(&r), Some(200));
+}
+
+#[test]
+fn last_fire_returns_manual_when_only_manual() {
+    let mut r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = Some(50);
+    assert_eq!(last_fire_timestamp(&r), Some(50));
+}
+
+// ── sort by RCol::Health ──────────────────────────────────────────────────────
+
+fn routine_with_health(id: &str, enabled: bool, machines: &[&str], agent_registered: bool) -> Routine {
+    Routine {
+        agent_registered,
+        ..routine(id, id, "claude", "0 * * * *", machines, &[], enabled)
+    }
+}
+
+#[test]
+fn sort_by_health_puts_most_broken_first_ascending() {
+    let rs = vec![
+        routine_with_health("healthy", true, &["m1"], true),   // priority 4
+        routine_with_health("dormant", true, &[], true),        // priority 0
+        routine_with_health("disabled", false, &["m1"], false), // priority 3
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Health), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "dormant");
+    assert_eq!(sorted[1].id, "disabled");
+    assert_eq!(sorted[2].id, "healthy");
+}
+
+// ── sort by RCol::LastFire ────────────────────────────────────────────────────
+
+fn routine_with_last_fire(id: &str, manual: Option<u64>, scheduled: Option<u64>) -> Routine {
+    let mut r = routine(id, id, "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = manual;
+    r.last_scheduled_trigger_at = scheduled;
+    r
+}
+
+#[test]
+fn sort_by_last_fire_ascending_puts_oldest_first() {
+    let rs = vec![
+        routine_with_last_fire("new", Some(300), None),
+        routine_with_last_fire("old", Some(100), None),
+        routine_with_last_fire("never", None, None),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::LastFire), RDir::Asc, now());
+    // None < Some(100) < Some(300) in Option<u64> ordering
+    assert_eq!(sorted[0].id, "never");
+    assert_eq!(sorted[1].id, "old");
+    assert_eq!(sorted[2].id, "new");
+}

@@ -500,6 +500,95 @@ pub enum RView {
     Day,
 }
 
+// ─── Health status ────────────────────────────────────────────────────────────
+
+/// At-a-glance operational health derived from a routine's current fields.
+/// Mirrors the `attention_reason` triage in `overview.rs` but also covers the
+/// `Disabled` case so the Routines table can show a status badge on every row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoutineHealth {
+    /// Enabled but assigned to no machine — fires nowhere.
+    Dormant,
+    /// Enabled, has a machine, but the cron expression yields no future fire.
+    DeadSchedule,
+    /// Enabled, has a machine, schedule is live, but agent config is missing.
+    AgentMissing,
+    /// `enabled: false` (intentionally inactive).
+    Disabled,
+    /// Enabled, scheduled, has a machine, agent registered — fully operational.
+    Healthy,
+}
+
+impl RoutineHealth {
+    /// Sort priority: lower = more urgent. `RCol::Health` ascending puts broken rows first.
+    pub(crate) fn priority(self) -> u8 {
+        match self {
+            RoutineHealth::Dormant => 0,
+            RoutineHealth::DeadSchedule => 1,
+            RoutineHealth::AgentMissing => 2,
+            RoutineHealth::Disabled => 3,
+            RoutineHealth::Healthy => 4,
+        }
+    }
+
+    /// Short uppercase badge text.
+    pub(crate) fn badge(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "DORMANT",
+            RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
+            RoutineHealth::AgentMissing => "AGENT MISSING",
+            RoutineHealth::Disabled => "DISABLED",
+            RoutineHealth::Healthy => "HEALTHY",
+        }
+    }
+
+    /// CSS classes for the badge element.
+    pub(crate) fn badge_class(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "health-badge dormant",
+            RoutineHealth::DeadSchedule => "health-badge dead",
+            RoutineHealth::AgentMissing => "health-badge agent-missing",
+            RoutineHealth::Disabled => "health-badge disabled",
+            RoutineHealth::Healthy => "health-badge healthy",
+        }
+    }
+}
+
+/// Derive the operational health of a routine as of `now`.
+///
+/// Faults are checked in priority order: `Dormant` outranks `DeadSchedule`
+/// which outranks `AgentMissing`, matching the Overview triage ordering.
+#[must_use]
+pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
+    if !r.enabled {
+        return RoutineHealth::Disabled;
+    }
+    if r.machines.iter().all(|m| m.trim().is_empty()) {
+        return RoutineHealth::Dormant;
+    }
+    if next_fire_after(&r.schedule, now).is_none() {
+        return RoutineHealth::DeadSchedule;
+    }
+    if !r.agent_registered {
+        return RoutineHealth::AgentMissing;
+    }
+    RoutineHealth::Healthy
+}
+
+/// The most recent fire timestamp across both trigger kinds, or `None` when
+/// the routine has never been triggered.
+#[must_use]
+pub fn last_fire_timestamp(r: &Routine) -> Option<u64> {
+    match (r.last_manual_trigger_at, r.last_scheduled_trigger_at) {
+        (None, None) => None,
+        (Some(m), None) => Some(m),
+        (None, Some(s)) => Some(s),
+        (Some(m), Some(s)) => Some(m.max(s)),
+    }
+}
+
+// ─── Column sort ──────────────────────────────────────────────────────────────
+
 /// Column the routine table is sorted by (click-to-sort, matching the cron-jobs table pattern).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RCol {
@@ -508,6 +597,10 @@ pub enum RCol {
     Agent,
     Enabled,
     Updated,
+    /// Sort by `RoutineHealth::priority()` ascending (broken rows float to top).
+    Health,
+    /// Sort by the most recent of `last_scheduled_trigger_at` / `last_manual_trigger_at`.
+    LastFire,
 }
 
 /// Sort direction for the routine table.
@@ -548,6 +641,8 @@ pub fn sort_routines(
             RCol::Agent => a.agent.to_lowercase().cmp(&b.agent.to_lowercase()),
             RCol::Enabled => a.enabled.cmp(&b.enabled),
             RCol::Updated => a.updated_at.cmp(&b.updated_at),
+            RCol::Health => routine_health(a, now).priority().cmp(&routine_health(b, now).priority()),
+            RCol::LastFire => last_fire_timestamp(a).cmp(&last_fire_timestamp(b)),
             RCol::NextRun => {
                 let next_of = |r: &Routine| {
                     if r.enabled {
@@ -1936,7 +2031,9 @@ pub fn routine_table(props: &TableProps) -> Html {
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
+                        { sort_th("STATUS", RCol::Health, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("ENABLED", RCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("UPDATED", RCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
                     </tr>
@@ -2104,14 +2201,19 @@ pub fn routine_row(props: &RowProps) -> Html {
             <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
             <td><span class="cell-meta" title="workbench retention for finished runs">{ format_ttl(r.ttl_secs) }</span></td>
             <td>
+                <span class={routine_health(r, props.now).badge_class()}>
+                    {routine_health(r, props.now).badge()}
+                </span>
+            </td>
+            <td>
                 <label class="toggle">
                     <input type="checkbox" checked={r.enabled} onchange={on_toggle} />
                     <div class="toggle-track"></div>
                 </label>
             </td>
+            <td>{last_run}</td>
             <td>
                 <div class="cell-time">{updated}</div>
-                {last_run}
             </td>
             <td>
                 <div class="row-actions">

@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- **`defaults` module split.** `src/routines/defaults.rs` is now a module (`defaults/`); each
+  built-in routine lives in its own file (`update_moadim.rs`, `the_1_percent.rs`). Pure
+  refactor — no behaviour change.
+
 ### Added
 
 - **Dedicated LAST FIRE column in the Routines table.** The most-recent trigger

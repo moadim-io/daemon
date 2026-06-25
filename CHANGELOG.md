@@ -13,6 +13,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Global routine lock — UI banner and REST API.** The Routines page shows an amber banner
+  when a global lock is active, listing which sentinel(s) are present (SHARED / LOCAL) with an
+  **UNLOCK ALL** button that removes both via `DELETE /api/v1/routines/lock?scope=all`. Three
+  new REST endpoints expose lock management: `GET /routines/lock` (status), `POST /routines/lock`
+  (create sentinel; scope=shared|local), `DELETE /routines/lock` (remove; scope=shared|local|all).
 - **Global routine lock.** Create `~/.config/moadim/.lock` (committed, shared via git) or
   `~/.config/moadim/.local.lock` (gitignored, machine-local) to pause all routine scheduling
   and manual triggers without touching individual routine `enabled` states. Removing the file(s)

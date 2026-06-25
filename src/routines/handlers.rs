@@ -80,6 +80,7 @@ pub async fn unlock(
     Ok(Json(crate::global_lock::lock_status()))
 }
 
+/// Parse a `scope` string into a [`LockScope`], returning `400 BadRequest` on unknown values.
 fn parse_lock_scope(scope: &str) -> Result<LockScope, AppError> {
     match scope {
         "shared" => Ok(LockScope::Shared),

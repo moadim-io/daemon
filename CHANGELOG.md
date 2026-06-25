@@ -19,7 +19,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   restores prior state. Three new MCP tools — `get_lock_status`, `lock_routines`,
   `unlock_routines` — manage the sentinels and immediately re-sync the crontab. Blocked triggers
   return HTTP 423 Locked.
-
+- **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
+  terminal aesthetic and a clean light palette. The choice persists to `localStorage`
+  under `moadim.theme` and is applied flash-free via an inline `<head>` script before
+  the first paint. The `⌘K` command palette gains a "Toggle Theme" entry so
+  keyboard-first operators never need to reach for the mouse. All colours are pure CSS
+  custom-property overrides — no per-component changes. Closes #664.
+- **Sortable column headers for the Cron Jobs table.** Clicking any column header
+  (ID, HANDLER, NEXT RUN, ENABLED, UPDATED) sorts the table by that field; clicking
+  again reverses direction. An arrow indicator shows the active sort column and
+  direction. Sort state lives in component memory (no URL pollution) and resets to the
+  server's natural order on page reload. Pure client-side — no backend change.
+  Closes #657, #669.
 - **NEXT RUN countdown column in the Routines table.** The Routines table gains a
   live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
   matching the already-shipped column on the Cron Jobs page, so operators see per-routine
@@ -41,6 +52,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   a keyword search bar with match highlighting and navigation arrows, and an
   auto-tail toggle that keeps the viewport pinned to the last line as new output
   arrives. Closes #646.
+- **"The 1 Percent" built-in default routine.** A new daemon-managed default that fires
+  daily at 08:00 and audits the user's automation portfolio across six dimensions (coverage
+  gaps, redundancy, dead weight, prompt quality, schedule hygiene, machine targeting). Each
+  run it picks the single highest-impact improvement and opens a pull request on the routines
+  repository. If the routines folder is not a git repository the routine self-disables via
+  `update_routine`. Closes #640.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

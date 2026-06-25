@@ -21,7 +21,7 @@ Rust server that schedules **cron jobs** (run a script) and **routines** (run an
 AI agent), exposing both over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs and routines
-- **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services
+- **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services; Swagger UI at `/docs`
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
 All three share the same port. Jobs and routines created through any interface are
@@ -534,7 +534,14 @@ url:       http://localhost:5784/mcp
 
 ## API
 
-Full interface definitions are auto-generated at build time — see the [`apis/`](apis/) folder.
+The daemon serves an interactive **Swagger UI** at
+[`http://localhost:5784/docs`](http://localhost:5784/docs) — open it in a
+browser to explore every endpoint, read the schemas, and try calls against your
+running server directly. The raw OpenAPI spec is at
+`http://localhost:5784/docs/openapi.json`.
+
+Both are regenerated at build time from the source; the checked-in snapshot
+lives in [`apis/`](apis/).
 
 ## Changelog
 

@@ -797,7 +797,9 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         state.dispatch(RAction::LockStatusLoaded(status));
                         ok("Routines unlocked");
                     }
-                    Err(err_msg) => toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err)),
+                    Err(err_msg) => {
+                        toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err))
+                    }
                 }
             })
         })

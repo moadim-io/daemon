@@ -22,8 +22,8 @@ use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{
-    fires_within, fmt_until, fmt_when, month_start, next_fire_after, occurrences_per_day,
-    CAL_MONTHS, GRID_CELLS, WEEKDAYS,
+    fires_within, fmt_until, fmt_when, month_start, next_fire_after, next_fires,
+    occurrences_per_day, CAL_MONTHS, GRID_CELLS, WEEKDAYS,
 };
 use crate::{describe_cron_live, reltime, ToastKind};
 
@@ -1973,6 +1973,8 @@ pub struct RowProps {
 
 #[function_component(RoutineRow)]
 pub fn routine_row(props: &RowProps) -> Html {
+    let preview_open = use_state(|| false);
+
     let r = &props.routine;
     let cron_text = r.schedule_description.as_deref().unwrap_or("—").to_string();
     let updated = reltime(r.updated_at);
@@ -2010,6 +2012,42 @@ pub fn routine_row(props: &RowProps) -> Html {
         let cb = props.on_select.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+
+    let on_preview_toggle = {
+        let preview_open = preview_open.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            preview_open.set(!*preview_open);
+        })
+    };
+
+    let fires_panel = if *preview_open {
+        let fires = next_fires(&r.schedule, props.now, 10);
+        if fires.is_empty() {
+            html! { <div class="fires-panel"><div class="fires-empty">{"— no future fires —"}</div></div> }
+        } else {
+            let now = props.now;
+            html! {
+                <div class="fires-panel">
+                    <div class="fires-hd">{"NEXT 10 FIRES"}</div>
+                    { for fires.iter().map(|t| html! {
+                        <div class="fires-item">
+                            <span class="fires-when">{fmt_when(now, *t)}</span>
+                            <span class="fires-until">{fmt_until(now, *t)}</span>
+                        </div>
+                    }) }
+                </div>
+            }
+        }
+    } else {
+        html! {}
+    };
+
+    let preview_btn_class = if *preview_open {
+        "sched-preview-btn open"
+    } else {
+        "sched-preview-btn"
     };
 
     // LAST FIRE: most-recent trigger timestamp from last_fire_at, icon chosen by type.
@@ -2053,6 +2091,14 @@ pub fn routine_row(props: &RowProps) -> Html {
             <td>
                 <div class="cell-schedule">{&r.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
+                <button
+                    class={preview_btn_class}
+                    title="Preview next fire times"
+                    aria-label="Preview next scheduled fire times"
+                    aria-expanded={(*preview_open).to_string()}
+                    onclick={on_preview_toggle}
+                >{"▸ fires"}</button>
+                {fires_panel}
             </td>
             <td>{next_run}</td>
             <td>{last_fire}</td>

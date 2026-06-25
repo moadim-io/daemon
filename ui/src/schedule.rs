@@ -22,6 +22,16 @@ pub(crate) fn next_fire_after(schedule: &str, now: DateTime<Local>) -> Option<Da
     parse_cron(schedule)?.iter_after(now).next()
 }
 
+/// Compute the next `n` fire times for `schedule` strictly after `now`.
+/// Returns fewer than `n` items when the schedule has fewer future fires or is
+/// empty/invalid.
+pub(crate) fn next_fires(schedule: &str, now: DateTime<Local>, n: usize) -> Vec<DateTime<Local>> {
+    let Some(cron) = parse_cron(schedule) else {
+        return vec![];
+    };
+    cron.iter_after(now).take(n).collect()
+}
+
 /// `true` when `schedule`'s next fire lands within `window` of `now`.
 pub(crate) fn fires_within(schedule: &str, now: DateTime<Local>, window: Duration) -> bool {
     match next_fire_after(schedule, now) {

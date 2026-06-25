@@ -23,8 +23,8 @@ use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{
-    fires_within, fmt_until, fmt_when, month_start, next_fire_after, occurrences_per_day,
-    CAL_MONTHS, GRID_CELLS, WEEKDAYS,
+    fires_within, fmt_until, fmt_when, month_start, next_fire_after, next_fires,
+    occurrences_per_day, CAL_MONTHS, GRID_CELLS, WEEKDAYS,
 };
 use crate::{describe_cron_live, reltime, ToastKind};
 
@@ -1623,6 +1623,8 @@ fn next_run_cell(job: &CronJob, now: DateTime<Local>) -> Html {
 
 #[function_component(JobRow)]
 pub fn job_row(props: &JobRowProps) -> Html {
+    let preview_open = use_state(|| false);
+
     let job = &props.job;
     let id_short = format!("{}…", &job.id[..8.min(job.id.len())]);
     let cron_text = job
@@ -1676,6 +1678,42 @@ pub fn job_row(props: &JobRowProps) -> Html {
         })
     };
 
+    let on_preview_toggle = {
+        let preview_open = preview_open.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            preview_open.set(!*preview_open);
+        })
+    };
+
+    let fires_panel = if *preview_open {
+        let fires = next_fires(&job.schedule, props.now, 10);
+        if fires.is_empty() {
+            html! { <div class="fires-panel"><div class="fires-empty">{"— no future fires —"}</div></div> }
+        } else {
+            let now = props.now;
+            html! {
+                <div class="fires-panel">
+                    <div class="fires-hd">{"NEXT 10 FIRES"}</div>
+                    { for fires.iter().map(|t| html! {
+                        <div class="fires-item">
+                            <span class="fires-when">{fmt_when(now, *t)}</span>
+                            <span class="fires-until">{fmt_until(now, *t)}</span>
+                        </div>
+                    }) }
+                </div>
+            }
+        }
+    } else {
+        html! {}
+    };
+
+    let preview_btn_class = if *preview_open {
+        "sched-preview-btn open"
+    } else {
+        "sched-preview-btn"
+    };
+
     let last_run = job
         .last_manual_trigger_at
         .map(|t| format!("↻ {}", reltime(t)))
@@ -1698,6 +1736,14 @@ pub fn job_row(props: &JobRowProps) -> Html {
             <td>
                 <div class="cell-schedule">{&job.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
+                <button
+                    class={preview_btn_class}
+                    title="Preview next fire times"
+                    aria-label="Preview next scheduled fire times"
+                    aria-expanded={(*preview_open).to_string()}
+                    onclick={on_preview_toggle}
+                >{"▸ fires"}</button>
+                {fires_panel}
             </td>
             <td>{next_run}</td>
             <td><span class="cell-handler">{&job.handler}</span></td>

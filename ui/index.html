@@ -957,6 +957,46 @@
     .act-btn.logs { color: var(--text-ghost); }
     .act-btn.logs:hover { color: var(--text-mid); border-color: var(--border-hi); }
 
+    /* ── Schedule fire preview ── */
+    .sched-preview-btn {
+      display: inline-block;
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      color: var(--text-ghost);
+      cursor: pointer;
+      background: transparent;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .sched-preview-btn:hover { color: var(--text-mid); border-color: var(--border-hi); }
+    .sched-preview-btn.open  { color: var(--accent); border-color: var(--accent); }
+
+    .fires-panel {
+      margin-top: 6px;
+      border: 1px solid var(--border-hi);
+      background: var(--bg-3);
+      padding: 7px 10px;
+    }
+    .fires-hd {
+      font-size: 8px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-ghost);
+      margin-bottom: 5px;
+    }
+    .fires-item {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      padding: 2px 0;
+    }
+    .fires-when  { font-size: 11px; color: var(--text-hi); }
+    .fires-until { font-size: 10px; color: var(--text-dim); }
+    .fires-empty { font-size: 10px; color: var(--text-ghost); }
+
     /* ── View toggle ── */
     .section-acts { display: flex; align-items: center; gap: 10px; }
 

@@ -530,3 +530,128 @@ fn remove_also_clears_from_selection() {
     assert!(s.selected.contains("b"));
     assert_eq!(s.routines.len(), 1);
 }
+
+// ── sort_routines ─────────────────────────────────────────────────────────────
+
+fn routine_sort(id: &str, title: &str, agent: &str, enabled: bool, updated_at: u64) -> Routine {
+    let mut r = routine(id, title, agent, "0 * * * *", &[], &[], enabled);
+    r.updated_at = updated_at;
+    r
+}
+
+#[test]
+fn rdir_flip_toggles_direction() {
+    assert_eq!(RDir::Asc.flip(), RDir::Desc);
+    assert_eq!(RDir::Desc.flip(), RDir::Asc);
+}
+
+#[test]
+fn sort_routines_none_col_preserves_insertion_order() {
+    let rs = vec![
+        routine_sort("z", "Zebra", "claude", true, 10),
+        routine_sort("a", "Alpha", "codex", true, 5),
+    ];
+    let sorted = sort_routines(rs.clone(), None, RDir::Asc, now());
+    assert_eq!(sorted[0].id, "z");
+    assert_eq!(sorted[1].id, "a");
+}
+
+#[test]
+fn sort_routines_by_title_ascending() {
+    let rs = vec![
+        routine_sort("b", "Zebra", "claude", true, 10),
+        routine_sort("a", "Alpha", "claude", true, 5),
+        routine_sort("c", "Mango", "claude", true, 7),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Title), RDir::Asc, now());
+    assert_eq!(sorted[0].title, "Alpha");
+    assert_eq!(sorted[1].title, "Mango");
+    assert_eq!(sorted[2].title, "Zebra");
+}
+
+#[test]
+fn sort_routines_by_title_descending() {
+    let rs = vec![
+        routine_sort("b", "Zebra", "claude", true, 10),
+        routine_sort("a", "Alpha", "claude", true, 5),
+        routine_sort("c", "Mango", "claude", true, 7),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Title), RDir::Desc, now());
+    assert_eq!(sorted[0].title, "Zebra");
+    assert_eq!(sorted[1].title, "Mango");
+    assert_eq!(sorted[2].title, "Alpha");
+}
+
+#[test]
+fn sort_routines_by_agent_ascending() {
+    let rs = vec![
+        routine_sort("a", "T1", "codex", true, 1),
+        routine_sort("b", "T2", "claude", true, 2),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Agent), RDir::Asc, now());
+    assert_eq!(sorted[0].agent, "claude");
+    assert_eq!(sorted[1].agent, "codex");
+}
+
+#[test]
+fn sort_routines_by_updated_ascending() {
+    let rs = vec![
+        routine_sort("a", "T1", "claude", true, 100),
+        routine_sort("b", "T2", "claude", true, 50),
+        routine_sort("c", "T3", "claude", true, 75),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Updated), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "b");
+    assert_eq!(sorted[1].id, "c");
+    assert_eq!(sorted[2].id, "a");
+}
+
+#[test]
+fn sort_routines_by_updated_descending() {
+    let rs = vec![
+        routine_sort("a", "T1", "claude", true, 100),
+        routine_sort("b", "T2", "claude", true, 50),
+        routine_sort("c", "T3", "claude", true, 75),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Updated), RDir::Desc, now());
+    assert_eq!(sorted[0].id, "a");
+    assert_eq!(sorted[1].id, "c");
+    assert_eq!(sorted[2].id, "b");
+}
+
+#[test]
+fn sort_routines_by_enabled_puts_disabled_first_ascending() {
+    let rs = vec![
+        routine_sort("a", "T1", "claude", true, 1),
+        routine_sort("b", "T2", "claude", false, 2),
+        routine_sort("c", "T3", "claude", true, 3),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Enabled), RDir::Asc, now());
+    // false < true, so disabled goes first in Asc
+    assert!(!sorted[0].enabled);
+    assert!(sorted[1].enabled);
+    assert!(sorted[2].enabled);
+}
+
+#[test]
+fn sort_routines_by_next_run_puts_none_after_some() {
+    // Disabled routines have no next run → sort to end.
+    let rs = vec![
+        routine_sort("dis", "Disabled", "claude", false, 1),
+        routine_sort("hourly", "Hourly", "claude", true, 2),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::NextRun), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "hourly");
+    assert_eq!(sorted[1].id, "dis");
+}
+
+#[test]
+fn sort_routines_title_is_case_insensitive() {
+    let rs = vec![
+        routine_sort("a", "zebra", "claude", true, 1),
+        routine_sort("b", "ALPHA", "claude", true, 2),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Title), RDir::Asc, now());
+    assert_eq!(sorted[0].title, "ALPHA");
+    assert_eq!(sorted[1].title, "zebra");
+}

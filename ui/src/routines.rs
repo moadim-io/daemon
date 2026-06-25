@@ -471,36 +471,78 @@ pub enum RView {
     Day,
 }
 
-/// Field the routine table is sorted by.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RSort {
-    #[default]
-    Created,
-    Updated,
+/// Column the routine table is sorted by (click-to-sort, matching the cron-jobs table pattern).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RCol {
     Title,
-    Repository,
+    NextRun,
+    Agent,
+    Enabled,
+    Updated,
 }
 
-impl RSort {
-    /// Parse the value of the sort `<select>`.
-    fn from_str(s: &str) -> Self {
-        match s {
-            "updated" => RSort::Updated,
-            "title" => RSort::Title,
-            "repository" => RSort::Repository,
-            _ => RSort::Created,
-        }
-    }
+/// Sort direction for the routine table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RDir {
+    #[default]
+    Asc,
+    Desc,
+}
 
-    /// `<option>` value for this sort field.
-    fn as_str(self) -> &'static str {
+impl RDir {
+    /// Toggle to the opposite direction.
+    #[must_use]
+    pub fn flip(self) -> Self {
         match self {
-            RSort::Created => "created",
-            RSort::Updated => "updated",
-            RSort::Title => "title",
-            RSort::Repository => "repository",
+            RDir::Asc => RDir::Desc,
+            RDir::Desc => RDir::Asc,
         }
     }
+}
+
+/// Return `routines` sorted by `col` in `dir` order. When `col` is `None` the
+/// server/insertion order is preserved. Ties break by id for a stable sort.
+#[must_use]
+pub fn sort_routines(
+    mut routines: Vec<Routine>,
+    col: Option<RCol>,
+    dir: RDir,
+    now: DateTime<Local>,
+) -> Vec<Routine> {
+    let col = match col {
+        Some(c) => c,
+        None => return routines,
+    };
+    routines.sort_by(|a, b| {
+        let primary = match col {
+            RCol::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
+            RCol::Agent => a.agent.to_lowercase().cmp(&b.agent.to_lowercase()),
+            RCol::Enabled => a.enabled.cmp(&b.enabled),
+            RCol::Updated => a.updated_at.cmp(&b.updated_at),
+            RCol::NextRun => {
+                let next_of = |r: &Routine| {
+                    if r.enabled {
+                        next_fire_after(&r.schedule, now)
+                    } else {
+                        None
+                    }
+                };
+                match (next_of(a), next_of(b)) {
+                    (Some(ta), Some(tb)) => ta.cmp(&tb),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                }
+            }
+        };
+        let directed = if dir == RDir::Desc {
+            primary.reverse()
+        } else {
+            primary
+        };
+        directed.then_with(|| a.id.cmp(&b.id))
+    });
+    routines
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -512,10 +554,10 @@ pub struct RState {
     pub view: RView,
     /// Active faceted filter.
     pub filter: RoutineFilter,
-    /// Field the table is sorted by.
-    pub sort: RSort,
-    /// `true` sorts descending (newest / Z→A first).
-    pub sort_desc: bool,
+    /// Column the table is sorted by (`None` = natural order).
+    pub sort_col: Option<RCol>,
+    /// Direction of the active column sort.
+    pub sort_dir: RDir,
     /// IDs of currently selected routines (multiselect for bulk actions).
     pub selected: BTreeSet<String>,
 }
@@ -529,8 +571,8 @@ impl Default for RState {
             modal: RModal::None,
             view: RView::default(),
             filter: RoutineFilter::default(),
-            sort: RSort::default(),
-            sort_desc: false,
+            sort_col: None,
+            sort_dir: RDir::default(),
             selected: BTreeSet::new(),
         }
     }
@@ -554,8 +596,7 @@ pub enum RAction {
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
     ClearFilters,
-    SetSort(RSort),
-    ToggleSortDir,
+    SortByCol(RCol),
     Upsert(Box<Routine>),
     Remove(String),
     /// Remove multiple routines after a confirmed bulk delete.
@@ -600,8 +641,14 @@ impl Reducible for RState {
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
-            RAction::SetSort(sort) => s.sort = sort,
-            RAction::ToggleSortDir => s.sort_desc = !s.sort_desc,
+            RAction::SortByCol(col) => {
+                if s.sort_col == Some(col) {
+                    s.sort_dir = s.sort_dir.flip();
+                } else {
+                    s.sort_col = Some(col);
+                    s.sort_dir = RDir::Asc;
+                }
+            }
             RAction::Upsert(routine) => {
                 let routine = *routine;
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
@@ -833,13 +880,9 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         });
     }
 
-    let on_set_sort = {
+    let on_col_sort = {
         let state = state.clone();
-        Callback::from(move |sort: RSort| state.dispatch(RAction::SetSort(sort)))
-    };
-    let on_toggle_sort_dir = {
-        let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::ToggleSortDir))
+        Callback::from(move |col: RCol| state.dispatch(RAction::SortByCol(col)))
     };
 
     let on_create = {
@@ -1103,8 +1146,8 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let modal = state.modal.clone();
     let view = state.view;
     let filter = state.filter.clone();
-    let sort = state.sort;
-    let sort_desc = state.sort_desc;
+    let sort_col = state.sort_col;
+    let sort_dir = state.sort_dir;
     let selected = state.selected.clone();
 
     // Faceted filter + sort applied client-side.
@@ -1116,20 +1159,8 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let has_unassigned = unassigned_routines_count(&routines) > 0;
     let filter_active = filter.is_active();
     let visible = {
-        let mut v = filter_routines(&routines, &filter, now_val, window);
-        match sort {
-            RSort::Created => v.sort_by_key(|r| r.created_at),
-            RSort::Updated => v.sort_by_key(|r| r.updated_at),
-            RSort::Title => v.sort_by_key(|r| r.title.to_lowercase()),
-            RSort::Repository => v.sort_by_key(|r| match r.repositories.first() {
-                Some(repo) => (false, repo.repository.to_lowercase()),
-                None => (true, String::new()),
-            }),
-        }
-        if sort_desc {
-            v.reverse();
-        }
-        v
+        let filtered = filter_routines(&routines, &filter, now_val, window);
+        sort_routines(filtered, sort_col, sort_dir, now_val)
     };
     let shown = visible.len();
 
@@ -1181,16 +1212,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 has_unassigned={has_unassigned}
                                 shown={shown}
                                 total={total_routines}
-                                sort={sort}
-                                sort_desc={sort_desc}
                                 search_ref={search_ref.clone()}
                                 on_query={on_set_query}
                                 on_status={on_set_status}
                                 on_agent={on_set_agent}
                                 on_machine={on_set_machine}
                                 on_clear={on_clear_filters.clone()}
-                                on_set_sort={on_set_sort}
-                                on_toggle_sort_dir={on_toggle_sort_dir}
                             />
                             <RoutineBulkBar
                                 count={selected.len()}
@@ -1210,6 +1237,9 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             selected={selected.clone()}
                                             on_select={on_select}
                                             on_select_all={on_select_all}
+                                            sort_col={sort_col}
+                                            sort_dir={sort_dir}
+                                            on_sort={on_col_sort}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
@@ -1380,8 +1410,6 @@ pub struct FilterSortBarProps {
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
-    pub sort: RSort,
-    pub sort_desc: bool,
     /// NodeRef forwarded from the page so the `/` shortcut can focus this input.
     pub search_ref: NodeRef,
     pub on_query: Callback<String>,
@@ -1389,8 +1417,6 @@ pub struct FilterSortBarProps {
     pub on_agent: Callback<AgentFacet>,
     pub on_machine: Callback<RoutineMachineFacet>,
     pub on_clear: Callback<()>,
-    pub on_set_sort: Callback<RSort>,
-    pub on_toggle_sort_dir: Callback<()>,
 }
 
 /// Full-text search + status / agent / machine facets + sort controls for the routine table.
@@ -1428,24 +1454,6 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
-    let on_sort_change = {
-        let cb = props.on_set_sort.clone();
-        Callback::from(move |e: Event| {
-            let select: HtmlSelectElement = e.target_unchecked_into();
-            cb.emit(RSort::from_str(&select.value()));
-        })
-    };
-    let on_dir = {
-        let cb = props.on_toggle_sort_dir.clone();
-        Callback::from(move |_: MouseEvent| cb.emit(()))
-    };
-
-    let dir_label = if props.sort_desc {
-        "↓ DESC"
-    } else {
-        "↑ ASC"
-    };
-    let current_sort = props.sort.as_str();
     let status_val = props.filter.status.as_str();
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
@@ -1510,15 +1518,6 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                         html! {}
                     }
                 }
-                <span class="filter-label">{"SORT"}</span>
-                <select class="filter-select" onchange={on_sort_change}>
-                    <option value="created" selected={current_sort == "created"}>{"Created"}</option>
-                    <option value="updated" selected={current_sort == "updated"}>{"Updated"}</option>
-                    <option value="title" selected={current_sort == "title"}>{"Title"}</option>
-                    <option value="repository" selected={current_sort == "repository"}>{"Repository"}</option>
-                </select>
-                <button class="btn btn-ghost btn-sm" onclick={on_dir}
-                    title="Toggle sort direction">{dir_label}</button>
             </div>
         </div>
     }
@@ -1690,6 +1689,30 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
 
 // ─── Table ────────────────────────────────────────────────────────────────────
 
+/// Render a sortable `<th>` cell. Active column shows ▲ / ▼; inactive columns
+/// are plain clickable headers. Clicking the active column reverses direction.
+fn sort_th(
+    label: &'static str,
+    col: RCol,
+    current: Option<RCol>,
+    dir: RDir,
+    on_sort: &Callback<RCol>,
+) -> Html {
+    let active = current == Some(col);
+    let indicator = if active {
+        if dir == RDir::Asc { " ▲" } else { " ▼" }
+    } else {
+        ""
+    };
+    let cls = if active { "th-sort th-sort-active" } else { "th-sort" };
+    let cb = on_sort.clone();
+    html! {
+        <th class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(col))}>
+            { format!("{label}{indicator}") }
+        </th>
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub struct TableProps {
     pub routines: Vec<Routine>,
@@ -1704,6 +1727,12 @@ pub struct TableProps {
     pub on_select: Callback<String>,
     /// Fired when the header checkbox is clicked (toggles all-visible).
     pub on_select_all: Callback<()>,
+    /// Active sort column (`None` = natural order).
+    pub sort_col: Option<RCol>,
+    /// Direction of the active column sort.
+    pub sort_dir: RDir,
+    /// Fired when the user clicks a sortable column header.
+    pub on_sort: Callback<RCol>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
@@ -1778,14 +1807,14 @@ pub fn routine_table(props: &TableProps) -> Html {
                                 title="Select all visible"
                             />
                         </th>
-                        <th>{"TITLE"}</th>
+                        { sort_th("TITLE", RCol::Title, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"SCHEDULE"}</th>
-                        <th>{"NEXT RUN"}</th>
-                        <th>{"AGENT"}</th>
+                        { sort_th("NEXT RUN", RCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
-                        <th>{"ENABLED"}</th>
-                        <th>{"UPDATED"}</th>
+                        { sort_th("ENABLED", RCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("UPDATED", RCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
                     </tr>
                 </thead>

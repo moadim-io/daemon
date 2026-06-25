@@ -34,6 +34,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   a keyword search bar with match highlighting and navigation arrows, and an
   auto-tail toggle that keeps the viewport pinned to the last line as new output
   arrives. Closes #646.
+- **"The 1 Percent" built-in default routine.** A new daemon-managed default that fires
+  daily at 08:00 and audits the user's automation portfolio across six dimensions (coverage
+  gaps, redundancy, dead weight, prompt quality, schedule hygiene, machine targeting). Each
+  run it picks the single highest-impact improvement and opens a pull request on the routines
+  repository. If the routines folder is not a git repository the routine self-disables via
+  `update_routine`. Closes #640.
 - **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
   7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
   enabled cron job and routine into one color-coded matrix, so an operator can see

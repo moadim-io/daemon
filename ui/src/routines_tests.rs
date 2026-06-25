@@ -437,3 +437,138 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
 }
+
+// ── Selection state transitions ───────────────────────────────────────────────
+
+fn make_state(ids: &[&str]) -> RState {
+    let routines = ids
+        .iter()
+        .map(|id| routine(id, "t", "claude", "0 * * * *", &[], &[], true))
+        .collect();
+    RState {
+        routines,
+        ..RState::default()
+    }
+}
+
+#[test]
+fn select_only_clears_others_and_sets_anchor() {
+    use std::rc::Rc;
+    let mut s = make_state(&["a", "b", "c"]);
+    s.selected.insert("b".into());
+    let s = RState::reduce(
+        Rc::new(s),
+        RAction::SelectRoutine {
+            id: "a".into(),
+            kind: SelectKind::Only,
+        },
+    );
+    assert_eq!(s.selected.len(), 1);
+    assert!(s.selected.contains("a"));
+    assert_eq!(s.select_anchor.as_deref(), Some("a"));
+}
+
+#[test]
+fn select_toggle_adds_when_absent_and_removes_when_present() {
+    use std::rc::Rc;
+    let s = make_state(&["a", "b"]);
+    let s = RState::reduce(
+        Rc::new(s),
+        RAction::SelectRoutine {
+            id: "a".into(),
+            kind: SelectKind::Toggle,
+        },
+    );
+    assert!(s.selected.contains("a"));
+
+    let s = RState::reduce(
+        s,
+        RAction::SelectRoutine {
+            id: "a".into(),
+            kind: SelectKind::Toggle,
+        },
+    );
+    assert!(!s.selected.contains("a"));
+}
+
+#[test]
+fn select_range_covers_contiguous_slice() {
+    use std::rc::Rc;
+    let mut s = make_state(&["a", "b", "c", "d"]);
+    // Anchor at "a".
+    s = (*RState::reduce(
+        Rc::new(s),
+        RAction::SelectRoutine {
+            id: "a".into(),
+            kind: SelectKind::Only,
+        },
+    ))
+    .clone();
+    // Shift+click "c" — should select a, b, c.
+    let s = RState::reduce(
+        Rc::new(s),
+        RAction::SelectRoutine {
+            id: "c".into(),
+            kind: SelectKind::Range,
+        },
+    );
+    assert!(s.selected.contains("a"));
+    assert!(s.selected.contains("b"));
+    assert!(s.selected.contains("c"));
+    assert!(!s.selected.contains("d"));
+}
+
+#[test]
+fn select_all_selects_given_ids() {
+    use std::rc::Rc;
+    let s = make_state(&["a", "b", "c"]);
+    let s = RState::reduce(
+        Rc::new(s),
+        RAction::SelectAll(vec!["a".into(), "c".into()]),
+    );
+    assert_eq!(s.selected.len(), 2);
+    assert!(s.selected.contains("a"));
+    assert!(s.selected.contains("c"));
+    assert!(!s.selected.contains("b"));
+}
+
+#[test]
+fn clear_selection_empties_set_and_anchor() {
+    use std::rc::Rc;
+    let mut s = make_state(&["a", "b"]);
+    s.selected.insert("a".into());
+    s.select_anchor = Some("a".into());
+    let s = RState::reduce(Rc::new(s), RAction::ClearSelection);
+    assert!(s.selected.is_empty());
+    assert!(s.select_anchor.is_none());
+}
+
+#[test]
+fn remove_many_drops_from_selection_and_routines() {
+    use std::rc::Rc;
+    let mut s = make_state(&["a", "b", "c"]);
+    s.selected.insert("a".into());
+    s.selected.insert("b".into());
+    let s = RState::reduce(
+        Rc::new(s),
+        RAction::RemoveMany(vec!["a".into(), "b".into()]),
+    );
+    assert_eq!(s.routines.len(), 1);
+    assert_eq!(s.routines[0].id, "c");
+    assert!(s.selected.is_empty());
+}
+
+#[test]
+fn loaded_drops_stale_selections() {
+    use std::rc::Rc;
+    let mut s = make_state(&["a", "b"]);
+    s.selected.insert("a".into());
+    s.selected.insert("gone".into()); // no longer in the new list
+    let new_routines = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let s = RState::reduce(Rc::new(s), RAction::Loaded(new_routines));
+    assert!(s.selected.contains("a"));
+    assert!(!s.selected.contains("gone"));
+}

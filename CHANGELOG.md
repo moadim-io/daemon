@@ -19,6 +19,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Group-by dimension for the Cron Jobs table.** A new **GROUP BY** selector in the
+  Cron Jobs toolbar lets operators partition the flat job list into labelled sections
+  by **Handler**, **Machine**, or **Status** (enabled/disabled). Within each group the
+  active column sort still applies; groups are ordered alphabetically for a stable
+  layout. `None` (the default) preserves the existing flat-list behaviour. Backed by
+  a pure `group_jobs()` / `group_key()` function covered by 16 new host-only tests.
+  Follows the first-class grouping pattern in Airflow's DAG list, GitHub Actions
+  workflow runs, and Temporal namespace views — orthogonal to filtering so operators
+  can filter *and* group simultaneously. Pure frontend — no backend change.
+  Closes #714.
 - **Dedicated LAST FIRE column in the Routines table.** The most-recent trigger
   timestamp is now shown in its own **LAST FIRE** column directly beside NEXT RUN,
   matching the side-by-side "last run / next run" pattern standard in Airflow, Temporal,

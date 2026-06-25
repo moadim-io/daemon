@@ -30,6 +30,29 @@
       --mono:         'Share Tech Mono', 'Courier New', monospace;
     }
 
+    /* ── Light theme palette ─────────────────────────────────────────────────── */
+    /* Forest-green on parchment — same mono aesthetic, readable in daylight.
+       Applied via [data-theme="light"] on <html> set by the flash-free init
+       script below; overrides every :root variable so zero inline styles change. */
+    [data-theme="light"] {
+      --bg:           #f5f9f5;
+      --bg-2:         #ebf3eb;
+      --bg-3:         #deeade;
+      --border:       #bfd8bf;
+      --border-hi:    #97c297;
+      --text-ghost:   #88b888;
+      --text-dim:     #527852;
+      --text-mid:     #316331;
+      --text:         #193d19;
+      --text-hi:      #091a09;
+      --accent:       #16a34a;
+      --accent-dim:   #d1fae5;
+      --red:          #dc2626;
+      --red-dim:      #fee2e2;
+      --amber:        #b45309;
+      --amber-dim:    #fef3c7;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
@@ -126,6 +149,11 @@
       0%,100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.5); }
       50%      { box-shadow: 0 0 0 5px rgba(74,222,128,0); }
     }
+    @keyframes glow-light {
+      0%,100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.5); }
+      50%      { box-shadow: 0 0 0 5px rgba(22,163,74,0); }
+    }
+    [data-theme="light"] .health-dot.ok { animation-name: glow-light; }
 
     .health-status { color: var(--text-mid); letter-spacing: 0.06em; }
     .health-uptime  { color: var(--text-ghost); }
@@ -181,6 +209,19 @@
       line-height: 1;
     }
     .btn-cmdk:hover { color: var(--accent); border-color: var(--border-hi); }
+
+    .btn-theme {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1;
+    }
+    .btn-theme:hover { color: var(--accent); border-color: var(--border-hi); }
 
     /* ── Command palette (⌘K) ── */
     .cmdk {
@@ -1300,6 +1341,8 @@
     .btn:focus-visible,
     .btn-refresh:focus-visible,
     .btn-stop:focus-visible,
+    .btn-cmdk:focus-visible,
+    .btn-theme:focus-visible,
     .tab-btn:focus-visible,
     .act-btn:focus-visible,
     .view-btn:focus-visible,
@@ -1409,7 +1452,24 @@
       margin-left: 10px; letter-spacing: 0.06em;
       color: var(--text-ghost); text-transform: none;
     }
+
+    /* ── Light-mode heatmap intensity overrides ── */
+    /* lvl-1/2/3 are hardcoded dark-green fills; swap to green-on-light. */
+    [data-theme="light"] .hm-cell.lvl-1 { background: #c7e8c7; }
+    [data-theme="light"] .hm-cell.lvl-2 { background: #7ec87e; }
+    [data-theme="light"] .hm-cell.lvl-3 { background: #3aad5c; }
   </style>
+  <!-- Flash-free theme init: runs synchronously in <head> before first paint.
+       Reads moadim-theme from localStorage and stamps data-theme on <html> so
+       the correct palette is active before the WASM module renders anything. -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('moadim-theme');
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+      } catch (_) {}
+    })();
+  </script>
 </head>
 <body></body>
 </html>

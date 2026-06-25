@@ -26,6 +26,51 @@ use schedule_heatmap::HeatmapPage;
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
+/// Active colour palette. Defaults to dark (the `:root` definition in index.html).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Theme {
+    pub(crate) fn toggle(self) -> Self {
+        match self {
+            Theme::Dark => Theme::Light,
+            Theme::Light => Theme::Dark,
+        }
+    }
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+        }
+    }
+    /// Icon shown on the toggle button — indicates the mode you will switch TO.
+    pub(crate) fn icon(self) -> &'static str {
+        match self {
+            Theme::Dark => "☀",
+            Theme::Light => "◑",
+        }
+    }
+    pub(crate) fn aria_label(self) -> &'static str {
+        match self {
+            Theme::Dark => "Switch to light mode",
+            Theme::Light => "Switch to dark mode",
+        }
+    }
+}
+
+/// Parse a `localStorage` value into a [`Theme`]. Any value other than `"light"`
+/// resolves to `Dark`, matching the flash-free script's default behaviour.
+pub(crate) fn parse_theme(val: Option<&str>) -> Theme {
+    match val {
+        Some("light") => Theme::Light,
+        _ => Theme::Dark,
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
 pub struct Health {
     pub status: String,
@@ -78,6 +123,7 @@ pub struct ShellState {
     pub next_toast: u32,
     pub show_shutdown: bool,
     pub show_palette: bool,
+    pub theme: Theme,
 }
 
 pub enum ShellAction {
@@ -87,6 +133,7 @@ pub enum ShellAction {
     CloseShutdown,
     TogglePalette,
     ClosePalette,
+    SetTheme(Theme),
 }
 
 impl Reducible for ShellState {
@@ -112,6 +159,7 @@ impl Reducible for ShellState {
             ShellAction::CloseShutdown => s.show_shutdown = false,
             ShellAction::TogglePalette => s.show_palette = !s.show_palette,
             ShellAction::ClosePalette => s.show_palette = false,
+            ShellAction::SetTheme(t) => s.theme = t,
         }
         s.into()
     }
@@ -227,6 +275,19 @@ pub fn shell() -> Html {
         });
     }
 
+    // Read the persisted theme from localStorage on mount and sync the reducer.
+    // The flash-free <script> in index.html already stamped data-theme on <html>
+    // before first paint; this just brings the Rust state into sync with it.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            let stored = web_sys::window()
+                .and_then(|w| w.local_storage().ok().flatten())
+                .and_then(|s| s.get_item("moadim-theme").ok().flatten());
+            state.dispatch(ShellAction::SetTheme(parse_theme(stored.as_deref())));
+        });
+    }
+
     let on_toast = {
         let state = state.clone();
         Callback::from(move |(msg, kind): (String, ToastKind)| {
@@ -270,6 +331,25 @@ pub fn shell() -> Html {
     let on_stop = {
         let state = state.clone();
         Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::OpenShutdown))
+    };
+
+    let on_theme = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| {
+            let new_theme = state.theme.toggle();
+            // Stamp data-theme on <html> and persist to localStorage.
+            if let Some(window) = web_sys::window() {
+                if let Some(doc) = window.document() {
+                    if let Some(el) = doc.document_element() {
+                        let _ = el.set_attribute("data-theme", new_theme.as_str());
+                    }
+                }
+                if let Ok(Some(storage)) = window.local_storage() {
+                    let _ = storage.set_item("moadim-theme", new_theme.as_str());
+                }
+            }
+            state.dispatch(ShellAction::SetTheme(new_theme));
+        })
     };
 
     let on_close_shutdown = {
@@ -324,10 +404,11 @@ pub fn shell() -> Html {
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
     let show_palette = state.show_palette;
+    let theme = state.theme;
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} />
+            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} on_theme={on_theme} theme={theme} />
             <Nav />
             <Switch<Route> render={switch} />
             <CommandPalette
@@ -392,6 +473,8 @@ pub struct HeaderProps {
     pub on_refresh: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
     pub on_palette: Callback<MouseEvent>,
+    pub on_theme: Callback<MouseEvent>,
+    pub theme: Theme,
 }
 
 #[function_component(Header)]
@@ -429,6 +512,9 @@ pub fn header(props: &HeaderProps) -> Html {
                 </div>
                 <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
                     {"⌘K"}
+                </button>
+                <button class="btn-theme" title={props.theme.aria_label()} aria-label={props.theme.aria_label()} onclick={props.on_theme.clone()}>
+                    {props.theme.icon()}
                 </button>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
                 <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
@@ -563,4 +649,57 @@ fn fmt_uptime(secs: u64) -> String {
 fn main() {
     console_log::init_with_level(log::Level::Info).unwrap_or_default();
     yew::Renderer::<App>::new().render();
+}
+
+#[cfg(test)]
+mod main_tests {
+    use super::{parse_theme, Theme};
+
+    #[test]
+    fn parse_theme_none_is_dark() {
+        assert_eq!(parse_theme(None), Theme::Dark);
+    }
+
+    #[test]
+    fn parse_theme_dark_string() {
+        assert_eq!(parse_theme(Some("dark")), Theme::Dark);
+    }
+
+    #[test]
+    fn parse_theme_unrecognised_is_dark() {
+        assert_eq!(parse_theme(Some("system")), Theme::Dark);
+        assert_eq!(parse_theme(Some("")), Theme::Dark);
+    }
+
+    #[test]
+    fn parse_theme_light_string() {
+        assert_eq!(parse_theme(Some("light")), Theme::Light);
+    }
+
+    #[test]
+    fn theme_toggle_cycles() {
+        assert_eq!(Theme::Dark.toggle(), Theme::Light);
+        assert_eq!(Theme::Light.toggle(), Theme::Dark);
+    }
+
+    #[test]
+    fn theme_as_str_round_trips() {
+        assert_eq!(Theme::Dark.as_str(), "dark");
+        assert_eq!(Theme::Light.as_str(), "light");
+        assert_eq!(parse_theme(Some(Theme::Dark.as_str())), Theme::Dark);
+        assert_eq!(parse_theme(Some(Theme::Light.as_str())), Theme::Light);
+    }
+
+    #[test]
+    fn theme_icon_and_label_nonempty() {
+        assert!(!Theme::Dark.icon().is_empty());
+        assert!(!Theme::Light.icon().is_empty());
+        assert!(!Theme::Dark.aria_label().is_empty());
+        assert!(!Theme::Light.aria_label().is_empty());
+    }
+
+    #[test]
+    fn theme_default_is_dark() {
+        assert_eq!(Theme::default(), Theme::Dark);
+    }
 }

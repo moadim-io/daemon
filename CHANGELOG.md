@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Handler facet filter for the Cron Jobs table.** A new HANDLER drop-down in the Cron Jobs
+  filter bar lets operators narrow the job list to a specific handler name. The filter composes
+  with the existing status, machine, and free-text search facets. Backed by a new `HandlerFacet`
+  enum, `distinct_handlers()` helper, and `SetHandlerFacet` reducer action; 13 new host-only tests
+  cover the codec round-trips, `is_active` detection, and `filter_jobs` matching.
+
 - **Global routine lock — UI banner and REST API.** The Routines page shows an amber banner
   when a global lock is active, listing which sentinel(s) are present (SHARED / LOCAL) with an
   **UNLOCK ALL** button that removes both via `DELETE /api/v1/routines/lock?scope=all`. Three

@@ -69,6 +69,25 @@ fn machine_facet_decodes_a_plain_id_as_specific() {
     );
 }
 
+// ── HandlerFacet codecs ───────────────────────────────────────────────────────
+
+#[test]
+fn handler_facet_roundtrips_and_defaults_to_any() {
+    let any = HandlerFacet::Any;
+    let named = HandlerFacet::Named("webhook".into());
+    assert_eq!(HandlerFacet::from_value(&any.as_value()), any);
+    assert_eq!(HandlerFacet::from_value(&named.as_value()), named);
+    assert_eq!(HandlerFacet::default(), HandlerFacet::Any);
+}
+
+#[test]
+fn handler_facet_decodes_a_plain_name_as_named() {
+    assert_eq!(
+        HandlerFacet::from_value("notify-slack"),
+        HandlerFacet::Named("notify-slack".into())
+    );
+}
+
 // ── is_active ─────────────────────────────────────────────────────────────────
 
 #[test]
@@ -101,6 +120,12 @@ fn is_active_detects_each_facet() {
         ..Default::default()
     };
     assert!(m.is_active());
+
+    let h = JobFilter {
+        handler: HandlerFacet::Named("webhook".into()),
+        ..Default::default()
+    };
+    assert!(h.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -242,6 +267,7 @@ fn facets_and_together() {
         query: "back".into(),
         status: StatusFacet::Enabled,
         machine: MachineFacet::Machine("m1".into()),
+        handler: HandlerFacet::Any,
     };
     let hit = job("backup", "h", "0 * * * *", &["m1"], true);
     let wrong_machine = job("backup", "h", "0 * * * *", &["m2"], true);
@@ -279,6 +305,45 @@ fn filter_jobs_unfiltered_returns_all() {
     ];
     let out = filter_jobs(&jobs, &JobFilter::default(), now(), window());
     assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn handler_facet_any_matches_any_handler() {
+    let f = JobFilter::default();
+    assert!(f.matches(
+        &job("a", "webhook", "0 * * * *", &[], true),
+        now(),
+        window()
+    ));
+    assert!(f.matches(&job("b", "script", "0 * * * *", &[], true), now(), window()));
+}
+
+#[test]
+fn handler_facet_named_matches_only_that_handler() {
+    let f = JobFilter {
+        handler: HandlerFacet::Named("webhook".into()),
+        ..Default::default()
+    };
+    assert!(f.matches(
+        &job("a", "webhook", "0 * * * *", &[], true),
+        now(),
+        window()
+    ));
+    assert!(!f.matches(&job("b", "script", "0 * * * *", &[], true), now(), window()));
+}
+
+#[test]
+fn distinct_handlers_are_sorted_and_deduped() {
+    let jobs = vec![
+        job("a", "webhook", "0 * * * *", &[], true),
+        job("b", "script", "0 * * * *", &[], true),
+        job("c", "webhook", "0 * * * *", &[], false),
+        job("d", "notify-slack", "0 * * * *", &[], true),
+    ];
+    assert_eq!(
+        distinct_handlers(&jobs),
+        vec!["notify-slack", "script", "webhook"]
+    );
 }
 
 #[test]

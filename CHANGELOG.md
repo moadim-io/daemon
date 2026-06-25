@@ -13,6 +13,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Group-by dimension for the Routines table.** A GROUP selector in the filter bar
+  lets operators reorganise the Routines table into labelled sections by **Machine**,
+  **Agent**, or **Status** (Enabled/Disabled). When set to Machine, each group header
+  names the machine and the item count; unassigned routines appear under `UNASSIGNED`.
+  Agent grouping names the agent type; Status grouping shows `ENABLED` before `DISABLED`
+  and omits empty groups. Groups are sorted A→Z (alphabetically); items within each
+  group follow the active sort order. A `tr.group-row` separator row spans all columns
+  with an accent-coloured label. Grouping is purely client-side — no backend change.
+  Closes #681.
 - **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
   terminal aesthetic and a clean light palette. The choice persists to `localStorage`
   under `moadim.theme` and is applied flash-free via an inline `<head>` script before

@@ -4,7 +4,7 @@
 //! (claude, codex, …) on a schedule instead of running a handler script.
 
 use std::cell::Cell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
@@ -502,6 +502,84 @@ impl RSort {
     }
 }
 
+/// Dimension to group the routines table by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GroupBy {
+    /// No grouping — flat sorted list (default).
+    #[default]
+    None,
+    /// Group by the routine's first machine (`"UNASSIGNED"` when `machines` is empty).
+    Machine,
+    /// Group by `routine.agent`.
+    Agent,
+    /// Two groups: `ENABLED` first, `DISABLED` second; empty groups are omitted.
+    Enabled,
+}
+
+impl GroupBy {
+    pub(crate) fn from_str(s: &str) -> Self {
+        match s {
+            "machine" => GroupBy::Machine,
+            "agent" => GroupBy::Agent,
+            "enabled" => GroupBy::Enabled,
+            _ => GroupBy::None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            GroupBy::None => "none",
+            GroupBy::Machine => "machine",
+            GroupBy::Agent => "agent",
+            GroupBy::Enabled => "enabled",
+        }
+    }
+}
+
+/// Partition `items` (already filtered and sorted) into labelled groups.
+///
+/// - [`GroupBy::None`]: a single group with label `""` — caller skips group headers.
+/// - [`GroupBy::Machine`]: groups by the first entry in `routine.machines`
+///   (`"UNASSIGNED"` when the list is empty); groups sorted A→Z.
+/// - [`GroupBy::Agent`]: groups by `routine.agent`, sorted A→Z.
+/// - [`GroupBy::Enabled`]: `"ENABLED"` first, then `"DISABLED"`; empty groups omitted.
+pub(crate) fn group_routines(items: Vec<Routine>, by: GroupBy) -> Vec<(String, Vec<Routine>)> {
+    match by {
+        GroupBy::None => vec![("".to_string(), items)],
+        GroupBy::Machine => {
+            let mut map: BTreeMap<String, Vec<Routine>> = BTreeMap::new();
+            for r in items {
+                let key = r
+                    .machines
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "UNASSIGNED".to_string());
+                map.entry(key).or_default().push(r);
+            }
+            map.into_iter().collect()
+        }
+        GroupBy::Agent => {
+            let mut map: BTreeMap<String, Vec<Routine>> = BTreeMap::new();
+            for r in items {
+                map.entry(r.agent.clone()).or_default().push(r);
+            }
+            map.into_iter().collect()
+        }
+        GroupBy::Enabled => {
+            let (enabled, disabled): (Vec<_>, Vec<_>) =
+                items.into_iter().partition(|r| r.enabled);
+            let mut groups: Vec<(String, Vec<Routine>)> = Vec::new();
+            if !enabled.is_empty() {
+                groups.push(("ENABLED".to_string(), enabled));
+            }
+            if !disabled.is_empty() {
+                groups.push(("DISABLED".to_string(), disabled));
+            }
+            groups
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RState {
     pub routines: Vec<Routine>,
@@ -515,6 +593,8 @@ pub struct RState {
     pub sort: RSort,
     /// `true` sorts descending (newest / Z→A first).
     pub sort_desc: bool,
+    /// Active grouping dimension for the table view.
+    pub group_by: GroupBy,
 }
 
 impl Default for RState {
@@ -528,6 +608,7 @@ impl Default for RState {
             filter: RoutineFilter::default(),
             sort: RSort::default(),
             sort_desc: false,
+            group_by: GroupBy::default(),
         }
     }
 }
@@ -548,6 +629,7 @@ pub enum RAction {
     ClearFilters,
     SetSort(RSort),
     ToggleSortDir,
+    SetGroupBy(GroupBy),
     Upsert(Box<Routine>),
     Remove(String),
 }
@@ -578,6 +660,7 @@ impl Reducible for RState {
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
             RAction::SetSort(sort) => s.sort = sort,
             RAction::ToggleSortDir => s.sort_desc = !s.sort_desc,
+            RAction::SetGroupBy(gb) => s.group_by = gb,
             RAction::Upsert(routine) => {
                 let routine = *routine;
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
@@ -798,6 +881,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(RAction::ToggleSortDir))
     };
+    let on_set_group_by = {
+        let state = state.clone();
+        Callback::from(move |gb: GroupBy| state.dispatch(RAction::SetGroupBy(gb)))
+    };
 
     let on_create = {
         let state = state.clone();
@@ -950,6 +1037,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let filter = state.filter.clone();
     let sort = state.sort;
     let sort_desc = state.sort_desc;
+    let group_by = state.group_by;
 
     // Faceted filter + sort applied client-side.
     let now_val = *now;
@@ -1027,6 +1115,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 total={total_routines}
                                 sort={sort}
                                 sort_desc={sort_desc}
+                                group_by={group_by}
                                 search_ref={search_ref.clone()}
                                 on_query={on_set_query}
                                 on_status={on_set_status}
@@ -1035,6 +1124,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_clear={on_clear_filters.clone()}
                                 on_set_sort={on_set_sort}
                                 on_toggle_sort_dir={on_toggle_sort_dir}
+                                on_set_group_by={on_set_group_by}
                             />
                             {
                                 match view {
@@ -1043,6 +1133,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             routines={visible}
                                             loading={loading}
                                             filter_active={filter_active}
+                                            group_by={group_by}
                                             now={now_val}
                                             on_edit={on_edit}
                                             on_delete={on_ask_delete}
@@ -1209,6 +1300,8 @@ pub struct FilterSortBarProps {
     pub total: usize,
     pub sort: RSort,
     pub sort_desc: bool,
+    /// Active grouping dimension for the table.
+    pub group_by: GroupBy,
     /// NodeRef forwarded from the page so the `/` shortcut can focus this input.
     pub search_ref: NodeRef,
     pub on_query: Callback<String>,
@@ -1218,6 +1311,7 @@ pub struct FilterSortBarProps {
     pub on_clear: Callback<()>,
     pub on_set_sort: Callback<RSort>,
     pub on_toggle_sort_dir: Callback<()>,
+    pub on_set_group_by: Callback<GroupBy>,
 }
 
 /// Full-text search + status / agent / machine facets + sort controls for the routine table.
@@ -1266,6 +1360,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
         let cb = props.on_toggle_sort_dir.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
+    let on_group_by_change = {
+        let cb = props.on_set_group_by.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(GroupBy::from_str(&select.value()));
+        })
+    };
 
     let dir_label = if props.sort_desc {
         "↓ DESC"
@@ -1273,6 +1374,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
         "↑ ASC"
     };
     let current_sort = props.sort.as_str();
+    let current_group = props.group_by.as_str();
     let status_val = props.filter.status.as_str();
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
@@ -1346,6 +1448,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                 </select>
                 <button class="btn btn-ghost btn-sm" onclick={on_dir}
                     title="Toggle sort direction">{dir_label}</button>
+                <span class="filter-label">{"GROUP"}</span>
+                <select class="filter-select" aria-label="Group by" onchange={on_group_by_change}>
+                    <option value="none" selected={current_group == "none"}>{"None"}</option>
+                    <option value="machine" selected={current_group == "machine"}>{"Machine"}</option>
+                    <option value="agent" selected={current_group == "agent"}>{"Agent"}</option>
+                    <option value="enabled" selected={current_group == "enabled"}>{"Status"}</option>
+                </select>
             </div>
         </div>
     }
@@ -1523,6 +1632,8 @@ pub struct TableProps {
     pub loading: bool,
     /// Whether a filter is narrowing the list — selects the filtered-empty state.
     pub filter_active: bool,
+    /// Active grouping dimension; `GroupBy::None` renders a flat tbody.
+    pub group_by: GroupBy,
     /// Reference instant used to compute next-fire countdowns.
     pub now: chrono::DateTime<Local>,
     pub on_edit: Callback<String>,
@@ -1575,6 +1686,48 @@ pub fn routine_table(props: &TableProps) -> Html {
         };
     }
 
+    let make_row = |r: &Routine| {
+        html! {
+            <RoutineRow
+                key={r.id.clone()}
+                routine={r.clone()}
+                now={props.now}
+                on_edit={props.on_edit.clone()}
+                on_delete={props.on_delete.clone()}
+                on_toggle={props.on_toggle.clone()}
+                on_trigger={props.on_trigger.clone()}
+                on_logs={props.on_logs.clone()}
+            />
+        }
+    };
+
+    let body = if props.group_by == GroupBy::None {
+        html! {
+            <tbody>
+                { for props.routines.iter().map(&make_row) }
+            </tbody>
+        }
+    } else {
+        let groups = group_routines(props.routines.clone(), props.group_by);
+        html! {
+            <>
+                { for groups.into_iter().map(|(label, items)| {
+                    let count = items.len();
+                    html! {
+                        <tbody>
+                            <tr class="group-row">
+                                <td colspan="9">
+                                    {format!("{} ({})", label, count)}
+                                </td>
+                            </tr>
+                            { for items.iter().map(&make_row) }
+                        </tbody>
+                    }
+                }) }
+            </>
+        }
+    };
+
     html! {
         <div class="table-wrap">
             <table>
@@ -1591,20 +1744,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <th></th>
                     </tr>
                 </thead>
-                <tbody>
-                    { for props.routines.iter().map(|r| html! {
-                        <RoutineRow
-                            key={r.id.clone()}
-                            routine={r.clone()}
-                            now={props.now}
-                            on_edit={props.on_edit.clone()}
-                            on_delete={props.on_delete.clone()}
-                            on_toggle={props.on_toggle.clone()}
-                            on_trigger={props.on_trigger.clone()}
-                            on_logs={props.on_logs.clone()}
-                        />
-                    }) }
-                </tbody>
+                {body}
             </table>
         </div>
     }

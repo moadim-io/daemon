@@ -437,3 +437,141 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
 }
+
+// ── GroupBy enum ──────────────────────────────────────────────────────────────
+
+#[test]
+fn group_by_roundtrips_and_defaults_to_none() {
+    for gb in [
+        GroupBy::None,
+        GroupBy::Machine,
+        GroupBy::Agent,
+        GroupBy::Enabled,
+    ] {
+        assert_eq!(GroupBy::from_str(gb.as_str()), gb);
+    }
+    assert_eq!(GroupBy::from_str("nonsense"), GroupBy::None);
+    assert_eq!(GroupBy::default(), GroupBy::None);
+}
+
+// ── group_routines ────────────────────────────────────────────────────────────
+
+#[test]
+fn group_routines_none_returns_single_flat_group() {
+    let items = vec![
+        routine("a", "alpha", "claude", "0 * * * *", &["m1"], &[], true),
+        routine("b", "beta", "codex", "0 * * * *", &["m2"], &[], false),
+    ];
+    let groups = group_routines(items, GroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "");
+    assert_eq!(groups[0].1.len(), 2);
+}
+
+#[test]
+fn group_routines_none_empty_input_single_empty_group() {
+    let groups = group_routines(vec![], GroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].1.len(), 0);
+}
+
+#[test]
+fn group_routines_by_machine_groups_by_first_machine() {
+    let items = vec![
+        routine("a", "t", "claude", "0 * * * *", &["m1", "m2"], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &["m2"], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &["m1"], &[], true),
+    ];
+    let groups = group_routines(items, GroupBy::Machine);
+    // BTreeMap sorts A→Z: m1 < m2
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "m1");
+    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[1].0, "m2");
+    assert_eq!(groups[1].1.len(), 1);
+}
+
+#[test]
+fn group_routines_by_machine_unassigned_for_empty_machines() {
+    let items = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true),
+    ];
+    let groups = group_routines(items, GroupBy::Machine);
+    // BTreeMap: "UNASSIGNED" > "m1" lexicographically (uppercase U > lowercase m)
+    let labels: Vec<&str> = groups.iter().map(|(l, _)| l.as_str()).collect();
+    assert!(labels.contains(&"UNASSIGNED"));
+    assert!(labels.contains(&"m1"));
+    let unassigned = groups.iter().find(|(l, _)| l == "UNASSIGNED").unwrap();
+    assert_eq!(unassigned.1.len(), 1);
+}
+
+#[test]
+fn group_routines_by_agent_groups_correctly() {
+    let items = vec![
+        routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true),
+        routine("b", "t", "codex", "0 * * * *", &["m1"], &[], false),
+        routine("c", "t", "claude", "0 * * * *", &["m2"], &[], true),
+    ];
+    let groups = group_routines(items, GroupBy::Agent);
+    // BTreeMap: "claude" < "codex"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "claude");
+    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[1].0, "codex");
+    assert_eq!(groups[1].1.len(), 1);
+}
+
+#[test]
+fn group_routines_by_enabled_enabled_first() {
+    let items = vec![
+        routine("a", "t", "claude", "0 * * * *", &["m1"], &[], false),
+        routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &["m2"], &[], false),
+    ];
+    let groups = group_routines(items, GroupBy::Enabled);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "ENABLED");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "DISABLED");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_enabled_only_enabled_omits_disabled_group() {
+    let items = vec![
+        routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true),
+    ];
+    let groups = group_routines(items, GroupBy::Enabled);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "ENABLED");
+}
+
+#[test]
+fn group_routines_by_enabled_only_disabled_omits_enabled_group() {
+    let items = vec![
+        routine("a", "t", "claude", "0 * * * *", &["m1"], &[], false),
+    ];
+    let groups = group_routines(items, GroupBy::Enabled);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "DISABLED");
+}
+
+#[test]
+fn group_routines_by_machine_empty_returns_empty() {
+    let groups = group_routines(vec![], GroupBy::Machine);
+    assert!(groups.is_empty());
+}
+
+#[test]
+fn group_routines_by_agent_empty_returns_empty() {
+    let groups = group_routines(vec![], GroupBy::Agent);
+    assert!(groups.is_empty());
+}
+
+#[test]
+fn group_routines_by_enabled_empty_returns_empty() {
+    let groups = group_routines(vec![], GroupBy::Enabled);
+    assert!(groups.is_empty());
+}

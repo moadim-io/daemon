@@ -504,6 +504,18 @@
     tbody tr:last-child { border-bottom: none; }
     tbody tr:hover      { background: var(--bg-2); }
 
+    tbody tr.group-row { background: var(--bg-3); }
+    tbody tr.group-row:hover { background: var(--bg-3); }
+    tbody tr.group-row td {
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      padding: 6px 14px;
+      border-top: 1px solid var(--border-hi);
+      font-weight: 700;
+    }
+
     tbody td { padding: 11px 14px; vertical-align: middle; }
 
     .cell-id {

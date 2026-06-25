@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MOADIM — Cron Control</title>
+  <script>
+    (function(){var t=localStorage.getItem('moadim.theme');if(t==='light')document.documentElement.classList.add('theme-light');})();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
@@ -29,6 +32,29 @@
       --amber-dim:    #271b06;
       --mono:         'Share Tech Mono', 'Courier New', monospace;
     }
+
+    /* ── Light theme — full CSS-variable override so every component inherits ── */
+    html.theme-light {
+      --bg:           #f5f5f0;
+      --bg-2:         #ebebе6;
+      --bg-3:         #e0e0db;
+      --border:       #cccccc;
+      --border-hi:    #aaaaaa;
+      --text-ghost:   #999999;
+      --text-dim:     #666666;
+      --text-mid:     #444444;
+      --text:         #1a1a1a;
+      --text-hi:      #000000;
+      --accent:       #187a3d;
+      --accent-dim:   #e0f5e8;
+      --red:          #b91c1c;
+      --red-dim:      #fee2e2;
+      --amber:        #b45309;
+      --amber-dim:    #fef3c7;
+    }
+    /* Remove terminal eye-candy in bright surroundings */
+    html.theme-light body::before,
+    html.theme-light body::after { opacity: 0; }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -181,6 +207,19 @@
       line-height: 1;
     }
     .btn-cmdk:hover { color: var(--accent); border-color: var(--border-hi); }
+
+    .btn-theme {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 4px 9px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1;
+    }
+    .btn-theme:hover { color: var(--accent); border-color: var(--border-hi); }
 
     /* ── Command palette (⌘K) ── */
     .cmdk {

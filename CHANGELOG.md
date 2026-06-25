@@ -27,6 +27,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   selected routine and surfaces a single summary toast. Bulk delete shows a confirmation
   dialog and removes via `DELETE /routines/{id}`. Selection is automatically pruned on
   reload so stale IDs never carry over. Pure frontend — no backend change. Closes #676.
+- **Token Trim default routine.** A new built-in weekly routine (Sundays 07:00) that audits
+  routine prompts for redundancy, verbosity, dead scaffolding, and duplication, then opens one
+  PR per week that reduces LLM token consumption without degrading output quality.
 - **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
   terminal aesthetic and a clean light palette. The choice persists to `localStorage`
   under `moadim.theme` and is applied flash-free via an inline `<head>` script before

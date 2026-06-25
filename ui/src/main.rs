@@ -78,6 +78,8 @@ pub struct ShellState {
     pub next_toast: u32,
     pub show_shutdown: bool,
     pub show_palette: bool,
+    /// Whether the light theme is active (`false` = dark, the default).
+    pub theme_light: bool,
 }
 
 pub enum ShellAction {
@@ -87,6 +89,7 @@ pub enum ShellAction {
     CloseShutdown,
     TogglePalette,
     ClosePalette,
+    ToggleTheme,
 }
 
 impl Reducible for ShellState {
@@ -112,6 +115,7 @@ impl Reducible for ShellState {
             ShellAction::CloseShutdown => s.show_shutdown = false,
             ShellAction::TogglePalette => s.show_palette = !s.show_palette,
             ShellAction::ClosePalette => s.show_palette = false,
+            ShellAction::ToggleTheme => s.theme_light = !s.theme_light,
         }
         s.into()
     }
@@ -174,7 +178,42 @@ pub fn app() -> Html {
 /// the global shutdown dialog, and the toast stack. Lives inside the router so nav `Link`s work.
 #[function_component(Shell)]
 pub fn shell() -> Html {
-    let state = use_reducer(ShellState::default);
+    let state = use_reducer(|| {
+        // Read the persisted theme preference synchronously so the initial render
+        // matches what the flash-prevention script already applied to <html>.
+        let light = web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .and_then(|s| s.get_item("moadim.theme").ok().flatten())
+            .map(|v| v == "light")
+            .unwrap_or(false);
+        ShellState {
+            theme_light: light,
+            ..Default::default()
+        }
+    });
+
+    // Keep the <html> class and localStorage in sync whenever the theme toggles.
+    {
+        let theme_light = state.theme_light;
+        use_effect_with(theme_light, move |light| {
+            let light = *light;
+            if let Some(window) = web_sys::window() {
+                if let Some(doc) = window.document() {
+                    if let Some(html) = doc.document_element() {
+                        if light {
+                            let _ = html.class_list().add_1("theme-light");
+                        } else {
+                            let _ = html.class_list().remove_1("theme-light");
+                        }
+                    }
+                }
+                if let Ok(Some(storage)) = window.local_storage() {
+                    let _ = storage
+                        .set_item("moadim.theme", if light { "light" } else { "dark" });
+                }
+            }
+        });
+    }
 
     // Initial health poll on mount.
     {
@@ -244,8 +283,8 @@ pub fn shell() -> Html {
         Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::TogglePalette))
     };
 
-    // Palette "Refresh" / "Stop Server" actions mirror the header buttons but
-    // take the `()` payload the palette emits.
+    // Palette "Refresh" / "Stop Server" / "Toggle Theme" actions mirror the
+    // header buttons but take the `()` payload the palette emits.
     let on_palette_refresh = {
         let state = state.clone();
         Callback::from(move |_: ()| {
@@ -256,6 +295,15 @@ pub fn shell() -> Html {
     let on_palette_stop = {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
+    };
+    let on_palette_toggle_theme = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ToggleTheme))
+    };
+
+    let on_toggle_theme = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::ToggleTheme))
     };
 
     let on_refresh = {
@@ -324,10 +372,19 @@ pub fn shell() -> Html {
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
     let show_palette = state.show_palette;
+    let theme_light = state.theme_light;
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} />
+            <Header
+                health={health}
+                ok={health_ok}
+                on_refresh={on_refresh}
+                on_stop={on_stop}
+                on_palette={on_open_palette}
+                theme_light={theme_light}
+                on_toggle_theme={on_toggle_theme}
+            />
             <Nav />
             <Switch<Route> render={switch} />
             <CommandPalette
@@ -335,6 +392,7 @@ pub fn shell() -> Html {
                 on_close={on_close_palette}
                 on_refresh={on_palette_refresh}
                 on_stop={on_palette_stop}
+                on_toggle_theme={on_palette_toggle_theme}
             />
             {
                 if show_shutdown {
@@ -392,6 +450,10 @@ pub struct HeaderProps {
     pub on_refresh: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
     pub on_palette: Callback<MouseEvent>,
+    /// Whether the light theme is currently active.
+    pub theme_light: bool,
+    /// Toggle between dark and light theme.
+    pub on_toggle_theme: Callback<MouseEvent>,
 }
 
 #[function_component(Header)]
@@ -413,6 +475,11 @@ pub fn header(props: &HeaderProps) -> Html {
         .uptime_secs
         .map(|s| format!("/ UP {}", fmt_uptime(s)))
         .unwrap_or_default();
+    let (theme_icon, theme_title) = if props.theme_light {
+        ("☽", "Switch to dark theme")
+    } else {
+        ("☀", "Switch to light theme")
+    };
 
     html! {
         <header>
@@ -429,6 +496,15 @@ pub fn header(props: &HeaderProps) -> Html {
                 </div>
                 <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
                     {"⌘K"}
+                </button>
+                <button
+                    class="btn-theme"
+                    title={theme_title}
+                    aria-label={theme_title}
+                    aria-pressed={props.theme_light.to_string()}
+                    onclick={props.on_toggle_theme.clone()}
+                >
+                    {theme_icon}
                 </button>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
                 <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>

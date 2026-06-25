@@ -162,21 +162,22 @@ fn build_lists_pages_then_crons_then_routines() {
     let crons = vec![cron("backup", "0 * * * *", "snapshot", Some("Every hour"))];
     let routines = vec![routine("r1", "Nightly Audit", "claude", "0 0 * * *", None)];
     let commands = build_commands(&crons, &routines);
-    assert_eq!(commands.len(), 8); // 4 nav + 2 action + 1 cron + 1 routine
+    assert_eq!(commands.len(), 9); // 4 nav + 3 action + 1 cron + 1 routine
     assert_eq!(commands[0].kind, CmdKind::NavOverview);
     assert_eq!(commands[1].kind, CmdKind::NavCronJobs);
     assert_eq!(commands[2].kind, CmdKind::NavRoutines);
     assert_eq!(commands[3].kind, CmdKind::NavHeatmap);
     assert_eq!(commands[4].kind, CmdKind::ActionRefresh);
-    assert_eq!(commands[5].kind, CmdKind::ActionStop);
-    assert_eq!(commands[6].kind, CmdKind::Cron);
-    assert_eq!(commands[6].title, "backup");
-    assert_eq!(commands[6].subtitle, "Every hour"); // human description wins
-    assert!(commands[6].keywords.contains("snapshot"));
-    assert_eq!(commands[7].kind, CmdKind::Routine);
-    assert_eq!(commands[7].title, "Nightly Audit");
-    assert_eq!(commands[7].subtitle, "0 0 * * *"); // falls back to raw expr
-    assert!(commands[7].keywords.contains("claude"));
+    assert_eq!(commands[5].kind, CmdKind::ActionToggleTheme);
+    assert_eq!(commands[6].kind, CmdKind::ActionStop);
+    assert_eq!(commands[7].kind, CmdKind::Cron);
+    assert_eq!(commands[7].title, "backup");
+    assert_eq!(commands[7].subtitle, "Every hour"); // human description wins
+    assert!(commands[7].keywords.contains("snapshot"));
+    assert_eq!(commands[8].kind, CmdKind::Routine);
+    assert_eq!(commands[8].title, "Nightly Audit");
+    assert_eq!(commands[8].subtitle, "0 0 * * *"); // falls back to raw expr
+    assert!(commands[8].keywords.contains("claude"));
 }
 
 #[test]
@@ -208,6 +209,7 @@ fn route_for_maps_every_kind() {
     // Action commands run a callback, not a navigation.
     assert_eq!(route_for(CmdKind::ActionRefresh), None);
     assert_eq!(route_for(CmdKind::ActionStop), None);
+    assert_eq!(route_for(CmdKind::ActionToggleTheme), None);
 }
 
 #[test]
@@ -220,6 +222,7 @@ fn badge_for_maps_every_kind() {
     assert_eq!(badge_for(CmdKind::Routine), "ROUTINE");
     assert_eq!(badge_for(CmdKind::ActionRefresh), "ACTION");
     assert_eq!(badge_for(CmdKind::ActionStop), "ACTION");
+    assert_eq!(badge_for(CmdKind::ActionToggleTheme), "ACTION");
 }
 
 // ─── selection-index helpers ───────────────────────────────────────────────────

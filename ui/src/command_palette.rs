@@ -48,6 +48,8 @@ pub(crate) enum CmdKind {
     ActionRefresh,
     /// Open the stop-server confirmation (the header's ⏻ action).
     ActionStop,
+    /// Toggle light/dark theme (the header's ☀/☽ action).
+    ActionToggleTheme,
 }
 
 /// The destination page a [`CmdKind`] resolves to, independent of the wasm
@@ -86,7 +88,7 @@ pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
         CmdKind::NavCronJobs | CmdKind::Cron => Some(RouteKind::CronJobs),
         CmdKind::NavRoutines | CmdKind::Routine => Some(RouteKind::Routines),
         CmdKind::NavHeatmap => Some(RouteKind::Heatmap),
-        CmdKind::ActionRefresh | CmdKind::ActionStop => None,
+        CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => None,
     }
 }
 
@@ -100,7 +102,7 @@ pub(crate) fn badge_for(kind: CmdKind) -> &'static str {
         | CmdKind::NavHeatmap => "GO",
         CmdKind::Cron => "CRON",
         CmdKind::Routine => "ROUTINE",
-        CmdKind::ActionRefresh | CmdKind::ActionStop => "ACTION",
+        CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => "ACTION",
     }
 }
 
@@ -213,6 +215,12 @@ pub(crate) fn build_commands(crons: &[CronJob], routines: &[Routine]) -> Vec<Com
             keywords: "reload health status action".into(),
         },
         Command {
+            kind: CmdKind::ActionToggleTheme,
+            title: "Toggle Theme".into(),
+            subtitle: "Switch between dark and light mode".into(),
+            keywords: "theme dark light mode appearance color".into(),
+        },
+        Command {
             kind: CmdKind::ActionStop,
             title: "Stop Server".into(),
             subtitle: "Shut the moadim server down".into(),
@@ -301,6 +309,8 @@ pub struct PaletteProps {
     pub on_refresh: Callback<()>,
     /// Runs the "Stop Server" action (open the shutdown confirmation).
     pub on_stop: Callback<()>,
+    /// Runs the "Toggle Theme" action (flip dark/light mode).
+    pub on_toggle_theme: Callback<()>,
 }
 
 /// The ⌘K command palette overlay. Mounted permanently by the shell; renders
@@ -349,6 +359,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
         let on_close = props.on_close.clone();
         let on_refresh = props.on_refresh.clone();
         let on_stop = props.on_stop.clone();
+        let on_toggle_theme = props.on_toggle_theme.clone();
         let commands = commands.clone();
         let order = order.clone();
         Callback::from(move |row: usize| {
@@ -356,6 +367,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                 match command.kind {
                     CmdKind::ActionRefresh => on_refresh.emit(()),
                     CmdKind::ActionStop => on_stop.emit(()),
+                    CmdKind::ActionToggleTheme => on_toggle_theme.emit(()),
                     kind => {
                         if let (Some(nav), Some(route_kind)) = (navigator.clone(), route_for(kind))
                         {
@@ -438,7 +450,9 @@ pub fn command_palette(props: &PaletteProps) -> Html {
             let badge_cls = match command.kind {
                 CmdKind::Cron => "kind-badge cron",
                 CmdKind::Routine => "kind-badge routine",
-                CmdKind::ActionRefresh | CmdKind::ActionStop => "kind-badge action",
+                CmdKind::ActionRefresh
+                | CmdKind::ActionStop
+                | CmdKind::ActionToggleTheme => "kind-badge action",
                 _ => "kind-badge nav",
             };
             let launch = launch.clone();

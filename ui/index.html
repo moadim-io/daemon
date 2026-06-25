@@ -9,6 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
   <!-- trunk replaces this with the compiled WASM loader -->
   <link data-trunk rel="rust" data-wasm-opt="z" />
+  <!-- Flash-free theme init: apply stored preference before first paint. -->
+  <script>(function(){var t=localStorage.getItem('moadim.theme');if(t==='light')document.documentElement.classList.add('theme-light');}());</script>
   <style>
     :root {
       --bg:           #050905;
@@ -29,6 +31,30 @@
       --amber-dim:    #271b06;
       --mono:         'Share Tech Mono', 'Courier New', monospace;
     }
+
+    /* Light theme — overrides every token; components inherit with no changes. */
+    html.theme-light {
+      --bg:           #f4fbf2;
+      --bg-2:         #ecf7e8;
+      --bg-3:         #dff0d8;
+      --border:       #b8d8b0;
+      --border-hi:    #8abe80;
+      --text-ghost:   #a8c8a0;
+      --text-dim:     #4a7a42;
+      --text-mid:     #2e6028;
+      --text:         #1a3d16;
+      --text-hi:      #0a200a;
+      --accent:       #16a34a;
+      --accent-dim:   #d9f9e4;
+      --red:          #dc2626;
+      --red-dim:      #fee2e2;
+      --amber:        #d97706;
+      --amber-dim:    #fef3c7;
+    }
+    /* Heatmap density cells use hard-coded greens in dark mode; remap for light. */
+    html.theme-light .hm-cell.lvl-1 { background: #c6e8c0; }
+    html.theme-light .hm-cell.lvl-2 { background: #7ecc72; }
+    html.theme-light .hm-cell.lvl-3 { background: #2ea34a; }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -181,6 +207,19 @@
       line-height: 1;
     }
     .btn-cmdk:hover { color: var(--accent); border-color: var(--border-hi); }
+
+    .btn-theme {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1;
+    }
+    .btn-theme:hover { color: var(--accent); border-color: var(--border-hi); }
 
     /* ── Command palette (⌘K) ── */
     .cmdk {
@@ -1300,6 +1339,7 @@
     .btn:focus-visible,
     .btn-refresh:focus-visible,
     .btn-stop:focus-visible,
+    .btn-theme:focus-visible,
     .tab-btn:focus-visible,
     .act-btn:focus-visible,
     .view-btn:focus-visible,

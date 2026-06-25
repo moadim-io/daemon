@@ -437,3 +437,40 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
 }
+
+// ── toggle_selection ──────────────────────────────────────────────────────────
+
+#[test]
+fn toggle_selection_adds_absent_id() {
+    let set = HashSet::new();
+    let set = toggle_selection(set, "a");
+    assert!(set.contains("a"));
+    assert_eq!(set.len(), 1);
+}
+
+#[test]
+fn toggle_selection_removes_present_id() {
+    let mut set = HashSet::new();
+    set.insert("a".to_string());
+    let set = toggle_selection(set, "a");
+    assert!(!set.contains("a"));
+    assert!(set.is_empty());
+}
+
+#[test]
+fn toggle_selection_preserves_other_ids() {
+    let mut set = HashSet::new();
+    set.insert("a".to_string());
+    set.insert("b".to_string());
+    let set = toggle_selection(set, "b");
+    assert!(set.contains("a"));
+    assert!(!set.contains("b"));
+    assert_eq!(set.len(), 1);
+}
+
+#[test]
+fn toggle_selection_on_empty_set_grows_to_one() {
+    let set = toggle_selection(HashSet::new(), "x");
+    assert_eq!(set.len(), 1);
+    assert!(set.contains("x"));
+}

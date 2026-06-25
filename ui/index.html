@@ -7,6 +7,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <!-- Anti-FOUC: restore persisted theme before first paint so no flash occurs.
+       Runs synchronously in <head> before CSS is applied. -->
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('moadim-theme');
+        if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      } catch (_) {}
+    })();
+  </script>
   <!-- trunk replaces this with the compiled WASM loader -->
   <link data-trunk rel="rust" data-wasm-opt="z" />
   <style>
@@ -29,6 +39,52 @@
       --amber-dim:    #271b06;
       --mono:         'Share Tech Mono', 'Courier New', monospace;
     }
+
+    /* ── Light theme overrides ── */
+    /* Applied when <html data-theme="light"> is set — either by the anti-FOUC
+       script (localStorage restore) or toggled by the Yew shell. Keeps the
+       terminal monospace aesthetic but in a pale-green, high-contrast palette
+       suited to bright environments. */
+    [data-theme="light"] {
+      --bg:           #f0f5ee;
+      --bg-2:         #e4ede0;
+      --bg-3:         #d8e5d2;
+      --border:       #bdd4b5;
+      --border-hi:    #9cc090;
+      --text-ghost:   #7a9870;
+      --text-dim:     #4e7a42;
+      --text-mid:     #2d5524;
+      --text:         #1a3812;
+      --text-hi:      #0c2008;
+      --accent:       #177a28;
+      --accent-dim:   #c8e8cc;
+      --red:          #b52c1c;
+      --red-dim:      #fce8e4;
+      --amber:        #956010;
+      --amber-dim:    #fdf0d8;
+    }
+
+    /* Scanlines are decorative noise — soften them in light mode. */
+    [data-theme="light"] body::before { opacity: 0.04; }
+    [data-theme="light"] body::after  { opacity: 0.01; }
+
+    /* Overlay backdrop in light mode uses a pale green wash. */
+    [data-theme="light"] .overlay { background: rgba(200, 220, 192, 0.88); }
+
+    /* System-row blue accents: readable on both themes, but the dark hover
+       background needs a light-mode override. */
+    [data-theme="light"] tbody tr.sys-row:hover { background: #d8e8f4; }
+    [data-theme="light"] .badge-readonly {
+      background: #e4eaf4;
+      color:      #3a5aaa;
+      border-color: #3a5aaa;
+    }
+
+    /* Heatmap intensity levels: dark-green shades don't read well on light bg. */
+    [data-theme="light"] .hm-cell.lvl-1 { background: #c4e0c8; }
+    [data-theme="light"] .hm-cell.lvl-2 { background: #80c888; }
+    [data-theme="light"] .hm-cell.lvl-3 { background: #38a050; }
+    [data-theme="light"] .hm-cell.lvl-4 { background: var(--accent); color: var(--bg); }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -167,6 +223,19 @@
     }
     .btn-refresh:hover { color: var(--accent); border-color: var(--border-hi); }
     .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
+
+    .btn-theme {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 15px;
+      padding: 2px 9px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1.4;
+    }
+    .btn-theme:hover { color: var(--accent); border-color: var(--border-hi); }
 
     .btn-cmdk {
       background: none;
@@ -1299,6 +1368,7 @@
        used by .row-check. */
     .btn:focus-visible,
     .btn-refresh:focus-visible,
+    .btn-theme:focus-visible,
     .btn-stop:focus-visible,
     .tab-btn:focus-visible,
     .act-btn:focus-visible,

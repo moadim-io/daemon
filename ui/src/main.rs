@@ -24,6 +24,78 @@ use overview::OverviewPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+/// Dashboard colour scheme. `Dark` (the default) uses the original near-black
+/// green palette; `Light` switches to a pale-green palette suited to bright
+/// environments. Both keep the terminal monospace aesthetic.
+///
+/// Persistence: the chosen theme is stored in `localStorage` under
+/// `"moadim-theme"` and restored flash-free by an inline `<script>` in
+/// `index.html` that runs before the first paint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Theme {
+    /// Token stored in `localStorage` and used as the `data-theme` attribute value.
+    pub fn to_token(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+        }
+    }
+
+    /// Parse from a `localStorage` value or `data-theme` attribute.
+    pub fn from_token(s: &str) -> Self {
+        if s == "light" {
+            Theme::Light
+        } else {
+            Theme::Dark
+        }
+    }
+}
+
+/// Read the current theme from the `<html data-theme>` attribute set by the
+/// anti-FOUC inline script. Called once on mount so Yew state matches the DOM.
+fn read_theme_from_dom() -> Theme {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+        .and_then(|el| el.get_attribute("data-theme"))
+        .as_deref()
+        .map(Theme::from_token)
+        .unwrap_or_default()
+}
+
+/// Apply a theme: set/clear `data-theme` on `<html>` and persist to
+/// `localStorage`. Best-effort — errors are silently ignored.
+fn apply_theme(theme: Theme) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(doc) = window.document() else {
+        return;
+    };
+    let Some(el) = doc.document_element() else {
+        return;
+    };
+    match theme {
+        Theme::Dark => {
+            let _ = el.remove_attribute("data-theme");
+        }
+        Theme::Light => {
+            let _ = el.set_attribute("data-theme", "light");
+        }
+    }
+    if let Ok(Some(store)) = window.local_storage() {
+        let _ = store.set_item("moadim-theme", theme.to_token());
+    }
+}
+
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
@@ -78,15 +150,27 @@ pub struct ShellState {
     pub next_toast: u32,
     pub show_shutdown: bool,
     pub show_palette: bool,
+    pub theme: Theme,
 }
 
 pub enum ShellAction {
-    HealthLoaded { health: Health, ok: bool },
-    AddToast { msg: String, kind: ToastKind },
+    HealthLoaded {
+        health: Health,
+        ok: bool,
+    },
+    AddToast {
+        msg: String,
+        kind: ToastKind,
+    },
     OpenShutdown,
     CloseShutdown,
     TogglePalette,
     ClosePalette,
+    /// Flip between dark and light theme; DOM + localStorage update is a side
+    /// effect handled via `use_effect_with(state.theme, …)` in `Shell`.
+    ToggleTheme,
+    /// Set theme to a specific value (used on mount to sync from DOM).
+    SetTheme(Theme),
 }
 
 impl Reducible for ShellState {
@@ -112,6 +196,13 @@ impl Reducible for ShellState {
             ShellAction::CloseShutdown => s.show_shutdown = false,
             ShellAction::TogglePalette => s.show_palette = !s.show_palette,
             ShellAction::ClosePalette => s.show_palette = false,
+            ShellAction::ToggleTheme => {
+                s.theme = match s.theme {
+                    Theme::Dark => Theme::Light,
+                    Theme::Light => Theme::Dark,
+                };
+            }
+            ShellAction::SetTheme(t) => s.theme = t,
         }
         s.into()
     }
@@ -176,6 +267,26 @@ pub fn app() -> Html {
 pub fn shell() -> Html {
     let state = use_reducer(ShellState::default);
 
+    // Sync theme from DOM on mount — the anti-FOUC inline script may have set
+    // `data-theme="light"` before WASM loaded; this brings Yew state in line.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            let dom_theme = read_theme_from_dom();
+            if dom_theme != Theme::Dark {
+                state.dispatch(ShellAction::SetTheme(dom_theme));
+            }
+        });
+    }
+
+    // Apply theme to DOM + localStorage whenever the in-memory value changes.
+    {
+        let theme = state.theme;
+        use_effect_with(theme, move |t| {
+            apply_theme(*t);
+        });
+    }
+
     // Initial health poll on mount.
     {
         let state = state.clone();
@@ -232,6 +343,11 @@ pub fn shell() -> Html {
         Callback::from(move |(msg, kind): (String, ToastKind)| {
             state.dispatch(ShellAction::AddToast { msg, kind })
         })
+    };
+
+    let on_toggle_theme = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::ToggleTheme))
     };
 
     let on_close_palette = {
@@ -324,10 +440,11 @@ pub fn shell() -> Html {
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
     let show_palette = state.show_palette;
+    let theme = state.theme;
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} />
+            <Header health={health} ok={health_ok} theme={theme} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} on_theme={on_toggle_theme} />
             <Nav />
             <Switch<Route> render={switch} />
             <CommandPalette
@@ -389,9 +506,11 @@ pub fn nav() -> Html {
 pub struct HeaderProps {
     pub health: Health,
     pub ok: bool,
+    pub theme: Theme,
     pub on_refresh: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
     pub on_palette: Callback<MouseEvent>,
+    pub on_theme: Callback<MouseEvent>,
 }
 
 #[function_component(Header)]
@@ -413,6 +532,12 @@ pub fn header(props: &HeaderProps) -> Html {
         .uptime_secs
         .map(|s| format!("/ UP {}", fmt_uptime(s)))
         .unwrap_or_default();
+    // Show the "opposite" icon so clicking it makes sense: in dark mode, show
+    // ☀ (switch to light); in light mode, show ◑ (switch to dark).
+    let (theme_icon, theme_title) = match props.theme {
+        Theme::Dark => ("☀", "Switch to light theme"),
+        Theme::Light => ("◑", "Switch to dark theme"),
+    };
 
     html! {
         <header>
@@ -427,6 +552,9 @@ pub fn header(props: &HeaderProps) -> Html {
                     <span class="health-status">{status}</span>
                     <span class="health-uptime">{uptime}</span>
                 </div>
+                <button class="btn-theme" title={theme_title} aria-label={theme_title} onclick={props.on_theme.clone()}>
+                    {theme_icon}
+                </button>
                 <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
                     {"⌘K"}
                 </button>

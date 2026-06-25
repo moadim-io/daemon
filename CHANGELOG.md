@@ -13,6 +13,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Light/dark theme toggle with flash-free localStorage persistence.** A `☀`/`◑`
+  button in the dashboard header switches between the original dark (near-black green)
+  palette and a new light (pale green) palette suited to bright environments. The chosen
+  theme persists in `localStorage` under `moadim-theme` and is restored flash-free by an
+  inline `<script>` in `<head>` that sets `data-theme="light"` on `<html>` before the
+  first paint — no white flash on reload. The light palette redefines all CSS custom
+  properties (`--bg`, `--text`, etc.) in a `[data-theme="light"]` block; the Yew shell
+  reads the DOM attribute on mount to stay in sync. Pure frontend change — no backend
+  or API modification. Closes #671.
+
 - **NEXT RUN countdown column in the Routines table.** The Routines table gains a
   live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
   matching the already-shipped column on the Cron Jobs page, so operators see per-routine

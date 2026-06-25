@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Bulk actions for the Routines page.** Each routine row now has a leading selection
+  checkbox; a header checkbox toggles "all visible selected ↔ none" (respects the active
+  filter so hidden rows are never touched). When at least one routine is selected, a
+  floating bulk-action bar appears with **ENABLE**, **DISABLE**, and **DELETE** actions plus
+  a **CLEAR** affordance. Bulk enable/disable fires `PATCH /routines/{id}` for each
+  selected routine and surfaces a single summary toast. Bulk delete shows a confirmation
+  dialog and removes via `DELETE /routines/{id}`. Selection is automatically pruned on
+  reload so stale IDs never carry over. Pure frontend — no backend change. Closes #676.
 - **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
   terminal aesthetic and a clean light palette. The choice persists to `localStorage`
   under `moadim.theme` and is applied flash-free via an inline `<head>` script before

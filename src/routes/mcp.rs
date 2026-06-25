@@ -406,11 +406,11 @@ impl MoadimMcp {
                 )))
             }
         };
-        if let Err(e) = crate::global_lock::set_lock(lock_scope, true) {
-            return Ok(err(format!("failed to create lock sentinel: {e}")));
+        if let Err(io_err) = crate::global_lock::set_lock(lock_scope, true) {
+            return Ok(err(format!("failed to create lock sentinel: {io_err}")));
         }
-        if let Err(e) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
-            log::warn!("crontab sync after lock failed: {e}");
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after lock failed: {sync_err}");
         }
         Ok(ok(crate::global_lock::lock_status()))
     }
@@ -437,13 +437,13 @@ impl MoadimMcp {
                 )))
             }
         };
-        for s in scopes {
-            if let Err(e) = crate::global_lock::set_lock(s, false) {
-                return Ok(err(format!("failed to remove lock sentinel: {e}")));
+        for scope_item in scopes {
+            if let Err(io_err) = crate::global_lock::set_lock(scope_item, false) {
+                return Ok(err(format!("failed to remove lock sentinel: {io_err}")));
             }
         }
-        if let Err(e) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
-            log::warn!("crontab sync after unlock failed: {e}");
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after unlock failed: {sync_err}");
         }
         Ok(ok(crate::global_lock::lock_status()))
     }

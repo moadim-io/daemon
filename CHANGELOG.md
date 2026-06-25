@@ -27,6 +27,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   was already returned by the API — it was previously buried as a sub-line under the
   UPDATED cell where it was easy to miss. Pure frontend — no backend change.
   Closes #660. Closes #688.
+- **Schedule fire preview on Cron Jobs and Routines pages.** Every schedule cell now has a
+  **▸ fires** toggle button. Clicking it expands an inline panel listing the next 10 scheduled
+  fire times for that job or routine (absolute time + relative countdown per entry); clicking
+  again collapses it. Implements the per-job forward-projection pattern used by Cronitor,
+  BetterStack, and Cloud Scheduler — operators can verify an expression after editing or check
+  whether a job falls inside a maintenance window without guessing from the human description.
+  Pure frontend: `next_fires(schedule, now, n)` iterates the existing croner iterator and
+  collects up to `n` datetimes; no backend change. Closes #704.
 - **Calendar view for the Cron Jobs page.** The Cron Jobs page gains a CALENDAR
   view alongside the existing LIST and DAY views, matching the three-view layout
   of the Routines page. Operators can browse a 6-week monthly grid showing how

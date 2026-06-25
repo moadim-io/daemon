@@ -128,3 +128,34 @@ fn occurrences_per_day_daily_fills_one_per_day() {
     // Every day in the 42-cell grid gets exactly 1 fire
     assert!(counts.iter().all(|&c| c == 1));
 }
+
+// ─── Next fires ───────────────────────────────────────────────────────────────
+
+#[test]
+fn next_fires_returns_n_sequential_fires() {
+    let fires = next_fires("0 * * * *", now(), 3);
+    assert_eq!(fires.len(), 3);
+    assert_eq!(
+        fires[0],
+        Local.with_ymd_and_hms(2026, 6, 21, 13, 0, 0).unwrap()
+    );
+    assert_eq!(
+        fires[1],
+        Local.with_ymd_and_hms(2026, 6, 21, 14, 0, 0).unwrap()
+    );
+    assert_eq!(
+        fires[2],
+        Local.with_ymd_and_hms(2026, 6, 21, 15, 0, 0).unwrap()
+    );
+}
+
+#[test]
+fn next_fires_empty_for_invalid_schedule() {
+    assert!(next_fires("not a cron", now(), 5).is_empty());
+    assert!(next_fires("", now(), 5).is_empty());
+}
+
+#[test]
+fn next_fires_zero_n_returns_empty() {
+    assert!(next_fires("0 * * * *", now(), 0).is_empty());
+}

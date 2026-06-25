@@ -185,6 +185,35 @@ async fn api_trigger(id: &str) -> Result<Routine, String> {
     resp.json::<Routine>().await.map_err(|e| e.to_string())
 }
 
+/// Lock state as returned by `GET /api/v1/routines/lock`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+pub struct LockStatus {
+    pub shared: bool,
+    pub local: bool,
+    pub locked: bool,
+}
+
+async fn api_lock_status() -> Result<LockStatus, String> {
+    Request::get("/api/v1/routines/lock")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<LockStatus>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn api_unlock(scope: &str) -> Result<LockStatus, String> {
+    let resp = Request::delete(&format!("/api/v1/routines/lock?scope={scope}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<LockStatus>().await.map_err(|e| e.to_string())
+}
+
 async fn api_cleanup() -> Result<usize, String> {
     let resp = Request::post("/api/v1/routines/cleanup")
         .send()
@@ -518,6 +547,8 @@ pub struct RState {
     pub sort_desc: bool,
     /// IDs of currently selected routines (multiselect for bulk actions).
     pub selected: BTreeSet<String>,
+    /// Most recently fetched global lock status; `None` until the first fetch completes.
+    pub lock_status: Option<LockStatus>,
 }
 
 impl Default for RState {
@@ -532,6 +563,7 @@ impl Default for RState {
             sort: RSort::default(),
             sort_desc: false,
             selected: BTreeSet::new(),
+            lock_status: None,
         }
     }
 }
@@ -566,6 +598,8 @@ pub enum RAction {
     SelectAll(Vec<String>),
     /// Clear the entire selection.
     ClearSelection,
+    /// Received updated lock status from the server.
+    LockStatusLoaded(LockStatus),
 }
 
 impl Reducible for RState {
@@ -630,6 +664,9 @@ impl Reducible for RState {
             RAction::ClearSelection => {
                 s.selected.clear();
             }
+            RAction::LockStatusLoaded(status) => {
+                s.lock_status = Some(status);
+            }
         }
         s.into()
     }
@@ -689,6 +726,18 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         });
     }
 
+    // Fetch lock status on mount and whenever routines reload.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(status) = api_lock_status().await {
+                    state.dispatch(RAction::LockStatusLoaded(status));
+                }
+            });
+        });
+    }
+
     // Auto-refresh loop, re-armed whenever the chosen interval changes. `Off`
     // installs no loop (today's load-once behaviour); any cadence re-fetches the
     // list on that period via the existing endpoint. The cleanup flag stops the
@@ -731,6 +780,26 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         Callback::from(move |next: RefreshInterval| {
             crate::refresh::save_interval(next);
             interval.set(next);
+        })
+    };
+
+    let on_unlock_all = {
+        let state = state.clone();
+        let toast = toast.clone();
+        let ok = ok_toast.clone();
+        Callback::from(move |_: MouseEvent| {
+            let state = state.clone();
+            let toast = toast.clone();
+            let ok = ok.clone();
+            spawn_local(async move {
+                match api_unlock("all").await {
+                    Ok(status) => {
+                        state.dispatch(RAction::LockStatusLoaded(status));
+                        ok("Routines unlocked");
+                    }
+                    Err(err_msg) => toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err)),
+                }
+            })
         })
     };
 
@@ -1101,6 +1170,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let loading = state.loading;
     let page = state.page.clone();
     let modal = state.modal.clone();
+    let lock_status = state.lock_status.clone();
     let view = state.view;
     let filter = state.filter.clone();
     let sort = state.sort;
@@ -1154,6 +1224,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     },
                     RPage::List => html! {
                         <main>
+                            <GlobalLockBanner status={lock_status} on_unlock={on_unlock_all} />
                             <RoutineStatsBar
                                 routines={routines.clone()}
                                 now={now_val}
@@ -1258,6 +1329,48 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                 }
             }
         </>
+    }
+}
+
+// ─── Global lock banner ───────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct GlobalLockBannerProps {
+    /// Current lock status; `None` hides the banner (status not yet fetched).
+    pub status: Option<LockStatus>,
+    /// Called when the user clicks UNLOCK ALL.
+    pub on_unlock: Callback<MouseEvent>,
+}
+
+/// Banner shown above the routine list when the global lock is active.
+///
+/// Displays which sentinel(s) are present (SHARED / LOCAL) and an UNLOCK ALL button
+/// that removes both with `DELETE /api/v1/routines/lock?scope=all`.
+#[function_component(GlobalLockBanner)]
+pub fn global_lock_banner(props: &GlobalLockBannerProps) -> Html {
+    let Some(ref status) = props.status else {
+        return html! {};
+    };
+    if !status.locked {
+        return html! {};
+    }
+    html! {
+        <div class="lock-banner">
+            <div class="lock-banner-msg">
+                {"⚠ ROUTINES GLOBALLY LOCKED — scheduling and manual triggers paused"}
+                if status.shared {
+                    <span class="lock-scope-tag">{"SHARED .lock"}</span>
+                }
+                if status.local {
+                    <span class="lock-scope-tag">{"LOCAL .local.lock"}</span>
+                }
+            </div>
+            <div class="lock-banner-acts">
+                <button class="btn btn-ghost btn-sm" onclick={props.on_unlock.clone()}>
+                    {"UNLOCK ALL"}
+                </button>
+            </div>
+        </div>
     }
 }
 

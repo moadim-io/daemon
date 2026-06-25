@@ -6,8 +6,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use serde::Deserialize;
 
 use crate::error::AppError;
+use crate::global_lock::{LockScope, LockStatus};
 
 use super::ical::svc_ical;
 use super::model::{
@@ -18,6 +20,75 @@ use super::service::{
     svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger,
     svc_trigger_scheduled, svc_update,
 };
+
+/// Request body for `POST /routines/lock`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct LockRequest {
+    /// Which sentinel to create: `"shared"` (committed `.lock`) or `"local"` (gitignored `.local.lock`).
+    pub scope: String,
+}
+
+/// Query parameters for `DELETE /routines/lock`.
+#[derive(Deserialize, utoipa::IntoParams)]
+pub struct UnlockQuery {
+    /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"`.
+    pub scope: String,
+}
+
+/// `GET /routines/lock` — return the current global lock status.
+#[utoipa::path(get, path = "/routines/lock",
+    responses((status = 200, body = LockStatus)))]
+pub async fn get_lock_status() -> Json<LockStatus> {
+    Json(crate::global_lock::lock_status())
+}
+
+/// `POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.
+#[utoipa::path(post, path = "/routines/lock",
+    request_body = LockRequest,
+    responses((status = 200, body = LockStatus), (status = 400, description = "Unknown scope"), (status = 500, description = "IO error")))]
+pub async fn lock(
+    State(store): State<RoutineStore>,
+    Json(body): Json<LockRequest>,
+) -> Result<Json<LockStatus>, AppError> {
+    let scope = parse_lock_scope(&body.scope)?;
+    crate::global_lock::set_lock(scope, true).map_err(|_| AppError::Internal)?;
+    if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
+        log::warn!("crontab sync after HTTP lock failed: {sync_err}");
+    }
+    Ok(Json(crate::global_lock::lock_status()))
+}
+
+/// `DELETE /routines/lock` — remove lock sentinel(s), restoring routine scheduling.
+#[utoipa::path(delete, path = "/routines/lock",
+    params(UnlockQuery),
+    responses((status = 200, body = LockStatus), (status = 400, description = "Unknown scope"), (status = 500, description = "IO error")))]
+pub async fn unlock(
+    State(store): State<RoutineStore>,
+    Query(query): Query<UnlockQuery>,
+) -> Result<Json<LockStatus>, AppError> {
+    let scopes: Vec<LockScope> = if query.scope == "all" {
+        vec![LockScope::Shared, LockScope::Local]
+    } else {
+        vec![parse_lock_scope(&query.scope)?]
+    };
+    for scope in scopes {
+        crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;
+    }
+    if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
+        log::warn!("crontab sync after HTTP unlock failed: {sync_err}");
+    }
+    Ok(Json(crate::global_lock::lock_status()))
+}
+
+fn parse_lock_scope(scope: &str) -> Result<LockScope, AppError> {
+    match scope {
+        "shared" => Ok(LockScope::Shared),
+        "local" => Ok(LockScope::Local),
+        other => Err(AppError::BadRequest(format!(
+            "unknown scope {other:?}; use \"shared\" or \"local\""
+        ))),
+    }
+}
 
 /// `POST /routines` — create a new routine.
 #[utoipa::path(post, path = "/routines",

@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Sortable column headers for the Routines table.** Clicking any of the TITLE, NEXT RUN,
+  AGENT, ENABLED, or UPDATED column headers sorts the table by that field; clicking the
+  active column again reverses direction. An ▲/▼ arrow indicator shows the active sort
+  column and direction. The separate sort dropdown and direction toggle button have been
+  removed from the filter bar — column-header clicks are the single, discoverable sort
+  control. Sort state lives in component memory (no URL pollution) and resets to server
+  order on page reload. Pure client-side — no backend change. Closes #679.
 - **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
   terminal aesthetic and a clean light palette. The choice persists to `localStorage`
   under `moadim.theme` and is applied flash-free via an inline `<head>` script before

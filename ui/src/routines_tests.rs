@@ -437,3 +437,127 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
 }
+
+// ── sort_routines ─────────────────────────────────────────────────────────────
+
+fn sorted_ids(routines: Vec<Routine>) -> Vec<String> {
+    routines.into_iter().map(|r| r.id).collect()
+}
+
+#[test]
+fn sort_routines_none_preserves_insertion_order() {
+    let routines = vec![
+        routine("c", "C", "agent", "0 * * * *", &[], &[], true),
+        routine("a", "A", "agent", "0 * * * *", &[], &[], true),
+        routine("b", "B", "agent", "0 * * * *", &[], &[], true),
+    ];
+    let got = sort_routines(routines, None, false, now());
+    assert_eq!(sorted_ids(got), vec!["c", "a", "b"]);
+}
+
+#[test]
+fn sort_routines_title_ascending() {
+    let routines = vec![
+        routine("1", "Zebra", "agent", "0 * * * *", &[], &[], true),
+        routine("2", "apple", "agent", "0 * * * *", &[], &[], true),
+        routine("3", "Mango", "agent", "0 * * * *", &[], &[], true),
+    ];
+    let got = sort_routines(routines, Some(RSort::Title), false, now());
+    assert_eq!(sorted_ids(got), vec!["2", "3", "1"]);
+}
+
+#[test]
+fn sort_routines_title_descending() {
+    let routines = vec![
+        routine("1", "Zebra", "agent", "0 * * * *", &[], &[], true),
+        routine("2", "apple", "agent", "0 * * * *", &[], &[], true),
+        routine("3", "Mango", "agent", "0 * * * *", &[], &[], true),
+    ];
+    let got = sort_routines(routines, Some(RSort::Title), true, now());
+    assert_eq!(sorted_ids(got), vec!["1", "3", "2"]);
+}
+
+#[test]
+fn sort_routines_agent_ascending() {
+    let mut r1 = routine("1", "t", "zeta", "0 * * * *", &[], &[], true);
+    let mut r2 = routine("2", "t", "Alpha", "0 * * * *", &[], &[], true);
+    let mut r3 = routine("3", "t", "beta", "0 * * * *", &[], &[], true);
+    // Use distinct updated_at for stable tiebreak by id
+    r1.updated_at = 10;
+    r2.updated_at = 20;
+    r3.updated_at = 30;
+    let got = sort_routines(vec![r1, r2, r3], Some(RSort::Agent), false, now());
+    assert_eq!(sorted_ids(got), vec!["2", "3", "1"]);
+}
+
+#[test]
+fn sort_routines_enabled_ascending_disabled_first() {
+    let routines = vec![
+        routine("1", "t", "agent", "0 * * * *", &[], &[], true),
+        routine("2", "t", "agent", "0 * * * *", &[], &[], false),
+        routine("3", "t", "agent", "0 * * * *", &[], &[], true),
+    ];
+    let got = sort_routines(routines, Some(RSort::Enabled), false, now());
+    assert_eq!(got[0].id, "2");
+    assert!(!got[0].enabled);
+}
+
+#[test]
+fn sort_routines_enabled_descending_enabled_first() {
+    let routines = vec![
+        routine("1", "t", "agent", "0 * * * *", &[], &[], false),
+        routine("2", "t", "agent", "0 * * * *", &[], &[], true),
+    ];
+    let got = sort_routines(routines, Some(RSort::Enabled), true, now());
+    assert_eq!(got[0].id, "2");
+    assert!(got[0].enabled);
+}
+
+#[test]
+fn sort_routines_updated_ascending() {
+    let mut r1 = routine("1", "t", "agent", "0 * * * *", &[], &[], true);
+    let mut r2 = routine("2", "t", "agent", "0 * * * *", &[], &[], true);
+    let mut r3 = routine("3", "t", "agent", "0 * * * *", &[], &[], true);
+    r1.updated_at = 300;
+    r2.updated_at = 100;
+    r3.updated_at = 200;
+    let got = sort_routines(vec![r1, r2, r3], Some(RSort::Updated), false, now());
+    assert_eq!(sorted_ids(got), vec!["2", "3", "1"]);
+}
+
+#[test]
+fn sort_routines_updated_descending() {
+    let mut r1 = routine("1", "t", "agent", "0 * * * *", &[], &[], true);
+    let mut r2 = routine("2", "t", "agent", "0 * * * *", &[], &[], true);
+    r1.updated_at = 100;
+    r2.updated_at = 200;
+    let got = sort_routines(vec![r1, r2], Some(RSort::Updated), true, now());
+    assert_eq!(sorted_ids(got), vec!["2", "1"]);
+}
+
+#[test]
+fn sort_routines_next_run_enabled_before_disabled() {
+    // enabled routine with "0 * * * *" fires within the hour; disabled gets None
+    let enabled = routine("e", "t", "agent", "0 * * * *", &[], &[], true);
+    let disabled = routine("d", "t", "agent", "0 * * * *", &[], &[], false);
+    let got = sort_routines(
+        vec![disabled.clone(), enabled.clone()],
+        Some(RSort::NextRun),
+        false,
+        now(),
+    );
+    assert_eq!(got[0].id, "e");
+    assert_eq!(got[1].id, "d");
+}
+
+#[test]
+fn sort_routines_next_run_desc_puts_later_fire_first() {
+    // "0 * * * *" fires at :00 of next hour; "0 0 * * *" fires at midnight
+    // now() is 2026-01-01 12:00:00 → "0 * * * *" fires 13:00, "0 0 * * *" fires next 00:00
+    let r1 = routine("hourly", "t", "agent", "0 * * * *", &[], &[], true);
+    let r2 = routine("midnight", "t", "agent", "0 0 * * *", &[], &[], true);
+    // desc: later fire time first
+    let got = sort_routines(vec![r1, r2], Some(RSort::NextRun), true, now());
+    assert_eq!(got[0].id, "midnight");
+    assert_eq!(got[1].id, "hourly");
+}

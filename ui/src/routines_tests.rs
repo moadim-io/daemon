@@ -437,3 +437,96 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
 }
+
+// ── Bulk selection reducer actions ────────────────────────────────────────────
+
+use std::rc::Rc;
+use yew::Reducible;
+
+fn state_with_routines(ids: &[&str]) -> Rc<RState> {
+    let routines = ids
+        .iter()
+        .map(|id| routine(id, id, "claude", "0 * * * *", &["m1"], &[], true))
+        .collect();
+    Rc::new(RState {
+        routines,
+        loading: false,
+        ..RState::default()
+    })
+}
+
+#[test]
+fn select_routine_adds_id_to_selection() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectRoutine("a".into()));
+    assert!(s.selected.contains("a"));
+    assert!(!s.selected.contains("b"));
+}
+
+#[test]
+fn select_routine_toggles_already_selected_id_out() {
+    let s = state_with_routines(&["a"]);
+    let s = s.reduce(RAction::SelectRoutine("a".into()));
+    assert!(s.selected.contains("a"));
+    let s = s.reduce(RAction::SelectRoutine("a".into()));
+    assert!(!s.selected.contains("a"));
+}
+
+#[test]
+fn select_all_replaces_selection() {
+    let s = state_with_routines(&["a", "b", "c"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "c".into()]));
+    assert!(s.selected.contains("a"));
+    assert!(!s.selected.contains("b"));
+    assert!(s.selected.contains("c"));
+}
+
+#[test]
+fn clear_selection_empties_all() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into()]));
+    assert_eq!(s.selected.len(), 2);
+    let s = s.reduce(RAction::ClearSelection);
+    assert!(s.selected.is_empty());
+}
+
+#[test]
+fn open_confirm_bulk_delete_sets_modal_with_count() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into()]));
+    let s = s.reduce(RAction::OpenConfirmBulkDelete);
+    assert_eq!(s.modal, RModal::ConfirmBulkDelete { count: 2 });
+}
+
+#[test]
+fn remove_many_removes_routines_and_clears_from_selection() {
+    let s = state_with_routines(&["a", "b", "c"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into(), "c".into()]));
+    let s = s.reduce(RAction::RemoveMany(vec!["a".into(), "c".into()]));
+    assert_eq!(s.routines.len(), 1);
+    assert_eq!(s.routines[0].id, "b");
+    assert!(!s.selected.contains("a"));
+    assert!(s.selected.contains("b"));
+    assert!(!s.selected.contains("c"));
+}
+
+#[test]
+fn loaded_drops_stale_selections() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into()]));
+    // Reload with only "a" — "b" should be dropped from selection.
+    let new_routines = vec![routine("a", "a", "claude", "0 * * * *", &["m1"], &[], true)];
+    let s = s.reduce(RAction::Loaded(new_routines));
+    assert!(s.selected.contains("a"));
+    assert!(!s.selected.contains("b"));
+}
+
+#[test]
+fn remove_also_clears_from_selection() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into()]));
+    let s = s.reduce(RAction::Remove("a".into()));
+    assert!(!s.selected.contains("a"));
+    assert!(s.selected.contains("b"));
+    assert_eq!(s.routines.len(), 1);
+}

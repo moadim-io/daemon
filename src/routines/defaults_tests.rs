@@ -26,6 +26,16 @@ fn second_default_is_the_1_percent() {
 }
 
 #[test]
+fn third_default_is_token_trim() {
+    let spec = &DEFAULT_ROUTINES[2];
+    assert_eq!(spec.title, "Token Trim");
+    assert!(spec.prompt.contains("list_routines"));
+    assert!(spec.prompt.contains("update_routine"));
+    assert!(spec.prompt.contains("NOT_REPO"));
+    assert!(spec.prompt.contains("token"));
+}
+
+#[test]
 fn every_schedule_is_a_valid_cron() {
     for spec in DEFAULT_ROUTINES {
         let normalized = normalize_schedule(spec.schedule);

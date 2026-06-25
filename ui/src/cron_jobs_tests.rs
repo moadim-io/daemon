@@ -477,3 +477,159 @@ fn sort_jobs_stable_tiebreak_by_id() {
     assert_eq!(out[0].id, "alpha");
     assert_eq!(out[1].id, "beta");
 }
+
+// ── GroupBy codec ─────────────────────────────────────────────────────────────
+
+#[test]
+fn group_by_as_str_roundtrips() {
+    for by in [
+        GroupBy::None,
+        GroupBy::Handler,
+        GroupBy::Machine,
+        GroupBy::Status,
+    ] {
+        assert_eq!(GroupBy::from_str(by.as_str()), by);
+    }
+}
+
+#[test]
+fn group_by_default_is_none() {
+    assert_eq!(GroupBy::default(), GroupBy::None);
+}
+
+#[test]
+fn group_by_unknown_token_decodes_to_none() {
+    assert_eq!(GroupBy::from_str("bogus"), GroupBy::None);
+    assert_eq!(GroupBy::from_str(""), GroupBy::None);
+}
+
+// ── group_key ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn group_key_handler_returns_handler_field() {
+    let j = job("id1", "git-sync", "0 * * * *", &["m1"], true);
+    assert_eq!(group_key(&j, GroupBy::Handler), "git-sync");
+}
+
+#[test]
+fn group_key_machine_returns_first_machine() {
+    let j = job("id1", "h", "0 * * * *", &["alpha", "beta"], true);
+    assert_eq!(group_key(&j, GroupBy::Machine), "alpha");
+}
+
+#[test]
+fn group_key_machine_returns_unassigned_when_no_machines() {
+    let j = job("id1", "h", "0 * * * *", &[], true);
+    assert_eq!(group_key(&j, GroupBy::Machine), "(unassigned)");
+}
+
+#[test]
+fn group_key_status_enabled() {
+    let j = job("id1", "h", "0 * * * *", &[], true);
+    assert_eq!(group_key(&j, GroupBy::Status), "Enabled");
+}
+
+#[test]
+fn group_key_status_disabled() {
+    let j = job("id1", "h", "0 * * * *", &[], false);
+    assert_eq!(group_key(&j, GroupBy::Status), "Disabled");
+}
+
+#[test]
+fn group_key_none_returns_empty_string() {
+    let j = job("id1", "h", "0 * * * *", &[], true);
+    assert_eq!(group_key(&j, GroupBy::None), "");
+}
+
+// ── group_jobs ────────────────────────────────────────────────────────────────
+
+#[test]
+fn group_jobs_none_returns_single_group_with_all_jobs() {
+    let jobs = vec![
+        job("a", "handler-a", "0 * * * *", &[], true),
+        job("b", "handler-b", "0 * * * *", &[], false),
+    ];
+    let groups = group_jobs(&jobs, GroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "");
+    assert_eq!(groups[0].1.len(), 2);
+}
+
+#[test]
+fn group_jobs_by_handler_creates_one_group_per_handler() {
+    let jobs = vec![
+        job("a", "backup", "0 * * * *", &[], true),
+        job("b", "git-sync", "0 * * * *", &[], true),
+        job("c", "backup", "0 * * * *", &[], true),
+    ];
+    let groups = group_jobs(&jobs, GroupBy::Handler);
+    // BTreeMap → alphabetical: backup, git-sync
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "backup");
+    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[1].0, "git-sync");
+    assert_eq!(groups[1].1.len(), 1);
+}
+
+#[test]
+fn group_jobs_by_handler_preserves_input_order_within_group() {
+    let jobs = vec![
+        job("first", "backup", "0 * * * *", &[], true),
+        job("second", "backup", "0 * * * *", &[], true),
+    ];
+    let groups = group_jobs(&jobs, GroupBy::Handler);
+    assert_eq!(groups[0].1[0].id, "first");
+    assert_eq!(groups[0].1[1].id, "second");
+}
+
+#[test]
+fn group_jobs_by_machine_separates_unassigned() {
+    let jobs = vec![
+        job("a", "h", "0 * * * *", &["worker-1"], true),
+        job("b", "h", "0 * * * *", &[], true),
+        job("c", "h", "0 * * * *", &["worker-1"], true),
+    ];
+    let groups = group_jobs(&jobs, GroupBy::Machine);
+    // alphabetical: "(unassigned)" sorts before "worker-1"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "(unassigned)");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "worker-1");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_jobs_by_status_splits_enabled_and_disabled() {
+    let jobs = vec![
+        job("a", "h", "0 * * * *", &[], true),
+        job("b", "h", "0 * * * *", &[], false),
+        job("c", "h", "0 * * * *", &[], true),
+    ];
+    let groups = group_jobs(&jobs, GroupBy::Status);
+    // alphabetical: "Disabled" before "Enabled"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "Disabled");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "Enabled");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_jobs_empty_input_returns_empty_for_grouped_dimensions() {
+    for by in [GroupBy::Handler, GroupBy::Machine, GroupBy::Status] {
+        let groups = group_jobs(&[], by);
+        assert!(groups.is_empty(), "expected empty for {by:?}");
+    }
+}
+
+#[test]
+fn group_jobs_groups_sorted_alphabetically() {
+    let jobs = vec![
+        job("a", "zebra", "0 * * * *", &[], true),
+        job("b", "alpha", "0 * * * *", &[], true),
+        job("c", "middle", "0 * * * *", &[], true),
+    ];
+    let groups = group_jobs(&jobs, GroupBy::Handler);
+    let labels: Vec<&str> = groups.iter().map(|(l, _)| l.as_str()).collect();
+    assert_eq!(labels, ["alpha", "middle", "zebra"]);
+}

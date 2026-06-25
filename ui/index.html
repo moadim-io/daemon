@@ -1097,6 +1097,33 @@
       white-space: nowrap;
     }
 
+    /* ── Group-by selector ── */
+    .group-by-ctrl { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Table group header rows ── */
+    tr.group-hd td {
+      padding: 5px 10px;
+      background: var(--bg-3);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    tr.group-hd:first-child td { border-top: none; }
+    .group-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-hi);
+      font-weight: 600;
+    }
+    .group-count {
+      margin-left: 6px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+
     /* ── Calendar ── */
     .cal-wrap {
       border: 1px solid var(--border);

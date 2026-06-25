@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Global routine lock.** Create `~/.config/moadim/.lock` (committed, shared via git) or
+  `~/.config/moadim/.local.lock` (gitignored, machine-local) to pause all routine scheduling
+  and manual triggers without touching individual routine `enabled` states. Removing the file(s)
+  restores prior state. Three new MCP tools — `get_lock_status`, `lock_routines`,
+  `unlock_routines` — manage the sentinels and immediately re-sync the crontab. Blocked triggers
+  return HTTP 423 Locked.
+
 - **NEXT RUN countdown column in the Routines table.** The Routines table gains a
   live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
   matching the already-shipped column on the Cron Jobs page, so operators see per-routine

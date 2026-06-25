@@ -669,3 +669,142 @@ fn restart_tool_spawns_helper_and_acknowledges() {
     assert_eq!(val["status"], "restarting");
     assert!(val["helper_pid"].as_u64().unwrap() > 0);
 }
+
+#[test]
+fn get_lock_status_returns_unlocked_by_default() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler.get_lock_status().unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["locked"], false);
+    assert_eq!(val["shared"], false);
+    assert_eq!(val["local"], false);
+}
+
+#[test]
+fn lock_routines_shared_creates_sentinel_and_returns_status() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "shared".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["locked"], true);
+    assert_eq!(val["shared"], true);
+    // Clean up so other tests are not affected.
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, false).unwrap();
+}
+
+#[test]
+fn lock_routines_local_creates_sentinel_and_returns_status() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "local".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["locked"], true);
+    assert_eq!(val["local"], true);
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
+}
+
+#[test]
+fn lock_routines_unknown_scope_is_error() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "oops".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn unlock_routines_all_removes_both_sentinels() {
+    let _home = TempHome::set();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, true).unwrap();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, true).unwrap();
+    let handler = make_handler();
+    let result = handler
+        .unlock_routines(Parameters(UnlockRoutinesInput {
+            scope: "all".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["locked"], false);
+}
+
+#[test]
+fn unlock_routines_shared_removes_only_shared() {
+    let _home = TempHome::set();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, true).unwrap();
+    let handler = make_handler();
+    let result = handler
+        .unlock_routines(Parameters(UnlockRoutinesInput {
+            scope: "shared".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["shared"], false);
+}
+
+#[test]
+fn unlock_routines_local_removes_only_local() {
+    let _home = TempHome::set();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, true).unwrap();
+    let handler = make_handler();
+    let result = handler
+        .unlock_routines(Parameters(UnlockRoutinesInput {
+            scope: "local".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["local"], false);
+}
+
+#[test]
+fn unlock_routines_unknown_scope_is_error() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .unlock_routines(Parameters(UnlockRoutinesInput {
+            scope: "bad".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}

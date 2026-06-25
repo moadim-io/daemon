@@ -68,6 +68,15 @@ fn unlock_removes_sentinel() {
 }
 
 #[test]
+fn local_unlock_removes_sentinel() {
+    let _home = TempHome::set();
+    set_lock(LockScope::Local, true).unwrap();
+    assert!(is_globally_locked());
+    set_lock(LockScope::Local, false).unwrap();
+    assert!(!is_globally_locked());
+}
+
+#[test]
 fn unlock_noop_when_absent() {
     let _home = TempHome::set();
     // No file present — must not error.

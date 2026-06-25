@@ -396,6 +396,9 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
+    if crate::global_lock::is_globally_locked() {
+        return Err(AppError::Locked("routines are globally locked".into()));
+    }
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     routine.last_manual_trigger_at = Some(now_secs());
@@ -415,6 +418,9 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
 /// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
 pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
+    if crate::global_lock::is_globally_locked() {
+        return Err(AppError::Locked("routines are globally locked".into()));
+    }
     let routine = store
         .lock_recover()
         .get(id)

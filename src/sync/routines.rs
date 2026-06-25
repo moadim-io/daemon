@@ -61,6 +61,10 @@ pub(crate) fn format_routine_line(routine: &Routine) -> String {
 /// unassigned routine instead of it silently never firing. Routines whose agent config is missing
 /// are skipped with a warning.
 fn build_block(store: &RoutineStore) -> String {
+    if crate::global_lock::is_globally_locked() {
+        log::info!("routine sync: global lock active — clearing all routine crontab lines");
+        return format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}");
+    }
     let me = crate::machine::current_machine();
     let mut routines: Vec<Routine> = {
         let lock = store.lock_recover();

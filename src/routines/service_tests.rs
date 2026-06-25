@@ -1290,3 +1290,46 @@ fn svc_update_rejects_blank_repository_url() {
         .repositories
         .is_empty());
 }
+
+#[test]
+fn svc_trigger_returns_locked_when_globally_locked() {
+    let _home = TempHome::set();
+    let lock_path = crate::paths::global_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&lock_path, b"").unwrap();
+
+    let store = new_store();
+    let routine = make_routine("lock-trig-id", "Lock Trigger Test ZZZ", 1, 1);
+    store.lock().unwrap().insert("lock-trig-id".into(), routine);
+
+    let result = svc_trigger(&store, "lock-trig-id");
+    assert!(
+        matches!(result, Err(AppError::Locked(_))),
+        "expected Locked error, got {result:?}"
+    );
+}
+
+#[test]
+fn svc_trigger_scheduled_returns_locked_when_globally_locked() {
+    let _home = TempHome::set();
+    let lock_path = crate::paths::global_local_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&lock_path, b"").unwrap();
+
+    let store = new_store();
+    let routine = make_routine("lock-sched-id", "Lock Sched Test ZZZ", 1, 1);
+    store
+        .lock()
+        .unwrap()
+        .insert("lock-sched-id".into(), routine);
+
+    let result = svc_trigger_scheduled(&store, "lock-sched-id");
+    assert!(
+        matches!(result, Err(AppError::Locked(_))),
+        "expected Locked error, got {result:?}"
+    );
+}

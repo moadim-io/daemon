@@ -63,6 +63,20 @@ struct UpdateInput {
     enabled: Option<bool>,
 }
 
+/// Input for the `lock_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct LockRoutinesInput {
+    /// Which sentinel to create: `"shared"` (committed `.lock`) or `"local"` (gitignored `.local.lock`).
+    scope: String,
+}
+
+/// Input for the `unlock_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct UnlockRoutinesInput {
+    /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"` (both).
+    scope: String,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -364,6 +378,74 @@ impl MoadimMcp {
             Ok(logs) => ok(serde_json::json!({ "logs": logs })),
             Err(error) => err(error),
         })
+    }
+
+    /// Return whether the global routine lock is active and which sentinels are present.
+    #[tool(
+        description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
+    )]
+    fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Create a global lock sentinel that halts all routine scheduling and manual triggers without
+    /// touching individual routine `enabled` states.
+    #[tool(
+        description = "Globally pause all routines by creating a lock sentinel. Use scope=\"shared\" for a committed .lock (shared via git) or scope=\"local\" for a gitignored .local.lock (machine-local). Individual routine enabled states are not modified."
+    )]
+    fn lock_routines(
+        &self,
+        Parameters(LockRoutinesInput { scope }): Parameters<LockRoutinesInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let lock_scope = match scope.as_str() {
+            "shared" => crate::global_lock::LockScope::Shared,
+            "local" => crate::global_lock::LockScope::Local,
+            other => {
+                return Ok(err(format!(
+                    "unknown scope {other:?}; use \"shared\" or \"local\""
+                )))
+            }
+        };
+        if let Err(io_err) = crate::global_lock::set_lock(lock_scope, true) {
+            return Ok(err(format!("failed to create lock sentinel: {io_err}")));
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after lock failed: {sync_err}");
+        }
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Remove a global lock sentinel, restoring scheduled and manual triggers for all enabled
+    /// routines.
+    #[tool(
+        description = "Resume all routines by removing a lock sentinel. Use scope=\"shared\" to remove the committed .lock, scope=\"local\" to remove the gitignored .local.lock, or scope=\"all\" to remove both."
+    )]
+    fn unlock_routines(
+        &self,
+        Parameters(UnlockRoutinesInput { scope }): Parameters<UnlockRoutinesInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let scopes: Vec<crate::global_lock::LockScope> = match scope.as_str() {
+            "shared" => vec![crate::global_lock::LockScope::Shared],
+            "local" => vec![crate::global_lock::LockScope::Local],
+            "all" => vec![
+                crate::global_lock::LockScope::Shared,
+                crate::global_lock::LockScope::Local,
+            ],
+            other => {
+                return Ok(err(format!(
+                    "unknown scope {other:?}; use \"shared\", \"local\", or \"all\""
+                )))
+            }
+        };
+        for scope_item in scopes {
+            if let Err(io_err) = crate::global_lock::set_lock(scope_item, false) {
+                return Ok(err(format!("failed to remove lock sentinel: {io_err}")));
+            }
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after unlock failed: {sync_err}");
+        }
+        Ok(ok(crate::global_lock::lock_status()))
     }
 
     /// Ask the server to stop gracefully, mirroring `POST /api/v1/shutdown` and `moadim stop`.

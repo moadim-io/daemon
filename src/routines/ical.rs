@@ -96,8 +96,9 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
         "CALSCALE:GREGORIAN".to_string(),
         "X-WR-CALNAME:Moadim Routines".to_string(),
     ];
+    let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {
-        if !routine.enabled {
+        if !routine.enabled || globally_locked {
             continue;
         }
         let Ok(cron) = routine.schedule.parse::<Cron>() else {

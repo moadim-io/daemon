@@ -4,7 +4,7 @@
 //! (claude, codex, …) on a schedule instead of running a handler script.
 
 use std::cell::Cell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
@@ -27,6 +27,18 @@ use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
 pub const AVAILABLE_AGENTS: &[&str] = &["claude", "codex"];
+
+/// How a row-checkbox click should be interpreted: single select, toggle, or range.
+/// Mirrors the same enum in `cron_jobs` so the multiselect UX is consistent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectKind {
+    /// Click (no modifier) — select only this row.
+    Only,
+    /// ⌘/Ctrl+click — toggle this row in or out of the selection.
+    Toggle,
+    /// Shift+click — extend the selection from the anchor to this row.
+    Range,
+}
 
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
@@ -459,6 +471,7 @@ pub enum RModal {
     None,
     Edit(String),
     ConfirmDelete { id: String, title: String },
+    ConfirmBulkDelete { count: usize },
 }
 
 /// How the list page presents routines: a table, or a month calendar of upcoming fire times.
@@ -515,6 +528,10 @@ pub struct RState {
     pub sort: RSort,
     /// `true` sorts descending (newest / Z→A first).
     pub sort_desc: bool,
+    /// IDs of currently selected routines (multiselect).
+    pub selected: HashSet<String>,
+    /// Anchor row for Shift+click range selection.
+    pub select_anchor: Option<String>,
 }
 
 impl Default for RState {
@@ -528,6 +545,8 @@ impl Default for RState {
             filter: RoutineFilter::default(),
             sort: RSort::default(),
             sort_desc: false,
+            selected: HashSet::new(),
+            select_anchor: None,
         }
     }
 }
@@ -539,6 +558,7 @@ pub enum RAction {
     GoToLogs(String),
     OpenEdit(String),
     OpenConfirmDelete { id: String, title: String },
+    OpenConfirmBulkDelete,
     CloseModal,
     SetView(RView),
     SetQuery(String),
@@ -550,6 +570,12 @@ pub enum RAction {
     ToggleSortDir,
     Upsert(Box<Routine>),
     Remove(String),
+    RemoveMany(Vec<String>),
+    /// Apply a multiselect click interpreted per `kind`.
+    SelectRoutine { id: String, kind: SelectKind },
+    /// Select exactly the given (visible/filtered) ids.
+    SelectAll(Vec<String>),
+    ClearSelection,
 }
 
 impl Reducible for RState {
@@ -559,6 +585,14 @@ impl Reducible for RState {
         let mut s = (*self).clone();
         match action {
             RAction::Loaded(r) => {
+                // Drop selections for routines that no longer exist after a reload.
+                let ids: HashSet<&String> = r.iter().map(|x| &x.id).collect();
+                s.selected.retain(|id| ids.contains(id));
+                if let Some(a) = &s.select_anchor {
+                    if !ids.contains(a) {
+                        s.select_anchor = None;
+                    }
+                }
                 s.routines = r;
                 s.loading = false;
             }
@@ -568,6 +602,11 @@ impl Reducible for RState {
             RAction::OpenEdit(id) => s.modal = RModal::Edit(id),
             RAction::OpenConfirmDelete { id, title } => {
                 s.modal = RModal::ConfirmDelete { id, title }
+            }
+            RAction::OpenConfirmBulkDelete => {
+                s.modal = RModal::ConfirmBulkDelete {
+                    count: s.selected.len(),
+                }
             }
             RAction::CloseModal => s.modal = RModal::None,
             RAction::SetView(view) => s.view = view,
@@ -586,7 +625,58 @@ impl Reducible for RState {
                     s.routines.push(routine);
                 }
             }
-            RAction::Remove(id) => s.routines.retain(|x| x.id != id),
+            RAction::Remove(id) => {
+                s.routines.retain(|x| x.id != id);
+                s.selected.remove(&id);
+                if s.select_anchor.as_ref() == Some(&id) {
+                    s.select_anchor = None;
+                }
+            }
+            RAction::RemoveMany(ids) => {
+                let drop: HashSet<&String> = ids.iter().collect();
+                s.routines.retain(|x| !drop.contains(&x.id));
+                s.selected.retain(|id| !drop.contains(id));
+                if let Some(a) = &s.select_anchor {
+                    if drop.contains(a) {
+                        s.select_anchor = None;
+                    }
+                }
+            }
+            RAction::SelectRoutine { id, kind } => match kind {
+                SelectKind::Only => {
+                    s.selected.clear();
+                    s.selected.insert(id.clone());
+                    s.select_anchor = Some(id);
+                }
+                SelectKind::Toggle => {
+                    if !s.selected.remove(&id) {
+                        s.selected.insert(id.clone());
+                    }
+                    s.select_anchor = Some(id);
+                }
+                SelectKind::Range => {
+                    let anchor = s.select_anchor.clone().unwrap_or_else(|| id.clone());
+                    let pos = |target: &str| s.routines.iter().position(|r| r.id == target);
+                    match (pos(&anchor), pos(&id)) {
+                        (Some(a), Some(b)) => {
+                            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                            for r in &s.routines[lo..=hi] {
+                                s.selected.insert(r.id.clone());
+                            }
+                        }
+                        _ => {
+                            s.selected.insert(id.clone());
+                        }
+                    }
+                }
+            },
+            RAction::SelectAll(ids) => {
+                s.selected = ids.into_iter().collect();
+            }
+            RAction::ClearSelection => {
+                s.selected.clear();
+                s.select_anchor = None;
+            }
         }
         s.into()
     }
@@ -799,6 +889,116 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         Callback::from(move |_: ()| state.dispatch(RAction::ToggleSortDir))
     };
 
+    // ── Multiselect ──
+    let on_select = {
+        let state = state.clone();
+        Callback::from(move |(id, kind): (String, SelectKind)| {
+            state.dispatch(RAction::SelectRoutine { id, kind })
+        })
+    };
+
+    let on_select_all = {
+        let state = state.clone();
+        let now = now.clone();
+        Callback::from(move |_: ()| {
+            let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
+            let visible = filter_routines(&state.routines, &state.filter, *now, window);
+            let all_visible_selected = !visible.is_empty()
+                && visible.iter().all(|r| state.selected.contains(&r.id));
+            if all_visible_selected {
+                state.dispatch(RAction::ClearSelection);
+            } else {
+                state.dispatch(RAction::SelectAll(
+                    visible.into_iter().map(|r| r.id).collect(),
+                ));
+            }
+        })
+    };
+
+    let on_clear_selection = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(RAction::ClearSelection))
+    };
+
+    // ── Bulk enable / disable ──
+    let bulk_set_enabled = {
+        let state = state.clone();
+        let toast = toast.clone();
+        move |enabled: bool| {
+            let state = state.clone();
+            let toast = toast.clone();
+            let ids: Vec<String> = state.selected.iter().cloned().collect();
+            if ids.is_empty() {
+                return;
+            }
+            spawn_local(async move {
+                let mut ok = 0usize;
+                let mut failed = 0usize;
+                for id in ids {
+                    let req = UpdateRoutineRequest {
+                        enabled: Some(enabled),
+                        ..Default::default()
+                    };
+                    match api_update(&id, &req).await {
+                        Ok(r) => {
+                            state.dispatch(RAction::Upsert(Box::new(r)));
+                            ok += 1;
+                        }
+                        Err(_) => failed += 1,
+                    }
+                }
+                let verb = if enabled { "enabled" } else { "disabled" };
+                if failed == 0 {
+                    toast.emit((format!("{ok} routine(s) {verb}"), ToastKind::Ok));
+                } else {
+                    toast.emit((format!("{ok} {verb}, {failed} failed"), ToastKind::Err));
+                }
+            });
+        }
+    };
+
+    let on_bulk_enable = {
+        let f = bulk_set_enabled.clone();
+        Callback::from(move |_: ()| f(true))
+    };
+    let on_bulk_disable = {
+        let f = bulk_set_enabled.clone();
+        Callback::from(move |_: ()| f(false))
+    };
+
+    let on_bulk_delete = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(RAction::OpenConfirmBulkDelete))
+    };
+
+    let on_confirm_bulk_delete = {
+        let state = state.clone();
+        let toast = toast.clone();
+        Callback::from(move |_: ()| {
+            let state = state.clone();
+            let toast = toast.clone();
+            let ids: Vec<String> = state.selected.iter().cloned().collect();
+            state.dispatch(RAction::CloseModal);
+            spawn_local(async move {
+                let mut deleted = Vec::new();
+                let mut failed = 0usize;
+                for id in ids {
+                    match api_delete(&id).await {
+                        Ok(()) => deleted.push(id),
+                        Err(_) => failed += 1,
+                    }
+                }
+                let n = deleted.len();
+                state.dispatch(RAction::RemoveMany(deleted));
+                if failed == 0 {
+                    toast.emit((format!("{n} routine(s) deleted"), ToastKind::Ok));
+                } else {
+                    toast.emit((format!("{n} deleted, {failed} failed"), ToastKind::Err));
+                }
+            });
+        })
+    };
+
     let on_create = {
         let state = state.clone();
         let toast = toast.clone();
@@ -950,6 +1150,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let filter = state.filter.clone();
     let sort = state.sort;
     let sort_desc = state.sort_desc;
+    let selected = state.selected.clone();
 
     // Faceted filter + sort applied client-side.
     let now_val = *now;
@@ -1039,18 +1240,30 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             {
                                 match view {
                                     RView::Table => html! {
-                                        <RoutineTable
-                                            routines={visible}
-                                            loading={loading}
-                                            filter_active={filter_active}
-                                            now={now_val}
-                                            on_edit={on_edit}
-                                            on_delete={on_ask_delete}
-                                            on_toggle={on_toggle}
-                                            on_trigger={on_trigger}
-                                            on_logs={on_logs}
-                                            on_clear_filters={on_clear_filters}
-                                        />
+                                        <>
+                                            <RoutineBulkBar
+                                                count={selected.len()}
+                                                on_enable={on_bulk_enable}
+                                                on_disable={on_bulk_disable}
+                                                on_delete={on_bulk_delete}
+                                                on_clear={on_clear_selection}
+                                            />
+                                            <RoutineTable
+                                                routines={visible}
+                                                loading={loading}
+                                                filter_active={filter_active}
+                                                now={now_val}
+                                                selected={selected}
+                                                on_edit={on_edit}
+                                                on_delete={on_ask_delete}
+                                                on_toggle={on_toggle}
+                                                on_trigger={on_trigger}
+                                                on_logs={on_logs}
+                                                on_select={on_select}
+                                                on_select_all={on_select_all}
+                                                on_clear_filters={on_clear_filters}
+                                            />
+                                        </>
                                     },
                                     RView::Calendar => html! {
                                         <RoutineCalendar routines={visible} loading={loading} />
@@ -1079,6 +1292,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             title={title.clone()}
                             on_cancel={on_close}
                             on_confirm={on_confirm_delete}
+                        />
+                    },
+                    RModal::ConfirmBulkDelete { count } => html! {
+                        <BulkDeleteRoutinesDialog
+                            count={*count}
+                            on_cancel={on_close}
+                            on_confirm={on_confirm_bulk_delete}
                         />
                     },
                     RModal::None => html! {},
@@ -1525,11 +1745,14 @@ pub struct TableProps {
     pub filter_active: bool,
     /// Reference instant used to compute next-fire countdowns.
     pub now: chrono::DateTime<Local>,
+    pub selected: HashSet<String>,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_select: Callback<(String, SelectKind)>,
+    pub on_select_all: Callback<()>,
     pub on_clear_filters: Callback<()>,
 }
 
@@ -1575,11 +1798,28 @@ pub fn routine_table(props: &TableProps) -> Html {
         };
     }
 
+    let all_selected =
+        !props.routines.is_empty() && props.routines.iter().all(|r| props.selected.contains(&r.id));
+    let on_select_all = {
+        let cb = props.on_select_all.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+
     html! {
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
+                        <th class="th-select">
+                            <input
+                                type="checkbox"
+                                class="row-check"
+                                title="Select all"
+                                aria-label="Select all routines"
+                                checked={all_selected}
+                                onclick={on_select_all}
+                            />
+                        </th>
                         <th>{"TITLE"}</th>
                         <th>{"SCHEDULE"}</th>
                         <th>{"NEXT RUN"}</th>
@@ -1597,11 +1837,13 @@ pub fn routine_table(props: &TableProps) -> Html {
                             key={r.id.clone()}
                             routine={r.clone()}
                             now={props.now}
+                            selected={props.selected.contains(&r.id)}
                             on_edit={props.on_edit.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
                             on_logs={props.on_logs.clone()}
+                            on_select={props.on_select.clone()}
                         />
                     }) }
                 </tbody>
@@ -1642,11 +1884,13 @@ pub struct RowProps {
     pub routine: Routine,
     /// Reference instant for the NEXT RUN countdown.
     pub now: chrono::DateTime<Local>,
+    pub selected: bool,
     pub on_edit: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_select: Callback<(String, SelectKind)>,
 }
 
 #[function_component(RoutineRow)]
@@ -1682,6 +1926,20 @@ pub fn routine_row(props: &RowProps) -> Html {
         let cb = props.on_logs.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_select = {
+        let cb = props.on_select.clone();
+        let id = r.id.clone();
+        Callback::from(move |e: MouseEvent| {
+            let kind = if e.shift_key() {
+                SelectKind::Range
+            } else if e.ctrl_key() || e.meta_key() {
+                SelectKind::Toggle
+            } else {
+                SelectKind::Only
+            };
+            cb.emit((id.clone(), kind));
+        })
     };
 
     let last_run: Html = {
@@ -1719,8 +1977,19 @@ pub fn routine_row(props: &RowProps) -> Html {
 
     let next_run = next_routine_run_cell(r, props.now);
 
+    let row_class = if props.selected { "row-selected" } else { "" };
+
     html! {
-        <tr>
+        <tr class={row_class}>
+            <td class="td-select">
+                <input
+                    type="checkbox"
+                    class="row-check"
+                    aria-label="Select routine"
+                    checked={props.selected}
+                    onclick={on_select}
+                />
+            </td>
             <td>
                 <div class="cell-schedule" title={r.id.clone()}>{&r.title}</div>
             </td>
@@ -1756,6 +2025,71 @@ pub fn routine_row(props: &RowProps) -> Html {
                 </div>
             </td>
         </tr>
+    }
+}
+
+// ─── Bulk action bar ──────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct RoutineBulkBarProps {
+    pub count: usize,
+    pub on_enable: Callback<()>,
+    pub on_disable: Callback<()>,
+    pub on_delete: Callback<()>,
+    pub on_clear: Callback<()>,
+}
+
+#[function_component(RoutineBulkBar)]
+pub fn routine_bulk_bar(props: &RoutineBulkBarProps) -> Html {
+    if props.count == 0 {
+        return html! {};
+    }
+    let mk = |cb: Callback<()>| Callback::from(move |_: MouseEvent| cb.emit(()));
+    html! {
+        <div class="bulk-bar">
+            <span class="bulk-count">{ format!("{} SELECTED", props.count) }</span>
+            <div class="bulk-acts">
+                <button class="btn btn-ghost btn-sm" onclick={mk(props.on_enable.clone())}>{"ENABLE"}</button>
+                <button class="btn btn-ghost btn-sm" onclick={mk(props.on_disable.clone())}>{"DISABLE"}</button>
+                <button class="btn btn-danger btn-sm" onclick={mk(props.on_delete.clone())}>{"DELETE"}</button>
+                <button class="btn btn-ghost btn-sm" onclick={mk(props.on_clear.clone())}>{"CLEAR"}</button>
+            </div>
+        </div>
+    }
+}
+
+// ─── Bulk delete confirm dialog ───────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct BulkDeleteRoutinesProps {
+    pub count: usize,
+    pub on_cancel: Callback<()>,
+    pub on_confirm: Callback<()>,
+}
+
+#[function_component(BulkDeleteRoutinesDialog)]
+pub fn bulk_delete_routines_dialog(props: &BulkDeleteRoutinesProps) -> Html {
+    let on_cancel = {
+        let cb = props.on_cancel.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_confirm = {
+        let cb = props.on_confirm.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    html! {
+        <div class="overlay open">
+            <div class="confirm-dialog">
+                <div class="confirm-title">{"⚠ DELETE ROUTINES"}</div>
+                <div class="confirm-msg">
+                    { format!("Delete {} selected routine(s)? This cannot be undone.", props.count) }
+                </div>
+                <div class="confirm-acts">
+                    <button class="btn btn-ghost btn-sm" onclick={on_cancel}>{"CANCEL"}</button>
+                    <button class="btn btn-danger btn-sm" onclick={on_confirm}>{"DELETE"}</button>
+                </div>
+            </div>
+        </div>
     }
 }
 

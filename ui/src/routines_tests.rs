@@ -437,3 +437,19 @@ fn unassigned_routines_count_counts_empty_machine_lists() {
     ];
     assert_eq!(unassigned_routines_count(&routines), 2);
 }
+
+// ── SelectKind ────────────────────────────────────────────────────────────────
+
+#[test]
+fn select_kind_variants_are_distinct() {
+    assert_ne!(SelectKind::Only, SelectKind::Toggle);
+    assert_ne!(SelectKind::Only, SelectKind::Range);
+    assert_ne!(SelectKind::Toggle, SelectKind::Range);
+}
+
+#[test]
+fn select_kind_clone_and_copy() {
+    let k = SelectKind::Toggle;
+    let k2 = k;
+    assert_eq!(k, k2);
+}

@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
 
-use chrono::{DateTime, Duration, Local};
+use chrono::{DateTime, Datelike, Duration, Local};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,10 @@ use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
 use crate::machines::MachinesPicker;
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
+use crate::schedule::{
+    fires_within, fmt_until, fmt_when, month_start, next_fire_after, occurrences_per_day,
+    CAL_MONTHS, GRID_CELLS, WEEKDAYS,
+};
 use crate::{describe_cron_live, reltime, ToastKind};
 
 /// How long ahead a job's next fire counts as "due soon" for the KPI tile.
@@ -418,6 +421,7 @@ pub enum CPage {
 pub enum CView {
     #[default]
     Table,
+    Calendar,
     Day,
 }
 
@@ -1164,6 +1168,9 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                             />
                                         </>
                                     },
+                                    CView::Calendar => html! {
+                                        <CronJobCalendar jobs={displayed} loading={loading} />
+                                    },
                                     CView::Day => {
                                         let items = displayed.iter().filter(|j| j.enabled).map(|j| TimelineItem {
                                             label: j.handler.clone(),
@@ -1235,6 +1242,7 @@ pub fn cron_view_toggle(props: &CronViewToggleProps) -> Html {
     html! {
         <div class="view-toggle">
             { mk(CView::Table, "LIST") }
+            { mk(CView::Calendar, "CALENDAR") }
             { mk(CView::Day, "DAY") }
         </div>
     }
@@ -2264,6 +2272,82 @@ pub fn bulk_delete_dialog(props: &BulkDeleteProps) -> Html {
                     <button class="btn btn-danger btn-sm" onclick={on_confirm}>{"DELETE"}</button>
                 </div>
             </div>
+        </div>
+    }
+}
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+struct CalendarJobProps {
+    jobs: Vec<CronJob>,
+    loading: bool,
+}
+
+#[function_component(CronJobCalendar)]
+fn cron_job_calendar(props: &CalendarJobProps) -> Html {
+    let offset = use_state(|| 0i32);
+    let today = Local::now().date_naive();
+    let first = month_start(today, *offset);
+    let grid_start = {
+        let dow = first.weekday().num_days_from_sunday();
+        first - chrono::Duration::days(dow as i64)
+    };
+    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    for j in props.jobs.iter().filter(|j| j.enabled) {
+        if let Some(counts) = occurrences_per_day(&j.schedule, grid_start) {
+            for (i, &c) in counts.iter().enumerate() {
+                if c > 0 {
+                    cells[i].push((j.handler.clone(), c));
+                }
+            }
+        }
+    }
+    let month_label = format!("{} {}", CAL_MONTHS[first.month0() as usize], first.year());
+    let on_prev = {
+        let offset = offset.clone();
+        Callback::from(move |_: MouseEvent| offset.set(*offset - 1))
+    };
+    let on_next = {
+        let offset = offset.clone();
+        Callback::from(move |_: MouseEvent| offset.set(*offset + 1))
+    };
+    let on_reset = {
+        let offset = offset.clone();
+        Callback::from(move |_: MouseEvent| offset.set(0))
+    };
+    html! {
+        <div class="cal-wrap">
+            <div class="cal-nav">
+                <button class="cal-nav-btn" onclick={on_prev}>{"‹"}</button>
+                <button class="cal-month-label" onclick={on_reset}>{month_label}</button>
+                <button class="cal-nav-btn" onclick={on_next}>{"›"}</button>
+            </div>
+            if props.loading {
+                <div class="cal-loading">{"loading…"}</div>
+            } else {
+                <div class="cal-grid">
+                    { for WEEKDAYS.iter().map(|d| html! { <div class="cal-weekday">{*d}</div> }) }
+                    { for (0..GRID_CELLS).map(|i| {
+                        let date = grid_start + chrono::Duration::days(i as i64);
+                        let in_month = date.month() == first.month() && date.year() == first.year();
+                        let is_today = date == today;
+                        let mut cls = "cal-cell".to_string();
+                        if !in_month { cls.push_str(" cal-cell--out"); }
+                        if is_today  { cls.push_str(" cal-cell--today"); }
+                        html! {
+                            <div class={cls}>
+                                <span class="cal-day-num">{date.day()}</span>
+                                { for cells[i].iter().map(|(label, count)| html! {
+                                    <span class="cal-event" title={format!("{label} \u{d7}{count}")}>
+                                        {label}{if *count > 1 { format!(" \u{d7}{count}") } else { String::new() }}
+                                    </span>
+                                })}
+                            </div>
+                        }
+                    })}
+                </div>
+            }
         </div>
     }
 }

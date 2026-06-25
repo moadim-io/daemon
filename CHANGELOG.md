@@ -27,6 +27,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   was already returned by the API — it was previously buried as a sub-line under the
   UPDATED cell where it was easy to miss. Pure frontend — no backend change.
   Closes #660. Closes #688.
+- **Calendar view for the Cron Jobs page.** The Cron Jobs page gains a CALENDAR
+  view alongside the existing LIST and DAY views, matching the three-view layout
+  of the Routines page. Operators can browse a 6-week monthly grid showing how
+  many times each enabled job fires per day, with prev/next/today navigation.
+  Calendar grid helpers (`WEEKDAYS`, `CAL_MONTHS`, `GRID_CELLS`, `MAX_OCCURRENCES`,
+  `month_start`, `occurrences_per_day`) are extracted from `routines.rs` into the
+  shared `schedule` module so both pages share the same implementation.
 - **Global routine lock — UI banner and REST API.** The Routines page shows an amber banner
   when a global lock is active, listing which sentinel(s) are present (SHARED / LOCAL) with an
   **UNLOCK ALL** button that removes both via `DELETE /api/v1/routines/lock?scope=all`. Three

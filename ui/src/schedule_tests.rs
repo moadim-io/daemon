@@ -2,7 +2,7 @@
 //! assertion deterministic regardless of the host clock or time zone.
 
 use super::*;
-use chrono::TimeZone;
+use chrono::{NaiveDate, TimeZone};
 
 /// A fixed reference instant: Sun 2026-06-21 12:00:30 local. Off the minute
 /// boundary so `next_fire_after` against a top-of-hour schedule is unambiguous.
@@ -83,4 +83,48 @@ fn fmt_when_tomorrow_is_prefixed() {
 #[test]
 fn fmt_when_far_uses_month_and_day() {
     assert_eq!(fmt_when(now(), now() + Duration::days(3)), "Jun 24, 12:00");
+}
+
+// ─── Calendar utilities ───────────────────────────────────────────────────────
+
+#[test]
+fn month_start_same_month() {
+    let today = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+    assert_eq!(
+        super::month_start(today, 0),
+        NaiveDate::from_ymd_opt(2024, 6, 1).unwrap()
+    );
+}
+
+#[test]
+fn month_start_next_month() {
+    let today = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+    assert_eq!(
+        super::month_start(today, 1),
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
+    );
+}
+
+#[test]
+fn month_start_prev_month_year_boundary() {
+    let today = NaiveDate::from_ymd_opt(2024, 1, 10).unwrap();
+    assert_eq!(
+        super::month_start(today, -1),
+        NaiveDate::from_ymd_opt(2023, 12, 1).unwrap()
+    );
+}
+
+#[test]
+fn occurrences_per_day_invalid_schedule_returns_none() {
+    let today = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
+    assert!(super::occurrences_per_day("not-a-cron", today).is_none());
+}
+
+#[test]
+fn occurrences_per_day_daily_fills_one_per_day() {
+    let grid_start = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
+    let counts =
+        super::occurrences_per_day("0 12 * * *", grid_start).expect("daily schedule should parse");
+    // Every day in the 42-cell grid gets exactly 1 fire
+    assert!(counts.iter().all(|&c| c == 1));
 }

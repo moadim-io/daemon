@@ -7,7 +7,7 @@
 //! host (see `schedule_tests.rs`). The only inputs are the schedule string and a
 //! caller-supplied `now`, keeping every function deterministic.
 
-use chrono::{DateTime, Datelike, Duration, Local};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 
 use crate::parse_cron;
 
@@ -71,6 +71,68 @@ pub(crate) fn fmt_when(now: DateTime<Local>, then: DateTime<Local>) -> String {
         let day = then.day();
         format!("{month} {day}, {hm}")
     }
+}
+
+// ─── Calendar grid utilities ──────────────────────────────────────────────────
+//
+// Shared by RoutineCalendar and CronJobCalendar.
+
+/// Day-of-week headers for the calendar grid.
+pub(crate) const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+/// Full month names for the calendar navigation header.
+pub(crate) const CAL_MONTHS: [&str; 12] = [
+    "JANUARY",
+    "FEBRUARY",
+    "MARCH",
+    "APRIL",
+    "MAY",
+    "JUNE",
+    "JULY",
+    "AUGUST",
+    "SEPTEMBER",
+    "OCTOBER",
+    "NOVEMBER",
+    "DECEMBER",
+];
+
+/// Cells in the month grid: 6 weeks × 7 days, always, so the layout never reflows.
+pub(crate) const GRID_CELLS: usize = 42;
+
+/// Upper bound on fire-time iterations per schedule across the visible grid.
+pub(crate) const MAX_OCCURRENCES: usize = 4000;
+
+/// First day of the month `offset` months away from the month containing `today`.
+pub(crate) fn month_start(today: NaiveDate, offset: i32) -> NaiveDate {
+    let total = today.year() * 12 + today.month0() as i32 + offset;
+    let year = total.div_euclid(12);
+    let month0 = total.rem_euclid(12) as u32;
+    NaiveDate::from_ymd_opt(year, month0 + 1, 1).unwrap_or(today)
+}
+
+/// Fire counts per grid cell for `schedule` over `[grid_start, grid_start + 42 days)`.
+pub(crate) fn occurrences_per_day(
+    schedule: &str,
+    grid_start: NaiveDate,
+) -> Option<[u32; GRID_CELLS]> {
+    let cron = parse_cron(schedule)?;
+    let start_naive = grid_start.and_hms_opt(0, 0, 0)?;
+    let start = Local
+        .from_local_datetime(&start_naive)
+        .earliest()?
+        .checked_sub_signed(Duration::seconds(1))?;
+    let mut counts = [0u32; GRID_CELLS];
+    for dt in cron.iter_after(start).take(MAX_OCCURRENCES) {
+        let day = (dt.date_naive() - grid_start).num_days();
+        if day < 0 {
+            continue;
+        }
+        if day as usize >= GRID_CELLS {
+            break;
+        }
+        counts[day as usize] += 1;
+    }
+    Some(counts)
 }
 
 #[cfg(test)]

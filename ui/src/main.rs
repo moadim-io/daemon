@@ -24,6 +24,41 @@ use overview::OverviewPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+/// localStorage key for the theme preference.
+pub(crate) const THEME_KEY: &str = "moadim.theme";
+
+/// Read the persisted theme from localStorage. Returns `true` for light theme.
+pub(crate) fn load_theme_light() -> bool {
+    web_sys::window()
+        .and_then(|win| win.local_storage().ok().flatten())
+        .and_then(|store| store.get_item(THEME_KEY).ok().flatten())
+        .is_some_and(|val| val == "light")
+}
+
+/// Persist the theme choice to localStorage (best-effort; ignores storage errors).
+pub(crate) fn save_theme_light(light: bool) {
+    if let Some(store) = web_sys::window().and_then(|win| win.local_storage().ok().flatten()) {
+        let _ = store.set_item(THEME_KEY, if light { "light" } else { "dark" });
+    }
+}
+
+/// Apply or remove the `theme-light` CSS class from `<html>`.
+pub(crate) fn apply_theme(light: bool) {
+    if let Some(root) = web_sys::window()
+        .and_then(|win| win.document())
+        .and_then(|doc| doc.document_element())
+    {
+        let list = root.class_list();
+        if light {
+            let _ = list.add_1("theme-light");
+        } else {
+            let _ = list.remove_1("theme-light");
+        }
+    }
+}
+
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
@@ -78,6 +113,8 @@ pub struct ShellState {
     pub next_toast: u32,
     pub show_shutdown: bool,
     pub show_palette: bool,
+    /// `true` when the light theme is active; persisted to localStorage.
+    pub show_theme_light: bool,
 }
 
 pub enum ShellAction {
@@ -87,6 +124,7 @@ pub enum ShellAction {
     CloseShutdown,
     TogglePalette,
     ClosePalette,
+    ToggleTheme,
 }
 
 impl Reducible for ShellState {
@@ -112,6 +150,11 @@ impl Reducible for ShellState {
             ShellAction::CloseShutdown => s.show_shutdown = false,
             ShellAction::TogglePalette => s.show_palette = !s.show_palette,
             ShellAction::ClosePalette => s.show_palette = false,
+            ShellAction::ToggleTheme => {
+                s.show_theme_light = !s.show_theme_light;
+                save_theme_light(s.show_theme_light);
+                apply_theme(s.show_theme_light);
+            }
         }
         s.into()
     }
@@ -174,7 +217,18 @@ pub fn app() -> Html {
 /// the global shutdown dialog, and the toast stack. Lives inside the router so nav `Link`s work.
 #[function_component(Shell)]
 pub fn shell() -> Html {
-    let state = use_reducer(ShellState::default);
+    let state = use_reducer(|| ShellState {
+        show_theme_light: load_theme_light(),
+        ..ShellState::default()
+    });
+
+    // Apply the initial theme class from persisted preference.
+    {
+        let light = state.show_theme_light;
+        use_effect_with((), move |_| {
+            apply_theme(light);
+        });
+    }
 
     // Initial health poll on mount.
     {
@@ -257,6 +311,10 @@ pub fn shell() -> Html {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
     };
+    let on_palette_toggle_theme = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ToggleTheme))
+    };
 
     let on_refresh = {
         let state = state.clone();
@@ -324,10 +382,15 @@ pub fn shell() -> Html {
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
     let show_palette = state.show_palette;
+    let show_theme_light = state.show_theme_light;
+    let on_theme = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::ToggleTheme))
+    };
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} />
+            <Header health={health} ok={health_ok} light={show_theme_light} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} on_theme={on_theme} />
             <Nav />
             <Switch<Route> render={switch} />
             <CommandPalette
@@ -335,6 +398,7 @@ pub fn shell() -> Html {
                 on_close={on_close_palette}
                 on_refresh={on_palette_refresh}
                 on_stop={on_palette_stop}
+                on_toggle_theme={on_palette_toggle_theme}
             />
             {
                 if show_shutdown {
@@ -389,9 +453,12 @@ pub fn nav() -> Html {
 pub struct HeaderProps {
     pub health: Health,
     pub ok: bool,
+    /// `true` when the light theme is active (controls the toggle button icon).
+    pub light: bool,
     pub on_refresh: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
     pub on_palette: Callback<MouseEvent>,
+    pub on_theme: Callback<MouseEvent>,
 }
 
 #[function_component(Header)]
@@ -413,6 +480,8 @@ pub fn header(props: &HeaderProps) -> Html {
         .uptime_secs
         .map(|s| format!("/ UP {}", fmt_uptime(s)))
         .unwrap_or_default();
+    let theme_icon = if props.light { "☀" } else { "🌙" };
+    let theme_title = if props.light { "Switch to dark mode" } else { "Switch to light mode" };
 
     html! {
         <header>
@@ -427,6 +496,9 @@ pub fn header(props: &HeaderProps) -> Html {
                     <span class="health-status">{status}</span>
                     <span class="health-uptime">{uptime}</span>
                 </div>
+                <button class="btn-theme" title={theme_title} aria-label={theme_title} onclick={props.on_theme.clone()}>
+                    {theme_icon}
+                </button>
                 <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
                     {"⌘K"}
                 </button>

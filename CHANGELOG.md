@@ -13,6 +13,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
+  terminal aesthetic and a clean light palette. The choice persists to `localStorage`
+  under `moadim.theme` and is applied flash-free via an inline `<head>` script before
+  the first paint. The `⌘K` command palette gains a "Toggle Theme" entry so
+  keyboard-first operators never need to reach for the mouse. All colours are pure CSS
+  custom-property overrides — no per-component changes. Closes #664.
+- **Sortable column headers for the Cron Jobs table.** Clicking any column header
+  (ID, HANDLER, NEXT RUN, ENABLED, UPDATED) sorts the table by that field; clicking
+  again reverses direction. An arrow indicator shows the active sort column and
+  direction. Sort state lives in component memory (no URL pollution) and resets to the
+  server's natural order on page reload. Pure client-side — no backend change.
+  Closes #657, #669.
 - **NEXT RUN countdown column in the Routines table.** The Routines table gains a
   live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
   matching the already-shipped column on the Cron Jobs page, so operators see per-routine

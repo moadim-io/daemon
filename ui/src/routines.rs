@@ -1700,11 +1700,19 @@ fn sort_th(
 ) -> Html {
     let active = current == Some(col);
     let indicator = if active {
-        if dir == RDir::Asc { " ▲" } else { " ▼" }
+        if dir == RDir::Asc {
+            " ▲"
+        } else {
+            " ▼"
+        }
     } else {
         ""
     };
-    let cls = if active { "th-sort th-sort-active" } else { "th-sort" };
+    let cls = if active {
+        "th-sort th-sort-active"
+    } else {
+        "th-sort"
+    };
     let cb = on_sort.clone();
     html! {
         <th class={cls} onclick={Callback::from(move |_: MouseEvent| cb.emit(col))}>

@@ -655,3 +655,49 @@ fn sort_routines_title_is_case_insensitive() {
     assert_eq!(sorted[0].title, "ALPHA");
     assert_eq!(sorted[1].title, "zebra");
 }
+
+// ── last_fire_at ──────────────────────────────────────────────────────────────
+
+fn routine_with_triggers(last_manual: Option<u64>, last_scheduled: Option<u64>) -> Routine {
+    Routine {
+        last_manual_trigger_at: last_manual,
+        last_scheduled_trigger_at: last_scheduled,
+        ..routine("id", "My Routine", "claude", "0 * * * *", &[], &[], true)
+    }
+}
+
+#[test]
+fn last_fire_at_none_when_never_triggered() {
+    let r = routine_with_triggers(None, None);
+    assert_eq!(last_fire_at(&r), None);
+}
+
+#[test]
+fn last_fire_at_manual_only() {
+    let r = routine_with_triggers(Some(100), None);
+    assert_eq!(last_fire_at(&r), Some(100));
+}
+
+#[test]
+fn last_fire_at_scheduled_only() {
+    let r = routine_with_triggers(None, Some(200));
+    assert_eq!(last_fire_at(&r), Some(200));
+}
+
+#[test]
+fn last_fire_at_returns_max_when_manual_is_later() {
+    let r = routine_with_triggers(Some(300), Some(100));
+    assert_eq!(last_fire_at(&r), Some(300));
+}
+
+#[test]
+fn last_fire_at_returns_max_when_scheduled_is_later() {
+    let r = routine_with_triggers(Some(100), Some(300));
+    assert_eq!(last_fire_at(&r), Some(300));
+}
+
+#[test]
+fn last_fire_at_equal_timestamps_returns_that_value() {
+    let r = routine_with_triggers(Some(500), Some(500));
+    assert_eq!(last_fire_at(&r), Some(500));
+}

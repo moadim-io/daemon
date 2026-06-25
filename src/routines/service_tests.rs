@@ -1322,7 +1322,10 @@ fn svc_trigger_scheduled_returns_locked_when_globally_locked() {
 
     let store = new_store();
     let routine = make_routine("lock-sched-id", "Lock Sched Test ZZZ", 1, 1);
-    store.lock().unwrap().insert("lock-sched-id".into(), routine);
+    store
+        .lock()
+        .unwrap()
+        .insert("lock-sched-id".into(), routine);
 
     let result = svc_trigger_scheduled(&store, "lock-sched-id");
     assert!(

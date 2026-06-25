@@ -277,10 +277,10 @@ fn build_block_empty_when_globally_locked() {
     std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
 
     let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("lock-test".into(), make_routine("lock-test", title, agent_name));
+    store.lock().unwrap().insert(
+        "lock-test".into(),
+        make_routine("lock-test", title, agent_name),
+    );
 
     // Create the shared lock sentinel and verify it suppresses all crontab lines.
     let lock_path = crate::paths::global_lock_path();
@@ -290,7 +290,10 @@ fn build_block_empty_when_globally_locked() {
     std::fs::write(&lock_path, b"").unwrap();
 
     let block = build_block(&store);
-    assert!(!block.contains("moadim-routine:"), "locked block must have no routine lines");
+    assert!(
+        !block.contains("moadim-routine:"),
+        "locked block must have no routine lines"
+    );
     assert!(block.contains(BLOCK_BEGIN));
     assert!(block.contains(BLOCK_END));
 

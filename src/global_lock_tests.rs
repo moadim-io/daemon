@@ -6,8 +6,7 @@ struct TempHome(std::path::PathBuf);
 
 impl TempHome {
     fn set() -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("moadim-locktest-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("moadim-locktest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution (RUST_TEST_THREADS=1).
         unsafe {

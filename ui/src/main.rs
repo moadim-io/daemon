@@ -481,7 +481,11 @@ pub fn header(props: &HeaderProps) -> Html {
         .map(|s| format!("/ UP {}", fmt_uptime(s)))
         .unwrap_or_default();
     let theme_icon = if props.light { "☀" } else { "🌙" };
-    let theme_title = if props.light { "Switch to dark mode" } else { "Switch to light mode" };
+    let theme_title = if props.light {
+        "Switch to dark mode"
+    } else {
+        "Switch to light mode"
+    };
 
     html! {
         <header>

@@ -702,3 +702,305 @@ fn last_fire_at_equal_timestamps_returns_that_value() {
     let r = routine_with_triggers(Some(500), Some(500));
     assert_eq!(last_fire_at(&r), Some(500));
 }
+
+// ── routine_health ────────────────────────────────────────────────────────────
+
+#[test]
+fn health_disabled_routine_is_disabled() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn health_enabled_no_machines_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &[], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_enabled_blank_machine_entry_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["   "], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_dead_schedule_is_dead() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine(
+            "a",
+            "A",
+            "claude",
+            "not-a-valid-cron",
+            &["machine1"],
+            &[],
+            true,
+        )
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::DeadSchedule);
+}
+
+#[test]
+fn health_missing_agent_is_agent_missing() {
+    // agent_registered defaults to false in routine()
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::AgentMissing);
+}
+
+#[test]
+fn health_fully_configured_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_priority_order_dormant_most_urgent() {
+    assert!(
+        RoutineHealth::Dormant.priority() < RoutineHealth::DeadSchedule.priority(),
+        "Dormant must outrank DeadSchedule"
+    );
+    assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
+    assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Healthy.priority());
+}
+
+// ── sort by RCol::Health ──────────────────────────────────────────────────────
+
+fn routine_with_health(
+    id: &str,
+    enabled: bool,
+    machines: &[&str],
+    agent_registered: bool,
+) -> Routine {
+    Routine {
+        agent_registered,
+        ..routine(id, id, "claude", "0 * * * *", machines, &[], enabled)
+    }
+}
+
+#[test]
+fn sort_by_health_ascending_puts_most_broken_first() {
+    let rs = vec![
+        routine_with_health("healthy", true, &["m1"], true), // priority 4
+        routine_with_health("dormant", true, &[], true),     // priority 0
+        routine_with_health("disabled", false, &["m1"], false), // priority 3
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Health), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "dormant");
+    assert_eq!(sorted[1].id, "disabled");
+    assert_eq!(sorted[2].id, "healthy");
+}
+
+#[test]
+fn sort_by_health_descending_puts_healthy_first() {
+    let rs = vec![
+        routine_with_health("dormant", true, &[], true),
+        routine_with_health("healthy", true, &["m1"], true),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Health), RDir::Desc, now());
+    assert_eq!(sorted[0].id, "healthy");
+    assert_eq!(sorted[1].id, "dormant");
+}
+
+// ── RGroupBy codec ────────────────────────────────────────────────────────────
+
+#[test]
+fn r_group_by_as_str_roundtrips() {
+    for by in [
+        RGroupBy::None,
+        RGroupBy::Agent,
+        RGroupBy::Machine,
+        RGroupBy::Status,
+    ] {
+        assert_eq!(RGroupBy::from_str(by.as_str()), by);
+    }
+}
+
+#[test]
+fn r_group_by_default_is_none() {
+    assert_eq!(RGroupBy::default(), RGroupBy::None);
+}
+
+#[test]
+fn r_group_by_unknown_token_decodes_to_none() {
+    assert_eq!(RGroupBy::from_str("bogus"), RGroupBy::None);
+    assert_eq!(RGroupBy::from_str(""), RGroupBy::None);
+}
+
+// ── routine_group_key ─────────────────────────────────────────────────────────
+
+#[test]
+fn routine_group_key_agent_returns_agent_field() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Agent), "claude");
+}
+
+#[test]
+fn routine_group_key_machine_returns_first_machine() {
+    let r = routine(
+        "id1",
+        "t",
+        "claude",
+        "0 * * * *",
+        &["alpha", "beta"],
+        &[],
+        true,
+    );
+    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "alpha");
+}
+
+#[test]
+fn routine_group_key_machine_returns_unassigned_when_no_machines() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "(unassigned)");
+}
+
+#[test]
+fn routine_group_key_status_enabled() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Enabled");
+}
+
+#[test]
+fn routine_group_key_status_disabled() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], false);
+    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Disabled");
+}
+
+#[test]
+fn routine_group_key_none_returns_empty_string() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::None), "");
+}
+
+// ── group_routines ────────────────────────────────────────────────────────────
+
+#[test]
+fn group_routines_none_returns_single_group_with_all_routines() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "codex", "0 * * * *", &[], &[], false),
+    ];
+    let groups = group_routines(&rs, RGroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "");
+    assert_eq!(groups[0].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_agent_creates_one_group_per_agent() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "codex", "0 * * * *", &[], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Agent);
+    // BTreeMap → alphabetical: claude, codex
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "claude");
+    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[1].0, "codex");
+    assert_eq!(groups[1].1.len(), 1);
+}
+
+#[test]
+fn group_routines_by_agent_preserves_input_order_within_group() {
+    let rs = vec![
+        routine("first", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("second", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Agent);
+    assert_eq!(groups[0].1[0].id, "first");
+    assert_eq!(groups[0].1[1].id, "second");
+}
+
+#[test]
+fn group_routines_by_machine_separates_unassigned() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &["worker-1"], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &["worker-1"], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Machine);
+    // alphabetical: "(unassigned)" sorts before "worker-1"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "(unassigned)");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "worker-1");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_status_splits_enabled_and_disabled() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &[], &[], false),
+        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Status);
+    // alphabetical: "Disabled" before "Enabled"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "Disabled");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "Enabled");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+// ── sort by RCol::LastFire ────────────────────────────────────────────────────
+
+fn routine_with_last_fire(id: &str, manual: Option<u64>, scheduled: Option<u64>) -> Routine {
+    let mut r = routine(id, id, "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = manual;
+    r.last_scheduled_trigger_at = scheduled;
+    r
+}
+
+#[test]
+fn sort_by_last_fire_ascending_puts_oldest_first() {
+    let rs = vec![
+        routine_with_last_fire("new", Some(300), None),
+        routine_with_last_fire("old", Some(100), None),
+        routine_with_last_fire("never", None, None),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::LastFire), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "never");
+    assert_eq!(sorted[1].id, "old");
+    assert_eq!(sorted[2].id, "new");
+}
+
+#[test]
+fn sort_by_last_fire_descending_puts_newest_first() {
+    let rs = vec![
+        routine_with_last_fire("old", Some(100), None),
+        routine_with_last_fire("new", Some(300), None),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::LastFire), RDir::Desc, now());
+    assert_eq!(sorted[0].id, "new");
+    assert_eq!(sorted[1].id, "old");
+}
+
+// ── clone_title ───────────────────────────────────────────────────────────────
+
+#[test]
+fn clone_title_prepends_copy_of() {
+    assert_eq!(clone_title("Daily report"), "Copy of Daily report");
+}
+
+#[test]
+fn clone_title_does_not_double_prefix() {
+    assert_eq!(clone_title("Copy of Daily report"), "Copy of Daily report");
+}
+
+#[test]
+fn clone_title_preserves_empty_string() {
+    assert_eq!(clone_title(""), "Copy of ");
+}

@@ -100,6 +100,7 @@ fn build_routine_command_contains_expected_pieces() {
             "{prompt}".to_string(),
         ],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
@@ -129,6 +130,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
         command: "codex".to_string(),
         args: vec!["exec".to_string(), "{prompt_file}".to_string()],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     assert!(cmd.contains("'codex exec prompt.md'"));
@@ -141,6 +143,7 @@ fn build_routine_command_writes_claude_md() {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     // moadim-managed section written via printf %b
@@ -177,12 +180,42 @@ fn build_routine_command_writes_claude_md() {
 }
 
 #[test]
+fn build_routine_command_writes_disclosure_to_agent_instructions_file() {
+    // An agent that reads a non-CLAUDE.md instructions file (here Codex's AGENTS.md) must get the
+    // moadim system prompt + routine-origin disclosure written into *that* file, not CLAUDE.md, so
+    // the disclosure reaches the agent that actually runs (#152).
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        setup: None,
+        instructions_file: "AGENTS.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // disclosure lands in AGENTS.md
+    assert!(
+        cmd.contains(r#"> "$WB/AGENTS.md""#),
+        "moadim prompt should be written to AGENTS.md for codex"
+    );
+    assert!(
+        cmd.contains("Routine origin disclosure"),
+        "routine-origin disclosure section missing"
+    );
+    // and not in CLAUDE.md, which Codex never reads
+    assert!(
+        !cmd.contains("CLAUDE.md"),
+        "codex routine must not write CLAUDE.md"
+    );
+}
+
+#[test]
 fn build_routine_command_aborts_when_prompt_missing() {
     let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     // The cp of the routine's source prompt must fail-fast: a missing source aborts the launch
@@ -208,6 +241,7 @@ fn build_routine_command_inserts_setup_before_launch() {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: Some("seed-trust \"$WB\"".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     let setup_at = cmd.find("seed-trust").expect("setup present");

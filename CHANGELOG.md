@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-26
+
 ### Changed
 
 - **`defaults` module split.** `src/routines/defaults.rs` is now a module (`defaults/`); each

@@ -12,6 +12,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ## [Unreleased]
 
 ### Fixed
+- The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
 
 - Build provenance now marks a dirty working tree. A binary built from a tree
   with uncommitted changes to tracked files gets a `-dirty` suffix on its short

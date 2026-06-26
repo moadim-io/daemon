@@ -18,6 +18,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   instead of silently dropping the routine from the store, UI, API, and crontab
   with no trace. Directories with no `routine.toml` are still skipped quietly.
   (#530)
+- Build provenance now marks a dirty working tree. A binary built from a tree
+  with uncommitted changes to tracked files gets a `-dirty` suffix on its short
+  SHA (e.g. `a1b2c3d-dirty`) in `moadim --version`, `GET /api/v1/health`, and the
+  MCP provenance, instead of misreporting a clean SHA that doesn't match its
+  source. A pristine checkout is unchanged, and the `"unknown"` (no-git) fallback
+  is preserved. (#491, follow-up to #367)
 - **macOS: TCC "administer your computer" dialog no longer appears during background runs.**
   `moadim install` now proactively sends a harmless Apple Event to System Events so macOS
   prompts for the Automation permission once, while the user is at the terminal. After clicking
@@ -25,6 +31,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   A hint line is printed before the prompt so users know what to expect. Closes #730.
 
 ### Added
+
+- **UI: clone/duplicate a routine.** A ⧉ duplicate button on each routine row opens the
+  create-routine form pre-filled with all fields from the source routine (schedule, agent, prompt,
+  repositories, machines, TTL, enabled state). The title is automatically prefixed with
+  "Copy of " (and the prefix is not doubled on repeated clones). Operators can adjust any field
+  before saving; the result is a brand-new independent routine. Closes #715.
 
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
   returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
@@ -44,6 +56,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Per-row health-status badge in the Routines table.** A new sortable **HEALTH** column
+  shows a colored badge on every routine row: `HEALTHY` (accent), `DISABLED` (muted),
+  `DORMANT` (amber — enabled but no machine assigned), `DEAD SCHEDULE` (red — schedule
+  yields no future fire), and `AGENT MISSING` (amber — agent config not registered).
+  Badges follow the traffic-light pattern used by Jenkins, GitHub Actions, and Datadog:
+  color + text label together so status is legible without color vision. Sorting ascending
+  puts the most-urgent rows first (Dormant → Dead Schedule → Agent Missing → Disabled →
+  Healthy), letting operators triage broken routines in one click. The **LAST FIRE** column
+  header is also now sortable. Pure frontend — no backend change. Closes #712.
 - **Group-by dimension for the Cron Jobs table.** A new **GROUP BY** selector in the
   Cron Jobs toolbar lets operators partition the flat job list into labelled sections
   by **Handler**, **Machine**, or **Status** (enabled/disabled). Within each group the

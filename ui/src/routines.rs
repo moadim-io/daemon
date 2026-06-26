@@ -447,6 +447,81 @@ pub(crate) fn last_fire_at(r: &Routine) -> Option<u64> {
     }
 }
 
+// ─── Health status ────────────────────────────────────────────────────────────
+
+/// At-a-glance operational health derived from a routine's current fields.
+/// Covers the same fault categories as the Overview attention-reason triage
+/// plus the `Disabled` state so every row in the Routines table has a badge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoutineHealth {
+    /// Enabled but assigned to no machine — fires nowhere.
+    Dormant,
+    /// Enabled, has a machine, but the cron expression yields no future fire.
+    DeadSchedule,
+    /// Enabled, scheduled, has a machine, but agent config is missing.
+    AgentMissing,
+    /// `enabled: false` — intentionally paused.
+    Disabled,
+    /// Enabled, scheduled, has a machine, agent registered — fully operational.
+    Healthy,
+}
+
+impl RoutineHealth {
+    /// Lower number = more urgent. Ascending sort puts broken rows first.
+    pub(crate) fn priority(self) -> u8 {
+        match self {
+            RoutineHealth::Dormant => 0,
+            RoutineHealth::DeadSchedule => 1,
+            RoutineHealth::AgentMissing => 2,
+            RoutineHealth::Disabled => 3,
+            RoutineHealth::Healthy => 4,
+        }
+    }
+
+    /// Short uppercase label shown in the badge.
+    pub(crate) fn badge(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "DORMANT",
+            RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
+            RoutineHealth::AgentMissing => "AGENT MISSING",
+            RoutineHealth::Disabled => "DISABLED",
+            RoutineHealth::Healthy => "HEALTHY",
+        }
+    }
+
+    /// CSS class string for the badge `<span>`.
+    pub(crate) fn badge_class(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "health-badge dormant",
+            RoutineHealth::DeadSchedule => "health-badge dead",
+            RoutineHealth::AgentMissing => "health-badge agent-missing",
+            RoutineHealth::Disabled => "health-badge disabled",
+            RoutineHealth::Healthy => "health-badge healthy",
+        }
+    }
+}
+
+/// Derive the operational health of a routine as of `now`.
+///
+/// Faults are checked in priority order — `Dormant` outranks `DeadSchedule`
+/// which outranks `AgentMissing` — matching the Overview triage ordering.
+#[must_use]
+pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
+    if !r.enabled {
+        return RoutineHealth::Disabled;
+    }
+    if r.machines.iter().all(|m| m.trim().is_empty()) {
+        return RoutineHealth::Dormant;
+    }
+    if next_fire_after(&r.schedule, now).is_none() {
+        return RoutineHealth::DeadSchedule;
+    }
+    if !r.agent_registered {
+        return RoutineHealth::AgentMissing;
+    }
+    RoutineHealth::Healthy
+}
+
 /// Routines surviving `filter`, preserving the input order.
 #[must_use]
 pub fn filter_routines(
@@ -498,6 +573,8 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    /// Pre-filled create form cloned from an existing routine.
+    Clone(Box<Routine>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -522,7 +599,9 @@ pub enum RView {
 pub enum RCol {
     Title,
     NextRun,
+    LastFire,
     Agent,
+    Health,
     Enabled,
     Updated,
 }
@@ -565,6 +644,10 @@ pub fn sort_routines(
             RCol::Agent => a.agent.to_lowercase().cmp(&b.agent.to_lowercase()),
             RCol::Enabled => a.enabled.cmp(&b.enabled),
             RCol::Updated => a.updated_at.cmp(&b.updated_at),
+            RCol::Health => routine_health(a, now)
+                .priority()
+                .cmp(&routine_health(b, now).priority()),
+            RCol::LastFire => last_fire_at(a).cmp(&last_fire_at(b)),
             RCol::NextRun => {
                 let next_of = |r: &Routine| {
                     if r.enabled {
@@ -635,6 +718,8 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    /// Open the create form pre-filled with a copy of the named routine.
+    GoToClone(String),
     OpenEdit(String),
     OpenConfirmDelete {
         id: String,
@@ -681,6 +766,11 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToClone(id) => {
+                if let Some(source) = s.routines.iter().find(|x| x.id == id) {
+                    s.page = RPage::Clone(Box::new(source.clone()));
+                }
+            }
             RAction::OpenEdit(id) => s.modal = RModal::Edit(id),
             RAction::OpenConfirmDelete { id, title } => {
                 s.modal = RModal::ConfirmDelete { id, title }
@@ -913,6 +1003,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_edit = {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::OpenEdit(id)))
+    };
+    let on_clone = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToClone(id)))
     };
     let on_ask_delete = {
         let state = state.clone();
@@ -1294,6 +1388,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     RPage::New => html! {
                         <RoutineForm editing={None} on_cancel={on_cancel} on_save={on_create} />
                     },
+                    RPage::Clone(source) => {
+                        let mut pre = *source;
+                        pre.title = clone_title(&pre.title);
+                        html! {
+                            <RoutineForm editing={Some(pre)} on_cancel={on_cancel} on_save={on_create} />
+                        }
+                    },
                     RPage::Logs(id) => {
                         let title = routines.iter()
                             .find(|r| r.id == id)
@@ -1360,6 +1461,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             sort_dir={sort_dir}
                                             on_sort={on_col_sort}
                                             on_edit={on_edit}
+                                            on_clone={on_clone}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
@@ -1851,6 +1953,7 @@ pub struct TableProps {
     /// Fired when the user clicks a sortable column header.
     pub on_sort: Callback<RCol>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
@@ -1927,10 +2030,11 @@ pub fn routine_table(props: &TableProps) -> Html {
                         { sort_th("TITLE", RCol::Title, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"SCHEDULE"}</th>
                         { sort_th("NEXT RUN", RCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
-                        <th>{"LAST FIRE"}</th>
+                        { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
+                        { sort_th("HEALTH", RCol::Health, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("ENABLED", RCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("UPDATED", RCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
@@ -1945,6 +2049,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                             selected={props.selected.contains(&r.id)}
                             on_select={props.on_select.clone()}
                             on_edit={props.on_edit.clone()}
+                            on_clone={props.on_clone.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
@@ -1994,6 +2099,7 @@ pub struct RowProps {
     /// Fired when the selection checkbox is clicked.
     pub on_select: Callback<String>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
@@ -2011,6 +2117,11 @@ pub fn routine_row(props: &RowProps) -> Html {
 
     let on_edit = {
         let cb = props.on_edit.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_clone = {
+        let cb = props.on_clone.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -2140,6 +2251,12 @@ pub fn routine_row(props: &RowProps) -> Html {
             <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
             <td><span class="cell-meta" title="workbench retention for finished runs">{ format_ttl(r.ttl_secs) }</span></td>
             <td>
+                <span class={routine_health(r, props.now).badge_class()}
+                    title={routine_health(r, props.now).badge()}>
+                    {routine_health(r, props.now).badge()}
+                </span>
+            </td>
+            <td>
                 <label class="toggle">
                     <input type="checkbox" checked={r.enabled} onchange={on_toggle} />
                     <div class="toggle-track"></div>
@@ -2151,6 +2268,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
+                    <button class="act-btn clone" title="Duplicate routine" aria-label="Duplicate routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
@@ -2165,6 +2283,17 @@ pub struct FormProps {
     pub editing: Option<Routine>,
     pub on_cancel: Callback<()>,
     pub on_save: Callback<CreateRoutineRequest>,
+}
+
+/// Title for a cloned routine: prepend "Copy of " when the original title does not
+/// already start with that prefix, preventing "Copy of Copy of …" accumulation.
+pub(crate) fn clone_title(title: &str) -> String {
+    const PREFIX: &str = "Copy of ";
+    if title.starts_with(PREFIX) {
+        title.to_string()
+    } else {
+        format!("{PREFIX}{title}")
+    }
 }
 
 /// Serialize repositories as one `url [branch]` line each for the textarea.

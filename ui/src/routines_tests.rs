@@ -702,3 +702,161 @@ fn last_fire_at_equal_timestamps_returns_that_value() {
     let r = routine_with_triggers(Some(500), Some(500));
     assert_eq!(last_fire_at(&r), Some(500));
 }
+
+// ── routine_health ────────────────────────────────────────────────────────────
+
+#[test]
+fn health_disabled_routine_is_disabled() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn health_enabled_no_machines_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &[], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_enabled_blank_machine_entry_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["   "], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_dead_schedule_is_dead() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine(
+            "a",
+            "A",
+            "claude",
+            "not-a-valid-cron",
+            &["machine1"],
+            &[],
+            true,
+        )
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::DeadSchedule);
+}
+
+#[test]
+fn health_missing_agent_is_agent_missing() {
+    // agent_registered defaults to false in routine()
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::AgentMissing);
+}
+
+#[test]
+fn health_fully_configured_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_priority_order_dormant_most_urgent() {
+    assert!(
+        RoutineHealth::Dormant.priority() < RoutineHealth::DeadSchedule.priority(),
+        "Dormant must outrank DeadSchedule"
+    );
+    assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
+    assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Healthy.priority());
+}
+
+// ── sort by RCol::Health ──────────────────────────────────────────────────────
+
+fn routine_with_health(
+    id: &str,
+    enabled: bool,
+    machines: &[&str],
+    agent_registered: bool,
+) -> Routine {
+    Routine {
+        agent_registered,
+        ..routine(id, id, "claude", "0 * * * *", machines, &[], enabled)
+    }
+}
+
+#[test]
+fn sort_by_health_ascending_puts_most_broken_first() {
+    let rs = vec![
+        routine_with_health("healthy", true, &["m1"], true), // priority 4
+        routine_with_health("dormant", true, &[], true),     // priority 0
+        routine_with_health("disabled", false, &["m1"], false), // priority 3
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Health), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "dormant");
+    assert_eq!(sorted[1].id, "disabled");
+    assert_eq!(sorted[2].id, "healthy");
+}
+
+#[test]
+fn sort_by_health_descending_puts_healthy_first() {
+    let rs = vec![
+        routine_with_health("dormant", true, &[], true),
+        routine_with_health("healthy", true, &["m1"], true),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::Health), RDir::Desc, now());
+    assert_eq!(sorted[0].id, "healthy");
+    assert_eq!(sorted[1].id, "dormant");
+}
+
+// ── sort by RCol::LastFire ────────────────────────────────────────────────────
+
+fn routine_with_last_fire(id: &str, manual: Option<u64>, scheduled: Option<u64>) -> Routine {
+    let mut r = routine(id, id, "claude", "0 * * * *", &[], &[], true);
+    r.last_manual_trigger_at = manual;
+    r.last_scheduled_trigger_at = scheduled;
+    r
+}
+
+#[test]
+fn sort_by_last_fire_ascending_puts_oldest_first() {
+    let rs = vec![
+        routine_with_last_fire("new", Some(300), None),
+        routine_with_last_fire("old", Some(100), None),
+        routine_with_last_fire("never", None, None),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::LastFire), RDir::Asc, now());
+    assert_eq!(sorted[0].id, "never");
+    assert_eq!(sorted[1].id, "old");
+    assert_eq!(sorted[2].id, "new");
+}
+
+#[test]
+fn sort_by_last_fire_descending_puts_newest_first() {
+    let rs = vec![
+        routine_with_last_fire("old", Some(100), None),
+        routine_with_last_fire("new", Some(300), None),
+    ];
+    let sorted = sort_routines(rs, Some(RCol::LastFire), RDir::Desc, now());
+    assert_eq!(sorted[0].id, "new");
+    assert_eq!(sorted[1].id, "old");
+}
+
+// ── clone_title ───────────────────────────────────────────────────────────────
+
+#[test]
+fn clone_title_prepends_copy_of() {
+    assert_eq!(clone_title("Daily report"), "Copy of Daily report");
+}
+
+#[test]
+fn clone_title_does_not_double_prefix() {
+    assert_eq!(clone_title("Copy of Daily report"), "Copy of Daily report");
+}
+
+#[test]
+fn clone_title_preserves_empty_string() {
+    assert_eq!(clone_title(""), "Copy of ");
+}

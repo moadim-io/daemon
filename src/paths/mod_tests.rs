@@ -53,6 +53,23 @@ fn job_dir_is_child_of_jobs_dir() {
 }
 
 #[test]
+fn machine_config_path_filename() {
+    let path = machine_config_path();
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "machine.local.toml"
+    );
+    assert!(path.to_string_lossy().contains("moadim"));
+}
+
+#[test]
+fn machine_config_path_from_home_none_falls_back_to_dot() {
+    let dir = super::machine_config_path_from_home(None);
+    assert!(dir.ends_with(".config/moadim/machine.local.toml"));
+    assert!(dir.starts_with("."));
+}
+
+#[test]
 fn handlers_dir_contains_moadim_and_ends_with_handlers() {
     let path = handlers_dir().to_string_lossy().into_owned();
     assert!(path.contains("moadim"), "expected 'moadim' in {path}");

@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS: TCC "administer your computer" dialog no longer appears during background runs.**
+  `moadim install` now proactively sends a harmless Apple Event to System Events so macOS
+  prompts for the Automation permission once, while the user is at the terminal. After clicking
+  OK the grant is remembered permanently; the background daemon never triggers the dialog again.
+  A hint line is printed before the prompt so users know what to expect. Closes #730.
+
 ### Added
 
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint

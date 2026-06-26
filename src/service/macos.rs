@@ -135,7 +135,10 @@ fn request_automation_permission() {
 granting it here prevents background interruptions"
     );
     let _ = std::process::Command::new("osascript")
-        .args(["-e", "tell application \"System Events\" to get name of every process"])
+        .args([
+            "-e",
+            "tell application \"System Events\" to get name of every process",
+        ])
         .output();
 }
 

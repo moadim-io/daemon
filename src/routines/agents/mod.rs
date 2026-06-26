@@ -106,7 +106,7 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
         return builtin_agent_names();
     };
     let mut names: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
+        .filter_map(Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
             (path.extension()? == "toml")

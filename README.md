@@ -21,12 +21,14 @@ Rust server that schedules **cron jobs** (run a script) and **routines** (run an
 AI agent), exposing both over three interfaces simultaneously:
 
 - **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs and routines
-- **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services
+- **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services; Swagger UI at `/docs`
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
 All three share the same port. Jobs and routines created through any interface are
 automatically synced to the OS crontab so they actually run on schedule. See
-[Routines](#routines) for the agent-loop engine.
+[Routines](#routines) for the agent-loop engine, or
+[`docs/comparison.md`](docs/comparison.md) for how moadim compares to cron,
+GitHub Actions, and other agent runners.
 
 ## Installation
 
@@ -54,6 +56,22 @@ moadim
 This starts the server **in the background** and returns control to your shell.
 Stop it later with `moadim stop` (or the STOP button in the UI). To run it
 attached to your terminal instead, use `moadim --interactive`.
+
+### Man page
+
+A Unix man page ships in [`docs/moadim.1`](docs/moadim.1), mirroring the
+built-in `moadim --help`. View it without installing:
+
+```sh
+man ./docs/moadim.1
+```
+
+Or install it so `man moadim` works system-wide (packagers can drop it into
+`share/man/man1/`):
+
+```sh
+install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
+```
 
 ## Features
 
@@ -265,12 +283,78 @@ GET    /routines.ics          # subscribe to fire times as a calendar feed
 
 **MCP** — the same operations are exposed as tools: `list_routines`,
 `get_routine`, `create_routine`, `update_routine`, `delete_routine`,
-`trigger_routine`, and `cleanup_routines`.
+`trigger_routine`, `routine_logs`, `list_agents`, and `cleanup_workbenches`.
 
 **Agents:** the `agent` field resolves to a config at
 `~/.config/moadim/agents/<agent>.toml`. API responses include
 `agent_registered` so callers can tell whether the named agent is configured on
 the host.
+
+**Built-in `claude` agent prerequisites:** the default `claude` agent needs two
+things on the host beyond the `claude` CLI itself:
+
+- **`python3`** — the agent's `setup` step runs a short `python3` snippet to
+  pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
+  approvals) so the unattended session never blocks on a prompt. If `python3` is
+  not on `PATH`, the setup step fails and the run no-ops — the routine still
+  shows a healthy (green) status, but the agent never actually launches.
+- **`tmux`** — every routine run is launched inside a tmux session (named after
+  the run's workbench), so a tmux binary must be installed.
+
+Both are present by default on most developer machines; install them explicitly
+on a minimal host (e.g. a CI runner or fresh container) before relying on the
+built-in `claude` agent.
+
+### Agent configuration
+
+Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
+`<name>` is the registry key a routine's `agent` field references (the filename
+stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
+defaults (`claude`, `codex`, `hermes`) into this directory **only if the file is
+absent** — your edits are never overwritten — so you can both tweak a default and
+register a brand-new agent by dropping in another `<name>.toml`.
+
+| Field     | Type           | Required | Description                                                                                                                   |
+| --------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `command` | string         | yes      | Executable to run (resolved on `PATH`), e.g. `"claude"`.                                                                       |
+| `args`    | array<string>  | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.                                            |
+| `setup`   | string         | no       | Shell command run in the workbench **before** the agent launches, inserted verbatim into the cron line. See the variables below. |
+
+**Placeholders** (substituted in each `args` entry at launch):
+
+- `{workbench}` — absolute path to the run's workbench directory.
+- `{prompt_file}` — path to the composed prompt file (the rendered `CLAUDE.md`
+  plus the routine's `prompt`). Pass this when the CLI reads its prompt from a
+  file (e.g. `codex exec {prompt_file}`).
+- `{prompt}` — the composed prompt inlined as a single shell-quoted argument.
+  Pass this when the CLI takes the prompt as a positional argument.
+
+**`setup` variables** — the `setup` command runs with two shell variables in
+scope, so it can prepare per-run state before the agent starts:
+
+- `$WB` — absolute workbench path.
+- `$SESS` — the tmux session name for the run.
+
+Examples — the headless `codex`/`hermes` form, and the interactive `claude` form
+(the real default's `setup` step also pre-seeds `~/.claude.json`; see the
+prerequisites above):
+
+```toml
+# ~/.config/moadim/agents/codex.toml
+command = "codex"
+args = ["exec", "{prompt_file}"]
+```
+
+```toml
+# ~/.config/moadim/agents/claude.toml
+command = "claude"
+args = ["--permission-mode", "auto", "{prompt}"]
+# setup = '''...optional pre-launch shell command, runs with $WB and $SESS in scope...'''
+```
+
+A routine whose `agent` names a file that is missing or whose TOML is malformed
+fails to launch; `GET /routines` reports `agent_registered: false` for the former
+so you can spot an unconfigured agent before it fires.
 
 ### Global user prompt
 
@@ -310,9 +394,9 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. |
-| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (matching `status --json`'s shape; the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
-| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}`. Exits `0` when running, `3` when not. |
-| `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N}`. Exits `0` when running, `3` when not. |
+| `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
+| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Exits `0` when running, `3` when not. |
+| `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
 
 `status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch
 on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`
@@ -341,7 +425,9 @@ moadim cron-jobs delete <id>
 moadim routines create --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..." \
   --repositories '[{"repository":"https://github.com/me/repo","branch":"main"}]'
 moadim routines list
+moadim routines get <id>
 moadim routines update <id> --title "Renamed" --ttl-secs 3600
+moadim routines replace <id> --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..."
 moadim routines trigger <id>
 moadim routines logs <id>
 moadim routines ical          # iCalendar feed of upcoming fire times
@@ -363,9 +449,9 @@ on stdout. Paired with the exit codes above, a caller gets the full contract wit
 
 | Command            | `--json` shape | Exit codes |
 |--------------------|----------------|------------|
-| `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — `pid` is `null` when no pid file is present | `0` running, `3` not |
-| `moadim cleanup --json` | `{"running":bool,"removed":N}` — `removed` is `0` when no server is running | `0` running, `3` not |
-| `moadim stop --json`    | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — same shape as `status --json`; `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
+| `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `pid` is `null` when no pid file is present; `uptime_secs`/`version` are folded in from the server's `GET /health` and are `null` when no server answers | `0` running, `3` not |
+| `moadim cleanup --json` | `{"running":bool,"removed":N,"address":"127.0.0.1:5784"}` — `removed` is `0` when no server is running; `address` is the bound endpoint (matching `status`/`stop --json`) | `0` running, `3` not |
+| `moadim stop --json`    | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
 
 Any other failure exits `1` with a message on stderr. The object is always a single line, so
 `moadim status --json | jq -r .pid` and similar pipelines work without buffering.
@@ -448,7 +534,14 @@ url:       http://localhost:5784/mcp
 
 ## API
 
-Full interface definitions are auto-generated at build time — see the [`apis/`](apis/) folder.
+The daemon serves an interactive **Swagger UI** at
+[`http://localhost:5784/docs`](http://localhost:5784/docs) — open it in a
+browser to explore every endpoint, read the schemas, and try calls against your
+running server directly. The raw OpenAPI spec is at
+`http://localhost:5784/docs/openapi.json`.
+
+Both are regenerated at build time from the source; the checked-in snapshot
+lives in [`apis/`](apis/).
 
 ## Changelog
 

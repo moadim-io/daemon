@@ -225,8 +225,13 @@ pub(crate) fn format_crontab_line(job: &CronJob, handlers: &Path) -> String {
 }
 
 /// Build the full moadim block string from the enabled managed jobs in `store`.
+///
+/// Only jobs assigned to *this* machine ([`crate::machine::current_machine`]) are scheduled, so a
+/// shared config repo can drive different jobs on different machines. A job with an empty `machines`
+/// list runs nowhere and is logged once as dormant (see [`warn_dormant_jobs`]).
 fn build_block(store: &CronStore) -> String {
     let dir = handlers_dir();
+    let me = crate::machine::current_machine();
     let mut jobs: Vec<CronJob> = {
         let lock = store.lock_recover();
         lock.values()
@@ -234,6 +239,8 @@ fn build_block(store: &CronStore) -> String {
             .cloned()
             .collect()
     };
+    warn_dormant_jobs(&jobs);
+    jobs.retain(|j| crate::machine::targets(&j.machines, &me));
     jobs.sort_by_key(|j| j.created_at);
 
     let lines: Vec<String> = jobs.iter().map(|j| format_crontab_line(j, &dir)).collect();
@@ -245,6 +252,27 @@ fn build_block(store: &CronStore) -> String {
             "{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{}\n{BLOCK_END}",
             lines.join("\n")
         )
+    }
+}
+
+/// Log a single warning naming enabled managed jobs with no machine assignment (empty `machines`).
+///
+/// Mirrors the routine dormant-warning: with "unset targeting = runs nowhere", such jobs never
+/// schedule on any machine, so surfacing them once at sync time keeps the upgrade-goes-dormant
+/// behavior visible instead of silent.
+fn warn_dormant_jobs(jobs: &[CronJob]) {
+    let dormant: Vec<&str> = jobs
+        .iter()
+        .filter(|j| j.machines.is_empty())
+        .map(|j| j.id.as_str())
+        .collect();
+    if !dormant.is_empty() {
+        log::warn!(
+            "{} enabled cron job(s) have no machine assignment and will not be scheduled on any \
+             machine: {}; assign with `moadim cron-jobs update <id> --machines '[\"<name>\"]'`",
+            dormant.len(),
+            dormant.join(", ")
+        );
     }
 }
 
@@ -432,6 +460,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
                     schedule: to_moadim_schedule(os_sched),
                     handler: handler_from_command(command, &dir),
                     metadata: serde_json::json!({}),
+                    machines: Vec::new(),
                     enabled: true,
                     source: "managed".to_string(),
                     created_at: now,

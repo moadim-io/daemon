@@ -47,17 +47,100 @@ fn tmux_bin_falls_back_to_a_nonexistent_path_under_cfg_test() {
 }
 
 #[test]
-fn tmux_bin_honors_the_env_override() {
-    // With MOADIM_TMUX_BIN set, tmux_bin returns it verbatim — the seam that lets a test (or an
-    // operator with a non-standard install) point the probe/kill at a chosen binary instead of the
-    // cfg(test) fallback. Complements the no-override case above (#211/#215).
+fn tmux_session_alive_reflects_the_bin_exit_status() {
+    // Point the tmux seam at real binaries that exit 0 / non-zero so the `has-session` status
+    // actually resolves, exercising the `.map(|status| status.success())` branch in both directions
+    // (the cfg(test) fallback path never spawns a real process, so this is the only place it runs).
+    let previous = std::env::var_os("MOADIM_TMUX_BIN");
+    let set = |bin: &str| {
+        // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1).
+        unsafe { std::env::set_var("MOADIM_TMUX_BIN", bin) };
+    };
+
+    set("/usr/bin/true");
+    assert!(
+        super::session::tmux_session_alive("moadim-anything"),
+        "a 0-exit tmux stub reads as alive"
+    );
+    set("/usr/bin/false");
+    assert!(
+        !super::session::tmux_session_alive("moadim-anything"),
+        "a non-zero-exit tmux stub reads as not alive"
+    );
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+}
+
+#[test]
+fn note_forced_kill_is_silent_when_log_cannot_be_opened() {
+    // The workbench directory does not exist, so opening `agent.log` (append+create) fails because
+    // its parent is absent — exercising the `if let Ok` fall-through (the best-effort Err branch).
+    let missing = std::env::temp_dir().join(format!("moadim-nfk-missing-{}", uuid::Uuid::new_v4()));
+    let _ = std::fs::remove_dir_all(&missing);
+    super::session::note_forced_kill(&missing);
+    // Nothing is created when the open fails.
+    assert!(!missing.exists());
+}
+
+#[test]
+fn cleanup_expired_workbenches_kills_a_live_expired_session() {
+    // With the tmux seam pointed at a 0-exit stub every session reads as *alive*, so the watchdog's
+    // `alive && is_expired(.., max_runtime_for(slug))` actually evaluates the `max_runtime_for`
+    // closure (the existing test's absent-tmux path short-circuits before it). The expired workbench
+    // is force-killed and reaped.
+    let home = std::env::temp_dir().join(format!("moadim-cleanup-live-{}", uuid::Uuid::new_v4()));
+    let prev_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+        std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/true");
+    }
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+    // Timestamp 1 → far past any default max-runtime ceiling → expired, so the live session is killed.
+    std::fs::create_dir_all(workbenches.join("alive-1")).unwrap();
+
+    let store = super::super::model::new_store();
+    let removed = cleanup_expired_workbenches(&store);
+    assert!(
+        removed >= 1,
+        "the live, expired workbench is killed and reaped"
+    );
+    assert!(!workbenches.join("alive-1").exists());
+
+    // SAFETY: single-threaded harness; restore the saved overrides.
+    unsafe {
+        match prev_home {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+        match prev_tmux {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn tmux_bin_honors_the_override_env_var() {
+    // With `MOADIM_TMUX_BIN` set, `tmux_bin` returns it verbatim, ahead of the cfg(test) fallback —
+    // the seam that lets a test point probes/kills at a controlled stub.
     let previous = std::env::var_os("MOADIM_TMUX_BIN");
     // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
     unsafe {
-        std::env::set_var("MOADIM_TMUX_BIN", "/usr/local/bin/my-tmux");
+        std::env::set_var("MOADIM_TMUX_BIN", "/tmp/moadim-test-tmux-override");
     }
 
-    assert_eq!(super::session::tmux_bin(), "/usr/local/bin/my-tmux");
+    assert_eq!(super::session::tmux_bin(), "/tmp/moadim-test-tmux-override");
 
     // SAFETY: single-threaded harness; restore the saved override.
     unsafe {
@@ -242,6 +325,85 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
 }
 
 #[test]
+fn watchdog_dir_kills_hung_session_without_reaping() {
+    let base = std::env::temp_dir().join("moadim-watchdog-kill-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    touch_dir(&base, "hung-100"); // live + over max runtime -> killed
+    touch_dir(&base, "fresh-900"); // live + within bound      -> untouched
+    touch_dir(&base, "gone-100"); // already dead              -> untouched
+    touch_dir(&base, "notawb"); // not a workbench            -> skipped
+    std::fs::write(base.join("stray-50"), b"x").unwrap(); // a file, not a dir -> ignored
+
+    let now = 1000;
+    let max_runtime_for = |_slug: &str| 300u64; // age 900 (hung/gone) > 300, age 100 (fresh) <= 300
+    let alive = |session: &str| session != "moadim-gone-100";
+    let killed = std::cell::RefCell::new(Vec::new());
+    let kill = |session: &str| killed.borrow_mut().push(session.to_string());
+
+    let count = watchdog_dir(&base, now, &max_runtime_for, &alive, &kill);
+
+    assert_eq!(count, 1, "only the hung session is killed");
+    assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
+    // The watchdog only kills; it never reaps, so every directory still exists.
+    assert!(base.join("hung-100").exists());
+    assert!(base.join("fresh-900").exists());
+    assert!(base.join("gone-100").exists());
+    // The kill is recorded in the run's agent.log.
+    let log = std::fs::read_to_string(base.join("hung-100").join("agent.log")).unwrap();
+    assert!(log.contains("exceeded max runtime"));
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn watchdog_dir_returns_zero_when_dir_unreadable() {
+    let missing =
+        std::env::temp_dir().join(format!("moadim-watchdog-missing-{}", uuid::Uuid::new_v4()));
+    assert!(!missing.exists());
+    let max_runtime_for = |_slug: &str| 0u64;
+    let alive = |_session: &str| true;
+    assert_eq!(
+        watchdog_dir(&missing, 1000, &max_runtime_for, &alive, &noop_kill),
+        0
+    );
+}
+
+#[test]
+fn kill_hung_sessions_scans_real_workbenches_dir() {
+    // Drives the public watchdog entry point so it resolves the real `workbenches_dir()` and runs
+    // `tmux_session_alive` as the injected liveness check. With an empty store every slug falls back
+    // to MAX_RUNTIME_SECS, so the temp workbench (no live tmux session) is never killed — but the
+    // snapshot + scan path executes.
+    let home = std::env::temp_dir().join(format!("moadim-watchdog-{}", uuid::Uuid::new_v4()));
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+    // An old workbench whose tmux session is absent -> not killed (already dead).
+    std::fs::create_dir_all(workbenches.join("orphan-1")).unwrap();
+
+    let store = super::super::model::new_store();
+    let killed = kill_hung_sessions(&store);
+
+    assert_eq!(killed, 0);
+    assert!(workbenches.join("orphan-1").exists());
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn reap_dir_returns_zero_when_dir_unreadable() {
     // A directory that does not exist makes `read_dir` fail; the early `return 0`
     // branch is taken and nothing is reaped.
@@ -414,6 +576,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
         created_at: 0,

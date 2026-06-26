@@ -1,7 +1,7 @@
 .\" Man page for moadim.
 .\" Mirrors the built-in `moadim --help` output (src/cli.rs::print_help).
 .\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
-.TH MOADIM 1 "2026-06-21" "moadim 0.13.0" "Moadim Manual"
+.TH MOADIM 1 "2026-06-26" "moadim 0.16.0" "Moadim Manual"
 .SH NAME
 moadim \- cron/MCP/REST server with a web control panel
 .SH SYNOPSIS
@@ -55,6 +55,10 @@ Register moadim as an OS service (launchd / systemd user).
 .B uninstall
 Remove the OS service registration.
 .TP
+.B machine <show|set|list>
+Show or set this machine's identity, or list the machines referenced by
+routines and cron jobs.
+.TP
 .BR "help" ", " \-h ", " \-\-help
 Show usage help.
 .TP
@@ -74,6 +78,11 @@ Manage cron jobs (alias:
 .B routines <create|list|get|update|replace|delete|trigger|logs|ical> ...
 Manage routines (alias:
 .BR routine ).
+.TP
+.B schedule trigger <id>
+Trigger a routine or cron job by ID (used by the generated
+.B run.sh
+wrappers).
 .TP
 .B agents
 List available agent keys.

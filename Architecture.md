@@ -86,7 +86,7 @@ pub struct CronJob {
     pub source: String,                   // "managed" | "system:user-crontab" | "system:etc-crontab" | "system:cron.d/<file>"
     pub created_at: u64,                  // Unix seconds
     pub updated_at: u64,
-    pub last_triggered_at: Option<u64>,
+    pub last_manual_trigger_at: Option<u64>,  // only manual triggers update this; scheduled cron runs do not
 }
 ```
 
@@ -116,7 +116,7 @@ Both are cloned into `AppState` (REST) and `MoadimMcp` (MCP). Every write acquir
 | `svc_create` | Validates cron expr, assigns UUID v4, writes TOML, inserts into store |
 | `svc_update` | Partial-updates fields, bumps `updated_at`, rewrites TOML |
 | `svc_delete` | Removes from store, deletes job directory |
-| `svc_trigger` | Records `last_triggered_at = now`, rewrites TOML |
+| `svc_trigger` | Records `last_manual_trigger_at = now`, rewrites TOML |
 | `svc_logs_path` | Checks job exists, returns path to `job.local.log` |
 
 Both the HTTP handlers and MCP tools call these directly — there is no duplication of logic between the two transports.

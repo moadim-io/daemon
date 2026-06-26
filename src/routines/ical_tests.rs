@@ -12,6 +12,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
         repositories: vec![],
+        machines: vec![],
         enabled,
         source: "managed".to_string(),
         created_at: 0,
@@ -193,4 +194,32 @@ fn svc_ical_reads_store() {
     let ics = svc_ical(&store);
     assert!(ics.starts_with("BEGIN:VCALENDAR"));
     assert!(ics.contains("BEGIN:VEVENT"));
+}
+
+#[test]
+fn build_ical_skips_all_routines_when_globally_locked() {
+    let dir = std::env::temp_dir().join(format!("moadim-icallock-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("create temp home");
+    // SAFETY: single-threaded test execution (RUST_TEST_THREADS=1).
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    }
+    let lock_path = crate::paths::global_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&lock_path, b"").unwrap();
+
+    let routine = routine_with("rl", "@daily", true);
+    let ics = build_ical(&[routine], fixed_now());
+    assert!(
+        !ics.contains("BEGIN:VEVENT"),
+        "globally locked feed must have no events"
+    );
+
+    // SAFETY: cleanup.
+    unsafe {
+        std::env::remove_var("MOADIM_HOME_OVERRIDE");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }

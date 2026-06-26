@@ -131,7 +131,28 @@ fn build_routine_command_substitutes_arg_placeholders() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
-    assert!(cmd.contains("'codex exec prompt.md'"));
+    // The agent invocation is suffixed with the exit-status capture (see #453), so the launched
+    // string is `codex exec prompt.md; echo $? > exit_code`.
+    assert!(cmd.contains("'codex exec prompt.md; echo $? > exit_code'"));
+}
+
+#[test]
+fn build_routine_command_captures_exit_status() {
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // Each run records its terminal exit status into `$WB/exit_code`, and the capture is part of
+    // the tmux-launched invocation (so it runs in the pane, after the agent exits) rather than a
+    // separate statement that would record the wrong process's `$?`.
+    let launch_at = cmd.find("tmux new-session").expect("launch present");
+    assert!(
+        cmd[launch_at..].contains("echo $? > exit_code"),
+        "exit-status capture missing from the agent invocation"
+    );
 }
 
 #[test]

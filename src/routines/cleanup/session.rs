@@ -50,17 +50,22 @@ pub(super) fn tmux_kill_session(session: &str) {
         .status();
 }
 
-/// Record a watchdog kill in the run's `agent.log` (best-effort), so an operator reading the log
-/// sees why the session ended. `workbench` is the run directory; the note is appended to its
-/// `agent.log` (the same file the live session's output is piped to).
+/// Record a watchdog kill in the run's `agent.log` *and* its `exit_code` file (best-effort).
+///
+/// `workbench` is the run directory. The human-readable note is appended to `agent.log` (the same
+/// file the live session's output is piped to) so an operator reading the log sees why the session
+/// ended. The machine-readable `killed` sentinel is written to `exit_code`, the same file a
+/// normally-finishing run writes its numeric `$?` into (see `command::build_routine_command`); the
+/// distinct sentinel keeps a watchdog-killed run from masquerading as a clean `0` exit. The kill
+/// SIGKILLs the agent's pane before its own `echo $? > exit_code` can run, so there is no clobber.
 pub(super) fn note_forced_kill(workbench: &Path) {
     use std::io::Write;
-    let path = workbench.join("agent.log");
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
-        .open(path)
+        .open(workbench.join("agent.log"))
     {
         let _ = file.write_all(b"moadim: routine exceeded max runtime; killing session\n");
     }
+    let _ = std::fs::write(workbench.join("exit_code"), b"killed\n");
 }

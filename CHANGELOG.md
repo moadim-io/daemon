@@ -11,8 +11,34 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
+- A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
+  pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
+  and push to `main`, so style/lint regressions are caught in review without
+  relying on local hooks.
+
+### Changed
+
+- Enabled the `clippy::map_unwrap_or` lint and fixed the violations
+  (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
+
+### Fixed
+- The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
+
+- An agent config that exists on disk but cannot be read (due to a permissions
+  error or path collision) is now reported as `AgentLoadError::Unreadable` rather
+  than `AgentLoadError::Missing`. Previously, any `read_to_string` failure was
+  silently mapped to `Missing`, causing `validate_agent` to accept the broken
+  config (it tolerates `Missing` for configs not yet created), leaving a
+  green-dot routine that silently never fires. The new `Unreadable` variant is
+  rejected at create/update time with a `BadRequest`, so the operator learns the
+  real cause immediately. (#445)
+- Loading a routine whose `routine.toml` is unparsable or missing a required
+  field (title, schedule, or agent) now logs a `warn` naming the directory,
+  instead of silently dropping the routine from the store, UI, API, and crontab
+  with no trace. Directories with no `routine.toml` are still skipped quietly.
+  (#530)
 - Build provenance now marks a dirty working tree. A binary built from a tree
   with uncommitted changes to tracked files gets a `-dirty` suffix on its short
   SHA (e.g. `a1b2c3d-dirty`) in `moadim --version`, `GET /api/v1/health`, and the
@@ -25,6 +51,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   OK the grant is remembered permanently; the background daemon never triggers the dialog again.
   A hint line is printed before the prompt so users know what to expect. Closes #730.
 
+- **Trigger-spawned processes are now reaped so the daemon no longer leaks zombie
+  (`<defunct>`) entries.** Both the routine trigger (`POST /routines/{id}/trigger`)
+  and the cron-job trigger (`POST /cron-jobs/{id}/trigger`) previously dropped
+  the spawned child handle without calling `wait()`, so every trigger leaked one
+  zombie for the daemon's lifetime. A new `utils::process::spawn_and_reap` utility
+  spawns the command and hands the child to a detached thread that reaps it.
+  (#212)
+
 ### Added
 
 - `moadim trigger <id>` triggers a routine to run immediately from the terminal,
@@ -35,6 +69,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (exit `3`) when no server is reachable, matching the `status`/`cleanup`
   exit-code contract. (`moadim run <id>` is accepted as a hidden back-compat
   alias.)
+
+- **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section
+  toolbar lets operators partition the flat routine list into labelled sections by **Agent**,
+  **Machine**, or **Status** (Enabled / Disabled), with a **None** option to restore the flat
+  view. The selector only appears in Table view (hidden for Calendar and Day) and composes with
+  the existing faceted filter and column-sort controls. Closes #733.
+
+- **UI: clone/duplicate a routine.** A ⧉ duplicate button on each routine row opens the
+  create-routine form pre-filled with all fields from the source routine (schedule, agent, prompt,
+  repositories, machines, TTL, enabled state). The title is automatically prefixed with
+  "Copy of " (and the prefix is not doubled on repeated clones). Operators can adjust any field
+  before saving; the result is a brand-new independent routine. Closes #715.
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
   returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
   `local_only=true` query parameter that filters the response to entries targeting the current
@@ -335,6 +381,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
   port or a reverse proxy instead of failing against an address the daemon may not
   be bound to. (#385)
+- An agent config that exists on disk but cannot be read (due to a permissions
+  error or path collision) is now reported as `AgentLoadError::Unreadable` rather
+  than `AgentLoadError::Missing`. Previously, any `read_to_string` failure was
+  silently mapped to `Missing`, causing `validate_agent` to accept the broken
+  config (it tolerates `Missing` for configs not yet created), leaving a
+  green-dot routine that silently never fires. The new `Unreadable` variant is
+  rejected at create/update time with a `BadRequest`, so the operator learns the
+  real cause immediately. (#445)
 - The routine-origin disclosure write into the workbench `CLAUDE.md` now
   fail-fasts. Previously this `printf > "$WB/CLAUDE.md"` was `;`-joined with no
   failure guard, so if the write failed (read-only/full `$HOME`, an unwritable
@@ -396,6 +450,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - `moadim stop --json` now includes the bound `address` field
   (`{"running":bool,"pid":N|null,"address":"127.0.0.1:5784"}`), matching
   `status --json`'s object shape exactly so both can be parsed uniformly.
+- `moadim cleanup --json` now includes the bound `address` field
+  (`{"running":bool,"removed":N,"address":"127.0.0.1:5784"}`), matching
+  `status --json`/`stop --json` so every `--json` command surfaces the endpoint
+  it talked to, not just the running-state and result.
 - The web UI header now shows the running daemon version (e.g. `/ v0.12.0`)
   next to the `MOADIM / CONTROL` logo. The `GET /api/v1/health` response gained
   a `version` field (from `CARGO_PKG_VERSION`) that the UI already-polled health
@@ -417,6 +475,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- HTTP request logs now carry a short per-request correlation id. Each request
+  emits an inbound line (`[0000001a] <- GET /api/v1/health`) and an outbound
+  line (`[0000001a] -> 200 /api/v1/health in 2ms`) sharing the same id, so the
+  two halves can be paired in the log even when requests interleave under
+  concurrency (previously the unprefixed `  -> …` line couldn't be matched to
+  its request) (#354).
 - Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
   on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
   the web UI). The field was only ever updated by *manual* triggers, never by

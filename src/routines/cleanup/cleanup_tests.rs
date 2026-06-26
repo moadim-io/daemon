@@ -513,6 +513,61 @@ fn cleanup_expired_workbenches_scans_real_workbenches_dir() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+#[cfg(unix)]
+#[test]
+fn cleanup_expired_workbenches_kills_a_live_hung_session() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // Drives the public entry point against a *live* session so the watchdog path runs end-to-end:
+    // a stub `tmux` that always exits 0 makes `tmux_session_alive` report the session as running
+    // (exercising its `status.success()` mapping over a real process), which in turn makes
+    // `cleanup_expired_workbenches` consult its `max_runtime_for` bound. An ancient timestamp puts
+    // the run past the (empty-store default) max runtime, so the session is force-killed, the kill
+    // is noted in agent.log, and the workbench is reaped. Complements
+    // `cleanup_expired_workbenches_scans_real_workbenches_dir`, which covers the no-tmux path.
+    let home = std::env::temp_dir().join(format!("moadim-cleanup-hung-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&home).unwrap();
+    // A stub tmux that ignores its args and always succeeds, so has-session/kill-session both "work".
+    let stub_tmux = home.join("stub-tmux");
+    std::fs::write(&stub_tmux, b"#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&stub_tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let prev_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+        std::env::set_var("MOADIM_TMUX_BIN", &stub_tmux);
+    }
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+    // Timestamp 1 → far past any max-runtime / TTL bound, and its session reports alive via the stub.
+    std::fs::create_dir_all(workbenches.join("hung-1")).unwrap();
+
+    let store = super::super::model::new_store();
+    let removed = cleanup_expired_workbenches(&store);
+
+    assert_eq!(
+        removed, 1,
+        "the live-but-overrun workbench is killed then reaped"
+    );
+    assert!(!workbenches.join("hung-1").exists());
+
+    // SAFETY: single-threaded harness; restore the saved overrides.
+    unsafe {
+        match prev_home {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+        match prev_tmux {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
     super::super::model::Routine {
         id: "x".into(),

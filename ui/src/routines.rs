@@ -573,6 +573,8 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    /// Pre-filled create form cloned from an existing routine.
+    Clone(Box<Routine>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -621,6 +623,96 @@ impl RDir {
             RDir::Desc => RDir::Asc,
         }
     }
+}
+
+// ─── Group-by ────────────────────────────────────────────────────────────────
+
+/// Dimension used to partition the Routines table into labelled sections.
+/// Orthogonal to faceted filtering and column sorting — composes with both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RGroupBy {
+    #[default]
+    None,
+    /// Group by the routine's agent (claude, codex, …).
+    Agent,
+    /// Group by target machine; routines with no machine share an `(unassigned)` section.
+    Machine,
+    /// Group by enabled/disabled status.
+    Status,
+}
+
+impl RGroupBy {
+    /// Stable token stored as the `<select>` option value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RGroupBy::None => "none",
+            RGroupBy::Agent => "agent",
+            RGroupBy::Machine => "machine",
+            RGroupBy::Status => "status",
+        }
+    }
+
+    /// Parse a token back to a variant, defaulting to `None` for unknown values.
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "agent" => RGroupBy::Agent,
+            "machine" => RGroupBy::Machine,
+            "status" => RGroupBy::Status,
+            _ => RGroupBy::None,
+        }
+    }
+
+    /// Short human label shown in the selector dropdown.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            RGroupBy::None => "None",
+            RGroupBy::Agent => "Agent",
+            RGroupBy::Machine => "Machine",
+            RGroupBy::Status => "Status",
+        }
+    }
+}
+
+/// Group key for a single routine under the given dimension.
+#[must_use]
+pub fn routine_group_key(r: &Routine, by: RGroupBy) -> String {
+    match by {
+        RGroupBy::None => String::new(),
+        RGroupBy::Agent => r.agent.clone(),
+        RGroupBy::Machine => r
+            .machines
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "(unassigned)".to_string()),
+        RGroupBy::Status => {
+            if r.enabled {
+                "Enabled".to_string()
+            } else {
+                "Disabled".to_string()
+            }
+        }
+    }
+}
+
+/// Partition `routines` into `(group_label, routines_in_group)` pairs sorted
+/// alphabetically by label. Within each group the input order is preserved.
+/// When `by` is `None`, returns a single pair with an empty label.
+#[must_use]
+pub fn group_routines(routines: &[Routine], by: RGroupBy) -> Vec<(String, Vec<Routine>)> {
+    use std::collections::BTreeMap;
+    if by == RGroupBy::None {
+        return vec![(String::new(), routines.to_vec())];
+    }
+    let mut map: BTreeMap<String, Vec<Routine>> = BTreeMap::new();
+    for r in routines {
+        map.entry(routine_group_key(r, by))
+            .or_default()
+            .push(r.clone());
+    }
+    map.into_iter().collect()
 }
 
 /// Return `routines` sorted by `col` in `dir` order. When `col` is `None` the
@@ -687,6 +779,8 @@ pub struct RState {
     pub sort_dir: RDir,
     /// IDs of currently selected routines (multiselect for bulk actions).
     pub selected: BTreeSet<String>,
+    /// Active group-by dimension; `None` renders a flat list.
+    pub group_by: RGroupBy,
     /// Most recently fetched global lock status; `None` until the first fetch completes.
     pub lock_status: Option<LockStatus>,
     /// This machine's resolved name from the daemon, used to default the machine facet.
@@ -705,6 +799,7 @@ impl Default for RState {
             sort_col: None,
             sort_dir: RDir::default(),
             selected: BTreeSet::new(),
+            group_by: RGroupBy::default(),
             lock_status: None,
             current_machine: None,
         }
@@ -716,6 +811,8 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    /// Open the create form pre-filled with a copy of the named routine.
+    GoToClone(String),
     OpenEdit(String),
     OpenConfirmDelete {
         id: String,
@@ -729,6 +826,7 @@ pub enum RAction {
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
     ClearFilters,
+    SetGroupBy(RGroupBy),
     SortByCol(RCol),
     Upsert(Box<Routine>),
     Remove(String),
@@ -762,6 +860,11 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToClone(id) => {
+                if let Some(source) = s.routines.iter().find(|x| x.id == id) {
+                    s.page = RPage::Clone(Box::new(source.clone()));
+                }
+            }
             RAction::OpenEdit(id) => s.modal = RModal::Edit(id),
             RAction::OpenConfirmDelete { id, title } => {
                 s.modal = RModal::ConfirmDelete { id, title }
@@ -778,6 +881,7 @@ impl Reducible for RState {
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
+            RAction::SetGroupBy(by) => s.group_by = by,
             RAction::SortByCol(col) => {
                 if s.sort_col == Some(col) {
                     s.sort_dir = s.sort_dir.flip();
@@ -995,6 +1099,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::OpenEdit(id)))
     };
+    let on_clone = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToClone(id)))
+    };
     let on_ask_delete = {
         let state = state.clone();
         Callback::from(move |(id, title): (String, String)| {
@@ -1004,6 +1112,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_view = {
         let state = state.clone();
         Callback::from(move |view: RView| state.dispatch(RAction::SetView(view)))
+    };
+    let on_set_group_by = {
+        let state = state.clone();
+        Callback::from(move |by: RGroupBy| state.dispatch(RAction::SetGroupBy(by)))
     };
     let on_set_query = {
         let state = state.clone();
@@ -1340,6 +1452,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let sort_col = state.sort_col;
     let sort_dir = state.sort_dir;
     let selected = state.selected.clone();
+    let group_by = state.group_by;
 
     // Faceted filter + sort applied client-side.
     let now_val = *now;
@@ -1375,6 +1488,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     RPage::New => html! {
                         <RoutineForm editing={None} on_cancel={on_cancel} on_save={on_create} />
                     },
+                    RPage::Clone(source) => {
+                        let mut pre = *source;
+                        pre.title = clone_title(&pre.title);
+                        html! {
+                            <RoutineForm editing={Some(pre)} on_cancel={on_cancel} on_save={on_create} />
+                        }
+                    },
                     RPage::Logs(id) => {
                         let title = routines.iter()
                             .find(|r| r.id == id)
@@ -1399,6 +1519,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         updated_at_ms={*updated_at}
                                         on_change={on_set_interval}
                                     />
+                                    if view == RView::Table {
+                                        <RoutineGroupBySelector
+                                            group_by={group_by}
+                                            on_change={on_set_group_by}
+                                        />
+                                    }
                                     <ViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-ghost btn-sm" onclick={on_cleanup}
                                         title="Reap finished, expired run workbenches now">{"CLEANUP NOW"}</button>
@@ -1439,8 +1565,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_select_all={on_select_all}
                                             sort_col={sort_col}
                                             sort_dir={sort_dir}
+                                            group_by={group_by}
                                             on_sort={on_col_sort}
                                             on_edit={on_edit}
+                                            on_clone={on_clone}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
@@ -1449,14 +1577,15 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
+                                            id: Some(r.id.clone()),
                                             label: r.title.clone(),
                                             schedule: r.schedule.clone(),
                                         }).collect::<Vec<_>>();
-                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                        html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit)} /> }
                                     },
                                 }
                             }
@@ -1638,6 +1767,45 @@ pub fn view_toggle(props: &ViewToggleProps) -> Html {
     }
 }
 
+// ─── Group-by selector ────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct GroupBySelectorProps {
+    pub group_by: RGroupBy,
+    pub on_change: Callback<RGroupBy>,
+}
+
+/// Drop-down that lets the operator choose how to partition the Routines table.
+/// Placed in the section toolbar next to the view toggle; hidden for Calendar/Day views.
+#[function_component(RoutineGroupBySelector)]
+pub fn routine_group_by_selector(props: &GroupBySelectorProps) -> Html {
+    let on_change = props.on_change.clone();
+    let on_select = Callback::from(move |e: Event| {
+        let select: HtmlSelectElement = e.target_unchecked_into();
+        on_change.emit(RGroupBy::from_str(&select.value()));
+    });
+    let cur = props.group_by.as_str();
+    html! {
+        <div class="group-by-ctrl">
+            <label class="filter-label" for="routine-group-by-select">{"GROUP BY"}</label>
+            <select
+                id="routine-group-by-select"
+                class="filter-select"
+                aria-label="Group routines by"
+                onchange={on_select}
+            >
+                { for [RGroupBy::None, RGroupBy::Agent, RGroupBy::Machine, RGroupBy::Status].iter()
+                    .map(|&by| html! {
+                        <option value={by.as_str()} selected={cur == by.as_str()}>
+                            { by.label() }
+                        </option>
+                    })
+                }
+            </select>
+        </div>
+    }
+}
+
 // ─── Filter & sort bar ────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
@@ -1771,6 +1939,9 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
 pub struct CalendarProps {
     pub routines: Vec<Routine>,
     pub loading: bool,
+    /// When set, clicking a calendar chip opens the edit modal for that routine.
+    #[prop_or_default]
+    pub on_edit: Option<Callback<String>>,
 }
 
 #[function_component(RoutineCalendar)]
@@ -1801,14 +1972,15 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
 
     // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
-    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each entry is (id, title, count) so chips can dispatch the edit modal on click.
+    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
     let mut scheduled = 0usize;
     for r in props.routines.iter().filter(|r| r.enabled) {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((r.title.clone(), c));
+                    cells[i].push((r.id.clone(), r.title.clone(), c));
                 }
             }
         }
@@ -1844,13 +2016,19 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                             <div class={cls}>
                                 <div class="cal-daynum">{date.day()}</div>
                                 <div class="cal-hits">
-                                    { for hits.iter().take(4).map(|(title, count)| {
+                                    { for hits.iter().take(4).map(|(id, title, count)| {
                                         let label = if *count > 1 {
                                             format!("{title} ×{count}")
                                         } else {
                                             title.clone()
                                         };
-                                        html! { <div class="cal-chip" title={label.clone()}>{label}</div> }
+                                        let on_chip = props.on_edit.as_ref().map(|cb| {
+                                            let cb = cb.clone();
+                                            let id = id.clone();
+                                            Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+                                        });
+                                        let chip_cls = if on_chip.is_some() { "cal-chip clickable" } else { "cal-chip" };
+                                        html! { <div class={chip_cls} title={label.clone()} onclick={on_chip}>{label}</div> }
                                     }) }
                                     if hits.len() > 4 {
                                         <div class="cal-more">{format!("+{} more", hits.len() - 4)}</div>
@@ -1929,9 +2107,12 @@ pub struct TableProps {
     pub sort_col: Option<RCol>,
     /// Direction of the active column sort.
     pub sort_dir: RDir,
+    /// Active group-by dimension; `None` renders a flat list.
+    pub group_by: RGroupBy,
     /// Fired when the user clicks a sortable column header.
     pub on_sort: Callback<RCol>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
@@ -2019,19 +2200,36 @@ pub fn routine_table(props: &TableProps) -> Html {
                     </tr>
                 </thead>
                 <tbody>
-                    { for props.routines.iter().map(|r| html! {
-                        <RoutineRow
-                            key={r.id.clone()}
-                            routine={r.clone()}
-                            now={props.now}
-                            selected={props.selected.contains(&r.id)}
-                            on_select={props.on_select.clone()}
-                            on_edit={props.on_edit.clone()}
-                            on_delete={props.on_delete.clone()}
-                            on_toggle={props.on_toggle.clone()}
-                            on_trigger={props.on_trigger.clone()}
-                            on_logs={props.on_logs.clone()}
-                        />
+                    { for group_routines(&props.routines, props.group_by).into_iter().map(|(label, group)| {
+                        let count = group.len();
+                        let grouped = props.group_by != RGroupBy::None;
+                        html! {
+                            <>
+                                if grouped {
+                                    <tr class="group-hd" key={format!("ghd-{label}")}>
+                                        <td colspan="12">
+                                            <span class="group-label">{label.clone()}</span>
+                                            <span class="group-count">{format!("({count})")}</span>
+                                        </td>
+                                    </tr>
+                                }
+                                { for group.into_iter().map(|r| html! {
+                                    <RoutineRow
+                                        key={r.id.clone()}
+                                        routine={r.clone()}
+                                        now={props.now}
+                                        selected={props.selected.contains(&r.id)}
+                                        on_select={props.on_select.clone()}
+                                        on_edit={props.on_edit.clone()}
+                                        on_clone={props.on_clone.clone()}
+                                        on_delete={props.on_delete.clone()}
+                                        on_toggle={props.on_toggle.clone()}
+                                        on_trigger={props.on_trigger.clone()}
+                                        on_logs={props.on_logs.clone()}
+                                    />
+                                }) }
+                            </>
+                        }
                     }) }
                 </tbody>
             </table>
@@ -2076,6 +2274,7 @@ pub struct RowProps {
     /// Fired when the selection checkbox is clicked.
     pub on_select: Callback<String>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
@@ -2093,6 +2292,11 @@ pub fn routine_row(props: &RowProps) -> Html {
 
     let on_edit = {
         let cb = props.on_edit.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_clone = {
+        let cb = props.on_clone.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -2239,6 +2443,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
+                    <button class="act-btn clone" title="Duplicate routine" aria-label="Duplicate routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
@@ -2253,6 +2458,17 @@ pub struct FormProps {
     pub editing: Option<Routine>,
     pub on_cancel: Callback<()>,
     pub on_save: Callback<CreateRoutineRequest>,
+}
+
+/// Title for a cloned routine: prepend "Copy of " when the original title does not
+/// already start with that prefix, preventing "Copy of Copy of …" accumulation.
+pub(crate) fn clone_title(title: &str) -> String {
+    const PREFIX: &str = "Copy of ";
+    if title.starts_with(PREFIX) {
+        title.to_string()
+    } else {
+        format!("{PREFIX}{title}")
+    }
 }
 
 /// Serialize repositories as one `url [branch]` line each for the textarea.

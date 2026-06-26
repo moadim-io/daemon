@@ -27,6 +27,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section
+  toolbar lets operators partition the flat routine list into labelled sections by **Agent**,
+  **Machine**, or **Status** (Enabled / Disabled), with a **None** option to restore the flat
+  view. The selector only appears in Table view (hidden for Calendar and Day) and composes with
+  the existing faceted filter and column-sort controls. Closes #733.
+
 - **UI: clone/duplicate a routine.** A ⧉ duplicate button on each routine row opens the
   create-routine form pre-filled with all fields from the source routine (schedule, agent, prompt,
   repositories, machines, TTL, enabled state). The title is automatically prefixed with

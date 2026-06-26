@@ -12,6 +12,8 @@
         crate::routes::http::shutdown,
         crate::routes::http::restart,
         crate::routes::http::echo,
+        crate::routes::http::get_current_machine,
+        crate::routes::http::list_machines,
         crate::cron_jobs::list,
         crate::cron_jobs::create,
         crate::cron_jobs::get,
@@ -28,7 +30,11 @@
         crate::routines::update,
         crate::routines::delete,
         crate::routines::trigger,
+        crate::routines::scheduled_trigger,
         crate::routines::cleanup,
+        crate::routines::get_lock_status,
+        crate::routines::lock,
+        crate::routines::unlock,
         crate::routines::get_logs,
         crate::routines::ical_feed,
     ),
@@ -51,6 +57,9 @@
         crate::routes::http::RestartResponse,
         crate::routes::http::EchoRequest,
         crate::routes::http::EchoResponse,
+        crate::routes::http::MachineResponse,
+        crate::global_lock::LockStatus,
+        crate::routines::LockRequest,
     ))
 )]
 /// OpenAPI document aggregating all REST paths and component schemas.

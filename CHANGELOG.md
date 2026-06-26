@@ -35,6 +35,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
 
 ### Fixed
+- **6-field cron expressions no longer silently fail to fire.** `croner` accepts
+  6-field (`sec min hour dom month dow`) and 7-field expressions, but the OS
+  crontab only understands 5 fields. Both forms are now normalised to 5 fields
+  by dropping the leading seconds (and, for 7-field, the trailing year) before
+  the expression is stored or written to the crontab. Previously a 6-field
+  string was written verbatim, making the job malformed and silently inactive.
+  Closes #183.
+
 - The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
 
 - An agent config that exists on disk but cannot be read (due to a permissions

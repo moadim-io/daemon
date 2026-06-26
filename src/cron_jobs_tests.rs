@@ -46,10 +46,32 @@ fn validate_cron_rejects_invalid() {
 
 #[test]
 fn validate_cron_accepts_6_field() {
+    // croner accepts a leading seconds field; we must too.
+    assert!(validate_cron("0 */5 * * * *").is_ok());
+    assert!(validate_cron("30 0 9 * * 1-5").is_ok());
     // croner accepts 6-field `sec min hour dom month dow`; validate_cron
     // normalizes it down before parsing, so it must be accepted.
-    assert!(validate_cron("0 30 9 * * 1-5").is_ok());
     assert!(validate_cron("*/30 * * * * *").is_ok());
+}
+
+#[test]
+fn normalize_schedule_strips_seconds_from_6_field() {
+    // 6-field `sec min hour dom month dow` -> 5-field `min hour dom month dow`.
+    // Without this, the 6-field string lands in the OS crontab verbatim and
+    // the routine/job silently never fires.
+    assert_eq!(normalize_schedule("0 */5 * * * *"), "*/5 * * * *");
+    assert_eq!(normalize_schedule("30 0 9 * * 1-5"), "0 9 * * 1-5");
+}
+
+#[test]
+fn normalize_schedule_strips_seconds_and_year_from_7_field() {
+    assert_eq!(normalize_schedule("0 30 9 * * 1-5 *"), "30 9 * * 1-5");
+}
+
+#[test]
+fn normalize_schedule_passes_through_5_field_and_keywords() {
+    assert_eq!(normalize_schedule("*/15 * * * *"), "*/15 * * * *");
+    assert_eq!(normalize_schedule("@daily"), "@daily");
 }
 
 #[test]
@@ -59,7 +81,6 @@ fn normalize_schedule_projects_to_5_field() {
     assert_eq!(normalize_schedule("0 30 9 * * 1-5"), "30 9 * * 1-5");
     assert_eq!(normalize_schedule("0 30 9 * * 1-5 *"), "30 9 * * 1-5");
     assert_eq!(normalize_schedule("30 9 * * 1-5"), "30 9 * * 1-5");
-    assert_eq!(normalize_schedule("@daily"), "@daily");
 }
 
 #[test]

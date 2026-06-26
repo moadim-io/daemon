@@ -19,6 +19,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   an arbitrary, run-to-run order — churning the block across syncs and defeating
   the idempotency guard, which forced a needless `crontab -` rewrite that
   mutates the user's live crontab. Ties are now broken on the stable routine id.
+- **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
+  `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
+  before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids
+  raw CR characters in content lines. Closes #181.
 - A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without
@@ -26,10 +30,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- The request logger now records `GET /health` at `debug` instead of `info`.
+  The web UI polls `/health` continuously, so at the default `info` level those
+  two-lines-per-poll entries dominated `daemon.log` (thousands of lines a day on
+  an otherwise idle daemon) and buried every other request. Health polls remain
+  visible under `RUST_LOG=debug`; all other requests still log at `info`.
+
 - Enabled the `clippy::map_unwrap_or` lint and fixed the violations
   (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
 
 ### Fixed
+- **6-field cron expressions no longer silently fail to fire.** `croner` accepts
+  6-field (`sec min hour dom month dow`) and 7-field expressions, but the OS
+  crontab only understands 5 fields. Both forms are now normalised to 5 fields
+  by dropping the leading seconds (and, for 7-field, the trailing year) before
+  the expression is stored or written to the crontab. Previously a 6-field
+  string was written verbatim, making the job malformed and silently inactive.
+  Closes #183.
+
 - The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
 
 - An agent config that exists on disk but cannot be read (due to a permissions
@@ -67,6 +85,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim trigger <id>` triggers a routine to run immediately from the terminal,
+  outside its schedule — the same on-demand run the REST API
+  (`POST /routines/{id}/trigger`) and the MCP tool already expose. Prints
+  `triggered routine <id>` and exits `0` on success, errors with
+  `no routine with id <id>` on a `404`, and prints `moadim is not running`
+  (exit `3`) when no server is reachable, matching the `status`/`cleanup`
+  exit-code contract. (`moadim run <id>` is accepted as a hidden back-compat
+  alias.)
+
 - **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section
   toolbar lets operators partition the flat routine list into labelled sections by **Agent**,
   **Machine**, or **Status** (Enabled / Disabled), with a **None** option to restore the flat
@@ -78,7 +105,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   repositories, machines, TTL, enabled state). The title is automatically prefixed with
   "Copy of " (and the prefix is not doubled on repeated clones). Operators can adjust any field
   before saving; the result is a brand-new independent routine. Closes #715.
-
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
   returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
   `local_only=true` query parameter that filters the response to entries targeting the current
@@ -440,7 +466,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
   scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
   and lets you spot schedules that have never actually fired (#155).
-
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was
@@ -491,6 +516,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- The config tree now honors `$XDG_CONFIG_HOME` per the XDG Base Directory
+  spec: when set to an absolute path, the config dir resolves to
+  `$XDG_CONFIG_HOME/moadim` instead of always `~/.config/moadim` (an unset,
+  empty, or relative value still falls back to `~/.config`). This brings the
+  config tree in line with the Linux systemd installer, which already resolved
+  its unit path via `$XDG_CONFIG_HOME`, so users who relocate their config root
+  no longer get a surprise second tree under `~/.config`.
 - Routines no longer generate a per-routine `run.sh` launch script. The crontab
   line now invokes the `moadim` binary directly
   (`<schedule> <moadim> schedule trigger <id>`), and the running daemon is the
@@ -601,6 +633,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
   once before the existing upsert logic, and the construction sites wrap the
   value.
+
+### Fixed
+
+- Routine **create/update now reject an empty or whitespace-only `prompt`** with
+  `400 Bad Request` (`prompt must not be empty`), across the REST and MCP
+  surfaces. Previously a blank prompt was accepted and synced to the crontab, so
+  the routine fired on every tick and launched an agent with no task — silently
+  burning scheduled runs and agent/API budget.
 
 ## [0.12.0] - 2026-06-18
 

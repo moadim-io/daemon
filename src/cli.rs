@@ -479,6 +479,11 @@ pub(crate) fn read_pid_file() -> Option<u32> {
 /// straight to the real `kill` with no env override to keep parallel tests from racing on it.
 #[cfg(unix)]
 fn process_is_alive(pid: u32) -> bool {
+    // Linux PIDs are signed; u32::MAX overflows to -1 in the kernel, causing kill(-1, 0)
+    // to return success (it sends to all accessible processes). Treat out-of-range as dead.
+    if pid > i32::MAX as u32 {
+        return false;
+    }
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
         .output()

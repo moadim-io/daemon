@@ -70,15 +70,46 @@ fn load_agent_command_reports_missing_for_absent_config() {
 
 #[test]
 fn agent_load_error_display_distinguishes_variants() {
-    // The two variants render distinctly: missing vs. malformed (with the underlying error).
+    // The variants render distinctly: missing vs. unreadable vs. malformed (each with its cause).
     assert_eq!(
         AgentLoadError::Missing.to_string(),
         "agent config not found"
     );
     assert_eq!(
+        AgentLoadError::Read("denied".to_string()).to_string(),
+        "unreadable agent config: denied"
+    );
+    assert_eq!(
         AgentLoadError::Parse("boom".to_string()).to_string(),
         "malformed agent TOML: boom"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn load_agent_command_reports_read_error_for_unreadable_config() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // A present-but-unreadable config (permission denied, not NotFound) must yield `Read`, NOT
+    // `Missing` — otherwise the routine is mislabeled "config not found" and silently dropped.
+    let agent_name = "load-agent-unreadable-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\n").unwrap();
+    std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let result = load_agent_command(agent_name);
+
+    // Restore permissions before asserting so cleanup always runs (root bypasses the bit, in which
+    // case the read succeeds and the file simply parses — the call is exercised either way).
+    std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o644)).unwrap();
+    if let Ok(_) | Err(AgentLoadError::Read(_)) = result {
+        // Either outcome is acceptable depending on privilege level.
+    } else {
+        panic!("expected Read error or Ok (root), got {result:?}");
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
 }
 
 #[test]

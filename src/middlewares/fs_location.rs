@@ -10,14 +10,12 @@ pub async fn fs_location(req: Request, next: Next) -> Response {
 
 /// Inject fields from a JSON object value as `x-*` response headers.
 fn inject_headers_from_value(mut res: Response, val: serde_json::Value) -> Response {
-    let map = match val {
-        serde_json::Value::Object(obj) => obj,
-        _ => return res,
+    let serde_json::Value::Object(map) = val else {
+        return res;
     };
     for (key, value) in map {
-        let str_value = match value {
-            serde_json::Value::String(string) => string,
-            _ => continue,
+        let serde_json::Value::String(str_value) = value else {
+            continue;
         };
         let name = format!("x-{}", key.replace('_', "-"));
         if let (Ok(header_name), Ok(header_value)) = (

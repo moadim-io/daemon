@@ -8,7 +8,9 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::cron_jobs::{self, CreateRequest, CronStore, HandlerRegistry, UpdateRequest};
+use crate::cron_jobs::{
+    self, CreateRequest, CronStore, HandlerRegistry, ShutdownSignal, UpdateRequest,
+};
 use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
 use crate::utils::time::now_secs;
 
@@ -23,6 +25,9 @@ pub struct MoadimMcp {
     routines: RoutineStore,
     /// Unix timestamp (seconds) recorded at server startup.
     uptime_start: u64,
+    /// Notify handle that triggers a graceful server shutdown (the `shutdown` tool fires it,
+    /// mirroring `POST /api/v1/shutdown` and `moadim stop`).
+    shutdown: ShutdownSignal,
 }
 
 /// Input for the `echo` MCP tool.
@@ -52,8 +57,32 @@ struct UpdateInput {
     /// New metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     metadata: Option<serde_json::Value>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
+}
+
+/// Input for list tools that support local-machine filtering.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct LocalOnlyParam {
+    /// When `true` (the default), only return entries targeting the current machine.
+    /// Pass `false` to see entries from all machines.
+    local_only: Option<bool>,
+}
+
+/// Input for the `lock_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct LockRoutinesInput {
+    /// Which sentinel to create: `"shared"` (committed `.lock`) or `"local"` (gitignored `.local.lock`).
+    scope: String,
+}
+
+/// Input for the `unlock_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct UnlockRoutinesInput {
+    /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"` (both).
+    scope: String,
 }
 
 /// Input for the `update_routine` MCP tool.
@@ -72,10 +101,15 @@ struct UpdateRoutineInput {
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     repositories: Option<Vec<crate::routines::Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
     /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
     ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
+    /// the existing value.
+    max_runtime_secs: Option<u64>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -98,23 +132,32 @@ impl MoadimMcp {
         handlers: HandlerRegistry,
         routines: RoutineStore,
         uptime_start: u64,
+        shutdown: ShutdownSignal,
     ) -> Self {
         Self {
             store,
             handlers,
             routines,
             uptime_start,
+            shutdown,
         }
     }
 
-    /// Return server health status, uptime, and filesystem locations.
-    #[tool(description = "Get server health, uptime, and filesystem locations")]
+    /// Return server health status, uptime, build provenance, and filesystem locations.
+    #[tool(description = "Get server health, uptime, build provenance, and filesystem locations")]
     fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let loc = crate::filesystem::FsLocation::current();
         let mut val = serde_json::json!({
             "status": "ok",
-            "uptime_secs": now_secs() - self.uptime_start,
+            // saturating_sub so a backward wall-clock adjustment can't underflow
+            // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
+            "uptime_secs": now_secs().saturating_sub(self.uptime_start),
             "running": true,
+            // Build provenance, mirroring `GET /health` and `--version` so the
+            // running build is identifiable consistently across all three surfaces.
+            "version": crate::build_info::VERSION,
+            "git_sha": crate::build_info::GIT_SHA,
+            "build_date": crate::build_info::BUILD_DATE,
         });
         if let (Some(obj), Ok(serde_json::Value::Object(loc_map))) =
             (val.as_object_mut(), serde_json::to_value(&loc))
@@ -136,10 +179,21 @@ impl MoadimMcp {
         })))
     }
 
-    /// Return all managed cron jobs as a JSON array sorted by creation time.
-    #[tool(description = "List all managed cron jobs")]
-    fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
+    /// Return managed cron jobs as a JSON array sorted by creation time.
+    ///
+    /// When `local_only` is `true` (the default), only jobs whose `machines` list includes the
+    /// current machine are returned. Pass `false` to see all jobs regardless of machine.
+    #[tool(
+        description = "List managed cron jobs. Defaults to jobs targeting the current machine only; pass local_only=false to see all machines."
+    )]
+    fn list_cron_jobs(
+        &self,
+        Parameters(params): Parameters<LocalOnlyParam>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = cron_jobs::CronJobListQuery {
+            local_only: Some(params.local_only.unwrap_or(true)),
+        };
+        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers, &query)))
     }
 
     /// Return the cron job matching the given UUID.
@@ -182,6 +236,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             handler: input.handler,
             metadata: input.metadata,
+            machines: input.machines,
             enabled: input.enabled,
         };
         Ok(
@@ -208,7 +263,7 @@ impl MoadimMcp {
 
     /// Manually trigger a cron job immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a cron job outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a cron job outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_cron_job(
         &self,
@@ -220,13 +275,22 @@ impl MoadimMcp {
         })
     }
 
-    /// Return all managed routines as a JSON array sorted by creation time.
-    #[tool(description = "List all managed routines (agent-driven jobs)")]
-    fn list_routines(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_list(
-            &self.routines,
-            &routines::RoutineListQuery::default(),
-        )))
+    /// Return managed routines as a JSON array sorted by creation time.
+    ///
+    /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
+    /// current machine are returned. Pass `false` to see all routines regardless of machine.
+    #[tool(
+        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines."
+    )]
+    fn list_routines(
+        &self,
+        Parameters(params): Parameters<LocalOnlyParam>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = routines::RoutineListQuery {
+            local_only: Some(params.local_only.unwrap_or(true)),
+            ..Default::default()
+        };
+        Ok(ok(routines::svc_list(&self.routines, &query)))
     }
 
     /// Return the routine matching the given UUID.
@@ -269,8 +333,10 @@ impl MoadimMcp {
             agent: input.agent,
             prompt: input.prompt,
             repositories: input.repositories,
+            machines: input.machines,
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
+            max_runtime_secs: input.max_runtime_secs,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),
@@ -292,7 +358,7 @@ impl MoadimMcp {
 
     /// Manually trigger a routine immediately, recording the trigger time.
     #[tool(
-        description = "Manually trigger a routine outside its schedule, recording last_triggered_at"
+        description = "Manually trigger a routine outside its schedule, recording last_manual_trigger_at"
     )]
     fn trigger_routine(
         &self,
@@ -310,6 +376,126 @@ impl MoadimMcp {
     )]
     fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::svc_cleanup(&self.routines)))
+    }
+
+    /// List the available agent registry keys a routine can launch.
+    #[tool(description = "List the available agent registry keys a routine can launch")]
+    fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(routines::available_agents()))
+    }
+
+    /// Return the contents of a cron job's log file, or an error if the job does not exist.
+    #[tool(description = "Get a cron job's log file contents by ID")]
+    fn cron_job_logs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match cron_jobs::svc_logs(&self.store, &id) {
+            Ok(logs) => ok(serde_json::json!({ "logs": logs })),
+            Err(error) => err(error),
+        })
+    }
+
+    /// Return the newest run log for a routine, or an error if the routine does not exist.
+    #[tool(description = "Get a routine's newest run log by ID")]
+    fn routine_logs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match routines::svc_logs(&self.routines, &id) {
+            Ok(logs) => ok(serde_json::json!({ "logs": logs })),
+            Err(error) => err(error),
+        })
+    }
+
+    /// Return whether the global routine lock is active and which sentinels are present.
+    #[tool(
+        description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
+    )]
+    fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Create a global lock sentinel that halts all routine scheduling and manual triggers without
+    /// touching individual routine `enabled` states.
+    #[tool(
+        description = "Globally pause all routines by creating a lock sentinel. Use scope=\"shared\" for a committed .lock (shared via git) or scope=\"local\" for a gitignored .local.lock (machine-local). Individual routine enabled states are not modified."
+    )]
+    fn lock_routines(
+        &self,
+        Parameters(LockRoutinesInput { scope }): Parameters<LockRoutinesInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let lock_scope = match scope.as_str() {
+            "shared" => crate::global_lock::LockScope::Shared,
+            "local" => crate::global_lock::LockScope::Local,
+            other => {
+                return Ok(err(format!(
+                    "unknown scope {other:?}; use \"shared\" or \"local\""
+                )))
+            }
+        };
+        if let Err(io_err) = crate::global_lock::set_lock(lock_scope, true) {
+            return Ok(err(format!("failed to create lock sentinel: {io_err}")));
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after lock failed: {sync_err}");
+        }
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Remove a global lock sentinel, restoring scheduled and manual triggers for all enabled
+    /// routines.
+    #[tool(
+        description = "Resume all routines by removing a lock sentinel. Use scope=\"shared\" to remove the committed .lock, scope=\"local\" to remove the gitignored .local.lock, or scope=\"all\" to remove both."
+    )]
+    fn unlock_routines(
+        &self,
+        Parameters(UnlockRoutinesInput { scope }): Parameters<UnlockRoutinesInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let scopes: Vec<crate::global_lock::LockScope> = match scope.as_str() {
+            "shared" => vec![crate::global_lock::LockScope::Shared],
+            "local" => vec![crate::global_lock::LockScope::Local],
+            "all" => vec![
+                crate::global_lock::LockScope::Shared,
+                crate::global_lock::LockScope::Local,
+            ],
+            other => {
+                return Ok(err(format!(
+                    "unknown scope {other:?}; use \"shared\", \"local\", or \"all\""
+                )))
+            }
+        };
+        for scope_item in scopes {
+            if let Err(io_err) = crate::global_lock::set_lock(scope_item, false) {
+                return Ok(err(format!("failed to remove lock sentinel: {io_err}")));
+            }
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after unlock failed: {sync_err}");
+        }
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Ask the server to stop gracefully, mirroring `POST /api/v1/shutdown` and `moadim stop`.
+    #[tool(
+        description = "Stop the running server gracefully. Mirrors the POST /api/v1/shutdown route and `moadim stop`."
+    )]
+    fn shutdown(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        log::info!("shutdown requested via MCP");
+        self.shutdown.notify_one();
+        Ok(ok(serde_json::json!({ "status": "shutting down" })))
+    }
+
+    /// Stop this server and start a fresh instance, mirroring `POST /api/v1/restart` and
+    /// `moadim restart`. Delegates to a detached helper process that performs the swap.
+    #[tool(
+        description = "Restart the server: stop it and start a fresh instance. Mirrors the POST /api/v1/restart route and `moadim restart`."
+    )]
+    fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        log::info!("restart requested via MCP");
+        Ok(crate::cli::spawn_restart().map_or_else(err, |helper_pid| {
+            ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
+        }))
     }
 }
 

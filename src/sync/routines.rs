@@ -5,31 +5,25 @@
 //! ```text
 //! # BEGIN MOADIM-ROUTINES
 //! # Managed by moadim — routines (agent tmux sessions)
-//! * * * * * /bin/sh -l '/…/routines/<slug>/run.sh' # moadim-routine:<id>
+//! * * * * * /…/moadim schedule trigger '<id>' # moadim-routine:<id>
 //! # END MOADIM-ROUTINES
 //! ```
 //!
-//! Each routine's full launch command is written to a per-routine `run.sh` script; the crontab line
-//! is just `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`. Inlining the whole command
-//! (which includes a long per-agent `setup` step) pushed lines past cron's ~1000-char per-line
-//! limit, which cron silently drops.
+//! Each crontab line invokes the `moadim` binary directly to trigger the routine by ID
+//! (`moadim schedule trigger <id>`). No per-routine `run.sh` script is generated: the command is
+//! short enough to inline (well under cron's ~1000-char per-line limit), and the running daemon is
+//! the single source of truth for launch logic ([`crate::routines::build_routine_command`] + spawn).
+//! This means **scheduled routines require the daemon to be running** — it is installed as an OS
+//! service (launchd / systemd user) for exactly this reason.
 //!
-//! The `-l` makes `run.sh` execute under a **login** shell so it sources the user's `~/.profile`,
-//! giving the agent the environment variables (`GH_TOKEN`, API keys, …) an interactive login shell
-//! has. Cron's own environment is minimal and outside the GUI login session, so without `-l` the
-//! agent would launch with no credentials. (`run.sh` still replaces `PATH` with its own curated
-//! list, so binary resolution is unaffected — only env vars are gained.) Reverse sync is not
-//! implemented — routines are managed only through the API.
+//! The binary is referenced by absolute path ([`std::env::current_exe`]) so resolution does not
+//! depend on cron's minimal `PATH`. The agent still inherits the user's login environment (`GH_TOKEN`,
+//! API keys, …): the daemon's trigger path spawns the agent under `sh -lc`, which sources
+//! `~/.profile`. Reverse sync is not implemented — routines are managed only through the API.
 
-use std::io;
-use std::os::unix::fs::PermissionsExt;
-
-use crate::paths::routine_script_path;
-use crate::routines::{
-    build_routine_command, load_agent_command, shell_quote, slugify, AgentCommand, Routine,
-    RoutineStore,
-};
+use crate::routines::{load_agent_command, shell_quote, Routine, RoutineStore};
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
+use crate::utils::lock::LockRecover;
 
 /// Delimiter marking the start of the moadim routines crontab block.
 const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
@@ -38,64 +32,57 @@ const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
-/// Write the routine's launch command to its `run.sh` script and return the path.
+/// Format a single routine as a crontab line that triggers it via the `moadim` binary:
+/// `<schedule> '<moadim>' schedule trigger '<id>' # moadim-routine:<id>`.
 ///
-/// The script holds the full self-contained command from [`build_routine_command`], so the crontab
-/// line that calls it stays short regardless of how long the command is.
-fn write_routine_script(routine: &Routine, agent: &AgentCommand) -> io::Result<std::path::PathBuf> {
-    let path = routine_script_path(&slugify(&routine.title));
-    std::fs::create_dir_all(path.parent().expect("routine script path has a parent dir"))?;
-    let command = build_routine_command(routine, agent);
-    std::fs::write(&path, format!("#!/bin/sh\n{command}\n"))?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
-    Ok(path)
-}
-
-/// Format a single routine as a crontab line that invokes its `run.sh`:
-/// `<schedule> /bin/sh -l '<run.sh>' # moadim-routine:<id>`.
-///
-/// The `-l` runs the script under a login shell so it sources the user's `~/.profile`, letting the
-/// agent inherit their environment variables (`GH_TOKEN`, API keys, …) rather than cron's minimal
-/// one.
-///
-/// Returns `None` (after a warning) if the script cannot be written.
-pub(crate) fn format_routine_line(routine: &Routine, agent: &AgentCommand) -> Option<String> {
-    let script = match write_routine_script(routine, agent) {
-        Ok(path) => path,
-        Err(err) => {
-            log::warn!(
-                "routine sync: failed to write run.sh for routine {:?}: {err}; skipping",
-                routine.id
-            );
-            return None;
-        }
-    };
+/// The binary is referenced by absolute path ([`std::env::current_exe`]) so cron's minimal `PATH`
+/// cannot break resolution; both the path and the routine ID are shell-quoted. The launch command
+/// itself ([`crate::routines::build_routine_command`]) is built and spawned by the daemon when the
+/// `schedule trigger` request arrives, so it is not duplicated into the crontab line.
+pub(crate) fn format_routine_line(routine: &Routine) -> String {
+    // The daemon is already running from this binary, so resolving its own path cannot realistically
+    // fail; a failure here means the process has no executable path at all, which is unrecoverable.
+    let exe = std::env::current_exe().expect("daemon executable path is resolvable");
     let schedule = to_os_schedule(&routine.schedule);
-    Some(format!(
-        "{} /bin/sh -l {} # moadim-routine:{}",
+    format!(
+        "{} {} schedule trigger {} # moadim-routine:{}",
         schedule,
-        shell_quote(&script.to_string_lossy()),
+        shell_quote(&exe.to_string_lossy()),
+        shell_quote(&routine.id),
         routine.id
-    ))
+    )
 }
 
 /// Build the full routines block from the enabled managed routines in `store`.
 ///
-/// Routines whose agent config is missing are skipped with a warning.
+/// Only routines assigned to *this* machine ([`crate::machine::current_machine`]) are scheduled: a
+/// shared config repo can drive different routines on different machines. A routine with an empty
+/// `machines` list runs nowhere — these are logged once as dormant so the operator notices an
+/// unassigned routine instead of it silently never firing. Routines whose agent config is missing
+/// are skipped with a warning.
 fn build_block(store: &RoutineStore) -> String {
+    if crate::global_lock::is_globally_locked() {
+        log::info!("routine sync: global lock active — clearing all routine crontab lines");
+        return format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}");
+    }
+    let me = crate::machine::current_machine();
     let mut routines: Vec<Routine> = {
-        let lock = store.lock().unwrap();
+        let lock = store.lock_recover();
         lock.values()
             .filter(|routine| routine.source == "managed" && routine.enabled)
             .cloned()
             .collect()
     };
+    warn_dormant_routines(&routines);
+    routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
     routines.sort_by_key(|routine| routine.created_at);
 
     let lines: Vec<String> = routines
         .iter()
         .filter_map(|routine| match load_agent_command(&routine.agent) {
-            Ok(agent) => format_routine_line(routine, &agent),
+            // Validate the agent config at sync time so a broken routine is skipped here rather than
+            // failing at fire time; the crontab line itself no longer embeds the agent command.
+            Ok(_) => Some(format_routine_line(routine)),
             Err(err) => {
                 log::warn!(
                     "routine sync: cannot load agent {:?} ({}) for routine {:?}; skipping",
@@ -118,6 +105,27 @@ fn build_block(store: &RoutineStore) -> String {
     }
 }
 
+/// Log a single warning naming enabled routines with no machine assignment (empty `machines`).
+///
+/// With "unset targeting = runs nowhere", such routines never schedule on any machine. Surfacing
+/// them once at sync time makes that visible (e.g. after an upgrade from a version without
+/// targeting) instead of leaving the operator to wonder why a routine never fires.
+fn warn_dormant_routines(routines: &[Routine]) {
+    let dormant: Vec<&str> = routines
+        .iter()
+        .filter(|routine| routine.machines.is_empty())
+        .map(|routine| routine.title.as_str())
+        .collect();
+    if !dormant.is_empty() {
+        log::warn!(
+            "{} enabled routine(s) have no machine assignment and will not be scheduled on any \
+             machine: {}; assign with `moadim routines update <id> --machines '[\"<name>\"]'`",
+            dormant.len(),
+            dormant.join(", ")
+        );
+    }
+}
+
 /// Substring identifying a routine line inside the crontab block (`# moadim-routine:<id>`).
 const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 
@@ -134,7 +142,7 @@ const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 /// the last routine still works.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
     let current = read_crontab()?;
-    if store.lock().unwrap().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
+    if store.lock_recover().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
         log::warn!(
             "routine sync: store is empty but the crontab still has routine lines; refusing to \
              wipe the routines block (suspected load failure or a concurrent daemon)"

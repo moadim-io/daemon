@@ -629,6 +629,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   once before the existing upsert logic, and the construction sites wrap the
   value.
 
+### Fixed
+
+- Routine **create/update now reject an empty or whitespace-only `prompt`** with
+  `400 Bad Request` (`prompt must not be empty`), across the REST and MCP
+  surfaces. Previously a blank prompt was accepted and synced to the crontab, so
+  the routine fired on every tick and launched an agent with no task — silently
+  burning scheduled runs and agent/API budget.
+
 ## [0.12.0] - 2026-06-18
 
 ### Added

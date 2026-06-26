@@ -1313,14 +1313,15 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                         </>
                                     },
                                     CView::Calendar => html! {
-                                        <CronJobCalendar jobs={displayed} loading={loading} />
+                                        <CronJobCalendar jobs={displayed} loading={loading} on_edit={Some(on_edit.clone())} />
                                     },
                                     CView::Day => {
                                         let items = displayed.iter().filter(|j| j.enabled).map(|j| TimelineItem {
                                             label: j.handler.clone(),
                                             schedule: j.schedule.clone(),
+                                            id: j.id.clone(),
                                         }).collect::<Vec<_>>();
-                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                        html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit.clone())} /> }
                                     },
                                 }
                             }
@@ -2532,6 +2533,9 @@ pub fn bulk_delete_dialog(props: &BulkDeleteProps) -> Html {
 struct CalendarJobProps {
     jobs: Vec<CronJob>,
     loading: bool,
+    /// Called with the job id when the user clicks a calendar chip.
+    #[prop_or_default]
+    on_edit: Option<Callback<String>>,
 }
 
 #[function_component(CronJobCalendar)]
@@ -2543,12 +2547,13 @@ fn cron_job_calendar(props: &CalendarJobProps) -> Html {
         let dow = first.weekday().num_days_from_sunday();
         first - chrono::Duration::days(dow as i64)
     };
-    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each entry is (id, label, fire_count) so clicks can open the edit modal.
+    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
     for j in props.jobs.iter().filter(|j| j.enabled) {
         if let Some(counts) = occurrences_per_day(&j.schedule, grid_start) {
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((j.handler.clone(), c));
+                    cells[i].push((j.id.clone(), j.handler.clone(), c));
                 }
             }
         }
@@ -2588,10 +2593,29 @@ fn cron_job_calendar(props: &CalendarJobProps) -> Html {
                         html! {
                             <div class={cls}>
                                 <span class="cal-day-num">{date.day()}</span>
-                                { for cells[i].iter().map(|(label, count)| html! {
-                                    <span class="cal-event" title={format!("{label} \u{d7}{count}")}>
-                                        {label}{if *count > 1 { format!(" \u{d7}{count}") } else { String::new() }}
-                                    </span>
+                                { for cells[i].iter().map(|(id, label, count)| {
+                                    let display = if *count > 1 {
+                                        format!("{label} \u{d7}{count}")
+                                    } else {
+                                        label.clone()
+                                    };
+                                    if let Some(on_edit) = props.on_edit.as_ref() {
+                                        let cb = on_edit.clone();
+                                        let job_id = id.clone();
+                                        html! {
+                                            <button class="cal-event cal-event--link"
+                                                title={display.clone()}
+                                                onclick={Callback::from(move |_: MouseEvent| cb.emit(job_id.clone()))}>
+                                                {display}
+                                            </button>
+                                        }
+                                    } else {
+                                        html! {
+                                            <span class="cal-event" title={display.clone()}>
+                                                {display}
+                                            </span>
+                                        }
+                                    }
                                 })}
                             </div>
                         }

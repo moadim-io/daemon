@@ -12,6 +12,52 @@ use super::{build_app, echo, health, run_with_listener_until, write_openapi_spec
 use crate::cron_jobs::{new_registry, new_store, AppState};
 use crate::utils::time::now_secs;
 
+/// Crontab shim that makes sync succeed: `-l` prints the stored content, `-` writes stdin to a
+/// temp file. Used to cover the `if let Err(sync_err)` success fall-through in the lock handlers.
+struct SucceedingCronShim {
+    base: std::path::PathBuf,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl SucceedingCronShim {
+    fn new() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("moadim-httpcshim-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let store = base.join("store");
+        std::fs::write(&store, "").unwrap();
+        let store_display = store.to_string_lossy().into_owned();
+        let script = base.join("crontab-ok.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-l\" ]; then cat \"$STORE\"; elif [ \"$1\" = \"-\" ]; then cat > \"$STORE\"; fi\n"
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: single-threaded test execution (RUST_TEST_THREADS=1).
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+        }
+        Self { base, previous }
+    }
+}
+
+impl Drop for SucceedingCronShim {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            match self.previous.take() {
+                Some(val) => std::env::set_var("MOADIM_CRONTAB_BIN", val),
+                None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
 /// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
 /// `"claude"` is accepted) while `load_agent_command` finds no config — exercising the trigger
@@ -82,6 +128,31 @@ async fn build_app_serves_root() {
 }
 
 #[tokio::test]
+async fn build_app_sets_security_headers_on_ui_and_api() {
+    // The whole router carries the security headers (issue #406): assert on a representative
+    // UI response (the SPA at `/`) and a representative API response (`/api/v1/health`).
+    for uri in ["/", "/api/v1/health"] {
+        let resp = build_app(new_store(), crate::routines::new_store())
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(
+            resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            resp.headers().get("referrer-policy").unwrap(),
+            "no-referrer"
+        );
+        assert_eq!(
+            resp.headers().get("content-security-policy").unwrap(),
+            "frame-ancestors 'none'"
+        );
+    }
+}
+
+#[tokio::test]
 async fn build_app_serves_agents() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
@@ -99,6 +170,73 @@ async fn build_app_serves_agents() {
         .unwrap();
     let agents: Vec<String> = serde_json::from_slice(&bytes).unwrap();
     assert!(!agents.is_empty(), "agents list should never be empty");
+}
+
+#[tokio::test]
+async fn build_app_serves_machines() {
+    // Seed a cron job and a routine whose targeting lists overlap (`shared`) so the response
+    // exercises de-duplication across both stores, plus the implicit local-identity entry.
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "j1".to_string(),
+        crate::cron_jobs::CronJob {
+            id: "j1".to_string(),
+            schedule: "@daily".to_string(),
+            handler: "h".to_string(),
+            metadata: serde_json::Value::Null,
+            machines: vec!["zeta-box".to_string(), "shared".to_string()],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_manual_trigger_at: None,
+        },
+    );
+    let routines = crate::routines::new_store();
+    routines.lock().unwrap().insert(
+        "r1".to_string(),
+        crate::routines::Routine {
+            id: "r1".to_string(),
+            schedule: "@daily".to_string(),
+            title: "R".to_string(),
+            agent: "claude".to_string(),
+            prompt: "p".to_string(),
+            repositories: vec![],
+            machines: vec!["alpha-box".to_string(), "shared".to_string()],
+            enabled: true,
+            source: "managed".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            last_manual_trigger_at: None,
+            last_scheduled_trigger_at: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    let resp = build_app(store, routines)
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/machines")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let machines: Vec<String> = serde_json::from_slice(&bytes).unwrap();
+
+    let mut expected = vec![
+        crate::machine::current_machine(),
+        "alpha-box".to_string(),
+        "shared".to_string(),
+        "zeta-box".to_string(),
+    ];
+    expected.sort();
+    expected.dedup();
+    assert_eq!(machines, expected);
 }
 
 #[tokio::test]
@@ -657,6 +795,19 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // scheduled-trigger (the crontab-invoked path; runs the routine and returns OK)
+    let resp = build_app(store.clone(), routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/routines/{id}/scheduled-trigger"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
     // logs (empty)
     let resp = build_app(store.clone(), routines.clone())
         .oneshot(
@@ -708,6 +859,7 @@ async fn router_routine_not_found_paths() {
         ("GET", ""),
         ("DELETE", ""),
         ("POST", "/trigger"),
+        ("POST", "/scheduled-trigger"),
         ("GET", "/logs"),
     ] {
         let resp = build_app(new_store(), crate::routines::new_store())
@@ -896,6 +1048,7 @@ async fn router_serves_routines_ical_feed() {
             agent: "claude".to_string(),
             prompt: "do the thing".to_string(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             source: "managed".to_string(),
             created_at: 0,
@@ -927,6 +1080,174 @@ async fn router_serves_routines_ical_feed() {
     assert!(body.starts_with("BEGIN:VCALENDAR"));
     assert!(body.contains("BEGIN:VEVENT"));
     assert!(body.contains("SUMMARY:My Routine"));
+}
+
+// ── Global lock endpoints ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn get_lock_status_returns_unlocked_by_default() {
+    let _home = TempHome::set();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/routines/lock")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["shared"], false);
+    assert_eq!(json["local"], false);
+    assert_eq!(json["locked"], false);
+}
+
+#[tokio::test]
+async fn lock_route_creates_sentinel_and_returns_status() {
+    let _home = TempHome::set();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/routines/lock")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"scope":"shared"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["shared"], true);
+    assert_eq!(json["locked"], true);
+    // Cleanup.
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, false).unwrap();
+}
+
+#[tokio::test]
+async fn lock_route_unknown_scope_is_bad_request() {
+    let _home = TempHome::set();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/routines/lock")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"scope":"global"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn unlock_route_removes_sentinel_and_returns_status() {
+    let _home = TempHome::set();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, true).unwrap();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/routines/lock?scope=local")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["local"], false);
+    assert_eq!(json["locked"], false);
+}
+
+#[tokio::test]
+async fn unlock_route_all_removes_both_sentinels() {
+    let _home = TempHome::set();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, true).unwrap();
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, true).unwrap();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/routines/lock?scope=all")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["shared"], false);
+    assert_eq!(json["local"], false);
+    assert_eq!(json["locked"], false);
+}
+
+#[tokio::test]
+async fn lock_route_sync_success_path() {
+    // Covers the fall-through `}` of `if let Err(sync_err)` in the lock handler when sync passes.
+    let _home = TempHome::set();
+    let _shim = SucceedingCronShim::new();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/routines/lock")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"scope":"local"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
+}
+
+#[tokio::test]
+async fn unlock_route_sync_success_path() {
+    // Covers the fall-through `}` of `if let Err(sync_err)` in the unlock handler when sync passes.
+    let _home = TempHome::set();
+    let _shim = SucceedingCronShim::new();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/routines/lock?scope=all")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn unlock_route_unknown_scope_is_bad_request() {
+    let _home = TempHome::set();
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/routines/lock?scope=everything")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

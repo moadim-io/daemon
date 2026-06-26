@@ -13,7 +13,9 @@
 /// Crate version from `Cargo.toml` (`CARGO_PKG_VERSION`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Short git commit SHA the binary was built from, or `"unknown"` outside a git checkout.
+/// Short git commit SHA the binary was built from, with a `-dirty` suffix when
+/// the working tree had uncommitted changes to tracked files at build time, or
+/// `"unknown"` outside a git checkout.
 pub const GIT_SHA: &str = env!("MOADIM_GIT_SHA");
 
 /// Committer date (`YYYY-MM-DD`) of [`GIT_SHA`], or `"unknown"` outside a git checkout.

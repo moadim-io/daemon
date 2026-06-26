@@ -1577,14 +1577,15 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
+                                            id: Some(r.id.clone()),
                                             label: r.title.clone(),
                                             schedule: r.schedule.clone(),
                                         }).collect::<Vec<_>>();
-                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                        html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit)} /> }
                                     },
                                 }
                             }
@@ -1938,6 +1939,9 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
 pub struct CalendarProps {
     pub routines: Vec<Routine>,
     pub loading: bool,
+    /// When set, clicking a calendar chip opens the edit modal for that routine.
+    #[prop_or_default]
+    pub on_edit: Option<Callback<String>>,
 }
 
 #[function_component(RoutineCalendar)]
@@ -1968,14 +1972,15 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
 
     // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
-    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each entry is (id, title, count) so chips can dispatch the edit modal on click.
+    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
     let mut scheduled = 0usize;
     for r in props.routines.iter().filter(|r| r.enabled) {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((r.title.clone(), c));
+                    cells[i].push((r.id.clone(), r.title.clone(), c));
                 }
             }
         }
@@ -2011,13 +2016,19 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                             <div class={cls}>
                                 <div class="cal-daynum">{date.day()}</div>
                                 <div class="cal-hits">
-                                    { for hits.iter().take(4).map(|(title, count)| {
+                                    { for hits.iter().take(4).map(|(id, title, count)| {
                                         let label = if *count > 1 {
                                             format!("{title} ×{count}")
                                         } else {
                                             title.clone()
                                         };
-                                        html! { <div class="cal-chip" title={label.clone()}>{label}</div> }
+                                        let on_chip = props.on_edit.as_ref().map(|cb| {
+                                            let cb = cb.clone();
+                                            let id = id.clone();
+                                            Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+                                        });
+                                        let chip_cls = if on_chip.is_some() { "cal-chip clickable" } else { "cal-chip" };
+                                        html! { <div class={chip_cls} title={label.clone()} onclick={on_chip}>{label}</div> }
                                     }) }
                                     if hits.len() > 4 {
                                         <div class="cal-more">{format!("+{} more", hits.len() - 4)}</div>

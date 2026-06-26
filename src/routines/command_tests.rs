@@ -12,6 +12,7 @@ fn make_routine(title: &str) -> Routine {
         agent: "claude".to_string(),
         prompt: "do it".to_string(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
@@ -104,6 +105,43 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
     let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
     let copy = cmd.find("/prompt.md\"").unwrap();
     assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
+}
+
+#[test]
+fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
+    // The routine-origin disclosure write into `$WB/CLAUDE.md` must fail-fast, mirroring the
+    // `cp prompt.md` guard: a failed redirect (read-only/full $HOME, unwritable $WB, disk-quota)
+    // must abort the launch before the prompt copy, setup, and tmux session — otherwise the agent
+    // would run with no disclosure mandate.
+    let routine = make_routine("Cmd Disclosure Guard Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // The primary write is guarded with an aborting `|| { ...; exit 1; }`.
+    let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
+    assert!(
+        cmd.contains(
+            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write CLAUDE.md disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+        ),
+        "expected the CLAUDE.md disclosure write to fail-fast in: {cmd}"
+    );
+
+    // The guard must precede the prompt copy, so a failed disclosure write never reaches it.
+    let copy = cmd.find("/prompt.md\"").unwrap();
+    assert!(
+        write < copy,
+        "disclosure-write guard must precede the prompt copy"
+    );
+
+    // The best-effort user-prompt append stays best-effort (`|| true`), not aborting.
+    assert!(
+        cmd.contains(r#">> "$WB/CLAUDE.md" || true"#),
+        "user-prompt append must remain best-effort in: {cmd}"
+    );
 }
 
 #[test]

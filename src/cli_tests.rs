@@ -4,7 +4,7 @@ use super::*;
 
 /// Build a `Vec<String>` from string literals for [`parse`].
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|arg| arg.to_string()).collect()
+    args.iter().map(ToString::to_string).collect()
 }
 
 #[test]
@@ -107,18 +107,84 @@ fn json_flag_only_applies_to_its_command() {
 
 #[test]
 fn status_json_reports_running_pid_and_address() {
-    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(42))).unwrap();
+    let health = HealthInfo {
+        uptime_secs: 8123,
+        version: "1.2.3".to_string(),
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(42), Some(health))).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["pid"], serde_json::json!(42));
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+    assert_eq!(value["uptime_secs"], serde_json::json!(8123));
+    assert_eq!(value["version"], serde_json::json!("1.2.3"));
 }
 
 #[test]
 fn status_json_null_pid_when_unknown_or_down() {
-    let value: serde_json::Value = serde_json::from_str(&status_json(false, None)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&status_json(false, None, None)).unwrap();
     assert_eq!(value["running"], serde_json::json!(false));
     assert!(value["pid"].is_null());
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+    // Server-sourced fields are null when no /health was folded in.
+    assert!(value["uptime_secs"].is_null());
+    assert!(value["version"].is_null());
+}
+
+#[test]
+fn parse_health_reads_uptime_and_version() {
+    let body = r#"{"status":"ok","uptime_secs":42,"running":true,"version":"9.9.9"}"#;
+    assert_eq!(
+        parse_health(body),
+        Some(HealthInfo {
+            uptime_secs: 42,
+            version: "9.9.9".to_string(),
+        })
+    );
+}
+
+#[test]
+fn parse_health_rejects_malformed_or_incomplete_bodies() {
+    // Not JSON at all.
+    assert_eq!(parse_health("not json"), None);
+    // Missing version.
+    assert_eq!(parse_health(r#"{"uptime_secs":1}"#), None);
+    // Missing uptime_secs.
+    assert_eq!(parse_health(r#"{"version":"1.0.0"}"#), None);
+    // Wrong types.
+    assert_eq!(
+        parse_health(r#"{"uptime_secs":"x","version":"1.0.0"}"#),
+        None
+    );
+}
+
+#[test]
+fn fetch_health_parses_a_well_formed_health_response() {
+    let server = FakeServer::start(
+        200,
+        r#"{"status":"ok","uptime_secs":7,"running":true,"version":"3.2.1"}"#.to_string(),
+    );
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(
+        fetch_health(),
+        Some(HealthInfo {
+            uptime_secs: 7,
+            version: "3.2.1".to_string(),
+        })
+    );
+}
+
+#[test]
+fn fetch_health_is_none_on_non_200_status() {
+    let server = FakeServer::start(503, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(fetch_health(), None);
+}
+
+#[test]
+fn fetch_health_is_none_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(fetch_health(), None);
 }
 
 #[test]
@@ -403,7 +469,7 @@ fn bind_addr_honors_override() {
 #[test]
 fn status_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
-    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 

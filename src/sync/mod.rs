@@ -14,7 +14,7 @@
 //! This is the only sync direction the daemon runs.
 //!
 //! **Reverse sync** (crontab → moadim) is *not* wired up. The functions that
-//! implement it ([`sync_from_crontab`] and its `parse_block` /
+//! implement it ([`sync_from_crontab`](crate::sync::sync_from_crontab) and its `parse_block` /
 //! `parse_moadim_line` / `to_moadim_schedule` / `handler_from_command` helpers)
 //! exist and are unit-tested, but no caller invokes them on any interval or at
 //! startup — see issue #218. As a result, manual edits to the block do **not**
@@ -76,11 +76,14 @@ impl From<std::io::Error> for SyncError {
 
 // ─── Schedule conversion ───────────────────────────────────────────────────
 
-/// Convert a 7-field moadim schedule (`sec min hour dom month dow year`) to
-/// a 5-field OS crontab schedule (`min hour dom month dow`).
+/// Convert a moadim schedule to a 5-field OS crontab schedule
+/// (`min hour dom month dow`).
 ///
-/// `@keyword` schedules are passed through unchanged.
-/// The seconds (field 0) and year (field 6) are dropped.
+/// `croner` accepts both 6-field (`sec min hour dom month dow`) and 7-field
+/// (`sec min hour dom month dow year`) forms. Both carry a leading seconds field
+/// the OS crontab cannot express, so it is dropped (along with the trailing
+/// year), projecting onto 5 fields. `@keyword` and already-5-field schedules are
+/// passed through unchanged.
 pub(crate) fn to_os_schedule(schedule: &str) -> String {
     let trimmed = schedule.trim();
     if trimmed.starts_with('@') {
@@ -88,8 +91,7 @@ pub(crate) fn to_os_schedule(schedule: &str) -> String {
     }
     let fields: Vec<&str> = trimmed.split_ascii_whitespace().collect();
     match fields.len() {
-        7 => fields[1..6].join(" "),
-        5 => trimmed.to_string(),
+        6 | 7 => fields[1..6].join(" "),
         _ => trimmed.to_string(),
     }
 }
@@ -223,8 +225,13 @@ pub(crate) fn format_crontab_line(job: &CronJob, handlers: &Path) -> String {
 }
 
 /// Build the full moadim block string from the enabled managed jobs in `store`.
+///
+/// Only jobs assigned to *this* machine ([`crate::machine::current_machine`]) are scheduled, so a
+/// shared config repo can drive different jobs on different machines. A job with an empty `machines`
+/// list runs nowhere and is logged once as dormant (see [`warn_dormant_jobs`]).
 fn build_block(store: &CronStore) -> String {
     let dir = handlers_dir();
+    let me = crate::machine::current_machine();
     let mut jobs: Vec<CronJob> = {
         let lock = store.lock_recover();
         lock.values()
@@ -232,6 +239,8 @@ fn build_block(store: &CronStore) -> String {
             .cloned()
             .collect()
     };
+    warn_dormant_jobs(&jobs);
+    jobs.retain(|j| crate::machine::targets(&j.machines, &me));
     jobs.sort_by_key(|j| j.created_at);
 
     let lines: Vec<String> = jobs.iter().map(|j| format_crontab_line(j, &dir)).collect();
@@ -243,6 +252,27 @@ fn build_block(store: &CronStore) -> String {
             "{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{}\n{BLOCK_END}",
             lines.join("\n")
         )
+    }
+}
+
+/// Log a single warning naming enabled managed jobs with no machine assignment (empty `machines`).
+///
+/// Mirrors the routine dormant-warning: with "unset targeting = runs nowhere", such jobs never
+/// schedule on any machine, so surfacing them once at sync time keeps the upgrade-goes-dormant
+/// behavior visible instead of silent.
+fn warn_dormant_jobs(jobs: &[CronJob]) {
+    let dormant: Vec<&str> = jobs
+        .iter()
+        .filter(|j| j.machines.is_empty())
+        .map(|j| j.id.as_str())
+        .collect();
+    if !dormant.is_empty() {
+        log::warn!(
+            "{} enabled cron job(s) have no machine assignment and will not be scheduled on any \
+             machine: {}; assign with `moadim cron-jobs update <id> --machines '[\"<name>\"]'`",
+            dormant.len(),
+            dormant.join(", ")
+        );
     }
 }
 
@@ -430,6 +460,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
                     schedule: to_moadim_schedule(os_sched),
                     handler: handler_from_command(command, &dir),
                     metadata: serde_json::json!({}),
+                    machines: Vec::new(),
                     enabled: true,
                     source: "managed".to_string(),
                     created_at: now,

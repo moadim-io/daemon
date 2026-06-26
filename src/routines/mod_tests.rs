@@ -13,11 +13,13 @@ fn make_routine(id: &str) -> Routine {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
         }],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -55,6 +57,19 @@ fn compose_prompt_repo_without_branch() {
     }];
     let prompt = compose_prompt(&routine);
     assert!(prompt.contains("- git@example.com:a/b\n"));
+}
+
+#[test]
+fn compose_prompt_without_repositories_omits_clone_header() {
+    let mut routine = make_routine("x");
+    routine.repositories = vec![];
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Workbench"));
+    assert!(prompt.contains("You are working in an empty directory.\n"));
+    // No dangling "clone any you need:" header (and no empty bullet list) when there are no repos.
+    assert!(!prompt.contains("clone any you need"));
+    assert!(!prompt.contains("\n- "));
+    assert!(prompt.contains("do the thing"));
 }
 
 #[test]
@@ -423,6 +438,7 @@ fn svc_create_invalid_cron_rejected() {
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -441,6 +457,7 @@ fn svc_create_update_delete_lifecycle() {
             agent: "claude".into(),
             prompt: "p".into(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -464,6 +481,7 @@ fn svc_create_update_delete_lifecycle() {
                 repository: "r".into(),
                 branch: None,
             }]),
+            machines: None,
             enabled: Some(false),
             ttl_secs: None,
             max_runtime_secs: None,
@@ -488,6 +506,7 @@ fn svc_update_not_found() {
         agent: None,
         prompt: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -508,6 +527,7 @@ fn svc_update_invalid_cron_rejected() {
         agent: None,
         prompt: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,

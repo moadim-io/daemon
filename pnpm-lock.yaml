@@ -9,24 +9,24 @@ importers:
   .:
     devDependencies:
       block-no-verify:
-        specifier: ^1.2.0
-        version: 1.2.0
+        specifier: ^1.3.0
+        version: 1.3.0
 
 packages:
 
-  '@polyhook/sdk@0.1.4':
-    resolution: {integrity: sha512-RPA+oybxDEohRCsNfa1htt1yGRpVG0pbqvv+lqSVi0d4HMvuJo1PC+Ql57X0E0TwmX1wngLhLufcvf0q/Wiw8A==}
+  '@polyhook/sdk@0.1.11':
+    resolution: {integrity: sha512-Tb8NJ6oYxEwWAlsC0R/PFDIxMjYyXsZQOwSjoMD0eEPppyf1BtNfcZO1oSXxM2eQsEynlpOXr6cDku9B7KUSSQ==}
     engines: {node: '>=18'}
 
-  block-no-verify@1.2.0:
-    resolution: {integrity: sha512-5NoMB1bcBQgRoacpYLEKBUUV9ymx2rS851GIyyhEA0rZtc9YqiwzYsoxBrH1g8wdmPAKFSih60Mi1CNIMxBqSg==}
+  block-no-verify@1.3.0:
+    resolution: {integrity: sha512-pUEt/KwRe2Uu5abvSZwaA8J6FCcNqjy+IebPW6DAgag81NmqUnCxd63ueivAa8L3f1bYL0dMXJ9WgJ2uyg1ZvA==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
 snapshots:
 
-  '@polyhook/sdk@0.1.4': {}
+  '@polyhook/sdk@0.1.11': {}
 
-  block-no-verify@1.2.0:
+  block-no-verify@1.3.0:
     dependencies:
-      '@polyhook/sdk': 0.1.4
+      '@polyhook/sdk': 0.1.11

@@ -11,7 +11,369 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS: TCC "administer your computer" dialog no longer appears during background runs.**
+  `moadim install` now proactively sends a harmless Apple Event to System Events so macOS
+  prompts for the Automation permission once, while the user is at the terminal. After clicking
+  OK the grant is remembered permanently; the background daemon never triggers the dialog again.
+  A hint line is printed before the prompt so users know what to expect. Closes #730.
+
 ### Added
+
+- **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
+  returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
+  `local_only=true` query parameter that filters the response to entries targeting the current
+  machine. The MCP `list_routines` and `list_cron_jobs` tools gain the same parameter, defaulting
+  to `true` so MCP callers see local-first results. The UI routines and cron-jobs pages fetch the
+  current machine on mount and default the existing machine facet filter to it; users can change
+  the filter to "Any" to see all machines. Closes #726.
+
+## [0.16.0] - 2026-06-26
+
+### Changed
+
+- **`defaults` module split.** `src/routines/defaults.rs` is now a module (`defaults/`); each
+  built-in routine lives in its own file (`update_moadim.rs`, `the_1_percent.rs`). Pure
+  refactor — no behaviour change.
+
+### Added
+
+- **Per-row health-status badge in the Routines table.** A new sortable **HEALTH** column
+  shows a colored badge on every routine row: `HEALTHY` (accent), `DISABLED` (muted),
+  `DORMANT` (amber — enabled but no machine assigned), `DEAD SCHEDULE` (red — schedule
+  yields no future fire), and `AGENT MISSING` (amber — agent config not registered).
+  Badges follow the traffic-light pattern used by Jenkins, GitHub Actions, and Datadog:
+  color + text label together so status is legible without color vision. Sorting ascending
+  puts the most-urgent rows first (Dormant → Dead Schedule → Agent Missing → Disabled →
+  Healthy), letting operators triage broken routines in one click. The **LAST FIRE** column
+  header is also now sortable. Pure frontend — no backend change. Closes #712.
+- **Group-by dimension for the Cron Jobs table.** A new **GROUP BY** selector in the
+  Cron Jobs toolbar lets operators partition the flat job list into labelled sections
+  by **Handler**, **Machine**, or **Status** (enabled/disabled). Within each group the
+  active column sort still applies; groups are ordered alphabetically for a stable
+  layout. `None` (the default) preserves the existing flat-list behaviour. Backed by
+  a pure `group_jobs()` / `group_key()` function covered by 16 new host-only tests.
+  Follows the first-class grouping pattern in Airflow's DAG list, GitHub Actions
+  workflow runs, and Temporal namespace views — orthogonal to filtering so operators
+  can filter *and* group simultaneously. Pure frontend — no backend change.
+  Closes #714.
+- **Dedicated LAST FIRE column in the Routines table.** The most-recent trigger
+  timestamp is now shown in its own **LAST FIRE** column directly beside NEXT RUN,
+  matching the side-by-side "last run / next run" pattern standard in Airflow, Temporal,
+  and Kubernetes CronJob dashboards. A ↻ prefix marks manual triggers; ⏱ marks
+  scheduled fires; routines that have never been triggered show `—`. The trigger data
+  was already returned by the API — it was previously buried as a sub-line under the
+  UPDATED cell where it was easy to miss. Pure frontend — no backend change.
+  Closes #660. Closes #688.
+- **Schedule fire preview on Cron Jobs and Routines pages.** Every schedule cell now has a
+  **▸ fires** toggle button. Clicking it expands an inline panel listing the next 10 scheduled
+  fire times for that job or routine (absolute time + relative countdown per entry); clicking
+  again collapses it. Implements the per-job forward-projection pattern used by Cronitor,
+  BetterStack, and Cloud Scheduler — operators can verify an expression after editing or check
+  whether a job falls inside a maintenance window without guessing from the human description.
+  Pure frontend: `next_fires(schedule, now, n)` iterates the existing croner iterator and
+  collects up to `n` datetimes; no backend change. Closes #704.
+- **Calendar view for the Cron Jobs page.** The Cron Jobs page gains a CALENDAR
+  view alongside the existing LIST and DAY views, matching the three-view layout
+  of the Routines page. Operators can browse a 6-week monthly grid showing how
+  many times each enabled job fires per day, with prev/next/today navigation.
+  Calendar grid helpers (`WEEKDAYS`, `CAL_MONTHS`, `GRID_CELLS`, `MAX_OCCURRENCES`,
+  `month_start`, `occurrences_per_day`) are extracted from `routines.rs` into the
+  shared `schedule` module so both pages share the same implementation.
+- **Global routine lock — UI banner and REST API.** The Routines page shows an amber banner
+  when a global lock is active, listing which sentinel(s) are present (SHARED / LOCAL) with an
+  **UNLOCK ALL** button that removes both via `DELETE /api/v1/routines/lock?scope=all`. Three
+  new REST endpoints expose lock management: `GET /routines/lock` (status), `POST /routines/lock`
+  (create sentinel; scope=shared|local), `DELETE /routines/lock` (remove; scope=shared|local|all).
+- **Global routine lock.** Create `~/.config/moadim/.lock` (committed, shared via git) or
+  `~/.config/moadim/.local.lock` (gitignored, machine-local) to pause all routine scheduling
+  and manual triggers without touching individual routine `enabled` states. Removing the file(s)
+  restores prior state. Three new MCP tools — `get_lock_status`, `lock_routines`,
+  `unlock_routines` — manage the sentinels and immediately re-sync the crontab. Blocked triggers
+  return HTTP 423 Locked.
+- **Bulk actions for the Routines page.** Each routine row now has a leading selection
+  checkbox; a header checkbox toggles "all visible selected ↔ none" (respects the active
+  filter so hidden rows are never touched). When at least one routine is selected, a
+  floating bulk-action bar appears with **ENABLE**, **DISABLE**, and **DELETE** actions plus
+  a **CLEAR** affordance. Bulk enable/disable fires `PATCH /routines/{id}` for each
+  selected routine and surfaces a single summary toast. Bulk delete shows a confirmation
+  dialog and removes via `DELETE /routines/{id}`. Selection is automatically pruned on
+  reload so stale IDs never carry over. Pure frontend — no backend change. Closes #676.
+- **Token Trim default routine.** A new built-in weekly routine (Sundays 07:00) that audits
+  routine prompts for redundancy, verbosity, dead scaffolding, and duplication, then opens one
+  PR per week that reduces LLM token consumption without degrading output quality.
+- **Light/dark theme toggle.** A ☀/🌙 button in the header switches between the dark
+  terminal aesthetic and a clean light palette. The choice persists to `localStorage`
+  under `moadim.theme` and is applied flash-free via an inline `<head>` script before
+  the first paint. The `⌘K` command palette gains a "Toggle Theme" entry so
+  keyboard-first operators never need to reach for the mouse. All colours are pure CSS
+  custom-property overrides — no per-component changes. Closes #664.
+- **Sortable column headers for the Cron Jobs table.** Clicking any column header
+  (ID, HANDLER, NEXT RUN, ENABLED, UPDATED) sorts the table by that field; clicking
+  again reverses direction. An arrow indicator shows the active sort column and
+  direction. Sort state lives in component memory (no URL pollution) and resets to the
+  server's natural order on page reload. Pure client-side — no backend change.
+  Closes #657, #669.
+- **NEXT RUN countdown column in the Routines table.** The Routines table gains a
+  live **NEXT RUN** column (absolute fire time + relative countdown + due-soon accent)
+  matching the already-shipped column on the Cron Jobs page, so operators see per-routine
+  next-fire times at a glance without navigating to the Overview. Disabled routines show
+  `paused`; invalid or exhausted schedules show `—`; countdowns turn green inside the
+  1-hour due-soon window. A 30 s background tick keeps countdowns live between data
+  fetches. Pure client-side computation from the existing `schedule` field — no backend
+  change. Closes #653.
+- **Cross-filterable KPI tiles + DueSoon facet for Routines page.** The Routines
+  page's static stat cards are replaced by clickable `<button>` tiles with
+  `aria-pressed`; clicking ENABLED, DISABLED, or DUE SOON applies that status
+  filter to the list, and clicking the active tile clears it. A new `DueSoon`
+  status facet selects routines whose next scheduled fire lands within the next
+  hour (same 1-hour window used by the Cron Jobs page). A live 30-second `now`
+  tick keeps the DueSoon count current between data fetches. The STATUS dropdown
+  in the filter bar gains a "Due soon" option. The `/` key shortcut focuses the
+  search box when the user is not already typing in a field. Closes #652.
+- **Enhanced log viewer.** The per-job and per-routine log panel gains line numbers,
+  a keyword search bar with match highlighting and navigation arrows, and an
+  auto-tail toggle that keeps the viewport pinned to the last line as new output
+  arrives. Closes #646.
+- **"The 1 Percent" built-in default routine.** A new daemon-managed default that fires
+  daily at 08:00 and audits the user's automation portfolio across six dimensions (coverage
+  gaps, redundancy, dead weight, prompt quality, schedule hygiene, machine targeting). Each
+  run it picks the single highest-impact improvement and opens a pull request on the routines
+  repository. If the routines folder is not a git repository the routine self-disables via
+  `update_routine`. Closes #640.
+- **Fleet schedule heatmap.** A new HEATMAP page (`/heatmap`) renders a forward-looking
+  7-day × 24-hour fire-density grid that aggregates the next week's schedule of every
+  enabled cron job and routine into one color-coded matrix, so an operator can see
+  fleet-wide busy windows, scheduling collisions, and open time slots at a glance.
+  Three toggle buttons filter the grid to ALL / CRON / ROUTINES, and the current day
+  and hour are highlighted. The grid auto-refreshes every 30 s and the "now" column
+  advances every minute. Pure host-testable aggregation math; no backend change.
+  Closes #625.
+- **Live auto-refresh for the cron-jobs & routines tables.** Each list's action row
+  gains a Grafana/Datadog-style refresh-interval selector (`Off` default, `5s`, `15s`,
+  `30s`, `60s`) plus an "updated Ns ago" freshness cue, so an operator can keep the data
+  current on a cadence they choose instead of reloading the SPA. The choice persists to
+  `localStorage` under a shared key, so it is consistent across both pages and survives
+  navigation and reload; `Off` preserves the historical load-once behaviour (no background
+  traffic until opted in). Re-fetches use the existing `GET /api/v1/cron-jobs` /
+  `GET /api/v1/routines` endpoints — no backend change. Closes #618.
+- **Operations overview landing page.** The root `/` route now serves a single-pane
+  OVERVIEW summary that aggregates both cron jobs and routines, so an operator sees
+  whole-system state at a glance: five cross-entity KPI tiles (`SCHEDULED`, `ENABLED`,
+  `DUE SOON`, `DISABLED`, `NEXT RUN` with a live countdown) and an UPCOMING RUNS table
+  of the next 8 fires across every enabled job and routine, each tagged `CRON`/`ROUTINE`.
+  Closes #606.
+- **`NEXT RUN` column and `DUE SOON` KPI tile.** The scheduled-jobs table gains a
+  `NEXT RUN` column showing the absolute next fire time plus a relative countdown
+  (`in 5m`, `in 2h 10m`, `tomorrow 09:00`); disabled jobs read `paused` and the countdown
+  turns red once a fire lands inside the due-soon window. A new `DUE SOON` KPI tile counts
+  enabled jobs firing within the next hour, and a 30 s tick keeps countdowns live without
+  a manual reload. Closes #597.
+- **Faceted filter toolbar for the Routines page.** The single repository-URL
+  substring filter is replaced with a multi-facet toolbar matching the Cron Jobs
+  page (Airflow / GitHub Actions / Buildkite best practice: free-text + facets +
+  live result count). New facets: full-text search across title, agent, schedule,
+  schedule description, and repository URLs; status (All / Enabled / Disabled /
+  Dormant); agent (Any / claude / codex / …); machine (Any / Unassigned / specific).
+  A live "Showing N of M" count updates with each keystroke, a CLEAR button appears
+  when any filter is active, and the empty state distinguishes "no routines yet"
+  from "no matches — clear filters". Pure filter logic is extracted to free
+  functions with 31 new host-side unit tests. Closes #642.
+
+### Changed
+
+- Enabled the `clippy::redundant_closure_for_method_calls` lint and fixed the
+  violations, replacing closures that only forward their receiver to a method
+  (`|e| e.ok()`, `|s| s.to_string()`, `|p| p.into_inner()`) with the method
+  path itself (`Result::ok`, `ToString::to_string`,
+  `std::sync::PoisonError::into_inner`). No behavior change.
+- Pinned the `AppError` HTTP response **body** contract: tests now assert that
+  every variant serializes to `{"error": <message>}`, not just the right status
+  code, so the JSON error envelope clients parse can't silently regress. Tests
+  only; no behavior change.
+- Marked every public path builder in `paths` (`jobs_dir`, `routine_toml_path`,
+  `pid_file`, `moadim_home`, …) `#[must_use]`. These functions are pure and the
+  returned `PathBuf` is the whole point of calling them, so discarding it is
+  always a mistake; the attribute lets clippy flag such a call at compile time
+  instead of letting it silently no-op. No behavior change.
+
+### Fixed
+
+- The max-runtime watchdog now runs on its own 30s cadence instead of riding the
+  hourly cleanup sweep, so a hung run is force-killed within ~30s of its
+  `effective_max_runtime_secs` rather than surviving up to ~1h past its bound. A
+  sub-hour `max_runtime_secs` (or a sub-hour cron interval) is now actually
+  enforceable. TTL-reaping of finished workbenches stays on the hourly sweep.
+  (#436)
+
+- Removed a duplicate `.logo { font-weight }` declaration in `ui/index.html` left by
+  the concurrent merge of #595 and #596; identical rendering, cleaner CSS. Closes #599.
+
+## [0.15.0] - 2026-06-21
+
+### Added
+
+- **Day calendar view.** Routines and cron jobs gain a scrollable single-day
+  timeline: 24 hour rows with each fire time rendered as an `HH:MM` chip in its
+  hour, prev/next/`TODAY` navigation, and the current hour highlighted and
+  scrolled into view. Available alongside the routines `LIST`/`CALENDAR` toggle
+  and as a new `LIST`/`DAY` toggle on the previously table-only cron-jobs page.
+- **Zoom into the day view.** The single-day timeline gains a `−`/`+` zoom
+  control with four per-hour heights. The compact level keeps the wrapped-chip
+  layout; deeper levels switch each hour into a minute-positioned timeline where
+  fire times float at their exact minute against quarter-hour guide lines and a
+  `:00/:15/:30/:45` ruler, so sub-hour timing is readable at a glance. Closes #591.
+- **Set machines from the web UI.** The routine and cron-job create/edit forms now
+  expose a `MACHINES` input (comma-separated), so multi-machine targeting is settable
+  without dropping to the CLI or REST. Blank preserves today's behavior (empty list =
+  runs nowhere). Closes #580.
+- **Machine picker.** The `MACHINES` field in the routine and cron-job forms is now a
+  picker: it fetches the daemon's known machine names from the new `GET /api/v1/machines`
+  endpoint (every name referenced by a routine or cron job, plus this machine's own
+  identity) and renders them as toggleable chips, while still allowing a brand-new name
+  to be typed and added. Closes #586.
+
+### Changed
+
+- **Releases are automated on version bump.** Merging a `Cargo.toml` version bump to
+  `main` now auto-pushes the matching `vx.y.z` tag and runs the crates.io publish and
+  GitHub Release workflows (new `auto-release.yml`). No more manual tag push; `publish.yml`
+  and `release.yml` are now reusable (`workflow_call`) and keep their `v*` tag-push
+  trigger as a hand-cut fallback.
+
+### Fixed
+
+- **Test isolation.** The routine service and storage unit tests no longer write
+  into the developer's real `~/.config/moadim` home. They resolved paths through
+  `paths::home()`, which falls back to the real home when `MOADIM_HOME_OVERRIDE`
+  is unset, so tests leaked routine dirs (and the migration tests even scanned real
+  state). Every test now runs against an isolated temp home.
+
+## [0.14.0] - 2026-06-21
+
+### Added
+
+- **Multi-machine targeting.** Routines and cron jobs now carry a `machines` list,
+  so one shared `~/.config/moadim` config repo can drive different routines/jobs on
+  different machines (e.g. a laptop, a work box, a server). Each daemon resolves its
+  own machine identity — `MOADIM_MACHINE` env, else the `name` in the gitignored
+  `~/.config/moadim/machine.local.toml`, else the system hostname — and its crontab
+  sync schedules only the entries naming that machine. A new `moadim machine`
+  command (`show` / `set <name>` / `list`) inspects and sets the identity. The
+  `machines` field is settable via REST, the MCP `create_*`/`update_*` tools, and
+  the `--machines '["work","server"]'` CLI flag.
+  **Note:** an empty `machines` list runs **nowhere** — an entry is dormant until
+  assigned, so routines/jobs created before this change stop scheduling until you
+  assign them (the daemon logs each unassigned entry once at sync time). The
+  built-in default routine self-assigns to the machine that first seeds it.
+- `moadim status --json` now folds the running server's `GET /health` details into
+  its object as `uptime_secs` and `version`, so a single call answers liveness
+  **and** age/version instead of forcing a second `curl /health`. Both fields are
+  `null` when no server answers or its `/health` body cannot be parsed; exit codes
+  and the human-readable `status` output are unchanged (#284).
+
+### Changed
+
+- Enabled the `clippy::map_unwrap_or` lint and fixed the violations, replacing
+  `map(...).unwrap_or(...)` / `map(...).unwrap_or_else(...)` chains with the more
+  direct `map_or` / `map_or_else`. No behavior change. (#524)
+- Enabled the `clippy::semicolon_if_nothing_returned` lint and fixed the existing
+  violations so statements that return `()` end with a trailing semicolon. No
+  behavior change.
+- Enabled the `clippy::manual_let_else` lint and rewrote the `match` guards
+  whose only non-binding arm diverged (`return`/`continue`) as
+  `let ... else { ... }`, keeping the happy path unindented. No behavior change.
+
+### Fixed
+
+- 6-field cron schedules (`sec min hour dom month dow`, accepted by `croner`)
+  are now projected to a valid 5-field OS crontab line instead of being written
+  verbatim. Previously only 7-field expressions had their leading seconds
+  stripped, so a valid 6-field schedule reached the crontab unchanged — where
+  vixie-cron/cronie either rejects the line (silently dropping every managed
+  job) or misreads seconds as minutes (shifting the schedule). `normalize_schedule`
+  and `to_os_schedule` now handle the 6-field form the same way as 7-field.
+- The iCal feed (`GET /routines.ics`) no longer silently stops short of its
+  advertised 30-day horizon for high-frequency routines. The per-routine
+  `MAX_EVENTS_PER_ROUTINE = 100` cap still bounds feed size, but when a routine
+  fires more often than the cap allows within the horizon, a trailing
+  truncation-marker `VEVENT` (UID `…-truncated@moadim`) is now appended at the
+  first omitted fire time, so calendar subscribers can see the projection was
+  capped and where it stops instead of the routine appearing to just end after a
+  few days (#251).
+- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
+- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+  OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
+  every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)
+- Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
+  cron-derived ceiling for the *effective* schedule (the new schedule if supplied,
+  otherwise the routine's current one). The check runs before any mutation, so a
+  rejected update leaves the in-memory store untouched. (#468)
+- `launchctl_bin()` no longer falls back to the real `launchctl` in test builds.
+  A `#[cfg(test)]` structural guard resolves the default to a nonexistent path
+  (`/nonexistent/moadim-test-launchctl-guard`) so a macOS test that forgets to
+  wire up the `MOADIM_LAUNCHCTL_BIN` shim cannot mutate the developer's live
+  launchd session; the eventual spawn fails harmlessly. Mirrors the `crontab_bin()`
+  guard from #211 (#213).
+- The OpenAPI `servers` URL is now host-relative (`/api/v1`) instead of a
+  hardcoded `http://127.0.0.1:5784/api/v1`. Swagger UI's "Try it out" now targets
+  the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
+  port or a reverse proxy instead of failing against an address the daemon may not
+  be bound to. (#385)
+- The routine-origin disclosure write into the workbench `CLAUDE.md` now
+  fail-fasts. Previously this `printf > "$WB/CLAUDE.md"` was `;`-joined with no
+  failure guard, so if the write failed (read-only/full `$HOME`, an unwritable
+  `$WB`, disk-quota/inode exhaustion) the launch fell through to `cp prompt.md`,
+  setup, and `tmux new-session`, starting the Claude agent with no `CLAUDE.md` —
+  hence no routine-origin disclosure mandate. It now aborts the launch (logging
+  to `agent.log` and stderr) exactly like the adjacent `cp prompt.md` guard. The
+  optional user-prompt append remains best-effort (#482).
+
+## [0.13.0] - 2026-06-21
+
+### Added
+
+- **Full action parity across the CLI, REST, and MCP surfaces.** Every cron-job
+  and routine action is now reachable from all three.
+  - **New CLI data commands** (thin clients over the running server's REST API,
+    built on `clap`): `moadim cron-jobs <create|list|get|update|replace|delete|trigger|logs>`,
+    `moadim routines <create|list|get|update|replace|delete|trigger|logs|ical>`,
+    `moadim agents`, and `moadim echo <message>`. They print the server's JSON
+    response and exit `3` ("not running") when no daemon is reachable, matching
+    the existing `status`/`stop`/`cleanup` contract. (`cron`/`routine` are
+    accepted as aliases.)
+  - **New MCP tools** filling the gaps versus REST: `list_agents`,
+    `cron_job_logs`, `routine_logs`, `shutdown`, and `restart`.
+- **New `moadim schedule trigger <id>` CLI command** and matching
+  `POST /api/v1/routines/{id}/scheduled-trigger` route. Runs a routine on its
+  schedule, recording a *scheduled* (not manual) trigger. The generated crontab
+  line invokes it directly at each fire time.
+  - **New `POST /api/v1/restart` route** (plus the matching `restart` MCP tool):
+    stops the running server and starts a fresh instance via a detached helper
+    process, since an in-process server cannot rebind its own port. Documented in
+    the OpenAPI spec.
+- The MCP `health` tool now reports build provenance — `version`, `git_sha`, and
+  `build_date` — bringing it to parity with `GET /api/v1/health` and
+  `moadim --version`, so an MCP client can tell exactly which build is running
+  rather than only seeing status, uptime, and filesystem locations (#476).
+- The binary now embeds the git commit it was built from, so you can tell
+  exactly which build is running rather than only the released crate version
+  (which changes only on a `v*` tag). `moadim --version` prints
+  `moadim <version> (<short-sha> <date>)`, and the `GET /api/v1/health` response
+  gained `git_sha` and `build_date` fields alongside `version`. `build.rs`
+  resolves the fields from git at compile time and falls back to `"unknown"`
+  when the source isn't a git checkout (e.g. a crates.io tarball), so published
+  builds still compile and report sensibly (#367).
+- Routines now track **`last_scheduled_trigger_at`** (Unix seconds), the mirror of
+  `last_manual_trigger_at` for scheduled cron firings, surfaced in the REST/OpenAPI
+  routine response. Because the OS crontab runs a routine's generated `run.sh`
+  directly — the daemon never observes a scheduled fire — the script itself stamps
+  the fire time into a new gitignored `scheduled.local.toml` sidecar, which the
+  daemon reads back on load. The sidecar is daemon-read-only and kept separate from
+  the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
+  scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
+  and lets you spot schedules that have never actually fired (#155).
 
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
@@ -31,6 +393,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   persisted, and surviving entries are trimmed. Malformed `repositories` lists
   are now caught at the API boundary rather than surfacing later as a confusing
   run-time failure (#241).
+- Defense-in-depth security response headers are now injected on every HTTP
+  response served by the daemon (web UI + `/api/v1`): `X-Frame-Options: DENY`
+  and a `frame-ancestors 'none'` CSP block clickjacking of the dashboard's
+  destructive controls, `X-Content-Type-Options: nosniff` stops content
+  sniffing, and `Referrer-Policy: no-referrer` keeps the loopback URL from
+  leaking to third parties. The CSP is intentionally scoped to `frame-ancestors`
+  only so the existing inline + WASM SPA and Swagger UI keep working untouched
+  (#406).
 
 ### Changed
 
@@ -51,9 +421,57 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- Routines no longer generate a per-routine `run.sh` launch script. The crontab
+  line now invokes the `moadim` binary directly
+  (`<schedule> <moadim> schedule trigger <id>`), and the running daemon is the
+  single source of truth for launch logic — eliminating the duplication between
+  the cron path and the manual-trigger path. Stale `run.sh` files left by older
+  daemons are removed on the next persist. **Scheduled routines now require the
+  daemon to be running** (it is installed as an OS service for this reason); the
+  agent still inherits the user's login environment via the daemon's `sh -lc`
+  spawn.
+- Enabled the `clippy::uninlined_format_args` lint (deny) and inlined the
+  existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
+  error messages read more directly. No behavior change.
 
 ### Fixed
 
+- Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
+  again. The crate root's `#![deny(warnings)]` implies
+  `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or
+  the pre-push hook, so the rotted links sat on `main` and made `cargo doc` fail
+  with "could not document `moadim`". Links to private submodules in
+  `src/routines/mod.rs` were demoted to plain code spans, and the remaining
+  links in `cleanup`, `sync`, and `utils::atomic` were fully qualified. (#390)
+- The in-memory routine and cron-job stores no longer panic the request that
+  observes a poisoned lock. Every `Mutex::lock().unwrap()` on these stores was
+  replaced with a new `LockRecover::lock_recover()` extension that recovers the
+  guard from `PoisonError` (the protected `HashMap` is still structurally valid),
+  so one panicking handler can't cascade into every later request taking the same
+  lock. The two `get_mut(id).unwrap()` invariant unwraps in `svc_update`/
+  `svc_trigger` became `ok_or(AppError::NotFound)?`, removing the last panicking
+  unwraps from the production code paths. A new
+  `#![cfg_attr(not(test), deny(clippy::unwrap_used))]` crate lint now keeps
+  `.unwrap()` out of non-test code so the panic can't creep back in (tests still
+  use `.unwrap()` freely, where panicking is the intended failure mode).
+- Managed cron jobs are now re-synced to the OS crontab on daemon startup,
+  mirroring the routines sync that already ran. Previously the cron-job block was
+  only written on a job create/update/delete, so if it was lost or emptied
+  (manual `crontab -e`/`crontab -r`, an OS migration, or a marker collision) every
+  managed job stayed silently un-fired until the next mutation — even across a
+  restart, while routines self-healed. The startup sync is idempotent, so it is a
+  no-op read on a healthy crontab. (#394)
+- The generated `prompt.md` no longer emits a dangling "These repositories are
+  relevant — clone any you need:" header with an empty bullet list when a routine
+  has no `repositories`. `compose_prompt` now writes a plain "You are working in
+  an empty directory." preamble in that case, so the agent isn't promised a repo
+  list with nothing under it.
+- Deflaked `stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down`:
+  the test raced a ~35ms window between the restart timeout (80ms) and the server
+  drop (130ms), so a coverage-instrumented or loaded CI run could miss the post-kill
+  `wait_until_stopped` window and fail the assertion. The margins are now 300ms /
+  450ms, giving ~150ms of slack on each side of the deadline while still exercising
+  the same force-kill-then-stops path.
 - A malformed (present-but-unparseable) agent TOML is no longer misreported as
   "agent config not found". `load_agent_command` now returns a `Result` with a
   distinct `Missing` vs. `Parse` failure, so the sync/trigger skip diagnostics
@@ -106,6 +524,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   harmless shim instead of signalling a real PID. The default stays the platform
   killer (`kill` / `taskkill`), so the existing self-contained test that kills
   its own spawned child still works. (#216)
+- The `ui` crate's `RAction::Upsert` variant now boxes its `Routine`
+  (`Upsert(Box<Routine>)`). The variant carried a ~272-byte `Routine` by value
+  while the next-largest variant was 48 bytes, tripping
+  `clippy::large_enum_variant` under the crate's `[lints.clippy] all = "deny"`,
+  so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
+  once before the existing upsert logic, and the construction sites wrap the
+  value.
 
 ## [0.12.0] - 2026-06-18
 
@@ -416,7 +841,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/moadim-io/daemon/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/moadim-io/daemon/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/moadim-io/daemon/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/moadim-io/daemon/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/moadim-io/daemon/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/moadim-io/daemon/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/moadim-io/daemon/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/moadim-io/daemon/compare/v0.8.0...v0.9.0

@@ -674,6 +674,101 @@ pub fn sort_routines(
     routines
 }
 
+// ─── Group-by ─────────────────────────────────────────────────────────────────
+
+/// Dimension used to group the routines table into labelled sections.
+/// `None` (the default) keeps the existing flat list.
+///
+/// Best practice (Airflow DAG list, GitHub Actions workflow runs, Temporal
+/// namespace view): grouping is a first-class navigation primitive for large
+/// agent fleets; it composes with faceted filtering and column sorting and
+/// mirrors the CronJobs page's GroupBy feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RGroupBy {
+    #[default]
+    None,
+    /// Group by agent name (e.g. `claude`, `codex`).
+    Agent,
+    /// Group by target machine; routines with no machine share an `(unassigned)` section.
+    Machine,
+    /// Group by enabled/disabled status.
+    Status,
+}
+
+impl RGroupBy {
+    /// Stable token stored as the `<select>` option value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RGroupBy::None => "none",
+            RGroupBy::Agent => "agent",
+            RGroupBy::Machine => "machine",
+            RGroupBy::Status => "status",
+        }
+    }
+
+    /// Parse a token back to a variant, defaulting to `None` for unknown values.
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "agent" => RGroupBy::Agent,
+            "machine" => RGroupBy::Machine,
+            "status" => RGroupBy::Status,
+            _ => RGroupBy::None,
+        }
+    }
+
+    /// Short human label shown in the selector dropdown.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            RGroupBy::None => "None",
+            RGroupBy::Agent => "Agent",
+            RGroupBy::Machine => "Machine",
+            RGroupBy::Status => "Status",
+        }
+    }
+}
+
+/// Group key for a single routine under the given dimension. A routine always
+/// belongs to exactly one group (first machine for `Machine`, or `"(unassigned)"`).
+#[must_use]
+pub fn routine_group_key(routine: &Routine, by: RGroupBy) -> String {
+    match by {
+        RGroupBy::None => String::new(),
+        RGroupBy::Agent => routine.agent.clone(),
+        RGroupBy::Machine => routine
+            .machines
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "(unassigned)".to_string()),
+        RGroupBy::Status => {
+            if routine.enabled {
+                "Enabled".to_string()
+            } else {
+                "Disabled".to_string()
+            }
+        }
+    }
+}
+
+/// Partition `routines` into `(group_label, routines_in_group)` pairs sorted
+/// alphabetically by label. Within each group the input order is preserved
+/// (callers sort before grouping so column sorts apply within groups).
+/// When `by` is `None`, returns a single pair with an empty label.
+#[must_use]
+pub fn group_routines(routines: &[Routine], by: RGroupBy) -> Vec<(String, Vec<Routine>)> {
+    use std::collections::BTreeMap;
+    if by == RGroupBy::None {
+        return vec![(String::new(), routines.to_vec())];
+    }
+    let mut map: BTreeMap<String, Vec<Routine>> = BTreeMap::new();
+    for r in routines {
+        map.entry(routine_group_key(r, by)).or_default().push(r.clone());
+    }
+    map.into_iter().collect()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RState {
     pub routines: Vec<Routine>,
@@ -693,6 +788,8 @@ pub struct RState {
     pub lock_status: Option<LockStatus>,
     /// This machine's resolved name from the daemon, used to default the machine facet.
     pub current_machine: Option<String>,
+    /// Active group-by dimension (`None` = flat list, the default).
+    pub group_by: RGroupBy,
 }
 
 impl Default for RState {
@@ -709,6 +806,7 @@ impl Default for RState {
             selected: BTreeSet::new(),
             lock_status: None,
             current_machine: None,
+            group_by: RGroupBy::None,
         }
     }
 }
@@ -748,6 +846,8 @@ pub enum RAction {
     LockStatusLoaded(LockStatus),
     /// Resolved current machine name received from the daemon; defaults machine facet to it.
     CurrentMachineLoaded(String),
+    /// Change the group-by dimension for the table view.
+    SetGroupBy(RGroupBy),
 }
 
 impl Reducible for RState {
@@ -830,6 +930,7 @@ impl Reducible for RState {
                 s.current_machine = Some(name.clone());
                 s.filter.machine = RoutineMachineFacet::Machine(name);
             }
+            RAction::SetGroupBy(by) => s.group_by = by,
         }
         s.into()
     }
@@ -1343,6 +1444,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         })
     };
 
+    let on_set_group_by = {
+        let state = state.clone();
+        Callback::from(move |by: RGroupBy| state.dispatch(RAction::SetGroupBy(by)))
+    };
+
     let routines = state.routines.clone();
     let loading = state.loading;
     let page = state.page.clone();
@@ -1353,6 +1459,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let sort_col = state.sort_col;
     let sort_dir = state.sort_dir;
     let selected = state.selected.clone();
+    let group_by = state.group_by;
 
     // Faceted filter + sort applied client-side.
     let now_val = *now;
@@ -1419,6 +1526,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         updated_at_ms={*updated_at}
                                         on_change={on_set_interval}
                                     />
+                                    if view == RView::Table {
+                                        <RGroupBySelector
+                                            group_by={group_by}
+                                            on_change={on_set_group_by}
+                                        />
+                                    }
                                     <ViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-ghost btn-sm" onclick={on_cleanup}
                                         title="Reap finished, expired run workbenches now">{"CLEANUP NOW"}</button>
@@ -1467,6 +1580,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
                                             on_clear_filters={on_clear_filters}
+                                            group_by={group_by}
                                         />
                                     },
                                     RView::Calendar => html! {
@@ -1959,6 +2073,8 @@ pub struct TableProps {
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
     pub on_clear_filters: Callback<()>,
+    /// Active group-by dimension; `None` renders a flat list.
+    pub group_by: RGroupBy,
 }
 
 #[function_component(RoutineTable)]
@@ -2013,6 +2129,9 @@ pub fn routine_table(props: &TableProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
 
+    let groups = group_routines(&props.routines, props.group_by);
+    let grouped = props.group_by != RGroupBy::None;
+
     html! {
         <div class="table-wrap">
             <table>
@@ -2041,23 +2160,78 @@ pub fn routine_table(props: &TableProps) -> Html {
                     </tr>
                 </thead>
                 <tbody>
-                    { for props.routines.iter().map(|r| html! {
-                        <RoutineRow
-                            key={r.id.clone()}
-                            routine={r.clone()}
-                            now={props.now}
-                            selected={props.selected.contains(&r.id)}
-                            on_select={props.on_select.clone()}
-                            on_edit={props.on_edit.clone()}
-                            on_clone={props.on_clone.clone()}
-                            on_delete={props.on_delete.clone()}
-                            on_toggle={props.on_toggle.clone()}
-                            on_trigger={props.on_trigger.clone()}
-                            on_logs={props.on_logs.clone()}
-                        />
+                    { for groups.into_iter().map(|(label, group_routines)| {
+                        let count = group_routines.len();
+                        html! {
+                            <>
+                                if grouped {
+                                    <tr class="group-hd" key={format!("ghd-{label}")}>
+                                        <td colspan="12">
+                                            <span class="group-label">{label.clone()}</span>
+                                            <span class="group-count">{format!("({count})")}</span>
+                                        </td>
+                                    </tr>
+                                }
+                                { for group_routines.into_iter().map(|r| html! {
+                                    <RoutineRow
+                                        key={r.id.clone()}
+                                        routine={r.clone()}
+                                        now={props.now}
+                                        selected={props.selected.contains(&r.id)}
+                                        on_select={props.on_select.clone()}
+                                        on_edit={props.on_edit.clone()}
+                                        on_clone={props.on_clone.clone()}
+                                        on_delete={props.on_delete.clone()}
+                                        on_toggle={props.on_toggle.clone()}
+                                        on_trigger={props.on_trigger.clone()}
+                                        on_logs={props.on_logs.clone()}
+                                    />
+                                }) }
+                            </>
+                        }
                     }) }
                 </tbody>
             </table>
+        </div>
+    }
+}
+
+// ─── Group-by selector ────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct RGroupBySelectorProps {
+    pub group_by: RGroupBy,
+    pub on_change: Callback<RGroupBy>,
+}
+
+/// Drop-down that lets the operator choose how to group the routines table.
+/// Placed in the section toolbar next to the view toggle; hidden for
+/// Calendar/Day views (callers only render it in table view).
+#[function_component(RGroupBySelector)]
+pub fn r_group_by_selector(props: &RGroupBySelectorProps) -> Html {
+    let on_change = props.on_change.clone();
+    let on_select = Callback::from(move |e: Event| {
+        let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
+        on_change.emit(RGroupBy::from_str(&select.value()));
+    });
+    let cur = props.group_by.as_str();
+    html! {
+        <div class="group-by-ctrl">
+            <label class="filter-label" for="r-group-by-select">{"GROUP BY"}</label>
+            <select
+                id="r-group-by-select"
+                class="filter-select"
+                aria-label="Group routines by"
+                onchange={on_select}
+            >
+                { for [RGroupBy::None, RGroupBy::Agent, RGroupBy::Machine, RGroupBy::Status].iter()
+                    .map(|&by| html! {
+                        <option value={by.as_str()} selected={cur == by.as_str()}>
+                            { by.label() }
+                        </option>
+                    })
+                }
+            </select>
         </div>
     }
 }

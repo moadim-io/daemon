@@ -860,3 +860,138 @@ fn clone_title_does_not_double_prefix() {
 fn clone_title_preserves_empty_string() {
     assert_eq!(clone_title(""), "Copy of ");
 }
+
+// ── RGroupBy codec ────────────────────────────────────────────────────────────
+
+#[test]
+fn r_group_by_as_str_roundtrips() {
+    for by in [
+        RGroupBy::None,
+        RGroupBy::Agent,
+        RGroupBy::Machine,
+        RGroupBy::Status,
+    ] {
+        assert_eq!(RGroupBy::from_str(by.as_str()), by);
+    }
+}
+
+#[test]
+fn r_group_by_default_is_none() {
+    assert_eq!(RGroupBy::default(), RGroupBy::None);
+}
+
+#[test]
+fn r_group_by_unknown_token_decodes_to_none() {
+    assert_eq!(RGroupBy::from_str("bogus"), RGroupBy::None);
+    assert_eq!(RGroupBy::from_str(""), RGroupBy::None);
+}
+
+// ── routine_group_key ─────────────────────────────────────────────────────────
+
+#[test]
+fn routine_group_key_agent_returns_agent_field() {
+    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Agent), "claude");
+}
+
+#[test]
+fn routine_group_key_machine_returns_first_machine() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["alpha", "beta"], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "alpha");
+}
+
+#[test]
+fn routine_group_key_machine_returns_unassigned_when_no_machines() {
+    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "(unassigned)");
+}
+
+#[test]
+fn routine_group_key_status_enabled() {
+    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Enabled");
+}
+
+#[test]
+fn routine_group_key_status_disabled() {
+    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], false);
+    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Disabled");
+}
+
+#[test]
+fn routine_group_key_none_returns_empty_string() {
+    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::None), "");
+}
+
+// ── group_routines ────────────────────────────────────────────────────────────
+
+#[test]
+fn group_routines_none_returns_single_pair_with_empty_label() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "B", "codex", "0 * * * *", &[], &[], false),
+    ];
+    let groups = group_routines(&rs, RGroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "");
+    assert_eq!(groups[0].1.len(), 2);
+}
+
+#[test]
+fn group_routines_agent_partitions_by_agent_sorted() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "B", "codex", "0 * * * *", &[], &[], true),
+        routine("c", "C", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Agent);
+    assert_eq!(groups.len(), 2);
+    // BTreeMap sorts alphabetically: "claude" < "codex"
+    assert_eq!(groups[0].0, "claude");
+    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[1].0, "codex");
+    assert_eq!(groups[1].1.len(), 1);
+}
+
+#[test]
+fn group_routines_machine_uses_unassigned_for_empty_machines() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &["m1"], &[], true),
+        routine("b", "B", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Machine);
+    assert_eq!(groups.len(), 2);
+    let labels: Vec<&str> = groups.iter().map(|(l, _)| l.as_str()).collect();
+    assert!(labels.contains(&"m1"));
+    assert!(labels.contains(&"(unassigned)"));
+}
+
+#[test]
+fn group_routines_status_partitions_enabled_and_disabled() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "B", "claude", "0 * * * *", &[], &[], false),
+        routine("c", "C", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Status);
+    assert_eq!(groups.len(), 2);
+    // BTreeMap: "Disabled" < "Enabled"
+    assert_eq!(groups[0].0, "Disabled");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "Enabled");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_routines_preserves_within_group_input_order() {
+    let rs = vec![
+        routine("z", "Z", "claude", "0 * * * *", &[], &[], true),
+        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Agent);
+    assert_eq!(groups.len(), 1);
+    // Input order preserved within group
+    assert_eq!(groups[0].1[0].id, "z");
+    assert_eq!(groups[0].1[1].id, "a");
+}

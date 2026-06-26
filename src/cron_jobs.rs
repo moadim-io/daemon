@@ -260,7 +260,7 @@ pub fn svc_list(
 
     if query.local_only.unwrap_or(false) {
         let me = crate::machine::current_machine();
-        jobs.retain(|j| crate::machine::targets(&j.machines, &me));
+        jobs.retain(|job| crate::machine::targets(&job.machines, &me));
     }
 
     jobs.sort_by_key(|j| j.created_at);

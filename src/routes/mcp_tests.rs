@@ -107,7 +107,9 @@ fn echo_tool_returns_message() {
 fn list_cron_jobs_empty() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();
-    let result = handler.list_cron_jobs(Parameters(LocalOnlyParam { local_only: None })).unwrap();
+    let result = handler
+        .list_cron_jobs(Parameters(LocalOnlyParam { local_only: None }))
+        .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0].raw {
         rmcp::model::RawContent::Text(txt) => txt.text.clone(),
@@ -380,7 +382,9 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
 fn list_routines_empty() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();
-    let result = handler.list_routines(Parameters(LocalOnlyParam { local_only: None })).unwrap();
+    let result = handler
+        .list_routines(Parameters(LocalOnlyParam { local_only: None }))
+        .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 }
 

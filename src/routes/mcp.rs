@@ -183,7 +183,9 @@ impl MoadimMcp {
     ///
     /// When `local_only` is `true` (the default), only jobs whose `machines` list includes the
     /// current machine are returned. Pass `false` to see all jobs regardless of machine.
-    #[tool(description = "List managed cron jobs. Defaults to jobs targeting the current machine only; pass local_only=false to see all machines.")]
+    #[tool(
+        description = "List managed cron jobs. Defaults to jobs targeting the current machine only; pass local_only=false to see all machines."
+    )]
     fn list_cron_jobs(
         &self,
         Parameters(params): Parameters<LocalOnlyParam>,
@@ -277,7 +279,9 @@ impl MoadimMcp {
     ///
     /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
     /// current machine are returned. Pass `false` to see all routines regardless of machine.
-    #[tool(description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines.")]
+    #[tool(
+        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines."
+    )]
     fn list_routines(
         &self,
         Parameters(params): Parameters<LocalOnlyParam>,

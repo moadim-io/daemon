@@ -129,7 +129,7 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
     // Filter: keep only routines that target the current machine.
     if query.local_only.unwrap_or(false) {
         let me = crate::machine::current_machine();
-        routines.retain(|r| crate::machine::targets(&r.machines, &me));
+        routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
     }
 
     // Sort ascending by the requested field, then flip for descending order.

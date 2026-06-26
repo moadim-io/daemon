@@ -21,6 +21,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **UI: clone/duplicate a routine.** A ⧉ duplicate button on each routine row opens the
+  create-routine form pre-filled with all fields from the source routine (schedule, agent, prompt,
+  repositories, machines, TTL, enabled state). The title is automatically prefixed with
+  "Copy of " (and the prefix is not doubled on repeated clones). Operators can adjust any field
+  before saving; the result is a brand-new independent routine. Closes #715.
+
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
   returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
   `local_only=true` query parameter that filters the response to entries targeting the current

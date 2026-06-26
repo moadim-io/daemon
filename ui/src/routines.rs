@@ -573,6 +573,8 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    /// Pre-filled create form cloned from an existing routine.
+    Clone(Box<Routine>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -716,6 +718,8 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    /// Open the create form pre-filled with a copy of the named routine.
+    GoToClone(String),
     OpenEdit(String),
     OpenConfirmDelete {
         id: String,
@@ -762,6 +766,11 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToClone(id) => {
+                if let Some(source) = s.routines.iter().find(|x| x.id == id) {
+                    s.page = RPage::Clone(Box::new(source.clone()));
+                }
+            }
             RAction::OpenEdit(id) => s.modal = RModal::Edit(id),
             RAction::OpenConfirmDelete { id, title } => {
                 s.modal = RModal::ConfirmDelete { id, title }
@@ -994,6 +1003,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_edit = {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::OpenEdit(id)))
+    };
+    let on_clone = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToClone(id)))
     };
     let on_ask_delete = {
         let state = state.clone();
@@ -1375,6 +1388,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     RPage::New => html! {
                         <RoutineForm editing={None} on_cancel={on_cancel} on_save={on_create} />
                     },
+                    RPage::Clone(source) => {
+                        let mut pre = *source;
+                        pre.title = clone_title(&pre.title);
+                        html! {
+                            <RoutineForm editing={Some(pre)} on_cancel={on_cancel} on_save={on_create} />
+                        }
+                    },
                     RPage::Logs(id) => {
                         let title = routines.iter()
                             .find(|r| r.id == id)
@@ -1441,6 +1461,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             sort_dir={sort_dir}
                                             on_sort={on_col_sort}
                                             on_edit={on_edit}
+                                            on_clone={on_clone}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
@@ -1932,6 +1953,7 @@ pub struct TableProps {
     /// Fired when the user clicks a sortable column header.
     pub on_sort: Callback<RCol>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
@@ -2027,6 +2049,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                             selected={props.selected.contains(&r.id)}
                             on_select={props.on_select.clone()}
                             on_edit={props.on_edit.clone()}
+                            on_clone={props.on_clone.clone()}
                             on_delete={props.on_delete.clone()}
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
@@ -2076,6 +2099,7 @@ pub struct RowProps {
     /// Fired when the selection checkbox is clicked.
     pub on_select: Callback<String>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
@@ -2093,6 +2117,11 @@ pub fn routine_row(props: &RowProps) -> Html {
 
     let on_edit = {
         let cb = props.on_edit.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_clone = {
+        let cb = props.on_clone.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -2239,6 +2268,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
+                    <button class="act-btn clone" title="Duplicate routine" aria-label="Duplicate routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
@@ -2253,6 +2283,17 @@ pub struct FormProps {
     pub editing: Option<Routine>,
     pub on_cancel: Callback<()>,
     pub on_save: Callback<CreateRoutineRequest>,
+}
+
+/// Title for a cloned routine: prepend "Copy of " when the original title does not
+/// already start with that prefix, preventing "Copy of Copy of …" accumulation.
+pub(crate) fn clone_title(title: &str) -> String {
+    const PREFIX: &str = "Copy of ";
+    if title.starts_with(PREFIX) {
+        title.to_string()
+    } else {
+        format!("{PREFIX}{title}")
+    }
 }
 
 /// Serialize repositories as one `url [branch]` line each for the textarea.

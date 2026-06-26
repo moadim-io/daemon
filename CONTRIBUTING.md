@@ -8,6 +8,7 @@
 | [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`cargo install typos-cli`) |
+| [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
 (`ui/`). The daemon itself is a native binary and builds without them.
@@ -24,9 +25,16 @@ Run the checks the pre-push hook enforces before any push:
 
 ```sh
 cargo fmt --check
-cargo clippy
-cargo test
+cargo clippy --all-targets -- -D warnings
+cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 ```
+
+Use `--all-targets -- -D warnings` for clippy, exactly as the pre-push hook and
+the CI lint gate do — bare `cargo clippy` skips test/example/bench code and only
+warns, so it can pass locally yet fail the hook and CI. The `cargo llvm-cov`
+command runs the test suite with instrumentation and enforces 100% line coverage
+(excluding `main.rs`); it subsumes a bare `cargo test`, so running it is enough
+to satisfy both the test and coverage gates in one pass.
 
 Enable the bundled git hooks once per clone:
 
@@ -92,8 +100,29 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 1. Branch from `main` — name it `feat/...`, `fix/...`, `chore/...`, or `docs/...`.
 2. Keep commits focused; one logical change per commit.
 3. Note user-facing changes under `## [Unreleased]` in
-   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format).
+   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format). The pre-push hook
+   (and the CI `unreleased-entry` check) reject a push that touches `src/` or
+   `ui/` without a matching `CHANGELOG.md` edit. For a deliberately undocumented
+   change — e.g. a pure internal refactor with no user-facing effect — bypass
+   the local hook with `SKIP_CHANGELOG=1 git push`; the in-repo equivalent on
+   the PR is the `skip-changelog` label.
 4. Open a PR against `main`; fill in what changed and why.
+
+## Releasing
+
+Releases are automated. To cut one, open a PR that bumps the package version:
+
+1. Bump `version` in `Cargo.toml` (and `Cargo.lock`).
+2. Promote the `## [Unreleased]` entries in [`CHANGELOG.md`](CHANGELOG.md) to a
+   `## [x.y.z] - YYYY-MM-DD` section and add the compare link.
+3. Merge to `main`.
+
+On merge, [`auto-release.yml`](.github/workflows/auto-release.yml) detects the
+new version, pushes the `vx.y.z` tag, then publishes to crates.io
+([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
+([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag
+must not already exist, and `Cargo.toml`'s version must match the topmost
+changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 
 ## Code conventions
 

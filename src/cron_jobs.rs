@@ -377,9 +377,10 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     write_job(&job).map_err(|_| AppError::Internal)?;
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
-        if let Err(err) = std::process::Command::new(&handler_path).spawn() {
-            log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}");
-        }
+        // Reap the handler in the background so a finished handler does not linger as a
+        // zombie for the daemon's lifetime (the trigger stays non-blocking).
+        let command = std::process::Command::new(&handler_path);
+        crate::utils::process::spawn_and_reap(command, &format!("handler {handler_path:?}"));
     } else {
         log::warn!("trigger: handler script not found at {handler_path:?}");
     }

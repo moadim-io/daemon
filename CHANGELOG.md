@@ -13,6 +13,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
+  `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
+  before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids
+  raw CR characters in content lines. Closes #181.
+
 - A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without

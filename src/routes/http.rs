@@ -142,6 +142,25 @@ pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::h
     }))
 }
 
+/// Response body for `GET /machine`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct MachineResponse {
+    /// Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname).
+    pub name: String,
+}
+
+/// `GET /machine` — the current machine's resolved identity.
+///
+/// Returns the name this daemon uses to match `machines[]` targeting lists on routines and cron
+/// jobs. Useful for clients (e.g. the UI) that want to default their views to local entries only.
+#[utoipa::path(get, path = "/machine",
+    responses((status = 200, body = MachineResponse)))]
+pub async fn get_current_machine() -> Json<MachineResponse> {
+    Json(MachineResponse {
+        name: crate::machine::current_machine(),
+    })
+}
+
 /// `GET /machines` — distinct machine names this daemon knows about.
 ///
 /// There is no central machine registry, so the "known" set is the union of every `machines`
@@ -217,6 +236,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/shutdown", post(shutdown))
         .route("/restart", post(restart))
         .route("/echo", post(echo))
+        .route("/machine", get(get_current_machine))
         .route("/machines", get(list_machines))
         .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(

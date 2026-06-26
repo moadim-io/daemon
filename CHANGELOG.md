@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
+  returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
+  `local_only=true` query parameter that filters the response to entries targeting the current
+  machine. The MCP `list_routines` and `list_cron_jobs` tools gain the same parameter, defaulting
+  to `true` so MCP callers see local-first results. The UI routines and cron-jobs pages fetch the
+  current machine on mount and default the existing machine facet filter to it; users can change
+  the filter to "Any" to see all machines. Closes #726.
+
 ## [0.16.0] - 2026-06-26
 
 ### Changed

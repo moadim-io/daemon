@@ -45,6 +45,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **UI: clickable chips in Calendar and Day timeline views.** Schedule chips in the monthly
+  Calendar grid and the 24-hour Day timeline now open the edit modal when clicked, on both the
+  Routines and Cron Jobs pages. Previously these views were read-only; clicking a chip did
+  nothing. The chip carries the entity id through `TimelineItem` to the existing
+  `on_click` / `on_edit` callback, dispatching the same `OpenEdit` action as the table
+  EDIT button. Implements the contextual-click-to-edit pattern from leading scheduling dashboards
+  (Airflow calendar view, GitHub Actions timeline, Temporal UI). Closes #746.
+
 - **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section
   toolbar lets operators partition the flat routine list into labelled sections by **Agent**,
   **Machine**, or **Status** (Enabled / Disabled), with a **None** option to restore the flat

@@ -26,11 +26,13 @@ const MONTHS: [&str; 12] = [
 /// read sub-hour timing instead of a single wrapped bucket.
 const ZOOM_LEVELS: [i32; 4] = [40, 140, 300, 600];
 
-/// One schedulable thing on the timeline: a display label and its cron schedule.
+/// One schedulable thing on the timeline: a display label, its cron schedule,
+/// and the entity's id emitted when the user clicks the chip (empty = non-clickable).
 #[derive(Clone, PartialEq)]
 pub struct TimelineItem {
     pub label: String,
     pub schedule: String,
+    pub id: String,
 }
 
 /// All fire times for `schedule` that fall on `day`, in chronological order.
@@ -67,6 +69,10 @@ fn fire_times(schedule: &str, day: NaiveDate) -> Vec<NaiveTime> {
 pub struct DayTimelineProps {
     pub items: Vec<TimelineItem>,
     pub loading: bool,
+    /// Called with the item's `id` when the user clicks a fire-time chip.
+    /// Omit (or pass `None`) to render non-interactive chips.
+    #[prop_or_default]
+    pub on_click: Option<Callback<String>>,
 }
 
 #[function_component(DayTimeline)]
@@ -124,17 +130,17 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
         usize::MAX
     };
 
-    // Bucket every item's fire times into the hour rows.
-    let mut buckets: Vec<Vec<(NaiveTime, String)>> = vec![Vec::new(); 24];
+    // Bucket every item's fire times into the hour rows: (time, label, id).
+    let mut buckets: Vec<Vec<(NaiveTime, String, String)>> = vec![Vec::new(); 24];
     let mut total = 0usize;
     for it in props.items.iter() {
         for t in fire_times(&it.schedule, day) {
-            buckets[t.hour() as usize].push((t, it.label.clone()));
+            buckets[t.hour() as usize].push((t, it.label.clone(), it.id.clone()));
             total += 1;
         }
     }
     for b in buckets.iter_mut() {
-        b.sort_by_key(|(t, _)| *t);
+        b.sort_by_key(|(t, _, _)| *t);
     }
 
     let date_label = format!(
@@ -189,18 +195,31 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
                         <div class={cls} ref={row_ref}>
                             {label}
                             <div class="day-hour-slot">
-                                { for slot.iter().map(|(t, lbl)| {
+                                { for slot.iter().map(|(t, lbl, id)| {
                                     let frac = (t.minute() as f32 + t.second() as f32 / 60.0) / 60.0;
                                     let style = if detailed {
                                         Some(format!("top:{:.3}%", frac * 100.0))
                                     } else {
                                         None
                                     };
-                                    html! {
-                                        <div class="day-chip" style={style} title={lbl.clone()}>
-                                            <span class="day-chip-time">{format!("{:02}:{:02}", t.hour(), t.minute())}</span>
-                                            <span class="day-chip-label">{lbl.clone()}</span>
-                                        </div>
+                                    let time_str = format!("{:02}:{:02}", t.hour(), t.minute());
+                                    if let Some(on_click) = props.on_click.as_ref().filter(|_| !id.is_empty()) {
+                                        let cb = on_click.clone();
+                                        let item_id = id.clone();
+                                        html! {
+                                            <button class="day-chip day-chip--link" style={style} title={lbl.clone()}
+                                                onclick={Callback::from(move |_: MouseEvent| cb.emit(item_id.clone()))}>
+                                                <span class="day-chip-time">{time_str}</span>
+                                                <span class="day-chip-label">{lbl.clone()}</span>
+                                            </button>
+                                        }
+                                    } else {
+                                        html! {
+                                            <div class="day-chip" style={style} title={lbl.clone()}>
+                                                <span class="day-chip-time">{time_str}</span>
+                                                <span class="day-chip-label">{lbl.clone()}</span>
+                                            </div>
+                                        }
                                     }
                                 }) }
                             </div>

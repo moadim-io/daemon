@@ -205,7 +205,11 @@ fn description_truncates_overlong_single_line() {
     // across multiple physical lines per RFC 5545 §3.1.
     let unfolded = ics.replace("\r\n ", "");
     let mut saw_description = false;
-    for line in unfolded.split("\r\n").filter(|l| l.starts_with("DESCRIPTION:")) {
+    for line in unfolded
+        .split("
+")
+        .filter(|entry| entry.starts_with("DESCRIPTION:"))
+    {
         saw_description = true;
         assert!(
             line.chars().count() < 200,

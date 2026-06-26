@@ -11,6 +11,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Enabled the `clippy::map_unwrap_or` lint and fixed the violations
+  (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
+
 ### Fixed
 
 - Build provenance now marks a dirty working tree. A binary built from a tree

@@ -28,6 +28,84 @@ fn available_agents_in_falls_back_when_dir_has_no_toml() {
 }
 
 #[test]
+fn load_agent_command_parses_a_valid_config() {
+    // Happy path: a well-formed config resolves to an `AgentCommand` (Ok), unchanged from before.
+    let agent_name = "load-agent-valid-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = [\"--help\"]\n").unwrap();
+
+    let loaded = load_agent_command(agent_name).unwrap();
+    assert_eq!(loaded.command, "claude");
+    assert_eq!(loaded.args, vec!["--help".to_string()]);
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn load_agent_command_reports_parse_error_for_malformed_config() {
+    // A present-but-unparseable config must yield `Parse` (NOT `Missing`), carrying the toml error,
+    // so callers can name the real cause instead of "config not found".
+    let agent_name = "load-agent-malformed-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    match load_agent_command(agent_name) {
+        Err(AgentLoadError::Parse(err)) => assert!(!err.is_empty()),
+        other => panic!("expected Parse error, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn load_agent_command_reports_missing_for_absent_config() {
+    // No file on disk → `Missing` (and ONLY a genuine not-found), leaving the missing-file behavior
+    // identical to before.
+    assert!(matches!(
+        load_agent_command("load-agent-absent-zzz"),
+        Err(AgentLoadError::Missing)
+    ));
+}
+
+#[test]
+fn load_agent_command_reports_unreadable_for_non_not_found_io_error() {
+    // A present-but-unreadable config (here: a directory at the `<name>.toml` path, which yields an
+    // I/O error whose kind is NOT `NotFound`) must yield `Unreadable`, NOT `Missing` — so an
+    // unreadable config is never mislabeled "config not found" and silently dropped.
+    let agent_name = "load-agent-unreadable-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::create_dir_all(&cfg).unwrap();
+
+    match load_agent_command(agent_name) {
+        Err(AgentLoadError::Unreadable(err)) => assert!(!err.is_empty()),
+        other => panic!("expected Unreadable error, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&cfg).unwrap();
+}
+
+#[test]
+fn agent_load_error_display_distinguishes_variants() {
+    // Each variant renders distinctly: missing vs. unreadable vs. malformed (the latter two carrying
+    // the underlying error).
+    assert_eq!(
+        AgentLoadError::Missing.to_string(),
+        "agent config not found"
+    );
+    assert_eq!(
+        AgentLoadError::Unreadable("permission denied".to_string()).to_string(),
+        "unreadable agent config: permission denied"
+    );
+    assert_eq!(
+        AgentLoadError::Parse("boom".to_string()).to_string(),
+        "malformed agent TOML: boom"
+    );
+}
+
+#[test]
 fn ensure_default_agents_seeds_into_override_home() {
     // Covers the public `ensure_default_agents` wrapper, which resolves `agents_dir()` through the
     // `MOADIM_HOME_OVERRIDE` seam and seeds the built-in configs there.

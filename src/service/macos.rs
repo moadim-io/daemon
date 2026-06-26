@@ -10,7 +10,18 @@ const LAUNCHD_LABEL: &str = "io.moadim.daemon";
 /// The `launchctl` executable, overridable via `MOADIM_LAUNCHCTL_BIN` so tests can substitute a
 /// no-op shim instead of mutating the real launchd session. Mirrors the `MOADIM_CRONTAB_BIN` seam.
 pub(super) fn launchctl_bin() -> String {
-    std::env::var("MOADIM_LAUNCHCTL_BIN").unwrap_or_else(|_| "launchctl".to_string())
+    if let Ok(bin) = std::env::var("MOADIM_LAUNCHCTL_BIN") {
+        return bin;
+    }
+    // In test builds, never fall back to the real `launchctl`: a test that forgets to wire up the
+    // `MOADIM_LAUNCHCTL_BIN` shim must not mutate the developer's live launchd session. The guard
+    // path does not exist, so the eventual spawn fails harmlessly. Mirrors the `crontab_bin()` guard
+    // from issue #211.
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-launchctl-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "launchctl".to_string();
+    fallback
 }
 
 /// Escape the five XML metacharacters so a filesystem path embeds safely in the plist `<string>`s.
@@ -23,8 +34,11 @@ pub(super) fn xml_escape(text: &str) -> String {
 }
 
 /// Absolute path to the per-user LaunchAgents plist for the moadim service.
+///
+/// Resolves home through [`crate::paths::home`] so the `MOADIM_HOME_OVERRIDE` test seam redirects
+/// the plist under a tempdir instead of the developer's real `~/Library/LaunchAgents`.
 pub(super) fn plist_path() -> anyhow::Result<PathBuf> {
-    plist_path_from_home(dirs::home_dir())
+    plist_path_from_home(crate::paths::home())
 }
 
 /// Resolve the LaunchAgents plist path under `home`, erroring when the home directory is unknown.
@@ -106,7 +120,26 @@ pub fn install() -> anyhow::Result<()> {
     write_plist(&plist, &exe, &log)?;
     reload_agent(&plist)?;
     report_installed(&plist, &log);
+    request_automation_permission();
     Ok(())
+}
+
+/// Trigger the macOS TCC "administer your computer" prompt now, while the user is present at the
+/// terminal, so the background daemon never has to ask for it mid-run.
+///
+/// Sends a harmless Apple Event to System Events (list running process names). If permission is
+/// already granted this is a no-op; if not, the dialog appears once here and is remembered forever.
+fn request_automation_permission() {
+    println!(
+        "  hint    if macOS asks \"moadim would like to administer your computer\", click OK — \
+granting it here prevents background interruptions"
+    );
+    let _ = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to get name of every process",
+        ])
+        .output();
 }
 
 /// Unload the LaunchAgent (if loaded) and delete its plist.

@@ -41,6 +41,41 @@ fn plist_path_is_under_launch_agents() {
     assert!(path.ends_with("Library/LaunchAgents/io.moadim.daemon.plist"));
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn plist_path_honors_home_override() {
+    // With `MOADIM_HOME_OVERRIDE` set (as the install/uninstall tests do), `plist_path()` must
+    // resolve under the temp home, never the developer's real `~/Library/LaunchAgents`.
+    let base = std::env::temp_dir().join(format!("moadim-plist-home-{}", uuid::Uuid::new_v4()));
+    let prev_override = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); the var is restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
+    }
+
+    let path = plist_path().unwrap();
+
+    // SAFETY: single-threaded harness; restore the saved value before any assertion can unwind.
+    unsafe {
+        match prev_override {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+
+    assert_eq!(
+        path,
+        base.join("Library/LaunchAgents/io.moadim.daemon.plist"),
+        "plist_path() must land under MOADIM_HOME_OVERRIDE, not the real home"
+    );
+    if let Some(real_home) = dirs::home_dir() {
+        assert!(
+            !path.starts_with(real_home),
+            "plist_path() must not resolve under the real home when the override is set"
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn unit_carries_exec_start_and_install_section() {
@@ -80,20 +115,33 @@ fn run_errors_when_program_is_missing() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn launchctl_bin_defaults_to_launchctl_when_unset() {
-    // Covers the `unwrap_or_else` default arm of the `MOADIM_LAUNCHCTL_BIN` seam.
+fn launchctl_bin_never_resolves_to_real_launchctl_in_test_builds() {
+    // Structural guard for issue #213: in a test build, with no `MOADIM_LAUNCHCTL_BIN`
+    // shim configured, `launchctl_bin()` must never fall back to the real `launchctl`,
+    // so a test that forgets to isolate launchctl cannot mutate the developer's live
+    // launchd session. The resolved path must also not exist, so the eventual spawn
+    // fails harmlessly. Mirrors `crontab_bin_never_resolves_to_real_crontab_in_test_builds`.
     let previous = std::env::var_os("MOADIM_LAUNCHCTL_BIN");
     // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); restored below.
     unsafe {
         std::env::remove_var("MOADIM_LAUNCHCTL_BIN");
     }
-    assert_eq!(launchctl_bin(), "launchctl");
+    let bin = launchctl_bin();
     // SAFETY: single-threaded harness; restore the saved value if any.
     unsafe {
-        if let Some(value) = previous {
-            std::env::set_var("MOADIM_LAUNCHCTL_BIN", value);
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_LAUNCHCTL_BIN", value),
+            None => std::env::remove_var("MOADIM_LAUNCHCTL_BIN"),
         }
     }
+    assert_ne!(
+        bin, "launchctl",
+        "test build must not fall back to the real launchctl"
+    );
+    assert!(
+        !std::path::Path::new(&bin).exists(),
+        "the test-build launchctl guard path must not exist so the spawn fails: {bin}"
+    );
 }
 
 #[cfg(target_os = "macos")]

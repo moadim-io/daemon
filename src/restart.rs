@@ -74,10 +74,23 @@ fn wait_until_stopped() -> bool {
     !is_running()
 }
 
+/// The process-kill executable. Overridable via `MOADIM_KILL_BIN` so a test can inject a no-op
+/// shim instead of signalling a real PID. Defaults to the platform killer (`kill` / `taskkill`);
+/// unlike the crontab/tmux seams it does NOT default-deny under cfg(test), because
+/// `kill_pid_terminates_a_live_process` exercises a real kill against its own spawned child.
+#[cfg(unix)]
+fn kill_bin() -> String {
+    std::env::var("MOADIM_KILL_BIN").unwrap_or_else(|_| "kill".to_string())
+}
+#[cfg(not(unix))]
+fn kill_bin() -> String {
+    std::env::var("MOADIM_KILL_BIN").unwrap_or_else(|_| "taskkill".to_string())
+}
+
 /// Force-kill a process by PID. Best-effort: a missing/already-dead process is ignored.
 #[cfg(unix)]
 fn kill_pid(pid: u32) {
-    let _ = std::process::Command::new("kill")
+    let _ = std::process::Command::new(kill_bin())
         .args(["-9", &pid.to_string()])
         .output();
 }
@@ -85,7 +98,7 @@ fn kill_pid(pid: u32) {
 /// Force-kill a process by PID. Best-effort: failures are ignored.
 #[cfg(not(unix))]
 fn kill_pid(pid: u32) {
-    let _ = std::process::Command::new("taskkill")
+    let _ = std::process::Command::new(kill_bin())
         .args(["/F", "/PID", &pid.to_string()])
         .output();
 }

@@ -1,0 +1,19 @@
+# Code owners for the Moadim daemon.
+#
+# GitHub auto-requests a review from the owners listed here on every pull
+# request that touches matching paths. With a single catch-all rule, the
+# repository owner is requested on all PRs — including automated Dependabot
+# dependency bumps — so nothing merges without an owner in the loop.
+#
+# Docs: https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo.
+*       @tupe12334
+
+# Release-critical paths — keep the owner explicitly on the hook for anything
+# that can publish a crate, cut a release, or shift the dependency graph, even
+# if finer-grained ownership is added above later.
+/.github/workflows/publish.yml   @tupe12334
+/.github/workflows/release.yml   @tupe12334
+/Cargo.toml                      @tupe12334
+/Cargo.lock                      @tupe12334

@@ -6,14 +6,14 @@
 //! them in the prompt as context and the agent clones any it needs.
 //!
 //! The module is split by concern:
-//! - [`model`] — persisted types, API responses, and request bodies.
-//! - [`agents`] — the agent registry and built-in default agent configs.
-//! - [`defaults`] — built-in default routines seeded on startup when absent.
-//! - [`command`] — prompt composition and the single-line launch command builder.
-//! - [`service`] — store-mutating service functions (list/get/create/update/delete/trigger/logs).
-//! - [`cleanup`] — auto-removal of finished, expired run workbenches (per-routine TTL).
-//! - [`ical`] — iCalendar (`.ics`) export of upcoming routine fire times.
-//! - [`handlers`] — the Axum HTTP handlers.
+//! - `model` — persisted types, API responses, and request bodies.
+//! - `agents` — the agent registry and built-in default agent configs.
+//! - `defaults` — built-in default routines seeded on startup when absent.
+//! - `command` — prompt composition and the single-line launch command builder.
+//! - `service` — store-mutating service functions (list/get/create/update/delete/trigger/logs).
+//! - `cleanup` — auto-removal of finished, expired run workbenches (per-routine TTL).
+//! - `ical` — iCalendar (`.ics`) export of upcoming routine fire times.
+//! - `handlers` — the Axum HTTP handlers.
 
 mod agents;
 mod cleanup;

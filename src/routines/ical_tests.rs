@@ -174,7 +174,7 @@ fn feed_with_long_prompt_is_fully_folded() {
 }
 
 #[test]
-fn carriage_returns_are_normalized() {
+fn carriage_returns_crlf_and_lone_cr_normalized() {
     let mut routine = routine_with("r1", "@daily", true);
     // A pasted CRLF plus a lone CR — neither may leak a raw `\r` into the feed.
     routine.title = "a\r\nb\rc".to_string();
@@ -182,6 +182,25 @@ fn carriage_returns_are_normalized() {
     assert!(ics.contains("SUMMARY:a\\nb\\nc\r\n"));
     // The only raw CRs left are the structural CRLF line terminators.
     assert!(!ics.replace("\r\n", "").contains('\r'));
+}
+
+#[test]
+fn carriage_returns_are_normalized() {
+    let mut routine = routine_with("r1", "@daily", true);
+    // A lone CR and a CRLF, as pasted Windows / multi-line text produces.
+    routine.title = "a\rb\r\nc".to_string();
+    routine.prompt = "x\r\ny".to_string();
+    let ics = build_ical(&[routine], fixed_now());
+
+    // Both the lone CR and the CRLF collapse to the same escaped newline as a bare LF.
+    assert!(ics.contains("SUMMARY:a\\nb\\nc\r\n"));
+    assert!(ics.contains("DESCRIPTION:x\\ny (agent: claude)\r\n"));
+
+    // No raw CR survives except as part of a structural CRLF line terminator.
+    assert!(
+        !ics.replace("\r\n", "").contains('\r'),
+        "feed contains a stray carriage return"
+    );
 }
 
 #[test]

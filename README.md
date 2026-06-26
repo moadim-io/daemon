@@ -384,6 +384,7 @@ moadim status          # report whether a server is running
 moadim status --json   # same, as a machine-readable JSON object
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
+moadim trigger <id>    # trigger a routine to run now, outside its schedule
 moadim restart         # stop a running server (if any) and start a fresh one
 moadim stop            # ask a running server to stop
 moadim stop --json     # same, as a machine-readable JSON object
@@ -397,6 +398,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Exits `0` when running, `3` when not. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
+| `moadim trigger <id>` | —          | Sends `POST /api/v1/routines/{id}/trigger` to the running server, launching the routine immediately outside its schedule (the terminal equivalent of the REST/MCP on-demand trigger). Prints `triggered routine <id>` on success. Exits `0` when triggered, `3` when no server is reachable, and `1` with `no routine with id <id>` on a `404`. (`moadim run <id>` is kept as a hidden back-compat alias.) |
 
 `status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch
 on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`

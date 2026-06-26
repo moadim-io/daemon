@@ -1313,14 +1313,15 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                         </>
                                     },
                                     CView::Calendar => html! {
-                                        <CronJobCalendar jobs={displayed} loading={loading} />
+                                        <CronJobCalendar jobs={displayed} loading={loading} on_click={Some(on_edit)} />
                                     },
                                     CView::Day => {
                                         let items = displayed.iter().filter(|j| j.enabled).map(|j| TimelineItem {
+                                            id: Some(j.id.clone()),
                                             label: j.handler.clone(),
                                             schedule: j.schedule.clone(),
                                         }).collect::<Vec<_>>();
-                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                        html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit)} /> }
                                     },
                                 }
                             }
@@ -2532,6 +2533,9 @@ pub fn bulk_delete_dialog(props: &BulkDeleteProps) -> Html {
 struct CalendarJobProps {
     jobs: Vec<CronJob>,
     loading: bool,
+    /// When set, clicking a calendar chip opens the edit modal for that cron job.
+    #[prop_or_default]
+    on_click: Option<Callback<String>>,
 }
 
 #[function_component(CronJobCalendar)]
@@ -2543,12 +2547,13 @@ fn cron_job_calendar(props: &CalendarJobProps) -> Html {
         let dow = first.weekday().num_days_from_sunday();
         first - chrono::Duration::days(dow as i64)
     };
-    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each entry is (id, handler, count) so chips can dispatch the edit modal on click.
+    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
     for j in props.jobs.iter().filter(|j| j.enabled) {
         if let Some(counts) = occurrences_per_day(&j.schedule, grid_start) {
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((j.handler.clone(), c));
+                    cells[i].push((j.id.clone(), j.handler.clone(), c));
                 }
             }
         }
@@ -2588,10 +2593,19 @@ fn cron_job_calendar(props: &CalendarJobProps) -> Html {
                         html! {
                             <div class={cls}>
                                 <span class="cal-day-num">{date.day()}</span>
-                                { for cells[i].iter().map(|(label, count)| html! {
-                                    <span class="cal-event" title={format!("{label} \u{d7}{count}")}>
-                                        {label}{if *count > 1 { format!(" \u{d7}{count}") } else { String::new() }}
-                                    </span>
+                                { for cells[i].iter().map(|(id, label, count)| {
+                                    let title_str = format!("{label} \u{d7}{count}");
+                                    let on_chip = props.on_click.as_ref().map(|cb| {
+                                        let cb = cb.clone();
+                                        let id = id.clone();
+                                        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+                                    });
+                                    let chip_cls = if on_chip.is_some() { "cal-event clickable" } else { "cal-event" };
+                                    html! {
+                                        <span class={chip_cls} title={title_str} onclick={on_chip}>
+                                            {label}{if *count > 1 { format!(" \u{d7}{count}") } else { String::new() }}
+                                        </span>
+                                    }
                                 })}
                             </div>
                         }

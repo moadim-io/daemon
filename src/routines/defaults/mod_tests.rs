@@ -140,17 +140,24 @@ fn scratch_home() -> std::path::PathBuf {
 fn with_redirected_home(body: impl FnOnce(&std::path::Path)) {
     let home = scratch_home();
     std::fs::create_dir_all(&home).unwrap();
-    let previous = std::env::var_os("HOME");
+    let previous_home = std::env::var_os("HOME");
+    let previous_xdg = std::env::var_os("XDG_CONFIG_HOME");
     // SAFETY: tests in this crate run single-threaded per binary; we set and immediately restore the
-    // override around this call.
+    // overrides around this call. XDG_CONFIG_HOME is also redirected so config_root() uses the
+    // temp home rather than a CI runner's real XDG path.
     unsafe {
         std::env::set_var("HOME", &home);
+        std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));
     }
     body(&home);
     unsafe {
-        match previous {
+        match previous_home {
             Some(value) => std::env::set_var("HOME", value),
             None => std::env::remove_var("HOME"),
+        }
+        match previous_xdg {
+            Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
         }
     }
     let _ = std::fs::remove_dir_all(&home);

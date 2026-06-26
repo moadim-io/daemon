@@ -164,6 +164,21 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
+///
+/// The prompt is the one field that defines what a routine actually does. A blank
+/// prompt still produces a valid `prompt.md` (just the moadim preamble + repo list),
+/// so the routine fires on every cron tick and launches an agent with no task —
+/// silently burning scheduled runs and the user's agent/API budget (issue #224).
+/// Shared by the create and update paths so the REST and MCP surfaces reject it
+/// identically, mirroring [`validate_cron`].
+fn validate_prompt(prompt: &str) -> Result<(), AppError> {
+    if prompt.trim().is_empty() {
+        return Err(AppError::BadRequest("prompt must not be empty".to_string()));
+    }
+    Ok(())
+}
+
 /// Upper bound on a routine title, in characters, to keep `CLAUDE.md`, crontab
 /// comments, iCal `SUMMARY`s, and UI rows from rendering an unbounded string.
 const MAX_TITLE_LEN: usize = 200;
@@ -242,7 +257,7 @@ pub fn svc_create(
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
     reject_blank("title", &req.title)?;
-    reject_blank("prompt", &req.prompt)?;
+    validate_prompt(&req.prompt)?;
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let ceiling_schedule = normalize_schedule(&req.schedule);
@@ -310,7 +325,7 @@ pub fn svc_update(
         validate_title(title)?;
     }
     if let Some(ref prompt) = req.prompt {
-        reject_blank("prompt", prompt)?;
+        validate_prompt(prompt)?;
     }
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;

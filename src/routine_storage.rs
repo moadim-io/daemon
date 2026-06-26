@@ -333,8 +333,22 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
         for entry in entries.flatten() {
             if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
                 let dir_name = entry.file_name().to_string_lossy().to_string();
-                if let Some(routine) = load_routine_from_dir(&dir_name) {
-                    routines.insert(routine.id.clone(), routine);
+                match load_routine_from_dir(&dir_name) {
+                    Some(routine) => {
+                        routines.insert(routine.id.clone(), routine);
+                    }
+                    // A dir whose routine.toml exists but the loader rejected (unparsable, or
+                    // missing a required field) would otherwise vanish from the store, UI, API
+                    // and crontab with no trace. Warn so the operator can find and fix the file
+                    // instead of hunting a routine that silently disappeared.
+                    None if routine_toml_path(&dir_name).exists() => {
+                        log::warn!(
+                            "load_store: skipping routine dir {dir_name:?}: its routine.toml is \
+                             unparsable or missing a required field (title, schedule, or agent)"
+                        );
+                    }
+                    // No routine.toml at all — not a routine dir; skip it quietly.
+                    None => {}
                 }
             }
         }

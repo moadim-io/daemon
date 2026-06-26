@@ -1214,6 +1214,8 @@
       text-overflow: ellipsis;
     }
     .cal-more { font-size: 9px; color: var(--text-ghost); padding: 0 5px; }
+    .cal-chip.link { cursor: pointer; }
+    .cal-chip.link:hover { opacity: 0.75; }
 
     @media (max-width: 640px) {
       .cal-day { min-height: 64px; }
@@ -1346,6 +1348,10 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .day-chip.link { cursor: pointer; }
+    .day-chip.link:hover { opacity: 0.75; }
+    .cal-event.link { cursor: pointer; }
+    .cal-event.link:hover { opacity: 0.75; }
 
     @media (max-width: 640px) {
       .day-hour { grid-template-columns: 52px 1fr; }

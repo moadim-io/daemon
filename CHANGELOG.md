@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Calendar and day-timeline chips are now clickable: clicking any chip in the
+  Routines calendar/day view or the Cron Jobs calendar/day view opens the edit
+  modal for that entity directly, without switching to the table view first.
+  `TimelineItem` gains an `id` field; `DayTimeline` gains an optional
+  `on_click: Option<Callback<String>>` prop; both calendar components gain an
+  optional `on_edit: Option<Callback<String>>` prop.
+
 - A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without

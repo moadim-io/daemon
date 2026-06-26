@@ -1577,14 +1577,15 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit.clone())} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
                                             label: r.title.clone(),
                                             schedule: r.schedule.clone(),
+                                            id: r.id.clone(),
                                         }).collect::<Vec<_>>();
-                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                        html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit.clone())} /> }
                                     },
                                 }
                             }
@@ -1938,6 +1939,9 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
 pub struct CalendarProps {
     pub routines: Vec<Routine>,
     pub loading: bool,
+    /// When set, each calendar chip is clickable and emits the routine id on click.
+    #[prop_or_default]
+    pub on_edit: Option<Callback<String>>,
 }
 
 #[function_component(RoutineCalendar)]
@@ -1968,14 +1972,15 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
 
     // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
-    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each cell entry carries (title, id, count) so chips can open the edit modal on click.
+    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
     let mut scheduled = 0usize;
     for r in props.routines.iter().filter(|r| r.enabled) {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((r.title.clone(), c));
+                    cells[i].push((r.title.clone(), r.id.clone(), c));
                 }
             }
         }
@@ -2011,13 +2016,23 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                             <div class={cls}>
                                 <div class="cal-daynum">{date.day()}</div>
                                 <div class="cal-hits">
-                                    { for hits.iter().take(4).map(|(title, count)| {
+                                    { for hits.iter().take(4).map(|(title, id, count)| {
                                         let label = if *count > 1 {
                                             format!("{title} ×{count}")
                                         } else {
                                             title.clone()
                                         };
-                                        html! { <div class="cal-chip" title={label.clone()}>{label}</div> }
+                                        let onclick = props.on_edit.as_ref().map(|cb| {
+                                            let cb = cb.clone();
+                                            let entity_id = id.clone();
+                                            Callback::from(move |_: MouseEvent| cb.emit(entity_id.clone()))
+                                        });
+                                        let chip_cls = if onclick.is_some() {
+                                            "cal-chip link"
+                                        } else {
+                                            "cal-chip"
+                                        };
+                                        html! { <div class={chip_cls} title={label.clone()} onclick={onclick}>{label}</div> }
                                     }) }
                                     if hits.len() > 4 {
                                         <div class="cal-more">{format!("+{} more", hits.len() - 4)}</div>

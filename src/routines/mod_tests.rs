@@ -13,11 +13,13 @@ fn make_routine(id: &str) -> Routine {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
         }],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -58,6 +60,19 @@ fn compose_prompt_repo_without_branch() {
 }
 
 #[test]
+fn compose_prompt_without_repositories_omits_clone_header() {
+    let mut routine = make_routine("x");
+    routine.repositories = vec![];
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Workbench"));
+    assert!(prompt.contains("You are working in an empty directory.\n"));
+    // No dangling "clone any you need:" header (and no empty bullet list) when there are no repos.
+    assert!(!prompt.contains("clone any you need"));
+    assert!(!prompt.contains("\n- "));
+    assert!(prompt.contains("do the thing"));
+}
+
+#[test]
 fn substitute_replaces_placeholders() {
     assert_eq!(
         substitute("read {prompt_file} in {workbench}", ".", "prompt.md"),
@@ -85,6 +100,7 @@ fn build_routine_command_contains_expected_pieces() {
             "{prompt}".to_string(),
         ],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
@@ -114,6 +130,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
         command: "codex".to_string(),
         args: vec!["exec".to_string(), "{prompt_file}".to_string()],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     assert!(cmd.contains("'codex exec prompt.md'"));
@@ -126,6 +143,7 @@ fn build_routine_command_writes_claude_md() {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     // moadim-managed section written via printf %b
@@ -162,12 +180,42 @@ fn build_routine_command_writes_claude_md() {
 }
 
 #[test]
+fn build_routine_command_writes_disclosure_to_agent_instructions_file() {
+    // An agent that reads a non-CLAUDE.md instructions file (here Codex's AGENTS.md) must get the
+    // moadim system prompt + routine-origin disclosure written into *that* file, not CLAUDE.md, so
+    // the disclosure reaches the agent that actually runs (#152).
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        setup: None,
+        instructions_file: "AGENTS.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // disclosure lands in AGENTS.md
+    assert!(
+        cmd.contains(r#"> "$WB/AGENTS.md""#),
+        "moadim prompt should be written to AGENTS.md for codex"
+    );
+    assert!(
+        cmd.contains("Routine origin disclosure"),
+        "routine-origin disclosure section missing"
+    );
+    // and not in CLAUDE.md, which Codex never reads
+    assert!(
+        !cmd.contains("CLAUDE.md"),
+        "codex routine must not write CLAUDE.md"
+    );
+}
+
+#[test]
 fn build_routine_command_aborts_when_prompt_missing() {
     let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     // The cp of the routine's source prompt must fail-fast: a missing source aborts the launch
@@ -193,6 +241,7 @@ fn build_routine_command_inserts_setup_before_launch() {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
         setup: Some("seed-trust \"$WB\"".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     let setup_at = cmd.find("seed-trust").expect("setup present");
@@ -423,6 +472,7 @@ fn svc_create_invalid_cron_rejected() {
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -441,6 +491,7 @@ fn svc_create_update_delete_lifecycle() {
             agent: "claude".into(),
             prompt: "p".into(),
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
@@ -464,6 +515,7 @@ fn svc_create_update_delete_lifecycle() {
                 repository: "r".into(),
                 branch: None,
             }]),
+            machines: None,
             enabled: Some(false),
             ttl_secs: None,
             max_runtime_secs: None,
@@ -488,6 +540,7 @@ fn svc_update_not_found() {
         agent: None,
         prompt: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -508,6 +561,7 @@ fn svc_update_invalid_cron_rejected() {
         agent: None,
         prompt: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
@@ -539,8 +593,11 @@ fn svc_trigger_records_time_without_agent_config() {
 }
 
 #[test]
-fn load_agent_command_missing_returns_none() {
-    assert!(load_agent_command("definitely-not-an-agent-zzz").is_none());
+fn load_agent_command_missing_returns_missing_error() {
+    assert!(matches!(
+        load_agent_command("definitely-not-an-agent-zzz"),
+        Err(crate::routines::AgentLoadError::Missing)
+    ));
 }
 
 #[test]

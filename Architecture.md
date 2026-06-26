@@ -86,7 +86,7 @@ pub struct CronJob {
     pub source: String,                   // "managed" | "system:user-crontab" | "system:etc-crontab" | "system:cron.d/<file>"
     pub created_at: u64,                  // Unix seconds
     pub updated_at: u64,
-    pub last_triggered_at: Option<u64>,
+    pub last_manual_trigger_at: Option<u64>,  // only manual triggers update this; scheduled cron runs do not
 }
 ```
 
@@ -116,7 +116,7 @@ Both are cloned into `AppState` (REST) and `MoadimMcp` (MCP). Every write acquir
 | `svc_create` | Validates cron expr, assigns UUID v4, writes TOML, inserts into store |
 | `svc_update` | Partial-updates fields, bumps `updated_at`, rewrites TOML |
 | `svc_delete` | Removes from store, deletes job directory |
-| `svc_trigger` | Records `last_triggered_at = now`, rewrites TOML |
+| `svc_trigger` | Records `last_manual_trigger_at = now`, rewrites TOML |
 | `svc_logs_path` | Checks job exists, returns path to `job.local.log` |
 
 Both the HTTP handlers and MCP tools call these directly — there is no duplication of logic between the two transports.
@@ -208,14 +208,14 @@ and a `title`. Routines are a separate type with their own store (`RoutineStore`
 (`/routines`), MCP tools (`create_routine`, …), and crontab block — they do not share `CronJob`.
 
 When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
-time moadim composes `prompt.txt` (a repositories-as-context preamble + the prompt) into
+time moadim composes `prompt.md` (a repositories-as-context preamble + the prompt) into
 `~/.config/moadim/routines/<id>/`, then writes a single self-contained shell command into a dedicated
 crontab block:
 
 ```
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
-<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.txt $WB/; \
+<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.md $WB/; \
   tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
   tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
 # END MOADIM-ROUTINES
@@ -224,7 +224,7 @@ crontab block:
 OS cron runs that line directly: it makes a fresh empty workbench under `~/.moadim/workbenches/`,
 launches the agent **interactively** (no `-p`) in a detached tmux session rooted there, and captures
 output via `pipe-pane`. The prompt reaches the agent as a process **argument** (the `{prompt}`
-placeholder expands to `"$(cat prompt.txt)"`), so there is no keystroke-injection readiness race. The
+placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection readiness race. The
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
 
@@ -239,18 +239,18 @@ Finished run workbenches are reaped automatically by an hourly background sweep
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
 the same sweep includes a watchdog that force-kills any session whose run has exceeded the routine's
-`max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 6h) — bounding a hung agent that never exits —
+`max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 1h) — bounding a hung agent that never exits —
 recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
 `ttl_secs` rules.
 
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
-(`command`, `args`; placeholders `{prompt_file}` → `prompt.txt`, `{workbench}` → `.`,
-`{prompt}` → `"$(cat prompt.txt)"`).
+(`command`, `args`; placeholders `{prompt_file}` → `prompt.md`, `{workbench}` → `.`,
+`{prompt}` → `"$(cat prompt.md)"`).
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 
 Modules: `src/routines.rs` (model + service + command builder + handlers), `src/routine_storage.rs`
-(`routine.toml` + `prompt.txt` persistence), `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
+(`routine.toml` + `prompt.md` persistence), `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
 Reverse sync (crontab → store) is not implemented for routines.
 
 ## Error handling (`src/error.rs`)

@@ -478,8 +478,7 @@ fn process_is_alive(pid: u32) -> bool {
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
         .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|out| out.status.success())
 }
 
 /// Best-effort liveness on non-unix: assume the recorded PID is alive, mirroring the best-effort

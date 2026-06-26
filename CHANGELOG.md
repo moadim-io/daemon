@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Handler facet filter for the Cron Jobs table.** A new **HANDLER** dropdown in
+  the Cron Jobs filter bar lets operators narrow the job list to a single handler
+  script (e.g. `backup.sh`, `git-sync`). The selector is populated dynamically
+  from the distinct handler names found in the loaded job list and is hidden when
+  all jobs share the same handler. Works in conjunction with the existing STATUS,
+  MACHINE, and free-text filters (facets AND together), is cleared by the **CLEAR**
+  button, and is reflected in the "Showing N of M" result count. Closes #705.
+
 - A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without

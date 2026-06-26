@@ -242,6 +242,7 @@ fn facets_and_together() {
         query: "back".into(),
         status: StatusFacet::Enabled,
         machine: MachineFacet::Machine("m1".into()),
+        ..Default::default()
     };
     let hit = job("backup", "h", "0 * * * *", &["m1"], true);
     let wrong_machine = job("backup", "h", "0 * * * *", &["m2"], true);
@@ -632,4 +633,94 @@ fn group_jobs_groups_sorted_alphabetically() {
     let groups = group_jobs(&jobs, GroupBy::Handler);
     let labels: Vec<&str> = groups.iter().map(|(l, _)| l.as_str()).collect();
     assert_eq!(labels, ["alpha", "middle", "zebra"]);
+}
+
+// ── HandlerFacet codec ────────────────────────────────────────────────────────
+
+#[test]
+fn handler_facet_roundtrips_through_select_value() {
+    let any = HandlerFacet::Any;
+    let specific = HandlerFacet::Handler("run-backup.sh".into());
+    assert_eq!(HandlerFacet::from_value(&any.as_value()), any);
+    assert_eq!(HandlerFacet::from_value(&specific.as_value()), specific);
+}
+
+#[test]
+fn handler_facet_default_is_any() {
+    assert_eq!(HandlerFacet::default(), HandlerFacet::Any);
+}
+
+#[test]
+fn handler_facet_decodes_plain_string_as_specific() {
+    assert_eq!(
+        HandlerFacet::from_value("git-sync"),
+        HandlerFacet::Handler("git-sync".into())
+    );
+}
+
+// ── HandlerFacet in is_active ─────────────────────────────────────────────────
+
+#[test]
+fn is_active_detects_handler_facet() {
+    let h = JobFilter {
+        handler: HandlerFacet::Handler("backup".into()),
+        ..Default::default()
+    };
+    assert!(h.is_active());
+}
+
+// ── HandlerFacet matching ─────────────────────────────────────────────────────
+
+#[test]
+fn handler_any_matches_all_handlers() {
+    let f = JobFilter::default();
+    assert!(f.matches(&job("a", "backup.sh", "0 * * * *", &[], true), now(), window()));
+    assert!(f.matches(&job("b", "cleanup.py", "0 * * * *", &[], true), now(), window()));
+}
+
+#[test]
+fn handler_specific_requires_exact_handler_match() {
+    let f = JobFilter {
+        handler: HandlerFacet::Handler("backup.sh".into()),
+        ..Default::default()
+    };
+    assert!(f.matches(&job("a", "backup.sh", "0 * * * *", &[], true), now(), window()));
+    assert!(!f.matches(&job("b", "cleanup.py", "0 * * * *", &[], true), now(), window()));
+    assert!(!f.matches(&job("c", "backup", "0 * * * *", &[], true), now(), window()));
+}
+
+#[test]
+fn handler_facet_ands_with_status_facet() {
+    let f = JobFilter {
+        handler: HandlerFacet::Handler("backup.sh".into()),
+        status: StatusFacet::Enabled,
+        ..Default::default()
+    };
+    let hit = job("a", "backup.sh", "0 * * * *", &[], true);
+    let wrong_handler = job("b", "cleanup.py", "0 * * * *", &[], true);
+    let disabled = job("c", "backup.sh", "0 * * * *", &[], false);
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&wrong_handler, now(), window()));
+    assert!(!f.matches(&disabled, now(), window()));
+}
+
+// ── distinct_handlers ─────────────────────────────────────────────────────────
+
+#[test]
+fn distinct_handlers_are_sorted_and_deduped() {
+    let jobs = vec![
+        job("a", "zap.sh", "0 * * * *", &[], true),
+        job("b", "alpha.sh", "0 * * * *", &[], true),
+        job("c", "zap.sh", "0 * * * *", &[], true),
+        job("d", "beta.sh", "0 * * * *", &[], false),
+    ];
+    assert_eq!(
+        distinct_handlers(&jobs),
+        vec!["alpha.sh", "beta.sh", "zap.sh"]
+    );
+}
+
+#[test]
+fn distinct_handlers_empty_input_returns_empty() {
+    assert!(distinct_handlers(&[]).is_empty());
 }

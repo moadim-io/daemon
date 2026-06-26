@@ -159,12 +159,46 @@ impl MachineFacet {
     }
 }
 
+/// Sentinel select value for the handler facet's "any handler" choice. Real
+/// handler strings never carry a leading NUL.
+const HANDLER_ANY: &str = "\u{0}any";
+
+/// Handler facet: any handler, or one specific handler name drawn from the
+/// distinct handler values across the loaded jobs.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum HandlerFacet {
+    #[default]
+    Any,
+    Handler(String),
+}
+
+impl HandlerFacet {
+    /// Encode for the `<select>` option value.
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            HandlerFacet::Any => HANDLER_ANY.to_string(),
+            HandlerFacet::Handler(h) => h.clone(),
+        }
+    }
+
+    /// Decode from a selected `<select>` option value.
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        match v {
+            HANDLER_ANY => HandlerFacet::Any,
+            other => HandlerFacet::Handler(other.to_string()),
+        }
+    }
+}
+
 /// Combined free-text + facet filter applied client-side to the loaded jobs.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct JobFilter {
     pub query: String,
     pub status: StatusFacet,
     pub machine: MachineFacet,
+    pub handler: HandlerFacet,
 }
 
 impl JobFilter {
@@ -175,6 +209,7 @@ impl JobFilter {
         !self.query.trim().is_empty()
             || self.status != StatusFacet::All
             || self.machine != MachineFacet::Any
+            || self.handler != HandlerFacet::Any
     }
 
     /// Does this job survive the filter? Facets AND together; free-text matches
@@ -194,6 +229,11 @@ impl JobFilter {
             MachineFacet::Any => {}
             MachineFacet::Unassigned if !job.machines.is_empty() => return false,
             MachineFacet::Machine(m) if !job.machines.iter().any(|x| x == m) => return false,
+            _ => {}
+        }
+        match &self.handler {
+            HandlerFacet::Any => {}
+            HandlerFacet::Handler(h) if job.handler != *h => return false,
             _ => {}
         }
         let q = self.query.trim().to_lowercase();
@@ -250,6 +290,16 @@ pub fn distinct_machines(jobs: &[CronJob]) -> Vec<String> {
 #[must_use]
 pub fn unassigned_count(jobs: &[CronJob]) -> usize {
     jobs.iter().filter(|j| j.machines.is_empty()).count()
+}
+
+/// Distinct handler names across all jobs, sorted, for the handler-facet options.
+#[must_use]
+pub fn distinct_handlers(jobs: &[CronJob]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for j in jobs {
+        set.insert(j.handler.clone());
+    }
+    set.into_iter().collect()
 }
 
 // ─── Column sort ──────────────────────────────────────────────────────────────
@@ -610,6 +660,7 @@ pub enum CAction {
     SetQuery(String),
     SetStatus(StatusFacet),
     SetMachineFacet(MachineFacet),
+    SetHandlerFacet(HandlerFacet),
     ClearFilters,
     /// Sort by `col`; re-clicking the active column reverses direction.
     SetSort(SortCol),
@@ -714,6 +765,7 @@ impl Reducible for CState {
             CAction::SetQuery(q) => s.filter.query = q,
             CAction::SetStatus(status) => s.filter.status = status,
             CAction::SetMachineFacet(m) => s.filter.machine = m,
+            CAction::SetHandlerFacet(h) => s.filter.handler = h,
             CAction::ClearFilters => s.filter = JobFilter::default(),
             CAction::SetSort(col) => {
                 if s.sort_col == Some(col) {
@@ -1045,6 +1097,10 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |m: MachineFacet| state.dispatch(CAction::SetMachineFacet(m)))
     };
+    let on_set_handler = {
+        let state = state.clone();
+        Callback::from(move |h: HandlerFacet| state.dispatch(CAction::SetHandlerFacet(h)))
+    };
     let on_clear_filters = {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(CAction::ClearFilters))
@@ -1219,6 +1275,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         }
     }
     let has_unassigned = unassigned_count(&jobs) > 0;
+    let handler_options = distinct_handlers(&jobs);
     let filter_active = filter.is_active();
 
     let edit_job = match &modal {
@@ -1272,12 +1329,14 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                 filter={filter.clone()}
                                 machines={machine_options}
                                 has_unassigned={has_unassigned}
+                                handlers={handler_options}
                                 shown={shown}
                                 total={total_jobs}
                                 search_ref={search_ref.clone()}
                                 on_query={on_set_query}
                                 on_status={on_set_status}
                                 on_machine={on_set_machine}
+                                on_handler={on_set_handler}
                                 on_clear={on_clear_filters.clone()}
                             />
                             {
@@ -1513,6 +1572,8 @@ pub struct CronFilterBarProps {
     pub machines: Vec<String>,
     /// Whether at least one dormant (no-machine) job exists.
     pub has_unassigned: bool,
+    /// Distinct handler names across all jobs, for the handler-facet options.
+    pub handlers: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -1520,6 +1581,7 @@ pub struct CronFilterBarProps {
     pub on_query: Callback<String>,
     pub on_status: Callback<StatusFacet>,
     pub on_machine: Callback<MachineFacet>,
+    pub on_handler: Callback<HandlerFacet>,
     pub on_clear: Callback<()>,
 }
 
@@ -1546,6 +1608,13 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
             cb.emit(MachineFacet::from_value(&select.value()));
         })
     };
+    let on_handler_change = {
+        let cb = props.on_handler.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(HandlerFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -1553,6 +1622,7 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
 
     let status = props.filter.status.as_str();
     let machine_val = props.filter.machine.as_value();
+    let handler_val = props.filter.handler.as_value();
     let active = props.filter.is_active();
 
     html! {
@@ -1591,6 +1661,21 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
                         <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
                     }) }
                 </select>
+                if !props.handlers.is_empty() {
+                    <>
+                        <span class="filter-label">{"HANDLER"}</span>
+                        <select class="filter-select" aria-label="Handler filter"
+                            onchange={on_handler_change}>
+                            <option value={HANDLER_ANY}
+                                selected={handler_val == HANDLER_ANY}>{"Any"}</option>
+                            { for props.handlers.iter().map(|h| html! {
+                                <option value={h.clone()} selected={handler_val == *h}>
+                                    {h.clone()}
+                                </option>
+                            }) }
+                        </select>
+                    </>
+                }
             </div>
             <div class="filter-field">
                 <span class="filter-count">

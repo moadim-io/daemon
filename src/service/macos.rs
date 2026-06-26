@@ -120,7 +120,26 @@ pub fn install() -> anyhow::Result<()> {
     write_plist(&plist, &exe, &log)?;
     reload_agent(&plist)?;
     report_installed(&plist, &log);
+    request_automation_permission();
     Ok(())
+}
+
+/// Trigger the macOS TCC "administer your computer" prompt now, while the user is present at the
+/// terminal, so the background daemon never has to ask for it mid-run.
+///
+/// Sends a harmless Apple Event to System Events (list running process names). If permission is
+/// already granted this is a no-op; if not, the dialog appears once here and is remembered forever.
+fn request_automation_permission() {
+    println!(
+        "  hint    if macOS asks \"moadim would like to administer your computer\", click OK — \
+granting it here prevents background interruptions"
+    );
+    let _ = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to get name of every process",
+        ])
+        .output();
 }
 
 /// Unload the LaunchAgent (if loaded) and delete its plist.

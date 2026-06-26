@@ -18,6 +18,17 @@ fn format_version_drops_suffix_when_sha_unknown() {
 }
 
 #[test]
+fn format_version_carries_dirty_suffix_through() {
+    // A build from a tree with uncommitted tracked changes stamps "<sha>-dirty"
+    // (build.rs). Formatting passes it through verbatim, so --version / health /
+    // MCP provenance surface the dirty marker instead of a misleading clean SHA.
+    assert_eq!(
+        format_version("0.1.0", "a1b2c3d-dirty", "2026-06-19"),
+        "0.1.0 (a1b2c3d-dirty 2026-06-19)"
+    );
+}
+
+#[test]
 fn long_version_starts_with_the_crate_version() {
     // Regardless of whether this test binary was built inside a git checkout,
     // the rendered string always begins with the crate version.

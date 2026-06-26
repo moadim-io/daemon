@@ -53,13 +53,7 @@ fn job_dir_is_child_of_jobs_dir() {
 }
 
 #[test]
-fn jobs_dir_from_home_none_falls_back_to_dot() {
-    let dir = super::jobs_dir_from_home(None);
-    assert!(dir.ends_with(".config/moadim/jobs"));
-    assert!(dir.starts_with("."));
-}
 
-#[test]
 fn machine_config_path_filename() {
     let path = machine_config_path();
     assert_eq!(

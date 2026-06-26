@@ -62,16 +62,6 @@ pub fn jobs_dir() -> PathBuf {
     config_dir().join("jobs")
 }
 
-/// Returns the jobs directory under `home`, or `.` if `home` is `None`.
-///
-/// Used in tests to exercise the no-home fallback without touching process-global env vars.
-#[cfg(test)]
-pub(crate) fn jobs_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("jobs")
-}
 
 /// Returns the path to `{config_dir}/handlers/` (default `~/.config/moadim/handlers/`).
 #[must_use]

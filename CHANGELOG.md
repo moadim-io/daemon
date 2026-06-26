@@ -13,6 +13,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
+  `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
+  before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids
+  raw CR characters in content lines. Closes #181.
+
 - **macOS: TCC "administer your computer" dialog no longer appears during background runs.**
   `moadim install` now proactively sends a harmless Apple Event to System Events so macOS
   prompts for the Automation permission once, while the user is at the terminal. After clicking

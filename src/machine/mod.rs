@@ -41,9 +41,9 @@ impl MachineSource {
     /// Short human label used in CLI output.
     pub fn label(self) -> &'static str {
         match self {
-            MachineSource::Env => "MOADIM_MACHINE env",
-            MachineSource::File => "machine.local.toml",
-            MachineSource::Hostname => "system hostname",
+            Self::Env => "MOADIM_MACHINE env",
+            Self::File => "machine.local.toml",
+            Self::Hostname => "system hostname",
         }
     }
 }

@@ -10,6 +10,22 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+/// Fetch the current machine's resolved name from the daemon.
+pub async fn api_current_machine() -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        name: String,
+    }
+    Request::get("/api/v1/machine")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<Resp>()
+        .await
+        .map(|r| r.name)
+        .map_err(|e| e.to_string())
+}
+
 async fn api_machines() -> Result<Vec<String>, String> {
     Request::get("/api/v1/machines")
         .send()

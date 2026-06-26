@@ -19,7 +19,7 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
-use crate::machines::MachinesPicker;
+use crate::machines::{api_current_machine, MachinesPicker};
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{
     fires_within, fmt_until, fmt_when, month_start, next_fire_after, next_fires,
@@ -689,6 +689,8 @@ pub struct RState {
     pub selected: BTreeSet<String>,
     /// Most recently fetched global lock status; `None` until the first fetch completes.
     pub lock_status: Option<LockStatus>,
+    /// This machine's resolved name from the daemon, used to default the machine facet.
+    pub current_machine: Option<String>,
 }
 
 impl Default for RState {
@@ -704,6 +706,7 @@ impl Default for RState {
             sort_dir: RDir::default(),
             selected: BTreeSet::new(),
             lock_status: None,
+            current_machine: None,
         }
     }
 }
@@ -739,6 +742,8 @@ pub enum RAction {
     ClearSelection,
     /// Received updated lock status from the server.
     LockStatusLoaded(LockStatus),
+    /// Resolved current machine name received from the daemon; defaults machine facet to it.
+    CurrentMachineLoaded(String),
 }
 
 impl Reducible for RState {
@@ -812,6 +817,10 @@ impl Reducible for RState {
             RAction::LockStatusLoaded(status) => {
                 s.lock_status = Some(status);
             }
+            RAction::CurrentMachineLoaded(name) => {
+                s.current_machine = Some(name.clone());
+                s.filter.machine = RoutineMachineFacet::Machine(name);
+            }
         }
         s.into()
     }
@@ -866,6 +875,18 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         updated_at.set(js_sys::Date::now());
                     }
                     Err(e) => toast.emit((format!("Failed to load routines: {e}"), ToastKind::Err)),
+                }
+            });
+        });
+    }
+
+    // Fetch and apply the current machine as the default machine filter.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(name) = api_current_machine().await {
+                    state.dispatch(RAction::CurrentMachineLoaded(name));
                 }
             });
         });
@@ -1325,7 +1346,15 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
-    let machine_options = distinct_machines_r(&routines);
+    let mut machine_options = distinct_machines_r(&routines);
+    // Always include the current machine so the default filter option is visible in the dropdown
+    // even before any routine targets it.
+    if let Some(cm) = &state.current_machine {
+        if !machine_options.contains(cm) {
+            machine_options.push(cm.clone());
+            machine_options.sort();
+        }
+    }
     let has_unassigned = unassigned_routines_count(&routines) > 0;
     let filter_active = filter.is_active();
     let visible = {

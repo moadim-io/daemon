@@ -136,7 +136,7 @@ fn svc_get_returns_existing() {
 
 #[test]
 fn svc_list_empty_store() {
-    let result = svc_list(&new_store(), &new_registry());
+    let result = svc_list(&new_store(), &new_registry(), &CronJobListQuery::default());
     assert!(result.is_empty());
 }
 
@@ -152,7 +152,7 @@ fn svc_list_sorted_by_created_at() {
     lock.insert("early".to_string(), early);
     drop(lock);
 
-    let result = svc_list(&store, &new_registry());
+    let result = svc_list(&store, &new_registry(), &CronJobListQuery::default());
     assert_eq!(result[0].job.id, "early");
     assert_eq!(result[1].job.id, "late");
 }

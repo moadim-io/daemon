@@ -20,7 +20,7 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
-use crate::machines::MachinesPicker;
+use crate::machines::{api_current_machine, MachinesPicker};
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{
     fires_within, fmt_until, fmt_when, month_start, next_fire_after, next_fires,
@@ -334,6 +334,102 @@ pub fn sort_jobs(
     jobs
 }
 
+// ─── Group-by ─────────────────────────────────────────────────────────────────
+//
+// Orthogonal to filtering and sorting: operators can group the flat job list
+// into labelled sections so jobs of the same handler, machine, or status stay
+// visually together. Best-practice (Airflow DAG list, GitHub Actions workflow
+// runs, Temporal namespace view): grouping is a first-class navigation primitive
+// for large job fleets; it composes with faceted filtering and column sorting.
+
+/// Dimension used to group the cron-jobs table into labelled sections.
+/// `None` (the default) keeps the existing flat list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GroupBy {
+    #[default]
+    None,
+    /// Group by handler name (e.g. `git-sync`, `backup`, `deploy`).
+    Handler,
+    /// Group by target machine; jobs with no machine share an `(unassigned)` section.
+    Machine,
+    /// Group by enabled/disabled status.
+    Status,
+}
+
+impl GroupBy {
+    /// Stable token stored as the `<select>` option value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GroupBy::None => "none",
+            GroupBy::Handler => "handler",
+            GroupBy::Machine => "machine",
+            GroupBy::Status => "status",
+        }
+    }
+
+    /// Parse a token back to a variant, defaulting to `None` for unknown values.
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "handler" => GroupBy::Handler,
+            "machine" => GroupBy::Machine,
+            "status" => GroupBy::Status,
+            _ => GroupBy::None,
+        }
+    }
+
+    /// Short human label shown in the selector dropdown.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            GroupBy::None => "None",
+            GroupBy::Handler => "Handler",
+            GroupBy::Machine => "Machine",
+            GroupBy::Status => "Status",
+        }
+    }
+}
+
+/// Group key for a single job under the given dimension. A job always belongs
+/// to exactly one group (first machine for `Machine`, or `"(unassigned)"`).
+#[must_use]
+pub fn group_key(job: &CronJob, by: GroupBy) -> String {
+    match by {
+        GroupBy::None => String::new(),
+        GroupBy::Handler => job.handler.clone(),
+        GroupBy::Machine => job
+            .machines
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "(unassigned)".to_string()),
+        GroupBy::Status => {
+            if job.enabled {
+                "Enabled".to_string()
+            } else {
+                "Disabled".to_string()
+            }
+        }
+    }
+}
+
+/// Partition `jobs` into `(group_label, jobs_in_group)` pairs sorted
+/// alphabetically by label. Within each group the input order is preserved
+/// (callers sort before grouping so column sorts apply within groups).
+/// When `by` is `None`, returns a single pair with an empty label.
+#[must_use]
+pub fn group_jobs(jobs: &[CronJob], by: GroupBy) -> Vec<(String, Vec<CronJob>)> {
+    use std::collections::BTreeMap;
+    if by == GroupBy::None {
+        return vec![(String::new(), jobs.to_vec())];
+    }
+    let mut map: BTreeMap<String, Vec<CronJob>> = BTreeMap::new();
+    for job in jobs {
+        map.entry(group_key(job, by)).or_default().push(job.clone());
+    }
+    map.into_iter().collect()
+}
+
 // ─── API layer ────────────────────────────────────────────────────────────────
 
 async fn api_list() -> Result<Vec<CronJob>, String> {
@@ -462,6 +558,10 @@ pub struct CState {
     pub sort_col: Option<SortCol>,
     /// Direction of the active column sort.
     pub sort_dir: SortDir,
+    /// Active group-by dimension (`None` = flat list, the default).
+    pub group_by: GroupBy,
+    /// This machine's resolved name from the daemon, used to default the machine facet.
+    pub current_machine: Option<String>,
 }
 
 impl Default for CState {
@@ -477,6 +577,8 @@ impl Default for CState {
             filter: JobFilter::default(),
             sort_col: None,
             sort_dir: SortDir::default(),
+            group_by: GroupBy::None,
+            current_machine: None,
         }
     }
 }
@@ -511,6 +613,10 @@ pub enum CAction {
     ClearFilters,
     /// Sort by `col`; re-clicking the active column reverses direction.
     SetSort(SortCol),
+    /// Change the group-by dimension for the table view.
+    SetGroupBy(GroupBy),
+    /// Resolved current machine name received from the daemon; defaults machine facet to it.
+    CurrentMachineLoaded(String),
 }
 
 impl Reducible for CState {
@@ -617,6 +723,11 @@ impl Reducible for CState {
                     s.sort_dir = SortDir::Asc;
                 }
             }
+            CAction::SetGroupBy(by) => s.group_by = by,
+            CAction::CurrentMachineLoaded(name) => {
+                s.current_machine = Some(name.clone());
+                s.filter.machine = MachineFacet::Machine(name);
+            }
         }
         s.into()
     }
@@ -673,6 +784,18 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                         updated_at.set(js_sys::Date::now());
                     }
                     Err(e) => toast.emit((format!("Failed to load jobs: {e}"), ToastKind::Err)),
+                }
+            });
+        });
+    }
+
+    // Fetch and apply the current machine as the default machine filter.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(name) = api_current_machine().await {
+                    state.dispatch(CAction::CurrentMachineLoaded(name));
                 }
             });
         });
@@ -1062,6 +1185,11 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
         Callback::from(move |col: SortCol| state.dispatch(CAction::SetSort(col)))
     };
 
+    let on_set_group_by = {
+        let state = state.clone();
+        Callback::from(move |by: GroupBy| state.dispatch(CAction::SetGroupBy(by)))
+    };
+
     let jobs = state.jobs.clone();
     let loading = state.loading;
     let now_val = *now;
@@ -1072,6 +1200,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let filter = state.filter.clone();
     let sort_col = state.sort_col;
     let sort_dir = state.sort_dir;
+    let group_by = state.group_by;
 
     // Faceted view of the list: filter first, then sort. The KPI tiles and
     // result count stay over the filtered set (unaffected by sort order).
@@ -1080,7 +1209,15 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let shown = filtered.len();
     let displayed = sort_jobs(filtered, sort_col, sort_dir, now_val);
     let total_jobs = jobs.len();
-    let machine_options = distinct_machines(&jobs);
+    let mut machine_options = distinct_machines(&jobs);
+    // Always include the current machine so the default filter option is visible in the dropdown
+    // even before any job targets it.
+    if let Some(cm) = &state.current_machine {
+        if !machine_options.contains(cm) {
+            machine_options.push(cm.clone());
+            machine_options.sort();
+        }
+    }
     let has_unassigned = unassigned_count(&jobs) > 0;
     let filter_active = filter.is_active();
 
@@ -1121,6 +1258,12 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                         updated_at_ms={*updated_at}
                                         on_change={on_set_interval}
                                     />
+                                    if view == CView::Table {
+                                        <GroupBySelector
+                                            group_by={group_by}
+                                            on_change={on_set_group_by}
+                                        />
+                                    }
                                     <CronViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-primary btn-sm" onclick={on_new}>{"+ NEW JOB"}</button>
                                 </div>
@@ -1156,6 +1299,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                                                 filter_active={filter_active}
                                                 sort_col={sort_col}
                                                 sort_dir={sort_dir}
+                                                group_by={group_by}
                                                 on_sort={on_sort}
                                                 on_edit={on_edit}
                                                 on_delete={on_ask_delete}
@@ -1244,6 +1388,46 @@ pub fn cron_view_toggle(props: &CronViewToggleProps) -> Html {
             { mk(CView::Table, "LIST") }
             { mk(CView::Calendar, "CALENDAR") }
             { mk(CView::Day, "DAY") }
+        </div>
+    }
+}
+
+// ─── Group-by selector ────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct GroupBySelectorProps {
+    pub group_by: GroupBy,
+    pub on_change: Callback<GroupBy>,
+}
+
+/// Drop-down that lets the operator choose how to group the job table.
+/// Placed in the section toolbar next to the view toggle; hidden for
+/// Calendar/Day views (callers only render it in table view).
+#[function_component(GroupBySelector)]
+pub fn group_by_selector(props: &GroupBySelectorProps) -> Html {
+    let on_change = props.on_change.clone();
+    let on_select = Callback::from(move |e: Event| {
+        let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
+        on_change.emit(GroupBy::from_str(&select.value()));
+    });
+    let cur = props.group_by.as_str();
+    html! {
+        <div class="group-by-ctrl">
+            <label class="filter-label" for="group-by-select">{"GROUP BY"}</label>
+            <select
+                id="group-by-select"
+                class="filter-select"
+                aria-label="Group jobs by"
+                onchange={on_select}
+            >
+                { for [GroupBy::None, GroupBy::Handler, GroupBy::Machine, GroupBy::Status].iter()
+                    .map(|&by| html! {
+                        <option value={by.as_str()} selected={cur == by.as_str()}>
+                            { by.label() }
+                        </option>
+                    })
+                }
+            </select>
         </div>
     }
 }
@@ -1474,6 +1658,8 @@ pub struct JobTableProps {
     pub sort_col: Option<SortCol>,
     /// Direction of the active column sort.
     pub sort_dir: SortDir,
+    /// Active group-by dimension; `None` renders a flat list.
+    pub group_by: GroupBy,
     /// Fired when the user clicks a sortable column header.
     pub on_sort: Callback<SortCol>,
     pub on_edit: Callback<String>,
@@ -1532,6 +1718,9 @@ pub fn job_table(props: &JobTableProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
 
+    let groups = group_jobs(&props.jobs, props.group_by);
+    let grouped = props.group_by != GroupBy::None;
+
     html! {
         <div class="table-wrap">
             <table>
@@ -1558,19 +1747,34 @@ pub fn job_table(props: &JobTableProps) -> Html {
                     </tr>
                 </thead>
                 <tbody>
-                    { for props.jobs.iter().map(|job| html! {
-                        <JobRow
-                            key={job.id.clone()}
-                            job={job.clone()}
-                            now={props.now}
-                            selected={props.selected.contains(&job.id)}
-                            on_edit={props.on_edit.clone()}
-                            on_delete={props.on_delete.clone()}
-                            on_toggle={props.on_toggle.clone()}
-                            on_trigger={props.on_trigger.clone()}
-                            on_logs={props.on_logs.clone()}
-                            on_select={props.on_select.clone()}
-                        />
+                    { for groups.into_iter().map(|(label, group_jobs)| {
+                        let count = group_jobs.len();
+                        html! {
+                            <>
+                                if grouped {
+                                    <tr class="group-hd" key={format!("ghd-{label}")}>
+                                        <td colspan="9">
+                                            <span class="group-label">{label.clone()}</span>
+                                            <span class="group-count">{format!("({count})")}</span>
+                                        </td>
+                                    </tr>
+                                }
+                                { for group_jobs.into_iter().map(|job| html! {
+                                    <JobRow
+                                        key={job.id.clone()}
+                                        job={job.clone()}
+                                        now={props.now}
+                                        selected={props.selected.contains(&job.id)}
+                                        on_edit={props.on_edit.clone()}
+                                        on_delete={props.on_delete.clone()}
+                                        on_toggle={props.on_toggle.clone()}
+                                        on_trigger={props.on_trigger.clone()}
+                                        on_logs={props.on_logs.clone()}
+                                        on_select={props.on_select.clone()}
+                                    />
+                                }) }
+                            </>
+                        }
                     }) }
                 </tbody>
             </table>

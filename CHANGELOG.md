@@ -11,6 +11,26 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS: TCC "administer your computer" dialog no longer appears during background runs.**
+  `moadim install` now proactively sends a harmless Apple Event to System Events so macOS
+  prompts for the Automation permission once, while the user is at the terminal. After clicking
+  OK the grant is remembered permanently; the background daemon never triggers the dialog again.
+  A hint line is printed before the prompt so users know what to expect. Closes #730.
+
+### Added
+
+- **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
+  returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
+  `local_only=true` query parameter that filters the response to entries targeting the current
+  machine. The MCP `list_routines` and `list_cron_jobs` tools gain the same parameter, defaulting
+  to `true` so MCP callers see local-first results. The UI routines and cron-jobs pages fetch the
+  current machine on mount and default the existing machine facet filter to it; users can change
+  the filter to "Any" to see all machines. Closes #726.
+
+## [0.16.0] - 2026-06-26
+
 ### Changed
 
 - **`defaults` module split.** `src/routines/defaults.rs` is now a module (`defaults/`); each
@@ -28,7 +48,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   puts the most-urgent rows first (Dormant → Dead Schedule → Agent Missing → Disabled →
   Healthy), letting operators triage broken routines in one click. The **LAST FIRE** column
   header is also now sortable. Pure frontend — no backend change. Closes #712.
-
+- **Group-by dimension for the Cron Jobs table.** A new **GROUP BY** selector in the
+  Cron Jobs toolbar lets operators partition the flat job list into labelled sections
+  by **Handler**, **Machine**, or **Status** (enabled/disabled). Within each group the
+  active column sort still applies; groups are ordered alphabetically for a stable
+  layout. `None` (the default) preserves the existing flat-list behaviour. Backed by
+  a pure `group_jobs()` / `group_key()` function covered by 16 new host-only tests.
+  Follows the first-class grouping pattern in Airflow's DAG list, GitHub Actions
+  workflow runs, and Temporal namespace views — orthogonal to filtering so operators
+  can filter *and* group simultaneously. Pure frontend — no backend change.
+  Closes #714.
 - **Dedicated LAST FIRE column in the Routines table.** The most-recent trigger
   timestamp is now shown in its own **LAST FIRE** column directly beside NEXT RUN,
   matching the side-by-side "last run / next run" pattern standard in Airflow, Temporal,

@@ -59,6 +59,9 @@ pub struct RoutineListQuery {
     pub sort: RoutineSort,
     /// Sort direction (default: ascending).
     pub order: SortOrder,
+    /// When `true`, only return routines whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all routines, preserving backwards compatibility).
+    pub local_only: Option<bool>,
 }
 
 /// A persisted routine: a scheduled AI-agent task.

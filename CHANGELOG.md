@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Documentation
+
+- The README's **Bind address** section now warns that the REST API and MCP
+  endpoint are unauthenticated, so `MOADIM_BIND_ADDR` should stay on a loopback
+  address: binding to a routable interface (a LAN IP or `0.0.0.0`) exposes
+  unauthenticated routine create/trigger — effectively remote code execution — to
+  the network. Recommends an authenticating reverse proxy / firewall for remote
+  access instead. (#253)
+
 ### Fixed
 
 - **macOS: TCC "administer your computer" dialog no longer appears during background runs.**

@@ -137,12 +137,15 @@ fn stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down() {
     let home = temp_home("kill-success");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "80");
-    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "300");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "15");
     let mut child = spawn_dummy_with_pid_file();
-    // The first wait (80ms) times out with the server still up, then the server is taken down
-    // at 130ms — well inside the post-kill wait's window — so that wait observes it stopped.
-    server.stop_after(Duration::from_millis(130));
+    // The first wait (300ms) times out with the server still up, then the server is taken down
+    // at 450ms — well inside the post-kill wait's window — so that wait observes it stopped.
+    // The ~150ms of slack on each side of the post-kill deadline keeps the test off the timing
+    // knife-edge it used to sit on (80ms timeout / 130ms drop left only ~35ms of margin, which
+    // a coverage-instrumented or otherwise loaded CI run could blow, flaking this assertion).
+    server.stop_after(Duration::from_millis(450));
     stop_running_and_wait().expect("server stops after force-kill -> success");
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&home);

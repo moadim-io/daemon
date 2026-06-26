@@ -62,7 +62,6 @@ pub fn jobs_dir() -> PathBuf {
     config_dir().join("jobs")
 }
 
-
 /// Returns the path to `{config_dir}/handlers/` (default `~/.config/moadim/handlers/`).
 #[must_use]
 pub fn handlers_dir() -> PathBuf {

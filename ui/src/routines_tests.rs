@@ -843,3 +843,48 @@ fn sort_by_last_fire_descending_puts_newest_first() {
     assert_eq!(sorted[0].id, "new");
     assert_eq!(sorted[1].id, "old");
 }
+
+// ── clone_title ───────────────────────────────────────────────────────────────
+
+#[test]
+fn clone_title_prefixes_with_copy_em_dash() {
+    assert_eq!(clone_title("Nightly triage"), "COPY \u{2014} Nightly triage");
+}
+
+#[test]
+fn clone_title_handles_empty_string() {
+    assert_eq!(clone_title(""), "COPY \u{2014} ");
+}
+
+// ── GoToClone reducer action ──────────────────────────────────────────────────
+
+#[test]
+fn go_to_clone_sets_page_new_and_stores_prefill() {
+    let s = state_with_routines(&["a"]);
+    let r = routine("a", "Alpha", "claude", "0 * * * *", &["m1"], &[], true);
+    let s = s.reduce(RAction::GoToClone(Box::new(r.clone())));
+    assert_eq!(s.page, RPage::New);
+    assert_eq!(s.prefill, Some(r));
+}
+
+#[test]
+fn go_to_new_clears_prefill() {
+    let s = state_with_routines(&["a"]);
+    let r = routine("a", "Alpha", "claude", "0 * * * *", &["m1"], &[], true);
+    let s = s.reduce(RAction::GoToClone(Box::new(r)));
+    assert!(s.prefill.is_some());
+    let s = s.reduce(RAction::GoToNew);
+    assert_eq!(s.page, RPage::New);
+    assert!(s.prefill.is_none());
+}
+
+#[test]
+fn go_to_list_clears_prefill() {
+    let s = state_with_routines(&["a"]);
+    let r = routine("a", "Alpha", "claude", "0 * * * *", &["m1"], &[], true);
+    let s = s.reduce(RAction::GoToClone(Box::new(r)));
+    assert!(s.prefill.is_some());
+    let s = s.reduce(RAction::GoToList);
+    assert_eq!(s.page, RPage::List);
+    assert!(s.prefill.is_none());
+}

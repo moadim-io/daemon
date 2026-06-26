@@ -433,6 +433,11 @@ impl RoutineFilter {
     }
 }
 
+/// Return the title to pre-fill when cloning `title`: `"COPY — {title}"`.
+pub(crate) fn clone_title(title: &str) -> String {
+    format!("COPY \u{2014} {title}")
+}
+
 /// Returns the most-recent trigger timestamp across both manual and scheduled fires.
 /// `None` means the routine has never been triggered.
 ///
@@ -691,6 +696,8 @@ pub struct RState {
     pub lock_status: Option<LockStatus>,
     /// This machine's resolved name from the daemon, used to default the machine facet.
     pub current_machine: Option<String>,
+    /// Source routine to prefill the create form for a clone operation; cleared on GoToList/GoToNew.
+    pub prefill: Option<Routine>,
 }
 
 impl Default for RState {
@@ -707,6 +714,7 @@ impl Default for RState {
             selected: BTreeSet::new(),
             lock_status: None,
             current_machine: None,
+            prefill: None,
         }
     }
 }
@@ -715,6 +723,8 @@ pub enum RAction {
     Loaded(Vec<Routine>),
     GoToNew,
     GoToList,
+    /// Open the create form pre-filled from a source routine for cloning.
+    GoToClone(Box<Routine>),
     GoToLogs(String),
     OpenEdit(String),
     OpenConfirmDelete {
@@ -759,8 +769,18 @@ impl Reducible for RState {
                 s.routines = r;
                 s.loading = false;
             }
-            RAction::GoToNew => s.page = RPage::New,
-            RAction::GoToList => s.page = RPage::List,
+            RAction::GoToNew => {
+                s.page = RPage::New;
+                s.prefill = None;
+            }
+            RAction::GoToList => {
+                s.page = RPage::List;
+                s.prefill = None;
+            }
+            RAction::GoToClone(r) => {
+                s.page = RPage::New;
+                s.prefill = Some(*r);
+            }
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
             RAction::OpenEdit(id) => s.modal = RModal::Edit(id),
             RAction::OpenConfirmDelete { id, title } => {
@@ -1218,6 +1238,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         })
     };
 
+    let on_clone = {
+        let state = state.clone();
+        Callback::from(move |r: Box<Routine>| state.dispatch(RAction::GoToClone(r)))
+    };
+
     // ── Bulk selection ────────────────────────────────────────────────────────
     let on_select = {
         let state = state.clone();
@@ -1373,7 +1398,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             {
                 match page {
                     RPage::New => html! {
-                        <RoutineForm editing={None} on_cancel={on_cancel} on_save={on_create} />
+                        <RoutineForm editing={None} prefill={state.prefill.clone()} on_cancel={on_cancel} on_save={on_create} />
                     },
                     RPage::Logs(id) => {
                         let title = routines.iter()
@@ -1446,6 +1471,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
                                             on_clear_filters={on_clear_filters}
+                                            on_clone={on_clone}
                                         />
                                     },
                                     RView::Calendar => html! {
@@ -1937,6 +1963,7 @@ pub struct TableProps {
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
     pub on_clear_filters: Callback<()>,
+    pub on_clone: Callback<Box<Routine>>,
 }
 
 #[function_component(RoutineTable)]
@@ -2031,6 +2058,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                             on_toggle={props.on_toggle.clone()}
                             on_trigger={props.on_trigger.clone()}
                             on_logs={props.on_logs.clone()}
+                            on_clone={props.on_clone.clone()}
                         />
                     }) }
                 </tbody>
@@ -2080,6 +2108,8 @@ pub struct RowProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    /// Fired when the user clicks COPY; carries a boxed clone of the routine.
+    pub on_clone: Callback<Box<Routine>>,
 }
 
 #[function_component(RoutineRow)]
@@ -2123,6 +2153,12 @@ pub fn routine_row(props: &RowProps) -> Html {
         let cb = props.on_select.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+
+    let on_clone = {
+        let cb = props.on_clone.clone();
+        let routine = r.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(Box::new(routine.clone())))
     };
 
     let on_preview_toggle = {
@@ -2239,6 +2275,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
+                    <button class="act-btn copy" title="Clone routine" aria-label="Clone routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
@@ -2251,6 +2288,9 @@ pub fn routine_row(props: &RowProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct FormProps {
     pub editing: Option<Routine>,
+    /// When set and `editing` is `None`, pre-fills the form for a clone. Cleared on cancel/save.
+    #[prop_or_default]
+    pub prefill: Option<Routine>,
     pub on_cancel: Callback<()>,
     pub on_save: Callback<CreateRoutineRequest>,
 }
@@ -2306,23 +2346,26 @@ fn format_ttl(ttl_secs: Option<u64>) -> String {
 #[function_component(RoutineForm)]
 pub fn routine_form(props: &FormProps) -> Html {
     let editing = props.editing.clone();
+    let prefill = props.prefill.clone();
     let is_edit = editing.is_some();
+    // True when we're cloning: no edit target, but a source routine is provided.
+    let is_clone = prefill.is_some() && !is_edit;
+    // Source for initial field values: the routine being edited, or the one being cloned.
+    let source = editing.as_ref().or(prefill.as_ref());
 
     let title = use_state(|| {
-        editing
-            .as_ref()
-            .map(|r| r.title.clone())
-            .unwrap_or_default()
+        if is_clone {
+            prefill
+                .as_ref()
+                .map(|r| clone_title(&r.title))
+                .unwrap_or_default()
+        } else {
+            source.map(|r| r.title.clone()).unwrap_or_default()
+        }
     });
-    let schedule = use_state(|| {
-        editing
-            .as_ref()
-            .map(|r| r.schedule.clone())
-            .unwrap_or_default()
-    });
+    let schedule = use_state(|| source.map(|r| r.schedule.clone()).unwrap_or_default());
     let agent = use_state(|| {
-        editing
-            .as_ref()
+        source
             .map(|r| r.agent.clone())
             .unwrap_or_else(|| "claude".to_string())
     });
@@ -2347,29 +2390,17 @@ pub fn routine_form(props: &FormProps) -> Html {
             || ()
         });
     }
-    let prompt = use_state(|| {
-        editing
-            .as_ref()
-            .map(|r| r.prompt.clone())
-            .unwrap_or_default()
-    });
+    let prompt = use_state(|| source.map(|r| r.prompt.clone()).unwrap_or_default());
     let repos_raw = use_state(|| {
-        editing
-            .as_ref()
+        source
             .map(|r| repos_to_text(&r.repositories))
             .unwrap_or_default()
     });
-    let machines = use_state(|| {
-        editing
-            .as_ref()
-            .map(|r| r.machines.clone())
-            .unwrap_or_default()
-    });
-    let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
+    let machines = use_state(|| source.map(|r| r.machines.clone()).unwrap_or_default());
+    let enabled = use_state(|| source.map(|r| r.enabled).unwrap_or(true));
     // Blank means "use the server default"; otherwise the workbench TTL in seconds.
     let ttl_raw = use_state(|| {
-        editing
-            .as_ref()
+        source
             .and_then(|r| r.ttl_secs)
             .map(|s| s.to_string())
             .unwrap_or_default()
@@ -2488,9 +2519,12 @@ pub fn routine_form(props: &FormProps) -> Html {
         "…"
     } else if is_edit {
         "SAVE CHANGES"
+    } else if is_clone {
+        "CREATE COPY"
     } else {
         "CREATE ROUTINE"
     };
+    let page_title = if is_clone { "COPY ROUTINE" } else { "NEW ROUTINE" };
 
     let body = html! {
         <div class="modal-body">
@@ -2584,7 +2618,7 @@ pub fn routine_form(props: &FormProps) -> Html {
             <main class="create-page">
                 <div class="page-hd">
                     <button class="btn btn-ghost btn-sm" onclick={on_cancel_click}>{"← BACK"}</button>
-                    <div class="page-title">{"NEW ROUTINE"}</div>
+                    <div class="page-title">{page_title}</div>
                 </div>
                 <div class="page-card">
                     {body}

@@ -214,7 +214,6 @@ fn validate_title(title: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-
 /// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
 /// normalized copy with surrounding whitespace trimmed.
 ///
@@ -250,7 +249,6 @@ fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppErr
     }
     Ok(normalized)
 }
-
 
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(

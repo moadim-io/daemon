@@ -74,3 +74,6 @@ manual_let_else = "deny"
 # wrapping it in a closure that only forwards the receiver
 # (`|e| e.ok()`, `|s| s.to_string()`).
 redundant_closure_for_method_calls = "deny"
+# Flag match arms with identical bodies so redundant arms get merged or removed,
+# keeping match expressions concise and free of unreachable dead branches.
+match_same_arms = "deny"

@@ -60,6 +60,23 @@ fn jobs_dir_from_home_none_falls_back_to_dot() {
 }
 
 #[test]
+fn machine_config_path_filename() {
+    let path = machine_config_path();
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "machine.local.toml"
+    );
+    assert!(path.to_string_lossy().contains("moadim"));
+}
+
+#[test]
+fn machine_config_path_from_home_none_falls_back_to_dot() {
+    let dir = super::machine_config_path_from_home(None);
+    assert!(dir.ends_with(".config/moadim/machine.local.toml"));
+    assert!(dir.starts_with("."));
+}
+
+#[test]
 fn handlers_dir_contains_moadim_and_ends_with_handlers() {
     let path = handlers_dir().to_string_lossy().into_owned();
     assert!(path.contains("moadim"), "expected 'moadim' in {path}");
@@ -124,6 +141,16 @@ fn routine_gitignore_path_filename() {
     let path = routine_gitignore_path("abc");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), ".gitignore");
     assert!(path.to_string_lossy().contains("abc"));
+}
+
+#[test]
+fn routine_state_path_filename() {
+    let path = routine_state_path("abc");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "state.local.toml"
+    );
+    assert_eq!(path.parent().unwrap(), routine_dir("abc"));
 }
 
 #[test]

@@ -1,25 +1,55 @@
 version: 2
+
+# Batch dependency updates into a single grouped PR per ecosystem instead of one
+# PR per dependency. Without `groups:`, every bump opens its own PR — each firing
+# the full lint/test/coverage matrix and demanding a separate review, which
+# multiplies CI minutes and review load every week.
+#
+# Minor and patch bumps (the low-risk majority) are grouped into one PR per
+# ecosystem so they can be reviewed and merged together. Major bumps are left
+# ungrouped — they're the most likely to break and deserve an individual PR with
+# focused review.
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      cargo:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "cargo"
     directory: "/ui"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      cargo-ui:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      npm:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"

@@ -18,6 +18,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Loading a routine whose `routine.toml` is unparsable or missing a required
+  field (title, schedule, or agent) now logs a `warn` naming the directory,
+  instead of silently dropping the routine from the store, UI, API, and crontab
+  with no trace. Directories with no `routine.toml` are still skipped quietly.
+  (#530)
 - Build provenance now marks a dirty working tree. A binary built from a tree
   with uncommitted changes to tracked files gets a `-dirty` suffix on its short
   SHA (e.g. `a1b2c3d-dirty`) in `moadim --version`, `GET /api/v1/health`, and the

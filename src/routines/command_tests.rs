@@ -67,6 +67,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             command: "claude".to_string(),
             args: vec![],
             setup: None,
+            instructions_file: "CLAUDE.md".to_string(),
         };
         let cmd = build_routine_command(&routine, &agent);
         // The resolved tmux dir is baked into the exported PATH.
@@ -89,6 +90,7 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
@@ -118,6 +120,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
 
@@ -125,7 +128,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
     assert!(
         cmd.contains(
-            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write CLAUDE.md disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write agent instructions disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
         ),
         "expected the CLAUDE.md disclosure write to fail-fast in: {cmd}"
     );

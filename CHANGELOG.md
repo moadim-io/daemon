@@ -24,6 +24,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
 
 ### Fixed
+- The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
 
 - Loading a routine whose `routine.toml` is unparsable or missing a required
   field (title, schedule, or agent) now logs a `warn` naming the directory,

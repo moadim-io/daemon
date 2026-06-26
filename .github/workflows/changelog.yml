@@ -5,7 +5,8 @@ name: Changelog
 # TODO, tomorrow's changelog"). Docs-, CI-, and test-only PRs are exempt — the
 # gate only fires when product code under src/ or ui/ changes. Add the
 # `skip-changelog` label to a PR to bypass the check for deliberately
-# undocumented src/ui changes.
+# undocumented src/ui changes. Dependabot PRs are exempt — dependency bumps
+# don't need a hand-written changelog entry.
 
 on:
   pull_request:
@@ -14,9 +15,10 @@ on:
 jobs:
   changelog:
     name: unreleased-entry
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 

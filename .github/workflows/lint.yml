@@ -1,14 +1,15 @@
 name: Lint
 
-# Gate every PR (and pushes to main) on the same formatting and lint checks the
-# local pre-push hook enforces (`cargo fmt --check`, `cargo clippy -- -D
-# warnings`), so style/lint regressions are caught in review even when a
-# contributor hasn't installed the hooks. CI and the hook stay in lockstep:
-# both run the exact same two commands against the whole workspace.
+# Mirror the local pre-push hook's format and lint gates (`cargo fmt --check`
+# and `cargo clippy`) in CI, so style and lint regressions are caught on every
+# PR even when a contributor hasn't installed the git hooks. HEAD has
+# historically drifted out of clippy/fmt compliance between hook runs; this gate
+# keeps `main` green against the same standard the hook enforces locally.
 #
-# clippy needs the wasm32 target available because the `ui` workspace member is
-# a Yew/wasm-bindgen crate; the toolchain step installs it so a workspace-wide
-# lint doesn't fail to resolve the target.
+# fmt and clippy run as separate jobs so a formatting failure and a lint failure
+# are reported independently. The build relies on the committed `prebuilt.html`
+# (build.rs falls back to it when trunk is absent), so no trunk or wasm target
+# is needed just to type-check and lint the server crate.
 
 on:
   pull_request:
@@ -16,20 +17,35 @@ on:
     branches: [main]
 
 jobs:
-  fmt-clippy:
-    name: fmt + clippy
+  fmt:
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (with rustfmt)
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
+          toolchain: stable
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust (with clippy)
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          components: clippy
 
       - name: Cache cargo registry (registry only, not target)
-        uses: actions/cache@v5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: |
             ~/.cargo/registry
@@ -37,8 +53,5 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Clippy (deny warnings)
-        run: cargo clippy -- -D warnings
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings

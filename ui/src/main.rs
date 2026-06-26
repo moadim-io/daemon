@@ -2,14 +2,62 @@ use croner::Cron;
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::Deserialize;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+mod command_palette;
 mod cron_jobs;
+mod day_timeline;
+mod log_viewer;
+mod machines;
+mod overview;
+mod refresh;
 mod routines;
+mod schedule;
+mod schedule_heatmap;
+use command_palette::CommandPalette;
 use cron_jobs::CronJobsPage;
+use overview::OverviewPage;
 use routines::RoutinesPage;
+use schedule_heatmap::HeatmapPage;
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+/// localStorage key for the theme preference.
+pub(crate) const THEME_KEY: &str = "moadim.theme";
+
+/// Read the persisted theme from localStorage. Returns `true` for light theme.
+pub(crate) fn load_theme_light() -> bool {
+    web_sys::window()
+        .and_then(|win| win.local_storage().ok().flatten())
+        .and_then(|store| store.get_item(THEME_KEY).ok().flatten())
+        .is_some_and(|val| val == "light")
+}
+
+/// Persist the theme choice to localStorage (best-effort; ignores storage errors).
+pub(crate) fn save_theme_light(light: bool) {
+    if let Some(store) = web_sys::window().and_then(|win| win.local_storage().ok().flatten()) {
+        let _ = store.set_item(THEME_KEY, if light { "light" } else { "dark" });
+    }
+}
+
+/// Apply or remove the `theme-light` CSS class from `<html>`.
+pub(crate) fn apply_theme(light: bool) {
+    if let Some(root) = web_sys::window()
+        .and_then(|win| win.document())
+        .and_then(|doc| doc.document_element())
+    {
+        let list = root.class_list();
+        if light {
+            let _ = list.add_1("theme-light");
+        } else {
+            let _ = list.remove_1("theme-light");
+        }
+    }
+}
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -18,6 +66,7 @@ pub struct Health {
     pub status: String,
     pub uptime_secs: Option<u64>,
     pub running: bool,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +96,8 @@ pub enum Route {
     CronJobs,
     #[at("/routines")]
     Routines,
+    #[at("/heatmap")]
+    Heatmap,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -61,6 +112,9 @@ pub struct ShellState {
     pub toasts: Vec<Toast>,
     pub next_toast: u32,
     pub show_shutdown: bool,
+    pub show_palette: bool,
+    /// `true` when the light theme is active; persisted to localStorage.
+    pub show_theme_light: bool,
 }
 
 pub enum ShellAction {
@@ -68,6 +122,9 @@ pub enum ShellAction {
     AddToast { msg: String, kind: ToastKind },
     OpenShutdown,
     CloseShutdown,
+    TogglePalette,
+    ClosePalette,
+    ToggleTheme,
 }
 
 impl Reducible for ShellState {
@@ -91,6 +148,13 @@ impl Reducible for ShellState {
             }
             ShellAction::OpenShutdown => s.show_shutdown = true,
             ShellAction::CloseShutdown => s.show_shutdown = false,
+            ShellAction::TogglePalette => s.show_palette = !s.show_palette,
+            ShellAction::ClosePalette => s.show_palette = false,
+            ShellAction::ToggleTheme => {
+                s.show_theme_light = !s.show_theme_light;
+                save_theme_light(s.show_theme_light);
+                apply_theme(s.show_theme_light);
+            }
         }
         s.into()
     }
@@ -131,6 +195,7 @@ async fn poll_health(state: UseReducerHandle<ShellState>) {
                 status: "offline".into(),
                 running: false,
                 uptime_secs: None,
+                version: None,
             },
             ok: false,
         }),
@@ -152,7 +217,18 @@ pub fn app() -> Html {
 /// the global shutdown dialog, and the toast stack. Lives inside the router so nav `Link`s work.
 #[function_component(Shell)]
 pub fn shell() -> Html {
-    let state = use_reducer(ShellState::default);
+    let state = use_reducer(|| ShellState {
+        show_theme_light: load_theme_light(),
+        ..ShellState::default()
+    });
+
+    // Apply the initial theme class from persisted preference.
+    {
+        let light = state.show_theme_light;
+        use_effect_with((), move |_| {
+            apply_theme(light);
+        });
+    }
 
     // Initial health poll on mount.
     {
@@ -175,11 +251,69 @@ pub fn shell() -> Html {
         });
     }
 
+    // Global ⌘K / Ctrl-K listener that toggles the command palette from any
+    // page. Registered once on mount and torn down on unmount.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            let on_key =
+                Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if (event.meta_key() || event.ctrl_key())
+                        && event.key().eq_ignore_ascii_case("k")
+                    {
+                        event.prevent_default();
+                        state.dispatch(ShellAction::TogglePalette);
+                    }
+                }));
+            let window = web_sys::window().expect("window exists");
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("keydown listener attaches");
+            move || {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        on_key.as_ref().unchecked_ref(),
+                    );
+                }
+                drop(on_key);
+            }
+        });
+    }
+
     let on_toast = {
         let state = state.clone();
         Callback::from(move |(msg, kind): (String, ToastKind)| {
             state.dispatch(ShellAction::AddToast { msg, kind })
         })
+    };
+
+    let on_close_palette = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ClosePalette))
+    };
+
+    let on_open_palette = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::TogglePalette))
+    };
+
+    // Palette "Refresh" / "Stop Server" actions mirror the header buttons but
+    // take the `()` payload the palette emits.
+    let on_palette_refresh = {
+        let state = state.clone();
+        Callback::from(move |_: ()| {
+            let state = state.clone();
+            spawn_local(async move { poll_health(state).await });
+        })
+    };
+    let on_palette_stop = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
+    };
+    let on_palette_toggle_theme = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ToggleTheme))
     };
 
     let on_refresh = {
@@ -214,6 +348,7 @@ pub fn shell() -> Html {
                                 status: "stopping".into(),
                                 running: false,
                                 uptime_secs: None,
+                                version: None,
                             },
                             ok: false,
                         });
@@ -234,10 +369,11 @@ pub fn shell() -> Html {
     let switch = {
         let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
-            Route::Home => html! { <Redirect<Route> to={Route::CronJobs} /> },
+            Route::Home => html! { <OverviewPage /> },
             Route::CronJobs => html! { <CronJobsPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
-            Route::NotFound => html! { <Redirect<Route> to={Route::CronJobs} /> },
+            Route::Heatmap => html! { <HeatmapPage /> },
+            Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
     };
 
@@ -245,12 +381,25 @@ pub fn shell() -> Html {
     let health_ok = state.health_ok;
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
+    let show_palette = state.show_palette;
+    let show_theme_light = state.show_theme_light;
+    let on_theme = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::ToggleTheme))
+    };
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} />
+            <Header health={health} ok={health_ok} light={show_theme_light} on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette} on_theme={on_theme} />
             <Nav />
             <Switch<Route> render={switch} />
+            <CommandPalette
+                open={show_palette}
+                on_close={on_close_palette}
+                on_refresh={on_palette_refresh}
+                on_stop={on_palette_stop}
+                on_toggle_theme={on_palette_toggle_theme}
+            />
             {
                 if show_shutdown {
                     html! {
@@ -273,10 +422,8 @@ pub fn shell() -> Html {
 #[function_component(Nav)]
 pub fn nav() -> Html {
     let route = use_route::<Route>().unwrap_or(Route::Home);
-    // Home redirects to CronJobs, so treat it as the cron-jobs tab for highlighting.
     let cls = |target: &Route| {
-        let active = route == *target || (route == Route::Home && *target == Route::CronJobs);
-        if active {
+        if route == *target {
             "tab-btn active"
         } else {
             "tab-btn"
@@ -284,11 +431,17 @@ pub fn nav() -> Html {
     };
     html! {
         <nav class="tabs">
+            <Link<Route> classes={classes!(cls(&Route::Home))} to={Route::Home}>
+                { "OVERVIEW" }
+            </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::CronJobs))} to={Route::CronJobs}>
                 { "CRON JOBS" }
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Routines))} to={Route::Routines}>
                 { "ROUTINES" }
+            </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Heatmap))} to={Route::Heatmap}>
+                { "HEATMAP" }
             </Link<Route>>
         </nav>
     }
@@ -300,8 +453,12 @@ pub fn nav() -> Html {
 pub struct HeaderProps {
     pub health: Health,
     pub ok: bool,
+    /// `true` when the light theme is active (controls the toggle button icon).
+    pub light: bool,
     pub on_refresh: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
+    pub on_palette: Callback<MouseEvent>,
+    pub on_theme: Callback<MouseEvent>,
 }
 
 #[function_component(Header)]
@@ -312,25 +469,44 @@ pub fn header(props: &HeaderProps) -> Html {
         "health-dot error"
     };
     let status = props.health.status.to_uppercase();
+    let version = props
+        .health
+        .version
+        .as_ref()
+        .map(|v| format!("/ v{v}"))
+        .unwrap_or_default();
     let uptime = props
         .health
         .uptime_secs
         .map(|s| format!("/ UP {}", fmt_uptime(s)))
         .unwrap_or_default();
+    let theme_icon = if props.light { "☀" } else { "🌙" };
+    let theme_title = if props.light {
+        "Switch to dark mode"
+    } else {
+        "Switch to light mode"
+    };
 
     html! {
         <header>
-            <div class="logo">
+            <h1 class="logo">
                 {"MOADIM"}
                 <span class="logo-sub">{"/ CONTROL"}</span>
-            </div>
+                <span class="logo-version">{version}</span>
+            </h1>
             <div class="header-right">
                 <div class="health">
                     <div class={dot_class}></div>
                     <span class="health-status">{status}</span>
                     <span class="health-uptime">{uptime}</span>
                 </div>
-                <button class="btn-refresh" title="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
+                <button class="btn-theme" title={theme_title} aria-label={theme_title} onclick={props.on_theme.clone()}>
+                    {theme_icon}
+                </button>
+                <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
+                    {"⌘K"}
+                </button>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
                 <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
             </div>
         </header>
@@ -358,9 +534,15 @@ pub fn shutdown_dialog(props: &ShutdownProps) -> Html {
 
     html! {
         <div class="overlay open">
-            <div class="confirm-dialog">
-                <div class="confirm-title">{"⏻ STOP SERVER"}</div>
-                <div class="confirm-msg">
+            <div
+                class="confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="shutdown-dialog-title"
+                aria-describedby="shutdown-dialog-msg"
+            >
+                <div id="shutdown-dialog-title" class="confirm-title">{"⏻ STOP SERVER"}</div>
+                <div id="shutdown-dialog-msg" class="confirm-msg">
                     { "Stop the moadim server? Scheduled jobs and routines will not run until it is started again." }
                 </div>
                 <div class="confirm-acts">
@@ -382,7 +564,7 @@ pub struct ToastStackProps {
 #[function_component(ToastStack)]
 pub fn toast_stack(props: &ToastStackProps) -> Html {
     html! {
-        <div class="toast-wrap">
+        <div class="toast-wrap" role="status" aria-live="polite" aria-atomic="false">
             { for props.toasts.iter().map(|t| {
                 let cls = match t.kind { ToastKind::Ok => "toast ok", ToastKind::Err => "toast err" };
                 html! {

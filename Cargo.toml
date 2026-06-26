@@ -74,3 +74,6 @@ manual_let_else = "deny"
 # wrapping it in a closure that only forwards the receiver
 # (`|e| e.ok()`, `|s| s.to_string()`).
 redundant_closure_for_method_calls = "deny"
+# Prefer `Self` over the concrete type name in `impl` blocks so the code
+# stays consistent and renaming the type requires fewer edits.
+use_self = "deny"

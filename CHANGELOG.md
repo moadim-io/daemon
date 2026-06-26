@@ -51,6 +51,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   OK the grant is remembered permanently; the background daemon never triggers the dialog again.
   A hint line is printed before the prompt so users know what to expect. Closes #730.
 
+- **Trigger-spawned processes are now reaped so the daemon no longer leaks zombie
+  (`<defunct>`) entries.** Both the routine trigger (`POST /routines/{id}/trigger`)
+  and the cron-job trigger (`POST /cron-jobs/{id}/trigger`) previously dropped
+  the spawned child handle without calling `wait()`, so every trigger leaked one
+  zombie for the daemon's lifetime. A new `utils::process::spawn_and_reap` utility
+  spawns the command and hands the child to a detached thread that reaps it.
+  (#212)
+
 ### Added
 
 - **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section

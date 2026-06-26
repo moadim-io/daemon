@@ -451,13 +451,14 @@ fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
             let cmd = build_routine_command(routine, &agent);
-            if let Err(err) = std::process::Command::new("sh")
-                .arg("-lc")
-                .arg(&cmd)
-                .spawn()
-            {
-                log::warn!("trigger: failed to spawn routine command: {err}");
-            }
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            let mut command = std::process::Command::new("sh");
+            command.arg("-lc").arg(&cmd);
+            // Reap the child in the background so the short-lived launcher shell does not
+            // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
+            crate::utils::process::spawn_and_reap(command, "routine command");
         }
         Err(err) => log::warn!(
             "trigger: cannot load agent {:?} ({}) for routine {:?}",

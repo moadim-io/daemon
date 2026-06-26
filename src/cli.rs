@@ -410,12 +410,16 @@ fn parse_health(body: &str) -> Option<HealthInfo> {
     })
 }
 
-/// Render the `cleanup` result as a one-line JSON object: `{"running":bool,"removed":N}`. `removed`
-/// is `0` when the server is not running (`running:false`).
+/// Render the `cleanup` result as a one-line JSON object:
+/// `{"running":bool,"removed":N,"address":…}`. `removed` is `0` when the server is not running
+/// (`running:false`). `address` is the effective bound [`bind_addr`] the request was sent to,
+/// matching `status --json`/`stop --json`'s object shape so every `--json` command surfaces the
+/// endpoint it talked to.
 fn cleanup_json(removed: usize, running: bool) -> String {
     serde_json::json!({
         "running": running,
         "removed": removed,
+        "address": bind_addr(),
     })
     .to_string()
 }

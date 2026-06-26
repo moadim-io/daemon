@@ -454,6 +454,24 @@
     }
     .attn-detail { color: var(--text-mid); }
 
+    /* ── Routine health badge (per-row status indicator in the Routines table) ── */
+    .health-badge {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      padding: 2px 5px;
+      border: 1px solid var(--border-hi);
+      color: var(--text-mid);
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .health-badge.dormant       { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+    .health-badge.dead          { border-color: var(--red);   color: var(--red);   background: var(--red-dim); }
+    .health-badge.agent-missing { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+    .health-badge.disabled      { border-color: var(--border-hi); color: var(--text-dim); }
+    .health-badge.healthy       { border-color: var(--accent); color: var(--accent); }
+
     .ov-name-link {
       color: var(--text-hi);
       text-decoration: none;
@@ -1196,6 +1214,10 @@
       text-overflow: ellipsis;
     }
     .cal-more { font-size: 9px; color: var(--text-ghost); padding: 0 5px; }
+    .cal-chip.clickable,
+    .cal-event.clickable { cursor: pointer; }
+    .cal-chip.clickable:hover,
+    .cal-event.clickable:hover { background: var(--bg-hi, var(--bg-3)); filter: brightness(1.12); }
 
     @media (max-width: 640px) {
       .cal-day { min-height: 64px; }
@@ -1328,6 +1350,8 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .day-chip.clickable { cursor: pointer; }
+    .day-chip.clickable:hover { filter: brightness(1.12); }
 
     @media (max-width: 640px) {
       .day-hour { grid-template-columns: 52px 1fr; }

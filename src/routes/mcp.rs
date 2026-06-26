@@ -57,8 +57,32 @@ struct UpdateInput {
     /// New metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     metadata: Option<serde_json::Value>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
+}
+
+/// Input for list tools that support local-machine filtering.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct LocalOnlyParam {
+    /// When `true` (the default), only return entries targeting the current machine.
+    /// Pass `false` to see entries from all machines.
+    local_only: Option<bool>,
+}
+
+/// Input for the `lock_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct LockRoutinesInput {
+    /// Which sentinel to create: `"shared"` (committed `.lock`) or `"local"` (gitignored `.local.lock`).
+    scope: String,
+}
+
+/// Input for the `unlock_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct UnlockRoutinesInput {
+    /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"` (both).
+    scope: String,
 }
 
 /// Input for the `update_routine` MCP tool.
@@ -77,6 +101,8 @@ struct UpdateRoutineInput {
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     repositories: Option<Vec<crate::routines::Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
     /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
@@ -153,10 +179,21 @@ impl MoadimMcp {
         })))
     }
 
-    /// Return all managed cron jobs as a JSON array sorted by creation time.
-    #[tool(description = "List all managed cron jobs")]
-    fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
+    /// Return managed cron jobs as a JSON array sorted by creation time.
+    ///
+    /// When `local_only` is `true` (the default), only jobs whose `machines` list includes the
+    /// current machine are returned. Pass `false` to see all jobs regardless of machine.
+    #[tool(
+        description = "List managed cron jobs. Defaults to jobs targeting the current machine only; pass local_only=false to see all machines."
+    )]
+    fn list_cron_jobs(
+        &self,
+        Parameters(params): Parameters<LocalOnlyParam>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = cron_jobs::CronJobListQuery {
+            local_only: Some(params.local_only.unwrap_or(true)),
+        };
+        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers, &query)))
     }
 
     /// Return the cron job matching the given UUID.
@@ -199,6 +236,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             handler: input.handler,
             metadata: input.metadata,
+            machines: input.machines,
             enabled: input.enabled,
         };
         Ok(
@@ -237,13 +275,22 @@ impl MoadimMcp {
         })
     }
 
-    /// Return all managed routines as a JSON array sorted by creation time.
-    #[tool(description = "List all managed routines (agent-driven jobs)")]
-    fn list_routines(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_list(
-            &self.routines,
-            &routines::RoutineListQuery::default(),
-        )))
+    /// Return managed routines as a JSON array sorted by creation time.
+    ///
+    /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
+    /// current machine are returned. Pass `false` to see all routines regardless of machine.
+    #[tool(
+        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines."
+    )]
+    fn list_routines(
+        &self,
+        Parameters(params): Parameters<LocalOnlyParam>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = routines::RoutineListQuery {
+            local_only: Some(params.local_only.unwrap_or(true)),
+            ..Default::default()
+        };
+        Ok(ok(routines::svc_list(&self.routines, &query)))
     }
 
     /// Return the routine matching the given UUID.
@@ -286,6 +333,7 @@ impl MoadimMcp {
             agent: input.agent,
             prompt: input.prompt,
             repositories: input.repositories,
+            machines: input.machines,
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
             max_runtime_secs: input.max_runtime_secs,
@@ -360,6 +408,74 @@ impl MoadimMcp {
         })
     }
 
+    /// Return whether the global routine lock is active and which sentinels are present.
+    #[tool(
+        description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
+    )]
+    fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Create a global lock sentinel that halts all routine scheduling and manual triggers without
+    /// touching individual routine `enabled` states.
+    #[tool(
+        description = "Globally pause all routines by creating a lock sentinel. Use scope=\"shared\" for a committed .lock (shared via git) or scope=\"local\" for a gitignored .local.lock (machine-local). Individual routine enabled states are not modified."
+    )]
+    fn lock_routines(
+        &self,
+        Parameters(LockRoutinesInput { scope }): Parameters<LockRoutinesInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let lock_scope = match scope.as_str() {
+            "shared" => crate::global_lock::LockScope::Shared,
+            "local" => crate::global_lock::LockScope::Local,
+            other => {
+                return Ok(err(format!(
+                    "unknown scope {other:?}; use \"shared\" or \"local\""
+                )))
+            }
+        };
+        if let Err(io_err) = crate::global_lock::set_lock(lock_scope, true) {
+            return Ok(err(format!("failed to create lock sentinel: {io_err}")));
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after lock failed: {sync_err}");
+        }
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
+    /// Remove a global lock sentinel, restoring scheduled and manual triggers for all enabled
+    /// routines.
+    #[tool(
+        description = "Resume all routines by removing a lock sentinel. Use scope=\"shared\" to remove the committed .lock, scope=\"local\" to remove the gitignored .local.lock, or scope=\"all\" to remove both."
+    )]
+    fn unlock_routines(
+        &self,
+        Parameters(UnlockRoutinesInput { scope }): Parameters<UnlockRoutinesInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let scopes: Vec<crate::global_lock::LockScope> = match scope.as_str() {
+            "shared" => vec![crate::global_lock::LockScope::Shared],
+            "local" => vec![crate::global_lock::LockScope::Local],
+            "all" => vec![
+                crate::global_lock::LockScope::Shared,
+                crate::global_lock::LockScope::Local,
+            ],
+            other => {
+                return Ok(err(format!(
+                    "unknown scope {other:?}; use \"shared\", \"local\", or \"all\""
+                )))
+            }
+        };
+        for scope_item in scopes {
+            if let Err(io_err) = crate::global_lock::set_lock(scope_item, false) {
+                return Ok(err(format!("failed to remove lock sentinel: {io_err}")));
+            }
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
+            log::warn!("crontab sync after unlock failed: {sync_err}");
+        }
+        Ok(ok(crate::global_lock::lock_status()))
+    }
+
     /// Ask the server to stop gracefully, mirroring `POST /api/v1/shutdown` and `moadim stop`.
     #[tool(
         description = "Stop the running server gracefully. Mirrors the POST /api/v1/shutdown route and `moadim stop`."
@@ -377,11 +493,9 @@ impl MoadimMcp {
     )]
     fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         log::info!("restart requested via MCP");
-        Ok(crate::cli::spawn_restart()
-            .map(|helper_pid| {
-                ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
-            })
-            .unwrap_or_else(err))
+        Ok(crate::cli::spawn_restart().map_or_else(err, |helper_pid| {
+            ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
+        }))
     }
 }
 

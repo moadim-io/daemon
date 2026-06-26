@@ -12,6 +12,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 ## [Unreleased]
 
 ### Fixed
+- iCal feeds now truncate long routine prompts so each DESCRIPTION field fits within the RFC 5545 line-length limit and multi-line entries fold correctly. (#185)
 
 - Build provenance now marks a dirty working tree. A binary built from a tree
   with uncommitted changes to tracked files gets a `-dirty` suffix on its short

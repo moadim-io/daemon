@@ -31,7 +31,13 @@ pub(crate) fn home() -> Option<PathBuf> {
 /// their config root via `$XDG_CONFIG_HOME` gets a single coherent config tree instead of a
 /// surprise second one under `~/.config`.
 fn config_root() -> PathBuf {
-    config_root_from(std::env::var_os(XDG_CONFIG_HOME_ENV), home())
+    // When the test seam is active, bypass XDG so the entire config tree redirects to the
+    // override directory — matching the behaviour callers expect from MOADIM_HOME_OVERRIDE.
+    if std::env::var_os(HOME_OVERRIDE_ENV).is_some() {
+        config_root_from(None, home())
+    } else {
+        config_root_from(std::env::var_os(XDG_CONFIG_HOME_ENV), home())
+    }
 }
 
 /// Resolve the config root from an explicit `$XDG_CONFIG_HOME` value and home directory.

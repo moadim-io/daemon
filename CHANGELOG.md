@@ -39,6 +39,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Per-row health-status badge in the Routines table.** A new sortable **HEALTH** column
+  shows a colored badge on every routine row: `HEALTHY` (accent), `DISABLED` (muted),
+  `DORMANT` (amber — enabled but no machine assigned), `DEAD SCHEDULE` (red — schedule
+  yields no future fire), and `AGENT MISSING` (amber — agent config not registered).
+  Badges follow the traffic-light pattern used by Jenkins, GitHub Actions, and Datadog:
+  color + text label together so status is legible without color vision. Sorting ascending
+  puts the most-urgent rows first (Dormant → Dead Schedule → Agent Missing → Disabled →
+  Healthy), letting operators triage broken routines in one click. The **LAST FIRE** column
+  header is also now sortable. Pure frontend — no backend change. Closes #712.
 - **Group-by dimension for the Cron Jobs table.** A new **GROUP BY** selector in the
   Cron Jobs toolbar lets operators partition the flat job list into labelled sections
   by **Handler**, **Machine**, or **Status** (enabled/disabled). Within each group the

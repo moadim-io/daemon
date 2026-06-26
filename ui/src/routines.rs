@@ -447,6 +447,81 @@ pub(crate) fn last_fire_at(r: &Routine) -> Option<u64> {
     }
 }
 
+// ─── Health status ────────────────────────────────────────────────────────────
+
+/// At-a-glance operational health derived from a routine's current fields.
+/// Covers the same fault categories as the Overview attention-reason triage
+/// plus the `Disabled` state so every row in the Routines table has a badge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoutineHealth {
+    /// Enabled but assigned to no machine — fires nowhere.
+    Dormant,
+    /// Enabled, has a machine, but the cron expression yields no future fire.
+    DeadSchedule,
+    /// Enabled, scheduled, has a machine, but agent config is missing.
+    AgentMissing,
+    /// `enabled: false` — intentionally paused.
+    Disabled,
+    /// Enabled, scheduled, has a machine, agent registered — fully operational.
+    Healthy,
+}
+
+impl RoutineHealth {
+    /// Lower number = more urgent. Ascending sort puts broken rows first.
+    pub(crate) fn priority(self) -> u8 {
+        match self {
+            RoutineHealth::Dormant => 0,
+            RoutineHealth::DeadSchedule => 1,
+            RoutineHealth::AgentMissing => 2,
+            RoutineHealth::Disabled => 3,
+            RoutineHealth::Healthy => 4,
+        }
+    }
+
+    /// Short uppercase label shown in the badge.
+    pub(crate) fn badge(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "DORMANT",
+            RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
+            RoutineHealth::AgentMissing => "AGENT MISSING",
+            RoutineHealth::Disabled => "DISABLED",
+            RoutineHealth::Healthy => "HEALTHY",
+        }
+    }
+
+    /// CSS class string for the badge `<span>`.
+    pub(crate) fn badge_class(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "health-badge dormant",
+            RoutineHealth::DeadSchedule => "health-badge dead",
+            RoutineHealth::AgentMissing => "health-badge agent-missing",
+            RoutineHealth::Disabled => "health-badge disabled",
+            RoutineHealth::Healthy => "health-badge healthy",
+        }
+    }
+}
+
+/// Derive the operational health of a routine as of `now`.
+///
+/// Faults are checked in priority order — `Dormant` outranks `DeadSchedule`
+/// which outranks `AgentMissing` — matching the Overview triage ordering.
+#[must_use]
+pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
+    if !r.enabled {
+        return RoutineHealth::Disabled;
+    }
+    if r.machines.iter().all(|m| m.trim().is_empty()) {
+        return RoutineHealth::Dormant;
+    }
+    if next_fire_after(&r.schedule, now).is_none() {
+        return RoutineHealth::DeadSchedule;
+    }
+    if !r.agent_registered {
+        return RoutineHealth::AgentMissing;
+    }
+    RoutineHealth::Healthy
+}
+
 /// Routines surviving `filter`, preserving the input order.
 #[must_use]
 pub fn filter_routines(
@@ -522,7 +597,9 @@ pub enum RView {
 pub enum RCol {
     Title,
     NextRun,
+    LastFire,
     Agent,
+    Health,
     Enabled,
     Updated,
 }
@@ -565,6 +642,10 @@ pub fn sort_routines(
             RCol::Agent => a.agent.to_lowercase().cmp(&b.agent.to_lowercase()),
             RCol::Enabled => a.enabled.cmp(&b.enabled),
             RCol::Updated => a.updated_at.cmp(&b.updated_at),
+            RCol::Health => routine_health(a, now)
+                .priority()
+                .cmp(&routine_health(b, now).priority()),
+            RCol::LastFire => last_fire_at(a).cmp(&last_fire_at(b)),
             RCol::NextRun => {
                 let next_of = |r: &Routine| {
                     if r.enabled {
@@ -1927,10 +2008,11 @@ pub fn routine_table(props: &TableProps) -> Html {
                         { sort_th("TITLE", RCol::Title, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"SCHEDULE"}</th>
                         { sort_th("NEXT RUN", RCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
-                        <th>{"LAST FIRE"}</th>
+                        { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
                         <th>{"TTL"}</th>
+                        { sort_th("HEALTH", RCol::Health, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("ENABLED", RCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("UPDATED", RCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
@@ -2139,6 +2221,12 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
             <td><span class="cell-meta" title="workbench retention for finished runs">{ format_ttl(r.ttl_secs) }</span></td>
+            <td>
+                <span class={routine_health(r, props.now).badge_class()}
+                    title={routine_health(r, props.now).badge()}>
+                    {routine_health(r, props.now).badge()}
+                </span>
+            </td>
             <td>
                 <label class="toggle">
                     <input type="checkbox" checked={r.enabled} onchange={on_toggle} />

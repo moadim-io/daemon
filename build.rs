@@ -63,6 +63,5 @@ fn git_is_dirty() -> bool {
     std::process::Command::new("git")
         .args(["diff", "--quiet", "HEAD", "--"])
         .output()
-        .map(|out| out.status.code() == Some(1))
-        .unwrap_or(false)
+        .is_ok_and(|out| out.status.code() == Some(1))
 }

@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **6-field cron expressions no longer silently fail to fire.** `croner` accepts
+  6-field (`sec min hour dom month dow`) and 7-field expressions, but the OS
+  crontab only understands 5 fields. Both forms are now normalised to 5 fields
+  by dropping the leading seconds (and, for 7-field, the trailing year) before
+  the expression is stored or written to the crontab. Previously a 6-field
+  string was written verbatim, making the job malformed and silently inactive.
+  Closes #183.
+
 - Build provenance now marks a dirty working tree. A binary built from a tree
   with uncommitted changes to tracked files gets a `-dirty` suffix on its short
   SHA (e.g. `a1b2c3d-dirty`) in `moadim --version`, `GET /api/v1/health`, and the

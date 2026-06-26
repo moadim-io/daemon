@@ -2,7 +2,7 @@
 
 use crate::utils::lock::LockRecover;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -238,12 +238,32 @@ pub struct UpdateRequest {
 
 // --- Service layer (no HTTP types) ---
 
+/// Query parameters for `GET /cron-jobs`.
+#[derive(Debug, Clone, Default, Deserialize, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct CronJobListQuery {
+    /// When `true`, only return jobs whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all jobs, preserving backwards compatibility).
+    pub local_only: Option<bool>,
+}
+
 /// Return all jobs sorted by creation time (oldest first).
-pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobResponse> {
+pub fn svc_list(
+    store: &CronStore,
+    handlers: &HandlerRegistry,
+    query: &CronJobListQuery,
+) -> Vec<CronJobResponse> {
     let lock = store.lock_recover();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
-    jobs.sort_by_key(|j| j.created_at);
     drop(lock);
+
+    if query.local_only.unwrap_or(false) {
+        let me = crate::machine::current_machine();
+        jobs.retain(|j| crate::machine::targets(&j.machines, &me));
+    }
+
+    jobs.sort_by_key(|j| j.created_at);
     jobs.into_iter()
         .map(|j| CronJobResponse::from_job(j, handlers))
         .collect()
@@ -380,9 +400,13 @@ pub async fn create(
 
 /// `GET /cron-jobs` — list all cron jobs sorted by creation time.
 #[utoipa::path(get, path = "/cron-jobs",
+    params(CronJobListQuery),
     responses((status = 200, body = Vec<CronJobResponse>)))]
-pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
-    Json(svc_list(&state.store, &state.handlers))
+pub async fn list(
+    State(state): State<AppState>,
+    Query(query): Query<CronJobListQuery>,
+) -> Json<Vec<CronJobResponse>> {
+    Json(svc_list(&state.store, &state.handlers, &query))
 }
 
 /// `GET /cron-jobs/{id}` — retrieve a single cron job by UUID.

@@ -47,6 +47,17 @@
         ],
         "summary": "`GET /cron-jobs` — list all cron jobs sorted by creation time.",
         "operationId": "list",
+        "parameters": [
+          {
+            "name": "local_only",
+            "in": "query",
+            "description": "When `true`, only return jobs whose `machines` list includes the current machine.\nDefaults to `false` (return all jobs, preserving backwards compatibility).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -374,6 +385,28 @@
         }
       }
     },
+    "/machine": {
+      "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /machine` — the current machine's resolved identity.",
+        "description": "Returns the name this daemon uses to match `machines[]` targeting lists on routines and cron\njobs. Useful for clients (e.g. the UI) that want to default their views to local entries only.",
+        "operationId": "get_current_machine",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/machines": {
       "get": {
         "tags": [
@@ -457,6 +490,15 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/SortOrder"
+            }
+          },
+          {
+            "name": "local_only",
+            "in": "query",
+            "description": "When `true`, only return routines whose `machines` list includes the current machine.\nDefaults to `false` (return all routines, preserving backwards compatibility).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1250,6 +1292,19 @@
           "shared": {
             "type": "boolean",
             "description": "Whether the committed `.lock` file is present."
+          }
+        }
+      },
+      "MachineResponse": {
+        "type": "object",
+        "description": "Response body for `GET /machine`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname)."
           }
         }
       },

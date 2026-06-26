@@ -20,7 +20,7 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
-use crate::machines::MachinesPicker;
+use crate::machines::{api_current_machine, MachinesPicker};
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::schedule::{
     fires_within, fmt_until, fmt_when, month_start, next_fire_after, next_fires,
@@ -560,6 +560,8 @@ pub struct CState {
     pub sort_dir: SortDir,
     /// Active group-by dimension (`None` = flat list, the default).
     pub group_by: GroupBy,
+    /// This machine's resolved name from the daemon, used to default the machine facet.
+    pub current_machine: Option<String>,
 }
 
 impl Default for CState {
@@ -576,6 +578,7 @@ impl Default for CState {
             sort_col: None,
             sort_dir: SortDir::default(),
             group_by: GroupBy::None,
+            current_machine: None,
         }
     }
 }
@@ -612,6 +615,8 @@ pub enum CAction {
     SetSort(SortCol),
     /// Change the group-by dimension for the table view.
     SetGroupBy(GroupBy),
+    /// Resolved current machine name received from the daemon; defaults machine facet to it.
+    CurrentMachineLoaded(String),
 }
 
 impl Reducible for CState {
@@ -719,6 +724,10 @@ impl Reducible for CState {
                 }
             }
             CAction::SetGroupBy(by) => s.group_by = by,
+            CAction::CurrentMachineLoaded(name) => {
+                s.current_machine = Some(name.clone());
+                s.filter.machine = MachineFacet::Machine(name);
+            }
         }
         s.into()
     }
@@ -775,6 +784,18 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                         updated_at.set(js_sys::Date::now());
                     }
                     Err(e) => toast.emit((format!("Failed to load jobs: {e}"), ToastKind::Err)),
+                }
+            });
+        });
+    }
+
+    // Fetch and apply the current machine as the default machine filter.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(name) = api_current_machine().await {
+                    state.dispatch(CAction::CurrentMachineLoaded(name));
                 }
             });
         });
@@ -1188,7 +1209,15 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let shown = filtered.len();
     let displayed = sort_jobs(filtered, sort_col, sort_dir, now_val);
     let total_jobs = jobs.len();
-    let machine_options = distinct_machines(&jobs);
+    let mut machine_options = distinct_machines(&jobs);
+    // Always include the current machine so the default filter option is visible in the dropdown
+    // even before any job targets it.
+    if let Some(cm) = &state.current_machine {
+        if !machine_options.contains(cm) {
+            machine_options.push(cm.clone());
+            machine_options.sort();
+        }
+    }
     let has_unassigned = unassigned_count(&jobs) > 0;
     let filter_active = filter.is_active();
 

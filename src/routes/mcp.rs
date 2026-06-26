@@ -63,6 +63,14 @@ struct UpdateInput {
     enabled: Option<bool>,
 }
 
+/// Input for list tools that support local-machine filtering.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct LocalOnlyParam {
+    /// When `true` (the default), only return entries targeting the current machine.
+    /// Pass `false` to see entries from all machines.
+    local_only: Option<bool>,
+}
+
 /// Input for the `lock_routines` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct LockRoutinesInput {
@@ -171,10 +179,19 @@ impl MoadimMcp {
         })))
     }
 
-    /// Return all managed cron jobs as a JSON array sorted by creation time.
-    #[tool(description = "List all managed cron jobs")]
-    fn list_cron_jobs(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers)))
+    /// Return managed cron jobs as a JSON array sorted by creation time.
+    ///
+    /// When `local_only` is `true` (the default), only jobs whose `machines` list includes the
+    /// current machine are returned. Pass `false` to see all jobs regardless of machine.
+    #[tool(description = "List managed cron jobs. Defaults to jobs targeting the current machine only; pass local_only=false to see all machines.")]
+    fn list_cron_jobs(
+        &self,
+        Parameters(params): Parameters<LocalOnlyParam>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = cron_jobs::CronJobListQuery {
+            local_only: Some(params.local_only.unwrap_or(true)),
+        };
+        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers, &query)))
     }
 
     /// Return the cron job matching the given UUID.
@@ -256,13 +273,20 @@ impl MoadimMcp {
         })
     }
 
-    /// Return all managed routines as a JSON array sorted by creation time.
-    #[tool(description = "List all managed routines (agent-driven jobs)")]
-    fn list_routines(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_list(
-            &self.routines,
-            &routines::RoutineListQuery::default(),
-        )))
+    /// Return managed routines as a JSON array sorted by creation time.
+    ///
+    /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
+    /// current machine are returned. Pass `false` to see all routines regardless of machine.
+    #[tool(description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines.")]
+    fn list_routines(
+        &self,
+        Parameters(params): Parameters<LocalOnlyParam>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let query = routines::RoutineListQuery {
+            local_only: Some(params.local_only.unwrap_or(true)),
+            ..Default::default()
+        };
+        Ok(ok(routines::svc_list(&self.routines, &query)))
     }
 
     /// Return the routine matching the given UUID.

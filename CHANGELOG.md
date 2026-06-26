@@ -511,6 +511,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- The config tree now honors `$XDG_CONFIG_HOME` per the XDG Base Directory
+  spec: when set to an absolute path, the config dir resolves to
+  `$XDG_CONFIG_HOME/moadim` instead of always `~/.config/moadim` (an unset,
+  empty, or relative value still falls back to `~/.config`). This brings the
+  config tree in line with the Linux systemd installer, which already resolved
+  its unit path via `$XDG_CONFIG_HOME`, so users who relocate their config root
+  no longer get a surprise second tree under `~/.config`.
 - Routines no longer generate a per-routine `run.sh` launch script. The crontab
   line now invokes the `moadim` binary directly
   (`<schedule> <moadim> schedule trigger <id>`), and the running daemon is the

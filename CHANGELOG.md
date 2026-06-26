@@ -80,6 +80,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim trigger <id>` triggers a routine to run immediately from the terminal,
+  outside its schedule — the same on-demand run the REST API
+  (`POST /routines/{id}/trigger`) and the MCP tool already expose. Prints
+  `triggered routine <id>` and exits `0` on success, errors with
+  `no routine with id <id>` on a `404`, and prints `moadim is not running`
+  (exit `3`) when no server is reachable, matching the `status`/`cleanup`
+  exit-code contract. (`moadim run <id>` is accepted as a hidden back-compat
+  alias.)
+
 - **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section
   toolbar lets operators partition the flat routine list into labelled sections by **Agent**,
   **Machine**, or **Status** (Enabled / Disabled), with a **None** option to restore the flat
@@ -91,7 +100,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   repositories, machines, TTL, enabled state). The title is automatically prefixed with
   "Copy of " (and the prefix is not doubled on repeated clones). Operators can adjust any field
   before saving; the result is a brand-new independent routine. Closes #715.
-
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
   returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
   `local_only=true` query parameter that filters the response to entries targeting the current
@@ -453,7 +461,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
   scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
   and lets you spot schedules that have never actually fired (#155).
-
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was

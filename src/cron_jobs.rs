@@ -353,8 +353,13 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     write_job(&job).map_err(|_| AppError::Internal)?;
     let handler_path = crate::paths::handlers_dir().join(&job.handler);
     if handler_path.exists() {
-        if let Err(err) = std::process::Command::new(&handler_path).spawn() {
-            log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}");
+        match std::process::Command::new(&handler_path).spawn() {
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+            Err(err) => log::warn!("trigger: failed to spawn handler {handler_path:?}: {err}"),
         }
     } else {
         log::warn!("trigger: handler script not found at {handler_path:?}");

@@ -843,3 +843,147 @@ fn sort_by_last_fire_descending_puts_newest_first() {
     assert_eq!(sorted[0].id, "new");
     assert_eq!(sorted[1].id, "old");
 }
+
+// ── RoutineGroupBy codec ──────────────────────────────────────────────────────
+
+#[test]
+fn routine_group_by_as_str_roundtrips() {
+    for by in [
+        RoutineGroupBy::None,
+        RoutineGroupBy::Agent,
+        RoutineGroupBy::Machine,
+        RoutineGroupBy::Status,
+    ] {
+        assert_eq!(RoutineGroupBy::from_str(by.as_str()), by);
+    }
+}
+
+#[test]
+fn routine_group_by_default_is_none() {
+    assert_eq!(RoutineGroupBy::default(), RoutineGroupBy::None);
+}
+
+#[test]
+fn routine_group_by_unknown_token_decodes_to_none() {
+    assert_eq!(RoutineGroupBy::from_str("bogus"), RoutineGroupBy::None);
+    assert_eq!(RoutineGroupBy::from_str(""), RoutineGroupBy::None);
+}
+
+// ── group_key_r ───────────────────────────────────────────────────────────────
+
+#[test]
+fn group_key_r_agent_returns_agent_field() {
+    let r = routine("id1", "title", "claude", "0 * * * *", &["m1"], &[], true);
+    assert_eq!(group_key_r(&r, RoutineGroupBy::Agent), "claude");
+}
+
+#[test]
+fn group_key_r_machine_returns_first_machine() {
+    let r = routine(
+        "id1",
+        "title",
+        "claude",
+        "0 * * * *",
+        &["alpha", "beta"],
+        &[],
+        true,
+    );
+    assert_eq!(group_key_r(&r, RoutineGroupBy::Machine), "alpha");
+}
+
+#[test]
+fn group_key_r_machine_returns_unassigned_when_no_machines() {
+    let r = routine("id1", "title", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(group_key_r(&r, RoutineGroupBy::Machine), "(unassigned)");
+}
+
+#[test]
+fn group_key_r_status_enabled() {
+    let r = routine("id1", "title", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(group_key_r(&r, RoutineGroupBy::Status), "Enabled");
+}
+
+#[test]
+fn group_key_r_status_disabled() {
+    let r = routine("id1", "title", "claude", "0 * * * *", &[], &[], false);
+    assert_eq!(group_key_r(&r, RoutineGroupBy::Status), "Disabled");
+}
+
+#[test]
+fn group_key_r_none_returns_empty_string() {
+    let r = routine("id1", "title", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(group_key_r(&r, RoutineGroupBy::None), "");
+}
+
+// ── group_routines ────────────────────────────────────────────────────────────
+
+#[test]
+fn group_routines_none_returns_single_group_with_all_routines() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "B", "codex", "0 * * * *", &[], &[], false),
+    ];
+    let groups = group_routines(&rs, RoutineGroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "");
+    assert_eq!(groups[0].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_agent_creates_one_group_per_agent() {
+    let rs = vec![
+        routine("a", "A", "codex", "0 * * * *", &[], &[], true),
+        routine("b", "B", "claude", "0 * * * *", &[], &[], true),
+        routine("c", "C", "codex", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RoutineGroupBy::Agent);
+    // BTreeMap → alphabetical: claude, codex
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "claude");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "codex");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_agent_preserves_input_order_within_group() {
+    let rs = vec![
+        routine("first", "A", "claude", "0 * * * *", &[], &[], true),
+        routine("second", "B", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RoutineGroupBy::Agent);
+    assert_eq!(groups[0].1[0].id, "first");
+    assert_eq!(groups[0].1[1].id, "second");
+}
+
+#[test]
+fn group_routines_by_machine_separates_unassigned() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &["worker-1"], &[], true),
+        routine("b", "B", "claude", "0 * * * *", &[], &[], true),
+        routine("c", "C", "claude", "0 * * * *", &["worker-1"], &[], true),
+    ];
+    let groups = group_routines(&rs, RoutineGroupBy::Machine);
+    // alphabetical: "(unassigned)" sorts before "worker-1"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "(unassigned)");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "worker-1");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_status_splits_enabled_disabled() {
+    let rs = vec![
+        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "B", "claude", "0 * * * *", &[], &[], false),
+        routine("c", "C", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RoutineGroupBy::Status);
+    // alphabetical: "Disabled" before "Enabled"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "Disabled");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "Enabled");
+    assert_eq!(groups[1].1.len(), 2);
+}

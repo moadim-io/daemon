@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Group-by dimension for the Routines table.** A new GROUP BY drop-down in the Routines table
+  toolbar (visible only in List view) lets operators organise the routine list into labelled
+  sections by Agent, Machine, or Status. Each group header shows the group name and a member
+  count; within a group, the active column sort still applies. Composes with the existing
+  full-text search, faceted filters, and sortable columns. Implements the grouping pattern from
+  Airflow DAG groups, GitHub Actions workflow grouping, and Temporal namespace views — a
+  first-class navigation primitive for large fleets. Pure frontend change. Closes #732.
+
 ### Fixed
 
 - **macOS: TCC "administer your computer" dialog no longer appears during background runs.**

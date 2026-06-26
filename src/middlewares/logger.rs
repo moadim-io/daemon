@@ -22,16 +22,12 @@ pub async fn logger(req: Request, next: Next) -> Response {
     } else {
         log::Level::Info
     };
-    log::log!(level, "{} {}", method, path);
+    log::log!(level, "{method} {path}");
     let start = Instant::now();
     let res = next.run(req).await;
-    log::log!(
-        level,
-        "  -> {} {} in {}ms",
-        res.status(),
-        path,
-        start.elapsed().as_millis()
-    );
+    let status = res.status();
+    let elapsed = start.elapsed().as_millis();
+    log::log!(level, "  -> {status} {path} in {elapsed}ms");
     res
 }
 

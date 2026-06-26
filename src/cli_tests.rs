@@ -501,6 +501,7 @@ fn status_and_stop_json_share_the_same_shape() {
     }
 }
 
+#[test]
 fn cleanup_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();

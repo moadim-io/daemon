@@ -47,7 +47,11 @@ echo "Test-convention check passed."
 cargo fmt --check
 
 # ── 3. Lint ───────────────────────────────────────────────────────────────────
-cargo clippy
+# Match the CI clippy gate (.github/workflows/lint.yml) exactly: lint every
+# target (tests, examples, benches), and treat warnings as errors. Bare
+# `cargo clippy` skips test code and only warns, so it can pass here yet fail
+# CI — keep the two in lockstep so a green local push stays green in CI.
+cargo clippy --all-targets -- -D warnings
 
 # ── 4. Coverage ───────────────────────────────────────────────────────────────
 # Requires: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview

@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- Build provenance now marks a dirty working tree. A binary built from a tree
+  with uncommitted changes to tracked files gets a `-dirty` suffix on its short
+  SHA (e.g. `a1b2c3d-dirty`) in `moadim --version`, `GET /api/v1/health`, and the
+  MCP provenance, instead of misreporting a clean SHA that doesn't match its
+  source. A pristine checkout is unchanged, and the `"unknown"` (no-git) fallback
+  is preserved. (#491, follow-up to #367)
 - **macOS: TCC "administer your computer" dialog no longer appears during background runs.**
   `moadim install` now proactively sends a harmless Apple Event to System Events so macOS
   prompts for the Automation permission once, while the user is at the terminal. After clicking

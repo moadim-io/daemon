@@ -480,15 +480,24 @@ fn stop_json_address_reflects_bind_override() {
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 
-/// `status --json` and `stop --json` advertise the same `{running,pid,address}` contract, so a
-/// client can parse either uniformly. Guard the whole object (keys *and* the override-aware
-/// `address` value) so the two shapes can't silently drift apart again as fields are added.
+/// `status --json` and `stop --json` advertise the same `{running,pid,address}` base contract, so a
+/// client can parse either uniformly. Guard that every field in `stop` is present in `status` with
+/// the same value (including the override-aware `address`) so the two shapes can't silently drift
+/// apart. `status` carries additional fields (`uptime_secs`, `version`) that `stop` omits.
 #[test]
 fn status_and_stop_json_share_the_same_shape() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
-    let status: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
     let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
-    assert_eq!(status, stop);
+    // Every key in `stop` must appear in `status` with the same value.
+    for (key, val) in stop.as_object().unwrap() {
+        assert_eq!(
+            &status[key],
+            val,
+            "field {key} differs between status and stop"
+        );
+    }
 }
 
 #[test]

@@ -105,11 +105,12 @@ fn make_managed_job(id: &str, schedule: &str, handler: &str, created_at: u64) ->
         schedule: schedule.to_string(),
         handler: handler.to_string(),
         metadata: serde_json::json!({}),
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at,
         updated_at: created_at,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 
@@ -124,6 +125,14 @@ fn store_with(jobs: Vec<CronJob>) -> CronStore {
 #[test]
 fn to_os_schedule_7field_drops_sec_and_year() {
     assert_eq!(to_os_schedule("0 30 9 * * 1-5 *"), "30 9 * * 1-5");
+}
+
+#[test]
+fn to_os_schedule_6field_drops_seconds() {
+    // croner accepts 6-field `sec min hour dom month dow`; the OS crontab has no
+    // seconds column, so the leading field is dropped to a valid 5-field line.
+    assert_eq!(to_os_schedule("0 30 9 * * 1-5"), "30 9 * * 1-5");
+    assert_eq!(to_os_schedule("*/30 * * * * *"), "* * * * *");
 }
 
 #[test]
@@ -210,11 +219,12 @@ fn make_job(id: &str, schedule: &str, handler: &str) -> CronJob {
         schedule: schedule.to_string(),
         handler: handler.to_string(),
         metadata: serde_json::json!({}),
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
     }
 }
 
@@ -406,6 +416,47 @@ fn resolve_handler_path_matches_extension() {
     assert_eq!(resolved, script);
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn resolve_handler_path_matches_exact() {
+    // Covers the exact-match `return exact` branch: a file named exactly like the
+    // handler (no extension) exists in the directory.
+    let dir = std::env::temp_dir().join(format!("moadim-handlers-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("deploy");
+    std::fs::write(&script, "#!/bin/sh\n").unwrap();
+
+    let resolved = resolve_handler_path("deploy", &dir);
+    assert_eq!(resolved, script);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_block_empty_store_emits_header_only() {
+    // Covers the `lines.is_empty()` branch of build_block: an empty store yields the
+    // begin/header/end markers with no managed job lines between them.
+    let block = build_block(&store_with(vec![]));
+    assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
+}
+
+#[test]
+fn build_block_excludes_job_targeting_another_machine() {
+    let mut job = make_managed_job("other", "0 9 * * *", "h", 0);
+    job.machines = vec!["definitely-not-this-host-zzz".to_string()];
+    let block = build_block(&store_with(vec![job]));
+    // Targeted at a different machine → not scheduled here.
+    assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
+}
+
+#[test]
+fn build_block_skips_job_with_no_machine_assignment() {
+    let mut job = make_managed_job("dormant", "0 9 * * *", "h", 0);
+    // Empty `machines` → dormant: excluded and logged via `warn_dormant_jobs`.
+    job.machines = vec![];
+    let block = build_block(&store_with(vec![job]));
+    assert_eq!(block, format!("{BLOCK_BEGIN}\n{BLOCK_HEADER}\n{BLOCK_END}"));
 }
 
 // ─── SyncError Display & From<io::Error> ─────────────────────────────────────
@@ -723,4 +774,33 @@ fn sync_from_crontab_skips_managed_job_absent_from_block() {
         "the absent job stays in the store"
     );
     drop(shim);
+}
+
+#[test]
+fn crontab_bin_never_resolves_to_real_crontab_in_test_builds() {
+    // Structural guard for issue #175: in a test build, with no `MOADIM_CRONTAB_BIN`
+    // shim configured, `crontab_bin()` must never fall back to the real `crontab`,
+    // so a test that forgets to isolate the crontab cannot clobber the developer's
+    // live crontab. The resolved path must also not exist, so the eventual spawn
+    // fails harmlessly and the sync only logs a warning.
+    let saved = std::env::var_os("MOADIM_CRONTAB_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::remove_var("MOADIM_CRONTAB_BIN");
+    }
+    let bin = crontab_bin();
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+            None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+        }
+    }
+    assert_ne!(
+        bin, "crontab",
+        "test build must not fall back to the real crontab"
+    );
+    assert!(
+        !Path::new(&bin).exists(),
+        "the test-build crontab guard path must not exist so the spawn fails: {bin}"
+    );
 }

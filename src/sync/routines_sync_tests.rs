@@ -11,123 +11,46 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         agent: agent.to_string(),
         prompt: "p".to_string(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
-        last_triggered_at: None,
+        last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
         ttl_secs: None,
+        max_runtime_secs: None,
     }
 }
 
 #[test]
-fn format_routine_line_invokes_script_with_schedule_and_tag() {
+fn format_routine_line_inlines_schedule_trigger_and_tag() {
     let title = "Fid Sync Routine";
     let slug = slugify(title);
     let routine = make_routine("fid", title, "claude");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let line = format_routine_line(&routine, &agent).unwrap();
+    let line = format_routine_line(&routine);
     assert!(line.starts_with("30 9 * * 1-5 "));
-    // crontab line just runs the generated script — keeps it well under cron's length limit
-    assert!(line.contains("/bin/sh "));
-    // `-l` runs the script under a login shell so it sources the user's profile and the agent
-    // inherits their environment (PATH, GH_TOKEN, …) instead of cron's minimal one.
-    assert!(line.contains("/bin/sh -l "));
-    assert!(line.contains(&format!("/{slug}/run.sh")));
+    // The crontab line invokes the binary directly with the shell-quoted routine ID — no run.sh.
+    assert!(line.contains("schedule trigger 'fid'"));
     assert!(line.ends_with("# moadim-routine:fid"));
     assert!(!line.contains('\n'));
-    // the long launch command lives in the script, not the crontab line
-    let script = std::fs::read_to_string(crate::paths::routine_script_path(&slug)).unwrap();
-    assert!(script.starts_with("#!/bin/sh\n"));
-    assert!(script.contains("tmux new-session"));
+    // No per-routine launch script is written any more.
+    assert!(!crate::paths::routine_script_path(&slug).exists());
     let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
 }
 
 #[test]
-fn format_routine_line_creates_missing_parent_dir() {
-    // Covers write_routine_script's create_dir_all(parent) branch: the routine's
-    // directory does not exist yet, so the script write must create it first.
-    let title = "Parent Create Sync Routine";
-    let slug = slugify(title);
-    // Ensure a clean slate so create_dir_all actually has work to do.
-    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
-    assert!(!crate::paths::routine_dir(&slug).exists());
-
-    let routine = make_routine("parent-create", title, "claude");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
+fn format_routine_line_honors_keyword_schedule() {
+    // A `@`-keyword schedule is passed through `to_os_schedule` and prefixes the line.
+    let routine = {
+        let mut routine = make_routine("kw-id", "Keyword Sync Routine", "claude");
+        routine.schedule = "@daily".to_string();
+        routine
     };
-    let line = format_routine_line(&routine, &agent).unwrap();
-    assert!(line.ends_with("# moadim-routine:parent-create"));
-    assert!(crate::paths::routine_script_path(&slug).exists());
-
-    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
-}
-
-#[test]
-fn format_routine_line_returns_none_when_script_write_fails() {
-    // Covers the Err(err) arm of format_routine_line: write_routine_script fails
-    // because the routine directory path is occupied by a regular file, so
-    // create_dir_all on it errors and the line is skipped (returns None).
-    let title = "Write Fail Sync Routine";
-    let slug = slugify(title);
-    let routine_dir = crate::paths::routine_dir(&slug);
-    let _ = std::fs::remove_dir_all(&routine_dir);
-    if let Some(parent) = routine_dir.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    // Occupy the routine directory path with a regular file so that
-    // create_dir_all(<routine_dir>) inside write_routine_script fails.
-    std::fs::write(&routine_dir, "blocker").unwrap();
-
-    let routine = make_routine("write-fail", title, "claude");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let result = format_routine_line(&routine, &agent);
-    assert!(result.is_none(), "expected None on script write failure");
-
-    let _ = std::fs::remove_file(&routine_dir);
-}
-
-#[test]
-fn format_routine_line_when_parent_dir_already_exists() {
-    // Covers write_routine_script's path where the routine directory (the script's parent) already
-    // exists, so create_dir_all is a no-op success and execution proceeds to build + write the
-    // script and format the line. Uses a keyword schedule and repositories to run the full body.
-    let title = "Existing Parent Sync Routine";
-    let slug = slugify(title);
-    let routine_dir = crate::paths::routine_dir(&slug);
-    // Pre-create the routine (parent) directory so create_dir_all has nothing to do.
-    std::fs::create_dir_all(&routine_dir).unwrap();
-    assert!(routine_dir.exists());
-
-    let mut routine = make_routine("existing-parent", title, "claude");
-    routine.schedule = "@daily".to_string();
-    routine.repositories = vec![crate::routines::Repository {
-        repository: "https://example.com/ctx.git".to_string(),
-        branch: Some("main".to_string()),
-    }];
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-
-    let line = format_routine_line(&routine, &agent).unwrap();
+    let line = format_routine_line(&routine);
     assert!(line.starts_with("@daily "), "wrong schedule: {line}");
-    assert!(line.ends_with("# moadim-routine:existing-parent"));
-    assert!(crate::paths::routine_script_path(&slug).exists());
-
-    let _ = std::fs::remove_dir_all(&routine_dir);
+    assert!(line.contains("schedule trigger 'kw-id'"));
+    assert!(line.ends_with("# moadim-routine:kw-id"));
 }
 
 #[test]
@@ -165,6 +88,27 @@ fn build_block_skips_routine_with_missing_agent_config() {
     let block = build_block(&store);
     // Missing agent config → routine skipped, block stays empty.
     assert!(!block.contains("moadim-routine:"));
+}
+
+#[test]
+fn build_block_skips_routine_with_malformed_agent_config() {
+    // A present-but-unparseable agent TOML must still be skipped, but for the *malformed* reason
+    // (not the missing-file message). The routine never reaches the crontab block.
+    let agent_name = "test-sync-agent-malformed-block";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    // `command` must be a string; an array makes the TOML structurally invalid for `AgentCommand`.
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "mal".into(),
+        make_routine("mal", "Malformed Agent Sync Routine", agent_name),
+    );
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
+
+    std::fs::remove_file(&cfg).unwrap();
 }
 
 /// A temp-dir `crontab` shim wired in via `MOADIM_CRONTAB_BIN`: `-l` prints the store file, `-`
@@ -287,8 +231,73 @@ fn build_block_includes_routine_with_agent_config() {
         .insert("inc".into(), make_routine("inc", title, agent_name));
     let block = build_block(&store);
     assert!(block.contains("# moadim-routine:inc"));
-    assert!(block.contains(&format!("/{slug}/run.sh")));
+    assert!(block.contains("schedule trigger 'inc'"));
 
+    std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}
+
+#[test]
+fn build_block_excludes_routine_targeting_another_machine() {
+    let agent_name = "test-sync-agent-other-machine";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("other", "Other Machine Routine", agent_name);
+    // Assigned to a machine that is not this host: it must not be scheduled here.
+    routine.machines = vec!["definitely-not-this-host-zzz".to_string()];
+    store.lock().unwrap().insert("other".into(), routine);
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn build_block_skips_routine_with_no_machine_assignment() {
+    let store = new_store();
+    // Empty `machines` means the routine runs nowhere — it is dormant and excluded (and logged as
+    // such via `warn_dormant_routines`).
+    let mut routine = make_routine("dormant", "Dormant Routine", "claude");
+    routine.machines = vec![];
+    store.lock().unwrap().insert("dormant".into(), routine);
+    let block = build_block(&store);
+    assert!(!block.contains("moadim-routine:"));
+}
+
+#[test]
+fn build_block_empty_when_globally_locked() {
+    let agent_name = "test-sync-agent-global-lock";
+    let title = "Global Lock Sync Routine";
+    let slug = crate::routines::slugify(title);
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "lock-test".into(),
+        make_routine("lock-test", title, agent_name),
+    );
+
+    // Create the shared lock sentinel and verify it suppresses all crontab lines.
+    let lock_path = crate::paths::global_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&lock_path, b"").unwrap();
+
+    let block = build_block(&store);
+    assert!(
+        !block.contains("moadim-routine:"),
+        "locked block must have no routine lines"
+    );
+    assert!(block.contains(BLOCK_BEGIN));
+    assert!(block.contains(BLOCK_END));
+
+    std::fs::remove_file(&lock_path).unwrap();
     std::fs::remove_file(&cfg).unwrap();
     let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
 }

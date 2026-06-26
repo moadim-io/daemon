@@ -18,7 +18,7 @@
       "type": "object"
     },
     "schedule": {
-      "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, or standard 5-field syntax (min hour dom month dow).",
+      "description": "Cron expression. Supports @hourly, @daily, @weekly, @monthly, @yearly, @annually, or standard 5-field syntax (min hour dom month dow). @reboot and @midnight are not supported.",
       "examples": [
         "@hourly",
         "@daily",

@@ -11,6 +11,9 @@
 //! A default that is absent from the store (never seeded, or deleted while the daemon was stopped)
 //! is (re)created enabled. Suppressing re-add after an explicit delete (e.g. a "removed defaults"
 //! marker) is tracked as a follow-up.
+//!
+//! Each built-in routine lives in its own submodule (e.g. [`update_moadim`], [`the_1_percent`]).
+//! Adding a new default means a new file + one entry in [`DEFAULT_ROUTINES`].
 
 use crate::utils::lock::LockRecover;
 use uuid::Uuid;
@@ -21,6 +24,13 @@ use crate::utils::time::now_secs;
 
 use super::command::slugify;
 use super::model::{Routine, RoutineStore};
+
+/// "The 1 Percent" self-improving routines agent.
+mod the_1_percent;
+/// Weekly token-efficiency audit routine.
+mod token_trim;
+/// Daily `moadim` cargo package update routine.
+mod update_moadim;
 
 /// A built-in routine specification: the daemon-owned content reconciled onto disk each startup.
 struct DefaultRoutine {
@@ -34,27 +44,9 @@ struct DefaultRoutine {
     prompt: &'static str,
 }
 
-/// Prompt for the daily `moadim` cargo update routine.
-const UPDATE_MOADIM_PROMPT: &str = "\
-Ensure the locally installed `moadim` cargo package is up to date, and update it if it is not.
-
-Steps:
-1. Find the installed version: `cargo install --list | grep '^moadim '` (no output means it is not installed).
-2. Find the latest published version on crates.io: `cargo search moadim --limit 1`.
-3. If `moadim` is not installed, or the installed version is older than the latest published version, run `cargo install moadim --force` to update it.
-4. If it is already on the latest version, make no changes.
-
-Report which versions you found and whether an update was performed.
-";
-
 /// Built-in default routines, reconciled onto disk on every startup.
-const DEFAULT_ROUTINES: &[DefaultRoutine] = &[DefaultRoutine {
-    title: "Update moadim cargo package",
-    // Daily at 09:00 local time.
-    schedule: "0 9 * * *",
-    agent: "claude",
-    prompt: UPDATE_MOADIM_PROMPT,
-}];
+const DEFAULT_ROUTINES: &[DefaultRoutine] =
+    &[update_moadim::SPEC, the_1_percent::SPEC, token_trim::SPEC];
 
 /// Build a concrete [`Routine`] from a [`DefaultRoutine`] spec, stamping `now` as the create/update
 /// time and normalizing the schedule. Kept separate from disk/store mutation so it can be unit
@@ -67,6 +59,11 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         agent: spec.agent.to_string(),
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
+        // Self-assign a fresh default to the machine seeding it, so it actually runs out of the box
+        // (an empty `machines` list would leave the default dormant on every machine). On a shared
+        // config repo the default is seeded once, on whichever machine starts first; the user can
+        // reassign it with `moadim routines update`.
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: now,
@@ -101,7 +98,9 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         agent: spec.agent.to_string(),
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
-        // Never override the user's enable/disable choice on an existing default.
+        // Machine targeting is user-owned, like `enabled`: carry the existing choice across a
+        // spec-driven reconcile so a default reassigned (or unassigned) by the user stays that way.
+        machines: cur.machines.clone(),
         enabled: cur.enabled,
         source: "managed".to_string(),
         created_at: cur.created_at,
@@ -149,5 +148,5 @@ pub fn ensure_default_routines(store: &RoutineStore) {
 }
 
 #[cfg(test)]
-#[path = "defaults_tests.rs"]
+#[path = "mod_tests.rs"]
 mod defaults_tests;

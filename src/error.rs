@@ -18,6 +18,8 @@ pub enum AppError {
     NotFound,
     /// 409 Conflict with a human-readable description.
     Conflict(String),
+    /// 423 Locked — a global lock sentinel is preventing the operation.
+    Locked(String),
 }
 
 impl fmt::Display for AppError {
@@ -27,6 +29,7 @@ impl fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "bad request: {msg}"),
             AppError::NotFound => write!(f, "not found"),
             AppError::Conflict(msg) => write!(f, "conflict: {msg}"),
+            AppError::Locked(msg) => write!(f, "locked: {msg}"),
         }
     }
 }
@@ -38,6 +41,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::Locked(_) => StatusCode::LOCKED,
         };
         (
             status,

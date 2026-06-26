@@ -59,6 +59,9 @@ pub struct RoutineListQuery {
     pub sort: RoutineSort,
     /// Sort direction (default: ascending).
     pub order: SortOrder,
+    /// When `true`, only return routines whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all routines, preserving backwards compatibility).
+    pub local_only: Option<bool>,
 }
 
 /// A persisted routine: a scheduled AI-agent task.
@@ -78,6 +81,12 @@ pub struct Routine {
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines this routine runs on. Each daemon schedules a routine only when this list names its
+    /// own machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so
+    /// a routine is dormant until explicitly assigned. Lets one shared config repo drive different
+    /// routines on different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the routine is active.
     pub enabled: bool,
     /// `"managed"` for routines owned by this server.
@@ -87,13 +96,35 @@ pub struct Routine {
     /// Unix timestamp (seconds) when the routine was last updated.
     pub updated_at: u64,
     /// Unix timestamp (seconds) when the routine was last manually triggered, if ever.
-    pub last_triggered_at: Option<u64>,
+    ///
+    /// Only manual triggers (`trigger_routine`) update this; scheduled cron firings run the built
+    /// command directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.
+    #[serde(alias = "last_triggered_at")]
+    pub last_manual_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.
+    ///
+    /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
+    /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
+    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns stamps this
+    /// timestamp into the gitignored `scheduled.local.toml` sidecar at fire time (via its `printf`
+    /// step); the daemon reads it back on load. The daemon never writes this field directly (it is
+    /// absent from `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a
+    /// routine can't clobber it.
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
     /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills
+    /// its (hung) tmux session, after which the workbench is reaped under the normal TTL rules.
+    /// `None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A
+    /// session still within this bound is never touched. The cap and
+    /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -124,6 +155,19 @@ pub fn local_timezone() -> Option<String> {
     iana_time_zone::get_timezone().ok()
 }
 
+/// Render a human-readable schedule description for `schedule`, appending the
+/// timezone in parentheses when known. Returns `None` when the cron expression
+/// cannot be parsed.
+fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
+    schedule.parse::<Cron>().ok().map(|cron| {
+        let desc = cron.describe();
+        match timezone {
+            Some(tz) => format!("{desc} ({tz})"),
+            None => desc,
+        }
+    })
+}
+
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
@@ -132,13 +176,7 @@ impl RoutineResponse {
             .to_string_lossy()
             .into_owned();
         let timezone = local_timezone();
-        let schedule_description = routine.schedule.parse::<Cron>().ok().map(|cron| {
-            let desc = cron.describe();
-            match &timezone {
-                Some(tz) => format!("{desc} ({tz})"),
-                None => desc,
-            }
-        });
+        let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
         Self {
             routine,
             agent_registered,
@@ -185,6 +223,9 @@ pub struct CreateRoutineRequest {
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines to run this routine on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -192,6 +233,10 @@ pub struct CreateRoutineRequest {
     /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Max wall-clock seconds a run may execute before the watchdog kills its hung
+    /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -208,8 +253,16 @@ pub struct UpdateRoutineRequest {
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
+    pub max_runtime_secs: Option<u64>,
 }
+
+#[cfg(test)]
+#[path = "model_tests.rs"]
+mod model_tests;

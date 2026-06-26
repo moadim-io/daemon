@@ -1,7 +1,7 @@
 //! Atomic file writes: write to a temp file in the same directory, then rename into place.
 //!
 //! `std::fs::write` truncates-then-writes in place, so a crash mid-write leaves a torn file holding
-//! neither the old nor the new complete contents. [`atomic_write`] avoids that by writing to a
+//! neither the old nor the new complete contents. [`atomic_write`](crate::utils::atomic::atomic_write) avoids that by writing to a
 //! uniquely-named sibling temp file and renaming it over the target, so a concurrent reader always
 //! observes one complete version. This mirrors the durability guarantee the daemon already gives
 //! `~/.claude.json` (write temp + `os.replace`).

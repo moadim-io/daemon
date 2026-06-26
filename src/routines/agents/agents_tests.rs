@@ -1,0 +1,141 @@
+#![allow(clippy::missing_docs_in_private_items)]
+
+use super::*;
+
+/// A unique temp directory base for agent registry tests.
+fn unique_dir(tag: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("moadim-agents-{tag}-{}", uuid::Uuid::new_v4()))
+}
+
+#[test]
+fn available_agents_in_falls_back_when_dir_has_no_toml() {
+    // Covers the `names.is_empty()` → built-in defaults branch when the directory
+    // is readable but contains no `.toml` stems.
+    let dir = unique_dir("empty-readable");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("notes.txt"), "ignore me").unwrap();
+
+    assert_eq!(
+        available_agents_in(&dir),
+        vec![
+            "claude".to_string(),
+            "codex".to_string(),
+            "hermes".to_string()
+        ]
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn load_agent_command_parses_a_valid_config() {
+    // Happy path: a well-formed config resolves to an `AgentCommand` (Ok), unchanged from before.
+    let agent_name = "load-agent-valid-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = [\"--help\"]\n").unwrap();
+
+    let loaded = load_agent_command(agent_name).unwrap();
+    assert_eq!(loaded.command, "claude");
+    assert_eq!(loaded.args, vec!["--help".to_string()]);
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn load_agent_command_reports_parse_error_for_malformed_config() {
+    // A present-but-unparseable config must yield `Parse` (NOT `Missing`), carrying the toml error,
+    // so callers can name the real cause instead of "config not found".
+    let agent_name = "load-agent-malformed-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    match load_agent_command(agent_name) {
+        Err(AgentLoadError::Parse(err)) => assert!(!err.is_empty()),
+        other => panic!("expected Parse error, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn load_agent_command_reports_missing_for_absent_config() {
+    // No file on disk → `Missing`, leaving the missing-file behavior identical to before.
+    assert!(matches!(
+        load_agent_command("load-agent-absent-zzz"),
+        Err(AgentLoadError::Missing)
+    ));
+}
+
+#[test]
+fn agent_load_error_display_distinguishes_variants() {
+    // The two variants render distinctly: missing vs. malformed (with the underlying error).
+    assert_eq!(
+        AgentLoadError::Missing.to_string(),
+        "agent config not found"
+    );
+    assert_eq!(
+        AgentLoadError::Parse("boom".to_string()).to_string(),
+        "malformed agent TOML: boom"
+    );
+}
+
+#[test]
+fn ensure_default_agents_seeds_into_override_home() {
+    // Covers the public `ensure_default_agents` wrapper, which resolves `agents_dir()` through the
+    // `MOADIM_HOME_OVERRIDE` seam and seeds the built-in configs there.
+    let home = unique_dir("ensure-default");
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); the override is restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    ensure_default_agents();
+    assert!(crate::paths::agents_dir().join("claude.toml").exists());
+
+    // SAFETY: single-threaded harness; restore the saved value.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_default_agents_in_returns_early_when_dir_is_uncreatable() {
+    // Covers the `create_dir_all` error arm: a path whose parent is a regular file can never be
+    // created, so the function logs and returns without writing any config.
+    let base = unique_dir("uncreatable");
+    std::fs::create_dir_all(&base).unwrap();
+    let file = base.join("iamafile");
+    std::fs::write(&file, "x").unwrap();
+    let unmakeable = file.join("sub"); // parent is a file -> create_dir_all errors
+
+    ensure_default_agents_in(&unmakeable);
+    assert!(!unmakeable.exists());
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[cfg(unix)]
+#[test]
+fn ensure_default_agents_in_swallows_per_config_write_errors() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // Covers the per-config `std::fs::write` error arm: the directory exists (so `create_dir_all`
+    // succeeds) but is read-only, so each config write fails and is logged rather than panicking.
+    let dir = unique_dir("write-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    ensure_default_agents_in(&dir);
+
+    // Restore permissions so cleanup can proceed. (Root bypasses the read-only bit, in which case
+    // the writes succeed; the call is exercised either way.)
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}

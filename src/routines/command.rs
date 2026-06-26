@@ -1,6 +1,6 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
-use crate::paths::routine_prompt_path;
+use crate::paths::{routine_prompt_path, routine_scheduled_state_path};
 
 use super::agents::AgentCommand;
 use super::model::Routine;
@@ -30,15 +30,25 @@ pub(crate) fn slugify(title: &str) -> String {
 }
 
 /// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
+///
+/// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
+/// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
+/// repo list with nothing under it.
 pub(crate) fn compose_prompt(routine: &Routine) -> String {
     let mut body = String::from("# Workbench\n");
-    body.push_str(
-        "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
-    );
-    for repo in &routine.repositories {
-        match &repo.branch {
-            Some(branch) => body.push_str(&format!("- {} (branch {})\n", repo.repository, branch)),
-            None => body.push_str(&format!("- {}\n", repo.repository)),
+    if routine.repositories.is_empty() {
+        body.push_str("You are working in an empty directory.\n");
+    } else {
+        body.push_str(
+            "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
+        );
+        for repo in &routine.repositories {
+            match &repo.branch {
+                Some(branch) => {
+                    body.push_str(&format!("- {} (branch {})\n", repo.repository, branch));
+                }
+                None => body.push_str(&format!("- {}\n", repo.repository)),
+            }
         }
     }
     body.push_str("\n---\n");
@@ -159,8 +169,15 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
     let title = shell_quote(routine_title);
     let uq = shell_quote(user_prompt_path);
     vec![
+        // Fail-fast if the disclosure write fails. The statements are `;`-joined, so a bare
+        // redirection failure (read-only/full $HOME, an unwritable $WB, disk-quota/inode
+        // exhaustion) would be ignored and the agent would launch with no `CLAUDE.md` — hence no
+        // routine-origin disclosure mandate, the central transparency guarantee of this project.
+        // Abort instead, mirroring the `cp prompt.md` guard below: record the reason in the
+        // workbench's agent.log (already created via mkdir) and on stderr. Only this primary write
+        // is guarded; the optional user-prompt append below stays best-effort (`|| true`).
         format!(
-            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md""#,
+            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > "$WB/CLAUDE.md" || {{ echo "moadim: failed to write CLAUDE.md disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
             header, disclosure, title
         ),
         format!(
@@ -179,6 +196,9 @@ pub(crate) fn system_prompt_stmts(user_prompt_path: &str, routine_title: &str) -
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
+    let scheduled_state_path = routine_scheduled_state_path(&slug)
+        .to_string_lossy()
+        .into_owned();
 
     let prompt_file_ref = "prompt.md";
     let workbench_ref = ".";
@@ -190,11 +210,29 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![
-        // cron runs with a minimal PATH (/usr/bin:/bin) that omits tmux/claude/npm dirs. Bake the
-        // daemon's own PATH into the line so the agent tools resolve the same way they do for a
-        // manual trigger (which inherits the daemon's environment).
+        // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see
+        // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced first and
+        // the agent inherits their environment — GH_TOKEN, API keys and the like — which cron's
+        // minimal env (and, on macOS, the GUI-Keychain-less session) otherwise withholds.
+        //
+        // PATH is still *replaced* with this curated list (not merged with the profile's), keeping
+        // binary resolution identical to before the login-shell change: tmux and the agent always
+        // resolve to the same dirs the daemon itself uses, regardless of how the profile orders
+        // PATH. Only environment *variables* are gained from the profile; PATH behaviour is
+        // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
+        // Record this scheduled firing. This command stamps the fire time into the routine's
+        // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
+        // `last_scheduled_trigger_at` on load. (The cron line calls `moadim schedule trigger`, which
+        // spawns this command via the daemon's scheduled-trigger path without recording a *manual*
+        // trigger.) Written before the prompt-copy guard below so an aborted run still records that
+        // the schedule fired, and best-effort (`|| true`) so a sidecar write failure never blocks
+        // launching the agent.
+        format!(
+            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
+            shell_quote(&scheduled_state_path)
+        ),
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
@@ -225,3 +263,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.join("; ")
 }
+
+#[cfg(test)]
+#[path = "command_tests.rs"]
+mod command_tests;

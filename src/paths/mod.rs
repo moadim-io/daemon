@@ -56,13 +56,6 @@ pub fn config_dir() -> PathBuf {
     config_root().join("moadim")
 }
 
-/// Returns the moadim config directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn config_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-}
-
 /// Returns the path to `{config_dir}/jobs/` (default `~/.config/moadim/jobs/`).
 #[must_use]
 pub fn jobs_dir() -> PathBuf {
@@ -70,6 +63,9 @@ pub fn jobs_dir() -> PathBuf {
 }
 
 /// Returns the jobs directory under `home`, or `.` if `home` is `None`.
+///
+/// Used in tests to exercise the no-home fallback without touching process-global env vars.
+#[cfg(test)]
 pub(crate) fn jobs_dir_from_home(home: Option<PathBuf>) -> PathBuf {
     home.unwrap_or_else(|| PathBuf::from("."))
         .join(".config")
@@ -184,14 +180,6 @@ pub fn routine_script_path(id: &str) -> PathBuf {
 #[must_use]
 pub fn agents_dir() -> PathBuf {
     config_dir().join("agents")
-}
-
-/// Returns the agents directory under `home`, or `.` if `home` is `None`.
-pub(crate) fn agents_dir_from_home(home: Option<PathBuf>) -> PathBuf {
-    home.unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("moadim")
-        .join("agents")
 }
 
 /// Returns the path to `{agents_dir}/{name}.toml`.

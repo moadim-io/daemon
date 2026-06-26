@@ -9,17 +9,20 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.12.0"
+version = "0.16.0"
 edition = "2021"
-description = "Moadim.io MCP/REST server for managing cron jobs"
+description = "Loop engine for AI agents — cron jobs and routines over REST, MCP, and a built-in web UI"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
-homepage = "https://github.com/moadim-io/daemon"
+homepage = "https://moadim.io"
+keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
 anyhow = "1"
 axum = "0.8"
 chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
 croner = "3"
 dirs = "6"
 env_logger = "0.11"
@@ -34,6 +37,7 @@ tokio = { version = "1", features = ["full"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
+gethostname = "1"
 
 [[bin]]
 name = "moadim"
@@ -53,8 +57,20 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
-# Require variables to be interpolated directly in format strings
-# (`format!("{x}")` instead of `format!("{}", x)`). Inline captures keep the
-# placeholder next to its value, so they read clearer and cannot drift out of
-# sync with the trailing argument list.
+# Require inline format args (`{x}`) over positional (`{}`, x) where possible.
 uninlined_format_args = "deny"
+# Reject leftover `dbg!` debugging macros so they never ship to production.
+dbg_macro = "deny"
+# Prefer `map_or`/`map_or_else`/`is_ok_and` over `.map(f).unwrap_or(_)`.
+map_unwrap_or = "deny"
+# Require a trailing `;` on the last statement of a `()`-returning block so
+# statement-only blocks read consistently and intent stays explicit.
+semicolon_if_nothing_returned = "deny"
+# Prefer `let PATTERN = expr else { diverge }` over a `match` whose only
+# non-binding arm diverges (return/continue/break), keeping the happy path
+# unindented.
+manual_let_else = "deny"
+# Prefer naming the method directly (`Result::ok`, `ToString::to_string`) over
+# wrapping it in a closure that only forwards the receiver
+# (`|e| e.ok()`, `|s| s.to_string()`).
+redundant_closure_for_method_calls = "deny"

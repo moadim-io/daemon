@@ -1,7 +1,8 @@
 //! Cron job data model, service functions, and Axum HTTP handlers.
 
+use crate::utils::lock::LockRecover;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -52,6 +53,12 @@ pub struct CronJob {
     pub handler: String,
     /// Arbitrary JSON metadata attached to the job.
     pub metadata: serde_json::Value,
+    /// Machines this job runs on. Each daemon schedules the job only when this list names its own
+    /// machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so a
+    /// job is dormant until explicitly assigned. Lets one shared config repo drive different jobs on
+    /// different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the job is active.
     pub enabled: bool,
     /// `"managed"` for jobs owned by this server; `"system:*"` for read-only system cron entries.
@@ -158,7 +165,10 @@ pub fn new_registry() -> HandlerRegistry {
 
 /// Normalize `expr` to 5-field OS cron format for consistent storage.
 ///
-/// Strips the seconds (field 0) and year (field 6) from any 7-field expression.
+/// Both the 6-field (`sec min hour dom month dow`) and 7-field
+/// (`sec min hour dom month dow year`) forms accepted by `croner` carry a
+/// leading seconds field that the OS crontab cannot express; it is dropped (as
+/// is the trailing year), projecting onto the 5-field `min hour dom month dow`.
 /// `@keyword` schedules and already-5-field expressions are returned unchanged.
 pub(crate) fn normalize_schedule(expr: &str) -> String {
     let trimmed = expr.trim();
@@ -167,7 +177,7 @@ pub(crate) fn normalize_schedule(expr: &str) -> String {
     }
     let fields: Vec<&str> = trimmed.split_ascii_whitespace().collect();
     match fields.len() {
-        7 => fields[1..6].join(" "),
+        6 | 7 => fields[1..6].join(" "),
         _ => trimmed.to_string(),
     }
 }
@@ -196,6 +206,9 @@ pub struct CreateRequest {
     #[serde(default)]
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: serde_json::Value,
+    /// Machines to run this job on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the job in an enabled state (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -217,18 +230,40 @@ pub struct UpdateRequest {
     /// New metadata, or `None` to keep the existing value.
     #[schemars(schema_with = "crate::utils::schema::metadata_schema")]
     pub metadata: Option<serde_json::Value>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
 }
 
 // --- Service layer (no HTTP types) ---
 
+/// Query parameters for `GET /cron-jobs`.
+#[derive(Debug, Clone, Default, Deserialize, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct CronJobListQuery {
+    /// When `true`, only return jobs whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all jobs, preserving backwards compatibility).
+    pub local_only: Option<bool>,
+}
+
 /// Return all jobs sorted by creation time (oldest first).
-pub fn svc_list(store: &CronStore, handlers: &HandlerRegistry) -> Vec<CronJobResponse> {
-    let lock = store.lock().unwrap();
+pub fn svc_list(
+    store: &CronStore,
+    handlers: &HandlerRegistry,
+    query: &CronJobListQuery,
+) -> Vec<CronJobResponse> {
+    let lock = store.lock_recover();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
-    jobs.sort_by_key(|j| j.created_at);
     drop(lock);
+
+    if query.local_only.unwrap_or(false) {
+        let me = crate::machine::current_machine();
+        jobs.retain(|job| crate::machine::targets(&job.machines, &me));
+    }
+
+    jobs.sort_by_key(|j| j.created_at);
     jobs.into_iter()
         .map(|j| CronJobResponse::from_job(j, handlers))
         .collect()
@@ -241,8 +276,7 @@ pub fn svc_get(
     id: &str,
 ) -> Result<CronJobResponse, AppError> {
     let job = store
-        .lock()
-        .unwrap()
+        .lock_recover()
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
@@ -262,6 +296,7 @@ pub fn svc_create(
         schedule: normalize_schedule(&req.schedule),
         handler: req.handler,
         metadata: req.metadata,
+        machines: req.machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -269,7 +304,7 @@ pub fn svc_create(
         last_manual_trigger_at: None,
     };
     write_job(&job).map_err(|_| AppError::Internal)?;
-    store.lock().unwrap().insert(job.id.clone(), job.clone());
+    store.lock_recover().insert(job.id.clone(), job.clone());
     if let Err(err) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after create failed: {err}");
     }
@@ -286,7 +321,7 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(sched) = req.schedule {
         job.schedule = normalize_schedule(&sched);
@@ -296,6 +331,9 @@ pub fn svc_update(
     }
     if let Some(metadata) = req.metadata {
         job.metadata = metadata;
+    }
+    if let Some(machines) = req.machines {
+        job.machines = machines;
     }
     if let Some(enabled) = req.enabled {
         job.enabled = enabled;
@@ -316,7 +354,7 @@ pub fn svc_delete(
     handlers: &HandlerRegistry,
     id: &str,
 ) -> Result<CronJobResponse, AppError> {
-    let job = store.lock().unwrap().remove(id).ok_or(AppError::NotFound)?;
+    let job = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
     remove_job_dir(id).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::sync_to_crontab(store) {
         log::warn!("crontab sync after delete failed: {err}");
@@ -327,7 +365,7 @@ pub fn svc_delete(
 /// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk,
 /// then spawn the handler script from the handlers directory if it exists.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
-    let mut lock = store.lock().unwrap();
+    let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     job.last_manual_trigger_at = Some(now_secs());
     let job = job.clone();
@@ -362,9 +400,13 @@ pub async fn create(
 
 /// `GET /cron-jobs` — list all cron jobs sorted by creation time.
 #[utoipa::path(get, path = "/cron-jobs",
+    params(CronJobListQuery),
     responses((status = 200, body = Vec<CronJobResponse>)))]
-pub async fn list(State(state): State<AppState>) -> Json<Vec<CronJobResponse>> {
-    Json(svc_list(&state.store, &state.handlers))
+pub async fn list(
+    State(state): State<AppState>,
+    Query(query): Query<CronJobListQuery>,
+) -> Json<Vec<CronJobResponse>> {
+    Json(svc_list(&state.store, &state.handlers, &query))
 }
 
 /// `GET /cron-jobs/{id}` — retrieve a single cron job by UUID.
@@ -428,10 +470,21 @@ pub async fn trigger(
 
 /// Return the log file path for job `id`, or `NotFound` if no such job exists.
 pub fn svc_logs_path(store: &CronStore, id: &str) -> Result<std::path::PathBuf, AppError> {
-    if !store.lock().unwrap().contains_key(id) {
+    if !store.lock_recover().contains_key(id) {
         return Err(AppError::NotFound);
     }
     Ok(crate::paths::job_log_path(id))
+}
+
+/// Read job `id`'s log file to a string, or `NotFound` if no such job exists. Returns an empty
+/// string when the job exists but has not produced a log file yet. Shared by the REST `get_logs`
+/// handler and the `cron_job_logs` MCP tool so both surfaces read logs identically.
+pub fn svc_logs(store: &CronStore, id: &str) -> Result<String, AppError> {
+    let log_path = svc_logs_path(store, id)?;
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// `GET /cron-jobs/{id}/logs` — return the contents of the job's log file as plain text.
@@ -442,13 +495,7 @@ pub async fn get_logs(
     State(store): State<CronStore>,
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
-    let log_path = svc_logs_path(&store, &id)?;
-    if !log_path.exists() {
-        return Ok(String::new());
-    }
-    tokio::fs::read_to_string(&log_path)
-        .await
-        .map_err(|_| AppError::Internal)
+    svc_logs(&store, &id)
 }
 
 #[cfg(test)]

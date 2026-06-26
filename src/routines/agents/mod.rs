@@ -31,10 +31,37 @@ pub struct AgentCommand {
     pub setup: Option<String>,
 }
 
-/// Load the agent command for `name`, returning `None` if the config is missing or invalid.
-pub fn load_agent_command(name: &str) -> Option<AgentCommand> {
-    let text = std::fs::read_to_string(agent_toml_path(name)).ok()?;
-    toml::from_str(&text).ok()
+/// Why [`load_agent_command`] could not produce an [`AgentCommand`].
+///
+/// Distinguishes a missing config (the routine simply has no `<name>.toml`) from a config that is
+/// present on disk but cannot be parsed, so callers can report the real cause instead of collapsing
+/// both into a misleading "config not found".
+#[derive(Debug)]
+pub enum AgentLoadError {
+    /// No `~/.config/moadim/agents/<name>.toml` exists (or it is otherwise unreadable).
+    Missing,
+    /// The file exists but its TOML could not be parsed; carries the underlying parse error.
+    Parse(String),
+}
+
+impl std::fmt::Display for AgentLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentLoadError::Missing => write!(f, "agent config not found"),
+            AgentLoadError::Parse(err) => write!(f, "malformed agent TOML: {err}"),
+        }
+    }
+}
+
+/// Load the agent command for `name`.
+///
+/// Returns [`AgentLoadError::Missing`] when no config file exists, and [`AgentLoadError::Parse`]
+/// (carrying the `toml` error) when the file is present but unparseable, so the two failures are
+/// never conflated.
+pub fn load_agent_command(name: &str) -> Result<AgentCommand, AgentLoadError> {
+    let text =
+        std::fs::read_to_string(agent_toml_path(name)).map_err(|_| AgentLoadError::Missing)?;
+    toml::from_str(&text).map_err(|err| AgentLoadError::Parse(err.to_string()))
 }
 
 /// Built-in default agent configs `(name, toml)`, written on startup if the file does not exist.
@@ -67,7 +94,7 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
         return builtin_agent_names();
     };
     let mut names: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
+        .filter_map(Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
             (path.extension()? == "toml")

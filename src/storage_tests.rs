@@ -9,6 +9,7 @@ fn test_job(id: &str) -> CronJob {
         schedule: "@daily".to_string(),
         handler: "test-handler".to_string(),
         metadata: serde_json::json!({"key": "val"}),
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 1000,

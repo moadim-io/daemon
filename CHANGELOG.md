@@ -416,6 +416,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- HTTP request logs now carry a short per-request correlation id. Each request
+  emits an inbound line (`[0000001a] <- GET /api/v1/health`) and an outbound
+  line (`[0000001a] -> 200 /api/v1/health in 2ms`) sharing the same id, so the
+  two halves can be paired in the log even when requests interleave under
+  concurrency (previously the unprefixed `  -> …` line couldn't be matched to
+  its request) (#354).
 - Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
   on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
   the web UI). The field was only ever updated by *manual* triggers, never by

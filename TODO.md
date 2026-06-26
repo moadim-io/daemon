@@ -5,6 +5,8 @@
 This is a list of todos for consumption, in a pr remove the todo you have implemented and add any new ones you think of.
 
 - Add a `cargo xtask spellcheck` (or `make spell`) wrapper that installs and runs `typos` so contributors don't need to know the tool name
+- Add a `test + coverage` CI job that mirrors the pre-push hook's final gate (`cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'`) so the 100% coverage contract is enforced in PRs, not just locally
+- Add a `concurrency` group to `lint.yml` (group by workflow + PR ref, `cancel-in-progress: true`) so a new push to a PR cancels the superseded lint run instead of piling up redundant jobs
 - Add a CI step (or weekly scheduled job) that checks whether a newer `crate-ci/typos` release exists than the pinned tag and opens/updates a tracking issue, so the pin gets bumped on a cadence instead of drifting silently
 - Add a day-detail popover to the routines calendar: clicking a day lists each fire time (HH:MM) with its routine, and a "run now" shortcut per routine
 - Link the routines calendar UI to the new `GET /routines.ics` feed: add a "SUBSCRIBE" button that copies the feed URL, plus a per-routine `?routine=<id>` filter on the endpoint

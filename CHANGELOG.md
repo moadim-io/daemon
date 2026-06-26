@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
+  pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
+  and push to `main`, so style/lint regressions are caught in review without
+  relying on local hooks.
+
 ### Changed
 
 - Enabled the `clippy::map_unwrap_or` lint and fixed the violations

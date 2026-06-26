@@ -200,8 +200,12 @@ fn description_truncates_overlong_single_line() {
     let mut routine = routine_with("r1", "@daily", true);
     routine.prompt = "a".repeat(500);
     let ics = build_ical(&[routine], fixed_now());
+    // Unfold continuation lines (strip CRLF + leading space) before inspecting the
+    // logical content; the long prompt summary causes the DESCRIPTION to be folded
+    // across multiple physical lines per RFC 5545 §3.1.
+    let unfolded = ics.replace("\r\n ", "");
     let mut saw_description = false;
-    for line in ics.split("\r\n").filter(|l| l.starts_with("DESCRIPTION:")) {
+    for line in unfolded.split("\r\n").filter(|l| l.starts_with("DESCRIPTION:")) {
         saw_description = true;
         assert!(
             line.chars().count() < 200,

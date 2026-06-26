@@ -493,8 +493,7 @@ fn status_and_stop_json_share_the_same_shape() {
     // Every key in `stop` must appear in `status` with the same value.
     for (key, val) in stop.as_object().unwrap() {
         assert_eq!(
-            &status[key],
-            val,
+            &status[key], val,
             "field {key} differs between status and stop"
         );
     }

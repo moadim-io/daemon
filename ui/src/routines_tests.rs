@@ -896,7 +896,15 @@ fn routine_group_key_agent_returns_agent_field() {
 
 #[test]
 fn routine_group_key_machine_returns_first_machine() {
-    let r = routine("a", "A", "claude", "0 * * * *", &["alpha", "beta"], &[], true);
+    let r = routine(
+        "a",
+        "A",
+        "claude",
+        "0 * * * *",
+        &["alpha", "beta"],
+        &[],
+        true,
+    );
     assert_eq!(routine_group_key(&r, RGroupBy::Machine), "alpha");
 }
 

@@ -34,6 +34,9 @@ enum DataCommand {
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
     #[command(subcommand, visible_alias = "routine")]
     Routines(RoutineCmd),
+    /// Trigger a routine on its schedule by ID (invoked by the generated crontab line).
+    #[command(subcommand, visible_alias = "sched")]
+    Schedule(ScheduleCmd),
     /// List the available agent registry keys.
     Agents,
     /// Echo a message back via the server, with a server timestamp.
@@ -57,6 +60,10 @@ enum CronCmd {
         /// Optional metadata as a JSON value (object/array/scalar).
         #[arg(long)]
         metadata: Option<String>,
+        /// Machines to run this job on, as a JSON array (e.g. `["work","server"]`). Empty/omitted
+        /// means the job runs on no machine until assigned.
+        #[arg(long)]
+        machines: Option<String>,
         /// Create the job disabled instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -81,6 +88,9 @@ enum CronCmd {
         /// New metadata as a JSON value.
         #[arg(long)]
         metadata: Option<String>,
+        /// New machines targeting list as a JSON array (e.g. `["work","server"]`).
+        #[arg(long)]
+        machines: Option<String>,
         /// New enabled state (`true`/`false`).
         #[arg(long)]
         enabled: Option<bool>,
@@ -98,6 +108,9 @@ enum CronCmd {
         /// Optional metadata as a JSON value.
         #[arg(long)]
         metadata: Option<String>,
+        /// Machines to run this job on, as a JSON array (e.g. `["work","server"]`).
+        #[arg(long)]
+        machines: Option<String>,
         /// Replace into a disabled state instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -115,6 +128,20 @@ enum CronCmd {
     /// Print a cron job's log file.
     Logs {
         /// UUID of the cron job whose logs to print.
+        id: String,
+    },
+}
+
+/// Schedule operations driven by the OS crontab, keyed only by ID.
+#[derive(Subcommand)]
+enum ScheduleCmd {
+    /// Run a routine on its schedule by ID.
+    ///
+    /// This is what the generated crontab line invokes at each fire time. It records a *scheduled*
+    /// trigger (not a manual one), so it maps to the routine's `scheduled-trigger` route rather than
+    /// the manual `trigger` route.
+    Trigger {
+        /// UUID of the routine to trigger.
         id: String,
     },
 }
@@ -139,6 +166,10 @@ enum RoutineCmd {
         /// Repositories as a JSON array (e.g. `[{"repository":"url","branch":"main"}]`).
         #[arg(long)]
         repositories: Option<String>,
+        /// Machines to run this routine on, as a JSON array (e.g. `["work","server"]`). Empty/omitted
+        /// means the routine runs on no machine until assigned.
+        #[arg(long)]
+        machines: Option<String>,
         /// Workbench TTL in seconds for finished runs.
         #[arg(long)]
         ttl_secs: Option<u64>,
@@ -175,6 +206,9 @@ enum RoutineCmd {
         /// New repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
+        /// New machines targeting list as a JSON array (e.g. `["work","server"]`).
+        #[arg(long)]
+        machines: Option<String>,
         /// New enabled state (`true`/`false`).
         #[arg(long)]
         enabled: Option<bool>,
@@ -204,6 +238,9 @@ enum RoutineCmd {
         /// Repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
+        /// Machines to run this routine on, as a JSON array (e.g. `["work","server"]`).
+        #[arg(long)]
+        machines: Option<String>,
         /// Workbench TTL in seconds for finished runs.
         #[arg(long)]
         ttl_secs: Option<u64>,
@@ -257,6 +294,11 @@ fn dispatch(command: DataCommand) -> i32 {
     match command {
         DataCommand::CronJobs(cmd) => dispatch_cron(cmd),
         DataCommand::Routines(cmd) => dispatch_routine(cmd),
+        DataCommand::Schedule(ScheduleCmd::Trigger { id }) => request(
+            "POST",
+            &format!("{}/scheduled-trigger", routine_path(&id)),
+            None,
+        ),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
         DataCommand::Echo { message } => {
             let body = object([("message", Value::String(message))]);
@@ -272,8 +314,9 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
             schedule,
             handler,
             metadata,
+            machines,
             disabled,
-        } => match cron_body(schedule, handler, metadata, disabled) {
+        } => match cron_body(schedule, handler, metadata, machines, disabled) {
             Ok(body) => request("POST", "/api/v1/cron-jobs", Some(&body)),
             Err(code) => code,
         },
@@ -284,12 +327,17 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
             schedule,
             handler,
             metadata,
+            machines,
             enabled,
         } => {
             let mut map = Map::new();
             insert_opt(&mut map, "schedule", schedule.map(Value::String));
             insert_opt(&mut map, "handler", handler.map(Value::String));
             match insert_json_opt(&mut map, "metadata", metadata) {
+                Ok(()) => {}
+                Err(code) => return code,
+            }
+            match insert_json_opt(&mut map, "machines", machines) {
                 Ok(()) => {}
                 Err(code) => return code,
             }
@@ -301,8 +349,9 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
             schedule,
             handler,
             metadata,
+            machines,
             disabled,
-        } => match cron_body(schedule, handler, metadata, disabled) {
+        } => match cron_body(schedule, handler, metadata, machines, disabled) {
             Ok(body) => request("PUT", &cron_path(&id), Some(&body)),
             Err(code) => code,
         },
@@ -321,6 +370,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             prompt,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
             disabled,
@@ -330,6 +380,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             prompt,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
             disabled,
@@ -346,6 +397,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             prompt,
             repositories,
+            machines,
             enabled,
             ttl_secs,
             max_runtime_secs,
@@ -356,6 +408,10 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             insert_opt(&mut map, "agent", agent.map(Value::String));
             insert_opt(&mut map, "prompt", prompt.map(Value::String));
             match insert_json_opt(&mut map, "repositories", repositories) {
+                Ok(()) => {}
+                Err(code) => return code,
+            }
+            match insert_json_opt(&mut map, "machines", machines) {
                 Ok(()) => {}
                 Err(code) => return code,
             }
@@ -375,6 +431,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             prompt,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
             disabled,
@@ -384,6 +441,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             prompt,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
             disabled,
@@ -416,12 +474,14 @@ fn cron_body(
     schedule: String,
     handler: String,
     metadata: Option<String>,
+    machines: Option<String>,
     disabled: bool,
 ) -> Result<String, i32> {
     let mut map = Map::new();
     map.insert("schedule".to_string(), Value::String(schedule));
     map.insert("handler".to_string(), Value::String(handler));
     insert_json_opt(&mut map, "metadata", metadata)?;
+    insert_json_opt(&mut map, "machines", machines)?;
     map.insert("enabled".to_string(), Value::Bool(!disabled));
     Ok(to_body(map))
 }
@@ -435,6 +495,7 @@ fn routine_body(
     agent: String,
     prompt: String,
     repositories: Option<String>,
+    machines: Option<String>,
     ttl_secs: Option<u64>,
     max_runtime_secs: Option<u64>,
     disabled: bool,
@@ -445,6 +506,7 @@ fn routine_body(
     map.insert("agent".to_string(), Value::String(agent));
     map.insert("prompt".to_string(), Value::String(prompt));
     insert_json_opt(&mut map, "repositories", repositories)?;
+    insert_json_opt(&mut map, "machines", machines)?;
     insert_opt(&mut map, "ttl_secs", ttl_secs.map(Value::from));
     insert_opt(
         &mut map,

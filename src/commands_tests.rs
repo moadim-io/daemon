@@ -19,7 +19,7 @@ const UNREACHABLE_ADDR: &str = "127.0.0.1:1";
 
 /// Build a `Vec<String>` argv from string literals.
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|arg| arg.to_string()).collect()
+    args.iter().map(ToString::to_string).collect()
 }
 
 /// Save an env var's prior value and restore it on drop so a test's override never leaks.
@@ -204,6 +204,15 @@ fn invalid_json_flags_return_two_without_a_server() {
         ])),
         2
     );
+    // Malformed --machines JSON is rejected on the cron-job and routine update paths too.
+    assert_eq!(
+        run(argv(&["cron-jobs", "update", "id", "--machines", "{bad"])),
+        2
+    );
+    assert_eq!(
+        run(argv(&["routines", "update", "id", "--machines", "{bad"])),
+        2
+    );
 }
 
 // ─── End-to-end dispatch against a fake server ───────────────────────────────
@@ -321,6 +330,9 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["routines", "trigger", "rid"],
         &["routines", "logs", "rid"],
         &["routines", "ical"],
+        // schedule (posts to the routine scheduled-trigger route)
+        &["schedule", "trigger", "sid"],
+        &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
         &["echo", "hello"],
@@ -367,6 +379,11 @@ fn no_server_returns_not_running_exit_code() {
         run(argv(&["cron-jobs", "list"])),
         crate::cli::EXIT_NOT_RUNNING
     );
+    // `schedule trigger` reaches the same not-running path.
+    assert_eq!(
+        run(argv(&["schedule", "trigger", "sid"])),
+        crate::cli::EXIT_NOT_RUNNING
+    );
 }
 
 // ─── Body-builder unit tests ─────────────────────────────────────────────────
@@ -388,12 +405,13 @@ fn object_and_to_body_build_compact_json() {
 
 #[test]
 fn cron_body_sets_enabled_from_disabled_flag() {
-    let enabled: Value =
-        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, false).unwrap())
-            .unwrap();
+    let enabled: Value = serde_json::from_str(
+        &cron_body("* * * * *".into(), "h".into(), None, None, false).unwrap(),
+    )
+    .unwrap();
     assert_eq!(enabled["enabled"], Value::Bool(true));
     let disabled: Value =
-        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, true).unwrap())
+        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, None, true).unwrap())
             .unwrap();
     assert_eq!(disabled["enabled"], Value::Bool(false));
 }
@@ -401,7 +419,13 @@ fn cron_body_sets_enabled_from_disabled_flag() {
 #[test]
 fn cron_body_rejects_bad_metadata() {
     assert_eq!(
-        cron_body("* * * * *".into(), "h".into(), Some("{bad".into()), false),
+        cron_body(
+            "* * * * *".into(),
+            "h".into(),
+            Some("{bad".into()),
+            None,
+            false
+        ),
         Err(2)
     );
 }
@@ -415,6 +439,7 @@ fn routine_body_serializes_all_fields() {
             "agent".into(),
             "prompt".into(),
             Some("[]".into()),
+            Some("[\"work\"]".into()),
             Some(30),
             Some(60),
             false,
@@ -424,6 +449,10 @@ fn routine_body_serializes_all_fields() {
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
     assert_eq!(value["repositories"], Value::Array(vec![]));
+    assert_eq!(
+        value["machines"],
+        Value::Array(vec![Value::String("work".to_string())])
+    );
     assert_eq!(value["ttl_secs"], Value::from(30));
     assert_eq!(value["enabled"], Value::Bool(true));
 }
@@ -437,6 +466,7 @@ fn routine_body_rejects_bad_repositories() {
             "a".into(),
             "p".into(),
             Some("{bad".into()),
+            None,
             None,
             None,
             false,

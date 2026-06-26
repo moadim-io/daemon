@@ -89,6 +89,7 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
@@ -118,6 +119,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);

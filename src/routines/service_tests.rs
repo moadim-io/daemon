@@ -475,6 +475,39 @@ fn svc_create_rejects_malformed_agent_config() {
 }
 
 #[test]
+fn svc_create_rejects_unreadable_agent_config() {
+    // A referenced agent whose `<name>.toml` is present but unreadable (here a directory at the
+    // path, which reads back as a non-`NotFound` I/O error) is rejected at create time with
+    // `BadRequest` — not accepted and left as a green-dot routine that never fires.
+    let agent_name = "svc-create-unreadable-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::create_dir_all(&cfg).unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Unreadable ZZZ".into(),
+            agent: agent_name.into(),
+            prompt: "p".into(),
+            repositories: vec![],
+            machines: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("unreadable config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&cfg).unwrap();
+}
+
+#[test]
 fn svc_update_rejects_malformed_agent_config() {
     let _home = TempHome::set();
     // The same rejection applies when an update switches a routine to a malformed agent.
@@ -1332,4 +1365,88 @@ fn svc_trigger_scheduled_returns_locked_when_globally_locked() {
         matches!(result, Err(AppError::Locked(_))),
         "expected Locked error, got {result:?}"
     );
+}
+
+#[test]
+fn svc_create_rejects_empty_prompt() {
+    // Covers `validate_prompt`'s reject branch via `svc_create`: an empty prompt
+    // is a 400 before any persistence or crontab sync (issue #224).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Empty Prompt ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "".into(),
+            repositories: vec![],
+            machines: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // No routine was created, so the store stays empty.
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_whitespace_prompt() {
+    // A whitespace-only prompt trims to empty and is rejected like a blank one.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Whitespace Prompt ZZZ".into(),
+            agent: "claude".into(),
+            prompt: "   \n\t".into(),
+            repositories: vec![],
+            machines: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_update_rejects_clearing_prompt_to_empty() {
+    // Covers the `req.prompt` validation branch in `svc_update`: updating an
+    // existing routine's prompt to whitespace-only is a 400, and the stored
+    // prompt is left untouched (issue #224).
+    let title = "Svc Update Empty Prompt ZZZ";
+    let store = new_store();
+    let routine = make_routine("empty-prompt-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("empty-prompt-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "empty-prompt-id",
+        UpdateRoutineRequest {
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: Some("   ".into()),
+            repositories: None,
+            machines: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert_eq!(
+        store.lock().unwrap().get("empty-prompt-id").unwrap().prompt,
+        "do the thing"
+    );
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

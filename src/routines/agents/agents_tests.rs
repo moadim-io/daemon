@@ -61,7 +61,8 @@ fn load_agent_command_reports_parse_error_for_malformed_config() {
 
 #[test]
 fn load_agent_command_reports_missing_for_absent_config() {
-    // No file on disk → `Missing`, leaving the missing-file behavior identical to before.
+    // No file on disk → `Missing` (and ONLY a genuine not-found), leaving the missing-file behavior
+    // identical to before.
     assert!(matches!(
         load_agent_command("load-agent-absent-zzz"),
         Err(AgentLoadError::Missing)
@@ -69,11 +70,34 @@ fn load_agent_command_reports_missing_for_absent_config() {
 }
 
 #[test]
+fn load_agent_command_reports_unreadable_for_non_not_found_io_error() {
+    // A present-but-unreadable config (here: a directory at the `<name>.toml` path, which yields an
+    // I/O error whose kind is NOT `NotFound`) must yield `Unreadable`, NOT `Missing` — so an
+    // unreadable config is never mislabeled "config not found" and silently dropped.
+    let agent_name = "load-agent-unreadable-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::create_dir_all(&cfg).unwrap();
+
+    match load_agent_command(agent_name) {
+        Err(AgentLoadError::Unreadable(err)) => assert!(!err.is_empty()),
+        other => panic!("expected Unreadable error, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&cfg).unwrap();
+}
+
+#[test]
 fn agent_load_error_display_distinguishes_variants() {
-    // The two variants render distinctly: missing vs. malformed (with the underlying error).
+    // Each variant renders distinctly: missing vs. unreadable vs. malformed (the latter two carrying
+    // the underlying error).
     assert_eq!(
         AgentLoadError::Missing.to_string(),
         "agent config not found"
+    );
+    assert_eq!(
+        AgentLoadError::Unreadable("permission denied".to_string()).to_string(),
+        "unreadable agent config: permission denied"
     );
     assert_eq!(
         AgentLoadError::Parse("boom".to_string()).to_string(),

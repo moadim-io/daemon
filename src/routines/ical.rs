@@ -13,6 +13,10 @@ const HORIZON_DAYS: i64 = 30;
 const MAX_EVENTS_PER_ROUTINE: usize = 100;
 /// Product identifier advertised in the `PRODID` property.
 const PRODID: &str = "-//moadim//routines//EN";
+/// Duration assigned to each fire so it renders as a visible block rather than a
+/// zero-length instant. RFC 5545 requires a `VEVENT` to carry either `DTEND` or
+/// `DURATION`; a routine fire has no intrinsic end, so a short fixed window is used.
+const EVENT_DURATION: &str = "PT15M";
 
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
 fn escape_text(text: &str) -> String {
@@ -117,6 +121,7 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
             lines.push(format!("DTSTAMP:{dtstamp}"));
             lines.push(format!("DTSTART:{stamp}"));
+            lines.push(format!("DURATION:{EVENT_DURATION}"));
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
             // A fire time is a momentary trigger, not a block of busy time. Mark

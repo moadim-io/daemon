@@ -103,7 +103,6 @@ pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "schedule",
 pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
-        None => Command::Background,
         Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("machine") => Command::Machine(args[1..].to_vec()),
         Some("restart") => Command::Restart,
@@ -126,10 +125,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
-        Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
-        Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
+        None | Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => {
+            Command::Background
+        }
         Some(_) => Command::Help,
     }
 }

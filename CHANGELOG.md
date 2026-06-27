@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `GET /routines.ics` accepts an optional **`?routine=<id>`** query param that
+  scopes the feed to a single routine, so a calendar client can subscribe to one
+  routine's fire times instead of the firehose of every routine on the host. The
+  filtered calendar is named after the routine (`X-WR-CALNAME`); an unknown or
+  disabled id yields a well-formed empty calendar (still `200 text/calendar`).
+  Without the param the feed is unchanged — every enabled routine (#263).
+
 - The generated routines crontab block is now deterministic when several
   routines share the same `created_at`. The block is built from a `HashMap`,
   whose iteration order is unspecified, so tied routines previously emitted in

@@ -19,6 +19,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   an arbitrary, run-to-run order — churning the block across syncs and defeating
   the idempotency guard, which forced a needless `crontab -` rewrite that
   mutates the user's live crontab. Ties are now broken on the stable routine id.
+- **UI overview: "▶ RUN" quick-trigger button in the Upcoming Runs table.**
+  Each row in the UPCOMING RUNS table on the Overview page now carries a
+  `▶ RUN` button that fires the job's trigger endpoint
+  (`POST /api/v1/routines/{id}/trigger` or `/api/v1/cron-jobs/{id}/trigger`)
+  without leaving the page. A toast confirms success or surfaces the error.
+  Implements the "quick actions" best practice from CI/CD operations dashboards
+  (Cronitor, Temporal, GitHub Actions) where operators can fire jobs directly
+  from the at-a-glance view.
 - **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
   `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
   before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids

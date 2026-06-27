@@ -79,6 +79,41 @@ impl CronShim {
         }
     }
 
+    /// Build a shim whose `-l` reads `initial` normally but whose `-` always exits 1 without writing.
+    ///
+    /// Used to exercise error paths that only fire when `write_crontab` fails (e.g. the write step
+    /// inside `clear_managed_crontab_blocks`).
+    fn write_fails(initial: &str) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronshim-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let store_file = base.join("store");
+        std::fs::write(&store_file, initial).unwrap();
+
+        let store_display = store_file.to_string_lossy().into_owned();
+        let script_body = format!(
+            "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-l\" ]; then\n  cat \"$STORE\"\nelif [ \"$1\" = \"-\" ]; then\n  cat > /dev/null\n  echo \"crontab write error\" 1>&2\n  exit 1\nfi\n"
+        );
+
+        let script_path = base.join("crontab-shim.sh");
+        std::fs::write(&script_path, script_body).unwrap();
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1);
+        // the override is restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script_path);
+        }
+
+        Self {
+            base,
+            store_file,
+            previous,
+        }
+    }
+
     /// Read back the current emulated crontab contents from the store file.
     fn store_contents(&self) -> String {
         std::fs::read_to_string(&self.store_file).unwrap_or_default()
@@ -877,4 +912,65 @@ fn clear_on_an_absent_crontab_succeeds_with_zero() {
     let shim = CronShim::new(None);
     assert_eq!(clear_managed_crontab_blocks().unwrap(), 0);
     assert_eq!(shim.store_contents(), "", "nothing was written");
+}
+
+// ─── clear_managed_crontab_blocks error paths (L302 / L327) ──────────────────
+
+#[test]
+fn clear_managed_crontab_blocks_errors_on_read_failure() {
+    // A failing shim makes `read_crontab` return Err, exercising the `?` at L302.
+    let _shim = CronShim::failing();
+    let err = clear_managed_crontab_blocks().unwrap_err();
+    match err {
+        SyncError::CrontabCommand(msg) => assert!(msg.contains("boom"), "unexpected msg: {msg}"),
+        SyncError::Io(io) => panic!("expected CrontabCommand, got Io({io})"),
+    }
+}
+
+#[test]
+fn clear_managed_crontab_blocks_errors_on_write_failure() {
+    // The initial crontab contains a managed block, so `updated != current` after removal and
+    // `write_crontab` is called. The write-failing shim makes that call return Err (L327).
+    let initial = "# BEGIN MOADIM\n30 9 * * * /h # moadim:j1\n# END MOADIM\n";
+    let _shim = CronShim::write_fails(initial);
+    let err = clear_managed_crontab_blocks().unwrap_err();
+    assert!(
+        matches!(err, SyncError::CrontabCommand(_)),
+        "expected CrontabCommand error from write failure, got: {err:?}"
+    );
+}
+
+// ─── parse_moadim_line keyword-without-command (L398) ─────────────────────────
+
+#[test]
+fn parse_moadim_line_keyword_without_command_returns_none() {
+    // Body is "@daily" with no whitespace-separated command after it: `splitn(2, …)` yields
+    // only one element, so the second `parts.next()?` returns None and the function returns None.
+    assert!(parse_moadim_line("@daily # moadim:some-id").is_none());
+}
+
+// ─── parse_block else-branch (L434) ───────────────────────────────────────────
+
+#[test]
+fn parse_block_skips_untagged_non_comment_line_inside_block() {
+    // A non-comment, non-empty line inside the block that carries no `# moadim:` tag:
+    // `parse_moadim_line` returns None so the `if let Some(…)` body is not entered.
+    let crontab =
+        "# BEGIN MOADIM\nuntagged line without moadim marker\n30 9 * * * /cmd # moadim:id1\n# END MOADIM\n";
+    let entries = parse_block(crontab);
+    assert_eq!(entries.len(), 1);
+    assert!(entries.contains_key("id1"));
+}
+
+// ─── sync_from_crontab read-failure path (L468) ───────────────────────────────
+
+#[test]
+fn sync_from_crontab_errors_on_read_failure() {
+    // A failing shim makes `read_crontab` return Err, exercising the `?` at L468.
+    let _shim = CronShim::failing();
+    let err = sync_from_crontab(&store_with(vec![])).unwrap_err();
+    match err {
+        SyncError::CrontabCommand(msg) => assert!(msg.contains("boom"), "unexpected msg: {msg}"),
+        SyncError::Io(io) => panic!("expected CrontabCommand, got Io({io})"),
+    }
 }

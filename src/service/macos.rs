@@ -114,9 +114,9 @@ fn report_installed(plist: &Path, log: &Path) {
 
 /// Write the LaunchAgent plist for the running binary and load it with launchd.
 pub fn install() -> anyhow::Result<()> {
-    let exe = moadim_exe()?;
+    let exe = moadim_exe().expect("current executable path is always available");
     let log = daemon_log();
-    let plist = plist_path()?;
+    let plist = plist_path().expect("home directory must be known to install the launchd agent");
     write_plist(&plist, &exe, &log)?;
     reload_agent(&plist)?;
     report_installed(&plist, &log);
@@ -144,7 +144,7 @@ granting it here prevents background interruptions"
 
 /// Unload the LaunchAgent (if loaded) and delete its plist.
 pub fn uninstall() -> anyhow::Result<()> {
-    let plist = plist_path()?;
+    let plist = plist_path().expect("home directory must be known to uninstall the launchd agent");
     if plist.exists() {
         let plist_arg = plist.display().to_string();
         let _ = run(&launchctl_bin(), &["unload", "-w", &plist_arg]);

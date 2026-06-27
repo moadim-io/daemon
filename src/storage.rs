@@ -135,7 +135,9 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
         last_manual_trigger_at: job.last_manual_trigger_at,
         metadata: json_to_toml_table(&job.metadata),
     };
-    let text = toml::to_string_pretty(&toml_job).map_err(std::io::Error::other)?;
+    let text = toml::to_string_pretty(&toml_job).expect(
+        "JobToml serialization cannot fail for a struct with only primitive and Option fields",
+    );
     std::fs::write(job_toml_path(&job.id), text)?;
     Ok(())
 }

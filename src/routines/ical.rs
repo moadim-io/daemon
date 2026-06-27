@@ -120,6 +120,17 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
 /// calendar is named after the routine instead of the generic [`DEFAULT_CAL_NAME`]. The name is
 /// escaped per RFC 5545 like any other text value.
 fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) -> String {
+    build_ical_core(routines, now, cal_name, MAX_EVENTS_PER_ROUTINE)
+}
+
+/// Core iCalendar builder parameterised by `max_events` so tests can exercise the truncation paths
+/// with a small cap without needing a schedule that fires exactly [`MAX_EVENTS_PER_ROUTINE`] times.
+fn build_ical_core(
+    routines: &[Routine],
+    now: DateTime<Local>,
+    cal_name: &str,
+    max_events: usize,
+) -> String {
     let dtstamp = format_utc(now.with_timezone(&Utc));
     let horizon = now + Duration::days(HORIZON_DAYS);
     let mut lines = vec![
@@ -148,7 +159,7 @@ fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) 
         // so, surface the truncation rather than letting the feed silently stop short of 30 days.
         let mut fires = cron.iter_after(now).take_while(|dt| *dt <= horizon);
         let mut emitted = 0usize;
-        for fire in fires.by_ref().take(MAX_EVENTS_PER_ROUTINE) {
+        for fire in fires.by_ref().take(max_events) {
             let stamp = format_utc(fire.with_timezone(&Utc));
             lines.push("BEGIN:VEVENT".to_string());
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
@@ -165,14 +176,14 @@ fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) 
         }
         // Cap reached with fires still pending inside the horizon: append a marker VEVENT at the
         // first omitted fire so subscribers see the projection was truncated and where it stops.
-        if emitted == MAX_EVENTS_PER_ROUTINE {
+        if emitted == max_events {
             if let Some(next) = fires.next() {
                 let stamp = format_utc(next.with_timezone(&Utc));
                 let note = escape_text(&format!(
                     "{}: schedule truncated — only the first {} of more upcoming runs through {} \
                      are listed. Subscribe to the daemon directly for the full schedule.",
                     routine.title,
-                    MAX_EVENTS_PER_ROUTINE,
+                    max_events,
                     horizon.format("%Y-%m-%d")
                 ));
                 lines.push("BEGIN:VEVENT".to_string());
@@ -195,6 +206,18 @@ fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) 
         .join("\r\n");
     out.push_str("\r\n");
     out
+}
+
+/// Test-only entry point: build the iCalendar feed with a custom per-routine event cap so tests
+/// can exercise the truncation-marker path without needing a cron schedule that fires exactly
+/// [`MAX_EVENTS_PER_ROUTINE`] times in the 30-day horizon.
+#[cfg(test)]
+pub(crate) fn build_ical_with_cap(
+    routines: &[Routine],
+    now: DateTime<Local>,
+    max_events: usize,
+) -> String {
+    build_ical_core(routines, now, DEFAULT_CAL_NAME, max_events)
 }
 
 /// Build the iCalendar feed for every routine currently in `store`.

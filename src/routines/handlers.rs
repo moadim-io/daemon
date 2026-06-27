@@ -234,3 +234,7 @@ pub async fn get_logs(
 ) -> Result<String, AppError> {
     svc_logs(&store, &id)
 }
+
+#[cfg(test)]
+#[path = "handlers_tests.rs"]
+mod handlers_tests;

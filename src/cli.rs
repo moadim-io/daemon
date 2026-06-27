@@ -304,12 +304,13 @@ pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
 /// can be parsed uniformly. `running` is `true` when a running server was asked to shut down, and
 /// `false` when none was reachable. `pid` is the process that was stopped (read from the pid file
 /// before the shutdown request), or `null` when no pid file was present. `address` is the bound
-/// [`BIND_ADDR`] the request was sent to.
+/// address the request was sent to, honoring the [`BIND_ADDR_ENV`] override just like
+/// [`status_json`] so the two shapes can't drift apart.
 fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
         "pid": pid,
-        "address": BIND_ADDR,
+        "address": bind_addr(),
     })
     .to_string()
 }

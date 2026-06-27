@@ -13,6 +13,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `moadim uninstall` now clears the managed crontab blocks (both
+  `# BEGIN MOADIM-ROUTINES` and `# BEGIN MOADIM`) in addition to removing the OS
+  service, so `cron` stops firing routines/jobs against a daemon you uninstalled.
+  The routines block is cleared first because its marker is a superstring of the
+  cron-jobs marker (avoids the #324 collision). Best-effort and idempotent — a
+  crontab with no managed block, no crontab at all, or a failed service-removal
+  step still completes the cleanup — and it reports how many managed entries were
+  removed. (#380)
+
 - `GET /health` now reports a `dependencies` section (currently `{"tmux": bool}`)
   so the UI/CLI can detect when the `tmux` runtime dependency is missing, and the
   daemon logs a `warn!` at startup naming the missing binary. `tmux` is a hard
@@ -437,8 +446,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   first omitted fire time, so calendar subscribers can see the projection was
   capped and where it stops instead of the routine appearing to just end after a
   few days (#251).
-- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
-- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)
 - Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the

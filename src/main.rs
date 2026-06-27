@@ -61,11 +61,31 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
-        cli::Command::Uninstall => service::uninstall(),
+        cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
         cli::Command::Foreground => run_server().await,
     }
+}
+
+/// `moadim uninstall`: tear down everything install/usage added — the OS service
+/// registration AND the managed crontab blocks the daemon wrote. Without the
+/// crontab step, `cron` keeps firing routines/jobs against a removed daemon (#380).
+///
+/// Both steps are best-effort and independent: a failure (or unsupported-platform
+/// error) in the service step is reported but does not skip the crontab cleanup,
+/// and the command still succeeds so a partial install can always be torn down.
+fn uninstall() -> anyhow::Result<()> {
+    if let Err(err) = service::uninstall() {
+        eprintln!("moadim: service uninstall step failed: {err}");
+    }
+    match sync::clear_managed_crontab_blocks() {
+        Ok(0) => println!("moadim: no managed crontab entries to remove"),
+        Ok(1) => println!("moadim: removed 1 managed crontab entry"),
+        Ok(n) => println!("moadim: removed {n} managed crontab entries"),
+        Err(err) => eprintln!("moadim: crontab cleanup failed: {err}"),
+    }
+    Ok(())
 }
 
 /// Run the HTTP/MCP/UI server in the foreground until a termination signal or the `/shutdown` route

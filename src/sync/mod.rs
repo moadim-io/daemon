@@ -20,7 +20,7 @@
 //! startup — see issue #218. As a result, manual edits to the block do **not**
 //! round-trip back into the store: a hand-edited schedule or handler is
 //! reverted by the next forward sync, and hand-added lines are never imported.
-//! These helpers are kept (behind `#[allow(dead_code)]`) so reverse sync can be
+//! These helpers are kept (behind `#[allow(dead_code, reason = "reverse sync not yet wired up; retained for issue #218")]`) so reverse sync can be
 //! enabled later without re-deriving the parser.
 
 use crate::utils::lock::LockRecover;
@@ -102,7 +102,7 @@ pub(crate) fn to_os_schedule(schedule: &str) -> String {
 /// Moadim uses 5-field format (`min hour dom month dow`) natively, which is the
 /// same as the OS crontab. The value is returned as-is. `@keyword` schedules are
 /// also passed through unchanged.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "reverse sync not yet wired up; retained for issue #218")]
 pub(crate) fn to_moadim_schedule(schedule: &str) -> String {
     schedule.trim().to_string()
 }
@@ -130,7 +130,7 @@ pub(crate) fn resolve_handler_path(handler: &str, dir: &Path) -> PathBuf {
 ///
 /// If `command` is a path under `dir`, the stem (filename without extension)
 /// is used. Otherwise the bare filename stem is returned.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "reverse sync not yet wired up; retained for issue #218")]
 pub(crate) fn handler_from_command(command: &str, dir: &Path) -> String {
     let path = Path::new(command.trim());
     let stem = if let Ok(rel) = path.strip_prefix(dir) {
@@ -334,7 +334,7 @@ pub(crate) fn replace_block_with(
 /// Parse a crontab line that carries a `# moadim:<uuid>` tag.
 ///
 /// Returns `(uuid, os_schedule, command)` on success.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "reverse sync not yet wired up; retained for issue #218")]
 pub(crate) fn parse_moadim_line(line: &str) -> Option<(String, String, String)> {
     let tag = "# moadim:";
     let comment_pos = line.rfind(tag)?;
@@ -365,7 +365,7 @@ pub(crate) fn parse_moadim_line(line: &str) -> Option<(String, String, String)> 
 /// Extract all moadim entries from a crontab string.
 ///
 /// Returns a map of `uuid → (os_schedule, command)`.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "reverse sync not yet wired up; retained for issue #218")]
 pub(crate) fn parse_block(crontab: &str) -> HashMap<String, (String, String)> {
     let mut in_block = false;
     let mut entries = HashMap::new();
@@ -416,7 +416,7 @@ pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
 ///   the block by the last forward sync).
 ///
 /// Returns `true` if any jobs were created or updated.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "reverse sync not yet wired up; retained for issue #218")]
 pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
     let crontab = read_crontab()?;
     let block_entries = parse_block(&crontab);

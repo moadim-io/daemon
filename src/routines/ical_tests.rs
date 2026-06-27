@@ -206,7 +206,7 @@ fn description_truncates_overlong_single_line() {
     let unfolded = ics.replace("\r\n ", "");
     let mut saw_description = false;
     for line in unfolded
-        .split('\n')
+        .split("\r\n")
         .filter(|entry| entry.starts_with("DESCRIPTION:"))
     {
         saw_description = true;
@@ -237,7 +237,9 @@ fn carriage_returns_are_normalized() {
 
     // Both the lone CR and the CRLF collapse to the same escaped newline as a bare LF.
     assert!(ics.contains("SUMMARY:a\\nb\\nc\r\n"));
-    assert!(ics.contains("DESCRIPTION:x\\ny (agent: claude)\r\n"));
+    // Prompt "x\r\ny" is multi-line; prompt_summary takes the first non-empty line ("x")
+    // and appends "…" because further lines exist. The CR/CRLF never reach the feed.
+    assert!(ics.contains("DESCRIPTION:x… (agent: claude)\r\n"));
 
     // No raw CR survives except as part of a structural CRLF line terminator.
     assert!(

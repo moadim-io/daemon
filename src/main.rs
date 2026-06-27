@@ -1,12 +1,25 @@
 #![deny(warnings)]
+// Forbid `.unwrap()` in production code so a poisoned lock or other panic
+// cannot take the daemon down. Tests use `.unwrap()` freely (panicking is the
+// desired failure mode there), so the lint is scoped to non-test builds.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
+/// Compile-time build provenance (crate version + git commit/date).
+mod build_info;
 /// Command-line interface and background-process lifecycle.
 mod cli;
+/// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
+mod commands;
 mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
 mod filesystem;
+/// Global lock sentinel that halts all routine scheduling and triggers without modifying routine
+/// enabled states.
+mod global_lock;
+/// Machine identity for multi-machine deployments (per-machine routine/job targeting).
+mod machine;
 /// Axum middleware stack.
 mod middlewares;
 mod openapi;
@@ -24,7 +37,8 @@ mod routines;
 mod service;
 /// TOML-backed job persistence.
 mod storage;
-/// Bidirectional sync between managed jobs and the OS crontab.
+/// Forward sync of managed jobs into the OS crontab (reverse sync is implemented
+/// but not wired up — see the `sync` module docs and issue #218).
 mod sync;
 /// Shared utility functions.
 mod utils;
@@ -42,11 +56,14 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Status { json } => std::process::exit(cli::status(json)?),
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
-        cli::Command::Stop { json } => std::process::exit(cli::stop(json)?),
+        cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
+        cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart => cli::restart(),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => service::uninstall(),
+        cli::Command::Data(args) => std::process::exit(commands::run(args)),
+        cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
         cli::Command::Foreground => run_server().await,
     }
 }
@@ -54,6 +71,13 @@ async fn main() -> anyhow::Result<()> {
 /// Run the HTTP/MCP/UI server in the foreground until a termination signal or the `/shutdown` route
 /// stops it. Records this process's PID so `moadim stop`/`status` can find it, and clears it on exit.
 async fn run_server() -> anyhow::Result<()> {
+    // Initialize the logging backend so the `log::*` call sites across the daemon actually emit;
+    // without an installed backend the `log` facade is a silent no-op and startup, crontab-sync,
+    // and HTTP-request diagnostics are dropped. Defaults to the `info` level and is overridable via
+    // `RUST_LOG`. A detached daemon redirects stderr to its log file, so these lines land there
+    // with timestamps and levels. Use `try_init` to avoid panicking if a backend is already set.
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .try_init();
     // tmux is a hard runtime dependency: every routine agent launches via `tmux new-session`. When
     // it is missing the launch command silently no-ops (the statements are `;`-joined), so warn
     // loudly at startup rather than letting scheduled runs vanish. Also surfaced in `GET /health`.
@@ -65,26 +89,35 @@ async fn run_server() -> anyhow::Result<()> {
     }
     routines::ensure_default_agents();
     let store = storage::load_store();
-    // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the
-    // first cron trigger after upgrade would fail on the cp step.
+    // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
+    // cron trigger after upgrade would fail on the launch command's `cp prompt.md` step.
     routine_storage::migrate_prompt_files();
     // Move legacy UUID-named routine dirs to the current slug-based layout before loading, so the
-    // store reflects the canonical dirs the crontab sync and run.sh `cp prompt.md` both target.
+    // store reflects the canonical dirs the crontab sync and the launch command's `cp prompt.md`
+    // both target.
     routine_storage::migrate_routine_dirs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // The crontab sync writes only run.sh; re-persist so every routine also has its routine.toml +
-    // prompt.md sidecar in the slug dir, healing dirs left with run.sh but no prompt (otherwise the
-    // cron `cp prompt.md` fails and the agent launches with an empty prompt).
+    // Re-persist so every routine has its routine.toml + prompt.md sidecar in the slug dir (and any
+    // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
+    // command's `cp prompt.md` fails and the agent launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
     // create/update/delete, leaving scheduled routines silently un-fired.
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
+    }
+    // Likewise re-sync managed cron-jobs to the crontab on startup, mirroring the routines sync
+    // above; otherwise a lost or emptied block (manual `crontab -e`/`crontab -r`, an OS migration,
+    // or a marker collision) leaves every managed job silently un-fired until the next job
+    // create/update/delete. `sync_to_crontab` is idempotent, so this is a no-op read on a healthy
+    // crontab.
+    if let Err(err) = sync::sync_to_crontab(&store) {
+        log::warn!("startup crontab sync (cron-jobs) failed: {err}");
     }
     let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;

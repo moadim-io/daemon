@@ -45,6 +45,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- The built-in Claude agent now reads its project instructions from `AGENTS.md`,
+  the same file Codex uses, unifying the moadim-managed system prompt and
+  routine-origin disclosure onto a single instructions file across agents. Claude
+  Code loads `AGENTS.md` as a memory/context file, so the disclosure is honored
+  exactly as it was from `CLAUDE.md`. User-authored agent configs that omit
+  `instructions_file` still fall back to the historical `CLAUDE.md` default.
+
 - The request logger now records `GET /health` at `debug` instead of `info`.
   The web UI polls `/health` continuously, so at the default `info` level those
   two-lines-per-poll entries dominated `daemon.log` (thousands of lines a day on

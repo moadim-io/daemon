@@ -16,6 +16,16 @@ mod codex;
 #[path = "hermes/setup.rs"]
 mod hermes;
 
+/// The conventions filename a [`AgentCommand`] reads project instructions from when none is
+/// configured. Claude Code's convention; the historical (and still default) target for the
+/// moadim-managed system prompt.
+pub(crate) const DEFAULT_INSTRUCTIONS_FILE: &str = "CLAUDE.md";
+
+/// Default value for [`AgentCommand::instructions_file`] when omitted from the agent's TOML.
+fn default_instructions_file() -> String {
+    DEFAULT_INSTRUCTIONS_FILE.to_string()
+}
+
 /// A resolved agent invocation read from `~/.config/moadim/agents/<name>.toml`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentCommand {
@@ -25,24 +35,17 @@ pub struct AgentCommand {
     /// placeholders; `{prompt}` inlines the composed prompt as a single shell-quoted argument.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Filename, relative to the workbench, that this agent reads its project instructions from.
+    /// The moadim-managed system prompt and routine-origin disclosure are written here so the agent
+    /// that actually runs sees them. Defaults to `CLAUDE.md` (Claude Code's convention); Codex reads
+    /// `AGENTS.md` instead.
+    #[serde(default = "default_instructions_file")]
+    pub instructions_file: String,
     /// Optional shell command run in the workbench *before* the agent launches, inserted verbatim
     /// into the cron line. Runs with the shell vars `$WB` (absolute workbench path) and `$SESS`
     /// (tmux session name) in scope — e.g. to pre-seed per-directory editor trust state.
     #[serde(default)]
     pub setup: Option<String>,
-    /// Filename the agent reads its project instructions from, written into the workbench by the
-    /// daemon so the moadim system prompt and routine-origin disclosure reach the agent that
-    /// actually runs. Claude Code reads `CLAUDE.md` (the default); Codex reads `AGENTS.md`.
-    #[serde(default = "default_instructions_file")]
-    pub instructions_file: String,
-}
-
-/// Default project-instructions filename for an agent: Claude Code's `CLAUDE.md` convention.
-///
-/// Applied when an agent's TOML omits `instructions_file`, preserving the prior behavior of
-/// always writing `CLAUDE.md` for configs that predate this field.
-fn default_instructions_file() -> String {
-    "CLAUDE.md".to_string()
 }
 
 /// Why [`load_agent_command`] could not produce an [`AgentCommand`].

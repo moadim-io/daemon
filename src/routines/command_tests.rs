@@ -66,8 +66,8 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
         let agent = AgentCommand {
             command: "claude".to_string(),
             args: vec![],
-            setup: None,
             instructions_file: "CLAUDE.md".to_string(),
+            setup: None,
         };
         let cmd = build_routine_command(&routine, &agent);
         // The resolved tmux dir is baked into the exported PATH.
@@ -89,8 +89,8 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
-        setup: None,
         instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
     let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
@@ -119,8 +119,8 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
-        setup: None,
         instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
 

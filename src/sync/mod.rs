@@ -76,14 +76,15 @@ impl From<std::io::Error> for SyncError {
 
 // ─── Schedule conversion ───────────────────────────────────────────────────
 
-/// Convert a moadim schedule to a 5-field OS crontab schedule
-/// (`min hour dom month dow`).
+/// Convert a 6-field (`sec min hour dom month dow`) or 7-field
+/// (`sec min hour dom month dow year`) moadim schedule to a 5-field OS crontab
+/// schedule (`min hour dom month dow`).
 ///
-/// `croner` accepts both 6-field (`sec min hour dom month dow`) and 7-field
-/// (`sec min hour dom month dow year`) forms. Both carry a leading seconds field
-/// the OS crontab cannot express, so it is dropped (along with the trailing
-/// year), projecting onto 5 fields. `@keyword` and already-5-field schedules are
-/// passed through unchanged.
+/// `@keyword` schedules are passed through unchanged. Both the 6- and 7-field
+/// forms carry a leading seconds field, so field 0 (and, for the 7-field form,
+/// the trailing year) is dropped. A 6-field schedule that is not reduced would
+/// be written verbatim to the crontab where it is malformed and silently never
+/// fires.
 pub(crate) fn to_os_schedule(schedule: &str) -> String {
     let trimmed = schedule.trim();
     if trimmed.starts_with('@') {

@@ -83,6 +83,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   string was written verbatim, making the job malformed and silently inactive.
   Closes #183.
 
+- **`moadim stop --json` now reports the real bound `address`.** Under a
+  `MOADIM_BIND_ADDR` override, `stop --json` emitted the hardcoded default
+  `127.0.0.1:5784` while `status --json` reported the actual address, so the two
+  `--json` objects disagreed despite the documented "identical shape" contract.
+  `stop_json` now uses `bind_addr()` like `status_json`. Added a regression test
+  plus a guard asserting `status`/`stop` produce the same object.
+
 - The pid file is now reconciled against process liveness before it is reported
   or acted on. After a `kill -9`, panic, OOM kill, or power loss the graceful
   shutdown path never runs, so the pid file lingers with a now-dead PID.

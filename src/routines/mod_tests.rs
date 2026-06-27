@@ -40,6 +40,28 @@ fn slugify_empty_falls_back() {
 }
 
 #[test]
+fn slugify_preserves_non_ascii_letters() {
+    // Accented Latin letters are kept and lowercased, not dropped.
+    assert_eq!(slugify("Café Report"), "café-report");
+    assert_eq!(slugify("Über Lauf"), "über-lauf");
+    // Non-Latin scripts survive instead of collapsing to the "routine" fallback.
+    assert_eq!(slugify("עדכון יומי"), "עדכון-יומי");
+    assert_eq!(slugify("日次レポート"), "日次レポート");
+    assert_eq!(slugify("Отчёт"), "отчёт");
+}
+
+#[test]
+fn slugify_distinct_non_latin_titles_yield_distinct_slugs() {
+    // Two valid non-Latin titles must not both collapse to "routine" (which blocked
+    // creating a second such routine on a duplicate-slug check).
+    let a = slugify("עדכון יומי");
+    let b = slugify("דוח שבועי");
+    assert_ne!(a, "routine");
+    assert_ne!(b, "routine");
+    assert_ne!(a, b);
+}
+
+#[test]
 fn compose_prompt_lists_repos_and_prompt() {
     let routine = make_routine("x");
     let prompt = compose_prompt(&routine);

@@ -18,6 +18,7 @@ fn at_ten() -> DateTime<Local> {
 fn src(kind: Kind, label: &str, schedule: &str, enabled: bool) -> SchedSource {
     SchedSource {
         kind,
+        id: label.into(),
         label: label.into(),
         schedule: schedule.into(),
         human: None,
@@ -121,6 +122,7 @@ fn from_cron_maps_label_and_schedule() {
     .expect("valid cron job json");
     let source = from_cron(&job);
     assert_eq!(source.kind, Kind::Cron);
+    assert_eq!(source.id, "backup");
     assert_eq!(source.label, "backup");
     assert_eq!(source.schedule, "*/5 * * * *");
     assert_eq!(source.human.as_deref(), Some("Every 5 minutes"));
@@ -140,6 +142,7 @@ fn from_routine_uses_title_as_label() {
     .expect("valid routine json");
     let source = from_routine(&routine);
     assert_eq!(source.kind, Kind::Routine);
+    assert_eq!(source.id, "r1");
     assert_eq!(source.label, "Nightly sweep");
     assert_eq!(source.schedule, "0 0 * * *");
     assert!(!source.enabled);
@@ -310,6 +313,33 @@ fn from_routine_carries_agent_registration_and_machines() {
     let s = from_routine(&routine);
     assert_eq!(s.agent_registered, Some(false));
     assert!(!s.machines_empty);
+}
+
+#[test]
+fn upcoming_run_carries_cron_id() {
+    let source = src(Kind::Cron, "daily-backup", "*/5 * * * *", true);
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].id, "daily-backup");
+    assert_eq!(runs[0].label, "daily-backup");
+}
+
+#[test]
+fn upcoming_run_routine_id_differs_from_label() {
+    let routine: Routine = serde_json::from_value(serde_json::json!({
+        "id": "abc-uuid-123",
+        "schedule": "*/5 * * * *",
+        "title": "My Routine",
+        "agent": "claude",
+        "prompt": "do something",
+        "enabled": true
+    }))
+    .expect("valid routine json");
+    let source = from_routine(&routine);
+    assert_eq!(source.id, "abc-uuid-123");
+    assert_eq!(source.label, "My Routine");
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].id, "abc-uuid-123");
+    assert_eq!(runs[0].label, "My Routine");
 }
 
 #[test]

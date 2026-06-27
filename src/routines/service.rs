@@ -97,6 +97,11 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
             "agent {agent:?} has a malformed config: {err}"
         ))),
+        // An existing-but-unreadable config (e.g. permissions) would otherwise pass validation and
+        // leave a green-dot routine that never fires; surface it now instead of silently dropping it.
+        Err(AgentLoadError::Unreadable(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} has an unreadable config: {err}"
+        ))),
     }
 }
 
@@ -157,6 +162,21 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
         .cloned()
         .ok_or(AppError::NotFound)?;
     Ok(RoutineResponse::from_routine(routine))
+}
+
+/// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
+///
+/// The prompt is the one field that defines what a routine actually does. A blank
+/// prompt still produces a valid `prompt.md` (just the moadim preamble + repo list),
+/// so the routine fires on every cron tick and launches an agent with no task —
+/// silently burning scheduled runs and the user's agent/API budget (issue #224).
+/// Shared by the create and update paths so the REST and MCP surfaces reject it
+/// identically, mirroring [`validate_cron`].
+fn validate_prompt(prompt: &str) -> Result<(), AppError> {
+    if prompt.trim().is_empty() {
+        return Err(AppError::BadRequest("prompt must not be empty".to_string()));
+    }
+    Ok(())
 }
 
 /// Upper bound on a routine title, in characters, to keep `CLAUDE.md`, crontab
@@ -237,7 +257,7 @@ pub fn svc_create(
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
     reject_blank("title", &req.title)?;
-    reject_blank("prompt", &req.prompt)?;
+    validate_prompt(&req.prompt)?;
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let ceiling_schedule = normalize_schedule(&req.schedule);
@@ -305,7 +325,7 @@ pub fn svc_update(
         validate_title(title)?;
     }
     if let Some(ref prompt) = req.prompt {
-        reject_blank("prompt", prompt)?;
+        validate_prompt(prompt)?;
     }
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;
@@ -446,13 +466,14 @@ fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
             let cmd = build_routine_command(routine, &agent);
-            if let Err(err) = std::process::Command::new("sh")
-                .arg("-lc")
-                .arg(&cmd)
-                .spawn()
-            {
-                log::warn!("trigger: failed to spawn routine command: {err}");
-            }
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            let mut command = std::process::Command::new("sh");
+            command.arg("-lc").arg(&cmd);
+            // Reap the child in the background so the short-lived launcher shell does not
+            // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
+            crate::utils::process::spawn_and_reap(command, "routine command");
         }
         Err(err) => log::warn!(
             "trigger: cannot load agent {:?} ({}) for routine {:?}",

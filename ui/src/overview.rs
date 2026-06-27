@@ -22,7 +22,7 @@ use yew_router::prelude::*;
 use crate::cron_jobs::CronJob;
 use crate::routines::Routine;
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
-use crate::Route;
+use crate::{Route, ToastKind};
 
 /// "Due soon" / "soon" window: an enabled entity whose next fire lands within
 /// this many seconds is operationally urgent. Mirrors the per-page cron stats.
@@ -54,6 +54,8 @@ pub(crate) enum Kind {
 pub(crate) struct SchedSource {
     /// Cron job or routine.
     pub kind: Kind,
+    /// API id used to trigger the entity (cron-job id UUID, routine UUID).
+    pub id: String,
     /// Display name: the cron-job id or the routine title.
     pub label: String,
     /// Raw cron expression used to compute the next fire.
@@ -144,6 +146,8 @@ pub(crate) struct AttentionItem {
 pub(crate) struct UpcomingRun {
     /// Cron job or routine.
     pub kind: Kind,
+    /// API id passed to the trigger endpoint.
+    pub id: String,
     /// Display name.
     pub label: String,
     /// Human schedule description, when present.
@@ -227,6 +231,7 @@ pub(crate) fn upcoming_runs(sources: &[SchedSource], now: DateTime<Local>) -> Ve
         .filter_map(|s| {
             next_fire_after(&s.schedule, now).map(|at| UpcomingRun {
                 kind: s.kind,
+                id: s.id.clone(),
                 label: s.label.clone(),
                 human: s.human.clone(),
                 at,
@@ -255,6 +260,7 @@ fn targets_no_machine(machines: &[String]) -> bool {
 fn from_cron(job: &CronJob) -> SchedSource {
     SchedSource {
         kind: Kind::Cron,
+        id: job.id.clone(),
         label: job.id.clone(),
         schedule: job.schedule.clone(),
         human: job.schedule_description.clone(),
@@ -268,6 +274,7 @@ fn from_cron(job: &CronJob) -> SchedSource {
 fn from_routine(routine: &Routine) -> SchedSource {
     SchedSource {
         kind: Kind::Routine,
+        id: routine.id.clone(),
         label: routine.title.clone(),
         schedule: routine.schedule.clone(),
         human: routine.schedule_description.clone(),
@@ -284,6 +291,30 @@ fn sources_of(crons: &[CronJob], routines: &[Routine]) -> Vec<SchedSource> {
         .map(from_cron)
         .chain(routines.iter().map(from_routine))
         .collect()
+}
+
+async fn api_trigger_cron(id: &str) -> Result<(), String> {
+    let resp = Request::post(&format!("/api/v1/cron-jobs/{id}/trigger"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
+}
+
+async fn api_trigger_routine(id: &str) -> Result<(), String> {
+    let resp = Request::post(&format!("/api/v1/routines/{id}/trigger"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
 }
 
 pub(crate) async fn fetch_crons() -> Result<Vec<CronJob>, String> {
@@ -316,8 +347,13 @@ struct Data {
     error: Option<String>,
 }
 
+#[derive(Properties, PartialEq)]
+pub struct OverviewPageProps {
+    pub on_toast: Callback<(String, ToastKind)>,
+}
+
 #[function_component(OverviewPage)]
-pub fn overview_page() -> Html {
+pub fn overview_page(props: &OverviewPageProps) -> Html {
     let data = use_state(|| Data {
         loading: true,
         ..Data::default()
@@ -372,6 +408,23 @@ pub fn overview_page() -> Html {
         });
     }
 
+    let on_trigger = {
+        let on_toast = props.on_toast.clone();
+        Callback::from(move |(kind, id): (Kind, String)| {
+            let on_toast = on_toast.clone();
+            spawn_local(async move {
+                let result = match kind {
+                    Kind::Cron => api_trigger_cron(&id).await,
+                    Kind::Routine => api_trigger_routine(&id).await,
+                };
+                match result {
+                    Ok(()) => on_toast.emit(("Triggered".into(), ToastKind::Ok)),
+                    Err(e) => on_toast.emit((format!("Trigger failed: {e}"), ToastKind::Err)),
+                }
+            });
+        })
+    };
+
     let now_val = *now;
     let sources = sources_of(&data.crons, &data.routines);
     let kpis = compute_kpis(&sources, now_val);
@@ -406,6 +459,7 @@ pub fn overview_page() -> Html {
                 now={now_val}
                 loading={data.loading}
                 error={data.error.clone()}
+                on_trigger={on_trigger}
             />
         </main>
     }
@@ -514,6 +568,7 @@ struct UpcomingTableProps {
     now: DateTime<Local>,
     loading: bool,
     error: Option<String>,
+    on_trigger: Callback<(Kind, String)>,
 }
 
 #[function_component(UpcomingTable)]
@@ -558,6 +613,7 @@ fn upcoming_table(props: &UpcomingTableProps) -> Html {
                         <th>{"NAME"}</th>
                         <th>{"SCHEDULE"}</th>
                         <th>{"NEXT RUN"}</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -567,6 +623,12 @@ fn upcoming_table(props: &UpcomingTableProps) -> Html {
                             Kind::Routine => ("ROUTINE", "kind-badge routine", Route::Routines),
                         };
                         let until_cls = if run.soon { "cell-next-until soon" } else { "cell-next-until" };
+                        let kind = run.kind;
+                        let id = run.id.clone();
+                        let on_trigger = props.on_trigger.clone();
+                        let onclick = Callback::from(move |_: MouseEvent| {
+                            on_trigger.emit((kind, id.clone()));
+                        });
                         html! {
                             <tr key={i.to_string()}>
                                 <td><span class={badge_cls}>{badge}</span></td>
@@ -583,6 +645,15 @@ fn upcoming_table(props: &UpcomingTableProps) -> Html {
                                 <td class="cell-next">
                                     <div class="cell-next-when">{fmt_when(now, run.at)}</div>
                                     <div class={until_cls}>{fmt_until(now, run.at)}</div>
+                                </td>
+                                <td class="cell-act">
+                                    <button
+                                        class="btn btn-sm btn-ghost run-now-btn"
+                                        title="Trigger now"
+                                        {onclick}
+                                    >
+                                        {"▶ RUN"}
+                                    </button>
                                 </td>
                             </tr>
                         }

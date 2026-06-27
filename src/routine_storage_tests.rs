@@ -769,3 +769,167 @@ fn repersist_routines_logs_on_write_failure() {
         assert!(routines.join(&slug).is_file());
     });
 }
+
+// ─── New tests for previously uncovered lines ────────────────────────────────
+
+#[test]
+fn load_routine_from_dir_missing_title_returns_none() {
+    // Covers L118: `let title = toml.title?;` — a TOML that has schedule and agent
+    // but no `title` field causes `load_routine_from_dir` to return `None`.
+    with_override_home(|_home| {
+        let slug = "rs-no-title-zzz";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "schedule = \"@daily\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        assert!(load_routine_from_dir(slug).is_none());
+    });
+}
+
+#[test]
+fn load_routine_from_dir_missing_schedule_returns_none() {
+    // Covers L124: `schedule: toml.schedule?,` — a TOML with `title` and `agent` but
+    // no `schedule` field causes `load_routine_from_dir` to return `None`.
+    with_override_home(|_home| {
+        let slug = "rs-no-schedule-zzz";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "title = \"Rs No Schedule\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        assert!(load_routine_from_dir(slug).is_none());
+    });
+}
+
+#[test]
+fn load_routine_from_dir_missing_agent_returns_none() {
+    // Covers L126: `agent: toml.agent?,` — a TOML with `title` and `schedule` but no
+    // `agent` field causes `load_routine_from_dir` to return `None`.
+    with_override_home(|_home| {
+        let slug = "rs-no-agent-zzz";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "title = \"Rs No Agent\"\nschedule = \"@daily\"\n",
+        )
+        .unwrap();
+        assert!(load_routine_from_dir(slug).is_none());
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn write_routine_fails_on_gitignore_write_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L155: `std::fs::write(&gitignore, ..)? ` — the dir exists but is read-only
+    // (and `.gitignore` is absent), so writing it fails and the error is propagated.
+    with_override_home(|_home| {
+        let title = "Rs Gitignore Fail Routine";
+        let slug = slugify(title);
+        let dir = crate::paths::routine_dir(&slug);
+        // Create dir without a .gitignore, then lock it.
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = write_routine(&make_routine("rs-gitignore-fail-id", title));
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            result.is_err(),
+            "write_routine should fail when .gitignore cannot be written"
+        );
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn write_routine_fails_on_routine_toml_write_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L185: `atomic_write(&routine_toml_path(&slug), ..)? ` — `.gitignore` exists
+    // (so that step is skipped), but the dir is read-only so the atomic write for
+    // `routine.toml` (which creates a sibling temp file) fails.
+    with_override_home(|_home| {
+        let title = "Rs Toml Write Fail Routine";
+        let slug = slugify(title);
+        let dir = crate::paths::routine_dir(&slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_gitignore_path(&slug),
+            "*.local.*\n*.log\nrun.sh\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = write_routine(&make_routine("rs-toml-write-fail-id", title));
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            result.is_err(),
+            "write_routine should fail when routine.toml cannot be written"
+        );
+    });
+}
+
+#[test]
+fn write_routine_fails_on_runtime_state_write_error() {
+    // Covers L190 and L206: `write_runtime_state(..)? ` and the `atomic_write` inside it.
+    // `routine.toml` and `prompt.md` writes succeed, but `state.local.toml` is replaced
+    // with a non-empty directory so the atomic rename over it fails.
+    with_override_home(|_home| {
+        let title = "Rs Runtime State Write Fail Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-runtime-state-write-fail-id", title);
+        routine.last_manual_trigger_at = Some(12345);
+
+        // Block state.local.toml with a non-empty directory so the atomic rename fails.
+        let state_path = crate::paths::routine_state_path(&slug);
+        std::fs::create_dir_all(&state_path).unwrap();
+        std::fs::write(state_path.join("occupant"), "block").unwrap();
+
+        let result = write_routine(&routine);
+
+        // Restore: remove blocking dir so with_override_home can clean up.
+        std::fs::remove_dir_all(&state_path).unwrap();
+
+        assert!(
+            result.is_err(),
+            "write_routine should fail when state sidecar cannot be written"
+        );
+    });
+}
+
+#[test]
+fn write_runtime_state_fails_when_state_file_is_a_directory() {
+    // Covers L210: `std::fs::remove_file(&path)?` — when `last_manual_trigger_at` is
+    // `None` and the state path is a directory (not a regular file), `remove_file` fails
+    // because it can only remove files, not directories.
+    with_override_home(|_home| {
+        let title = "Rs Remove State Dir Fail Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-remove-state-dir-id", title);
+        routine.last_manual_trigger_at = None;
+
+        // Write once to create the slug dir and all regular sidecars.
+        write_routine(&routine).unwrap();
+
+        // Replace state.local.toml with a directory so remove_file fails.
+        let state_path = crate::paths::routine_state_path(&slug);
+        std::fs::create_dir_all(&state_path).unwrap();
+
+        let result = write_routine(&routine);
+
+        // Restore before assertions so with_override_home can clean up.
+        std::fs::remove_dir_all(&state_path).unwrap();
+
+        assert!(
+            result.is_err(),
+            "write_routine should fail when state.local.toml is a directory"
+        );
+    });
+}

@@ -118,6 +118,26 @@ fn write_openapi_spec_logs_on_write_failure() {
 // ── build_app / router smoke tests ───────────────────────────────────────────
 
 #[tokio::test]
+async fn build_app_serves_machine() {
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/machine")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(body["name"].is_string() && !body["name"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn build_app_serves_root() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app
@@ -1325,4 +1345,43 @@ async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
     assert_eq!(resp.0.uptime_secs, 0);
     assert_eq!(resp.0.status, "ok");
     assert!(resp.0.running);
+}
+
+#[tokio::test]
+async fn build_app_restart_route_returns_500_when_spawn_fails() {
+    // Cover the `map_err(|_| AppError::Internal)?` branch in the restart handler (http.rs L139):
+    // make spawn_restart() fail by placing a regular file at the `.config` component of the
+    // home path so create_dir_all() for the daemon log directory errors out.
+    let dir = std::env::temp_dir().join(format!("moadim-restart-fail-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A regular file at `.config` blocks create_dir_all(".config/moadim") inside spawn_detached_with.
+    std::fs::write(dir.join(".config"), b"blocker").unwrap();
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    }
+
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/restart")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // SAFETY: cleanup before asserting so the env var is always removed.
+    unsafe {
+        std::env::remove_var("MOADIM_HOME_OVERRIDE");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        resp.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "restart route should return 500 when spawn_restart fails"
+    );
 }

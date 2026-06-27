@@ -204,9 +204,12 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         .stdin
         .take()
         .expect("stdin is piped")
-        .write_all(content.as_bytes())?;
+        .write_all(content.as_bytes())
+        .expect("writing crontab content to crontab stdin must not fail");
 
-    let status = child.wait()?;
+    let status = child
+        .wait()
+        .expect("waiting for crontab child process failed");
 
     if !status.success() {
         return Err(SyncError::CrontabCommand(format!(

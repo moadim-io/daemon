@@ -245,3 +245,98 @@ fn load_job_from_dir_missing_schedule_returns_none() {
     assert!(load_job_from_dir(id).is_none());
     remove_job_dir(id).expect("cleanup failed");
 }
+
+/// RAII guard: redirect config paths to a temp dir and restore on drop.
+struct HomeOverrideGuard {
+    dir: std::path::PathBuf,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl HomeOverrideGuard {
+    fn new() -> Self {
+        let dir = std::env::temp_dir().join(format!("moadim-st-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp home");
+        let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+        // SAFETY: single-threaded test execution (RUST_TEST_THREADS=1).
+        unsafe { std::env::set_var("MOADIM_HOME_OVERRIDE", &dir) }
+        Self { dir, previous }
+    }
+}
+
+impl Drop for HomeOverrideGuard {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            match self.previous.take() {
+                Some(val) => std::env::set_var("MOADIM_HOME_OVERRIDE", val),
+                None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+            }
+        }
+        restore_writable_storage(&self.dir);
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn restore_writable_storage(dir: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+            if path.is_dir() {
+                restore_writable_storage(&path);
+            }
+        }
+    }
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
+}
+
+#[test]
+fn load_job_from_dir_missing_handler_returns_none() {
+    let _home = HomeOverrideGuard::new();
+    // A job.toml with schedule but no handler: `base.handler?` returns None.
+    let id = "missing-handler-job";
+    let dir = crate::paths::job_dir(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        crate::paths::job_toml_path(id),
+        "schedule = \"@daily\"\nenabled = true\n",
+    )
+    .unwrap();
+    assert!(load_job_from_dir(id).is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn write_job_gitignore_write_failure_returns_err() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = HomeOverrideGuard::new();
+    // Create the job dir and make it read-only so `.gitignore` can't be written.
+    let job = test_job("gitignore-fail");
+    let dir = home
+        .dir
+        .join(".config")
+        .join("moadim")
+        .join("jobs")
+        .join(&job.id);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = write_job(&job);
+    assert!(result.is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn remove_job_dir_remove_failure_returns_err() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = HomeOverrideGuard::new();
+    // Pre-create jobs/id/ then make jobs/ read-only so remove_dir_all fails.
+    let jobs = home.dir.join(".config").join("moadim").join("jobs");
+    let job_dir = jobs.join("rd-fail");
+    std::fs::create_dir_all(&job_dir).unwrap();
+    std::fs::set_permissions(&jobs, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = remove_job_dir("rd-fail");
+    assert!(result.is_err());
+}

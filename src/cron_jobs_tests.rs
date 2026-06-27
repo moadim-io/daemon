@@ -853,3 +853,177 @@ async fn replace_handler_updates_job() {
 
     crate::storage::remove_job_dir(&id).unwrap();
 }
+
+// ─── coverage: local_only filter + I/O error paths ────────────────────────
+
+/// RAII guard: redirect config paths to a temp dir and restore on drop.
+struct HomeOverrideGuard {
+    dir: std::path::PathBuf,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl HomeOverrideGuard {
+    fn new() -> Self {
+        let dir = std::env::temp_dir().join(format!("moadim-cj-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create temp home");
+        let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+        // SAFETY: single-threaded test execution (RUST_TEST_THREADS=1).
+        unsafe { std::env::set_var("MOADIM_HOME_OVERRIDE", &dir) }
+        Self { dir, previous }
+    }
+}
+
+impl Drop for HomeOverrideGuard {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            match self.previous.take() {
+                Some(val) => std::env::set_var("MOADIM_HOME_OVERRIDE", val),
+                None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+            }
+        }
+        // Restore write permission before deletion so `remove_dir_all` succeeds
+        // even if a test made a sub-directory read-only.
+        restore_writable(&self.dir);
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn restore_writable(dir: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+            if path.is_dir() {
+                restore_writable(&path);
+            }
+        }
+    }
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
+}
+
+#[test]
+fn svc_list_local_only_filters_non_matching_machines() {
+    let _home = HomeOverrideGuard::new();
+    let store = new_store();
+    let me = crate::machine::current_machine();
+    // Job targeting this machine — should survive the filter.
+    let mut local = make_job("local");
+    local.machines = vec![me.clone()];
+    // Job targeting a different machine — should be dropped.
+    let mut other = make_job("other");
+    other.machines = vec!["not-this-machine-xyz".to_string()];
+    {
+        let mut lock = store.lock().unwrap();
+        lock.insert("local".to_string(), local);
+        lock.insert("other".to_string(), other);
+    }
+    let reg = new_registry();
+    let results = svc_list(
+        &store,
+        &reg,
+        &CronJobListQuery {
+            local_only: Some(true),
+        },
+    );
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].job.id, "local");
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_create_write_failure_returns_internal() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = HomeOverrideGuard::new();
+    // Pre-create the jobs dir and make it read-only so write_job can't create a subdir.
+    let jobs_dir = home.dir.join(".config").join("moadim").join("jobs");
+    std::fs::create_dir_all(&jobs_dir).unwrap();
+    std::fs::set_permissions(&jobs_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        &new_registry(),
+        CreateRequest {
+            schedule: "@daily".into(),
+            handler: "h".into(),
+            metadata: serde_json::Value::Null,
+            machines: vec![],
+            enabled: true,
+        },
+    );
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_update_write_failure_returns_internal() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = HomeOverrideGuard::new();
+    let store = new_store();
+    // Insert a job directly (bypassing write_job).
+    store
+        .lock()
+        .unwrap()
+        .insert("j1".to_string(), make_job("j1"));
+    // Block writes by making jobs dir read-only.
+    let jobs_dir = home.dir.join(".config").join("moadim").join("jobs");
+    std::fs::create_dir_all(&jobs_dir).unwrap();
+    std::fs::set_permissions(&jobs_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_update(
+        &store,
+        &new_registry(),
+        "j1",
+        UpdateRequest {
+            schedule: None,
+            handler: Some("new-handler".into()),
+            metadata: None,
+            machines: None,
+            enabled: None,
+        },
+    );
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_delete_remove_failure_returns_internal() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = HomeOverrideGuard::new();
+    // Pre-create jobs/j1/ so remove_job_dir has something to remove.
+    let jobs_dir = home.dir.join(".config").join("moadim").join("jobs");
+    let job_dir = jobs_dir.join("j1");
+    std::fs::create_dir_all(&job_dir).unwrap();
+    // Make jobs/ read-only so remove_dir_all(jobs/j1/) fails.
+    std::fs::set_permissions(&jobs_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("j1".to_string(), make_job("j1"));
+
+    let result = svc_delete(&store, &new_registry(), "j1");
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_trigger_write_failure_returns_internal() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = HomeOverrideGuard::new();
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("j1".to_string(), make_job("j1"));
+    // Block writes by making jobs dir read-only.
+    let jobs_dir = home.dir.join(".config").join("moadim").join("jobs");
+    std::fs::create_dir_all(&jobs_dir).unwrap();
+    std::fs::set_permissions(&jobs_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_trigger(&store, "j1");
+    assert!(matches!(result, Err(AppError::Internal)));
+}

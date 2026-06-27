@@ -125,9 +125,15 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
-            (path.extension()? == "toml")
-                .then(|| path.file_stem()?.to_str().map(str::to_string))
-                .flatten()
+            // Propagate None for paths without an extension (e.g. a bare "readme" file).
+            if path.extension()? != "toml" {
+                return None;
+            }
+            // For real directory entries file_stem() is always Some; to_str() may be None for
+            // non-UTF-8 names (silently skipped).
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::to_string)
         })
         .collect();
     if names.is_empty() {

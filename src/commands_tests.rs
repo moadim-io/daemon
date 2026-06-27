@@ -474,3 +474,37 @@ fn routine_body_rejects_bad_repositories() {
         Err(2)
     );
 }
+
+#[test]
+fn cron_body_rejects_bad_machines() {
+    // Covers the `?` error branch on the `machines` insert_json_opt call (L484).
+    assert_eq!(
+        cron_body(
+            "* * * * *".into(),
+            "h".into(),
+            None,
+            Some("{bad".into()),
+            false,
+        ),
+        Err(2)
+    );
+}
+
+#[test]
+fn routine_body_rejects_bad_machines() {
+    // Covers the `?` error branch on the `machines` insert_json_opt call (L509).
+    assert_eq!(
+        routine_body(
+            "* * * * *".into(),
+            "t".into(),
+            "a".into(),
+            "p".into(),
+            None,
+            Some("{bad".into()),
+            None,
+            None,
+            false,
+        ),
+        Err(2)
+    );
+}

@@ -80,6 +80,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   an otherwise idle daemon) and buried every other request. Health polls remain
   visible under `RUST_LOG=debug`; all other requests still log at `info`.
 
+- On first run (no `MOADIM_MACHINE` env var and no `machine.local.toml`), the
+  daemon now auto-generates a unique machine name (`machine-{8hex}`) and writes
+  it to `machine.local.toml` rather than silently falling back to the system
+  hostname. A `warn!` log names the generated value and points to
+  `moadim machine set <name>` to override it. If the write fails the hostname
+  fallback is preserved. Closes #762.
+
 - Enabled the `clippy::map_unwrap_or` lint and fixed the violations
   (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
 

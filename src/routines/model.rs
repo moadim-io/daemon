@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::command::slugify;
-use crate::paths::{agent_toml_path, routine_toml_path};
+use super::load_agent_command;
+use crate::paths::routine_toml_path;
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -171,7 +172,10 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
-        let agent_registered = agent_toml_path(&routine.agent).exists();
+        // An agent counts as registered only if its config both exists *and* parses: a
+        // present-but-malformed config is silently dropped at crontab-sync time, so reporting it as
+        // registered would paint a never-firing routine as healthy. See issue #301.
+        let agent_registered = load_agent_command(&routine.agent).is_ok();
         let file_path = routine_toml_path(&slugify(&routine.title))
             .to_string_lossy()
             .into_owned();

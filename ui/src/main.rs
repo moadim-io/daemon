@@ -369,7 +369,7 @@ pub fn shell() -> Html {
     let switch = {
         let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
-            Route::Home => html! { <OverviewPage /> },
+            Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::CronJobs => html! { <CronJobsPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
             Route::Heatmap => html! { <HeatmapPage /> },

@@ -69,6 +69,11 @@ pub enum Command {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
     },
+    /// Trigger a routine to run immediately, outside its schedule, by UUID.
+    Trigger {
+        /// UUID of the routine to trigger.
+        id: String,
+    },
     /// Register the daemon as an OS service (launchd on macOS, systemd user on Linux).
     Install,
     /// Remove the OS service registration created by [`Command::Install`].
@@ -112,6 +117,13 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         Some("cleanup") => Command::Cleanup {
             json: wants_json(&args[1..]),
         },
+        // `trigger <id>` runs a single routine on demand. Without an id there is nothing to
+        // trigger, so fall back to help rather than silently no-op (mirrors the unknown-argument
+        // behavior). `run` is kept as a hidden back-compat alias of the original subcommand name.
+        Some("trigger" | "run") => match args.get(1) {
+            Some(id) => Command::Trigger { id: id.clone() },
+            None => Command::Help,
+        },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
         Some("-h" | "--help" | "help") => Command::Help,
@@ -154,6 +166,7 @@ pub fn print_help() {
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
+         \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
@@ -336,6 +349,33 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     }
 }
 
+/// Ask a running server to trigger routine `id` immediately, outside its schedule, via the
+/// `POST /routines/{id}/trigger` route — the same on-demand run the REST API and MCP tool already
+/// expose, finally reachable from the terminal.
+///
+/// Prints a confirmation when the routine was triggered, an error when no routine has that id
+/// (`404`), and a "not running" hint when no server is reachable. Returns the process exit code to
+/// surface, mirroring the `status`/`cleanup` contract: `0` when the routine was triggered, and
+/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
+pub fn trigger(id: String) -> anyhow::Result<i32> {
+    match http_request("POST", &format!("/api/v1/routines/{id}/trigger")) {
+        Ok(200) => {
+            println!("triggered routine {id}");
+            Ok(liveness_exit_code(true))
+        }
+        Ok(404) => {
+            anyhow::bail!("no routine with id {id}");
+        }
+        Ok(status) => {
+            anyhow::bail!("unexpected response from server: HTTP {status}");
+        }
+        Err(_) => {
+            println!("moadim is not running");
+            Ok(liveness_exit_code(false))
+        }
+    }
+}
+
 /// Report whether a server is running, with its PID when known. With `json`, emits a single
 /// machine-readable object instead of the human-readable line.
 ///
@@ -410,12 +450,16 @@ fn parse_health(body: &str) -> Option<HealthInfo> {
     })
 }
 
-/// Render the `cleanup` result as a one-line JSON object: `{"running":bool,"removed":N}`. `removed`
-/// is `0` when the server is not running (`running:false`).
+/// Render the `cleanup` result as a one-line JSON object:
+/// `{"running":bool,"removed":N,"address":…}`. `removed` is `0` when the server is not running
+/// (`running:false`). `address` is the effective bound [`bind_addr`] the request was sent to,
+/// matching `status --json`/`stop --json`'s object shape so every `--json` command surfaces the
+/// endpoint it talked to.
 fn cleanup_json(removed: usize, running: bool) -> String {
     serde_json::json!({
         "running": running,
         "removed": removed,
+        "address": bind_addr(),
     })
     .to_string()
 }

@@ -192,10 +192,12 @@ fn cleanup_json_reports_removed_and_running() {
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["removed"], serde_json::json!(3));
+    assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
 
     let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+    assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
 #[test]
@@ -228,6 +230,34 @@ fn restart_command() {
 fn install_and_uninstall_commands() {
     assert_eq!(parse(argv(&["install"])), Command::Install);
     assert_eq!(parse(argv(&["uninstall"])), Command::Uninstall);
+}
+
+#[test]
+fn trigger_command_carries_the_routine_id() {
+    assert_eq!(
+        parse(argv(&["trigger", "abc-123"])),
+        Command::Trigger {
+            id: "abc-123".to_string()
+        }
+    );
+}
+
+#[test]
+fn run_is_a_back_compat_alias_for_trigger() {
+    // `run` was the original subcommand name; it stays as a hidden alias of `trigger`.
+    assert_eq!(
+        parse(argv(&["run", "abc-123"])),
+        Command::Trigger {
+            id: "abc-123".to_string()
+        }
+    );
+}
+
+#[test]
+fn trigger_without_an_id_falls_back_to_help() {
+    // Nothing to trigger without an id, so it shows usage rather than silently no-op'ing.
+    assert_eq!(parse(argv(&["trigger"])), Command::Help);
+    assert_eq!(parse(argv(&["run"])), Command::Help);
 }
 
 #[test]
@@ -474,6 +504,13 @@ fn status_json_address_reflects_bind_override() {
 }
 
 #[test]
+fn cleanup_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+#[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();
     print_version();
@@ -566,6 +603,35 @@ fn cleanup_errors_on_unexpected_status() {
     let server = FakeServer::start(500, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     assert!(cleanup(false).is_err());
+}
+
+#[test]
+fn trigger_triggers_routine_when_server_responds() {
+    let server = FakeServer::start(200, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(trigger("some-id".to_string()).unwrap(), 0);
+}
+
+#[test]
+fn trigger_reports_unknown_routine_on_404() {
+    // A 404 from the trigger route means no routine has that id — a user error, surfaced as a
+    // non-zero exit via the bubbled `Err`, distinct from "server not running".
+    let server = FakeServer::start(404, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(trigger("missing".to_string()).is_err());
+}
+
+#[test]
+fn trigger_errors_on_unexpected_status() {
+    let server = FakeServer::start(500, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(trigger("some-id".to_string()).is_err());
+}
+
+#[test]
+fn trigger_reports_not_running_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(trigger("some-id".to_string()).unwrap(), EXIT_NOT_RUNNING);
 }
 
 #[test]

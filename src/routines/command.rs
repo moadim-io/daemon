@@ -186,7 +186,7 @@ pub(crate) fn system_prompt_stmts(
         // workbench's agent.log (already created via mkdir) and on stderr. Only this primary write
         // is guarded; the optional user-prompt append below stays best-effort (`|| true`).
         format!(
-            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > {dest} || {{ echo "moadim: failed to write {instructions_file} disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
+            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > {dest} || {{ echo "moadim: failed to write agent instructions disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
             header, disclosure, title
         ),
         format!(

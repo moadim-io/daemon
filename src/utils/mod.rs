@@ -2,6 +2,8 @@
 pub mod atomic;
 /// Poison-tolerant locking for the in-memory stores.
 pub mod lock;
+/// Spawn child processes and reap them so triggers don't leak zombie (`<defunct>`) entries.
+pub mod process;
 /// JSON Schema helpers for schemars.
 pub mod schema;
 /// Startup print printed to stdout when the server begins listening.

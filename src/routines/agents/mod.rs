@@ -4,6 +4,7 @@
 //! `<agent>/setup.rs` module; [`DEFAULT_AGENT_CONFIGS`] assembles them for [`ensure_default_agents`].
 
 use serde::Deserialize;
+use std::io::ErrorKind;
 use std::path::Path;
 
 use crate::paths::{agent_toml_path, agents_dir};
@@ -49,13 +50,17 @@ pub struct AgentCommand {
 
 /// Why [`load_agent_command`] could not produce an [`AgentCommand`].
 ///
-/// Distinguishes a missing config (the routine simply has no `<name>.toml`) from a config that is
-/// present on disk but cannot be parsed, so callers can report the real cause instead of collapsing
-/// both into a misleading "config not found".
+/// Distinguishes a genuinely missing config (the routine simply has no `<name>.toml`) from a config
+/// that is present on disk but cannot be read or parsed, so callers can report the real cause instead
+/// of collapsing every failure into a misleading "config not found".
 #[derive(Debug)]
 pub enum AgentLoadError {
-    /// No `~/.config/moadim/agents/<name>.toml` exists (or it is otherwise unreadable).
+    /// No `~/.config/moadim/agents/<name>.toml` exists.
     Missing,
+    /// The file exists but could not be read (e.g. a permissions error, or the path is a directory);
+    /// carries the underlying I/O error. Distinct from [`Missing`](Self::Missing) so an unreadable
+    /// config is never mislabeled "not found" and silently dropped.
+    Unreadable(String),
     /// The file exists but its TOML could not be parsed; carries the underlying parse error.
     Parse(String),
 }
@@ -64,6 +69,7 @@ impl std::fmt::Display for AgentLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AgentLoadError::Missing => write!(f, "agent config not found"),
+            AgentLoadError::Unreadable(err) => write!(f, "unreadable agent config: {err}"),
             AgentLoadError::Parse(err) => write!(f, "malformed agent TOML: {err}"),
         }
     }
@@ -71,12 +77,18 @@ impl std::fmt::Display for AgentLoadError {
 
 /// Load the agent command for `name`.
 ///
-/// Returns [`AgentLoadError::Missing`] when no config file exists, and [`AgentLoadError::Parse`]
-/// (carrying the `toml` error) when the file is present but unparseable, so the two failures are
-/// never conflated.
+/// Returns [`AgentLoadError::Missing`] only when no config file exists, [`AgentLoadError::Unreadable`]
+/// when the file is present but cannot be read (e.g. a permissions error), and
+/// [`AgentLoadError::Parse`] (carrying the `toml` error) when the file is present but unparseable, so
+/// the three failures are never conflated.
 pub fn load_agent_command(name: &str) -> Result<AgentCommand, AgentLoadError> {
-    let text =
-        std::fs::read_to_string(agent_toml_path(name)).map_err(|_| AgentLoadError::Missing)?;
+    let text = std::fs::read_to_string(agent_toml_path(name)).map_err(|err| {
+        if err.kind() == ErrorKind::NotFound {
+            AgentLoadError::Missing
+        } else {
+            AgentLoadError::Unreadable(err.to_string())
+        }
+    })?;
     toml::from_str(&text).map_err(|err| AgentLoadError::Parse(err.to_string()))
 }
 

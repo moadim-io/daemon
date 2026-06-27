@@ -53,13 +53,7 @@ fn job_dir_is_child_of_jobs_dir() {
 }
 
 #[test]
-fn jobs_dir_from_home_none_falls_back_to_dot() {
-    let dir = super::jobs_dir_from_home(None);
-    assert!(dir.ends_with(".config/moadim/jobs"));
-    assert!(dir.starts_with("."));
-}
 
-#[test]
 fn machine_config_path_filename() {
     let path = machine_config_path();
     assert_eq!(
@@ -87,13 +81,6 @@ fn handlers_dir_contains_moadim_and_ends_with_handlers() {
 }
 
 #[test]
-fn handlers_dir_from_home_none_falls_back_to_dot() {
-    let dir = super::handlers_dir_from_home(None);
-    assert!(dir.ends_with(".config/moadim/handlers"));
-    assert!(dir.starts_with("."));
-}
-
-#[test]
 fn job_log_path_filename() {
     let path = super::job_log_path("abc");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "job.local.log");
@@ -108,13 +95,6 @@ fn routines_dir_ends_with_routines() {
         path.ends_with("routines"),
         "expected end with 'routines': {path}"
     );
-}
-
-#[test]
-fn routines_dir_from_home_none_falls_back_to_dot() {
-    let dir = super::routines_dir_from_home(None);
-    assert!(dir.ends_with(".config/moadim/routines"));
-    assert!(dir.starts_with("."));
 }
 
 #[test]
@@ -160,13 +140,6 @@ fn agents_dir_ends_with_agents() {
         path.ends_with("agents"),
         "expected end with 'agents': {path}"
     );
-}
-
-#[test]
-fn agents_dir_from_home_none_falls_back_to_dot() {
-    let dir = super::agents_dir_from_home(None);
-    assert!(dir.ends_with(".config/moadim/agents"));
-    assert!(dir.starts_with("."));
 }
 
 #[test]
@@ -234,30 +207,47 @@ fn user_prompt_path_filename() {
 }
 
 #[test]
-fn user_prompt_path_from_home_none_falls_back_to_dot() {
-    let path = super::user_prompt_path_from_home(None);
-    assert!(path.ends_with(".config/moadim/user_prompt.md"));
-    assert!(path.starts_with("."));
-}
-
-#[test]
 fn user_prompt_path_is_in_config_dir() {
     assert_eq!(user_prompt_path().parent().unwrap(), config_dir());
 }
 
 #[test]
-fn config_dir_from_home_none_falls_back_to_dot() {
-    // Exercises the `home.unwrap_or_else(|| PathBuf::from("."))` fallback in
-    // `config_dir_from_home` for the case where `dirs::home_dir()` yields `None`.
-    let dir = super::config_dir_from_home(None);
-    assert!(dir.ends_with(".config/moadim"));
+fn config_root_from_absolute_xdg_is_used_verbatim() {
+    // An absolute `$XDG_CONFIG_HOME` relocates the config root, ignoring `home`.
+    let xdg = std::ffi::OsString::from("/custom/xdg");
+    let home = Some(std::path::PathBuf::from("/home/u"));
+    let dir = super::config_root_from(Some(xdg), home);
+    assert_eq!(dir, std::path::PathBuf::from("/custom/xdg"));
+}
+
+#[test]
+fn config_root_from_relative_xdg_is_ignored() {
+    // A relative `$XDG_CONFIG_HOME` violates the XDG spec and must be ignored, falling back to
+    // `$HOME/.config`.
+    let xdg = std::ffi::OsString::from("relative/config");
+    let home = Some(std::path::PathBuf::from("/home/u"));
+    let dir = super::config_root_from(Some(xdg), home);
+    assert_eq!(dir, std::path::PathBuf::from("/home/u/.config"));
+}
+
+#[test]
+fn config_root_from_unset_xdg_falls_back_to_home_config() {
+    let home = Some(std::path::PathBuf::from("/home/u"));
+    let dir = super::config_root_from(None, home);
+    assert_eq!(dir, std::path::PathBuf::from("/home/u/.config"));
+}
+
+#[test]
+fn config_root_from_none_home_falls_back_to_dot() {
+    // Exercises the `home.unwrap_or_else(|| PathBuf::from("."))` fallback for the case where both
+    // `$XDG_CONFIG_HOME` is unset and `dirs::home_dir()` yields `None`.
+    let dir = super::config_root_from(None, None);
+    assert!(dir.ends_with(".config"));
     assert!(dir.starts_with("."));
 }
 
 #[test]
-fn config_dir_from_home_some_joins_under_home() {
-    // The `Some(home)` arm: the moadim config dir nests under the provided home.
-    let home = std::path::PathBuf::from("/tmp/some-home");
-    let dir = super::config_dir_from_home(Some(home.clone()));
-    assert_eq!(dir, home.join(".config").join("moadim"));
+fn config_dir_nests_moadim_under_config_root() {
+    assert!(config_dir().ends_with("moadim"));
+    assert_eq!(config_dir().file_name().unwrap(), "moadim");
 }

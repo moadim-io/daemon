@@ -128,7 +128,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
     assert!(
         cmd.contains(
-            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write CLAUDE.md disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write agent instructions disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
         ),
         "expected the CLAUDE.md disclosure write to fail-fast in: {cmd}"
     );

@@ -83,6 +83,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   string was written verbatim, making the job malformed and silently inactive.
   Closes #183.
 
+- The pid file is now reconciled against process liveness before it is reported
+  or acted on. After a `kill -9`, panic, OOM kill, or power loss the graceful
+  shutdown path never runs, so the pid file lingers with a now-dead PID.
+  `read_pid_file()` now treats a recorded PID that is not a live process
+  (`kill -0` probe on Unix) as absent and cleans the stale file up best-effort.
+  `status`/`stop --json` therefore emit `pid: null` consistently with
+  `running: false` instead of a dead-or-PID-reused number, and `restart` never
+  force-kills a stale PID. (#315)
+
 - The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
 
 - An agent config that exists on disk but cannot be read (due to a permissions

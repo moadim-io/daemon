@@ -648,6 +648,14 @@ fn pid_file_write_read_clear_roundtrip() {
     // A garbage pid file parses to None rather than panicking.
     std::fs::write(crate::paths::pid_file(), "not-a-pid").unwrap();
     assert!(read_pid_file().is_none());
+    // A pid file recording a dead process (u32::MAX is never a live PID on Unix) is reconciled
+    // against liveness: reported as absent and cleaned up best-effort so it doesn't linger.
+    std::fs::write(crate::paths::pid_file(), u32::MAX.to_string()).unwrap();
+    assert!(read_pid_file().is_none());
+    assert!(!crate::paths::pid_file().exists());
+    // A pid file recording a live process (this test process) reads back unchanged.
+    std::fs::write(crate::paths::pid_file(), std::process::id().to_string()).unwrap();
+    assert_eq!(read_pid_file(), Some(std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
 }
 

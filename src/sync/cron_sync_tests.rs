@@ -129,6 +129,10 @@ fn to_os_schedule_7field_drops_sec_and_year() {
 
 #[test]
 fn to_os_schedule_6field_drops_seconds() {
+    // 6-field `sec min hour dom month dow` -> 5-field. Without reduction the
+    // expression is written verbatim to the OS crontab and never fires.
+    assert_eq!(to_os_schedule("0 */5 * * * *"), "*/5 * * * *");
+    assert_eq!(to_os_schedule("30 0 9 * * 1-5"), "0 9 * * 1-5");
     // croner accepts 6-field `sec min hour dom month dow`; the OS crontab has no
     // seconds column, so the leading field is dropped to a valid 5-field line.
     assert_eq!(to_os_schedule("0 30 9 * * 1-5"), "30 9 * * 1-5");

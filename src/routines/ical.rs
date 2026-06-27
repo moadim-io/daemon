@@ -24,9 +24,9 @@ fn escape_text(text: &str) -> String {
             ';' => out.push_str("\\;"),
             ',' => out.push_str("\\,"),
             '\n' => out.push_str("\\n"),
-            // RFC 5545 §3.3.11: a TEXT value must not contain a raw CR. Normalize
-            // both CRLF and a lone CR to a single escaped newline so they match the
-            // `\n` handling and never leak a stray `\r` into a content line.
+            // RFC 5545 §3.3.11: a TEXT value cannot contain a raw carriage
+            // return. Normalize both CRLF and a lone CR to the same escaped
+            // newline as a bare LF, so no stray '\r' ever reaches the feed.
             '\r' => {
                 if chars.peek() == Some(&'\n') {
                     chars.next();

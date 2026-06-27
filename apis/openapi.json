@@ -145,7 +145,7 @@
         "tags": [
           "crate::cron_jobs"
         ],
-        "summary": "`PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).",
+        "summary": "`PUT /cron-jobs/{id}` — alias for PATCH: a partial merge, **not** a full replacement. Fields\nomitted from the body are retained from the existing cron job (they are not reset to defaults),\nbecause `UpdateRequest` uses all-`Option` fields. Delegates to [`update`].",
         "operationId": "replace",
         "parameters": [
           {
@@ -717,7 +717,7 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).",
+        "summary": "`PUT /routines/{id}` — alias for PATCH: a partial merge, **not** a full replacement. Fields\nomitted from the body are retained from the existing routine (they are not reset to defaults),\nbecause `UpdateRoutineRequest` uses all-`Option` fields. Delegates to [`update`].",
         "operationId": "replace",
         "parameters": [
           {

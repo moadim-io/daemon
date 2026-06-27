@@ -33,7 +33,9 @@ pub enum MachineSource {
     Env,
     /// From the `name` field in `machine.local.toml`.
     File,
-    /// Fell back to the system hostname.
+    /// Auto-generated on first run and written to `machine.local.toml`.
+    Generated,
+    /// Fell back to the system hostname (only when writing the generated name fails).
     Hostname,
 }
 
@@ -43,6 +45,7 @@ impl MachineSource {
         match self {
             MachineSource::Env => "MOADIM_MACHINE env",
             MachineSource::File => "machine.local.toml",
+            MachineSource::Generated => "auto-generated (first run)",
             MachineSource::Hostname => "system hostname",
         }
     }
@@ -55,10 +58,36 @@ pub fn current_machine() -> String {
 
 /// This machine's identity name together with where it was resolved from.
 pub fn resolve() -> (String, MachineSource) {
-    resolve_from(
-        std::env::var("MOADIM_MACHINE").ok(),
-        read_machine_file(),
-        hostname(),
+    let env = std::env::var("MOADIM_MACHINE").ok();
+    let file = read_machine_file();
+    if let Some(name) = non_empty(env) {
+        return (name, MachineSource::Env);
+    }
+    if let Some(name) = non_empty(file) {
+        return (name, MachineSource::File);
+    }
+    // No name configured: generate a unique name and persist it so every subsequent
+    // call returns the same identity without re-generating.
+    let generated = generate_name();
+    match set_machine(&generated) {
+        Ok(()) => {
+            log::warn!(
+                "no machine name configured; generated {generated:?} — run `moadim machine set <name>` to choose your own"
+            );
+            (generated, MachineSource::Generated)
+        }
+        Err(err) => {
+            log::warn!("failed to save generated machine name: {err}; falling back to hostname");
+            (hostname(), MachineSource::Hostname)
+        }
+    }
+}
+
+/// Generate a unique machine name of the form `machine-{8hex}`.
+fn generate_name() -> String {
+    format!(
+        "machine-{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
     )
 }
 
@@ -66,6 +95,7 @@ pub fn resolve() -> (String, MachineSource) {
 ///
 /// Split out from [`resolve`] so the precedence (and each branch) is unit-testable without touching
 /// the real environment or filesystem.
+#[cfg(test)]
 fn resolve_from(
     env: Option<String>,
     file: Option<String>,
@@ -115,7 +145,8 @@ pub fn set_machine(name: &str) -> std::io::Result<()> {
     let toml = MachineToml {
         name: Some(name.to_string()),
     };
-    let text = toml::to_string_pretty(&toml).map_err(std::io::Error::other)?;
+    let text = toml::to_string_pretty(&toml)
+        .expect("MachineToml serialization cannot fail for a struct with an Option<String> field");
     atomic_write(&path, text.as_bytes())
 }
 

@@ -1267,6 +1267,8 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        machines: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     };

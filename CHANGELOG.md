@@ -13,6 +13,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- `GET /health` now reports a `dependencies` section (currently `{"tmux": bool}`)
+  so the UI/CLI can detect when the `tmux` runtime dependency is missing, and the
+  daemon logs a `warn!` at startup naming the missing binary. `tmux` is a hard
+  dependency — every routine agent launches inside a tmux session — but its
+  absence was previously unchecked and undocumented, so a host without `tmux`
+  made scheduled routine runs silently no-op. Detection reuses the existing
+  PATH probe (`tmux_available_in` / `tmux_available`) (#187).
+
 - `GET /routines.ics` accepts an optional **`?routine=<id>`** query param that
   scopes the feed to a single routine, so a calendar client can subscribe to one
   routine's fire times instead of the firehose of every routine on the host. The
@@ -42,6 +50,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without
   relying on local hooks.
+
+### Documentation
+
+- Documented the required external binaries (`tmux`, `crontab`) under a new
+  **Prerequisites** section in the README (#187).
 
 ### Changed
 

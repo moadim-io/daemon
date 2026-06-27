@@ -84,6 +84,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
 
 ### Fixed
+- iCal feeds now summarize long routine prompts in the DESCRIPTION field (first line, truncated to 120 chars) instead of embedding the full prompt, keeping calendar entries readable. (#185)
 - **6-field cron expressions no longer silently fail to fire.** `croner` accepts
   6-field (`sec min hour dom month dow`) and 7-field expressions, but the OS
   crontab only understands 5 fields. Both forms are now normalised to 5 fields

@@ -185,6 +185,49 @@ fn carriage_returns_crlf_and_lone_cr_normalized() {
 }
 
 #[test]
+fn description_summarizes_long_multiline_prompt() {
+    let mut routine = routine_with("r1", "* * * * *", true);
+    routine.prompt = format!("First line of the plan\n{}", "x".repeat(5000));
+    let ics = build_ical(&[routine], fixed_now());
+    // Only the first line is shown, with an ellipsis marking the elided remainder.
+    assert!(ics.contains("DESCRIPTION:First line of the plan… (agent: claude)\r\n"));
+    // The multi-KB tail never reaches the feed, even once.
+    assert!(!ics.contains("xxxxxxxxxx"));
+}
+
+#[test]
+fn description_truncates_overlong_single_line() {
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.prompt = "a".repeat(500);
+    let ics = build_ical(&[routine], fixed_now());
+    // Unfold continuation lines (strip CRLF + leading space) before inspecting the
+    // logical content; the long prompt summary causes the DESCRIPTION to be folded
+    // across multiple physical lines per RFC 5545 §3.1.
+    let unfolded = ics.replace("\r\n ", "");
+    let mut saw_description = false;
+    for line in unfolded
+        .split("\r\n")
+        .filter(|entry| entry.starts_with("DESCRIPTION:"))
+    {
+        saw_description = true;
+        assert!(
+            line.chars().count() < 200,
+            "DESCRIPTION not bounded: {line}"
+        );
+        assert!(line.ends_with("… (agent: claude)"));
+    }
+    assert!(saw_description);
+}
+
+#[test]
+fn description_handles_blank_prompt() {
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.prompt = "   \n  ".to_string();
+    let ics = build_ical(&[routine], fixed_now());
+    assert!(ics.contains("DESCRIPTION: (agent: claude)\r\n"));
+}
+
+#[test]
 fn carriage_returns_are_normalized() {
     let mut routine = routine_with("r1", "@daily", true);
     // A lone CR and a CRLF, as pasted Windows / multi-line text produces.
@@ -194,7 +237,9 @@ fn carriage_returns_are_normalized() {
 
     // Both the lone CR and the CRLF collapse to the same escaped newline as a bare LF.
     assert!(ics.contains("SUMMARY:a\\nb\\nc\r\n"));
-    assert!(ics.contains("DESCRIPTION:x\\ny (agent: claude)\r\n"));
+    // Prompt "x\r\ny" is multi-line; prompt_summary takes the first non-empty line ("x")
+    // and appends "…" because further lines exist. The CR/CRLF never reach the feed.
+    assert!(ics.contains("DESCRIPTION:x… (agent: claude)\r\n"));
 
     // No raw CR survives except as part of a structural CRLF line terminator.
     assert!(

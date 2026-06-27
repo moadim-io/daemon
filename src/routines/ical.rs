@@ -46,6 +46,27 @@ fn format_utc(dt: DateTime<Utc>) -> String {
     dt.format("%Y%m%dT%H%M%SZ").to_string()
 }
 
+/// Maximum characters of a routine prompt shown in a `DESCRIPTION` before truncation.
+const DESCRIPTION_PROMPT_MAX: usize = 120;
+
+/// Build a compact, single-line summary of a routine prompt for a `VEVENT` `DESCRIPTION`.
+///
+/// Prompts are routinely multi-KB and identical across all of a routine's fire times, so embedding
+/// the full prompt in every event bloats the feed and makes calendar entries unreadable. Take the
+/// first non-empty line, trimmed and truncated to [`DESCRIPTION_PROMPT_MAX`] characters, appending
+/// an ellipsis when any content (a longer line, or further lines) was dropped.
+fn prompt_summary(prompt: &str) -> String {
+    let non_empty = || prompt.lines().filter(|line| !line.trim().is_empty());
+    let first_line = non_empty().next().unwrap_or("").trim();
+    let has_more_lines = non_empty().count() > 1;
+    let truncated: String = first_line.chars().take(DESCRIPTION_PROMPT_MAX).collect();
+    if has_more_lines || truncated.chars().count() < first_line.chars().count() {
+        format!("{truncated}…")
+    } else {
+        truncated
+    }
+}
+
 /// Maximum octets per physical content line per RFC 5545 §3.1 (excluding CRLF).
 const FOLD_LIMIT: usize = 75;
 
@@ -117,7 +138,11 @@ fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) 
             continue;
         };
         let summary = escape_text(&routine.title);
-        let description = escape_text(&format!("{} (agent: {})", routine.prompt, routine.agent));
+        let description = escape_text(&format!(
+            "{} (agent: {})",
+            prompt_summary(&routine.prompt),
+            routine.agent
+        ));
         // Fire times within the horizon, in order. Kept as a stateful iterator so that after the
         // per-routine cap is spent we can peek whether more fires remain inside the horizon and, if
         // so, surface the truncation rather than letting the feed silently stop short of 30 days.

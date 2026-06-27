@@ -66,8 +66,8 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
         let agent = AgentCommand {
             command: "claude".to_string(),
             args: vec![],
-            setup: None,
             instructions_file: "CLAUDE.md".to_string(),
+            setup: None,
         };
         let cmd = build_routine_command(&routine, &agent);
         // The resolved tmux dir is baked into the exported PATH.
@@ -89,8 +89,8 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
-        setup: None,
         instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
     let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
@@ -119,8 +119,8 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
-        setup: None,
         instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
 
@@ -167,6 +167,72 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
         match saved {
             Some(prev) => std::env::set_var("HOME", prev),
             None => std::env::remove_var("HOME"),
+        }
+    }
+}
+
+#[test]
+fn tmux_available_in_true_when_fake_tmux_present() {
+    // A temp dir containing a fake `tmux` executable resolves as available — the "present" branch
+    // of the injectable detection helper.
+    let dir = std::env::temp_dir().join(format!("moadim-tmux-present-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tmux = dir.join("tmux");
+    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    assert!(tmux_available_in(&dir.to_string_lossy()));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn tmux_available_in_false_when_dir_has_no_tmux() {
+    // A temp dir without a `tmux` file resolves as missing — the "missing" branch of the helper.
+    let dir = std::env::temp_dir().join(format!("moadim-tmux-missing-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    assert!(!tmux_available_in(&dir.to_string_lossy()));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn tmux_available_reads_live_path_present() {
+    // `tmux_available()` reads the process `PATH`; pointed at a dir with a fake tmux it returns
+    // true, exercising the `is_some_and(..)` Some/true arm.
+    let dir = std::env::temp_dir().join(format!("moadim-tmux-live-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tmux = dir.join("tmux");
+    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    with_path(&dir, || assert!(tmux_available()));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn tmux_available_false_when_path_unset() {
+    // With PATH removed entirely, `std::env::var("PATH").ok()` is None and `is_some_and` short-
+    // circuits to false — the missing-PATH arm.
+    let saved = std::env::var_os("PATH");
+    // SAFETY: single-threaded test harness; restored immediately below.
+    unsafe {
+        std::env::remove_var("PATH");
+    }
+    assert!(!tmux_available());
+    unsafe {
+        if let Some(prev) = saved {
+            std::env::set_var("PATH", prev);
         }
     }
 }

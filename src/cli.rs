@@ -490,13 +490,52 @@ pub fn clear_pid_file() {
     let _ = std::fs::remove_file(crate::paths::pid_file());
 }
 
-/// Read the PID recorded in the pid file, if present and parseable.
+/// Read the PID recorded in the pid file, if present, parseable, **and still a live process**.
+///
+/// On a clean shutdown the pid file is removed ([`clear_pid_file`]), but a `kill -9`, panic, OOM
+/// kill, or power loss skips that path and leaves the file behind with a now-dead PID. Returning
+/// that stale PID would make the machine-readable contract dishonest — `status`/`stop --json` would
+/// report a `pid` for a process that no longer exists (and which, after PID reuse, may belong to an
+/// unrelated process), and `restart` would force-kill it. So a recorded PID that is not alive is
+/// treated as absent and the stale file is cleaned up best-effort, keeping the pid self-healing.
 pub(crate) fn read_pid_file() -> Option<u32> {
-    std::fs::read_to_string(crate::paths::pid_file())
+    let pid = std::fs::read_to_string(crate::paths::pid_file())
         .ok()?
         .trim()
         .parse()
-        .ok()
+        .ok()?;
+    if process_is_alive(pid) {
+        Some(pid)
+    } else {
+        clear_pid_file();
+        None
+    }
+}
+
+/// Returns `true` if a process with `pid` currently exists.
+///
+/// Uses the standard signal-0 liveness probe (`kill -0 <pid>`): no signal is delivered, but the
+/// kernel runs the same existence check it would for a real signal, so a successful exit means the
+/// PID is alive. Unlike [`crate::restart`]'s destructive killer, this probe is harmless, so it goes
+/// straight to the real `kill` with no env override to keep parallel tests from racing on it.
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    // Linux PIDs are signed; u32::MAX overflows to -1 in the kernel, causing kill(-1, 0)
+    // to return success (it sends to all accessible processes). Treat out-of-range as dead.
+    if pid > i32::MAX as u32 {
+        return false;
+    }
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .is_ok_and(|out| out.status.success())
+}
+
+/// Best-effort liveness on non-unix: assume the recorded PID is alive, mirroring the best-effort
+/// semantics of the Windows force-killer. The pid file is still cleared on graceful shutdown.
+#[cfg(not(unix))]
+fn process_is_alive(_pid: u32) -> bool {
+    true
 }
 
 /// The daemon log path, rendered for display.

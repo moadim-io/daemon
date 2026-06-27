@@ -16,6 +16,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa_swagger_ui::SwaggerUi;
 
+/// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
+/// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
+/// instead of having routine runs silently no-op.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct DependencyHealth {
+    /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
+    pub tmux: bool,
+}
+
 /// Response body for `GET /health`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
@@ -25,6 +34,8 @@ pub struct HealthResponse {
     pub uptime_secs: u64,
     /// Whether the server is running.
     pub running: bool,
+    /// Presence of required external binaries on the daemon's `PATH`.
+    pub dependencies: DependencyHealth,
     /// Daemon version (from `CARGO_PKG_VERSION`).
     pub version: String,
     /// Short git commit SHA the daemon was built from, or `"unknown"` outside a git checkout.
@@ -78,6 +89,9 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
         uptime_secs: now_secs().saturating_sub(state.uptime_start),
         running: true,
+        dependencies: DependencyHealth {
+            tmux: routines::tmux_available(),
+        },
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),
         build_date: crate::build_info::BUILD_DATE.to_string(),

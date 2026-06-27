@@ -878,7 +878,7 @@ impl Drop for HomeOverrideGuard {
         // SAFETY: single-threaded test execution.
         unsafe {
             match self.previous.take() {
-                Some(v) => std::env::set_var("MOADIM_HOME_OVERRIDE", v),
+                Some(val) => std::env::set_var("MOADIM_HOME_OVERRIDE", val),
                 None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
             }
         }
@@ -892,8 +892,8 @@ impl Drop for HomeOverrideGuard {
 fn restore_writable(dir: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt as _;
     if let Ok(entries) = std::fs::read_dir(dir) {
-        for e in entries.flatten() {
-            let path = e.path();
+        for entry in entries.flatten() {
+            let path = entry.path();
             let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
             if path.is_dir() {
                 restore_writable(&path);

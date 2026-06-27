@@ -684,6 +684,7 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     configure(&mut cmd);
     detach(&mut cmd);
 
+    #[allow(clippy::zombie_processes)]
     let child = cmd.spawn().expect("spawn detached moadim child process");
     Ok(child.id())
 }

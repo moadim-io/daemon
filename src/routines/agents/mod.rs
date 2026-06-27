@@ -132,7 +132,7 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
             // For real directory entries file_stem() is always Some; to_str() may be None for
             // non-UTF-8 names (silently skipped).
             path.file_stem()
-                .and_then(|s| s.to_str())
+                .and_then(|stem| stem.to_str())
                 .map(str::to_string)
         })
         .collect();

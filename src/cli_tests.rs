@@ -517,6 +517,36 @@ fn print_help_and_version_emit_without_panicking() {
 }
 
 #[test]
+fn help_text_documents_every_accepted_flag() {
+    let help = help_text();
+    // Each alias `parse_args` accepts must be discoverable in `--help`, so the
+    // documentation can't silently drift from the parser.
+    for flag in [
+        "-i",
+        "--interactive",
+        "-f",
+        "--foreground", // foreground mode
+        "-b",
+        "--background",
+        "-d",
+        "--detach",
+        "--daemon", // background mode
+        "-h",
+        "--help",
+        "-V",
+        "--version", // help & version
+        "--json",
+        "-q",
+        "--quiet", // command flags
+    ] {
+        assert!(
+            help.contains(flag),
+            "help text is missing the `{flag}` flag that the parser accepts"
+        );
+    }
+}
+
+#[test]
 fn stop_reports_not_running_when_no_server() {
     let home = temp_home("stop-down");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());

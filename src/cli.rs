@@ -146,10 +146,11 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
-/// Print usage help to stdout.
-pub fn print_help() {
+/// Build the usage help text. Every flag listed here must stay in sync with the
+/// aliases [`parse`] actually accepts; [`crate::cli_tests`] asserts as much.
+pub fn help_text() -> String {
     let bind_addr = bind_addr();
-    println!(
+    format!(
         "moadim — cron/MCP/REST server with a web control panel\n\
          \n\
          USAGE:\n\
@@ -158,8 +159,8 @@ pub fn print_help() {
          \n\
          MODES:\n\
          \x20   (default)              start the server in the background and exit\n\
-         \x20   -i, --interactive      run in the foreground, attached to the terminal (Ctrl-C to stop)\n\
-         \x20   -b, --background       start the server detached in the background (explicit default)\n\
+         \x20   -i, --interactive      run in the foreground, attached to the terminal (Ctrl-C to stop); aliases: -f, --foreground\n\
+         \x20   -b, --background       start the server detached in the background (explicit default); aliases: -d, --detach, --daemon\n\
          \n\
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
@@ -171,7 +172,7 @@ pub fn print_help() {
          \x20   uninstall              remove the OS service registration\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
          \x20   help, -h, --help       show this help\n\
-         \x20   version, -V            show the version\n\
+         \x20   version, -V, --version show the version\n\
          \n\
          DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
          \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
@@ -186,7 +187,12 @@ pub fn print_help() {
          \n\
          Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
-    );
+    )
+}
+
+/// Print usage help to stdout.
+pub fn print_help() {
+    println!("{}", help_text());
 }
 
 /// Print the binary version to stdout, including the git commit and date it was

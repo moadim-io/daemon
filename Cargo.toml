@@ -74,3 +74,12 @@ manual_let_else = "deny"
 # wrapping it in a closure that only forwards the receiver
 # (`|e| e.ok()`, `|s| s.to_string()`).
 redundant_closure_for_method_calls = "deny"
+# Forbid `.unwrap()` in production code: a panic in a long-running daemon process
+# kills the server without a graceful shutdown, swallowing the in-flight request
+# and leaving connected agents in an undefined state. All error paths must instead
+# propagate via `?` or be handled explicitly so the structured error responses and
+# logging this daemon provides remain intact. Production code is already clean, so
+# `deny` locks in that state and keeps every future error path deliberate.
+# Test code is exempt because test modules are gated with `#[cfg(test)]` and
+# legitimately use `.unwrap()` to assert invariants.
+unwrap_used = "deny"

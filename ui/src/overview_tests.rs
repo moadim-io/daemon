@@ -18,6 +18,7 @@ fn at_ten() -> DateTime<Local> {
 fn src(kind: Kind, label: &str, schedule: &str, enabled: bool) -> SchedSource {
     SchedSource {
         kind,
+        id: label.into(),
         label: label.into(),
         schedule: schedule.into(),
         human: None,
@@ -329,4 +330,38 @@ fn sources_of_concatenates_crons_then_routines() {
     assert_eq!(sources[0].kind, Kind::Cron);
     assert_eq!(sources[1].kind, Kind::Routine);
     assert_eq!(sources[1].label, "T");
+}
+
+#[test]
+fn from_cron_maps_id() {
+    let job: CronJob = serde_json::from_value(serde_json::json!({
+        "id": "backup", "schedule": "*/5 * * * *", "handler": "h", "metadata": {},
+        "enabled": true, "created_at": 0, "updated_at": 0
+    }))
+    .expect("valid cron job json");
+    let s = from_cron(&job);
+    assert_eq!(s.id, "backup");
+    assert_eq!(s.label, "backup");
+}
+
+#[test]
+fn from_routine_maps_id_separate_from_label() {
+    let routine: Routine = serde_json::from_value(serde_json::json!({
+        "id": "r-uuid-1", "schedule": "0 0 * * *", "title": "Nightly sweep",
+        "agent": "claude", "prompt": "go", "enabled": true
+    }))
+    .expect("valid routine json");
+    let s = from_routine(&routine);
+    assert_eq!(s.id, "r-uuid-1");
+    assert_eq!(s.label, "Nightly sweep");
+}
+
+#[test]
+fn upcoming_runs_propagates_id() {
+    let mut s = src(Kind::Cron, "five", "*/5 * * * *", true);
+    s.id = "cron-xyz".into();
+    let runs = upcoming_runs(&[s], at_ten());
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].id, "cron-xyz");
+    assert_eq!(runs[0].label, "five");
 }

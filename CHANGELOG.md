@@ -13,6 +13,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **UI: inline ▶ RUN trigger button in Overview Upcoming Runs** — each row in the merged
+  upcoming-runs table now has a ▶ button that fires the job immediately via the existing
+  `POST /api/v1/cron-jobs/{id}/trigger` or `POST /api/v1/routines/{id}/trigger` endpoint.
+  Success and failure feedback surfaces as a toast. The Overview page now accepts `on_toast`
+  (matching the pattern on Cron Jobs and Routines pages) and `SchedSource`/`UpcomingRun`
+  carry an `id` field so the correct entity is addressed. Closes #757.
+
 - **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
   `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
   before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids

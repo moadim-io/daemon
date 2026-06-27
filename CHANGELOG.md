@@ -22,6 +22,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   step still completes the cleanup — and it reports how many managed entries were
   removed. (#380)
 
+- `GET /health` now reports a `dependencies` section (currently `{"tmux": bool}`)
+  so the UI/CLI can detect when the `tmux` runtime dependency is missing, and the
+  daemon logs a `warn!` at startup naming the missing binary. `tmux` is a hard
+  dependency — every routine agent launches inside a tmux session — but its
+  absence was previously unchecked and undocumented, so a host without `tmux`
+  made scheduled routine runs silently no-op. Detection reuses the existing
+  PATH probe (`tmux_available_in` / `tmux_available`) (#187).
+
 - `GET /routines.ics` accepts an optional **`?routine=<id>`** query param that
   scopes the feed to a single routine, so a calendar client can subscribe to one
   routine's fire times instead of the firehose of every routine on the host. The
@@ -52,6 +60,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   and push to `main`, so style/lint regressions are caught in review without
   relying on local hooks.
 
+### Documentation
+
+- Documented the required external binaries (`tmux`, `crontab`) under a new
+  **Prerequisites** section in the README (#187).
+
 ### Changed
 
 - The built-in Claude agent now reads its project instructions from `AGENTS.md`,
@@ -78,6 +91,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the expression is stored or written to the crontab. Previously a 6-field
   string was written verbatim, making the job malformed and silently inactive.
   Closes #183.
+
+- The pid file is now reconciled against process liveness before it is reported
+  or acted on. After a `kill -9`, panic, OOM kill, or power loss the graceful
+  shutdown path never runs, so the pid file lingers with a now-dead PID.
+  `read_pid_file()` now treats a recorded PID that is not a live process
+  (`kill -0` probe on Unix) as absent and cleans the stale file up best-effort.
+  `status`/`stop --json` therefore emit `pid: null` consistently with
+  `running: false` instead of a dead-or-PID-reused number, and `restart` never
+  force-kills a stale PID. (#315)
 
 - The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
 

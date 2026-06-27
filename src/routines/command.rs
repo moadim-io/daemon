@@ -71,10 +71,35 @@ pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> 
 /// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
 fn bin_dir(bin: &str) -> Option<String> {
     let path = std::env::var("PATH").ok()?;
+    bin_dir_in(&path, bin)
+}
+
+/// Return the first directory in the `:`-separated `path` list that contains a file named `bin`.
+///
+/// Split out from [`bin_dir`] so the resolution logic is injectable in tests: callers can point
+/// `path` at a temp dir with or without a fake binary without mutating the process-global `PATH`.
+fn bin_dir_in(path: &str, bin: &str) -> Option<String> {
     path.split(':')
         .filter(|dir| !dir.is_empty())
         .find(|dir| std::path::Path::new(dir).join(bin).is_file())
         .map(str::to_string)
+}
+
+/// Whether `tmux` resolves to a file on the given `:`-separated `path` list.
+///
+/// `tmux` is a hard runtime dependency: routine launches run `tmux new-session …; tmux pipe-pane …`
+/// and a missing `tmux` would be silently ignored (the statements are `;`-joined), making the run a
+/// no-op. This helper surfaces its presence so startup can warn and `GET /health` can report it.
+/// Injectable for tests via the `path` argument; see [`tmux_available`] for the live-`PATH` variant.
+pub(crate) fn tmux_available_in(path: &str) -> bool {
+    bin_dir_in(path, "tmux").is_some()
+}
+
+/// Whether `tmux` resolves on the daemon's live `PATH`. Returns `false` when `PATH` is unset.
+pub(crate) fn tmux_available() -> bool {
+    std::env::var("PATH")
+        .ok()
+        .is_some_and(|path| tmux_available_in(&path))
 }
 
 /// A short `PATH` for cron, since cron's default (`/usr/bin:/bin`) hides homebrew/npm-installed

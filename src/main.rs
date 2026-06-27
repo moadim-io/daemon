@@ -98,6 +98,15 @@ async fn run_server() -> anyhow::Result<()> {
     // with timestamps and levels. Use `try_init` to avoid panicking if a backend is already set.
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .try_init();
+    // tmux is a hard runtime dependency: every routine agent launches via `tmux new-session`. When
+    // it is missing the launch command silently no-ops (the statements are `;`-joined), so warn
+    // loudly at startup rather than letting scheduled runs vanish. Also surfaced in `GET /health`.
+    if !routines::tmux_available() {
+        log::warn!(
+            "tmux not found on PATH; scheduled routine runs will silently fail to launch their \
+             agent. Install tmux (e.g. `brew install tmux` or `apt install tmux`)."
+        );
+    }
     routines::ensure_default_agents();
     let store = storage::load_store();
     // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first

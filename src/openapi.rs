@@ -53,6 +53,7 @@
         crate::routines::RoutineSort,
         crate::routines::SortOrder,
         crate::routes::http::HealthResponse,
+        crate::routes::http::DependencyHealth,
         crate::routes::http::ShutdownResponse,
         crate::routes::http::RestartResponse,
         crate::routes::http::EchoRequest,

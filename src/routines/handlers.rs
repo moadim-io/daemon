@@ -11,10 +11,10 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::global_lock::{LockScope, LockStatus};
 
-use super::ical::svc_ical;
+use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse,
-    RoutineStore, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, IcalFeedQuery, Routine, RoutineListQuery,
+    RoutineResponse, RoutineStore, UpdateRoutineRequest,
 };
 use super::service::{
     svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger,
@@ -198,12 +198,22 @@ pub async fn scheduled_trigger(
 ///
 /// Returns a `text/calendar` body suitable for subscribing to in an external calendar
 /// (Google Calendar, Apple Calendar, …) so upcoming runs show up alongside other events.
+/// With `?routine=<id>` the feed is scoped to a single routine (named after it); without
+/// it every enabled routine is rendered (issue #263).
 #[utoipa::path(get, path = "/routines.ics",
+    params(IcalFeedQuery),
     responses((status = 200, description = "iCalendar (text/calendar) feed of upcoming routine fire times")))]
-pub async fn ical_feed(State(store): State<RoutineStore>) -> impl IntoResponse {
+pub async fn ical_feed(
+    State(store): State<RoutineStore>,
+    Query(query): Query<IcalFeedQuery>,
+) -> impl IntoResponse {
+    let body = match query.routine.as_deref() {
+        Some(id) => svc_ical_routine(&store, id),
+        None => svc_ical(&store),
+    };
     (
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
-        svc_ical(&store),
+        body,
     )
 }
 

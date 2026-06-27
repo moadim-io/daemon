@@ -21,6 +21,19 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   made scheduled routine runs silently no-op. Detection reuses the existing
   PATH probe (`tmux_available_in` / `tmux_available`) (#187).
 
+- `GET /routines.ics` accepts an optional **`?routine=<id>`** query param that
+  scopes the feed to a single routine, so a calendar client can subscribe to one
+  routine's fire times instead of the firehose of every routine on the host. The
+  filtered calendar is named after the routine (`X-WR-CALNAME`); an unknown or
+  disabled id yields a well-formed empty calendar (still `200 text/calendar`).
+  Without the param the feed is unchanged — every enabled routine (#263).
+
+- The generated routines crontab block is now deterministic when several
+  routines share the same `created_at`. The block is built from a `HashMap`,
+  whose iteration order is unspecified, so tied routines previously emitted in
+  an arbitrary, run-to-run order — churning the block across syncs and defeating
+  the idempotency guard, which forced a needless `crontab -` rewrite that
+  mutates the user's live crontab. Ties are now broken on the stable routine id.
 - **UI overview: "▶ RUN" quick-trigger button in the Upcoming Runs table.**
   Each row in the UPCOMING RUNS table on the Overview page now carries a
   `▶ RUN` button that fires the job's trigger endpoint
@@ -29,12 +42,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   Implements the "quick actions" best practice from CI/CD operations dashboards
   (Cronitor, Temporal, GitHub Actions) where operators can fire jobs directly
   from the at-a-glance view.
-
 - **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
   `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
   before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids
   raw CR characters in content lines. Closes #181.
-
 - A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without

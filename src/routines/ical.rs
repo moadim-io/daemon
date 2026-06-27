@@ -13,6 +13,8 @@ const HORIZON_DAYS: i64 = 30;
 const MAX_EVENTS_PER_ROUTINE: usize = 100;
 /// Product identifier advertised in the `PRODID` property.
 const PRODID: &str = "-//moadim//routines//EN";
+/// Calendar display name (`X-WR-CALNAME`) for the unfiltered, all-routines feed.
+const DEFAULT_CAL_NAME: &str = "Moadim Routines";
 
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
 fn escape_text(text: &str) -> String {
@@ -80,13 +82,23 @@ fn fold_line(line: &str) -> String {
 /// `(now, now + HORIZON_DAYS]`, capped at [`MAX_EVENTS_PER_ROUTINE`]. Fire times are evaluated in
 /// the host's local timezone (matching crontab semantics) and emitted as UTC instants so the feed
 /// needs no embedded `VTIMEZONE`. Disabled routines and unparseable schedules (e.g. `@reboot`)
-/// contribute nothing.
+/// contribute nothing. The calendar is named [`DEFAULT_CAL_NAME`]; for a single-routine feed see
+/// [`build_ical_named`].
 ///
 /// When a routine fires more often than the cap allows within the horizon, the count cap is hit
 /// before the horizon is exhausted. To keep that truncation from silently reading as "covered the
 /// whole 30 days", a trailing marker `VEVENT` (UID `…-truncated@moadim`) is appended at the first
 /// omitted fire time, telling subscribers the feed was capped and where the projection stops.
 pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
+    build_ical_named(routines, now, DEFAULT_CAL_NAME)
+}
+
+/// Like [`build_ical`] but with an explicit `X-WR-CALNAME`.
+///
+/// Used by the per-routine feed (`GET /routines.ics?routine=<id>`, issue #263) so a subscribed
+/// calendar is named after the routine instead of the generic [`DEFAULT_CAL_NAME`]. The name is
+/// escaped per RFC 5545 like any other text value.
+fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) -> String {
     let dtstamp = format_utc(now.with_timezone(&Utc));
     let horizon = now + Duration::days(HORIZON_DAYS);
     let mut lines = vec![
@@ -94,7 +106,7 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
         "VERSION:2.0".to_string(),
         format!("PRODID:{PRODID}"),
         "CALSCALE:GREGORIAN".to_string(),
-        "X-WR-CALNAME:Moadim Routines".to_string(),
+        format!("X-WR-CALNAME:{}", escape_text(cal_name)),
     ];
     let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {
@@ -164,6 +176,27 @@ pub fn build_ical(routines: &[Routine], now: DateTime<Local>) -> String {
 pub fn svc_ical(store: &RoutineStore) -> String {
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     build_ical(&routines, Local::now())
+}
+
+/// Build the iCalendar feed for a single routine by `id` (issue #263).
+///
+/// The calendar is named after the routine so a subscribed feed reads as that routine
+/// rather than the generic all-routines name. An unknown id yields a well-formed empty
+/// calendar (named [`DEFAULT_CAL_NAME`]) rather than an error, mirroring how a disabled
+/// routine already contributes no events.
+pub fn svc_ical_routine(store: &RoutineStore, id: &str) -> String {
+    let routine = store
+        .lock()
+        .expect("routine store lock poisoned")
+        .get(id)
+        .cloned();
+    match routine {
+        Some(routine) => {
+            let cal_name = routine.title.clone();
+            build_ical_named(std::slice::from_ref(&routine), Local::now(), &cal_name)
+        }
+        None => build_ical_named(&[], Local::now(), DEFAULT_CAL_NAME),
+    }
 }
 
 #[cfg(test)]

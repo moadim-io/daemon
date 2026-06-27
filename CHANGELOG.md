@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Tests
+
+- Added a `cli_tests` regression guard asserting that `status --json` and
+  `stop --json` emit the **same set of object keys**, so the documented
+  "matching exactly" contract between the two `--json` shapes can't silently
+  drift apart as fields are added to one side but not the other.
+
 ### Added
 
 - **UI overview: "▶ RUN" quick-trigger button in the Upcoming Runs table.**

@@ -556,7 +556,7 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`GET /routines.ics` — iCalendar feed of upcoming routine fire times.",
+        "summary": "`GET /routines.ics` — iCalendar feed of every enabled routine's upcoming fire times.",
         "description": "Returns a `text/calendar` body suitable for subscribing to in an external calendar\n(Google Calendar, Apple Calendar, …) so upcoming runs show up alongside other events.\nWith `?routine=<id>` the feed is scoped to a single routine (named after it); without\nit every enabled routine is rendered (issue #263).",
         "operationId": "ical_feed",
         "parameters": [

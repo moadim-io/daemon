@@ -75,7 +75,16 @@ fn build_block(store: &RoutineStore) -> String {
     };
     warn_dormant_routines(&routines);
     routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
-    routines.sort_by_key(|routine| routine.created_at);
+    // The routines come off a `HashMap`, whose iteration order is unspecified, so routines that
+    // share a `created_at` (e.g. several seeded or batch-created in the same second) would otherwise
+    // emit in an arbitrary, run-to-run order. That churns the generated crontab block across syncs
+    // and defeats the `new_crontab == current` idempotency guard below, forcing a needless
+    // `crontab -` rewrite. Break ties on the stable routine id so the block is fully deterministic.
+    routines.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     let lines: Vec<String> = routines
         .iter()

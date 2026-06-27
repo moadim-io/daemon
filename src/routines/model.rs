@@ -64,6 +64,17 @@ pub struct RoutineListQuery {
     pub local_only: Option<bool>,
 }
 
+/// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct IcalFeedQuery {
+    /// Render only the fire times of the routine with this UUID. Absent (the default)
+    /// renders every enabled routine. An unknown or disabled id yields a well-formed
+    /// empty calendar.
+    pub routine: Option<String>,
+}
+
 /// A persisted routine: a scheduled AI-agent task.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Routine {

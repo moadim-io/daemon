@@ -145,6 +145,48 @@ fn ensure_default_agents_in_returns_early_when_dir_is_uncreatable() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+#[test]
+fn ensure_default_agents_in_logs_and_continues_on_write_failure() {
+    // Covers the `std::fs::write` error branch: a directory already occupies the
+    // path where the first agent's `.toml` file would be written, so the write
+    // fails while the loop continues to the next agent.
+    let dir = unique_dir("write-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Block the claude config path with a directory so writing the file fails.
+    std::fs::create_dir_all(dir.join("claude.toml")).unwrap();
+
+    ensure_default_agents_in(&dir);
+
+    // The blocked path remains a directory (write failed, was logged, ignored).
+    assert!(dir.join("claude.toml").is_dir());
+    // The loop still seeded the second agent.
+    assert!(dir.join("codex.toml").is_file());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn builtin_configs_declare_expected_instructions_file() {
+    // Both built-in agents now read their project instructions from AGENTS.md, unifying the
+    // moadim-managed system prompt and routine-origin disclosure onto a single file. Claude Code
+    // loads AGENTS.md as a memory/context file, and AGENTS.md is the file Codex reads, so the
+    // disclosure lands in the file each agent actually reads.
+    let claude: AgentCommand = toml::from_str(claude_code::CONFIG).unwrap();
+    assert_eq!(claude.instructions_file, "AGENTS.md");
+
+    let codex: AgentCommand = toml::from_str(codex::CONFIG).unwrap();
+    assert_eq!(codex.instructions_file, "AGENTS.md");
+}
+
+#[test]
+fn default_instructions_file_falls_back_to_claude_md() {
+    // A config that omits `instructions_file` falls back to the historical CLAUDE.md default,
+    // preserving backward compatibility for user-authored agent configs.
+    let agent: AgentCommand = toml::from_str(r#"command = "x""#).unwrap();
+    assert_eq!(agent.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
+    assert_eq!(agent.instructions_file, "CLAUDE.md");
+}
+
 #[cfg(unix)]
 #[test]
 fn ensure_default_agents_in_swallows_per_config_write_errors() {

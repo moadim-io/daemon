@@ -1218,7 +1218,6 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
             machine_options.sort();
         }
     }
-    let has_unassigned = unassigned_count(&jobs) > 0;
     let filter_active = filter.is_active();
 
     let edit_job = match &modal {
@@ -1271,7 +1270,6 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                             <CronFilterBar
                                 filter={filter.clone()}
                                 machines={machine_options}
-                                has_unassigned={has_unassigned}
                                 shown={shown}
                                 total={total_jobs}
                                 search_ref={search_ref.clone()}
@@ -1512,8 +1510,6 @@ pub struct CronFilterBarProps {
     pub filter: JobFilter,
     /// Distinct machines across all jobs, for the machine-facet options.
     pub machines: Vec<String>,
-    /// Whether at least one dormant (no-machine) job exists.
-    pub has_unassigned: bool,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -1578,16 +1574,8 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
                 <span class="filter-label">{"MACHINE"}</span>
                 <select class="filter-select" aria-label="Machine filter" onchange={on_machine_change}>
                     <option value={MACHINE_ANY} selected={machine_val == MACHINE_ANY}>{"Any"}</option>
-                    {
-                        if props.has_unassigned {
-                            html! {
-                                <option value={MACHINE_UNASSIGNED}
-                                    selected={machine_val == MACHINE_UNASSIGNED}>{"Unassigned"}</option>
-                            }
-                        } else {
-                            html! {}
-                        }
-                    }
+                    <option value={MACHINE_UNASSIGNED}
+                        selected={machine_val == MACHINE_UNASSIGNED}>{"None"}</option>
                     { for props.machines.iter().map(|m| html! {
                         <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
                     }) }

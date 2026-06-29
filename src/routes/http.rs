@@ -8,6 +8,7 @@ use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
 use axum::{
     extract::State,
+    http::StatusCode,
     middleware,
     routing::{get, post},
     Json, Router,
@@ -175,6 +176,39 @@ pub async fn get_current_machine() -> Json<MachineResponse> {
     })
 }
 
+/// Request body for `PUT /machine`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct SetMachineRequest {
+    /// New machine name. Trimmed; must be non-empty.
+    pub name: String,
+}
+
+/// `PUT /machine` — rename this machine's identity.
+///
+/// Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name
+/// is empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;
+/// setting the name here persists it for when the env var is absent.
+#[utoipa::path(put, path = "/machine",
+    request_body = SetMachineRequest,
+    responses(
+        (status = 200, body = MachineResponse),
+        (status = 400, description = "Empty name"),
+        (status = 500, description = "Write failed"),
+    ))]
+pub async fn put_machine(
+    Json(body): Json<SetMachineRequest>,
+) -> Result<Json<MachineResponse>, (StatusCode, String)> {
+    match crate::machine::set_machine(&body.name) {
+        Ok(()) => Ok(Json(MachineResponse {
+            name: body.name.trim().to_string(),
+        })),
+        Err(err) if err.kind() == std::io::ErrorKind::InvalidInput => {
+            Err((StatusCode::BAD_REQUEST, err.to_string()))
+        }
+        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+    }
+}
+
 /// `GET /machines` — distinct machine names this daemon knows about.
 ///
 /// There is no central machine registry, so the "known" set is the union of every `machines`
@@ -250,7 +284,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/shutdown", post(shutdown))
         .route("/restart", post(restart))
         .route("/echo", post(echo))
-        .route("/machine", get(get_current_machine))
+        .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
         .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
         .route(

@@ -13,6 +13,7 @@
         crate::routes::http::restart,
         crate::routes::http::echo,
         crate::routes::http::get_current_machine,
+        crate::routes::http::put_machine,
         crate::routes::http::list_machines,
         crate::cron_jobs::list,
         crate::cron_jobs::create,
@@ -59,6 +60,7 @@
         crate::routes::http::EchoRequest,
         crate::routes::http::EchoResponse,
         crate::routes::http::MachineResponse,
+        crate::routes::http::SetMachineRequest,
         crate::global_lock::LockStatus,
         crate::routines::LockRequest,
     ))

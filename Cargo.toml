@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.17.0"
+version = "0.17.1"
 edition = "2021"
 description = "Loop engine for AI agents — cron jobs and routines over REST, MCP, and a built-in web UI"
 license = "MIT"

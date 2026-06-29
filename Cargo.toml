@@ -74,3 +74,9 @@ manual_let_else = "deny"
 # wrapping it in a closure that only forwards the receiver
 # (`|e| e.ok()`, `|s| s.to_string()`).
 redundant_closure_for_method_calls = "deny"
+# Prefer `for x in &collection` / `for x in &mut collection` over the explicit
+# `for x in collection.iter()` / `.iter_mut()` form. The reference syntax is
+# shorter, is the idiomatic way to iterate without consuming, and avoids the
+# reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
+# would move). It states "borrow and iterate" at a glance.
+explicit_iter_loop = "deny"

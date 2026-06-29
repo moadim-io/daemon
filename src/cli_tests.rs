@@ -669,14 +669,24 @@ fn pid_file_write_read_clear_roundtrip() {
     let gitignore = crate::paths::config_gitignore_path();
     assert!(gitignore.exists());
     let content = std::fs::read_to_string(&gitignore).unwrap();
-    assert!(content.contains("*.local.*"), "gitignore must cover *.local.*");
+    assert!(
+        content.contains("*.local.*"),
+        "gitignore must cover *.local.*"
+    );
     // Manually remove one pattern; a second write must restore it without
     // duplicating the patterns already present.
     std::fs::write(&gitignore, "*.pid\n*.log\n").unwrap();
     write_pid_file().unwrap();
     let content = std::fs::read_to_string(&gitignore).unwrap();
-    assert!(content.contains("*.local.*"), "missing pattern must be re-added");
-    assert_eq!(content.matches("*.pid").count(), 1, "existing patterns must not duplicate");
+    assert!(
+        content.contains("*.local.*"),
+        "missing pattern must be re-added"
+    );
+    assert_eq!(
+        content.matches("*.pid").count(),
+        1,
+        "existing patterns must not duplicate"
+    );
     clear_pid_file();
     assert!(read_pid_file().is_none());
     // A garbage pid file parses to None rather than panicking.

@@ -687,6 +687,22 @@ fn pid_file_write_read_clear_roundtrip() {
         1,
         "existing patterns must not duplicate"
     );
+    // Write a file with all patterns but no trailing newline; the next write
+    // must insert the newline separator before appending (line 495 branch).
+    std::fs::write(&gitignore, "*.pid\n*.log").unwrap();
+    write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "must append after no-trailing-newline content"
+    );
+    // All patterns present → early return (line 492 branch). Call twice; second is a no-op.
+    write_pid_file().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&gitignore).unwrap(),
+        content,
+        "no-op write must not change file"
+    );
     clear_pid_file();
     assert!(read_pid_file().is_none());
     // A garbage pid file parses to None rather than panicking.

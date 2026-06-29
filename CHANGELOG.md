@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-06-29
+
 ### Added
 
 - Machine name badge in the header: the resolved `@ <name>` is shown as a

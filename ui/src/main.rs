@@ -457,29 +457,33 @@ pub fn shell() -> Html {
     };
     let on_confirm_rename_machine = {
         let state = state.clone();
-        Callback::from(move |(name, on_done): (String, Callback<Result<(), String>>)| {
-            let state = state.clone();
-            spawn_local(async move {
-                match api_put_machine(&name).await {
-                    Ok(new_name) => {
-                        state.dispatch(ShellAction::MachineName { name: new_name.clone() });
-                        state.dispatch(ShellAction::CloseRenameMachine);
-                        state.dispatch(ShellAction::AddToast {
-                            msg: format!("Machine renamed to \"{new_name}\""),
-                            kind: ToastKind::Ok,
-                        });
-                        on_done.emit(Ok(()));
+        Callback::from(
+            move |(name, on_done): (String, Callback<Result<(), String>>)| {
+                let state = state.clone();
+                spawn_local(async move {
+                    match api_put_machine(&name).await {
+                        Ok(new_name) => {
+                            state.dispatch(ShellAction::MachineName {
+                                name: new_name.clone(),
+                            });
+                            state.dispatch(ShellAction::CloseRenameMachine);
+                            state.dispatch(ShellAction::AddToast {
+                                msg: format!("Machine renamed to \"{new_name}\""),
+                                kind: ToastKind::Ok,
+                            });
+                            on_done.emit(Ok(()));
+                        }
+                        Err(e) => {
+                            state.dispatch(ShellAction::AddToast {
+                                msg: format!("Rename failed: {e}"),
+                                kind: ToastKind::Err,
+                            });
+                            on_done.emit(Err(e));
+                        }
                     }
-                    Err(e) => {
-                        state.dispatch(ShellAction::AddToast {
-                            msg: format!("Rename failed: {e}"),
-                            kind: ToastKind::Err,
-                        });
-                        on_done.emit(Err(e));
-                    }
-                }
-            });
-        })
+                });
+            },
+        )
     };
 
     html! {

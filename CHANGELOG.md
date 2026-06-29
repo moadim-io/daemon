@@ -13,6 +13,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- Machine name badge in the header: the resolved `@ <name>` is shown as a
+  clickable chip. Clicking it opens a rename dialog that calls the new
+  `PUT /api/v1/machine` endpoint, writes the new name to
+  `machine.local.toml`, and updates the badge immediately on success.
+  Empty names are rejected (400). (#766)
+
 - `moadim uninstall` now clears the managed crontab blocks (both
   `# BEGIN MOADIM-ROUTINES` and `# BEGIN MOADIM`) in addition to removing the OS
   service, so `cron` stops firing routines/jobs against a daemon you uninstalled.

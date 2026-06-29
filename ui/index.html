@@ -180,6 +180,25 @@
 
     .btn-sm { padding: 4px 10px; }
 
+    /* ── Machine badge (header) ── */
+    .machine-badge {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      white-space: nowrap;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .machine-badge::before { content: "@ "; color: var(--text-ghost); }
+    .machine-badge:hover { color: var(--accent); border-color: var(--border-hi); }
+
     .btn-refresh {
       background: none;
       border: 1px solid var(--border);
@@ -1453,6 +1472,7 @@
        focus, so mouse users see no change. Mirrors the accent ring already
        used by .row-check. */
     .btn:focus-visible,
+    .machine-badge:focus-visible,
     .btn-refresh:focus-visible,
     .btn-stop:focus-visible,
     .tab-btn:focus-visible,

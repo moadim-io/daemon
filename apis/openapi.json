@@ -405,6 +405,42 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`PUT /machine` — rename this machine's identity.",
+        "description": "Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name\nis empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;\nsetting the name here persists it for when the env var is absent.",
+        "operationId": "put_machine",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMachineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty name"
+          },
+          "500": {
+            "description": "Write failed"
+          }
+        }
       }
     },
     "/machines": {
@@ -1533,6 +1569,19 @@
           "title",
           "repository"
         ]
+      },
+      "SetMachineRequest": {
+        "type": "object",
+        "description": "Request body for `PUT /machine`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New machine name. Trimmed; must be non-empty."
+          }
+        }
       },
       "ShutdownResponse": {
         "type": "object",

@@ -118,6 +118,72 @@ fn write_openapi_spec_logs_on_write_failure() {
 // ── build_app / router smoke tests ───────────────────────────────────────────
 
 #[tokio::test]
+async fn put_machine_updates_name() {
+    let dir = std::env::temp_dir().join(format!("moadim-machine-put-{}", uuid::Uuid::new_v4()));
+    std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/machine")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"name":"my-box"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["name"].as_str().unwrap(), "my-box");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::remove_var("MOADIM_HOME_OVERRIDE");
+}
+
+#[tokio::test]
+async fn put_machine_rejects_empty_name() {
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/machine")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"name":"   "}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn put_machine_returns_500_on_write_failure() {
+    // Place a regular file where the config dir should be so `create_dir_all` fails.
+    let dir = std::env::temp_dir().join(format!("moadim-machine-fail-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&dir, b"").unwrap();
+    std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/machine")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"name":"new-name"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let _ = std::fs::remove_file(&dir);
+    std::env::remove_var("MOADIM_HOME_OVERRIDE");
+}
+
+#[tokio::test]
 async fn build_app_serves_machine() {
     let app = build_app(new_store(), crate::routines::new_store());
     let resp = app

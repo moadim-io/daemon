@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- Machine filter in Routines and Cron Jobs views now always shows a **None** option
+  (routines/jobs with no machine assigned), replacing the previously conditional
+  "Unassigned" entry that only appeared when such items existed.
+
 ## [0.17.0] — 2026-06-29
 
 ### Added

@@ -130,10 +130,16 @@ pub type ShutdownSignal = Arc<tokio::sync::Notify>;
 pub struct AppState {
     /// Shared cron job store.
     pub store: CronStore,
+    /// On-disk directory the cron-job store is (re)loaded from on every GET read. Defaults to
+    /// [`crate::paths::jobs_dir`] in production; tests point it at a tempdir for isolation.
+    pub jobs_dir: std::path::PathBuf,
     /// Registered handler identifiers.
     pub handlers: HandlerRegistry,
     /// Shared routine (agent-driven job) store.
     pub routines: crate::routines::RoutineStore,
+    /// On-disk directory the routine store is (re)loaded from on every GET read. Defaults to
+    /// [`crate::paths::routines_dir`] in production; tests point it at a tempdir for isolation.
+    pub routines_dir: std::path::PathBuf,
     /// Unix timestamp (seconds) when the server started.
     pub uptime_start: u64,
     /// Fired by the `/shutdown` route to ask the server to stop.
@@ -255,9 +261,13 @@ pub struct CronJobListQuery {
 /// Return all jobs sorted by creation time (oldest first).
 pub fn svc_list(
     store: &CronStore,
+    dir: &std::path::Path,
     handlers: &HandlerRegistry,
     query: &CronJobListQuery,
 ) -> Vec<CronJobResponse> {
+    // Refresh from disk first so a job pulled/edited on disk under a running daemon is reflected
+    // without a restart. Disk is the source of truth.
+    crate::storage::reload_store_from_dir(store, dir);
     let lock = store.lock_recover();
     let mut jobs: Vec<CronJob> = lock.values().cloned().collect();
     drop(lock);
@@ -276,9 +286,12 @@ pub fn svc_list(
 /// Look up a job by `id`, returning `NotFound` if it does not exist.
 pub fn svc_get(
     store: &CronStore,
+    dir: &std::path::Path,
     handlers: &HandlerRegistry,
     id: &str,
 ) -> Result<CronJobResponse, AppError> {
+    // Refresh from disk first so a freshly-pulled or edited job is visible without a restart.
+    crate::storage::reload_store_from_dir(store, dir);
     let job = store
         .lock_recover()
         .get(id)
@@ -411,7 +424,12 @@ pub async fn list(
     State(state): State<AppState>,
     Query(query): Query<CronJobListQuery>,
 ) -> Json<Vec<CronJobResponse>> {
-    Json(svc_list(&state.store, &state.handlers, &query))
+    Json(svc_list(
+        &state.store,
+        &state.jobs_dir,
+        &state.handlers,
+        &query,
+    ))
 }
 
 /// `GET /cron-jobs/{id}` — retrieve a single cron job by UUID.
@@ -422,7 +440,12 @@ pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<CronJobResponse>, AppError> {
-    Ok(Json(svc_get(&state.store, &state.handlers, &id)?))
+    Ok(Json(svc_get(
+        &state.store,
+        &state.jobs_dir,
+        &state.handlers,
+        &id,
+    )?))
 }
 
 /// `PATCH /cron-jobs/{id}` — partially update a cron job.

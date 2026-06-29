@@ -23,6 +23,29 @@ fn make_store_with(id: &str) -> CronStore {
     store
 }
 
+/// A unique, freshly-created scratch directory under the system temp dir, used as the on-disk
+/// source the GET read path re-scans. `svc_list`/`svc_get` reload the store from this dir before
+/// serving, so tests persist their jobs here to exercise the real reload in isolation.
+fn scratch_jobs_dir() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("moadim-cj-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Write `job` to `{base}/{job.id}/job.toml` so the directory-aware reload in `svc_list`/`svc_get`
+/// loads it back. Mirrors the on-disk layout [`crate::storage::write_job`] produces, but rooted at an
+/// arbitrary `base` rather than the global jobs dir, keeping the test self-contained and parallel
+/// with no shared global state.
+fn write_job_to(base: &std::path::Path, job: &CronJob) {
+    let dir = base.join(&job.id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let toml = format!(
+        "schedule = \"{}\"\nhandler = \"{}\"\nenabled = {}\ncreated_at = {}\nupdated_at = {}\nmachines = {:?}\n\n[metadata]\n",
+        job.schedule, job.handler, job.enabled, job.created_at, job.updated_at, job.machines,
+    );
+    std::fs::write(dir.join("job.toml"), toml).unwrap();
+}
+
 #[test]
 fn validate_cron_accepts_valid() {
     assert!(validate_cron("30 9 * * 1-5").is_ok());
@@ -145,44 +168,64 @@ fn create_request_explicit_disabled() {
 
 #[test]
 fn svc_get_returns_not_found() {
-    assert!(svc_get(&new_store(), &new_registry(), "missing").is_err());
+    let dir = scratch_jobs_dir();
+    assert!(svc_get(&new_store(), &dir, &new_registry(), "missing").is_err());
 }
 
 #[test]
 fn svc_get_returns_existing() {
-    let store = make_store_with("test-id");
-    let resp = svc_get(&store, &new_registry(), "test-id").unwrap();
+    // `svc_get` reloads from disk first: a job present on disk is found even though the in-memory
+    // store starts empty, proving the GET read path re-scans the directory.
+    let dir = scratch_jobs_dir();
+    write_job_to(&dir, &make_job("test-id"));
+    let store = new_store();
+    let resp = svc_get(&store, &dir, &new_registry(), "test-id").unwrap();
     assert_eq!(resp.job.id, "test-id");
 }
 
 #[test]
 fn svc_list_empty_store() {
-    let result = svc_list(&new_store(), &new_registry(), &CronJobListQuery::default());
+    let dir = scratch_jobs_dir();
+    let result = svc_list(
+        &new_store(),
+        &dir,
+        &new_registry(),
+        &CronJobListQuery::default(),
+    );
     assert!(result.is_empty());
 }
 
 #[test]
 fn svc_list_sorted_by_created_at() {
-    let store = new_store();
-    let mut lock = store.lock().unwrap();
+    let dir = scratch_jobs_dir();
     let mut early = make_job("early");
     early.created_at = 100;
     let mut late = make_job("late");
     late.created_at = 200;
-    lock.insert("late".to_string(), late);
-    lock.insert("early".to_string(), early);
-    drop(lock);
+    write_job_to(&dir, &late);
+    write_job_to(&dir, &early);
 
-    let result = svc_list(&store, &new_registry(), &CronJobListQuery::default());
+    // The store starts empty; `svc_list` reloads both jobs from disk and sorts by created_at.
+    let result = svc_list(
+        &new_store(),
+        &dir,
+        &new_registry(),
+        &CronJobListQuery::default(),
+    );
     assert_eq!(result[0].job.id, "early");
     assert_eq!(result[1].job.id, "late");
 }
 
 #[test]
-fn svc_delete_removes_from_store() {
-    let store = make_store_with("test-id");
-    store.lock().unwrap().remove("test-id");
-    assert!(svc_get(&store, &new_registry(), "test-id").is_err());
+fn svc_get_reflects_disk_removal() {
+    // A job removed on disk under a running daemon disappears from the next GET (the reload drops
+    // it from the in-memory store), with no restart.
+    let dir = scratch_jobs_dir();
+    write_job_to(&dir, &make_job("test-id"));
+    let store = new_store();
+    assert!(svc_get(&store, &dir, &new_registry(), "test-id").is_ok());
+    std::fs::remove_dir_all(dir.join("test-id")).unwrap();
+    assert!(svc_get(&store, &dir, &new_registry(), "test-id").is_err());
 }
 
 #[test]
@@ -191,11 +234,22 @@ fn svc_delete_not_found() {
 }
 
 #[test]
-fn svc_update_enabled_override() {
-    let store = make_store_with("test-id");
-    store.lock().unwrap().get_mut("test-id").unwrap().enabled = false;
+fn svc_get_reflects_disk_enabled_edit() {
+    // An `enabled` flip edited on disk is reflected on the next get without a restart.
+    let dir = scratch_jobs_dir();
+    write_job_to(&dir, &make_job("test-id"));
+    let store = new_store();
     assert!(
-        !svc_get(&store, &new_registry(), "test-id")
+        svc_get(&store, &dir, &new_registry(), "test-id")
+            .unwrap()
+            .job
+            .enabled
+    );
+    let mut disabled = make_job("test-id");
+    disabled.enabled = false;
+    write_job_to(&dir, &disabled);
+    assert!(
+        !svc_get(&store, &dir, &new_registry(), "test-id")
             .unwrap()
             .job
             .enabled
@@ -421,8 +475,10 @@ fn from_ref_extracts_store_from_app_state() {
     let store = new_store();
     let state = AppState {
         store: store.clone(),
+        jobs_dir: crate::paths::jobs_dir(),
         handlers: new_registry(),
         routines: crate::routines::new_store(),
+        routines_dir: crate::paths::routines_dir(),
         uptime_start: 0,
         shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
     };
@@ -834,8 +890,10 @@ async fn replace_handler_updates_job() {
 
     let state = AppState {
         store: store.clone(),
+        jobs_dir: crate::paths::jobs_dir(),
         handlers: new_registry(),
         routines: crate::routines::new_store(),
+        routines_dir: crate::paths::routines_dir(),
         uptime_start: 0,
         shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
     };
@@ -905,8 +963,7 @@ fn restore_writable(dir: &std::path::Path) {
 
 #[test]
 fn svc_list_local_only_filters_non_matching_machines() {
-    let _home = HomeOverrideGuard::new();
-    let store = new_store();
+    let dir = scratch_jobs_dir();
     let me = crate::machine::current_machine();
     // Job targeting this machine — should survive the filter.
     let mut local = make_job("local");
@@ -914,14 +971,12 @@ fn svc_list_local_only_filters_non_matching_machines() {
     // Job targeting a different machine — should be dropped.
     let mut other = make_job("other");
     other.machines = vec!["not-this-machine-xyz".to_string()];
-    {
-        let mut lock = store.lock().unwrap();
-        lock.insert("local".to_string(), local);
-        lock.insert("other".to_string(), other);
-    }
+    write_job_to(&dir, &local);
+    write_job_to(&dir, &other);
     let reg = new_registry();
     let results = svc_list(
-        &store,
+        &new_store(),
+        &dir,
         &reg,
         &CronJobListQuery {
             local_only: Some(true),

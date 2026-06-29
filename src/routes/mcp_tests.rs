@@ -7,8 +7,10 @@ use super::*;
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
         new_store(),
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     )
@@ -161,8 +163,10 @@ fn create_cron_job_tool_invalid_cron_is_error() {
     let store = crate::cron_jobs::new_store();
     let handler = MoadimMcp::new(
         store,
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -182,8 +186,10 @@ fn update_cron_job_tool_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = MoadimMcp::new(
         crate::cron_jobs::new_store(),
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -219,8 +225,10 @@ fn delete_cron_job_tool_success() {
     let id = created.job.id.clone();
     let handler = MoadimMcp::new(
         store,
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -247,8 +255,10 @@ fn trigger_cron_job_tool_success() {
     let id = created.job.id.clone();
     let handler = MoadimMcp::new(
         store,
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -265,8 +275,10 @@ fn create_cron_job_tool_success() {
     let store = crate::cron_jobs::new_store();
     let handler = MoadimMcp::new(
         store,
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -291,8 +303,9 @@ fn create_cron_job_tool_success() {
 #[test]
 fn get_cron_job_tool_success() {
     use rmcp::handler::server::wrapper::Parameters;
-    let store = crate::cron_jobs::new_store();
-    // Insert a job directly into the store (no disk I/O needed for get)
+    // The get tool reloads from disk first, so the job must be persisted to the (temp-home) jobs
+    // dir; an in-memory-only insert would be wiped by the reload.
+    let _home = TempHome::set();
     let job = crate::cron_jobs::CronJob {
         id: "get-test-id".into(),
         schedule: "@daily".into(),
@@ -305,11 +318,13 @@ fn get_cron_job_tool_success() {
         updated_at: 0,
         last_manual_trigger_at: None,
     };
-    store.lock().unwrap().insert("get-test-id".into(), job);
+    crate::storage::write_job(&job).unwrap();
     let handler = MoadimMcp::new(
-        store,
+        crate::cron_jobs::new_store(),
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -327,8 +342,10 @@ fn update_cron_job_tool_success() {
     let store = crate::cron_jobs::new_store();
     let handler = MoadimMcp::new(
         store.clone(),
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -418,8 +435,10 @@ fn create_get_update_trigger_delete_routine_success() {
     let routines = crate::routines::new_store();
     let handler = MoadimMcp::new(
         new_store(),
+        crate::paths::jobs_dir(),
         new_registry(),
         routines.clone(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -569,8 +588,10 @@ fn cron_job_logs_tool_returns_logs_for_existing_job() {
     let id = created.job.id.clone();
     let handler = MoadimMcp::new(
         store,
+        crate::paths::jobs_dir(),
         new_registry(),
         crate::routines::new_store(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );
@@ -607,8 +628,10 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
     let routines = crate::routines::new_store();
     let handler = MoadimMcp::new(
         new_store(),
+        crate::paths::jobs_dir(),
         new_registry(),
         routines.clone(),
+        crate::paths::routines_dir(),
         0,
         test_shutdown(),
     );

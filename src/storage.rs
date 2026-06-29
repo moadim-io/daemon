@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::cron_jobs::{CronJob, CronStore};
-use crate::paths::{job_dir, job_gitignore_path, job_local_toml_path, job_toml_path, jobs_dir};
+use crate::paths::{job_dir, job_gitignore_path, job_toml_path, jobs_dir};
 
 /// TOML representation of a job on disk. `job.local.toml` may override any field.
 #[derive(Debug, Deserialize, Serialize)]
@@ -62,10 +62,25 @@ fn json_to_toml_table(val: &serde_json::Value) -> toml::Table {
     }
 }
 
-/// Load a managed job from `{jobs_dir}/{id}/`, merging `job.local.toml` overrides.
+/// Load a managed job from `{jobs_dir}/{id}/`, merging `job.local.toml` overrides (production base).
+///
+/// Thin global-path wrapper around [`load_job_from_base`], retained for the test suite which
+/// exercises the load via the global [`jobs_dir`] under a `MOADIM_HOME_OVERRIDE` tempdir.
+#[cfg(test)]
 fn load_job_from_dir(id: &str) -> Option<CronJob> {
-    let base = read_job_toml(&job_toml_path(id))?;
-    let local = read_job_toml(&job_local_toml_path(id));
+    load_job_from_base(&jobs_dir(), id)
+}
+
+/// Load a managed job from `{base}/{id}/`, merging `{base}/{id}/job.local.toml` overrides.
+///
+/// Directory-coherent variant of [`load_job_from_dir`]: both `job.toml` and the `job.local.toml`
+/// override are resolved relative to `base` rather than the global [`jobs_dir`], so a scan of any
+/// directory (production or a test tempdir) reads the right files.
+fn load_job_from_base(base: &std::path::Path, id: &str) -> Option<CronJob> {
+    let dir = base.join(id);
+    let base_toml = read_job_toml(&dir.join("job.toml"))?;
+    let local = read_job_toml(&dir.join("job.local.toml"));
+    let base = base_toml;
     let (schedule, handler, enabled, created_at, updated_at, last_manual_trigger_at, mut meta) = (
         local
             .as_ref()
@@ -157,19 +172,42 @@ pub fn load_store() -> CronStore {
 }
 
 /// Scan `dir` and load all valid managed jobs into a new store.
+///
+/// Each job's `job.toml` and `job.local.toml` are read relative to `dir`, so the scan is coherent for
+/// any directory, not only the global [`jobs_dir`].
 pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> CronStore {
+    Arc::new(Mutex::new(scan_jobs(dir)))
+}
+
+/// Re-scan `dir` and replace `store`'s contents with the freshly-loaded jobs, in place.
+///
+/// Disk is the source of truth: this lets a job pulled or edited on disk under a running daemon
+/// become visible on the next read without a restart. The whole map is replaced under a single lock
+/// so a concurrent reader never observes a partial store. Jobs whose dir disappeared on disk drop
+/// out of the store. Every create/update/delete/trigger persists to disk before returning, so
+/// replacing the map from disk loses no state.
+pub(crate) fn reload_store_from_dir(store: &CronStore, dir: &std::path::Path) {
+    use crate::utils::lock::LockRecover;
+    *store.lock_recover() = scan_jobs(dir);
+}
+
+/// Scan `dir` for job sub-directories and return the loaded jobs keyed by id.
+///
+/// Shared by [`load_store_from_dir`] (build a new store) and [`reload_store_from_dir`] (refresh an
+/// existing one).
+fn scan_jobs(dir: &std::path::Path) -> HashMap<String, CronJob> {
     let mut jobs = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
                 let id = entry.file_name().to_string_lossy().to_string();
-                if let Some(job) = load_job_from_dir(&id) {
+                if let Some(job) = load_job_from_base(dir, &id) {
                     jobs.insert(id, job);
                 }
             }
         }
     }
-    Arc::new(Mutex::new(jobs))
+    jobs
 }
 
 #[cfg(test)]

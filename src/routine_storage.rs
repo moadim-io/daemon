@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_dir, routine_gitignore_path, routine_prompt_path, routine_scheduled_state_path,
-    routine_script_path, routine_state_path, routine_toml_path, routines_dir,
+    routine_dir, routine_gitignore_path, routine_prompt_path, routine_script_path,
+    routine_state_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -89,27 +89,29 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar, returning `None` when
-/// the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
-fn read_runtime_state(dir_name: &str) -> Option<u64> {
-    let text = std::fs::read_to_string(routine_state_path(dir_name)).ok()?;
+/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar under `base`, returning
+/// `None` when the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
+fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
+    let path = base.join(dir_name).join("state.local.toml");
+    let text = std::fs::read_to_string(path).ok()?;
     toml::from_str::<RuntimeState>(&text)
         .ok()?
         .last_manual_trigger_at
 }
 
-/// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar, returning
-/// `None` when the sidecar is absent or unparsable (e.g. before the routine's schedule has ever
-/// fired). The daemon only reads this file; it is written by the routine's launch command at fire
-/// time.
-fn read_scheduled_state(dir_name: &str) -> Option<u64> {
-    let text = std::fs::read_to_string(routine_scheduled_state_path(dir_name)).ok()?;
+/// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar under `base`,
+/// returning `None` when the sidecar is absent or unparsable (e.g. before the routine's schedule has
+/// ever fired). The daemon only reads this file; it is written by the routine's launch command at
+/// fire time.
+fn read_scheduled_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
+    let path = base.join(dir_name).join("scheduled.local.toml");
+    let text = std::fs::read_to_string(path).ok()?;
     toml::from_str::<ScheduledState>(&text)
         .ok()?
         .last_scheduled_trigger_at
 }
 
-/// Load a routine from `{routines_dir}/{dir_name}/routine.toml`.
+/// Load a routine from `{routines_dir}/{dir_name}/routine.toml` (the production base directory).
 ///
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
 /// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
@@ -117,11 +119,21 @@ fn read_scheduled_state(dir_name: &str) -> Option<u64> {
 /// `last_manual_trigger_at` is read from the `state.local.toml` sidecar, falling back to the legacy
 /// `routine.toml` field for routines written before the runtime state was split out.
 fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
-    let toml = read_routine_toml(&routine_toml_path(dir_name))?;
+    load_routine_from_base(&routines_dir(), dir_name)
+}
+
+/// Load a routine from `{base}/{dir_name}/routine.toml`, reading the sidecars from the same `{base}`.
+///
+/// This is the directory-coherent variant of [`load_routine_from_dir`]: every file (the tracked
+/// `routine.toml` and the `state.local.toml` / `scheduled.local.toml` sidecars) is resolved relative
+/// to `base` rather than the global [`routines_dir`]. The scheduler-written
+/// `last_scheduled_trigger_at` is read back here, so a reload through this path preserves it.
+fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Routine> {
+    let toml = read_routine_toml(&base.join(dir_name).join("routine.toml"))?;
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
-    let last_manual_trigger_at = read_runtime_state(dir_name).or(toml.last_manual_trigger_at);
-    let last_scheduled_trigger_at = read_scheduled_state(dir_name);
+    let last_manual_trigger_at = read_runtime_state(base, dir_name).or(toml.last_manual_trigger_at);
+    let last_scheduled_trigger_at = read_scheduled_state(base, dir_name);
     Some(Routine {
         id,
         schedule: toml.schedule?,
@@ -335,13 +347,41 @@ pub fn load_store() -> RoutineStore {
 }
 
 /// Scan `dir` and load all valid routines into a new store.
+///
+/// Every per-routine file (the tracked `routine.toml` and the `state.local.toml` /
+/// `scheduled.local.toml` sidecars) is read relative to `dir`, so the scan is fully coherent for any
+/// directory — not only the global [`routines_dir`].
 pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
+    Arc::new(Mutex::new(scan_routines(dir)))
+}
+
+/// Re-scan `dir` and replace `store`'s contents with the freshly-loaded routines, in place.
+///
+/// Disk is the source of truth: this lets a routine pulled or edited on disk under a running daemon
+/// (e.g. after a `git pull` of the config repo, including a changed `machines` list) become visible
+/// on the next read without a restart. Because the reload goes through [`load_routine_from_base`],
+/// each routine's gitignored `scheduled.local.toml` (`last_scheduled_trigger_at`) is read back and
+/// preserved rather than clobbered. Routines whose dir disappeared on disk drop out of the store.
+///
+/// The whole map is replaced under a single lock so a concurrent reader never observes a partial
+/// store. Every create/update/delete/trigger persists to disk before returning, so replacing the map
+/// from disk loses no state.
+pub(crate) fn reload_store_from_dir(store: &RoutineStore, dir: &std::path::Path) {
+    let fresh = scan_routines(dir);
+    *store.lock_recover() = fresh;
+}
+
+/// Scan `dir` for routine sub-directories and return the loaded routines keyed by id.
+///
+/// Shared by [`load_store_from_dir`] (build a new store) and [`reload_store_from_dir`] (refresh an
+/// existing one).
+fn scan_routines(dir: &std::path::Path) -> HashMap<String, Routine> {
     let mut routines = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
                 let dir_name = entry.file_name().to_string_lossy().to_string();
-                match load_routine_from_dir(&dir_name) {
+                match load_routine_from_base(dir, &dir_name) {
                     Some(routine) => {
                         routines.insert(routine.id.clone(), routine);
                     }
@@ -349,7 +389,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
                     // missing a required field) would otherwise vanish from the store, UI, API
                     // and crontab with no trace. Warn so the operator can find and fix the file
                     // instead of hunting a routine that silently disappeared.
-                    None if routine_toml_path(&dir_name).exists() => {
+                    None if dir.join(&dir_name).join("routine.toml").exists() => {
                         log::warn!(
                             "load_store: skipping routine dir {dir_name:?}: its routine.toml is \
                              unparsable or missing a required field (title, schedule, or agent)"
@@ -361,7 +401,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
             }
         }
     }
-    Arc::new(Mutex::new(routines))
+    routines
 }
 
 #[cfg(test)]

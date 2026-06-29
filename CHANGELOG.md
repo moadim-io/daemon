@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-06-29
+
 ### Changed
 
 - Machine filter in Routines and Cron Jobs views now always shows a **None** option

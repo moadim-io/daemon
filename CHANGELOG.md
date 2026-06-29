@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-06-30
+
 ### Added
 
 - **Optional `tags` for routines.** Routines can now carry a free-form list of

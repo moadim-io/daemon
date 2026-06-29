@@ -486,7 +486,7 @@ fn ensure_config_gitignore() {
     let missing: Vec<&str> = REQUIRED
         .iter()
         .copied()
-        .filter(|p| !lines.iter().any(|l| l.trim() == *p))
+        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
         .collect();
     if missing.is_empty() {
         return;

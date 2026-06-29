@@ -72,6 +72,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         last_scheduled_trigger_at: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: Vec::new(),
     }
 }
 
@@ -81,7 +82,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
 /// repositories list) drifted from the spec and the routine must be rewritten, or `None` when `cur`
 /// already matches and no write is needed. The user-owned [`Routine::enabled`] toggle is always
 /// carried over from `cur` — so a default the user turned off stays off — as are its `id`,
-/// `created_at`, `last_manual_trigger_at`, and `last_scheduled_trigger_at`.
+/// `created_at`, `last_manual_trigger_at`, `last_scheduled_trigger_at`, and `tags`.
 fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> {
     let schedule = normalize_schedule(spec.schedule);
     let up_to_date = cur.schedule == schedule
@@ -109,6 +110,8 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         last_scheduled_trigger_at: cur.last_scheduled_trigger_at,
         ttl_secs: cur.ttl_secs,
         max_runtime_secs: cur.max_runtime_secs,
+        // Tags are user-owned, like `enabled`: never overridden by the spec.
+        tags: cur.tags.clone(),
     })
 }
 

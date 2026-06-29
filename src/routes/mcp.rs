@@ -110,6 +110,8 @@ struct UpdateRoutineInput {
     /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
     /// the existing value.
     max_runtime_secs: Option<u64>,
+    /// New tags list, or `None` to keep the existing value.
+    tags: Option<Vec<String>>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -335,6 +337,7 @@ impl MoadimMcp {
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
             max_runtime_secs: input.max_runtime_secs,
+            tags: input.tags,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),

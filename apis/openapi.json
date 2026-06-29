@@ -1105,6 +1105,13 @@
             "type": "string",
             "description": "Cron expression for the new routine. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels for the routine (defaults to empty). Each entry is trimmed\nand must be non-blank."
+          },
           "title": {
             "type": "string",
             "description": "Human name for the routine."
@@ -1499,6 +1506,13 @@
             "type": "string",
             "description": "`\"managed\"` for routines owned by this server."
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels for grouping and filtering routines (e.g. `\"triage\"`, `\"nightly\"`).\nDefaults to empty; each entry is trimmed and must be non-blank."
+          },
           "title": {
             "type": "string",
             "description": "Human name; slugified to name the workbench and tmux session."
@@ -1704,6 +1718,16 @@
               "null"
             ],
             "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "New tags list, or `None` to keep the existing value."
           },
           "title": {
             "type": [

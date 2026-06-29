@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- `~/.config/moadim/.gitignore` required patterns (`*.pid`, `*.log`,
+  `*.local.*`) are now ensured on every daemon start instead of only when
+  the file is absent, so a manually edited or newly required entry is
+  restored automatically. (#770)
+
 ## [0.17.0] — 2026-06-29
 
 ### Added

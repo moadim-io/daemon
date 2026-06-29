@@ -166,6 +166,161 @@ fn write_plist_skips_dir_creation_when_paths_have_no_parent() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn write_plist_errors_when_plist_dir_creation_blocked() {
+    // Covers the `?` error branch at the first create_dir_all (plist parent dir).
+    // A regular file sitting where LaunchAgents/ should be prevents create_dir_all.
+    let base = std::env::temp_dir().join(format!("moadim-wp-plist-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    // Create a FILE at the LaunchAgents path, blocking directory creation.
+    std::fs::write(base.join("LaunchAgents"), "block").unwrap();
+    let plist = base.join("LaunchAgents/io.moadim.daemon.plist");
+    let log = base.join("daemon.log");
+    assert!(write_plist(&plist, std::path::Path::new("/usr/local/bin/moadim"), &log).is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn write_plist_errors_when_log_dir_creation_blocked() {
+    // Covers the `?` error branch at the second create_dir_all (log parent dir).
+    // The plist dir succeeds, but a file blocks the log dir creation.
+    let base = std::env::temp_dir().join(format!("moadim-wp-log-{}", uuid::Uuid::new_v4()));
+    let launch_agents = base.join("Library/LaunchAgents");
+    std::fs::create_dir_all(&launch_agents).unwrap();
+    // Block the log parent directory with a file.
+    let log_parent = base.join("logparent");
+    std::fs::write(&log_parent, "block").unwrap();
+    let plist = launch_agents.join("io.moadim.daemon.plist");
+    // Give a log path whose parent is the blocked non-directory.
+    let log = log_parent.join("daemon.log");
+    assert!(write_plist(&plist, std::path::Path::new("/usr/local/bin/moadim"), &log).is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_errors_when_write_plist_fails() {
+    // Covers the `?` error branch on write_plist(...) inside install() (L120).
+    // Block the LaunchAgents directory so write_plist cannot create it.
+    let base = std::env::temp_dir().join(format!("moadim-inst-wp-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(base.join("Library")).unwrap();
+    std::fs::write(base.join("Library/LaunchAgents"), "block").unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    let prev_override = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1).
+    unsafe {
+        std::env::set_var("HOME", &base);
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
+    }
+    let result = install();
+    unsafe {
+        match prev_home {
+            Some(val) => std::env::set_var("HOME", val),
+            None => std::env::remove_var("HOME"),
+        }
+        match prev_override {
+            Some(val) => std::env::set_var("MOADIM_HOME_OVERRIDE", val),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    assert!(result.is_err(), "install must fail when write_plist fails");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_errors_when_reload_agent_fails() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers the `?` error branch on reload_agent(&plist) inside install() (L121).
+    // write_plist succeeds; then the launchctl shim exits 1, making load fail.
+    let base = std::env::temp_dir().join(format!("moadim-inst-ra-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let shim = base.join("launchctl");
+    std::fs::write(&shim, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    let prev_override = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    let prev_launchctl = std::env::var_os("MOADIM_LAUNCHCTL_BIN");
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1).
+    unsafe {
+        std::env::set_var("HOME", &base);
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
+        std::env::set_var("MOADIM_LAUNCHCTL_BIN", &shim);
+    }
+    let result = install();
+    unsafe {
+        match prev_home {
+            Some(val) => std::env::set_var("HOME", val),
+            None => std::env::remove_var("HOME"),
+        }
+        match prev_override {
+            Some(val) => std::env::set_var("MOADIM_HOME_OVERRIDE", val),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+        match prev_launchctl {
+            Some(val) => std::env::set_var("MOADIM_LAUNCHCTL_BIN", val),
+            None => std::env::remove_var("MOADIM_LAUNCHCTL_BIN"),
+        }
+    }
+    assert!(
+        result.is_err(),
+        "install must fail when launchctl load fails"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn uninstall_errors_when_remove_plist_fails() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers the `?` error branch on remove_file(&plist) inside uninstall() (L151).
+    // The plist exists but the LaunchAgents directory is read-only, preventing deletion.
+    let base = std::env::temp_dir().join(format!("moadim-uninst-rm-{}", uuid::Uuid::new_v4()));
+    let launch_agents = base.join("Library/LaunchAgents");
+    std::fs::create_dir_all(&launch_agents).unwrap();
+    let plist = launch_agents.join("io.moadim.daemon.plist");
+    std::fs::write(&plist, "plist content").unwrap();
+    // Lock the directory so remove_file fails with "Permission denied".
+    std::fs::set_permissions(&launch_agents, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    let prev_override = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    let prev_launchctl = std::env::var_os("MOADIM_LAUNCHCTL_BIN");
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1).
+    unsafe {
+        std::env::set_var("HOME", &base);
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
+        // Use /bin/true so the best-effort `launchctl unload` succeeds (result is ignored anyway).
+        std::env::set_var("MOADIM_LAUNCHCTL_BIN", "/bin/true");
+    }
+    let result = uninstall();
+    // Restore write permission so the directory can be cleaned up.
+    let _ = std::fs::set_permissions(&launch_agents, std::fs::Permissions::from_mode(0o755));
+    unsafe {
+        match prev_home {
+            Some(val) => std::env::set_var("HOME", val),
+            None => std::env::remove_var("HOME"),
+        }
+        match prev_override {
+            Some(val) => std::env::set_var("MOADIM_HOME_OVERRIDE", val),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+        match prev_launchctl {
+            Some(val) => std::env::set_var("MOADIM_LAUNCHCTL_BIN", val),
+            None => std::env::remove_var("MOADIM_LAUNCHCTL_BIN"),
+        }
+    }
+    assert!(
+        result.is_err(),
+        "uninstall must fail when plist file cannot be removed"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn install_then_uninstall_round_trips_against_a_sandbox() {
     use std::os::unix::fs::PermissionsExt as _;
 

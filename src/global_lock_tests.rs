@@ -84,3 +84,26 @@ fn unlock_noop_when_absent() {
     set_lock(LockScope::Local, false).unwrap();
     assert!(!is_globally_locked());
 }
+
+#[cfg(unix)]
+#[test]
+fn set_lock_errors_when_config_dir_is_read_only() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let _home = TempHome::set();
+    // Create the config dir first so `create_dir_all` (the line before L60) succeeds,
+    // then strip write permission so `fs::write` for the lock sentinel (L60) fails.
+    let config_dir = crate::paths::config_dir();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let mut perms = std::fs::metadata(&config_dir).unwrap().permissions();
+    perms.set_mode(0o555);
+    std::fs::set_permissions(&config_dir, perms).unwrap();
+
+    let err = set_lock(LockScope::Shared, true).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+
+    // Restore write permission so TempHome::drop can remove the temp tree.
+    let mut perms = std::fs::metadata(&config_dir).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&config_dir, perms).unwrap();
+}

@@ -325,3 +325,40 @@ fn build_ical_skips_all_routines_when_globally_locked() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ── build_ical_with_cap: exact-cap / no-more-fires branch ────────────────────
+
+#[test]
+fn at_cap_with_no_further_fires_in_horizon_adds_no_truncation_marker() {
+    // Use cap=1 with a once-per-year schedule so the iterator is exhausted after emitting
+    // exactly 1 event: emitted == max_events, but fires.next() returns None because the
+    // next occurrence is a full year later (well beyond the 30-day horizon).
+    // This exercises the `if emitted == max_events { if let Some(next) = fires.next() { … } }`
+    // path where the inner if-let arm is NOT taken — the closing `}` of the outer if is reached
+    // without ever appending the truncation-marker VEVENT.
+    let routine = routine_with("r1", "0 0 2 1 *", true); // fires on 2 January at midnight
+    let now = fixed_now(); // 2026-01-01 00:00:00 local
+                           // Only 2026-01-02 00:00:00 falls within the 30-day horizon; the next fire is 2027-01-02.
+    let ics = build_ical_with_cap(&[routine], now, 1);
+    // Exactly one real VEVENT; no truncation-marker VEVENT.
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 1);
+    assert!(
+        !ics.contains("-truncated@moadim"),
+        "no truncation marker expected"
+    );
+}
+
+#[test]
+fn at_cap_with_more_fires_still_in_horizon_adds_truncation_marker() {
+    // Counterpart: a daily schedule gives ~30 fires; with cap=2 the third fire is still inside
+    // the horizon so fires.next() returns Some and the truncation marker IS appended.
+    let routine = routine_with("r1", "0 0 * * *", true); // fires daily at midnight
+    let now = fixed_now();
+    let ics = build_ical_with_cap(&[routine], now, 2);
+    // 2 real VEVENTs + 1 truncation-marker VEVENT.
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 3);
+    assert!(
+        ics.contains("-truncated@moadim"),
+        "truncation marker expected"
+    );
+}

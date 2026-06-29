@@ -589,15 +589,21 @@ fn http_request_core(
         .parse()
         .expect("bind address is a valid socket address");
     let mut stream = std::net::TcpStream::connect_timeout(&addr, timeout)?;
-    stream.set_read_timeout(Some(timeout))?;
-    stream.set_write_timeout(Some(timeout))?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .expect("set read timeout on loopback TCP stream");
+    stream
+        .set_write_timeout(Some(timeout))
+        .expect("set write timeout on loopback TCP stream");
     let payload = body.unwrap_or_default();
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Type: application/json\r\n\
          Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
-    stream.write_all(req.as_bytes())?;
+    stream
+        .write_all(req.as_bytes())
+        .expect("write HTTP request to local server");
     let mut resp = String::new();
     // A failed read after a clean shutdown can still yield the status line we already received.
     let _ = stream.read_to_string(&mut resp);
@@ -660,14 +666,16 @@ pub fn spawn_restart() -> anyhow::Result<u32> {
 fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
     use std::process::{Command as Proc, Stdio};
 
-    let exe = std::env::current_exe()?;
+    let exe = std::env::current_exe().expect("resolve current executable path");
     let log_path = crate::paths::daemon_log_file();
     std::fs::create_dir_all(log_path.parent().expect("daemon log path has a parent dir"))?;
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path)?;
-    let err = out.try_clone()?;
+    let err = out
+        .try_clone()
+        .expect("clone log file handle for stderr redirect");
 
     let mut cmd = Proc::new(exe);
     cmd.stdin(Stdio::null())
@@ -676,7 +684,8 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     configure(&mut cmd);
     detach(&mut cmd);
 
-    let child = cmd.spawn()?;
+    #[allow(clippy::zombie_processes)]
+    let child = cmd.spawn().expect("spawn detached moadim child process");
     Ok(child.id())
 }
 

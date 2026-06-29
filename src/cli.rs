@@ -474,15 +474,32 @@ pub fn write_pid_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Write a `.gitignore` into the config dir so generated runtime files (`*.pid`, `*.log`) and
-/// per-machine state (`*.local.*`, e.g. `machine.local.toml`) stay out of version control when users
-/// track `~/.config/moadim` in a dotfiles repo shared across machines.
-/// Best-effort: failure to write it is not fatal to starting the daemon.
+/// Ensure the config dir `.gitignore` contains all required patterns on every start.
+///
+/// Reads the existing file (if any), appends any missing patterns, and writes back only when
+/// something changed. Preserves user-added entries. Best-effort: failure is not fatal.
 fn ensure_config_gitignore() {
+    const REQUIRED: &[&str] = &["*.pid", "*.log", "*.local.*"];
     let gitignore = crate::paths::config_gitignore_path();
-    if !gitignore.exists() {
-        let _ = std::fs::write(&gitignore, "*.pid\n*.log\n*.local.*\n");
+    let existing = std::fs::read_to_string(&gitignore).unwrap_or_default();
+    let lines: Vec<&str> = existing.lines().collect();
+    let missing: Vec<&str> = REQUIRED
+        .iter()
+        .copied()
+        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
+        .collect();
+    if missing.is_empty() {
+        return;
     }
+    let mut content = existing.clone();
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    for pattern in &missing {
+        content.push_str(pattern);
+        content.push('\n');
+    }
+    let _ = std::fs::write(&gitignore, &content);
 }
 
 /// Remove the pid file. Best-effort: a missing file is not an error.

@@ -666,9 +666,43 @@ fn pid_file_write_read_clear_roundtrip() {
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     write_pid_file().unwrap();
     assert_eq!(read_pid_file(), Some(std::process::id()));
-    assert!(crate::paths::config_gitignore_path().exists());
-    // A second write hits the "gitignore already exists, skip" branch.
+    let gitignore = crate::paths::config_gitignore_path();
+    assert!(gitignore.exists());
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "gitignore must cover *.local.*"
+    );
+    // Manually remove one pattern; a second write must restore it without
+    // duplicating the patterns already present.
+    std::fs::write(&gitignore, "*.pid\n*.log\n").unwrap();
     write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "missing pattern must be re-added"
+    );
+    assert_eq!(
+        content.matches("*.pid").count(),
+        1,
+        "existing patterns must not duplicate"
+    );
+    // Write a file with all patterns but no trailing newline; the next write
+    // must insert the newline separator before appending (line 495 branch).
+    std::fs::write(&gitignore, "*.pid\n*.log").unwrap();
+    write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "must append after no-trailing-newline content"
+    );
+    // All patterns present → early return (line 492 branch). Call twice; second is a no-op.
+    write_pid_file().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&gitignore).unwrap(),
+        content,
+        "no-op write must not change file"
+    );
     clear_pid_file();
     assert!(read_pid_file().is_none());
     // A garbage pid file parses to None rather than panicking.

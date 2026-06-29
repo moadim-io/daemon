@@ -438,7 +438,12 @@ pub async fn update(
     Ok(Json(svc_update(&state.store, &state.handlers, &id, body)?))
 }
 
-/// `PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).
+/// `PUT /cron-jobs/{id}` — partial-update alias for PATCH.
+///
+/// Despite the HTTP convention, this endpoint does **not** perform a full replacement: it
+/// delegates to the same PATCH handler, so omitted fields are retained rather than reset to
+/// their defaults. Clients that need idempotent full-resource replacement must supply every
+/// field explicitly; the response shape is identical to PATCH.
 #[utoipa::path(put, path = "/cron-jobs/{id}",
     params(("id" = String, Path, description = "Cron job UUID")),
     request_body = UpdateRequest,

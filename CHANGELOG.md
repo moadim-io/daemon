@@ -26,6 +26,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
+- **`agent_command_available` on routine responses.** `RoutineResponse` (returned
+  by `GET`/`POST`/`PUT`/`DELETE` `/routines`) now reports whether the routine's
+  agent `command` (e.g. `claude`, `codex`) actually resolves on the daemon's
+  `PATH`, distinct from the existing `agent_registered` (which only checks that
+  `<agent>.toml` exists). A routine with a present, well-formed agent config but
+  an uninstalled binary previously looked identically healthy to one that could
+  actually run — the cron firing launches a tmux session that dies immediately
+  with "command not found," a silent no-op. Clients can now tell the two states
+  apart instead of inferring it from `agent.log` after the fact. (#383)
 
 ### Changed
 

@@ -36,6 +36,7 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
         ttl_secs: None,
+        tags: vec![],
         agent_registered: false,
         file_path: String::new(),
         schedule_description: human.map(Into::into),

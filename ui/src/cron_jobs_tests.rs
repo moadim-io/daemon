@@ -291,16 +291,6 @@ fn distinct_machines_are_sorted_and_deduped() {
     assert_eq!(distinct_machines(&jobs), vec!["m1", "m2", "m3"]);
 }
 
-#[test]
-fn unassigned_count_tallies_dormant_jobs() {
-    let jobs = vec![
-        job("a", "h", "0 * * * *", &["m1"], true),
-        job("b", "h", "0 * * * *", &[], true),
-        job("c", "h", "0 * * * *", &[], false),
-    ];
-    assert_eq!(unassigned_count(&jobs), 2);
-}
-
 // ── Sort ──────────────────────────────────────────────────────────────────────
 
 #[test]

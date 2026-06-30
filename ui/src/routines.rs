@@ -566,12 +566,6 @@ pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
     set.into_iter().collect()
 }
 
-/// Count of routines with no machine assigned.
-#[must_use]
-pub fn unassigned_routines_count(routines: &[Routine]) -> usize {
-    routines.iter().filter(|r| r.machines.is_empty()).count()
-}
-
 // ─── State ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Default)]

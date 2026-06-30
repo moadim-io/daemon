@@ -245,13 +245,6 @@ pub fn distinct_machines(jobs: &[CronJob]) -> Vec<String> {
     set.into_iter().collect()
 }
 
-/// Count of dormant jobs (no machine assigned) — surfaced as the "Unassigned"
-/// machine-facet option only when at least one such job exists.
-#[must_use]
-pub fn unassigned_count(jobs: &[CronJob]) -> usize {
-    jobs.iter().filter(|j| j.machines.is_empty()).count()
-}
-
 // ─── Column sort ──────────────────────────────────────────────────────────────
 //
 // Client-side sort applied to the filtered job list before rendering.

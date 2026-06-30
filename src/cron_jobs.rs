@@ -159,8 +159,26 @@ pub fn new_store() -> CronStore {
 }
 
 /// Create an empty [`HandlerRegistry`].
+#[cfg(test)]
 pub fn new_registry() -> HandlerRegistry {
     Arc::new(HashSet::new())
+}
+
+/// Build a [`HandlerRegistry`] by scanning [`crate::paths::handlers_dir`] for handler scripts.
+///
+/// Entries are keyed by their exact file name, matching how [`svc_trigger`] resolves a job's
+/// `handler` field (`handlers_dir().join(&job.handler)`, no extension guessing). A missing or
+/// unreadable handlers directory yields an empty registry rather than an error, since the
+/// directory is optional (a fresh install has none).
+pub fn populate_registry() -> HandlerRegistry {
+    let dir = crate::paths::handlers_dir();
+    let names = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    Arc::new(names)
 }
 
 /// Normalize `expr` to 5-field OS cron format for consistent storage.

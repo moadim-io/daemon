@@ -1,7 +1,7 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::mcp::MoadimMcp;
-use crate::cron_jobs::{self, new_registry, AppState, CronStore, ShutdownSignal};
+use crate::cron_jobs::{self, populate_registry, AppState, CronStore, ShutdownSignal};
 use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
@@ -255,7 +255,7 @@ pub(crate) fn build_app_with_shutdown(
 
     let app_state = AppState {
         store: store.clone(),
-        handlers: new_registry(),
+        handlers: populate_registry(),
         routines: routines.clone(),
         uptime_start: now_secs(),
         shutdown: shutdown_signal,

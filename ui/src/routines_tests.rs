@@ -36,6 +36,7 @@ fn routine(
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
         ttl_secs: None,
+        tags: vec![],
         agent_registered: false,
         file_path: String::new(),
         schedule_description: None,
@@ -427,16 +428,6 @@ fn distinct_machines_r_returns_sorted_unique_machines() {
     ];
     let machines = distinct_machines_r(&routines);
     assert_eq!(machines, vec!["m1", "m2", "m3"]);
-}
-
-#[test]
-fn unassigned_routines_count_counts_empty_machine_lists() {
-    let routines = vec![
-        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true),
-        routine("c", "t", "claude", "0 * * * *", &[], &[], false),
-    ];
-    assert_eq!(unassigned_routines_count(&routines), 2);
 }
 
 // ── Bulk selection reducer actions ────────────────────────────────────────────

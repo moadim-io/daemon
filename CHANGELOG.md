@@ -18,6 +18,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
 
+### Fixed
+
+- **Flaky `restart` test under `cargo llvm-cov`.** `stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops`
+  used a 60ms timeout against an 80ms fake-server stop delay, leaving margins too
+  tight to survive the scheduling jitter and slowdown that coverage
+  instrumentation adds, so it intermittently failed the pre-push 100%-coverage
+  gate. Widened to a 300ms timeout against a 450ms stop delay so the same
+  code path is still exercised with headroom to spare.
+
 ## [0.18.0] — 2026-06-30
 
 ### Added

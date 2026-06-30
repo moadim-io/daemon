@@ -15,6 +15,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tower_http::compression::CompressionLayer;
 use utoipa_swagger_ui::SwaggerUi;
 
 /// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
@@ -347,6 +348,10 @@ pub(crate) fn build_app_with_shutdown(
         ))
         .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
+        // Outermost layer: negotiates `Accept-Encoding` and gzip-compresses response bodies
+        // (notably the ~1.1 MB SPA `index.html` and the OpenAPI JSON under `/docs`). A no-op
+        // for clients that don't advertise gzip support (issue #399).
+        .layer(CompressionLayer::new())
         .with_state(app_state)
 }
 

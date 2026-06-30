@@ -13,6 +13,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Documentation
 
+- **Added `CODE_OF_CONDUCT.md`.** The repo had a `CONTRIBUTING.md` and
+  `SECURITY.md` but no documented standard of conduct or enforcement contact,
+  leaving GitHub's community-standards profile incomplete. Added a Contributor
+  Covenant v2.1 code of conduct with a real reporting contact, and linked it
+  from `CONTRIBUTING.md`. (#423)
 - The README's **Bind address** section now warns that the REST API and MCP
   endpoint are unauthenticated, so `MOADIM_BIND_ADDR` should stay on a loopback
   address: binding to a routable interface (a LAN IP or `0.0.0.0`) exposes

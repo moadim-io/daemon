@@ -18,6 +18,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
 
+### Changed
+
+- Declared `rust-version = "1.88"` (MSRV) in the root `Cargo.toml` and
+  `ui/Cargo.toml`, matching the floor already required transitively by
+  `darling 0.23`, so `cargo install moadim` on an older stable toolchain now
+  fails with Cargo's clean MSRV message instead of an opaque compile error. (#326)
+
 ## [0.18.0] — 2026-06-30
 
 ### Added

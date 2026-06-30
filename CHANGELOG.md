@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Machine name in health output.** `GET /health` and the MCP `health` tool now
+  report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
+  `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
+  field, so clients can tell which machine answered without a second request. (#778)
+
 ## [0.18.0] — 2026-06-30
 
 ### Added

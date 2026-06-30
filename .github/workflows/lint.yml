@@ -8,8 +8,11 @@ name: Lint
 #
 # fmt and clippy run as separate jobs so a formatting failure and a lint failure
 # are reported independently. The build relies on the committed `prebuilt.html`
-# (build.rs falls back to it when trunk is absent), so no trunk or wasm target
-# is needed just to type-check and lint the server crate.
+# (build.rs falls back to it when trunk is absent), so no trunk step is needed
+# just to type-check and lint. The clippy job runs `--workspace` so the `ui`
+# member crate is linted too; `ui`'s deps (yew/gloo/web-sys) build fine on the
+# host target for clippy's purposes, so no wasm32 target install is required
+# here either.
 
 on:
   pull_request:
@@ -54,4 +57,11 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        # Match the local pre-push hook exactly: this is a non-virtual
+        # workspace (the root Cargo.toml declares both a [package] and a
+        # [workspace]), so a bare `cargo clippy` only checks the root
+        # `moadim` package and silently skips the `ui` member crate. Without
+        # `--workspace`, `ui/Cargo.toml`'s `[lints.clippy] all = "deny"` was
+        # never enforced here, so a PR could lint-regress the dashboard and
+        # still go fully green.
+        run: cargo clippy --workspace --all-targets -- -D warnings

@@ -11,6 +11,11 @@ opt-level = "z"
 name = "moadim"
 version = "0.18.0"
 edition = "2021"
+# Floor set by the transitive proc-macro build dependency `darling 0.23`
+# (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
+# `rust-version = "1.88.0"`. Bumping this is a deliberate, CHANGELOG-worthy
+# change — see CONTRIBUTING.md.
+rust-version = "1.88"
 description = "Loop engine for AI agents — cron jobs and routines over REST, MCP, and a built-in web UI"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"

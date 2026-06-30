@@ -103,6 +103,32 @@ fn reconcile_preserves_disabled_toggle() {
 }
 
 #[test]
+fn reconcile_re_seeds_empty_machines_with_current_machine() {
+    // Routines seeded before the machines field was introduced have machines: [].
+    // reconcile must detect the empty list as "not intentionally set" and fill it
+    // in — otherwise the default never fires after upgrading.
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.machines = Vec::new(); // simulate pre-machines-feature routine
+    let updated = reconcile(spec, &cur, 200).expect("empty machines must trigger a rewrite");
+    assert!(
+        !updated.machines.is_empty(),
+        "reconcile must re-seed machines when the existing list is empty"
+    );
+}
+
+#[test]
+fn reconcile_preserves_non_empty_machines() {
+    // A user who reassigned the default to a different machine must keep their choice.
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.machines = vec!["other-machine".to_string()];
+    cur.prompt = "stale".to_string(); // force a drift so reconcile runs
+    let updated = reconcile(spec, &cur, 200).expect("drift should trigger a rewrite");
+    assert_eq!(updated.machines, vec!["other-machine".to_string()]);
+}
+
+#[test]
 fn reconcile_refreshes_content_but_keeps_identity() {
     let spec = &DEFAULT_ROUTINES[0];
     let mut cur = materialize(spec, 100);

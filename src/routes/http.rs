@@ -35,6 +35,8 @@ pub struct HealthResponse {
     pub uptime_secs: u64,
     /// Whether the server is running.
     pub running: bool,
+    /// Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname).
+    pub machine: String,
     /// Presence of required external binaries on the daemon's `PATH`.
     pub dependencies: DependencyHealth,
     /// Daemon version (from `CARGO_PKG_VERSION`).
@@ -90,6 +92,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
         uptime_secs: now_secs().saturating_sub(state.uptime_start),
         running: true,
+        machine: crate::machine::current_machine(),
         dependencies: DependencyHealth {
             tmux: routines::tmux_available(),
         },

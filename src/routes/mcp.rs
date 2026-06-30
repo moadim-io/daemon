@@ -156,6 +156,8 @@ impl MoadimMcp {
             // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
             "uptime_secs": now_secs().saturating_sub(self.uptime_start),
             "running": true,
+            // Resolved machine identity, mirroring `GET /health` and `GET /machine`.
+            "machine": crate::machine::current_machine(),
             // Build provenance, mirroring `GET /health` and `--version` so the
             // running build is identifiable consistently across all three surfaces.
             "version": crate::build_info::VERSION,

@@ -1027,3 +1027,30 @@ fn svc_trigger_write_failure_returns_internal() {
     let result = svc_trigger(&store, "j1");
     assert!(matches!(result, Err(AppError::Internal)));
 }
+
+#[test]
+fn populate_registry_missing_handlers_dir_is_empty() {
+    let _home = HomeOverrideGuard::new();
+    let registry = populate_registry();
+    assert!(registry.is_empty());
+}
+
+#[test]
+fn populate_registry_lists_handler_file_names() {
+    let home = HomeOverrideGuard::new();
+    let handlers_dir = home.dir.join(".config").join("moadim").join("handlers");
+    std::fs::create_dir_all(&handlers_dir).unwrap();
+    std::fs::write(handlers_dir.join("backup.sh"), "#!/bin/sh\n").unwrap();
+
+    let registry = populate_registry();
+    assert!(registry.contains("backup.sh"));
+
+    let resp = CronJobResponse::from_job(make_job_with_handler("j1", "backup.sh"), &registry);
+    assert!(resp.handler_registered);
+}
+
+fn make_job_with_handler(id: &str, handler: &str) -> CronJob {
+    let mut job = make_job(id);
+    job.handler = handler.to_string();
+    job
+}

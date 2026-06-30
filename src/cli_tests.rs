@@ -213,6 +213,37 @@ fn stop_json_reports_running_pid_and_address() {
     assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
+/// Sorted top-level key names of a JSON object string, for comparing object shapes.
+fn sorted_keys(json: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(json).unwrap();
+    let mut keys: Vec<String> = value
+        .as_object()
+        .expect("expected a JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn status_and_stop_json_share_the_same_keys() {
+    // `stop --json` and `status --json` are documented to share one object shape so scripts can
+    // parse them uniformly. Pin that contract by key set, in both the running and not-running
+    // states, so adding a field to one without the other is caught here instead of by a downstream
+    // consumer.
+    assert_eq!(
+        sorted_keys(&status_json(true, Some(42))),
+        sorted_keys(&stop_json(true, Some(42))),
+        "status --json and stop --json must expose the same keys when running"
+    );
+    assert_eq!(
+        sorted_keys(&status_json(false, None)),
+        sorted_keys(&stop_json(false, None)),
+        "status --json and stop --json must expose the same keys when not running"
+    );
+}
+
 #[test]
 fn liveness_exit_code_maps_running_to_codes() {
     // A reachable server exits 0; a missing one exits the documented EXIT_NOT_RUNNING.

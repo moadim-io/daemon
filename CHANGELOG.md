@@ -11,6 +11,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- A `cli_tests` assertion (`status_and_stop_json_share_the_same_keys`) now pins
+  that `status --json` and `stop --json` emit the same top-level key set in both
+  the running and not-running states, so a field added to one shape but not the
+  other fails at the source instead of in a downstream `--json` consumer. (#538)
+
 ### Fixed
 
 - `docs/moadim.1`'s `.TH` header reported a stale `moadim 0.16.0` even though

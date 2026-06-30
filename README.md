@@ -516,12 +516,24 @@ The server binds to `127.0.0.1:5784` by default — the same address every clien
 variable, set identically for the server and any client you run against it:
 
 ```sh
-# Bind the server to a different port (or interface)…
+# Bind the server to a different port (still on loopback)…
 MOADIM_BIND_ADDR=127.0.0.1:7000 moadim
 
 # …and point client commands at the same address.
 MOADIM_BIND_ADDR=127.0.0.1:7000 moadim status
 ```
+
+> **⚠️ Keep the bind address on loopback.** The REST API and the MCP endpoint are
+> **unauthenticated** — there is no token, password, or per-client check. Anyone who
+> can reach the bind address can create, edit, and trigger routines, and a triggered
+> routine launches an agent on your machine with your credentials. Binding to a
+> routable interface therefore hands that control surface — effectively remote code
+> execution — to the network: a LAN address exposes it to everyone on the subnet, and
+> `0.0.0.0` exposes it to every interface, including the public internet if the host is
+> reachable. The default `127.0.0.1` keeps the daemon private to the local machine;
+> leave it there. If you genuinely need remote access, put the daemon behind an
+> authenticating reverse proxy (or a firewall / VPN / SSH tunnel) instead of widening
+> `MOADIM_BIND_ADDR`.
 
 Because the override changes both the bind and the probe target, a client started without it
 keeps looking at the default `127.0.0.1:5784` and will report the relocated server as not running.

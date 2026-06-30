@@ -214,6 +214,45 @@ async fn build_app_serves_root() {
 }
 
 #[tokio::test]
+async fn build_app_compresses_root_with_gzip() {
+    // Issue #399: the ~1.1 MB SPA body should be gzip-compressed when the client advertises
+    // support for it.
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header(axum::http::header::ACCEPT_ENCODING, "gzip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(axum::http::header::CONTENT_ENCODING)
+            .unwrap(),
+        "gzip"
+    );
+}
+
+#[tokio::test]
+async fn build_app_serves_root_uncompressed_without_accept_encoding() {
+    // A client that doesn't advertise gzip support must still get the full identity body.
+    let app = build_app(new_store(), crate::routines::new_store());
+    let resp = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp
+        .headers()
+        .get(axum::http::header::CONTENT_ENCODING)
+        .is_none());
+}
+
+#[tokio::test]
 async fn build_app_sets_security_headers_on_ui_and_api() {
     // The whole router carries the security headers (issue #406): assert on a representative
     // UI response (the SPA at `/`) and a representative API response (`/api/v1/health`).

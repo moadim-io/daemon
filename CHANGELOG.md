@@ -38,6 +38,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- **Gzip-compressed HTTP responses.** The Axum router now negotiates
+  `Accept-Encoding` and gzip-compresses response bodies via a `tower-http`
+  `CompressionLayer`, cutting the ~1.1 MB SPA payload (and the OpenAPI JSON
+  under `/docs`) several-fold on every load/refresh for clients that
+  advertise gzip support. A no-op for clients that don't. (#399)
 - Declared `rust-version = "1.88"` (MSRV) in the root `Cargo.toml` and
   `ui/Cargo.toml`, matching the floor already required transitively by
   `darling 0.23`, so `cargo install moadim` on an older stable toolchain now

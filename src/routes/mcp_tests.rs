@@ -83,6 +83,11 @@ fn health_content_contains_status() {
     assert_eq!(val["version"], crate::build_info::VERSION);
     assert_eq!(val["git_sha"], crate::build_info::GIT_SHA);
     assert_eq!(val["build_date"], crate::build_info::BUILD_DATE);
+    // Resolved machine identity, for parity with `GET /health`.
+    assert!(
+        val["machine"].is_string() && !val["machine"].as_str().unwrap().is_empty(),
+        "mcp health should carry a non-empty machine name, got: {val}"
+    );
 }
 
 #[test]

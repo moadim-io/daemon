@@ -351,6 +351,11 @@ async fn build_app_serves_health() {
         "health payload should carry a boolean dependencies.tmux flag, got: {json}"
     );
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
+    // The resolved machine name is surfaced so clients can identify which daemon answered.
+    assert!(
+        json["machine"].is_string() && !json["machine"].as_str().unwrap().is_empty(),
+        "health payload should carry a non-empty machine name, got: {json}"
+    );
 }
 
 #[tokio::test]

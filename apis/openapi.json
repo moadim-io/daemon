@@ -1293,6 +1293,7 @@
           "status",
           "uptime_secs",
           "running",
+          "machine",
           "dependencies",
           "version",
           "git_sha",
@@ -1310,6 +1311,10 @@
           "git_sha": {
             "type": "string",
             "description": "Short git commit SHA the daemon was built from, or `\"unknown\"` outside a git checkout."
+          },
+          "machine": {
+            "type": "string",
+            "description": "Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname)."
           },
           "running": {
             "type": "boolean",

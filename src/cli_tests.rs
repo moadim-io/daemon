@@ -898,3 +898,23 @@ fn run_background_errors_when_spawn_detached_fails() {
     assert!(run_background().is_err());
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// `docs/moadim.1` hand-mirrors the CLI and hardcodes its own version in the `.TH` header
+/// (e.g. `"moadim 0.16.0"`). Nothing previously kept that in lockstep with `Cargo.toml`, so a
+/// release could silently ship a man page reporting the *previous* version (issue #556). Fail
+/// loudly on drift instead.
+#[test]
+fn man_page_version_matches_cargo_pkg_version() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/moadim.1");
+    let man_page = std::fs::read_to_string(path).expect("docs/moadim.1 should exist");
+    let th_line = man_page
+        .lines()
+        .find(|line| line.starts_with(".TH MOADIM"))
+        .expect("docs/moadim.1 should have a .TH header line");
+    let expected = format!("\"moadim {}\"", env!("CARGO_PKG_VERSION"));
+    assert!(
+        th_line.contains(&expected),
+        "docs/moadim.1 .TH header is stale: expected it to contain {expected:?}, got: {th_line:?}\n\
+         Update the version token in docs/moadim.1 to match Cargo.toml."
+    );
+}

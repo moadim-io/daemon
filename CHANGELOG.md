@@ -11,6 +11,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Fixed
+
+- `docs/moadim.1`'s `.TH` header reported a stale `moadim 0.16.0` even though
+  `Cargo.toml` had moved on to 0.18.0 — the hand-maintained man page has no
+  build-time link to the crate version, so a release could silently ship a man
+  page reporting the *previous* version. Corrected the version token and added
+  a regression test (`cli::cli_tests::man_page_version_matches_cargo_pkg_version`)
+  that fails when the two drift again. (#556)
+
 ### Added
 
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now

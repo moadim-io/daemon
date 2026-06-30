@@ -103,6 +103,8 @@ pub type HandlerRegistry = Arc<HashSet<String>>;
 
 Both are cloned into `AppState` (REST) and `MoadimMcp` (MCP). Every write acquires the mutex, updates in memory, then flushes to disk before releasing.
 
+`HandlerRegistry` is built once, at startup, by `scan_registry()` scanning `handlers_dir()` and stripping each entry's extension. It is **not** hot-reloaded: a handler script added to the directory after the daemon starts is not reflected until the next restart.
+
 ---
 
 ## Service layer
@@ -319,7 +321,7 @@ main()
   TcpListener::bind(:5784)
   routes::http::run_with_listener_until(store, listener, pending())
     build_app(store)
-      AppState { store, handlers: new_registry() }
+      AppState { store, handlers: scan_registry() }   scan ~/.config/moadim/handlers/ → HandlerRegistry
       StreamableHttpService::new(|| MoadimMcp::new(...))
       Router::new()  ← wire all routes + middleware
     banner::print(addr)          stdout: REST / MCP / UI URLs

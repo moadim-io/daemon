@@ -1027,3 +1027,33 @@ fn svc_trigger_write_failure_returns_internal() {
     let result = svc_trigger(&store, "j1");
     assert!(matches!(result, Err(AppError::Internal)));
 }
+
+#[test]
+fn scan_registry_strips_extensions_and_skips_directories() {
+    let home = HomeOverrideGuard::new();
+    let handlers_dir = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers_dir).unwrap();
+    std::fs::write(handlers_dir.join("my-handler.sh"), b"#!/bin/sh\n").unwrap();
+    std::fs::write(handlers_dir.join("no-ext"), b"#!/bin/sh\n").unwrap();
+    // A subdirectory must not be reported as a handler identifier.
+    std::fs::create_dir_all(handlers_dir.join("a-subdir")).unwrap();
+
+    let registry = scan_registry();
+
+    assert!(registry.contains("my-handler"));
+    assert!(registry.contains("no-ext"));
+    assert!(!registry.contains("a-subdir"));
+    assert_eq!(registry.len(), 2);
+    drop(home);
+}
+
+#[test]
+fn scan_registry_returns_empty_set_when_handlers_dir_missing() {
+    let _home = HomeOverrideGuard::new();
+    // HomeOverrideGuard only creates the temp home root, not the handlers dir.
+    assert!(!crate::paths::handlers_dir().exists());
+
+    let registry = scan_registry();
+
+    assert!(registry.is_empty());
+}

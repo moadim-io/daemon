@@ -572,6 +572,61 @@ async fn router_cron_job_full_lifecycle() {
 }
 
 #[tokio::test]
+async fn router_handler_registered_true_when_handler_script_exists_on_disk() {
+    // Regression test for the empty-registry bug: build the production AppState through the
+    // real startup path (`build_app` -> `build_app_with_shutdown` -> `scan_registry`), not
+    // `new_registry()` directly, so a registry that silently stays empty would be caught here.
+    let _home = TempHome::set();
+    let handlers_dir = crate::paths::handlers_dir();
+    std::fs::create_dir_all(&handlers_dir).unwrap();
+    std::fs::write(handlers_dir.join("real-handler.sh"), b"#!/bin/sh\n").unwrap();
+
+    let store = new_store();
+    let resp = build_app(store.clone(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/cron-jobs")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"schedule":"@daily","handler":"real-handler"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        created["handler_registered"], true,
+        "a job created against a handler script that already exists on disk should be \
+         registered by the startup scan"
+    );
+
+    // A second request rebuilds the app (and re-scans the registry) the same way the real
+    // server does on every request; the result should not depend on which request created it.
+    let resp = build_app(store.clone(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/cron-jobs/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let fetched: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(fetched["handler_registered"], true);
+}
+
+#[tokio::test]
 async fn router_create_invalid_cron_returns_400() {
     let resp = build_app(new_store(), crate::routines::new_store())
         .oneshot(

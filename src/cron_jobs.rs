@@ -159,8 +159,36 @@ pub fn new_store() -> CronStore {
 }
 
 /// Create an empty [`HandlerRegistry`].
+#[cfg(test)]
 pub fn new_registry() -> HandlerRegistry {
     Arc::new(HashSet::new())
+}
+
+/// Build a [`HandlerRegistry`] by scanning [`crate::paths::handlers_dir()`] for handler scripts.
+///
+/// Each discovered file's extension is stripped (`file_stem()`) so the registry holds the same
+/// extension-less identifiers stored on a [`CronJob`]'s `handler` field, matching the convention
+/// `crate::sync::resolve_handler_path` uses to resolve a handler name back to a script on disk.
+/// Called once at server startup (see `build_app_with_shutdown`); the registry is read-only
+/// afterward, so a handler script added to the directory later is not reflected until the daemon
+/// restarts.
+pub fn scan_registry() -> HandlerRegistry {
+    let Ok(entries) = std::fs::read_dir(crate::paths::handlers_dir()) else {
+        return Arc::new(HashSet::new());
+    };
+    let handlers = entries
+        .filter_map(Result::ok)
+        // `is_file()` follows symlinks (unlike `file_type()`, which reflects the dir entry
+        // itself), so a handler script reached via a symlink is still discovered.
+        .filter(|entry| entry.path().is_file())
+        .filter_map(|entry| {
+            entry
+                .path()
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+        .collect();
+    Arc::new(handlers)
 }
 
 /// Normalize `expr` to 5-field OS cron format for consistent storage.

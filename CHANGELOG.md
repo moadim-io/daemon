@@ -22,6 +22,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- `GET /cron-jobs`, `GET /cron-jobs/{id}`, and the equivalent MCP tools always
+  reported `handler_registered: false`, even when the job's handler script
+  genuinely existed on disk. The `HandlerRegistry` backing that field was built
+  with `new_registry()` at startup — an empty set that nothing ever populated
+  from `handlers_dir()`. The daemon now scans `handlers_dir()` at startup
+  (`scan_registry()`), so `handler_registered` reflects reality. The registry
+  stays read-only after startup; a handler script added later requires a
+  restart to be picked up. (#790)
 - `docs/moadim.1`'s `.TH` header reported a stale `moadim 0.16.0` even though
   `Cargo.toml` had moved on to 0.18.0 — the hand-maintained man page has no
   build-time link to the crate version, so a release could silently ship a man

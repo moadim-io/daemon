@@ -10,7 +10,7 @@ By participating in this project you agree to abide by our
 | [Rust stable](https://rustup.rs/) | Build the daemon |
 | [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
-| [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`cargo install typos-cli`) |
+| [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
@@ -50,8 +50,11 @@ The **pre-commit** hook spell-checks the tree with
 format/lint/coverage gates below. Spell-check the tree on demand with:
 
 ```sh
-typos
+make spell
 ```
+
+`make spell` installs `typos-cli` if it's missing, then runs `typos` against
+the repo root — you don't need to know the crate/binary name to run it.
 
 Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
 `schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`

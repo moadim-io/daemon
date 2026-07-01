@@ -48,8 +48,12 @@ pub enum Command {
     Foreground,
     /// Spawn the server as a detached background process, then exit (the default, non-interactive).
     Background,
-    /// Stop a running background server (if any) and start a fresh detached instance.
-    Restart,
+    /// Stop a running background server (if any) and start a fresh instance.
+    Restart {
+        /// Start the fresh instance in the foreground, attached to the terminal, instead of
+        /// detached in the background (mirrors `moadim -i`).
+        interactive: bool,
+    },
     /// Ask a running background server to stop. `json` requests machine-readable output.
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
@@ -106,7 +110,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         None => Command::Background,
         Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("machine") => Command::Machine(args[1..].to_vec()),
-        Some("restart") => Command::Restart,
+        Some("restart") => Command::Restart {
+            interactive: wants_interactive(&args[1..]),
+        },
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
             quiet: wants_quiet(&args[1..]),
@@ -146,6 +152,12 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
+/// Whether a `--interactive`/`-i` flag appears among a command's trailing arguments, requesting
+/// that `restart` bring the fresh instance up in the foreground instead of detached.
+fn wants_interactive(rest: &[String]) -> bool {
+    rest.iter().any(|arg| arg == "--interactive" || arg == "-i")
+}
+
 /// Print usage help to stdout.
 pub fn print_help() {
     let bind_addr = bind_addr();
@@ -162,7 +174,7 @@ pub fn print_help() {
          \x20   -b, --background       start the server detached in the background (explicit default)\n\
          \n\
          COMMANDS:\n\
-         \x20   restart                stop a running server (if any) and start a fresh background one\n\
+         \x20   restart [-i]           stop a running server (if any) and start a fresh one (-i/--interactive: foreground)\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
@@ -210,24 +222,33 @@ pub fn run_background() -> anyhow::Result<()> {
     start_detached_and_report("started")
 }
 
-/// Stop a running background server (if any) and start a fresh detached instance.
+/// Stop a currently running background server, if any, printing the same status line used by
+/// `restart`. Returns the PID of the server that was stopped, or `None` if none was running.
 ///
-/// Unlike [`run_background`], which restarts only as a side effect of being asked to start while
-/// one is already up, this is the explicit "give me a clean process now" command: it stops the
-/// running server when present, otherwise just starts one.
-pub fn restart() -> anyhow::Result<()> {
-    let old_pid = if is_running() {
+/// Shared by [`restart`] (which spawns a fresh detached instance afterward) and the interactive
+/// `restart -i` path in `main`, which brings the fresh instance up in the foreground instead.
+pub(crate) fn stop_existing_for_restart() -> anyhow::Result<Option<u32>> {
+    if is_running() {
         let pid = read_pid_file();
         let suffix = pid
             .map(|process_id| format!(" (pid {process_id})"))
             .unwrap_or_default();
         println!("moadim is running{suffix}; stopping it");
         crate::restart::stop_running_and_wait()?;
-        pid
+        Ok(pid)
     } else {
         println!("moadim is not running; starting a fresh instance");
-        None
-    };
+        Ok(None)
+    }
+}
+
+/// Stop a running background server (if any) and start a fresh detached instance.
+///
+/// Unlike [`run_background`], which restarts only as a side effect of being asked to start while
+/// one is already up, this is the explicit "give me a clean process now" command: it stops the
+/// running server when present, otherwise just starts one.
+pub fn restart() -> anyhow::Result<()> {
+    let old_pid = stop_existing_for_restart()?;
     let new_pid = spawn_detached()?;
     // Headline the rotation so scripts/logs can see the process actually changed.
     println!("{}", restart_rotation_line(old_pid, new_pid));

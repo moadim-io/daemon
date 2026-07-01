@@ -59,7 +59,11 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart => cli::restart(),
+        cli::Command::Restart { interactive: false } => cli::restart(),
+        cli::Command::Restart { interactive: true } => {
+            cli::stop_existing_for_restart()?;
+            run_server().await
+        }
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),

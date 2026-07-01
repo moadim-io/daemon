@@ -42,6 +42,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **`moadim restart -i`/`--interactive`.** `restart` previously always spawned
+  the fresh instance detached in the background, with no way to bring it up
+  attached to the terminal in one step (mirroring `moadim -i`). The new flag
+  stops the running server (if any) and starts the replacement in the
+  foreground instead of backgrounding it.
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

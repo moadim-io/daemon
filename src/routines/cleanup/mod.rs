@@ -4,8 +4,10 @@
 //! agent in a tmux session named `moadim-{slug}-{ts}`. When the agent exits the session ends, but
 //! the workbench (prompt, logs, cloned repos) lingers forever. This module reaps those leftovers: a
 //! workbench is removed once its run has *finished* (no live tmux session) **and** it is older than
-//! the owning routine's [`Routine::effective_ttl_secs`]. A still-running session within its
-//! [`Routine::effective_max_runtime_secs`] is never touched; one that has *exceeded* that bound is
+//! the owning routine's [`Routine::effective_ttl_secs`](crate::routines::Routine::effective_ttl_secs).
+//! A still-running session within its
+//! [`Routine::effective_max_runtime_secs`](crate::routines::Routine::effective_max_runtime_secs)
+//! is never touched; one that has *exceeded* that bound is
 //! a hung run, so a watchdog force-kills its tmux session (recording the reason in the run's
 //! `agent.log`), after which the workbench is reaped under the normal TTL rules. Orphaned
 //! workbenches (routine since deleted) fall back to `MAX_TTL_SECS` / `MAX_RUNTIME_SECS`.
@@ -25,8 +27,20 @@ mod ttl;
 
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
+pub(crate) use runtime::max_runtime_ceiling_secs;
+pub(crate) use ttl::ttl_ceiling_secs;
+
 /// How often the background task scans for expired workbenches.
 pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+/// How often the lightweight watchdog scans for *hung* runs to force-kill.
+///
+/// Decoupled from [`CLEANUP_INTERVAL`]: TTL-reaping finished workbenches can stay hourly, but the
+/// max-runtime watchdog must fire on a much shorter cadence or a sub-hour `max_runtime_secs` is
+/// unenforceable (a hung run would survive up to ~1h past its bound). At 30s the kill latency is
+/// `effective_max_runtime_secs + <=30s`, so even a routine bounded to a few minutes is reaped near
+/// its limit. This tick only evaluates the kill branch (no directory removal), so it stays cheap.
+pub const WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Split a workbench directory name into its `(slug, trigger_timestamp)`.
 ///
@@ -65,6 +79,77 @@ fn agent_log_finish_time(dir: &Path, trigger_ts: u64) -> u64 {
         .unwrap_or(trigger_ts)
 }
 
+/// Watchdog decision for a single workbench: if its session is alive but the run has exceeded
+/// `max_runtime_for(slug)` it is hung — `kill` the session, note it in the run's `agent.log`, and
+/// report it as no longer alive. Returns whether the session should be treated as alive afterwards
+/// (`true` only for a live session still within its bound).
+///
+/// Shared by [`reap_dir`] (full hourly sweep) and [`watchdog_dir`] (short watchdog-only tick) so the
+/// kill decision is defined once.
+fn kill_if_hung(
+    path: &Path,
+    session: &str,
+    ts: u64,
+    now: u64,
+    max_runtime: u64,
+    is_alive: &dyn Fn(&str) -> bool,
+    kill: &dyn Fn(&str),
+) -> bool {
+    if !is_alive(session) {
+        return false;
+    }
+    if is_expired(now, ts, max_runtime) {
+        // Hung run: force-kill the session so its workbench can be reaped under the normal TTL rules.
+        kill(session);
+        note_forced_kill(path);
+        log::warn!("cleanup: killed routine session {session:?} exceeding max runtime");
+        return false;
+    }
+    true
+}
+
+/// Scan `dir` and force-kill any session that has exceeded its max runtime, *without* TTL-reaping
+/// finished workbenches. This is the watchdog-only pass driven on the short [`WATCHDOG_INTERVAL`]
+/// cadence, so a sub-hour `max_runtime_secs` is enforced near its bound instead of waiting for the
+/// hourly [`reap_dir`] sweep. Returns the number of sessions killed. The injected `max_runtime_for`,
+/// `is_alive`, and `kill` keep the decision logic unit-testable without a clock or a live tmux.
+fn watchdog_dir(
+    dir: &Path,
+    now: u64,
+    max_runtime_for: &dyn Fn(&str) -> u64,
+    is_alive: &dyn Fn(&str) -> bool,
+    kill: &dyn Fn(&str),
+) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let killed = std::cell::Cell::new(0usize);
+    let counting_kill = |session: &str| {
+        killed.set(killed.get() + 1);
+        kill(session);
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((slug, ts)) = parse_workbench_name(&name) else {
+            continue;
+        };
+        let session = format!("moadim-{name}");
+        kill_if_hung(
+            &entry.path(),
+            &session,
+            ts,
+            now,
+            max_runtime_for(slug),
+            is_alive,
+            &counting_kill,
+        );
+    }
+    killed.get()
+}
+
 /// Scan `dir` and, for each `{slug}-{ts}` workbench:
 ///
 /// 1. **Watchdog** — if its session is still alive but the run has exceeded `max_runtime_for(slug)`,
@@ -92,7 +177,7 @@ fn reap_dir(
     };
     let mut removed = 0;
     for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -100,14 +185,15 @@ fn reap_dir(
             continue;
         };
         let session = format!("moadim-{name}");
-        let mut alive = is_alive(&session);
-        if alive && is_expired(now, ts, max_runtime_for(slug)) {
-            // Hung run: force-kill the session so its workbench can be reaped below.
-            kill(&session);
-            note_forced_kill(&entry.path());
-            log::warn!("cleanup: killed routine session {session:?} exceeding max runtime");
-            alive = false;
-        }
+        let alive = kill_if_hung(
+            &entry.path(),
+            &session,
+            ts,
+            now,
+            max_runtime_for(slug),
+            is_alive,
+            kill,
+        );
         if alive {
             // Still running within its max runtime — never touched.
             continue;
@@ -146,6 +232,25 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
         &tmux_session_alive,
         &tmux_kill_session,
         &agent_log_finish_time,
+    )
+}
+
+/// Force-kill hung run sessions under `~/.moadim/workbenches/` that have exceeded their routine's
+/// max runtime, without TTL-reaping finished workbenches.
+///
+/// Driven on the short [`WATCHDOG_INTERVAL`] cadence (separate from the hourly
+/// [`cleanup_expired_workbenches`] sweep) so a sub-hour `max_runtime_secs` is enforced near its
+/// bound rather than only at the next hourly tick. The killed workbench is reaped later by the
+/// normal TTL sweep. Returns the number of sessions killed.
+pub fn kill_hung_sessions(store: &RoutineStore) -> usize {
+    let max_runtimes = snapshot::snapshot_max_runtimes(store);
+    let max_runtime_for = |slug: &str| snapshot::max_runtime_for(&max_runtimes, slug);
+    watchdog_dir(
+        &workbenches_dir(),
+        now_secs(),
+        &max_runtime_for,
+        &tmux_session_alive,
+        &tmux_kill_session,
     )
 }
 

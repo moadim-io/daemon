@@ -271,6 +271,7 @@ fn referenced_machines_unions_routines_and_jobs() {
         handler: "h".to_string(),
         metadata: serde_json::json!({}),
         machines: vec!["server".to_string(), "work".to_string()],
+        tags: vec![],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,

@@ -22,6 +22,11 @@ struct JobToml {
     /// override.
     #[serde(default)]
     machines: Vec<String>,
+    /// Free-form labels for the job (empty = no tags). Read from the tracked base `job.toml`
+    /// only, like `machines` — targeting/labeling is the shared decision, not a per-machine
+    /// `job.local.toml` override.
+    #[serde(default)]
+    tags: Vec<String>,
     /// Unix creation timestamp.
     created_at: Option<u64>,
     /// Unix last-updated timestamp.
@@ -106,6 +111,7 @@ fn load_job_from_dir(id: &str) -> Option<CronJob> {
         schedule,
         handler,
         machines: base.machines,
+        tags: base.tags,
         enabled,
         source: "managed".to_string(),
         created_at,
@@ -129,6 +135,7 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
         schedule: Some(job.schedule.clone()),
         handler: Some(job.handler.clone()),
         machines: job.machines.clone(),
+        tags: job.tags.clone(),
         enabled: Some(job.enabled),
         created_at: Some(job.created_at),
         updated_at: Some(job.updated_at),

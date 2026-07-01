@@ -512,6 +512,7 @@ pub fn sync_from_crontab(store: &CronStore) -> Result<bool, SyncError> {
                     handler: handler_from_command(command, &dir),
                     metadata: serde_json::json!({}),
                     machines: Vec::new(),
+                    tags: Vec::new(),
                     enabled: true,
                     source: "managed".to_string(),
                     created_at: now,

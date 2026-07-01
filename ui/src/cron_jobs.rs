@@ -45,6 +45,9 @@ pub struct CronJob {
     /// Machines this job runs on. An empty list runs nowhere (dormant until assigned).
     #[serde(default)]
     pub machines: Vec<String>,
+    /// Free-form labels for the job.
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub enabled: bool,
     pub created_at: u64,
     pub updated_at: u64,
@@ -62,6 +65,8 @@ pub struct CreateRequest {
     pub metadata: Json,
     /// Machines to run this job on (empty = runs nowhere until assigned).
     pub machines: Vec<String>,
+    /// Free-form labels for the job.
+    pub tags: Vec<String>,
     pub enabled: bool,
 }
 
@@ -75,6 +80,8 @@ pub struct UpdateRequest {
     pub metadata: Option<Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machines: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
@@ -159,12 +166,50 @@ impl MachineFacet {
     }
 }
 
+/// Sentinel select values for the tag facet's non-tag choices. Real tag values never collide with
+/// these (they carry a leading NUL).
+const TAG_ANY: &str = "\u{0}any";
+const TAG_UNTAGGED: &str = "\u{0}untagged";
+
+/// Tag facet: any tag, the untagged jobs, or one specific tag drawn from the distinct tags across
+/// the loaded jobs. Mirrors [`MachineFacet`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum TagFacet {
+    #[default]
+    Any,
+    Untagged,
+    Tag(String),
+}
+
+impl TagFacet {
+    /// Encode for the `<select>` option value.
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            TagFacet::Any => TAG_ANY.to_string(),
+            TagFacet::Untagged => TAG_UNTAGGED.to_string(),
+            TagFacet::Tag(t) => t.clone(),
+        }
+    }
+
+    /// Decode from a selected `<select>` option value.
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        match v {
+            TAG_ANY => TagFacet::Any,
+            TAG_UNTAGGED => TagFacet::Untagged,
+            other => TagFacet::Tag(other.to_string()),
+        }
+    }
+}
+
 /// Combined free-text + facet filter applied client-side to the loaded jobs.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct JobFilter {
     pub query: String,
     pub status: StatusFacet,
     pub machine: MachineFacet,
+    pub tag: TagFacet,
 }
 
 impl JobFilter {
@@ -175,6 +220,7 @@ impl JobFilter {
         !self.query.trim().is_empty()
             || self.status != StatusFacet::All
             || self.machine != MachineFacet::Any
+            || self.tag != TagFacet::Any
     }
 
     /// Does this job survive the filter? Facets AND together; free-text matches
@@ -194,6 +240,12 @@ impl JobFilter {
             MachineFacet::Any => {}
             MachineFacet::Unassigned if !job.machines.is_empty() => return false,
             MachineFacet::Machine(m) if !job.machines.iter().any(|x| x == m) => return false,
+            _ => {}
+        }
+        match &self.tag {
+            TagFacet::Any => {}
+            TagFacet::Untagged if !job.tags.is_empty() => return false,
+            TagFacet::Tag(t) if !job.tags.iter().any(|x| x == t) => return false,
             _ => {}
         }
         let q = self.query.trim().to_lowercase();
@@ -240,6 +292,18 @@ pub fn distinct_machines(jobs: &[CronJob]) -> Vec<String> {
     for j in jobs {
         for m in &j.machines {
             set.insert(m.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Distinct tags across all jobs, sorted, for the tag-facet options.
+#[must_use]
+pub fn distinct_tags(jobs: &[CronJob]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for j in jobs {
+        for t in &j.tags {
+            set.insert(t.clone());
         }
     }
     set.into_iter().collect()
@@ -603,6 +667,7 @@ pub enum CAction {
     SetQuery(String),
     SetStatus(StatusFacet),
     SetMachineFacet(MachineFacet),
+    SetTagFacet(TagFacet),
     ClearFilters,
     /// Sort by `col`; re-clicking the active column reverses direction.
     SetSort(SortCol),
@@ -707,6 +772,7 @@ impl Reducible for CState {
             CAction::SetQuery(q) => s.filter.query = q,
             CAction::SetStatus(status) => s.filter.status = status,
             CAction::SetMachineFacet(m) => s.filter.machine = m,
+            CAction::SetTagFacet(t) => s.filter.tag = t,
             CAction::ClearFilters => s.filter = JobFilter::default(),
             CAction::SetSort(col) => {
                 if s.sort_col == Some(col) {
@@ -956,6 +1022,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                         handler: Some(req.handler),
                         metadata: Some(req.metadata),
                         machines: Some(req.machines),
+                        tags: Some(req.tags),
                         enabled: Some(req.enabled),
                     };
                     match api_update(id, &upd).await {
@@ -1037,6 +1104,10 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
     let on_set_machine = {
         let state = state.clone();
         Callback::from(move |m: MachineFacet| state.dispatch(CAction::SetMachineFacet(m)))
+    };
+    let on_set_tag = {
+        let state = state.clone();
+        Callback::from(move |t: TagFacet| state.dispatch(CAction::SetTagFacet(t)))
     };
     let on_clear_filters = {
         let state = state.clone();
@@ -1211,6 +1282,7 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
             machine_options.sort();
         }
     }
+    let tag_options = distinct_tags(&jobs);
     let filter_active = filter.is_active();
 
     let edit_job = match &modal {
@@ -1263,12 +1335,14 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
                             <CronFilterBar
                                 filter={filter.clone()}
                                 machines={machine_options}
+                                tags={tag_options}
                                 shown={shown}
                                 total={total_jobs}
                                 search_ref={search_ref.clone()}
                                 on_query={on_set_query}
                                 on_status={on_set_status}
                                 on_machine={on_set_machine}
+                                on_tag={on_set_tag}
                                 on_clear={on_clear_filters.clone()}
                             />
                             {
@@ -1503,6 +1577,8 @@ pub struct CronFilterBarProps {
     pub filter: JobFilter,
     /// Distinct machines across all jobs, for the machine-facet options.
     pub machines: Vec<String>,
+    /// Distinct tags across all jobs, for the tag-facet options.
+    pub tags: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -1510,6 +1586,7 @@ pub struct CronFilterBarProps {
     pub on_query: Callback<String>,
     pub on_status: Callback<StatusFacet>,
     pub on_machine: Callback<MachineFacet>,
+    pub on_tag: Callback<TagFacet>,
     pub on_clear: Callback<()>,
 }
 
@@ -1536,6 +1613,13 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
             cb.emit(MachineFacet::from_value(&select.value()));
         })
     };
+    let on_tag_change = {
+        let cb = props.on_tag.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(TagFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -1543,6 +1627,7 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
 
     let status = props.filter.status.as_str();
     let machine_val = props.filter.machine.as_value();
+    let tag_val = props.filter.tag.as_value();
     let active = props.filter.is_active();
 
     html! {
@@ -1571,6 +1656,15 @@ pub fn cron_filter_bar(props: &CronFilterBarProps) -> Html {
                         selected={machine_val == MACHINE_UNASSIGNED}>{"None"}</option>
                     { for props.machines.iter().map(|m| html! {
                         <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
+                    }) }
+                </select>
+                <span class="filter-label">{"TAG"}</span>
+                <select class="filter-select" aria-label="Tag filter" onchange={on_tag_change}>
+                    <option value={TAG_ANY} selected={tag_val == TAG_ANY}>{"Any"}</option>
+                    <option value={TAG_UNTAGGED}
+                        selected={tag_val == TAG_UNTAGGED}>{"None"}</option>
+                    { for props.tags.iter().map(|t| html! {
+                        <option value={t.clone()} selected={tag_val == *t}>{t.clone()}</option>
                     }) }
                 </select>
             </div>
@@ -1723,6 +1817,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                         { sort_th("NEXT RUN", SortCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("HANDLER", SortCol::Handler, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"METADATA"}</th>
+                        <th>{"TAGS"}</th>
                         { sort_th("ENABLED", SortCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("UPDATED", SortCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
@@ -1735,7 +1830,7 @@ pub fn job_table(props: &JobTableProps) -> Html {
                             <>
                                 if grouped {
                                     <tr class="group-hd" key={format!("ghd-{label}")}>
-                                        <td colspan="9">
+                                        <td colspan="10">
                                             <span class="group-label">{label.clone()}</span>
                                             <span class="group-count">{format!("({count})")}</span>
                                         </td>
@@ -1935,6 +2030,19 @@ pub fn job_row(props: &JobRowProps) -> Html {
             <td><span class="cell-handler">{&job.handler}</span></td>
             <td><span class="cell-meta">{meta}</span></td>
             <td>
+                {
+                    if job.tags.is_empty() {
+                        html! { <span class="cell-meta">{"—"}</span> }
+                    } else {
+                        html! {
+                            <span class="cell-meta" title={job.tags.join(", ")}>
+                                { job.tags.join(", ") }
+                            </span>
+                        }
+                    }
+                }
+            </td>
+            <td>
                 <label class="toggle">
                     <input type="checkbox" checked={job.enabled} onchange={on_toggle} />
                     <div class="toggle-track"></div>
@@ -1958,6 +2066,20 @@ pub fn job_row(props: &JobRowProps) -> Html {
     }
 }
 
+/// Join tags into a single comma-separated string for the input field.
+fn tags_to_text(tags: &[String]) -> String {
+    tags.join(", ")
+}
+
+/// Split a comma-separated input into trimmed, non-empty tags.
+fn text_to_tags(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 // ─── Create page ──────────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
@@ -1972,6 +2094,8 @@ pub fn create_page(props: &CreatePageProps) -> Html {
     let handler = use_state(String::new);
     let meta_raw = use_state(String::new);
     let machines = use_state(Vec::<String>::new);
+    // Comma-separated tags; blank means no tags.
+    let tags_raw = use_state(String::new);
     let enabled = use_state(|| true);
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
@@ -2012,6 +2136,13 @@ pub fn create_page(props: &CreatePageProps) -> Html {
         let machines = machines.clone();
         Callback::from(move |next: Vec<String>| machines.set(next))
     };
+    let on_tags = {
+        let tags_raw = tags_raw.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            tags_raw.set(i.value());
+        })
+    };
     let on_enabled = {
         let enabled = enabled.clone();
         Callback::from(move |e: Event| {
@@ -2034,6 +2165,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
         let handler = handler.clone();
         let meta_raw = meta_raw.clone();
         let machines = machines.clone();
+        let tags_raw = tags_raw.clone();
         let meta_err = meta_err.clone();
         let enabled = enabled.clone();
         let saving = saving.clone();
@@ -2053,6 +2185,7 @@ pub fn create_page(props: &CreatePageProps) -> Html {
                 handler: (*handler).clone(),
                 metadata,
                 machines: (*machines).clone(),
+                tags: text_to_tags(&tags_raw),
                 enabled: *enabled,
             });
         })
@@ -2139,6 +2272,14 @@ pub fn create_page(props: &CreatePageProps) -> Html {
                         }
                     </div>
                     <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
+                    <div class="form-group">
+                        <label class="form-label">
+                            {"TAGS "}
+                            <span style="color:var(--text-ghost)">{"(comma-separated)"}</span>
+                        </label>
+                        <input class="form-input" type="text" placeholder="backups, nightly"
+                            value={(*tags_raw).clone()} oninput={on_tags} autocomplete="off" spellcheck="false" />
+                    </div>
                     <div class="form-group" style="margin-bottom:0">
                         <div class="toggle-row">
                             <span class="toggle-row-label">{"ENABLED"}</span>
@@ -2209,6 +2350,14 @@ pub fn job_modal(props: &JobModalProps) -> Html {
             .map(|j| j.machines.clone())
             .unwrap_or_default()
     });
+    // Comma-separated tags; blank means no tags.
+    let tags_raw = use_state(|| {
+        props
+            .editing
+            .as_ref()
+            .map(|j| tags_to_text(&j.tags))
+            .unwrap_or_default()
+    });
     let enabled = use_state(|| props.editing.as_ref().map(|j| j.enabled).unwrap_or(true));
     let meta_err = use_state(String::new);
     let saving = use_state(|| false);
@@ -2262,6 +2411,13 @@ pub fn job_modal(props: &JobModalProps) -> Html {
         let machines = machines.clone();
         Callback::from(move |next: Vec<String>| machines.set(next))
     };
+    let on_tags = {
+        let tags_raw = tags_raw.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            tags_raw.set(i.value());
+        })
+    };
 
     let on_close_click = {
         let cb = props.on_close.clone();
@@ -2272,6 +2428,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
         let handler = handler.clone();
         let meta_raw = meta_raw.clone();
         let machines = machines.clone();
+        let tags_raw = tags_raw.clone();
         let meta_err = meta_err.clone();
         let enabled = enabled.clone();
         let saving = saving.clone();
@@ -2291,6 +2448,7 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                 handler: (*handler).clone(),
                 metadata,
                 machines: (*machines).clone(),
+                tags: text_to_tags(&tags_raw),
                 enabled: *enabled,
             });
         })
@@ -2377,6 +2535,14 @@ pub fn job_modal(props: &JobModalProps) -> Html {
                         }
                     </div>
                     <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
+                    <div class="form-group">
+                        <label class="form-label">
+                            {"TAGS "}
+                            <span style="color:var(--text-ghost)">{"(comma-separated)"}</span>
+                        </label>
+                        <input class="form-input" type="text" placeholder="backups, nightly"
+                            value={(*tags_raw).clone()} oninput={on_tags} autocomplete="off" spellcheck="false" />
+                    </div>
                     <div class="form-group" style="margin-bottom:0">
                         <div class="toggle-row">
                             <span class="toggle-row-label">{"ENABLED"}</span>

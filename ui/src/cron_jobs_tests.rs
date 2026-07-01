@@ -26,11 +26,20 @@ fn job(id: &str, handler: &str, schedule: &str, machines: &[&str], enabled: bool
         handler: handler.into(),
         metadata: serde_json::json!({}),
         machines: machines.iter().map(|m| (*m).to_string()).collect(),
+        tags: vec![],
         enabled,
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
         schedule_description: None,
+    }
+}
+
+/// Same as [`job`] but with an explicit tag list, for tag-facet tests.
+fn job_with_tags(id: &str, tags: &[&str]) -> CronJob {
+    CronJob {
+        tags: tags.iter().map(|t| (*t).to_string()).collect(),
+        ..job(id, "h", "0 * * * *", &[], true)
     }
 }
 
@@ -69,6 +78,25 @@ fn machine_facet_decodes_a_plain_id_as_specific() {
     );
 }
 
+#[test]
+fn tag_facet_roundtrips_through_select_value() {
+    let any = TagFacet::Any;
+    let untagged = TagFacet::Untagged;
+    let specific = TagFacet::Tag("nightly".into());
+    assert_eq!(TagFacet::from_value(&any.as_value()), any);
+    assert_eq!(TagFacet::from_value(&untagged.as_value()), untagged);
+    assert_eq!(TagFacet::from_value(&specific.as_value()), specific);
+    assert_eq!(TagFacet::default(), TagFacet::Any);
+}
+
+#[test]
+fn tag_facet_decodes_a_plain_value_as_specific() {
+    assert_eq!(
+        TagFacet::from_value("backups"),
+        TagFacet::Tag("backups".into())
+    );
+}
+
 // ── is_active ─────────────────────────────────────────────────────────────────
 
 #[test]
@@ -101,6 +129,12 @@ fn is_active_detects_each_facet() {
         ..Default::default()
     };
     assert!(m.is_active());
+
+    let t = JobFilter {
+        tag: TagFacet::Untagged,
+        ..Default::default()
+    };
+    assert!(t.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -181,6 +215,36 @@ fn machine_unassigned_matches_only_empty() {
     assert!(!f.matches(&job("b", "h", "0 * * * *", &["m1"], true), now(), window()));
 }
 
+// ── Tag facet matching ────────────────────────────────────────────────────────
+
+#[test]
+fn tag_any_matches_all() {
+    let f = JobFilter::default();
+    assert!(f.matches(&job_with_tags("a", &["nightly"]), now(), window()));
+    assert!(f.matches(&job_with_tags("b", &[]), now(), window()));
+}
+
+#[test]
+fn tag_specific_requires_membership() {
+    let f = JobFilter {
+        tag: TagFacet::Tag("nightly".into()),
+        ..Default::default()
+    };
+    assert!(f.matches(&job_with_tags("a", &["nightly", "ops"]), now(), window()));
+    assert!(!f.matches(&job_with_tags("b", &["ops"]), now(), window()));
+    assert!(!f.matches(&job_with_tags("c", &[]), now(), window()));
+}
+
+#[test]
+fn tag_untagged_matches_only_empty() {
+    let f = JobFilter {
+        tag: TagFacet::Untagged,
+        ..Default::default()
+    };
+    assert!(f.matches(&job_with_tags("a", &[]), now(), window()));
+    assert!(!f.matches(&job_with_tags("b", &["nightly"]), now(), window()));
+}
+
 // ── Free-text matching ────────────────────────────────────────────────────────
 
 #[test]
@@ -242,6 +306,7 @@ fn facets_and_together() {
         query: "back".into(),
         status: StatusFacet::Enabled,
         machine: MachineFacet::Machine("m1".into()),
+        ..Default::default()
     };
     let hit = job("backup", "h", "0 * * * *", &["m1"], true);
     let wrong_machine = job("backup", "h", "0 * * * *", &["m2"], true);
@@ -289,6 +354,16 @@ fn distinct_machines_are_sorted_and_deduped() {
         job("c", "h", "0 * * * *", &[], true),
     ];
     assert_eq!(distinct_machines(&jobs), vec!["m1", "m2", "m3"]);
+}
+
+#[test]
+fn distinct_tags_are_sorted_and_deduped() {
+    let jobs = vec![
+        job_with_tags("a", &["nightly", "backups"]),
+        job_with_tags("b", &["backups", "ops"]),
+        job_with_tags("c", &[]),
+    ];
+    assert_eq!(distinct_tags(&jobs), vec!["backups", "nightly", "ops"]);
 }
 
 // ── Sort ──────────────────────────────────────────────────────────────────────

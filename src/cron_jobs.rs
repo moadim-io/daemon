@@ -59,6 +59,10 @@ pub struct CronJob {
     /// different machines.
     #[serde(default)]
     pub machines: Vec<String>,
+    /// Free-form labels for grouping and filtering jobs (e.g. `"backups"`, `"nightly"`). Defaults
+    /// to empty; each entry is trimmed and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// Whether the job is active.
     pub enabled: bool,
     /// `"managed"` for jobs owned by this server; `"system:*"` for read-only system cron entries.
@@ -198,6 +202,26 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Reject blank (empty/whitespace-only) `tags` entries and return a normalized copy with each tag
+/// trimmed.
+///
+/// Tags are free-form labels for grouping jobs; an empty list is valid. This only guards the
+/// contents of non-empty entries, mirroring the routine `tags` validation: a blank label carries
+/// no meaning and would render as an empty chip, so it is refused at edit time rather than stored.
+fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::with_capacity(tags.len());
+    for (index, tag) in tags.iter().enumerate() {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "tags[{index}] must not be empty or whitespace-only"
+            )));
+        }
+        normalized.push(trimmed.to_string());
+    }
+    Ok(normalized)
+}
+
 /// Request body for creating a new cron job.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRequest {
@@ -213,6 +237,10 @@ pub struct CreateRequest {
     /// Machines to run this job on (defaults to empty = runs nowhere until assigned).
     #[serde(default)]
     pub machines: Vec<String>,
+    /// Free-form labels for the job (defaults to empty). Each entry is trimmed and must be
+    /// non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// Whether to create the job in an enabled state (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -236,6 +264,8 @@ pub struct UpdateRequest {
     pub metadata: Option<serde_json::Value>,
     /// New machines targeting list, or `None` to keep the existing value.
     pub machines: Option<Vec<String>>,
+    /// New tags list, or `None` to keep the existing value.
+    pub tags: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
 }
@@ -294,6 +324,7 @@ pub fn svc_create(
     req: CreateRequest,
 ) -> Result<CronJobResponse, AppError> {
     validate_cron(&req.schedule)?;
+    let tags = validate_tags(&req.tags)?;
     let now = now_secs();
     let job = CronJob {
         id: Uuid::new_v4().to_string(),
@@ -301,6 +332,7 @@ pub fn svc_create(
         handler: req.handler,
         metadata: req.metadata,
         machines: req.machines,
+        tags,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -325,6 +357,10 @@ pub fn svc_update(
     if let Some(ref sched) = req.schedule {
         validate_cron(sched)?;
     }
+    let tags = match req.tags {
+        Some(ref tags) => Some(validate_tags(tags)?),
+        None => None,
+    };
     let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
     if let Some(sched) = req.schedule {
@@ -338,6 +374,9 @@ pub fn svc_update(
     }
     if let Some(machines) = req.machines {
         job.machines = machines;
+    }
+    if let Some(tags) = tags {
+        job.tags = tags;
     }
     if let Some(enabled) = req.enabled {
         job.enabled = enabled;

@@ -57,6 +57,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
+- **Optional `tags` for cron jobs.** Cron jobs can now carry a free-form list of
+  string labels for grouping and organization, closing the parity gap left when
+  routine tags (#502) were never extended to cron jobs. Tags are optional
+  (default empty), persisted in the tracked `job.toml`, and settable across
+  every surface: REST (`tags` on the `POST`/`PUT`/`PATCH` `/cron-jobs` bodies),
+  MCP (`create_cron_job`/`update_cron_job`), the CLI (repeatable `--tag` flag on
+  `cron-jobs create|replace|update`), and the web UI (a comma-separated field in
+  the job form, a TAGS column in the table, and a tag facet in the filter
+  toolbar). Blank or whitespace-only tags are rejected with `400 Bad Request`.
+  Existing jobs without tags keep working unchanged. (#785)
 
 ### Changed
 

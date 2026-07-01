@@ -10,6 +10,7 @@ fn test_job(id: &str) -> CronJob {
         handler: "test-handler".to_string(),
         metadata: serde_json::json!({"key": "val"}),
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
         source: "managed".to_string(),
         created_at: 1000,
@@ -70,6 +71,26 @@ fn write_and_load_roundtrip() {
     assert_eq!(loaded.updated_at, job.updated_at);
     assert_eq!(loaded.last_manual_trigger_at, job.last_manual_trigger_at);
     assert_eq!(loaded.metadata["key"], "val");
+
+    remove_job_dir(id).expect("cleanup failed");
+}
+
+#[test]
+fn tags_round_trip_through_job_toml() {
+    // Tags are persisted to the tracked `job.toml` and read back on load, like `machines`.
+    let id = "test-tags-round-trip";
+    let mut job = test_job(id);
+    job.tags = vec!["backups".to_string(), "nightly".to_string()];
+    write_job(&job).expect("write_job failed");
+
+    let toml_text = std::fs::read_to_string(crate::paths::job_toml_path(id)).unwrap();
+    assert!(toml_text.contains("tags"), "job.toml should carry tags");
+
+    let loaded = load_job_from_dir(id).expect("load_job_from_dir failed");
+    assert_eq!(
+        loaded.tags,
+        vec!["backups".to_string(), "nightly".to_string()]
+    );
 
     remove_job_dir(id).expect("cleanup failed");
 }

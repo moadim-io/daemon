@@ -242,6 +242,10 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "--disabled",
             "--metadata",
             "{\"a\":1}",
+            "--tag",
+            "backups",
+            "--tag",
+            "nightly",
         ],
         &["cron-jobs", "list"],
         &["cron", "get", "abc"],
@@ -255,6 +259,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "{\"a\":1}",
             "--enabled",
             "true",
+            "--tag",
+            "ops",
         ],
         &[
             "cron-jobs",
@@ -412,14 +418,38 @@ fn object_and_to_body_build_compact_json() {
 #[test]
 fn cron_body_sets_enabled_from_disabled_flag() {
     let enabled: Value = serde_json::from_str(
-        &cron_body("* * * * *".into(), "h".into(), None, None, false).unwrap(),
+        &cron_body("* * * * *".into(), "h".into(), None, None, vec![], false).unwrap(),
     )
     .unwrap();
     assert_eq!(enabled["enabled"], Value::Bool(true));
-    let disabled: Value =
-        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, None, true).unwrap())
-            .unwrap();
+    let disabled: Value = serde_json::from_str(
+        &cron_body("* * * * *".into(), "h".into(), None, None, vec![], true).unwrap(),
+    )
+    .unwrap();
     assert_eq!(disabled["enabled"], Value::Bool(false));
+}
+
+#[test]
+fn cron_body_serializes_tags() {
+    let value: Value = serde_json::from_str(
+        &cron_body(
+            "* * * * *".into(),
+            "h".into(),
+            None,
+            None,
+            vec!["backups".to_string(), "nightly".to_string()],
+            false,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        value["tags"],
+        Value::Array(vec![
+            Value::String("backups".to_string()),
+            Value::String("nightly".to_string()),
+        ])
+    );
 }
 
 #[test]
@@ -430,6 +460,7 @@ fn cron_body_rejects_bad_metadata() {
             "h".into(),
             Some("{bad".into()),
             None,
+            vec![],
             false
         ),
         Err(2)
@@ -499,6 +530,7 @@ fn cron_body_rejects_bad_machines() {
             "h".into(),
             None,
             Some("{bad".into()),
+            vec![],
             false,
         ),
         Err(2)

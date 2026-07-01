@@ -310,6 +310,7 @@ async fn build_app_serves_machines() {
             handler: "h".to_string(),
             metadata: serde_json::Value::Null,
             machines: vec!["zeta-box".to_string(), "shared".to_string()],
+            tags: vec![],
             enabled: true,
             source: "managed".to_string(),
             created_at: 0,
@@ -493,7 +494,9 @@ async fn router_cron_job_full_lifecycle() {
                 .method("POST")
                 .uri("/api/v1/cron-jobs")
                 .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"schedule":"@daily","handler":"test-h"}"#))
+                .body(Body::from(
+                    r#"{"schedule":"@daily","handler":"test-h","tags":["  nightly  ","ops"]}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -504,6 +507,8 @@ async fn router_cron_job_full_lifecycle() {
         .unwrap();
     let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let id = created["id"].as_str().unwrap().to_string();
+    // Tags are trimmed on create and reflected in the response.
+    assert_eq!(created["tags"], serde_json::json!(["nightly", "ops"]));
 
     // GET /cron-jobs → 200 (list)
     let resp = build_app(store.clone(), crate::routines::new_store())
@@ -536,12 +541,19 @@ async fn router_cron_job_full_lifecycle() {
                 .method("PATCH")
                 .uri(format!("/api/v1/cron-jobs/{id}"))
                 .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"handler":"patched"}"#))
+                .body(Body::from(
+                    r#"{"handler":"patched","tags":["patched-tag"]}"#,
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let patched: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(patched["tags"], serde_json::json!(["patched-tag"]));
 
     // POST /cron-jobs/{id}/trigger → 200  (exercises FromRef<AppState> for CronStore)
     let resp = build_app(store.clone(), crate::routines::new_store())
@@ -580,6 +592,25 @@ async fn router_create_invalid_cron_returns_400() {
                 .uri("/api/v1/cron-jobs")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"schedule":"bad","handler":"h"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn router_create_blank_tag_returns_400() {
+    // A whitespace-only tag entry is rejected with 400, mirroring routine tags validation.
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/cron-jobs")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"schedule":"@daily","handler":"h","tags":["   "]}"#,
+                ))
                 .unwrap(),
         )
         .await

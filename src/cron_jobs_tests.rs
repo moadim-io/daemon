@@ -9,6 +9,7 @@ fn make_job(id: &str) -> CronJob {
         handler: "h".to_string(),
         metadata: serde_json::Value::Null,
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
@@ -118,6 +119,7 @@ fn cron_job_serializes() {
         handler: "my-handler".to_string(),
         metadata: serde_json::json!({}),
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
         source: "managed".to_string(),
         created_at: 1000,
@@ -211,11 +213,54 @@ fn svc_update_sets_machines() {
         handler: None,
         metadata: None,
         machines: Some(vec!["server".into()]),
+        tags: None,
         enabled: None,
     };
     let resp = svc_update(&store, &new_registry(), "mach-id", req).unwrap();
     assert_eq!(resp.job.machines, vec!["server"]);
     crate::storage::remove_job_dir("mach-id").unwrap();
+}
+
+#[test]
+fn svc_update_sets_and_trims_tags() {
+    // Covers the normalize/Ok path of `validate_tags` and the `if let Some(tags) = tags`
+    // assignment in `svc_update`: surrounding whitespace is trimmed and the tags replace
+    // the job's existing list.
+    let store = make_store_with("tag-id");
+    let req = UpdateRequest {
+        schedule: None,
+        handler: None,
+        metadata: None,
+        machines: None,
+        tags: Some(vec!["  ops  ".into(), "nightly".into()]),
+        enabled: None,
+    };
+    let resp = svc_update(&store, &new_registry(), "tag-id", req).unwrap();
+    assert_eq!(
+        resp.job.tags,
+        vec!["ops".to_string(), "nightly".to_string()]
+    );
+    crate::storage::remove_job_dir("tag-id").unwrap();
+}
+
+#[test]
+fn svc_update_rejects_blank_tag() {
+    // Covers the tags-validation error branch in `svc_update`: a blank or
+    // whitespace-only tag must 400 before the job is mutated.
+    let store = make_store_with("bad-tag-id");
+    for tag in ["", "   "] {
+        let req = UpdateRequest {
+            schedule: None,
+            handler: None,
+            metadata: None,
+            machines: None,
+            tags: Some(vec![tag.to_string()]),
+            enabled: None,
+        };
+        let result = svc_update(&store, &new_registry(), "bad-tag-id", req);
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+    crate::storage::remove_job_dir("bad-tag-id").unwrap();
 }
 
 #[test]
@@ -225,6 +270,7 @@ fn svc_update_not_found() {
         handler: Some("new".into()),
         metadata: None,
         machines: None,
+        tags: None,
         enabled: None,
     };
     assert!(svc_update(&new_store(), &new_registry(), "missing", req).is_err());
@@ -238,6 +284,7 @@ fn svc_update_invalid_cron_rejected() {
         handler: None,
         metadata: None,
         machines: None,
+        tags: None,
         enabled: None,
     };
     assert!(svc_update(&store, &new_registry(), "id", req).is_err());
@@ -311,6 +358,7 @@ fn svc_create_adds_to_store_and_disk() {
         handler: "cov-handler".into(),
         metadata: serde_json::Value::Null,
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
     };
     let resp = svc_create(&store, &new_registry(), req).unwrap();
@@ -323,6 +371,47 @@ fn svc_create_adds_to_store_and_disk() {
 }
 
 #[test]
+fn svc_create_trims_and_stores_tags() {
+    // Covers the normalize/Ok path of `validate_tags` and the `tags` assignment in
+    // `svc_create`: surrounding whitespace is trimmed and the tags are stored.
+    let store = new_store();
+    let req = CreateRequest {
+        schedule: "@daily".into(),
+        handler: "cov-handler".into(),
+        metadata: serde_json::Value::Null,
+        machines: vec![crate::machine::current_machine()],
+        tags: vec!["  triage  ".into(), "nightly".into()],
+        enabled: true,
+    };
+    let resp = svc_create(&store, &new_registry(), req).unwrap();
+    assert_eq!(
+        resp.job.tags,
+        vec!["triage".to_string(), "nightly".to_string()]
+    );
+    crate::storage::remove_job_dir(&resp.job.id).unwrap();
+}
+
+#[test]
+fn svc_create_rejects_blank_tag() {
+    // Covers the tags-validation error branch in `svc_create`: a blank or
+    // whitespace-only tag must 400 before anything is persisted.
+    let store = new_store();
+    for tag in ["", "   "] {
+        let req = CreateRequest {
+            schedule: "@daily".into(),
+            handler: "h".into(),
+            metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
+            tags: vec![tag.to_string()],
+            enabled: true,
+        };
+        let result = svc_create(&store, &new_registry(), req);
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
 fn svc_create_invalid_cron_returns_err() {
     let store = new_store();
     let req = CreateRequest {
@@ -330,6 +419,7 @@ fn svc_create_invalid_cron_returns_err() {
         handler: "h".into(),
         metadata: serde_json::Value::Null,
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
     };
     assert!(svc_create(&store, &new_registry(), req).is_err());
@@ -346,6 +436,7 @@ fn svc_update_changes_all_fields() {
             handler: "old".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -357,6 +448,7 @@ fn svc_update_changes_all_fields() {
         handler: Some("new".into()),
         metadata: Some(serde_json::json!({"k": "v"})),
         machines: None,
+        tags: None,
         enabled: Some(false),
     };
     let updated = svc_update(&store, &new_registry(), &id, req).unwrap();
@@ -378,6 +470,7 @@ fn svc_delete_removes_from_store_and_disk() {
             handler: "h".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -402,6 +495,7 @@ fn svc_trigger_persists_last_manual_trigger_at() {
             handler: "h".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -591,6 +685,7 @@ fn svc_create_syncs_crontab_on_success() {
             handler: "sync-ok-create".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -610,6 +705,7 @@ fn svc_update_syncs_crontab_on_success() {
             handler: "sync-ok-update".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -626,6 +722,7 @@ fn svc_update_syncs_crontab_on_success() {
             handler: None,
             metadata: None,
             machines: None,
+            tags: None,
             enabled: None,
         },
     )
@@ -645,6 +742,7 @@ fn svc_delete_syncs_crontab_on_success() {
             handler: "sync-ok-delete".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -668,6 +766,7 @@ fn svc_create_succeeds_despite_crontab_sync_failure() {
             handler: "sync-fail-create".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -687,6 +786,7 @@ fn svc_update_succeeds_despite_crontab_sync_failure() {
             handler: "sync-fail-update".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -703,6 +803,7 @@ fn svc_update_succeeds_despite_crontab_sync_failure() {
             handler: None,
             metadata: None,
             machines: None,
+            tags: None,
             enabled: None,
         },
     )
@@ -722,6 +823,7 @@ fn svc_delete_succeeds_despite_crontab_sync_failure() {
             handler: "sync-fail-delete".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -760,6 +862,7 @@ fn svc_trigger_logs_when_handler_spawn_fails() {
             handler: handler_name.clone(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -799,6 +902,7 @@ fn svc_trigger_spawns_existing_handler_script() {
             handler: handler_name.clone(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -826,6 +930,7 @@ async fn replace_handler_updates_job() {
             handler: "before".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -844,6 +949,7 @@ async fn replace_handler_updates_job() {
         handler: Some("after".into()),
         metadata: None,
         machines: None,
+        tags: None,
         enabled: None,
     };
     let resp = replace(State(state), Path(id.clone()), Json(body))
@@ -950,6 +1056,7 @@ fn svc_create_write_failure_returns_internal() {
             handler: "h".into(),
             metadata: serde_json::Value::Null,
             machines: vec![],
+            tags: vec![],
             enabled: true,
         },
     );
@@ -981,6 +1088,7 @@ fn svc_update_write_failure_returns_internal() {
             handler: Some("new-handler".into()),
             metadata: None,
             machines: None,
+            tags: None,
             enabled: None,
         },
     );

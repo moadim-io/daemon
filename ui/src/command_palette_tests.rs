@@ -12,6 +12,7 @@ fn cron(id: &str, schedule: &str, handler: &str, human: Option<&str>) -> CronJob
         handler: handler.into(),
         metadata: Value::Null,
         machines: vec![],
+        tags: vec![],
         enabled: true,
         created_at: 0,
         updated_at: 0,

@@ -64,6 +64,9 @@ enum CronCmd {
         /// means the job runs on no machine until assigned.
         #[arg(long)]
         machines: Option<String>,
+        /// Tag for the job; repeat the flag to add several.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Create the job disabled instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -91,6 +94,10 @@ enum CronCmd {
         /// New machines targeting list as a JSON array (e.g. `["work","server"]`).
         #[arg(long)]
         machines: Option<String>,
+        /// Replacement tag; repeat the flag to set several. Passing any `--tag` replaces the whole
+        /// tag list; omit it to keep the existing tags.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// New enabled state (`true`/`false`).
         #[arg(long)]
         enabled: Option<bool>,
@@ -111,6 +118,9 @@ enum CronCmd {
         /// Machines to run this job on, as a JSON array (e.g. `["work","server"]`).
         #[arg(long)]
         machines: Option<String>,
+        /// Tag for the job; repeat the flag to add several.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Replace into a disabled state instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -325,8 +335,9 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
             handler,
             metadata,
             machines,
+            tags,
             disabled,
-        } => match cron_body(schedule, handler, metadata, machines, disabled) {
+        } => match cron_body(schedule, handler, metadata, machines, tags, disabled) {
             Ok(body) => request("POST", "/api/v1/cron-jobs", Some(&body)),
             Err(code) => code,
         },
@@ -338,6 +349,7 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
             handler,
             metadata,
             machines,
+            tags,
             enabled,
         } => {
             let mut map = Map::new();
@@ -351,6 +363,12 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
                 Ok(()) => {}
                 Err(code) => return code,
             }
+            // Any `--tag` replaces the whole list; no `--tag` leaves tags untouched (key absent).
+            insert_opt(
+                &mut map,
+                "tags",
+                (!tags.is_empty()).then(|| tags_value(tags)),
+            );
             insert_opt(&mut map, "enabled", enabled.map(Value::Bool));
             request("PATCH", &cron_path(&id), Some(&to_body(map)))
         }
@@ -360,8 +378,9 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
             handler,
             metadata,
             machines,
+            tags,
             disabled,
-        } => match cron_body(schedule, handler, metadata, machines, disabled) {
+        } => match cron_body(schedule, handler, metadata, machines, tags, disabled) {
             Ok(body) => request("PUT", &cron_path(&id), Some(&body)),
             Err(code) => code,
         },
@@ -496,6 +515,7 @@ fn cron_body(
     handler: String,
     metadata: Option<String>,
     machines: Option<String>,
+    tags: Vec<String>,
     disabled: bool,
 ) -> Result<String, i32> {
     let mut map = Map::new();
@@ -503,6 +523,7 @@ fn cron_body(
     map.insert("handler".to_string(), Value::String(handler));
     insert_json_opt(&mut map, "metadata", metadata)?;
     insert_json_opt(&mut map, "machines", machines)?;
+    map.insert("tags".to_string(), tags_value(tags));
     map.insert("enabled".to_string(), Value::Bool(!disabled));
     Ok(to_body(map))
 }

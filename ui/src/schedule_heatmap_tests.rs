@@ -224,6 +224,7 @@ fn cron_job(schedule: &str, enabled: bool) -> CronJob {
         handler: "h".into(),
         metadata: json!({}),
         machines: vec![],
+        tags: vec![],
         enabled,
         created_at: 0,
         updated_at: 0,

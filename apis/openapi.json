@@ -1053,6 +1053,13 @@
           "schedule": {
             "type": "string",
             "description": "Cron expression for the new job. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels for the job (defaults to empty). Each entry is trimmed and must be\nnon-blank."
           }
         }
       },
@@ -1185,6 +1192,13 @@
           "source": {
             "type": "string",
             "description": "`\"managed\"` for jobs owned by this server; `\"system:*\"` for read-only system cron entries."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels for grouping and filtering jobs (e.g. `\"backups\"`, `\"nightly\"`). Defaults\nto empty; each entry is trimmed and must be non-blank."
           },
           "updated_at": {
             "type": "integer",
@@ -1660,6 +1674,16 @@
               "null"
             ],
             "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "New tags list, or `None` to keep the existing value."
           }
         }
       },

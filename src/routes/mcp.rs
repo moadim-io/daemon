@@ -59,6 +59,8 @@ struct UpdateInput {
     metadata: Option<serde_json::Value>,
     /// New machines targeting list, or `None` to keep the existing value.
     machines: Option<Vec<String>>,
+    /// New tags list, or `None` to keep the existing value.
+    tags: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     enabled: Option<bool>,
 }
@@ -239,6 +241,7 @@ impl MoadimMcp {
             handler: input.handler,
             metadata: input.metadata,
             machines: input.machines,
+            tags: input.tags,
             enabled: input.enabled,
         };
         Ok(

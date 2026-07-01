@@ -176,6 +176,7 @@ fn create_cron_job_tool_invalid_cron_is_error() {
         handler: "h".into(),
         metadata: serde_json::Value::Null,
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
     };
     let result = handler.create_cron_job(Parameters(req)).unwrap();
@@ -199,6 +200,7 @@ fn update_cron_job_tool_not_found_is_error() {
             handler: Some("h".into()),
             metadata: None,
             machines: None,
+            tags: None,
             enabled: None,
         }))
         .unwrap();
@@ -217,6 +219,7 @@ fn delete_cron_job_tool_success() {
             handler: "h".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -245,6 +248,7 @@ fn trigger_cron_job_tool_success() {
             handler: "h".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -280,6 +284,7 @@ fn create_cron_job_tool_success() {
         handler: "mcp-handler".into(),
         metadata: serde_json::Value::Null,
         machines: vec![crate::machine::current_machine()],
+        tags: vec!["nightly".into()],
         enabled: true,
     };
     let result = handler.create_cron_job(Parameters(req)).unwrap();
@@ -289,6 +294,7 @@ fn create_cron_job_tool_success() {
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["tags"], serde_json::json!(["nightly"]));
     let id = val["id"].as_str().unwrap().to_string();
     crate::storage::remove_job_dir(&id).unwrap();
 }
@@ -304,6 +310,7 @@ fn get_cron_job_tool_success() {
         handler: "h".into(),
         metadata: serde_json::Value::Null,
         machines: vec![crate::machine::current_machine()],
+        tags: vec![],
         enabled: true,
         source: "managed".into(),
         created_at: 0,
@@ -346,6 +353,7 @@ fn update_cron_job_tool_success() {
             handler: "old".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )
@@ -359,10 +367,17 @@ fn update_cron_job_tool_success() {
             handler: Some("new".into()),
             metadata: None,
             machines: None,
+            tags: Some(vec!["ops".into()]),
             enabled: None,
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["tags"], serde_json::json!(["ops"]));
 
     crate::storage::remove_job_dir(&id).unwrap();
 }
@@ -567,6 +582,7 @@ fn cron_job_logs_tool_returns_logs_for_existing_job() {
             handler: "h".into(),
             metadata: serde_json::Value::Null,
             machines: vec![crate::machine::current_machine()],
+            tags: vec![],
             enabled: true,
         },
     )

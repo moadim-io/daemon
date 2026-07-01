@@ -1,7 +1,7 @@
 //! Routines tab: list, create, edit, trigger, logs, and delete agent-driven scheduled jobs.
 //!
-//! Mirrors the cron-jobs UI but targets the `/routines` API. A routine launches an AI agent
-//! (claude, codex, …) on a schedule instead of running a handler script.
+//! Targets the `/routines` API. A routine launches an AI agent (claude, codex, …) on a
+//! schedule.
 
 use std::cell::Cell;
 use std::collections::BTreeSet;
@@ -48,6 +48,7 @@ pub struct Routine {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -363,6 +364,35 @@ impl AgentFacet {
     }
 }
 
+/// Repository facet: all repositories, or one specific repository URL.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RepositoryFacet {
+    #[default]
+    All,
+    Named(String),
+}
+
+impl RepositoryFacet {
+    const REPOSITORY_ALL: &'static str = "\u{0}all";
+
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            RepositoryFacet::All => Self::REPOSITORY_ALL.to_string(),
+            RepositoryFacet::Named(r) => r.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        if v == Self::REPOSITORY_ALL {
+            RepositoryFacet::All
+        } else {
+            RepositoryFacet::Named(v.to_string())
+        }
+    }
+}
+
 /// Combined free-text + faceted filter applied client-side to the loaded routines.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RoutineFilter {
@@ -372,6 +402,7 @@ pub struct RoutineFilter {
     pub status: RoutineStatusFacet,
     pub agent: AgentFacet,
     pub machine: RoutineMachineFacet,
+    pub repository: RepositoryFacet,
 }
 
 impl RoutineFilter {
@@ -382,6 +413,7 @@ impl RoutineFilter {
             || self.status != RoutineStatusFacet::All
             || self.agent != AgentFacet::All
             || self.machine != RoutineMachineFacet::Any
+            || self.repository != RepositoryFacet::All
     }
 
     /// Does this routine survive the filter? Facets AND together.
@@ -409,6 +441,13 @@ impl RoutineFilter {
             RoutineMachineFacet::Any => {}
             RoutineMachineFacet::Unassigned if !r.machines.is_empty() => return false,
             RoutineMachineFacet::Machine(m) if !r.machines.iter().any(|x| x == m) => return false,
+            _ => {}
+        }
+        match &self.repository {
+            RepositoryFacet::All => {}
+            RepositoryFacet::Named(rp) if !r.repositories.iter().any(|x| x.repository == *rp) => {
+                return false
+            }
             _ => {}
         }
         let q = self.query.trim().to_lowercase();
@@ -566,6 +605,18 @@ pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
     set.into_iter().collect()
 }
 
+/// Distinct repository URLs across all routines, sorted.
+#[must_use]
+pub fn distinct_repositories(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        for repo in &r.repositories {
+            set.insert(repo.repository.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -595,7 +646,7 @@ pub enum RView {
     Day,
 }
 
-/// Column the routine table is sorted by (click-to-sort, matching the cron-jobs table pattern).
+/// Column the routine table is sorted by (click-to-sort).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RCol {
     Title,
@@ -826,6 +877,7 @@ pub enum RAction {
     SetStatusFacet(RoutineStatusFacet),
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
+    SetRepositoryFacet(RepositoryFacet),
     ClearFilters,
     SetGroupBy(RGroupBy),
     SortByCol(RCol),
@@ -881,6 +933,7 @@ impl Reducible for RState {
             RAction::SetStatusFacet(st) => s.filter.status = st,
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
+            RAction::SetRepositoryFacet(rp) => s.filter.repository = rp,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
             RAction::SetGroupBy(by) => s.group_by = by,
             RAction::SortByCol(col) => {
@@ -1133,6 +1186,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_machine = {
         let state = state.clone();
         Callback::from(move |m: RoutineMachineFacet| state.dispatch(RAction::SetMachineFacet(m)))
+    };
+    let on_set_repository = {
+        let state = state.clone();
+        Callback::from(move |rp: RepositoryFacet| state.dispatch(RAction::SetRepositoryFacet(rp)))
     };
     let on_clear_filters = {
         let state = state.clone();
@@ -1461,6 +1518,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
+    let repository_options = distinct_repositories(&routines);
     let mut machine_options = distinct_machines_r(&routines);
     // Always include the current machine so the default filter option is visible in the dropdown
     // even before any routine targets it.
@@ -1536,6 +1594,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 filter={filter.clone()}
                                 agents={agent_options}
                                 machines={machine_options}
+                                repositories={repository_options}
                                 shown={shown}
                                 total={total_routines}
                                 search_ref={search_ref.clone()}
@@ -1543,6 +1602,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_status={on_set_status}
                                 on_agent={on_set_agent}
                                 on_machine={on_set_machine}
+                                on_repository={on_set_repository}
                                 on_clear={on_clear_filters.clone()}
                             />
                             <RoutineBulkBar
@@ -1678,7 +1738,7 @@ pub struct StatsBarProps {
 /// Cross-filterable KPI stat tiles for the Routines page.
 ///
 /// Clicking ENABLED / DISABLED / DUE SOON applies (or clears, if already active)
-/// the matching status facet on the list below, matching the Cron Jobs page pattern.
+/// the matching status facet on the list below.
 #[function_component(RoutineStatsBar)]
 pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
@@ -1815,6 +1875,8 @@ pub struct FilterSortBarProps {
     pub agents: Vec<String>,
     /// Distinct machine ids across all routines, for the machine-facet options.
     pub machines: Vec<String>,
+    /// Distinct repository URLs across all routines, for the repository-facet options.
+    pub repositories: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -1824,6 +1886,7 @@ pub struct FilterSortBarProps {
     pub on_status: Callback<RoutineStatusFacet>,
     pub on_agent: Callback<AgentFacet>,
     pub on_machine: Callback<RoutineMachineFacet>,
+    pub on_repository: Callback<RepositoryFacet>,
     pub on_clear: Callback<()>,
 }
 
@@ -1858,6 +1921,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
             cb.emit(RoutineMachineFacet::from_value(&select.value()));
         })
     };
+    let on_repository_change = {
+        let cb = props.on_repository.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(RepositoryFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -1865,6 +1935,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
     let status_val = props.filter.status.as_str();
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
+    let repository_val = props.filter.repository.as_value();
     let active = props.filter.is_active();
 
     html! {
@@ -1901,6 +1972,14 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                         selected={machine_val == RMACHINE_UNASSIGNED}>{"None"}</option>
                     { for props.machines.iter().map(|m| html! {
                         <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
+                    }) }
+                </select>
+                <span class="filter-label">{"REPOSITORY"}</span>
+                <select class="filter-select" aria-label="Repository filter" onchange={on_repository_change}>
+                    <option value={RepositoryFacet::REPOSITORY_ALL}
+                        selected={repository_val == RepositoryFacet::REPOSITORY_ALL}>{"Any"}</option>
+                    { for props.repositories.iter().map(|r| html! {
+                        <option value={r.clone()} selected={repository_val == *r}>{r.clone()}</option>
                     }) }
                 </select>
             </div>

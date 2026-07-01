@@ -1,6 +1,6 @@
 //! Host-side unit tests for the routines faceted filter: the `RoutineStatusFacet`,
 //! `AgentFacet`, `RoutineMachineFacet` codecs and the pure `RoutineFilter` matching
-//! + list helpers. No DOM/wasm dependency (mirrors the `cron_jobs_tests.rs` convention).
+//! + list helpers. No DOM/wasm dependency (mirrors the `schedule_tests.rs` convention).
 
 use super::*;
 use chrono::TimeZone;
@@ -92,6 +92,25 @@ fn agent_facet_decodes_a_plain_name_as_named() {
     );
 }
 
+// ── RepositoryFacet codecs ─────────────────────────────────────────────────────
+
+#[test]
+fn repository_facet_roundtrips_and_defaults_to_all() {
+    let all = RepositoryFacet::All;
+    let named = RepositoryFacet::Named("github.com/org/repo".into());
+    assert_eq!(RepositoryFacet::from_value(&all.as_value()), all);
+    assert_eq!(RepositoryFacet::from_value(&named.as_value()), named);
+    assert_eq!(RepositoryFacet::default(), RepositoryFacet::All);
+}
+
+#[test]
+fn repository_facet_decodes_a_plain_url_as_named() {
+    assert_eq!(
+        RepositoryFacet::from_value("github.com/org/repo"),
+        RepositoryFacet::Named("github.com/org/repo".into())
+    );
+}
+
 // ── RoutineMachineFacet codecs ────────────────────────────────────────────────
 
 #[test]
@@ -163,6 +182,12 @@ fn is_active_detects_each_facet() {
         ..Default::default()
     };
     assert!(m.is_active());
+
+    let r = RoutineFilter {
+        repository: RepositoryFacet::Named("github.com/org/repo".into()),
+        ..Default::default()
+    };
+    assert!(r.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -293,6 +318,39 @@ fn machine_specific_matches_only_that_machine() {
     let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
     assert!(f.matches(&m1, now(), window()));
     assert!(!f.matches(&m2_only, now(), window()));
+    assert!(!f.matches(&none, now(), window()));
+}
+
+// ── Repository facet matching ─────────────────────────────────────────────────
+
+#[test]
+fn repository_all_matches_regardless_of_repositories() {
+    let f = RoutineFilter::default();
+    let with = routine("a", "t", "claude", "0 * * * *", &[], &["repo-a"], true);
+    let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&with, now(), window()));
+    assert!(f.matches(&without, now(), window()));
+}
+
+#[test]
+fn repository_named_matches_only_routines_listing_that_repository() {
+    let f = RoutineFilter {
+        repository: RepositoryFacet::Named("repo-a".into()),
+        ..Default::default()
+    };
+    let hit = routine(
+        "a",
+        "t",
+        "claude",
+        "0 * * * *",
+        &[],
+        &["repo-a", "repo-b"],
+        true,
+    );
+    let other = routine("b", "t", "claude", "0 * * * *", &[], &["repo-b"], true);
+    let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&other, now(), window()));
     assert!(!f.matches(&none, now(), window()));
 }
 
@@ -428,6 +486,32 @@ fn distinct_machines_r_returns_sorted_unique_machines() {
     ];
     let machines = distinct_machines_r(&routines);
     assert_eq!(machines, vec!["m1", "m2", "m3"]);
+}
+
+#[test]
+fn distinct_repositories_returns_sorted_unique_repositories() {
+    let routines = vec![
+        routine(
+            "a",
+            "t",
+            "claude",
+            "0 * * * *",
+            &[],
+            &["repo-b", "repo-a"],
+            true,
+        ),
+        routine(
+            "b",
+            "t",
+            "claude",
+            "0 * * * *",
+            &[],
+            &["repo-a", "repo-c"],
+            true,
+        ),
+    ];
+    let repos = distinct_repositories(&routines);
+    assert_eq!(repos, vec!["repo-a", "repo-b", "repo-c"]);
 }
 
 // ── Bulk selection reducer actions ────────────────────────────────────────────

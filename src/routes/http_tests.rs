@@ -657,6 +657,57 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // POST flag
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/routines/{id}/flags"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"type":"bug","description":"broken thing","scope":"general"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let flag: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let filename = flag["filename"].as_str().unwrap().to_string();
+
+    // GET flags
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/routines/{id}/flags"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let flags: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(flags.as_array().unwrap().len(), 1);
+
+    // DELETE flag (resolve)
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/routines/{id}/flags/{filename}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
     // DELETE
     let resp = build_app(routines.clone())
         .oneshot(
@@ -670,6 +721,73 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(!crate::paths::routine_dir(&id).exists());
+}
+
+#[tokio::test]
+async fn router_flag_create_rejects_bad_scope() {
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/routines")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"schedule":"@daily","title":"Flag Scope Routine","agent":"claude","prompt":"p"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let id = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/routines/{id}/flags"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"type":"bug","description":"d","scope":"nowhere"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn router_flag_not_found_paths() {
+    let resp = build_app(crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/routines/no-such/flags")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let resp = build_app(crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/routines/no-such/flags/bug-1.md")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

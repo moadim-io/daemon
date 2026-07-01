@@ -49,11 +49,14 @@ Show whether a server is running.
 .BR "cleanup " [ \-\-json ]
 Reap finished, expired routine workbenches now.
 .TP
+.B "trigger <id>"
+Trigger a routine to run now, outside its schedule.
+.TP
 .B install
 Register moadim as an OS service (launchd / systemd user).
 .TP
 .B uninstall
-Remove the OS service registration.
+Remove the OS service registration and the managed crontab block.
 .TP
 .B machine <show|set|list>
 Show or set this machine's identity, or list the machines referenced by

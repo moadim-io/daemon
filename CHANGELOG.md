@@ -76,6 +76,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `CompressionLayer`, cutting the ~1.1 MB SPA payload (and the OpenAPI JSON
   under `/docs`) several-fold on every load/refresh for clients that
   advertise gzip support. A no-op for clients that don't. (#399)
+- Bumped `tower-http` from `0.6.11` to `0.7.0`. No source changes needed —
+  the only feature used (`compression-gzip`'s `CompressionLayer`) is
+  API-compatible across the bump.
 - Declared `rust-version = "1.88"` (MSRV) in the root `Cargo.toml` and
   `ui/Cargo.toml`, matching the floor already required transitively by
   `darling 0.23`, so `cargo install moadim` on an older stable toolchain now

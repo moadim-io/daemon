@@ -43,6 +43,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   (`cli::cli_tests::status_stop_cleanup_json_share_the_same_address`) asserting
   `status --json`, `stop --json`, and `cleanup --json` all surface the same
   `address` value, so the three shapes can't silently drift apart again. (#245)
+- Removed two dead `AppError::NotFound` arms in `svc_update` (`routines/service.rs`):
+  the function already checks the routine's existence once, up front, while
+  holding the store's lock continuously for the rest of the call, so the two
+  later re-fetches could never actually miss. The two tests written to cover
+  those unreachable arms were accidental duplicates of the same first-check
+  path; merged them into one `svc_update_not_found_when_id_missing` test that
+  covers both request shapes against the real, single `NotFound` path.
 
 ### Added
 

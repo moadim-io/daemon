@@ -382,7 +382,11 @@ pub fn svc_update(
     // update leaves the in-memory store untouched (#468).
     let effective_schedule = match req.schedule.as_deref() {
         Some(schedule) => normalize_schedule(schedule),
-        None => lock.get(id).ok_or(AppError::NotFound)?.schedule.clone(),
+        None => lock
+            .get(id)
+            .expect("id existence checked above, and the lock has been held continuously since")
+            .schedule
+            .clone(),
     };
     reject_over_ceiling(
         "ttl_secs",
@@ -394,7 +398,9 @@ pub fn svc_update(
         req.max_runtime_secs,
         max_runtime_ceiling_secs(&effective_schedule),
     )?;
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    let routine = lock
+        .get_mut(id)
+        .expect("id existence checked above, and the lock has been held continuously since");
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);
     }

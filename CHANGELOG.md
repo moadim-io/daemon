@@ -11,6 +11,26 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-07-01
+
+### Fixed
+
+- **The routines page failed to load with "missing field `prompt`".** PR #825
+  made `GET /routines` omit the `prompt` field from each routine's JSON by
+  default, but the UI's separately-mirrored `Routine` struct never got a
+  matching `#[serde(default)]` on that field, so the wasm client's
+  deserialization broke on every list fetch.
+
+### Added
+
+- **Repository filter for the Routines table.** The REST `GET /routines`
+  endpoint has supported a `?repository=` filter for a while, but the web UI
+  had no way to use it — the only client-side facets were status, agent, and
+  machine. Added a REPOSITORY dropdown to the Routines filter bar (mirroring
+  the existing agent/machine facet pattern), populated from the distinct
+  repository URLs across loaded routines, so operators can narrow a dense
+  routines list to a single repo without hand-editing the query string.
+
 ## [0.19.0] - 2026-07-02
 
 ### Removed
@@ -1202,7 +1222,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1

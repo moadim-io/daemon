@@ -261,6 +261,49 @@ fn trigger_without_an_id_falls_back_to_help() {
 }
 
 #[test]
+fn enable_and_disable_commands_carry_the_routine_id() {
+    assert_eq!(
+        parse(argv(&["enable", "abc-123"])),
+        Command::Enable {
+            id: "abc-123".to_string(),
+            json: false
+        }
+    );
+    assert_eq!(
+        parse(argv(&["disable", "abc-123"])),
+        Command::Disable {
+            id: "abc-123".to_string(),
+            json: false
+        }
+    );
+}
+
+#[test]
+fn enable_and_disable_commands_honor_json_flag() {
+    assert_eq!(
+        parse(argv(&["enable", "abc-123", "--json"])),
+        Command::Enable {
+            id: "abc-123".to_string(),
+            json: true
+        }
+    );
+    assert_eq!(
+        parse(argv(&["disable", "abc-123", "--json"])),
+        Command::Disable {
+            id: "abc-123".to_string(),
+            json: true
+        }
+    );
+}
+
+#[test]
+fn enable_and_disable_without_an_id_fall_back_to_help() {
+    // Nothing to enable/disable without an id, so it shows usage rather than silently no-op'ing.
+    assert_eq!(parse(argv(&["enable"])), Command::Help);
+    assert_eq!(parse(argv(&["disable"])), Command::Help);
+}
+
+#[test]
 fn restart_rotation_line_shows_old_and_new_pid() {
     assert_eq!(
         restart_rotation_line(Some(123), 456),
@@ -462,6 +505,54 @@ impl FakeServer {
             std::thread::sleep(delay);
             alive.store(false, Ordering::SeqCst);
         });
+    }
+
+    /// Start a server that answers successive connections with successive entries from
+    /// `responses` (repeating the last entry once exhausted), so a caller that issues more than
+    /// one request per call (e.g. `enable`'s GET-then-PATCH) can be driven through a distinct
+    /// response for each. A status of `0` is a sentinel for "drop the connection without
+    /// responding", simulating that request landing on a server that is no longer reachable.
+    fn start_sequence(responses: Vec<(u16, String)>) -> FakeServer {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr").to_string();
+        listener.set_nonblocking(true).expect("set nonblocking");
+        let alive = Arc::new(AtomicBool::new(true));
+        let stop = Arc::new(AtomicBool::new(false));
+        let alive_loop = Arc::clone(&alive);
+        let stop_loop = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            let mut remaining = responses.into_iter();
+            let mut current = remaining.next().unwrap_or((200, String::new()));
+            while !stop_loop.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut buf = [0u8; 1024];
+                        let _ = stream.read(&mut buf);
+                        let (status, body) = &current;
+                        if alive_loop.load(Ordering::SeqCst) && *status != 0 {
+                            let response = format!(
+                                "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                                body.len()
+                            );
+                            let _ = stream.write_all(response.as_bytes());
+                        }
+                        if let Some(next) = remaining.next() {
+                            current = next;
+                        }
+                    }
+                    Err(ref err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        FakeServer {
+            addr,
+            alive,
+            stop,
+            handle: Some(handle),
+        }
     }
 }
 
@@ -687,6 +778,105 @@ fn trigger_errors_on_unexpected_status() {
 fn trigger_reports_not_running_when_no_server() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
     assert_eq!(trigger("some-id".to_string()).unwrap(), EXIT_NOT_RUNNING);
+}
+
+#[test]
+fn enable_flips_a_disabled_routine() {
+    // GET reports `enabled: false`, which doesn't match the `true` target, so `enable` proceeds
+    // to PATCH (also answered `200` by the same fixed-response fake server).
+    let server = FakeServer::start(200, "{\"enabled\":false}".to_string());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(enable("some-id".to_string(), false).unwrap(), 0);
+    assert_eq!(enable("some-id".to_string(), true).unwrap(), 0);
+}
+
+#[test]
+fn disable_flips_an_enabled_routine() {
+    let server = FakeServer::start(200, "{\"enabled\":true}".to_string());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(disable("some-id".to_string(), false).unwrap(), 0);
+    assert_eq!(disable("some-id".to_string(), true).unwrap(), 0);
+}
+
+#[test]
+fn enable_is_a_no_op_when_already_enabled() {
+    // The GET already reports the target state, so `enable` never issues the PATCH.
+    let server = FakeServer::start(200, "{\"enabled\":true}".to_string());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(enable("some-id".to_string(), false).unwrap(), 0);
+}
+
+#[test]
+fn disable_is_a_no_op_when_already_disabled() {
+    let server = FakeServer::start(200, "{\"enabled\":false}".to_string());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(disable("some-id".to_string(), false).unwrap(), 0);
+}
+
+#[test]
+fn enable_reports_unknown_routine_on_404() {
+    let server = FakeServer::start(404, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(enable("missing".to_string(), false).is_err());
+    assert!(disable("missing".to_string(), false).is_err());
+}
+
+#[test]
+fn enable_errors_on_unexpected_status() {
+    let server = FakeServer::start(500, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(enable("some-id".to_string(), false).is_err());
+    assert!(disable("some-id".to_string(), false).is_err());
+}
+
+#[test]
+fn enable_reports_not_running_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(
+        enable("some-id".to_string(), false).unwrap(),
+        EXIT_NOT_RUNNING
+    );
+    assert_eq!(
+        disable("some-id".to_string(), false).unwrap(),
+        EXIT_NOT_RUNNING
+    );
+}
+
+#[test]
+fn enable_reports_unknown_routine_on_404_from_the_patch() {
+    // GET reports a state that needs changing (so `enable`/`disable` proceed to PATCH), and the
+    // PATCH itself 404s — a distinct code path from the GET-side 404 covered above.
+    let server = FakeServer::start_sequence(vec![
+        (200, "{\"enabled\":false}".to_string()),
+        (404, String::new()),
+    ]);
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(enable("some-id".to_string(), false).is_err());
+}
+
+#[test]
+fn enable_errors_on_unexpected_status_from_the_patch() {
+    let server = FakeServer::start_sequence(vec![
+        (200, "{\"enabled\":false}".to_string()),
+        (500, String::new()),
+    ]);
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(enable("some-id".to_string(), false).is_err());
+}
+
+#[test]
+fn enable_reports_not_running_when_the_patch_is_unreachable() {
+    // The GET succeeds (server up, state needs changing), but the server disappears before the
+    // PATCH — the sentinel `0` status drops that connection without a response.
+    let server = FakeServer::start_sequence(vec![
+        (200, "{\"enabled\":false}".to_string()),
+        (0, String::new()),
+    ]);
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(
+        enable("some-id".to_string(), false).unwrap(),
+        EXIT_NOT_RUNNING
+    );
 }
 
 #[test]

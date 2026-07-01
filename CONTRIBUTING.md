@@ -68,13 +68,13 @@ Found a vulnerability? **Do not open a public issue.** See
 ## Architecture at a glance
 
 The daemon (`src/`) is an [Axum](https://github.com/tokio-rs/axum) server that
-exposes the same cron-job functionality over three interfaces on one port:
+exposes the same routine (agent-scheduling) functionality over three interfaces on one port:
 
 - **REST** — handlers in `src/routes/http.rs`
 - **MCP** — handlers in `src/routes/mcp.rs`
 - **UI** — a separate Yew/WASM crate in `ui/`, embedded at build time
 
-Jobs are persisted to the OS crontab so they run on schedule. See
+Routines are persisted to the OS crontab so they run on schedule. See
 [`Architecture.md`](Architecture.md) for the full picture.
 
 ## Tests
@@ -89,7 +89,8 @@ A colocated module reference is fine:
 
 ```rust
 #[cfg(test)]
-mod cron_jobs_tests; // semicolon, points at cron_jobs_tests.rs
+#[path = "service_tests.rs"]
+mod service_tests; // points at service_tests.rs
 ```
 
 The pre-push hook also requires 100% line coverage (excluding `main.rs`) via
@@ -138,27 +139,14 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 - Error variants belong in `src/error.rs` (`AppError`); fallible handlers
   return `Result<_, AppError>`, which converts to the right HTTP status.
 - No `unwrap()` in handler paths — propagate errors via `AppError`.
-- `apis/openapi.json` and `schemas/job.schema.json` are generated at build time
-  — never edit them by hand.
-
-## Adding a cron-job field
-
-1. Add the field to the `CronJob` struct in `src/cron_jobs.rs`.
-2. Add a matching `Option<T>` field to `UpdateRequest`.
-3. Apply the update in the `update` handler and reflect the change in the
-   crontab sync.
-4. Add a unit test in the `cron_jobs_tests.rs` sibling file.
-
-Cron entries are persisted in the OS crontab — use `crontab -e` / `crontab -l`
-to inspect state during development. The daemon must be able to invoke
-`crontab` on the host.
+- `apis/openapi.json` is generated at build time — never edit it by hand.
 
 ## Commit messages
 
 Conventional Commits: `type(scope): subject`.
 
 ```text
-feat(cron): add pause/resume endpoint
+feat(routines): add pause/resume endpoint
 fix(sync): handle missing crontab gracefully
 docs: correct contributor setup steps
 ```

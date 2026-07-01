@@ -16,11 +16,11 @@ edition = "2021"
 # `rust-version = "1.88.0"`. Bumping this is a deliberate, CHANGELOG-worthy
 # change — see CONTRIBUTING.md.
 rust-version = "1.88"
-description = "Loop engine for AI agents — cron jobs and routines over REST, MCP, and a built-in web UI"
+description = "Loop engine for AI agents — routines over REST, MCP, and a built-in web UI"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
 homepage = "https://moadim.io"
-keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+keywords = ["scheduler", "mcp", "automation", "rest"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]

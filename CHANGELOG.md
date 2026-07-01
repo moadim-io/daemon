@@ -11,6 +11,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Removed
+
+- **Removed the cron-job feature.** Moadim scheduled two kinds of things —
+  "cron jobs" (a schedule + a handler script) and "routines" (a schedule + an
+  AI-agent prompt). The project's focus is AI-agent routines, so the cron-job
+  half — the `CronJob`/`CronStore` model, the `/api/v1/cron-jobs*` REST routes,
+  the `*_cron_job` MCP tools, the `moadim cron-jobs` CLI subcommand, the
+  `~/.config/moadim/jobs/` and `~/.config/moadim/handlers/` directories, and
+  the job-specific crontab block — has been removed. Routines are unaffected
+  and keep their own crontab block, REST routes, MCP tools, and CLI
+  subcommand.
+
 ### Changed
 
 - **`list_routines` omits routine prompts by default.** The prompt is the

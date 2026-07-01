@@ -140,21 +140,25 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 ## Releasing
 
 Releases are driven by [Changesets](https://github.com/changesets/changesets).
-As changeset files land on `main`, [`changeset-release.yml`](.github/workflows/changeset-release.yml)
-keeps a standing "Version Packages" PR up to date — it bumps `package.json`,
-syncs that version into `Cargo.toml`/`Cargo.lock`
+Changeset files accumulate silently on `main` as PRs land (each one required
+by the `unreleased-entry` check above) until someone decides it's time to
+ship: trigger [`cut-release.yml`](.github/workflows/cut-release.yml) —
+`gh workflow run cut-release.yml`, or "Run workflow" on the Actions tab. It
+bumps `package.json`, syncs that version into `Cargo.toml`/`Cargo.lock`
 ([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
-and rolls the pending changesets into a new dated `CHANGELOG.md` section.
-Merge that PR when you're ready to cut a release.
+rolls the pending changesets into a new dated `CHANGELOG.md` section, verifies
+the result through the same lint/test gates a PR would get, and pushes it
+straight to `main` — no PR. (There used to be a bot-maintained "Version
+Packages" PR instead; it required GitHub Actions to be allowed to open PRs,
+which this org disables, so it never actually worked. See #849.)
 
-To cut one manually instead (e.g. a hotfix, or the bot workflow is
-unavailable):
+To cut one manually instead (e.g. a hotfix, or the workflow is unavailable):
 
 1. `pnpm version-packages` — runs the same bump + sync locally.
 2. Review the diff (`package.json`, `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md`).
 3. Commit, open a PR, and merge to `main`.
 
-Either way, on merge [`auto-release.yml`](.github/workflows/auto-release.yml)
+Either way, on landing on `main`, [`auto-release.yml`](.github/workflows/auto-release.yml)
 detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
 ([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
 ([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag

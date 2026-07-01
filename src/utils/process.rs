@@ -3,7 +3,7 @@ use std::thread::{self, JoinHandle};
 
 /// Spawn `command`, then hand the resulting child off to a detached reaper thread.
 ///
-/// The daemon fires routine and cron-job triggers from inside its own
+/// The daemon fires routine triggers from inside its own
 /// long-running process. Rust's standard library does **not** reap a [`Child`]
 /// when its handle is dropped, so a spawned process that exits would linger as a
 /// zombie (`<defunct>`) in the process table for the daemon's entire lifetime,

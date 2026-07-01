@@ -89,6 +89,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **CI now enforces `cargo test` and the 100% line-coverage gate.** Previously
+  CI only ran fmt + clippy (`lint.yml`); `cargo test` and
+  `cargo llvm-cov --fail-under-lines 100` lived solely in the local pre-push
+  hook, so a PR from a fork (or from a contributor who skipped hook setup)
+  could break tests or drop coverage and still go green. A new `coverage` job
+  in `test.yml` mirrors the pre-push hook's `cargo-llvm-cov` invocation
+  exactly, keeping the local gate and CI in lockstep. (#150)
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-02
+
 ### Removed
 
 - **Removed the cron-job feature.** Moadim scheduled two kinds of things —
@@ -1191,7 +1193,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/moadim-io/daemon/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/moadim-io/daemon/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/moadim-io/daemon/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/moadim-io/daemon/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0

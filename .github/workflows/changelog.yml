@@ -12,6 +12,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded changelog checks don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   changelog:
     name: unreleased-entry

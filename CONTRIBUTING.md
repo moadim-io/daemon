@@ -13,6 +13,7 @@ By participating in this project you agree to abide by our
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
 | [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
+| [pnpm](https://pnpm.io/installation) | Runs [Changesets](https://github.com/changesets/changesets) (`pnpm install` once, then `pnpm changeset`) — see [Workflow](#workflow) below |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
 (`ui/`). The daemon itself is a native binary and builds without them.
@@ -85,13 +86,13 @@ Found a vulnerability? **Do not open a public issue.** See
 ## Architecture at a glance
 
 The daemon (`src/`) is an [Axum](https://github.com/tokio-rs/axum) server that
-exposes the same cron-job functionality over three interfaces on one port:
+exposes the same routine (agent-scheduling) functionality over three interfaces on one port:
 
 - **REST** — handlers in `src/routes/http.rs`
 - **MCP** — handlers in `src/routes/mcp.rs`
 - **UI** — a separate Yew/WASM crate in `ui/`, embedded at build time
 
-Jobs are persisted to the OS crontab so they run on schedule. See
+Routines are persisted to the OS crontab so they run on schedule. See
 [`Architecture.md`](Architecture.md) for the full picture.
 
 ## Tests
@@ -106,7 +107,8 @@ A colocated module reference is fine:
 
 ```rust
 #[cfg(test)]
-mod cron_jobs_tests; // semicolon, points at cron_jobs_tests.rs
+#[path = "service_tests.rs"]
+mod service_tests; // points at service_tests.rs
 ```
 
 The pre-push hook also requires 100% line coverage (excluding `main.rs`) via
@@ -122,26 +124,38 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 1. Branch from `main` — name it `feat/...`, `fix/...`, `chore/...`, or `docs/...`.
 2. Keep commits focused; one logical change per commit.
-3. Note user-facing changes under `## [Unreleased]` in
-   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format). The pre-push hook
-   (and the CI `unreleased-entry` check) reject a push that touches `src/` or
-   `ui/` without a matching `CHANGELOG.md` edit. For a deliberately undocumented
-   change — e.g. a pure internal refactor with no user-facing effect — bypass
-   the local hook with `SKIP_CHANGELOG=1 git push`; the in-repo equivalent on
-   the PR is the `skip-changelog` label.
+3. Note user-facing changes with a changeset: run `pnpm changeset`, pick a bump
+   type (patch/minor/major), and write a summary in Keep a Changelog style
+   (e.g. start it with `### Added`/`### Changed`/`### Fixed` if it doesn't
+   obviously fall under the last one used) — that summary is what ends up in
+   `CHANGELOG.md` verbatim. Commit the generated `.changeset/*.md` file
+   alongside your change. The pre-push hook (and the CI `unreleased-entry`
+   check) reject a push that touches `src/` or `ui/` without an accompanying
+   changeset file. For a deliberately undocumented change — e.g. a pure
+   internal refactor with no user-facing effect — bypass the local hook with
+   `SKIP_CHANGELOG=1 git push`; the in-repo equivalent on the PR is the
+   `skip-changelog` label.
 4. Open a PR against `main`; fill in what changed and why.
 
 ## Releasing
 
-Releases are automated. To cut one, open a PR that bumps the package version:
+Releases are driven by [Changesets](https://github.com/changesets/changesets).
+As changeset files land on `main`, [`changeset-release.yml`](.github/workflows/changeset-release.yml)
+keeps a standing "Version Packages" PR up to date — it bumps `package.json`,
+syncs that version into `Cargo.toml`/`Cargo.lock`
+([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
+and rolls the pending changesets into a new dated `CHANGELOG.md` section.
+Merge that PR when you're ready to cut a release.
 
-1. Bump `version` in `Cargo.toml` (and `Cargo.lock`).
-2. Promote the `## [Unreleased]` entries in [`CHANGELOG.md`](CHANGELOG.md) to a
-   `## [x.y.z] - YYYY-MM-DD` section and add the compare link.
-3. Merge to `main`.
+To cut one manually instead (e.g. a hotfix, or the bot workflow is
+unavailable):
 
-On merge, [`auto-release.yml`](.github/workflows/auto-release.yml) detects the
-new version, pushes the `vx.y.z` tag, then publishes to crates.io
+1. `pnpm version-packages` — runs the same bump + sync locally.
+2. Review the diff (`package.json`, `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md`).
+3. Commit, open a PR, and merge to `main`.
+
+Either way, on merge [`auto-release.yml`](.github/workflows/auto-release.yml)
+detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
 ([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
 ([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag
 must not already exist, and `Cargo.toml`'s version must match the topmost
@@ -155,27 +169,14 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 - Error variants belong in `src/error.rs` (`AppError`); fallible handlers
   return `Result<_, AppError>`, which converts to the right HTTP status.
 - No `unwrap()` in handler paths — propagate errors via `AppError`.
-- `apis/openapi.json` and `schemas/job.schema.json` are generated at build time
-  — never edit them by hand.
-
-## Adding a cron-job field
-
-1. Add the field to the `CronJob` struct in `src/cron_jobs.rs`.
-2. Add a matching `Option<T>` field to `UpdateRequest`.
-3. Apply the update in the `update` handler and reflect the change in the
-   crontab sync.
-4. Add a unit test in the `cron_jobs_tests.rs` sibling file.
-
-Cron entries are persisted in the OS crontab — use `crontab -e` / `crontab -l`
-to inspect state during development. The daemon must be able to invoke
-`crontab` on the host.
+- `apis/openapi.json` is generated at build time — never edit it by hand.
 
 ## Commit messages
 
 Conventional Commits: `type(scope): subject`.
 
 ```text
-feat(cron): add pause/resume endpoint
+feat(routines): add pause/resume endpoint
 fix(sync): handle missing crontab gracefully
 docs: correct contributor setup steps
 ```

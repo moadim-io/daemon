@@ -144,7 +144,9 @@ pub async fn update(
     Ok(Json(svc_update(&store, &id, body)?))
 }
 
-/// `PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).
+/// `PUT /routines/{id}` — alias for PATCH: a partial merge, **not** a full replacement. Fields
+/// omitted from the body are retained from the existing routine (they are not reset to defaults),
+/// because `UpdateRoutineRequest` uses all-`Option` fields. Delegates to [`update`].
 #[utoipa::path(put, path = "/routines/{id}",
     params(("id" = String, Path, description = "Routine UUID")),
     request_body = UpdateRoutineRequest,

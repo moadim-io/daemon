@@ -12,6 +12,7 @@ By participating in this project you agree to abide by our
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
+| [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
 (`ui/`). The daemon itself is a native binary and builds without them.
@@ -59,6 +60,22 @@ the repo root — you don't need to know the crate/binary name to run it.
 Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
 `schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`
 flags, add it to `[default.extend-words]` there.
+
+Lint the workflow files under `.github/workflows/` (YAML syntax, `${{ }}`
+expressions, the `needs`/`if`/matrix job graph, action input names, and,
+via `shellcheck`, every embedded `run:` block) with
+[`actionlint`](https://github.com/rhysd/actionlint):
+
+```sh
+brew install actionlint shellcheck   # or: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+actionlint
+```
+
+`actionlint` picks up `shellcheck` from `PATH` automatically if it's
+installed; without it, shell-script findings in `run:` blocks are silently
+skipped. This mirrors the CI gate in
+[`actionlint.yml`](.github/workflows/actionlint.yml), so a clean local run
+means the CI job will pass too.
 
 ## Reporting security issues
 

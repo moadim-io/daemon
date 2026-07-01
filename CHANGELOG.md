@@ -57,6 +57,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
+- **`actionlint`/`shellcheck` CI gate.** New `.github/workflows/actionlint.yml`
+  runs `actionlint` (via `raven-actions/actionlint`, pinned to a commit SHA) on
+  every PR and on push to `main`, statically validating workflow YAML —
+  syntax, `${{ }}` expressions, the `needs`/`if`/matrix job graph, event
+  triggers, action input names — and, with `shellcheck` enabled by default,
+  linting every embedded `run:` block. Previously a typo'd key, a bad
+  expression, or an unquoted shell variable in `.github/workflows/` only
+  surfaced when the workflow actually ran on `main` or a release tag.
+  Documented in `CONTRIBUTING.md` alongside the other lint tooling. (#454)
 
 ### Changed
 

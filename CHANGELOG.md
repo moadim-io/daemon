@@ -95,6 +95,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   posture was never enforced on PRs and a dashboard lint regression could
   merge to `main` fully green, only surfacing via the local hook (if a
   contributor had it installed) or at release time.
+- `build_app_with_shutdown` cloned `store` and `routines` into `app_state`,
+  then cloned them *again* from the original bindings for the MCP service
+  closure — `clippy::redundant_clone` flags the second pair as dead clones
+  since the originals are never read afterward. Reordered to clone once
+  (for the MCP closure) before moving the originals into `app_state`,
+  dropping two unnecessary `Arc` clone+drop pairs per router build. No
+  behavior change.
 
 ### Fixed
 

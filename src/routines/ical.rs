@@ -221,7 +221,11 @@ pub(crate) fn build_ical_with_cap(
 }
 
 /// Build the iCalendar feed for every routine currently in `store`.
-pub fn svc_ical(store: &RoutineStore) -> String {
+///
+/// Refreshes the store from `dir` first so the feed reflects routines pulled or edited on disk under
+/// a running daemon without a restart (disk is the source of truth).
+pub fn svc_ical(store: &RoutineStore, dir: &std::path::Path) -> String {
+    crate::routine_storage::reload_store_from_dir(store, dir);
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     build_ical(&routines, Local::now())
 }
@@ -232,7 +236,8 @@ pub fn svc_ical(store: &RoutineStore) -> String {
 /// rather than the generic all-routines name. An unknown id yields a well-formed empty
 /// calendar (named [`DEFAULT_CAL_NAME`]) rather than an error, mirroring how a disabled
 /// routine already contributes no events.
-pub fn svc_ical_routine(store: &RoutineStore, id: &str) -> String {
+pub fn svc_ical_routine(store: &RoutineStore, dir: &std::path::Path, id: &str) -> String {
+    crate::routine_storage::reload_store_from_dir(store, dir);
     let routine = store
         .lock()
         .expect("routine store lock poisoned")

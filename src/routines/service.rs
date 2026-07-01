@@ -110,7 +110,14 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
 /// The default query (no repository filter, sort by creation time ascending)
 /// reproduces the previous behaviour. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
-pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
+pub fn svc_list(
+    store: &RoutineStore,
+    dir: &std::path::Path,
+    query: &RoutineListQuery,
+) -> Vec<RoutineResponse> {
+    // Refresh from disk first so a routine pulled/edited on disk under a running daemon (including a
+    // changed `machines` list) is reflected without a restart. Disk is the source of truth.
+    crate::routine_storage::reload_store_from_dir(store, dir);
     let lock = store.lock_recover();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
     drop(lock);
@@ -155,7 +162,13 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
 }
 
 /// Look up a routine by `id`, returning `NotFound` if it does not exist.
-pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
+pub fn svc_get(
+    store: &RoutineStore,
+    dir: &std::path::Path,
+    id: &str,
+) -> Result<RoutineResponse, AppError> {
+    // Refresh from disk first so a freshly-pulled or edited routine is visible without a restart.
+    crate::routine_storage::reload_store_from_dir(store, dir);
     let routine = store
         .lock_recover()
         .get(id)

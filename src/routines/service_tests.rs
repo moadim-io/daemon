@@ -66,11 +66,21 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
     Arc::new(Mutex::new(map))
 }
 
+/// Persist each routine to the (override-rooted) global routines dir and return that dir, so a
+/// subsequent `svc_list`/`svc_get` reload reads them back. Requires a live [`TempHome`] so
+/// `write_routine` and the dir both resolve under the temp home rather than the real config tree.
+fn persist_routines(routines: &[Routine]) -> std::path::PathBuf {
+    for routine in routines {
+        crate::routine_storage::write_routine(routine).unwrap();
+    }
+    crate::paths::routines_dir()
+}
+
 #[test]
 fn svc_list_sorts_by_updated_at() {
     let _home = TempHome::set();
     // Covers the `RoutineSort::Updated` arm: sort by `updated_at` ascending.
-    let store = store_with(vec![
+    let dir = persist_routines(&[
         make_routine("late", "Zeta", 100, 300),
         make_routine("early", "Alpha", 100, 100),
         make_routine("mid", "Mid", 100, 200),
@@ -79,7 +89,7 @@ fn svc_list_sorts_by_updated_at() {
         sort: RoutineSort::Updated,
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&new_store(), &dir, &query);
     assert_eq!(list[0].routine.id, "early");
     assert_eq!(list[1].routine.id, "mid");
     assert_eq!(list[2].routine.id, "late");
@@ -89,7 +99,7 @@ fn svc_list_sorts_by_updated_at() {
 fn svc_list_sorts_by_title_case_insensitively() {
     let _home = TempHome::set();
     // Covers the `RoutineSort::Title` arm: sort by lowercased title.
-    let store = store_with(vec![
+    let dir = persist_routines(&[
         make_routine("banana", "banana", 0, 0),
         make_routine("apple", "Apple", 0, 0),
         make_routine("cherry", "CHERRY", 0, 0),
@@ -98,7 +108,7 @@ fn svc_list_sorts_by_title_case_insensitively() {
         sort: RoutineSort::Title,
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&new_store(), &dir, &query);
     assert_eq!(list[0].routine.id, "apple");
     assert_eq!(list[1].routine.id, "banana");
     assert_eq!(list[2].routine.id, "cherry");
@@ -1491,12 +1501,12 @@ fn svc_list_local_only_filters_non_matching_machines() {
     // `make_routine` seeds `machines: [current_machine()]`, so this one passes the filter.
     let mut other = make_routine("list-other-id", "List Other Machine ZZZ", 2, 2);
     other.machines = vec!["definitely-not-this-machine-xyz".to_string()];
-    let store = store_with(vec![local, other]);
+    let dir = persist_routines(&[local, other]);
     let query = RoutineListQuery {
         local_only: Some(true),
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&new_store(), &dir, &query);
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].routine.id, "list-local-id");
 }

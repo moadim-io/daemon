@@ -19,10 +19,16 @@ use crate::utils::time::now_secs;
 pub struct MoadimMcp {
     /// Shared cron job store.
     store: CronStore,
+    /// On-disk directory the cron-job store is re-scanned from on every list/get tool call.
+    /// Defaults to [`crate::paths::jobs_dir`]; tests point it at a tempdir for isolation.
+    jobs_dir: std::path::PathBuf,
     /// Registered handler identifiers used to annotate job responses.
     handlers: HandlerRegistry,
     /// Shared routine store.
     routines: RoutineStore,
+    /// On-disk directory the routine store is re-scanned from on every list/get tool call.
+    /// Defaults to [`crate::paths::routines_dir`]; tests point it at a tempdir for isolation.
+    routines_dir: std::path::PathBuf,
     /// Unix timestamp (seconds) recorded at server startup.
     uptime_start: u64,
     /// Notify handle that triggers a graceful server shutdown (the `shutdown` tool fires it,
@@ -131,15 +137,19 @@ impl MoadimMcp {
     /// Create a new `MoadimMcp` handler connected to the given stores and handler registry.
     pub fn new(
         store: CronStore,
+        jobs_dir: std::path::PathBuf,
         handlers: HandlerRegistry,
         routines: RoutineStore,
+        routines_dir: std::path::PathBuf,
         uptime_start: u64,
         shutdown: ShutdownSignal,
     ) -> Self {
         Self {
             store,
+            jobs_dir,
             handlers,
             routines,
+            routines_dir,
             uptime_start,
             shutdown,
         }
@@ -195,7 +205,12 @@ impl MoadimMcp {
         let query = cron_jobs::CronJobListQuery {
             local_only: Some(params.local_only.unwrap_or(true)),
         };
-        Ok(ok(cron_jobs::svc_list(&self.store, &self.handlers, &query)))
+        Ok(ok(cron_jobs::svc_list(
+            &self.store,
+            &self.jobs_dir,
+            &self.handlers,
+            &query,
+        )))
     }
 
     /// Return the cron job matching the given UUID.
@@ -204,10 +219,12 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match cron_jobs::svc_get(&self.store, &self.handlers, &id) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
+        Ok(
+            match cron_jobs::svc_get(&self.store, &self.jobs_dir, &self.handlers, &id) {
+                Ok(resp) => ok(resp),
+                Err(error) => err(error),
+            },
+        )
     }
 
     /// Validate and persist a new cron job, returning the created record.
@@ -292,7 +309,11 @@ impl MoadimMcp {
             local_only: Some(params.local_only.unwrap_or(true)),
             ..Default::default()
         };
-        Ok(ok(routines::svc_list(&self.routines, &query)))
+        Ok(ok(routines::svc_list(
+            &self.routines,
+            &self.routines_dir,
+            &query,
+        )))
     }
 
     /// Return the routine matching the given UUID.
@@ -301,10 +322,12 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_get(&self.routines, &id) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
+        Ok(
+            match routines::svc_get(&self.routines, &self.routines_dir, &id) {
+                Ok(resp) => ok(resp),
+                Err(error) => err(error),
+            },
+        )
     }
 
     /// Validate and persist a new routine, returning the created record.

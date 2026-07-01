@@ -87,6 +87,10 @@ pub fn job_toml_path(id: &str) -> PathBuf {
 }
 
 /// Returns the path to `{jobs_dir}/{id}/job.local.toml`.
+///
+/// Only referenced by tests now that [`crate::storage`] resolves the local override relative to its
+/// scan base directory; gated to `#[cfg(test)]` so the production build sees no dead code.
+#[cfg(test)]
 #[must_use]
 pub fn job_local_toml_path(id: &str) -> PathBuf {
     job_dir(id).join("job.local.toml")

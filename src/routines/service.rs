@@ -108,7 +108,8 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
 /// Return the routines matching `query`, filtered and sorted as requested.
 ///
 /// The default query (no repository filter, sort by creation time ascending)
-/// reproduces the previous behaviour. The `repository` filter keeps routines
+/// reproduces the previous behaviour, except each routine's `prompt` is omitted
+/// unless `include_prompts` is `true`. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
 pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
     let lock = store.lock_recover();
@@ -148,9 +149,18 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
         routines.reverse();
     }
 
+    // Omit prompts by default: they are the largest field and rarely needed in a listing.
+    // Blanking triggers `skip_serializing_if` on `Routine::prompt`, dropping it from the JSON.
+    let include_prompts = query.include_prompts.unwrap_or(false);
+
     routines
         .into_iter()
-        .map(RoutineResponse::from_routine)
+        .map(|mut routine| {
+            if !include_prompts {
+                routine.prompt.clear();
+            }
+            RoutineResponse::from_routine(routine)
+        })
         .collect()
 }
 

@@ -71,6 +71,17 @@ pub(super) struct LocalOnlyParam {
     local_only: Option<bool>,
 }
 
+/// Input for the `list_routines` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct ListRoutinesParam {
+    /// When `true` (the default), only return routines targeting the current machine.
+    /// Pass `false` to see routines from all machines.
+    local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`
+    /// so listings stay compact; use `get_routine` to see a single routine's prompt.
+    include_prompts: Option<bool>,
+}
+
 /// Input for the `lock_routines` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct LockRoutinesInput {
@@ -281,15 +292,19 @@ impl MoadimMcp {
     ///
     /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
     /// current machine are returned. Pass `false` to see all routines regardless of machine.
+    ///
+    /// Prompts are omitted by default to keep the listing compact; pass `include_prompts=true`
+    /// to include each routine's prompt.
     #[tool(
-        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines."
+        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines. Prompts are omitted by default; pass include_prompts=true to include them."
     )]
     fn list_routines(
         &self,
-        Parameters(params): Parameters<LocalOnlyParam>,
+        Parameters(params): Parameters<ListRoutinesParam>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let query = routines::RoutineListQuery {
             local_only: Some(params.local_only.unwrap_or(true)),
+            include_prompts: Some(params.include_prompts.unwrap_or(false)),
             ..Default::default()
         };
         Ok(ok(routines::svc_list(&self.routines, &query)))

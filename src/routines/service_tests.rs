@@ -104,6 +104,35 @@ fn svc_list_sorts_by_title_case_insensitively() {
     assert_eq!(list[2].routine.id, "cherry");
 }
 
+#[test]
+fn svc_list_omits_prompt_by_default() {
+    let _home = TempHome::set();
+    // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
+    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
+    let list = svc_list(&store, &RoutineListQuery::default());
+    assert_eq!(list.len(), 1);
+    assert!(list[0].routine.prompt.is_empty());
+    let json = serde_json::to_value(&list[0]).unwrap();
+    assert!(
+        json.get("prompt").is_none(),
+        "prompt should be absent from the serialized listing, got {json}"
+    );
+}
+
+#[test]
+fn svc_list_includes_prompt_when_requested() {
+    let _home = TempHome::set();
+    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
+    let query = RoutineListQuery {
+        include_prompts: Some(true),
+        ..Default::default()
+    };
+    let list = svc_list(&store, &query);
+    assert_eq!(list[0].routine.prompt, "do the thing");
+    let json = serde_json::to_value(&list[0]).unwrap();
+    assert_eq!(json.get("prompt").and_then(|v| v.as_str()), Some("do the thing"));
+}
+
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {

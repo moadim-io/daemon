@@ -389,7 +389,10 @@ fn list_routines_empty() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();
     let result = handler
-        .list_routines(Parameters(LocalOnlyParam { local_only: None }))
+        .list_routines(Parameters(ListRoutinesParam {
+            local_only: None,
+            include_prompts: None,
+        }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 }

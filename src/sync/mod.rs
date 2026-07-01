@@ -442,12 +442,29 @@ pub(crate) fn parse_block(crontab: &str) -> HashMap<String, (String, String)> {
 
 // ─── Public sync API ───────────────────────────────────────────────────────
 
+/// Substring identifying a managed job line inside the crontab block (`# moadim:<id>`).
+const JOB_LINE_MARKER: &str = "# moadim:";
+
 /// Write all enabled managed jobs from `store` into the OS crontab block.
 ///
 /// Idempotent: skips the `crontab -` call when the crontab would not change.
 /// Call this after every job mutation. Errors are logged by the caller.
+///
+/// Footgun guard (mirrors [`routines::sync_routines_to_crontab`]): refuses to overwrite a populated
+/// job block when the store is *empty*. An empty store at sync time means the store failed to load
+/// (or a second daemon is racing this one), not a genuine "no jobs" state — so without this guard
+/// the sync would write a bare block and silently drop every managed cron line. A store that loaded
+/// fine but holds only disabled/unmanaged jobs is *not* empty, so legitimately clearing the last
+/// job still works.
 pub fn sync_to_crontab(store: &CronStore) -> Result<(), SyncError> {
     let current = read_crontab()?;
+    if store.lock().unwrap().is_empty() && current.contains(JOB_LINE_MARKER) {
+        log::warn!(
+            "cron sync: store is empty but the crontab still has managed job lines; refusing to \
+             wipe the moadim block (suspected load failure or a concurrent daemon)"
+        );
+        return Ok(());
+    }
     let block = build_block(store);
     let new_crontab = replace_block(&current, &block);
     if new_crontab == current {

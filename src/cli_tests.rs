@@ -565,6 +565,107 @@ fn status_stop_cleanup_json_share_the_same_address() {
     assert_eq!(cleanup["address"], expected);
 }
 
+// ─── README `--json` shape drift guard ─────────────────────────────────────────
+//
+// The README documents the exact `--json` object shape for `status`/`cleanup`/`stop` as a
+// script-facing stability promise (see the "Scripting" table). Nothing previously pinned those
+// documented key sets to the *actual* keys the `*_json` formatters emit, so a field renamed, added,
+// or removed in code (or in the README) could drift silently. The tests below parse the documented
+// shape literal straight out of README.md and assert it names exactly the same keys the formatter
+// produces; the exit-code half of the same contract is already locked by
+// `status_reports_down_when_no_server`/`status_reports_running_with_pid` and their `stop`/`cleanup`
+// counterparts.
+
+/// Return the top-level object keys named by a `--json` shape literal, e.g. turn
+/// `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` into `["running", "pid", "address"]`.
+/// The shapes documented in README.md never nest an object/array or embed a comma inside a string
+/// value, so splitting on top-level commas and taking each field's pre-colon, quote-trimmed key is
+/// sufficient (no JSON parser needed).
+fn shape_keys(shape: &str) -> Vec<String> {
+    shape
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split(',')
+        .map(|field| {
+            field
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .trim_matches('"')
+                .to_string()
+        })
+        .collect()
+}
+
+/// Extract the documented `--json` shape literal (the `{...}` text) from the README "Scripting"
+/// table row whose first cell is `` `moadim <command> --json` ``.
+fn readme_json_shape(command: &str) -> String {
+    let readme = include_str!("../README.md");
+    let marker = format!("`moadim {command} --json`");
+    let line = readme
+        .lines()
+        .find(|line| line.contains(&marker))
+        .unwrap_or_else(|| panic!("README scripting table has no row for {marker}"));
+    let start = line.find('{').expect("shape literal starts with `{`");
+    let end = line[start..]
+        .find('}')
+        .map(|offset| start + offset)
+        .expect("shape literal ends with `}`");
+    line[start..=end].to_string()
+}
+
+/// Sorted object keys of a `--json` formatter's output, for order-independent comparison against
+/// [`shape_keys`].
+fn actual_keys(json: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(json).expect("formatter emits valid JSON");
+    let mut keys: Vec<String> = value
+        .as_object()
+        .expect("formatter emits a JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn readme_status_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("status"));
+    documented.sort();
+    let health = HealthInfo {
+        uptime_secs: 42,
+        version: "0.1.0".to_string(),
+    };
+    assert_eq!(
+        documented,
+        actual_keys(&status_json(true, Some(7), Some(health))),
+        "README `moadim status --json` shape has drifted from status_json's actual keys"
+    );
+}
+
+#[test]
+fn readme_cleanup_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("cleanup"));
+    documented.sort();
+    assert_eq!(
+        documented,
+        actual_keys(&cleanup_json(3, true)),
+        "README `moadim cleanup --json` shape has drifted from cleanup_json's actual keys"
+    );
+}
+
+#[test]
+fn readme_stop_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("stop"));
+    documented.sort();
+    assert_eq!(
+        documented,
+        actual_keys(&stop_json(true, Some(7))),
+        "README `moadim stop --json` shape has drifted from stop_json's actual keys"
+    );
+}
+
 #[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();

@@ -49,6 +49,9 @@ pub struct Routine {
     pub title: String,
     pub agent: String,
     pub prompt: String,
+    /// Short (≤5 line) statement of the routine's goal; `None` when unset.
+    #[serde(default)]
+    pub goal: Option<String>,
     #[serde(default)]
     pub repositories: Vec<Repository>,
     /// Machines this routine runs on. An empty list runs nowhere (dormant until assigned).
@@ -86,6 +89,8 @@ pub struct CreateRoutineRequest {
     pub title: String,
     pub agent: String,
     pub prompt: String,
+    /// Short (≤5 line) goal statement; `None` when unset.
+    pub goal: Option<String>,
     pub repositories: Vec<Repository>,
     /// Machines to run this routine on (empty = runs nowhere until assigned).
     pub machines: Vec<String>,
@@ -112,6 +117,8 @@ pub struct UpdateRoutineRequest {
     pub agent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repositories: Option<Vec<Repository>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1292,6 +1299,8 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         title: Some(req.title),
                         agent: Some(req.agent),
                         prompt: Some(req.prompt),
+                        // Always send the goal so clearing the field (empty string) clears it server-side.
+                        goal: Some(req.goal.unwrap_or_default()),
                         repositories: Some(req.repositories),
                         machines: Some(req.machines),
                         enabled: Some(req.enabled),
@@ -2585,6 +2594,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             .map(|r| r.prompt.clone())
             .unwrap_or_default()
     });
+    // A very short (≤5 line) "why" for the routine; blank means unset.
+    let goal = use_state(|| {
+        editing
+            .as_ref()
+            .and_then(|r| r.goal.clone())
+            .unwrap_or_default()
+    });
     let repos_raw = use_state(|| {
         editing
             .as_ref()
@@ -2645,6 +2661,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             prompt.set(i.value());
         })
     };
+    let on_goal = {
+        let goal = goal.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            goal.set(i.value());
+        })
+    };
     let on_repos = {
         let repos_raw = repos_raw.clone();
         Callback::from(move |e: InputEvent| {
@@ -2698,6 +2721,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let schedule = schedule.clone();
         let agent = agent.clone();
         let prompt = prompt.clone();
+        let goal = goal.clone();
         let repos_raw = repos_raw.clone();
         let machines = machines.clone();
         let enabled = enabled.clone();
@@ -2715,6 +2739,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 title: (*title).clone(),
                 agent: (*agent).clone(),
                 prompt: (*prompt).clone(),
+                goal: Some((*goal).clone()).filter(|text| !text.trim().is_empty()),
                 repositories: text_to_repos(&repos_raw),
                 machines: (*machines).clone(),
                 enabled: *enabled,
@@ -2775,6 +2800,14 @@ pub fn routine_form(props: &FormProps) -> Html {
                 <label class="form-label">{"PROMPT "}<span class="form-required">{"*"}</span></label>
                 <textarea class="form-input" placeholder="Review open PRs and summarize…"
                     value={(*prompt).clone()} oninput={on_prompt} />
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    {"GOAL "}
+                    <span style="color:var(--text-ghost)">{"(optional; ≤5 lines — the why)"}</span>
+                </label>
+                <textarea class="form-input" placeholder="Keep the PR backlog under control…"
+                    value={(*goal).clone()} oninput={on_goal} />
             </div>
             <div class="form-group">
                 <label class="form-label">

@@ -7,6 +7,7 @@ pub(super) const SPEC: DefaultRoutine = DefaultRoutine {
     schedule: "0 8 * * *",
     agent: "claude",
     prompt: PROMPT,
+    goal: "Make the user's moadim routines 1% better every day through small, safe, compounding improvements.",
 };
 
 /// Task prompt handed to the agent.

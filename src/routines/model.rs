@@ -89,6 +89,10 @@ pub struct Routine {
     pub agent: String,
     /// The task prompt handed to the agent.
     pub prompt: String,
+    /// A very short (at most 5 lines) statement of the routine's goal — the "why" behind the
+    /// prompt. Rendered into the agent's `prompt.md` as a `## Goal` preamble. `None` when unset.
+    #[serde(default)]
+    pub goal: Option<String>,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -235,6 +239,10 @@ pub struct CreateRoutineRequest {
     pub agent: String,
     /// Task prompt.
     pub prompt: String,
+    /// A very short (at most 5 lines) statement of the routine's goal. Optional; `None` leaves it
+    /// unset. When present it is rendered into the agent's `prompt.md` as a `## Goal` preamble.
+    #[serde(default)]
+    pub goal: Option<String>,
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -270,6 +278,8 @@ pub struct UpdateRoutineRequest {
     pub agent: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     pub prompt: Option<String>,
+    /// New goal, or `None` to keep the existing value. Send an empty string to clear it.
+    pub goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
     /// New machines targeting list, or `None` to keep the existing value.

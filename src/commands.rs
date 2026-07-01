@@ -163,6 +163,9 @@ enum RoutineCmd {
         /// Task prompt.
         #[arg(long)]
         prompt: String,
+        /// Short (≤5 line) statement of the routine's goal — the "why" behind the prompt.
+        #[arg(long)]
+        goal: Option<String>,
         /// Repositories as a JSON array (e.g. `[{"repository":"url","branch":"main"}]`).
         #[arg(long)]
         repositories: Option<String>,
@@ -206,6 +209,9 @@ enum RoutineCmd {
         /// New prompt.
         #[arg(long)]
         prompt: Option<String>,
+        /// New goal (≤5 lines), or an empty string to clear it. Omit to keep the existing value.
+        #[arg(long)]
+        goal: Option<String>,
         /// New repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
@@ -242,6 +248,9 @@ enum RoutineCmd {
         /// Task prompt.
         #[arg(long)]
         prompt: String,
+        /// Short (≤5 line) statement of the routine's goal — the "why" behind the prompt.
+        #[arg(long)]
+        goal: Option<String>,
         /// Repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
@@ -379,6 +388,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             title,
             agent,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -390,6 +400,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             title,
             agent,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -408,6 +419,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             title,
             agent,
             prompt,
+            goal,
             repositories,
             machines,
             enabled,
@@ -420,6 +432,8 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             insert_opt(&mut map, "title", title.map(Value::String));
             insert_opt(&mut map, "agent", agent.map(Value::String));
             insert_opt(&mut map, "prompt", prompt.map(Value::String));
+            // Omitting `--goal` keeps the existing value (key absent); `--goal ""` clears it.
+            insert_opt(&mut map, "goal", goal.map(Value::String));
             match insert_json_opt(&mut map, "repositories", repositories) {
                 Ok(()) => {}
                 Err(code) => return code,
@@ -449,6 +463,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             title,
             agent,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -460,6 +475,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             title,
             agent,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -515,6 +531,7 @@ fn routine_body(
     title: String,
     agent: String,
     prompt: String,
+    goal: Option<String>,
     repositories: Option<String>,
     machines: Option<String>,
     ttl_secs: Option<u64>,
@@ -527,6 +544,7 @@ fn routine_body(
     map.insert("title".to_string(), Value::String(title));
     map.insert("agent".to_string(), Value::String(agent));
     map.insert("prompt".to_string(), Value::String(prompt));
+    insert_opt(&mut map, "goal", goal.map(Value::String));
     insert_json_opt(&mut map, "repositories", repositories)?;
     insert_json_opt(&mut map, "machines", machines)?;
     insert_opt(&mut map, "ttl_secs", ttl_secs.map(Value::from));

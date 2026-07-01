@@ -104,6 +104,38 @@ fn svc_list_sorts_by_title_case_insensitively() {
     assert_eq!(list[2].routine.id, "cherry");
 }
 
+#[test]
+fn svc_list_omits_prompt_by_default() {
+    let _home = TempHome::set();
+    // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
+    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
+    let list = svc_list(&store, &RoutineListQuery::default());
+    assert_eq!(list.len(), 1);
+    assert!(list[0].routine.prompt.is_empty());
+    let json = serde_json::to_value(&list[0]).unwrap();
+    assert!(
+        json.get("prompt").is_none(),
+        "prompt should be absent from the serialized listing, got {json}"
+    );
+}
+
+#[test]
+fn svc_list_includes_prompt_when_requested() {
+    let _home = TempHome::set();
+    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
+    let query = RoutineListQuery {
+        include_prompts: Some(true),
+        ..Default::default()
+    };
+    let list = svc_list(&store, &query);
+    assert_eq!(list[0].routine.prompt, "do the thing");
+    let json = serde_json::to_value(&list[0]).unwrap();
+    assert_eq!(
+        json.get("prompt").and_then(|value| value.as_str()),
+        Some("do the thing")
+    );
+}
+
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
@@ -1739,40 +1771,26 @@ fn svc_trigger_returns_internal_on_write_failure() {
 }
 
 #[test]
-fn svc_update_not_found_when_no_schedule_and_id_missing() {
+fn svc_update_not_found_when_id_missing() {
     let _home = TempHome::set();
-    // Covers L359 error arm: `lock.get(id).ok_or(AppError::NotFound)?` fires when the
-    // routine does not exist in the store and no new schedule is provided.
+    // `svc_update` looks the id up once (to compute `old_slug`) while holding the store's
+    // lock for the rest of the function, so a missing id can only ever fail at that single,
+    // first lookup — regardless of whether a new schedule is supplied. This one test covers
+    // both request shapes; the later `lock.get`/`lock.get_mut` calls can no longer fail on a
+    // missing id, so they use `.expect(..)` instead of a second/third `NotFound` arm.
     let store = new_store(); // empty store
     with_empty_path(|| {
-        let result = svc_update(
-            &store,
-            "nonexistent-id",
-            UpdateRoutineRequest {
-                schedule: None,
-                ..empty_update_request()
-            },
-        );
-        assert!(matches!(result, Err(AppError::NotFound)));
-    });
-}
-
-#[test]
-fn svc_update_not_found_when_schedule_provided_and_id_missing() {
-    let _home = TempHome::set();
-    // Covers L371 error arm: `lock.get_mut(id).ok_or(AppError::NotFound)?` fires when
-    // the routine does not exist in the store and a new schedule is provided.
-    let store = new_store(); // empty store
-    with_empty_path(|| {
-        let result = svc_update(
-            &store,
-            "nonexistent-id",
-            UpdateRoutineRequest {
-                schedule: Some("@daily".into()),
-                ..empty_update_request()
-            },
-        );
-        assert!(matches!(result, Err(AppError::NotFound)));
+        for schedule in [None, Some("@daily".to_string())] {
+            let result = svc_update(
+                &store,
+                "nonexistent-id",
+                UpdateRoutineRequest {
+                    schedule,
+                    ..empty_update_request()
+                },
+            );
+            assert!(matches!(result, Err(AppError::NotFound)));
+        }
     });
 }
 

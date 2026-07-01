@@ -19,6 +19,12 @@ on:
     # Mondays at 06:00 UTC — keep the spell-check gate current against main.
     - cron: "0 6 * * 1"
 
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded spell-check runs don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typos:
     name: typos

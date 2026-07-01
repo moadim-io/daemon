@@ -145,7 +145,8 @@
         "tags": [
           "crate::cron_jobs"
         ],
-        "summary": "`PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).",
+        "summary": "`PUT /cron-jobs/{id}` — partial-update alias for PATCH.",
+        "description": "Despite the HTTP convention, this endpoint does **not** perform a full replacement: it\ndelegates to the same PATCH handler, so omitted fields are retained rather than reset to\ntheir defaults. Clients that need idempotent full-resource replacement must supply every\nfield explicitly; the response shape is identical to PATCH.",
         "operationId": "replace",
         "parameters": [
           {
@@ -764,7 +765,8 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).",
+        "summary": "`PUT /routines/{id}` — partial-update alias for PATCH.",
+        "description": "Despite the HTTP convention, this endpoint does **not** perform a full replacement: it\ndelegates to the same PATCH handler, so omitted fields are retained rather than reset to\ntheir defaults. Clients that need idempotent full-resource replacement must supply every\nfield explicitly; the response shape is identical to PATCH.",
         "operationId": "replace",
         "parameters": [
           {

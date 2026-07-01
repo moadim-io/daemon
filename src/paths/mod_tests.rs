@@ -43,10 +43,30 @@ fn routine_toml_path_filename() {
 }
 
 #[test]
-fn routine_prompt_path_filename() {
-    let path = routine_prompt_path("abc");
-    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "prompt.md");
-    assert!(path.to_string_lossy().contains("abc"));
+fn routine_prompts_dir_filename() {
+    let path = routine_prompts_dir("abc");
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "prompts");
+    assert_eq!(path.parent().unwrap(), routine_dir("abc"));
+}
+
+#[test]
+fn routine_pure_prompt_path_filename() {
+    let path = routine_pure_prompt_path("abc");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "prompt.pure.md"
+    );
+    assert_eq!(path.parent().unwrap(), routine_prompts_dir("abc"));
+}
+
+#[test]
+fn routine_compiled_prompt_path_filename() {
+    let path = routine_compiled_prompt_path("abc");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "prompt.compiled.md"
+    );
+    assert_eq!(path.parent().unwrap(), routine_prompts_dir("abc"));
 }
 
 #[test]

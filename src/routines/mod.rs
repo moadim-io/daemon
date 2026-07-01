@@ -1,8 +1,7 @@
 //! Routine data model, agent registry, command builder, service functions, and HTTP handlers.
 //!
-//! A *routine* is a scheduled AI-agent task. Unlike a [`crate::cron_jobs::CronJob`] (which runs a
-//! handler script), a routine launches an agent (claude code, codex, …) inside an interactive tmux
-//! session rooted in a fresh workbench. moadim never clones the routine's `repositories`; it lists
+//! A *routine* is a scheduled AI-agent task: it launches an agent (claude code, codex, …) inside an
+//! interactive tmux session rooted in a fresh workbench. moadim never clones the routine's `repositories`; it lists
 //! them in the prompt as context and the agent clones any it needs.
 //!
 //! The module is split by concern:

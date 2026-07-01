@@ -11,7 +11,6 @@ mod build_info;
 mod cli;
 /// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
 mod commands;
-mod cron_jobs;
 mod error;
 /// Server filesystem location helpers.
 mod filesystem;
@@ -35,10 +34,7 @@ mod routine_storage;
 mod routines;
 /// `moadim install` / `uninstall`: register the daemon as an OS service.
 mod service;
-/// TOML-backed job persistence.
-mod storage;
-/// Forward sync of managed jobs into the OS crontab (reverse sync is implemented
-/// but not wired up — see the `sync` module docs and issue #218).
+/// Forward sync of managed routines into the OS crontab.
 mod sync;
 /// Shared utility functions.
 mod utils;
@@ -71,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// `moadim uninstall`: tear down everything install/usage added — the OS service
-/// registration AND the managed crontab blocks the daemon wrote. Without the
-/// crontab step, `cron` keeps firing routines/jobs against a removed daemon (#380).
+/// registration AND the managed crontab block the daemon wrote. Without the
+/// crontab step, `cron` keeps firing routines against a removed daemon (#380).
 ///
 /// Both steps are best-effort and independent: a failure (or unsupported-platform
 /// error) in the service step is reported but does not skip the crontab cleanup,
@@ -110,7 +106,6 @@ async fn run_server() -> anyhow::Result<()> {
         );
     }
     routines::ensure_default_agents();
-    let store = storage::load_store();
     // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
     // cron trigger after upgrade would fail on the launch command's `cp prompt.md` step.
     routine_storage::migrate_prompt_files();
@@ -133,19 +128,10 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
     }
-    // Likewise re-sync managed cron-jobs to the crontab on startup, mirroring the routines sync
-    // above; otherwise a lost or emptied block (manual `crontab -e`/`crontab -r`, an OS migration,
-    // or a marker collision) leaves every managed job silently un-fired until the next job
-    // create/update/delete. `sync_to_crontab` is idempotent, so this is a no-op read on a healthy
-    // crontab.
-    if let Err(err) = sync::sync_to_crontab(&store) {
-        log::warn!("startup crontab sync (cron-jobs) failed: {err}");
-    }
     let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
     cli::write_pid_file()?;
     let result =
-        routes::http::run_with_listener_until(store, routines, listener, termination_signal())
-            .await;
+        routes::http::run_with_listener_until(routines, listener, termination_signal()).await;
     cli::clear_pid_file();
     result
 }

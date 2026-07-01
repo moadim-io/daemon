@@ -62,48 +62,6 @@ pub fn config_dir() -> PathBuf {
     config_root().join("moadim")
 }
 
-/// Returns the path to `{config_dir}/jobs/` (default `~/.config/moadim/jobs/`).
-#[must_use]
-pub fn jobs_dir() -> PathBuf {
-    config_dir().join("jobs")
-}
-
-/// Returns the path to `{config_dir}/handlers/` (default `~/.config/moadim/handlers/`).
-#[must_use]
-pub fn handlers_dir() -> PathBuf {
-    config_dir().join("handlers")
-}
-
-/// Returns the path to `{jobs_dir}/{id}/`.
-#[must_use]
-pub fn job_dir(id: &str) -> PathBuf {
-    jobs_dir().join(id)
-}
-
-/// Returns the path to `{jobs_dir}/{id}/job.toml`.
-#[must_use]
-pub fn job_toml_path(id: &str) -> PathBuf {
-    job_dir(id).join("job.toml")
-}
-
-/// Returns the path to `{jobs_dir}/{id}/job.local.toml`.
-#[must_use]
-pub fn job_local_toml_path(id: &str) -> PathBuf {
-    job_dir(id).join("job.local.toml")
-}
-
-/// Returns the path to `{jobs_dir}/{id}/.gitignore`.
-#[must_use]
-pub fn job_gitignore_path(id: &str) -> PathBuf {
-    job_dir(id).join(".gitignore")
-}
-
-/// Returns the path to `{jobs_dir}/{id}/job.local.log`.
-#[must_use]
-pub fn job_log_path(id: &str) -> PathBuf {
-    job_dir(id).join("job.local.log")
-}
-
 // ─── Routines ────────────────────────────────────────────────────────────────
 
 /// Returns the path to `{config_dir}/routines/` (default `~/.config/moadim/routines/`).

@@ -85,7 +85,7 @@ pub enum Command {
     Help,
     /// Print the binary version.
     Version,
-    /// A data-plane subcommand (`cron-jobs`, `routines`, `agents`, `echo`) handled by the clap-based
+    /// A data-plane subcommand (`routines`, `agents`, `echo`) handled by the clap-based
     /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
     /// argv (including the subcommand keyword) for clap to parse.
     Data(Vec<String>),
@@ -97,7 +97,7 @@ pub enum Command {
 
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
 /// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
-pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "schedule", "agents", "echo"];
+pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "echo"];
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
@@ -172,7 +172,7 @@ fn wants_wait(rest: &[String]) -> Option<u64> {
 pub fn print_help() {
     let bind_addr = bind_addr();
     println!(
-        "moadim — cron/MCP/REST server with a web control panel\n\
+        "moadim — routine scheduler with an MCP/REST API and a web control panel\n\
          \n\
          USAGE:\n\
          \x20   moadim [MODE]\n\
@@ -191,15 +191,14 @@ pub fn print_help() {
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
-         \x20   uninstall              remove the OS service registration and managed crontab blocks\n\
+         \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
          DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
-         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
          \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
-         \x20   schedule  trigger <id> trigger a routine or cron job by ID (used by run.sh wrappers)\n\
+         \x20   schedule  trigger <id> trigger a routine by ID (used by the routines crontab line)\n\
          \x20   agents                 list available agent keys\n\
          \x20   echo <message>         echo a message via the server\n\
          \n\

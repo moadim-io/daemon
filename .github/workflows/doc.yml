@@ -1,0 +1,57 @@
+name: Doc
+
+# The codebase leans heavily on rustdoc intra-doc links (e.g.
+# `[Routine::effective_ttl_secs]` in src/routines/model.rs, 15+ in src/cli.rs,
+# 9+ each in src/restart.rs and src/routines/mod.rs — 60+ total). Rustdoc only
+# resolves these when docs are actually built, and none of the existing gates
+# (fmt, clippy, test, spellcheck) build them. A renamed or moved item silently
+# turns an intra-doc link into a broken one that every other check still
+# passes clean, so the rot ships invisibly into the published crate's docs
+# (`cargo install moadim` / `cargo doc --open`).
+#
+# `--document-private-items` is required here: `missing_docs_in_private_items`
+# is denied workspace-wide (see Cargo.toml `[lints.clippy]`), so most doc
+# comments — and therefore most intra-doc links — live on private items that
+# a public-only `cargo doc` would never check.
+#
+# RUSTDOCFLAGS=-D warnings turns rustdoc's (normally non-fatal) broken-link
+# and other doc warnings into a build failure, giving a cheap, deterministic
+# gate that mirrors the `test.yml` / `lint.yml` pattern.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded doc builds don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Scoped so this job's target/doc artifacts don't clobber the
+          # `test` or `clippy` jobs' cache entries.
+          shared-key: doc
+
+      - name: Build docs (deny warnings, including broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --document-private-items

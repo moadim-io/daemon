@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cron_jobs::{CronJob, CronStore};
 use crate::paths::{job_dir, job_gitignore_path, job_local_toml_path, job_toml_path, jobs_dir};
+use crate::utils::atomic::atomic_write;
 
 /// TOML representation of a job on disk. `job.local.toml` may override any field.
 #[derive(Debug, Deserialize, Serialize)]
@@ -138,7 +139,10 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
     let text = toml::to_string_pretty(&toml_job).expect(
         "JobToml serialization cannot fail for a struct with only primitive and Option fields",
     );
-    std::fs::write(job_toml_path(&job.id), text)?;
+    // Atomic write (temp + rename) so a crash or full disk mid-write can't leave a torn
+    // `job.toml` — a torn file parses to `None` and would silently drop the job from the store,
+    // the same failure mode `write_routine` already guards against for `routine.toml`.
+    atomic_write(&job_toml_path(&job.id), text.as_bytes())?;
     Ok(())
 }
 

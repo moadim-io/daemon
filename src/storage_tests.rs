@@ -75,6 +75,25 @@ fn write_and_load_roundtrip() {
 }
 
 #[test]
+fn write_job_leaves_no_tmp_residue() {
+    // `write_job` now persists `job.toml` via `atomic_write` (temp file + rename), mirroring
+    // `write_routine`'s guard against a crash mid-write leaving a torn file. Confirm the sibling
+    // temp file used to achieve that is always cleaned up.
+    let id = "test-write-job-no-residue";
+    let job = test_job(id);
+    write_job(&job).expect("write_job failed");
+
+    let residue = std::fs::read_dir(crate::paths::job_dir(id))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
+        .count();
+    assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
+
+    remove_job_dir(id).expect("cleanup failed");
+}
+
+#[test]
 fn remove_job_dir_nonexistent_is_ok() {
     assert!(remove_job_dir("test-nonexistent-9999999").is_ok());
 }

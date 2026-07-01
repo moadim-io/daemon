@@ -38,6 +38,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **Managed cron-job writes are now atomic.** `write_job` persisted `job.toml`
+  via an in-place `std::fs::write` truncate, so a crash or full disk mid-write
+  could leave a torn file that parses to `None` and silently drops the job
+  from the store on the next load. `write_routine` already guards against this
+  exact failure mode for `routine.toml` via the shared `atomic_write` helper
+  (write a sibling temp file, then rename it into place); `write_job` now uses
+  the same helper for parity.
 - **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
   each added a `unused_async = "deny"` entry under `[lints.clippy]` in
   `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't

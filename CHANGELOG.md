@@ -50,6 +50,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **The daemon never killed hung routine tmux sessions when launched via
+  launchd/systemd.** Those managers start `moadim --interactive` with a
+  minimal `PATH` (e.g. macOS launchd's `/usr/bin:/bin:/usr/sbin:/sbin`) that
+  hides a Homebrew- or npm-installed `tmux`. The daemon's own cleanup/watchdog
+  sweep shelled out to `tmux` directly (no login shell), so every
+  liveness/kill probe silently failed and read as "session already dead" —
+  a hung run's workbench got TTL-reaped while its real tmux session and agent
+  process kept running, untracked, forever. `resolve_tmux_bin` now also
+  searches common install locations (Homebrew, `/usr/local/bin`,
+  `~/.local/bin`) when `tmux` isn't on `PATH`, and the generated launchd
+  plist now sets a real `PATH` via `EnvironmentVariables`.
 - **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
   each added a `unused_async = "deny"` entry under `[lints.clippy]` in
   `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't

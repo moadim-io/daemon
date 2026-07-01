@@ -536,6 +536,35 @@ fn cleanup_json_address_reflects_bind_override() {
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 
+/// Lock the machine-readable contract across all three `--json` commands: `status`, `stop`, and
+/// `cleanup` must each surface `address`, and — since they all describe the same bound endpoint —
+/// the value must be identical across all three, so the shapes can't silently drift apart again.
+#[test]
+fn status_stop_cleanup_json_share_the_same_address() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+
+    let expected = serde_json::json!("127.0.0.1:6000");
+    assert!(
+        status["address"].is_string(),
+        "status --json must include address"
+    );
+    assert!(
+        stop["address"].is_string(),
+        "stop --json must include address"
+    );
+    assert!(
+        cleanup["address"].is_string(),
+        "cleanup --json must include address"
+    );
+    assert_eq!(status["address"], expected);
+    assert_eq!(stop["address"], expected);
+    assert_eq!(cleanup["address"], expected);
+}
+
 #[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();

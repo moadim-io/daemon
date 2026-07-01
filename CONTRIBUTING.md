@@ -12,6 +12,7 @@ By participating in this project you agree to abide by our
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
+| [pnpm](https://pnpm.io/installation) | Runs [Changesets](https://github.com/changesets/changesets) (`pnpm install` once, then `pnpm changeset`) — see [Workflow](#workflow) below |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
 (`ui/`). The daemon itself is a native binary and builds without them.
@@ -106,26 +107,38 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 1. Branch from `main` — name it `feat/...`, `fix/...`, `chore/...`, or `docs/...`.
 2. Keep commits focused; one logical change per commit.
-3. Note user-facing changes under `## [Unreleased]` in
-   [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog format). The pre-push hook
-   (and the CI `unreleased-entry` check) reject a push that touches `src/` or
-   `ui/` without a matching `CHANGELOG.md` edit. For a deliberately undocumented
-   change — e.g. a pure internal refactor with no user-facing effect — bypass
-   the local hook with `SKIP_CHANGELOG=1 git push`; the in-repo equivalent on
-   the PR is the `skip-changelog` label.
+3. Note user-facing changes with a changeset: run `pnpm changeset`, pick a bump
+   type (patch/minor/major), and write a summary in Keep a Changelog style
+   (e.g. start it with `### Added`/`### Changed`/`### Fixed` if it doesn't
+   obviously fall under the last one used) — that summary is what ends up in
+   `CHANGELOG.md` verbatim. Commit the generated `.changeset/*.md` file
+   alongside your change. The pre-push hook (and the CI `unreleased-entry`
+   check) reject a push that touches `src/` or `ui/` without an accompanying
+   changeset file. For a deliberately undocumented change — e.g. a pure
+   internal refactor with no user-facing effect — bypass the local hook with
+   `SKIP_CHANGELOG=1 git push`; the in-repo equivalent on the PR is the
+   `skip-changelog` label.
 4. Open a PR against `main`; fill in what changed and why.
 
 ## Releasing
 
-Releases are automated. To cut one, open a PR that bumps the package version:
+Releases are driven by [Changesets](https://github.com/changesets/changesets).
+As changeset files land on `main`, [`changeset-release.yml`](.github/workflows/changeset-release.yml)
+keeps a standing "Version Packages" PR up to date — it bumps `package.json`,
+syncs that version into `Cargo.toml`/`Cargo.lock`
+([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
+and rolls the pending changesets into a new dated `CHANGELOG.md` section.
+Merge that PR when you're ready to cut a release.
 
-1. Bump `version` in `Cargo.toml` (and `Cargo.lock`).
-2. Promote the `## [Unreleased]` entries in [`CHANGELOG.md`](CHANGELOG.md) to a
-   `## [x.y.z] - YYYY-MM-DD` section and add the compare link.
-3. Merge to `main`.
+To cut one manually instead (e.g. a hotfix, or the bot workflow is
+unavailable):
 
-On merge, [`auto-release.yml`](.github/workflows/auto-release.yml) detects the
-new version, pushes the `vx.y.z` tag, then publishes to crates.io
+1. `pnpm version-packages` — runs the same bump + sync locally.
+2. Review the diff (`package.json`, `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md`).
+3. Commit, open a PR, and merge to `main`.
+
+Either way, on merge [`auto-release.yml`](.github/workflows/auto-release.yml)
+detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
 ([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
 ([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag
 must not already exist, and `Cargo.toml`'s version must match the topmost

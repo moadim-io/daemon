@@ -59,6 +59,24 @@ pub struct RoutineListQuery {
     pub sort: RoutineSort,
     /// Sort direction (default: ascending).
     pub order: SortOrder,
+    /// When `true`, only return routines whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all routines, preserving backwards compatibility).
+    pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
+}
+
+/// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct IcalFeedQuery {
+    /// Render only the fire times of the routine with this UUID. Absent (the default)
+    /// renders every enabled routine. An unknown or disabled id yields a well-formed
+    /// empty calendar.
+    pub routine: Option<String>,
 }
 
 /// A persisted routine: a scheduled AI-agent task.
@@ -74,10 +92,22 @@ pub struct Routine {
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines this routine runs on. Each daemon schedules a routine only when this list names its
+    /// own machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so
+    /// a routine is dormant until explicitly assigned. Lets one shared config repo drive different
+    /// routines on different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the routine is active.
     pub enabled: bool,
     /// `"managed"` for routines owned by this server.
@@ -92,6 +122,17 @@ pub struct Routine {
     /// command directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.
     #[serde(alias = "last_triggered_at")]
     pub last_manual_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.
+    ///
+    /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
+    /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
+    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns stamps this
+    /// timestamp into the gitignored `scheduled.local.toml` sidecar at fire time (via its `printf`
+    /// step); the daemon reads it back on load. The daemon never writes this field directly (it is
+    /// absent from `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a
+    /// routine can't clobber it.
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
@@ -105,6 +146,10 @@ pub struct Routine {
     /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
+    /// Defaults to empty; each entry is trimmed and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -203,6 +248,9 @@ pub struct CreateRoutineRequest {
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines to run this routine on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -214,6 +262,10 @@ pub struct CreateRoutineRequest {
     /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
+    /// and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -230,12 +282,16 @@ pub struct UpdateRoutineRequest {
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
     /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
     pub max_runtime_secs: Option<u64>,
+    /// New tags list, or `None` to keep the existing value.
+    pub tags: Option<Vec<String>>,
 }
 
 #[cfg(test)]

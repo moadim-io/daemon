@@ -11,7 +11,7 @@
 //!
 //! **Forward sync** (moadim → crontab): called after every routine mutation.
 //! Enabled managed routines are written into the block; disabled/deleted routines are removed.
-//! This is the only sync direction the daemon runs. See [`routines::sync_routines_to_crontab`].
+//! This is the only sync direction the daemon runs. See [`crate::sync::routines::sync_routines_to_crontab`].
 
 use std::io::Write;
 use std::process::{Command, Stdio};

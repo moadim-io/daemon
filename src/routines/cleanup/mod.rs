@@ -75,8 +75,7 @@ fn agent_log_finish_time(dir: &Path, trigger_ts: u64) -> u64 {
         .and_then(|meta| meta.modified())
         .ok()
         .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|elapsed| elapsed.as_secs().max(trigger_ts))
-        .unwrap_or(trigger_ts)
+        .map_or(trigger_ts, |elapsed| elapsed.as_secs().max(trigger_ts))
 }
 
 /// Watchdog decision for a single workbench: if its session is alive but the run has exceeded
@@ -160,9 +159,11 @@ fn watchdog_dir(
 /// A live session within its max runtime is left untouched. The TTL reap decision is measured from
 /// each run's *finish* time (`finished_at(path, trigger_ts)`), not its trigger time, so a run is
 /// kept for the full window after it completes (#174); the watchdog still measures elapsed runtime
-/// from the trigger. Returns the number of directories removed. `ttl_for`, `max_runtime_for`,
-/// `is_alive`, `kill`, and `finished_at` are injected so the decision logic is unit-testable
-/// without a filesystem clock or a live tmux server.
+/// from the trigger. `finished_at` is evaluated *before* the watchdog can force-kill the session, so
+/// a hung run's forced-kill note (which touches `agent.log`) never masquerades as a fresh finish.
+/// Returns the number of directories removed. `ttl_for`, `max_runtime_for`, `is_alive`, `kill`, and
+/// `finished_at` are injected so the decision logic is unit-testable without a filesystem clock or a
+/// live tmux server.
 fn reap_dir(
     dir: &Path,
     now: u64,
@@ -184,6 +185,10 @@ fn reap_dir(
         let Some((slug, ts)) = parse_workbench_name(&name) else {
             continue;
         };
+        // Captured before `kill_if_hung` below: a forced kill appends a note to `agent.log`,
+        // which would otherwise bump its mtime to "now" and make a just-killed hung run look
+        // like it *just* finished, resetting its retention window instead of reaping it.
+        let finish_ts = finished_at(&entry.path(), ts);
         let session = format!("moadim-{name}");
         let alive = kill_if_hung(
             &entry.path(),
@@ -198,7 +203,6 @@ fn reap_dir(
             // Still running within its max runtime — never touched.
             continue;
         }
-        let finish_ts = finished_at(&entry.path(), ts);
         if !is_expired(now, finish_ts, ttl_for(slug)) {
             // Finished (or just killed) but its retention window has not elapsed yet — measured
             // from when the run finished, so its own duration does not eat into retention.

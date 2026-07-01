@@ -18,8 +18,8 @@
 use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
-use crate::cron_jobs::normalize_schedule;
 use crate::routine_storage::write_routine;
+use crate::utils::cron::normalize_schedule;
 use crate::utils::time::now_secs;
 
 use super::command::slugify;

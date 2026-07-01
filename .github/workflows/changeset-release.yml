@@ -10,10 +10,22 @@ name: Changeset Release
 # `publish.yml`/`release.yml` — this workflow never publishes or tags
 # anything itself, it only prepares the version-bump PR.
 #
-# Uses a `RELEASE_PAT` (a repo-provisioned fine-grained PAT) instead of the
-# default GITHUB_TOKEN: PRs opened with the default token don't trigger other
-# `pull_request` workflows (lint.yml, test.yml, changelog.yml), so the Version
-# Packages PR would merge with zero CI signal otherwise.
+# Uses the default GITHUB_TOKEN — no PAT. A PR opened with the default token
+# doesn't trigger other `pull_request`-triggered workflows (lint.yml, test.yml,
+# changelog.yml) on its own; that's GitHub's anti-recursion loop-guard and it
+# can't be turned off. Instead of routing around it with a repo-provisioned PAT
+# (an extra secret to rotate/scope/lose), this workflow calls lint.yml and
+# test.yml directly as reusable workflows once the Version Packages branch is
+# pushed — the same `workflow_call` escape hatch auto-release.yml already uses
+# to hand off to publish.yml/release.yml around this identical restriction.
+# Those calls target `changeset-release/main` explicitly (the branch name
+# changesets/action always uses for baseBranch "main"), since a workflow_call
+# job otherwise inherits the calling run's ref (the push to `main` that
+# triggered this workflow), not the branch the version step just created.
+#
+# changelog.yml's unreleased-entry check is not called here: it only gates
+# PRs that touch src/ or ui/, and this PR only ever touches package.json,
+# Cargo.toml/Cargo.lock, CHANGELOG.md, and .changeset/*.md.
 
 on:
   push:
@@ -31,11 +43,12 @@ jobs:
   version:
     name: Version Packages PR
     runs-on: ubuntu-latest
+    outputs:
+      pr-number: ${{ steps.changesets.outputs.pullRequestNumber }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -55,10 +68,27 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Create/update Version Packages PR
+        id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm version-packages
           commit: "chore(release): version packages"
           title: "chore(release): version packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  lint:
+    name: Lint Version Packages PR
+    needs: version
+    if: needs.version.outputs.pr-number != ''
+    uses: ./.github/workflows/lint.yml
+    with:
+      ref: changeset-release/main
+
+  test:
+    name: Test Version Packages PR
+    needs: version
+    if: needs.version.outputs.pr-number != ''
+    uses: ./.github/workflows/test.yml
+    with:
+      ref: changeset-release/main

@@ -1739,40 +1739,26 @@ fn svc_trigger_returns_internal_on_write_failure() {
 }
 
 #[test]
-fn svc_update_not_found_when_no_schedule_and_id_missing() {
+fn svc_update_not_found_when_id_missing() {
     let _home = TempHome::set();
-    // Covers L359 error arm: `lock.get(id).ok_or(AppError::NotFound)?` fires when the
-    // routine does not exist in the store and no new schedule is provided.
+    // `svc_update` looks the id up once (to compute `old_slug`) while holding the store's
+    // lock for the rest of the function, so a missing id can only ever fail at that single,
+    // first lookup — regardless of whether a new schedule is supplied. This one test covers
+    // both request shapes; the later `lock.get`/`lock.get_mut` calls can no longer fail on a
+    // missing id, so they use `.expect(..)` instead of a second/third `NotFound` arm.
     let store = new_store(); // empty store
     with_empty_path(|| {
-        let result = svc_update(
-            &store,
-            "nonexistent-id",
-            UpdateRoutineRequest {
-                schedule: None,
-                ..empty_update_request()
-            },
-        );
-        assert!(matches!(result, Err(AppError::NotFound)));
-    });
-}
-
-#[test]
-fn svc_update_not_found_when_schedule_provided_and_id_missing() {
-    let _home = TempHome::set();
-    // Covers L371 error arm: `lock.get_mut(id).ok_or(AppError::NotFound)?` fires when
-    // the routine does not exist in the store and a new schedule is provided.
-    let store = new_store(); // empty store
-    with_empty_path(|| {
-        let result = svc_update(
-            &store,
-            "nonexistent-id",
-            UpdateRoutineRequest {
-                schedule: Some("@daily".into()),
-                ..empty_update_request()
-            },
-        );
-        assert!(matches!(result, Err(AppError::NotFound)));
+        for schedule in [None, Some("@daily".to_string())] {
+            let result = svc_update(
+                &store,
+                "nonexistent-id",
+                UpdateRoutineRequest {
+                    schedule,
+                    ..empty_update_request()
+                },
+            );
+            assert!(matches!(result, Err(AppError::NotFound)));
+        }
     });
 }
 

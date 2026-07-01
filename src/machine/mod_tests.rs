@@ -241,7 +241,7 @@ fn resolve_prefers_env_over_file() {
 // ─── referenced_machines ───────────────────────────────────────────────────
 
 #[test]
-fn referenced_machines_unions_routines_and_jobs() {
+fn referenced_machines_unions_routines() {
     let home = temp_home("referenced");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
 
@@ -265,22 +265,8 @@ fn referenced_machines_unions_routines_and_jobs() {
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
 
-    let job = crate::cron_jobs::CronJob {
-        id: "j1".to_string(),
-        schedule: "0 9 * * *".to_string(),
-        handler: "h".to_string(),
-        metadata: serde_json::json!({}),
-        machines: vec!["server".to_string(), "work".to_string()],
-        enabled: true,
-        source: "managed".to_string(),
-        created_at: 0,
-        updated_at: 0,
-        last_manual_trigger_at: None,
-    };
-    crate::storage::write_job(&job).expect("write job");
-
     let names = referenced_machines();
-    let expected: std::collections::BTreeSet<String> = ["laptop", "server", "work"]
+    let expected: std::collections::BTreeSet<String> = ["laptop", "server"]
         .iter()
         .map(ToString::to_string)
         .collect();

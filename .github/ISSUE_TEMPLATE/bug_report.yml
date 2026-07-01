@@ -23,7 +23,7 @@ body:
     id: repro
     attributes:
       label: Steps to reproduce
-      description: The exact commands / API calls (and routine or cron-job config) that trigger the bug.
+      description: The exact commands / API calls (and routine config) that trigger the bug.
       placeholder: |
         1. moadim install
         2. curl -X POST http://127.0.0.1:5784/api/v1/routines -d '{...}'

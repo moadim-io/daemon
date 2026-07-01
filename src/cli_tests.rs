@@ -304,8 +304,8 @@ fn data_keywords_route_to_data_command_with_full_argv() {
     // The keyword itself with no further args still routes to the data dispatcher (which then
     // surfaces clap's usage error), rather than the lifecycle parser.
     assert_eq!(
-        parse(argv(&["cron-jobs"])),
-        Command::Data(argv(&["cron-jobs"]))
+        parse(argv(&["routines"])),
+        Command::Data(argv(&["routines"]))
     );
 }
 

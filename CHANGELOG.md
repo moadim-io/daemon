@@ -42,6 +42,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
+  server answers or `SECS` elapse (default 30) instead of checking once, so a
+  launch script can block on startup (`moadim && moadim status --wait`) rather
+  than sleeping a fixed guess before probing. Exits `0` once reachable and the
+  existing `3` on timeout, matching the `status`/`cleanup`/`stop` exit-code
+  contract.
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

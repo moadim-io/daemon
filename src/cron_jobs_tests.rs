@@ -411,8 +411,13 @@ fn svc_trigger_persists_last_manual_trigger_at() {
 
     let triggered = svc_trigger(&store, &id).unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());
+    // The handler ("h") does not exist, so capture happens synchronously inline (no background
+    // thread, see `runs::spawn_capture_and_append`) and a run record is already on disk here.
+    let records = crate::runs::load_runs(&id).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].exit_code, None);
 
-    crate::storage::remove_job_dir(&id).unwrap();
+    let _ = crate::storage::remove_job_dir(&id);
 }
 
 #[test]
@@ -769,7 +774,13 @@ fn svc_trigger_logs_when_handler_spawn_fails() {
     let triggered = svc_trigger(&store, &id).expect("trigger succeeds despite spawn failure");
     assert!(triggered.last_manual_trigger_at.is_some());
 
-    crate::storage::remove_job_dir(&id).unwrap();
+    // The background capture thread also persists a run record for the spawn failure
+    // (exit_code: None); wait for it so cleanup below does not race the write.
+    let records = wait_for_run_record(&id, 50);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].exit_code, None);
+
+    let _ = crate::storage::remove_job_dir(&id);
     let _ = std::fs::remove_file(&handler_path);
 }
 
@@ -808,8 +819,30 @@ fn svc_trigger_spawns_existing_handler_script() {
     let triggered = svc_trigger(&store, &id).unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());
 
-    crate::storage::remove_job_dir(&id).unwrap();
+    // Wait for the background capture thread to persist the run record before cleanup runs,
+    // so the two never race over the job directory.
+    let records = wait_for_run_record(&id, 50);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].exit_code, Some(0));
+    assert_eq!(records[0].trigger, crate::runs::RunTrigger::Manual);
+
+    let _ = crate::storage::remove_job_dir(&id);
     let _ = std::fs::remove_file(&handler_path);
+}
+
+/// Poll `crate::runs::load_runs(id)` until it returns at least one record or `tries` polls have
+/// elapsed (20ms apart), so a test can deterministically wait for `svc_trigger`'s background
+/// capture thread to finish writing `runs.jsonl` before touching the job directory itself.
+fn wait_for_run_record(id: &str, tries: u32) -> Vec<crate::runs::RunRecord> {
+    for _ in 0..tries {
+        if let Ok(records) = crate::runs::load_runs(id) {
+            if !records.is_empty() {
+                return records;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    crate::runs::load_runs(id).unwrap_or_default()
 }
 
 #[tokio::test]

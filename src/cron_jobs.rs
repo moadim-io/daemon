@@ -366,8 +366,9 @@ pub fn svc_delete(
     Ok(CronJobResponse::from_job(job, handlers))
 }
 
-/// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk,
-/// then spawn the handler script from the handlers directory if it exists.
+/// Record a manual trigger for `id`, updating `last_manual_trigger_at` in-store and on disk, then
+/// run the handler script from the handlers directory (if it exists), capturing a [`crate::runs::RunRecord`]
+/// of the execution.
 pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let mut lock = store.lock_recover();
     let job = lock.get_mut(id).ok_or(AppError::NotFound)?;
@@ -375,16 +376,20 @@ pub fn svc_trigger(store: &CronStore, id: &str) -> Result<CronJob, AppError> {
     let job = job.clone();
     drop(lock);
     write_job(&job).map_err(|_| AppError::Internal)?;
-    let handler_path = crate::paths::handlers_dir().join(&job.handler);
-    if handler_path.exists() {
-        // Reap the handler in the background so a finished handler does not linger as a
-        // zombie for the daemon's lifetime (the trigger stays non-blocking).
-        let command = std::process::Command::new(&handler_path);
-        crate::utils::process::spawn_and_reap(command, &format!("handler {handler_path:?}"));
-    } else {
-        log::warn!("trigger: handler script not found at {handler_path:?}");
-    }
+    // Captures output and appends a run record on a background thread so the trigger stays
+    // non-blocking, mirroring the previous fire-and-forget `spawn_and_reap` behavior.
+    crate::runs::spawn_capture_and_append(job.clone(), crate::runs::RunTrigger::Manual);
     Ok(job)
+}
+
+/// Return job `id`'s run history, most-recent first, or `NotFound` if no such job exists. Shared
+/// by the REST `get_runs` handler and the `cron_job_runs` MCP tool so both surfaces read run
+/// history identically. Mirrors [`svc_logs`]'s existence check and `Internal`-on-I/O-error mapping.
+pub fn svc_runs(store: &CronStore, id: &str) -> Result<Vec<crate::runs::RunRecord>, AppError> {
+    if !store.lock_recover().contains_key(id) {
+        return Err(AppError::NotFound);
+    }
+    crate::runs::load_runs(id).map_err(|_| AppError::Internal)
 }
 
 // --- Axum HTTP handlers ---
@@ -501,6 +506,17 @@ pub async fn get_logs(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_logs(&store, &id)
+}
+
+/// `GET /cron-jobs/{id}/runs` — return up to 100 most-recent run records, newest first.
+#[utoipa::path(get, path = "/cron-jobs/{id}/runs",
+    params(("id" = String, Path, description = "Cron job UUID")),
+    responses((status = 200, body = Vec<crate::runs::RunRecord>), (status = 404, description = "Not found")))]
+pub async fn get_runs(
+    State(store): State<CronStore>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<crate::runs::RunRecord>>, AppError> {
+    Ok(Json(svc_runs(&store, &id)?))
 }
 
 #[cfg(test)]

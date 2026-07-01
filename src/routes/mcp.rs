@@ -399,6 +399,20 @@ impl MoadimMcp {
         })
     }
 
+    /// Return a cron job's run history (most-recent first), or an error if the job does not exist.
+    #[tool(
+        description = "Get a cron job's run history by ID: up to 100 most-recent runs, newest first, each with timing, exit code, trigger type, and captured stdout/stderr"
+    )]
+    fn cron_job_runs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match cron_jobs::svc_runs(&self.store, &id) {
+            Ok(runs) => ok(serde_json::json!({ "runs": runs })),
+            Err(error) => err(error),
+        })
+    }
+
     /// Return the newest run log for a routine, or an error if the routine does not exist.
     #[tool(description = "Get a routine's newest run log by ID")]
     fn routine_logs(

@@ -33,6 +33,8 @@ mod routes;
 mod routine_storage;
 /// Routine (agent-driven job) data model, service layer, and handlers.
 mod routines;
+/// Per-run execution records for cron jobs: capture, persistence, and JSON model.
+mod runs;
 /// `moadim install` / `uninstall`: register the daemon as an OS service.
 mod service;
 /// TOML-backed job persistence.

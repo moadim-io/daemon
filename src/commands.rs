@@ -28,7 +28,7 @@ struct DataCli {
 /// The data subcommand groups: cron jobs, routines, agents, and echo.
 #[derive(Subcommand)]
 enum DataCommand {
-    /// Manage cron jobs (create/list/get/update/replace/delete/trigger/logs).
+    /// Manage cron jobs (create/list/get/update/replace/delete/trigger/logs/runs).
     #[command(subcommand, visible_alias = "cron")]
     CronJobs(CronCmd),
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
@@ -128,6 +128,11 @@ enum CronCmd {
     /// Print a cron job's log file.
     Logs {
         /// UUID of the cron job whose logs to print.
+        id: String,
+    },
+    /// Print a cron job's run history (up to 100 most-recent runs, newest first).
+    Runs {
+        /// UUID of the cron job whose run history to print.
         id: String,
     },
 }
@@ -368,6 +373,7 @@ fn dispatch_cron(cmd: CronCmd) -> i32 {
         CronCmd::Delete { id } => request("DELETE", &cron_path(&id), None),
         CronCmd::Trigger { id } => request("POST", &format!("{}/trigger", cron_path(&id)), None),
         CronCmd::Logs { id } => request("GET", &format!("{}/logs", cron_path(&id)), None),
+        CronCmd::Runs { id } => request("GET", &format!("{}/runs", cron_path(&id)), None),
     }
 }
 

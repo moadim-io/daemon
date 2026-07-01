@@ -104,6 +104,13 @@ pub fn job_log_path(id: &str) -> PathBuf {
     job_dir(id).join("job.local.log")
 }
 
+/// Returns the path to `{jobs_dir}/{id}/runs.jsonl`, the newline-delimited JSON run-history file
+/// written by [`crate::runs::append_run`].
+#[must_use]
+pub fn job_runs_path(id: &str) -> PathBuf {
+    job_dir(id).join("runs.jsonl")
+}
+
 // ─── Routines ────────────────────────────────────────────────────────────────
 
 /// Returns the path to `{config_dir}/routines/` (default `~/.config/moadim/routines/`).

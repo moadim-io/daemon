@@ -122,7 +122,9 @@ pub fn write_job(job: &CronJob) -> std::io::Result<()> {
 
     let gitignore = job_gitignore_path(&job.id);
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
+        // `*.jsonl` keeps the per-run `runs.jsonl` history (see `crate::runs`) out of version
+        // control, alongside the other runtime-only files below.
+        std::fs::write(&gitignore, "*.local.*\n*.log\n*.jsonl\nrun.sh\n")?;
     }
 
     let toml_job = JobToml {

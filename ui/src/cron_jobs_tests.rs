@@ -623,3 +623,58 @@ fn group_jobs_groups_sorted_alphabetically() {
     let labels: Vec<&str> = groups.iter().map(|(l, _)| l.as_str()).collect();
     assert_eq!(labels, ["alpha", "middle", "zebra"]);
 }
+
+// ─── Runs panel helpers ─────────────────────────────────────────────────────
+
+#[test]
+fn fmt_run_duration_sub_second() {
+    assert_eq!(fmt_run_duration(0), "0ms");
+    assert_eq!(fmt_run_duration(340), "340ms");
+    assert_eq!(fmt_run_duration(999), "999ms");
+}
+
+#[test]
+fn fmt_run_duration_seconds() {
+    assert_eq!(fmt_run_duration(1_000), "1.0s");
+    assert_eq!(fmt_run_duration(1_200), "1.2s");
+    assert_eq!(fmt_run_duration(59_999), "60.0s");
+}
+
+#[test]
+fn fmt_run_duration_minutes() {
+    assert_eq!(fmt_run_duration(60_000), "1m 00s");
+    assert_eq!(fmt_run_duration(65_000), "1m 05s");
+    assert_eq!(fmt_run_duration(3_661_000), "61m 01s");
+}
+
+#[test]
+fn run_badge_ok_for_zero_exit() {
+    let (label, class) = run_badge(Some(0));
+    assert_eq!(label, "OK");
+    assert_eq!(class, "run-badge-ok");
+}
+
+#[test]
+fn run_badge_exit_n_for_nonzero_exit() {
+    let (label, class) = run_badge(Some(7));
+    assert_eq!(label, "EXIT 7");
+    assert_eq!(class, "run-badge-err");
+}
+
+#[test]
+fn run_badge_failed_for_no_exit_code() {
+    let (label, class) = run_badge(None);
+    assert_eq!(label, "FAILED");
+    assert_eq!(class, "run-badge-failed");
+}
+
+#[test]
+fn tab_class_reflects_active_state() {
+    assert_eq!(tab_class(true), "logs-tab active");
+    assert_eq!(tab_class(false), "logs-tab");
+}
+
+#[test]
+fn logs_tab_defaults_to_runs() {
+    assert_eq!(LogsTab::default(), LogsTab::Runs);
+}

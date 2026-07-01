@@ -36,6 +36,23 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Per-run history for cron jobs.** Every manual trigger of a managed cron job
+  (REST `POST /cron-jobs/{id}/trigger`, the MCP `trigger_cron_job` tool, or the
+  UI's ▶ button) now captures a `RunRecord` — run ID, start/end timestamps,
+  duration, process exit code (`null` if the handler couldn't be spawned),
+  trigger type, and up to 10 KB each of captured stdout/stderr — persisted to
+  `~/.config/moadim/jobs/{id}/runs.jsonl` (newest-last, capped at 100 per job).
+  New `GET /cron-jobs/{id}/runs` REST route, `cron_job_runs` MCP tool, and
+  `moadim cron-jobs runs <id>` CLI command return up to 100 most-recent runs,
+  newest first. The cron-jobs LOGS page now opens on a new **RUNS** tab — a
+  table of index, relative start time, duration, an OK/EXIT N/FAILED badge, and
+  trigger type, each row expandable to reveal the captured stdout/stderr — with
+  the existing raw `job.log` viewer moved to a second **LOG** tab. Scheduled
+  (OS-cron-fired) runs are not yet captured: the crontab invokes a managed
+  job's handler directly, bypassing the daemon process, so there is no
+  in-process hook to observe them today; the `scheduled` trigger type and all
+  storage/REST/MCP/UI surfaces are wired up so that capture can land later
+  without further schema changes. (#23)
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

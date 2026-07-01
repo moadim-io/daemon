@@ -295,6 +295,44 @@
         }
       }
     },
+    "/cron-jobs/{id}/runs": {
+      "get": {
+        "tags": [
+          "crate::cron_jobs"
+        ],
+        "summary": "`GET /cron-jobs/{id}/runs` — return up to 100 most-recent run records, newest first.",
+        "operationId": "get_runs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Cron job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunRecord"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/cron-jobs/{id}/trigger": {
       "post": {
         "tags": [
@@ -1587,6 +1625,76 @@
           "updated",
           "title",
           "repository"
+        ]
+      },
+      "RunRecord": {
+        "type": "object",
+        "description": "A single recorded execution of a cron job's handler.",
+        "required": [
+          "id",
+          "job_id",
+          "started_at",
+          "finished_at",
+          "duration_ms",
+          "trigger",
+          "stdout",
+          "stderr"
+        ],
+        "properties": {
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Wall-clock duration of the run, in milliseconds.",
+            "minimum": 0
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Process exit code, or `None` if the handler could not be spawned."
+          },
+          "finished_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the run finished.",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique identifier (UUID v4) for this run."
+          },
+          "job_id": {
+            "type": "string",
+            "description": "ID of the cron job this run belongs to."
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the run started.",
+            "minimum": 0
+          },
+          "stderr": {
+            "type": "string",
+            "description": "Captured standard error, truncated to [`MAX_OUTPUT_BYTES`]."
+          },
+          "stdout": {
+            "type": "string",
+            "description": "Captured standard output, truncated to [`MAX_OUTPUT_BYTES`]."
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/RunTrigger",
+            "description": "How the run was initiated."
+          }
+        }
+      },
+      "RunTrigger": {
+        "type": "string",
+        "description": "How a run was initiated.",
+        "enum": [
+          "scheduled",
+          "manual"
         ]
       },
       "SetMachineRequest": {

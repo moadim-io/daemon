@@ -174,7 +174,7 @@ pub fn print_help() {
          \x20   version, -V            show the version\n\
          \n\
          DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
-         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
+         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs|runs> ...\n\
          \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
          \x20   schedule  trigger <id> trigger a routine or cron job by ID (used by run.sh wrappers)\n\
          \x20   agents                 list available agent keys\n\

@@ -994,6 +994,86 @@
     .act-btn.logs { color: var(--text-ghost); }
     .act-btn.logs:hover { color: var(--text-mid); border-color: var(--border-hi); }
 
+    /* ── Logs page: RUNS / LOG tabs ── */
+    .logs-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logs-tab {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      padding: 7px 16px;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--text-ghost);
+      cursor: pointer;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .logs-tab:hover { color: var(--text-mid); }
+    .logs-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Runs panel ── */
+    .runs-table-wrap {
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .runs-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+    .runs-table thead th {
+      position: sticky;
+      top: 0;
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      color: var(--text-ghost);
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .runs-table tbody tr.run-row { cursor: pointer; transition: background 0.1s; }
+    .runs-table tbody tr.run-row:hover { background: var(--border); }
+    .runs-table tbody tr.run-row.open { background: var(--border); }
+    .runs-table td { padding: 8px 12px; color: var(--text-mid); border-bottom: 1px solid var(--border); }
+
+    .run-badge {
+      display: inline-block;
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      padding: 2px 7px;
+      border: 1px solid;
+    }
+    .run-badge-ok { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+    .run-badge-err { color: var(--red); border-color: var(--red); background: var(--red-dim); }
+    .run-badge-failed { color: var(--text-ghost); border-color: var(--border-hi); background: transparent; }
+
+    .run-detail-row td { background: var(--bg); padding: 0; }
+    .run-detail {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+    .run-detail-block { background: var(--bg-2); padding: 10px 14px; }
+    .run-detail-label { font-size: 9px; letter-spacing: 0.12em; color: var(--text-ghost); margin-bottom: 6px; }
+    .run-detail-pre {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--text-mid);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
     /* ── Schedule fire preview ── */
     .sched-preview-btn {
       display: inline-block;

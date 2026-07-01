@@ -839,6 +839,91 @@ async fn router_get_logs_returns_file_content() {
         .unwrap();
 }
 
+// ── runs endpoint ──────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn router_get_runs_nonexistent_returns_404() {
+    let resp = build_app(new_store(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/cron-jobs/no-such-id/runs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn router_get_runs_returns_records_newest_first() {
+    let store = new_store();
+    let resp = build_app(store.clone(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/cron-jobs")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"schedule":"@daily","handler":"runs-h"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    let first = crate::runs::RunRecord {
+        id: "run-1".to_string(),
+        job_id: id.clone(),
+        started_at: 1,
+        finished_at: 2,
+        duration_ms: 1_000,
+        exit_code: Some(0),
+        trigger: crate::runs::RunTrigger::Manual,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let second = crate::runs::RunRecord {
+        id: "run-2".to_string(),
+        ..first.clone()
+    };
+    crate::runs::append_run(&id, &first).unwrap();
+    crate::runs::append_run(&id, &second).unwrap();
+
+    let resp = build_app(store.clone(), crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/cron-jobs/{id}/runs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let runs: Vec<crate::runs::RunRecord> = serde_json::from_slice(&body).unwrap();
+    assert_eq!(runs.len(), 2);
+    // Newest first.
+    assert_eq!(runs[0].id, "run-2");
+    assert_eq!(runs[1].id, "run-1");
+
+    let _ = build_app(store, crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/cron-jobs/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+}
+
 // ── routines CRUD lifecycle (covers all routine HTTP handlers) ────────────────
 
 #[tokio::test]

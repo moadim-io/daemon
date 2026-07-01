@@ -261,7 +261,12 @@ fn trigger_cron_job_tool_success() {
         .trigger_cron_job(Parameters(IdInput { id: id.clone() }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    crate::storage::remove_job_dir(&id).unwrap();
+    // The handler ("h") does not exist, so capture happens synchronously inline (no background
+    // thread, see `runs::spawn_capture_and_append`) and a run record is already on disk here.
+    let records = crate::runs::load_runs(&id).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].exit_code, None);
+    let _ = crate::storage::remove_job_dir(&id);
 }
 
 #[test]
@@ -599,6 +604,56 @@ fn cron_job_logs_tool_not_found_is_error() {
     let handler = make_handler();
     let result = handler
         .cron_job_logs(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn cron_job_runs_tool_returns_runs_for_existing_job() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let store = crate::cron_jobs::new_store();
+    let created = crate::cron_jobs::svc_create(
+        &store,
+        &new_registry(),
+        crate::cron_jobs::CreateRequest {
+            schedule: "@daily".into(),
+            handler: "h".into(),
+            metadata: serde_json::Value::Null,
+            machines: vec![crate::machine::current_machine()],
+            enabled: true,
+        },
+    )
+    .unwrap();
+    let id = created.job.id.clone();
+    let handler = MoadimMcp::new(
+        store,
+        new_registry(),
+        crate::routines::new_store(),
+        0,
+        test_shutdown(),
+    );
+    let result = handler
+        .cron_job_runs(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    // No trigger has run yet, so the run history is empty (but the key is present).
+    assert_eq!(val["runs"], serde_json::json!([]));
+    let _ = crate::storage::remove_job_dir(&id);
+}
+
+#[test]
+fn cron_job_runs_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .cron_job_runs(Parameters(IdInput {
             id: "no-such".into(),
         }))
         .unwrap();

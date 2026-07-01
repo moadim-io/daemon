@@ -268,6 +268,7 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["cron-jobs", "delete", "abc"],
         &["cron-jobs", "trigger", "abc"],
         &["cron-jobs", "logs", "abc"],
+        &["cron-jobs", "runs", "abc"],
         // routines
         &[
             "routines",

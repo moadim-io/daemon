@@ -79,6 +79,22 @@ pub struct UpdateRequest {
     pub enabled: Option<bool>,
 }
 
+/// A single recorded execution of a cron job's handler, as returned by `GET
+/// /cron-jobs/{id}/runs`. Mirrors the server's `RunRecord` (`src/runs.rs`).
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RunRecord {
+    pub id: String,
+    pub job_id: String,
+    pub started_at: u64,
+    pub finished_at: u64,
+    pub duration_ms: u64,
+    pub exit_code: Option<i32>,
+    /// `"scheduled"` or `"manual"`.
+    pub trigger: String,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 // ─── Faceted filter ─────────────────────────────────────────────────────────
 //
 // Pure, host-testable filtering of the loaded jobs. The view binds a search box,
@@ -493,6 +509,19 @@ async fn api_logs(id: &str) -> Result<String, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.text().await.map_err(|e| e.to_string())
+}
+
+async fn api_runs(id: &str) -> Result<Vec<RunRecord>, String> {
+    let resp = Request::get(&format!("/api/v1/cron-jobs/{id}/runs"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<RunRecord>>()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -2599,6 +2628,15 @@ fn cron_job_calendar(props: &CalendarJobProps) -> Html {
 
 // ─── Logs page ────────────────────────────────────────────────────────────────
 
+/// Which sub-view the logs page shows. RUNS (per-execution history) is the default; LOG is the
+/// raw append-only `job.log` viewer that predates the RUNS tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LogsTab {
+    #[default]
+    Runs,
+    Log,
+}
+
 #[derive(Properties, PartialEq)]
 pub struct LogsPageProps {
     pub job_id: String,
@@ -2608,30 +2646,26 @@ pub struct LogsPageProps {
 
 #[function_component(LogsPage)]
 pub fn logs_page(props: &LogsPageProps) -> Html {
+    let tab = use_state(LogsTab::default);
     let content: UseStateHandle<Option<String>> = use_state(|| None);
     let loading = use_state(|| true);
     let err: UseStateHandle<Option<String>> = use_state(|| None);
+    let runs: UseStateHandle<Option<Vec<RunRecord>>> = use_state(|| None);
+    let runs_loading = use_state(|| true);
+    let runs_err: UseStateHandle<Option<String>> = use_state(|| None);
 
     {
         let id = props.job_id.clone();
         let content = content.clone();
         let loading = loading.clone();
         let err = err.clone();
+        let runs = runs.clone();
+        let runs_loading = runs_loading.clone();
+        let runs_err = runs_err.clone();
         use_effect_with(id.clone(), move |id| {
             let id = id.clone();
-            let content = content.clone();
-            let loading = loading.clone();
-            let err = err.clone();
-            spawn_local(async move {
-                match api_logs(&id).await {
-                    Ok(text) => {
-                        content.set(Some(text));
-                        err.set(None);
-                    }
-                    Err(e) => err.set(Some(e)),
-                }
-                loading.set(false);
-            });
+            fetch_logs(id.clone(), content, loading, err);
+            fetch_runs(id, runs, runs_loading, runs_err);
         });
     }
 
@@ -2645,23 +2679,41 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
         let content = content.clone();
         let loading = loading.clone();
         let err = err.clone();
+        let runs = runs.clone();
+        let runs_loading = runs_loading.clone();
+        let runs_err = runs_err.clone();
         Callback::from(move |_: MouseEvent| {
-            let id = id.clone();
-            let content = content.clone();
-            let loading = loading.clone();
-            let err = err.clone();
             loading.set(true);
-            spawn_local(async move {
-                match api_logs(&id).await {
-                    Ok(text) => {
-                        content.set(Some(text));
-                        err.set(None);
-                    }
-                    Err(e) => err.set(Some(e)),
-                }
-                loading.set(false);
-            });
+            runs_loading.set(true);
+            fetch_logs(id.clone(), content.clone(), loading.clone(), err.clone());
+            fetch_runs(
+                id.clone(),
+                runs.clone(),
+                runs_loading.clone(),
+                runs_err.clone(),
+            );
         })
+    };
+
+    let on_tab_runs = {
+        let tab = tab.clone();
+        Callback::from(move |_: MouseEvent| tab.set(LogsTab::Runs))
+    };
+    let on_tab_log = {
+        let tab = tab.clone();
+        Callback::from(move |_: MouseEvent| tab.set(LogsTab::Log))
+    };
+    let runs_tab_class = tab_class(*tab == LogsTab::Runs);
+    let log_tab_class = tab_class(*tab == LogsTab::Log);
+
+    let body = if *tab == LogsTab::Runs {
+        html! {
+            <RunsPanel runs={(*runs).clone()} loading={*runs_loading} err={(*runs_err).clone()} />
+        }
+    } else {
+        html! {
+            <LogViewer content={(*content).clone()} loading={*loading} err={(*err).clone()} />
+        }
     };
 
     html! {
@@ -2671,12 +2723,196 @@ pub fn logs_page(props: &LogsPageProps) -> Html {
                 <div class="page-title">{format!("LOGS / {}", props.handler)}</div>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
-            <LogViewer
-                content={(*content).clone()}
-                loading={*loading}
-                err={(*err).clone()}
-            />
+            <div class="logs-tabs" role="tablist">
+                <button class={runs_tab_class} role="tab" aria-selected={(*tab == LogsTab::Runs).to_string()} onclick={on_tab_runs}>{"RUNS"}</button>
+                <button class={log_tab_class} role="tab" aria-selected={(*tab == LogsTab::Log).to_string()} onclick={on_tab_log}>{"LOG"}</button>
+            </div>
+            {body}
         </main>
+    }
+}
+
+/// CSS class for a logs-page tab button, highlighted when `active`.
+fn tab_class(active: bool) -> &'static str {
+    if active {
+        "logs-tab active"
+    } else {
+        "logs-tab"
+    }
+}
+
+/// Fetch job `id`'s raw log text and populate `content`/`loading`/`err`.
+fn fetch_logs(
+    id: String,
+    content: UseStateHandle<Option<String>>,
+    loading: UseStateHandle<bool>,
+    err: UseStateHandle<Option<String>>,
+) {
+    spawn_local(async move {
+        match api_logs(&id).await {
+            Ok(text) => {
+                content.set(Some(text));
+                err.set(None);
+            }
+            Err(e) => err.set(Some(e)),
+        }
+        loading.set(false);
+    });
+}
+
+/// Fetch job `id`'s run history and populate `runs`/`loading`/`err`.
+fn fetch_runs(
+    id: String,
+    runs: UseStateHandle<Option<Vec<RunRecord>>>,
+    loading: UseStateHandle<bool>,
+    err: UseStateHandle<Option<String>>,
+) {
+    spawn_local(async move {
+        match api_runs(&id).await {
+            Ok(list) => {
+                runs.set(Some(list));
+                err.set(None);
+            }
+            Err(e) => err.set(Some(e)),
+        }
+        loading.set(false);
+    });
+}
+
+// ─── Runs panel ───────────────────────────────────────────────────────────────
+
+/// Format a run's duration in milliseconds as a short human string: `"340ms"`, `"1.2s"`, or
+/// `"1m 05s"` past a minute.
+#[must_use]
+pub fn fmt_run_duration(duration_ms: u64) -> String {
+    if duration_ms < 1_000 {
+        format!("{duration_ms}ms")
+    } else if duration_ms < 60_000 {
+        format!("{:.1}s", duration_ms as f64 / 1000.0)
+    } else {
+        let total_secs = duration_ms / 1000;
+        format!("{}m {:02}s", total_secs / 60, total_secs % 60)
+    }
+}
+
+/// Classify a run's exit code into a badge label and CSS modifier class: `OK` (green) for `0`,
+/// `EXIT N` (red) for a non-zero code, `FAILED` (gray) when the handler could not be spawned.
+#[must_use]
+pub fn run_badge(exit_code: Option<i32>) -> (String, &'static str) {
+    match exit_code {
+        None => ("FAILED".to_string(), "run-badge-failed"),
+        Some(0) => ("OK".to_string(), "run-badge-ok"),
+        Some(code) => (format!("EXIT {code}"), "run-badge-err"),
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct RunsPanelProps {
+    pub runs: Option<Vec<RunRecord>>,
+    pub loading: bool,
+    pub err: Option<String>,
+}
+
+#[function_component(RunsPanel)]
+pub fn runs_panel(props: &RunsPanelProps) -> Html {
+    if props.loading {
+        return html! { <div class="empty"><div class="spinner"></div></div> };
+    }
+    if let Some(e) = &props.err {
+        return html! { <div class="logs-error">{format!("Error: {e}")}</div> };
+    }
+    let Some(runs) = &props.runs else {
+        return html! {};
+    };
+    if runs.is_empty() {
+        return html! { <div class="logs-empty">{"— no runs yet —"}</div> };
+    }
+    html! {
+        <div class="runs-table-wrap">
+            <table class="runs-table">
+                <thead>
+                    <tr>
+                        <th>{"#"}</th>
+                        <th>{"STARTED"}</th>
+                        <th>{"DURATION"}</th>
+                        <th>{"RESULT"}</th>
+                        <th>{"TRIGGER"}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    { for runs.iter().enumerate().map(|(i, run)| html! {
+                        <RunRow key={run.id.clone()} index={i + 1} run={run.clone()} />
+                    }) }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct RunRowProps {
+    pub index: usize,
+    pub run: RunRecord,
+}
+
+#[function_component(RunRow)]
+pub fn run_row(props: &RunRowProps) -> Html {
+    let expanded = use_state(|| false);
+    let run = &props.run;
+
+    let on_toggle = {
+        let expanded = expanded.clone();
+        Callback::from(move |_: MouseEvent| expanded.set(!*expanded))
+    };
+
+    let (badge_label, badge_cls) = run_badge(run.exit_code);
+    let started = reltime(run.started_at);
+    let duration = fmt_run_duration(run.duration_ms);
+    let trigger = run.trigger.to_uppercase();
+    let row_class = if *expanded { "run-row open" } else { "run-row" };
+
+    let detail = if *expanded {
+        let stdout = if run.stdout.is_empty() {
+            "—".to_string()
+        } else {
+            run.stdout.clone()
+        };
+        let stderr = if run.stderr.is_empty() {
+            "—".to_string()
+        } else {
+            run.stderr.clone()
+        };
+        html! {
+            <tr class="run-detail-row">
+                <td colspan="5">
+                    <div class="run-detail">
+                        <div class="run-detail-block">
+                            <div class="run-detail-label">{"STDOUT"}</div>
+                            <pre class="run-detail-pre">{stdout}</pre>
+                        </div>
+                        <div class="run-detail-block">
+                            <div class="run-detail-label">{"STDERR"}</div>
+                            <pre class="run-detail-pre">{stderr}</pre>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        }
+    } else {
+        html! {}
+    };
+
+    html! {
+        <>
+            <tr class={row_class} onclick={on_toggle}>
+                <td>{props.index}</td>
+                <td>{started}</td>
+                <td>{duration}</td>
+                <td><span class={classes!("run-badge", badge_cls)}>{badge_label}</span></td>
+                <td>{trigger}</td>
+            </tr>
+            {detail}
+        </>
     }
 }
 

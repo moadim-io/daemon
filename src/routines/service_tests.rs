@@ -973,6 +973,69 @@ fn svc_delete_syncs_crontab_on_success() {
 }
 
 #[test]
+fn svc_delete_tombstones_a_builtin_default_so_it_is_not_resurrected() {
+    // #265: deleting a built-in default (title matches DEFAULT_ROUTINES[0]; kept as a literal
+    // here since DEFAULT_ROUTINES is private to the `defaults` submodule) must stick — a later
+    // `ensure_default_routines` (simulating the next startup) must not re-create it.
+    let _home = TempHome::set();
+    let title = "Update moadim cargo package";
+    let slug = slugify(title);
+    let store = new_store();
+    let routine = make_routine("default-del-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("default-del-id".into(), routine);
+
+    with_working_crontab(|| {
+        svc_delete(&store, "default-del-id").unwrap();
+    });
+
+    let restarted_store = new_store();
+    crate::routines::ensure_default_routines(&restarted_store);
+    assert!(
+        !restarted_store
+            .lock()
+            .unwrap()
+            .values()
+            .any(|routine| slugify(&routine.title) == slug),
+        "a deleted built-in default must not be resurrected on the next startup"
+    );
+}
+
+#[test]
+fn svc_create_clears_tombstone_so_a_deliberately_recreated_default_reseeds() {
+    // #265: re-creating a routine under a tombstoned default's title is a deliberate "bring it
+    // back" signal — the next `ensure_default_routines` should treat it as a normal existing
+    // routine again (and, if it's later deleted with no re-create, resume being tombstoned).
+    let _home = TempHome::set();
+    let title = "Update moadim cargo package";
+    let slug = slugify(title);
+    record_removed_default(&slug);
+    assert!(
+        std::fs::read_to_string(crate::paths::removed_default_routines_path())
+            .unwrap()
+            .contains(&slug),
+        "precondition: the tombstone must be recorded before svc_create"
+    );
+
+    let store = new_store();
+    let mut req = valid_create_request();
+    req.title = title.into();
+    with_working_crontab(|| {
+        svc_create(&store, req).unwrap();
+    });
+
+    let tombstones =
+        std::fs::read_to_string(crate::paths::removed_default_routines_path()).unwrap_or_default();
+    assert!(
+        !tombstones.contains(&slug),
+        "svc_create must clear the tombstone for a matching default title"
+    );
+}
+
+#[test]
 fn svc_trigger_warns_when_spawn_fails() {
     let _home = TempHome::set();
     // With `PATH` cleared and an agent config present, `build_routine_command`

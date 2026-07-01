@@ -21,7 +21,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `~/.config/moadim/jobs/` and `~/.config/moadim/handlers/` directories, and
   the job-specific crontab block — has been removed. Routines are unaffected
   and keep their own crontab block, REST routes, MCP tools, and CLI
-  subcommand.
+  subcommand. (#842)
 
 ### Changed
 

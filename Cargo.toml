@@ -45,6 +45,11 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
 gethostname = "1"
 
+# `flock`-based advisory locking for the shared `~/.claude.json` prune (src/utils/claude_json.rs).
+# Unix-only target dependency since the daemon's launch mechanism (tmux sessions) is Unix-only.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [[bin]]
 name = "moadim"
 path = "src/main.rs"

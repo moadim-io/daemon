@@ -27,6 +27,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **Reaped workbenches no longer leak a `~/.claude.json` `projects` entry.** The built-in `claude`
+  agent's `setup` step seeds a per-workbench entry into `~/.claude.json`, keyed by the workbench's
+  absolute (always-unique) path, on every run. Nothing ever pruned it once the workbench was reaped,
+  so the file grew by one dead entry per `claude` run, forever. Cleanup now removes the matching
+  `projects[<workbench>]` entry when it reaps a workbench directory, using the same flock-guarded
+  read -> modify -> atomic-replace pattern the setup step already uses. (#430)
 - **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
   each added a `unused_async = "deny"` entry under `[lints.clippy]` in
   `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't

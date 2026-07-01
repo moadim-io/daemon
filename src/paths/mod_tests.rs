@@ -251,3 +251,24 @@ fn config_dir_nests_moadim_under_config_root() {
     assert!(config_dir().ends_with("moadim"));
     assert_eq!(config_dir().file_name().unwrap(), "moadim");
 }
+
+#[test]
+fn claude_json_path_is_dot_claude_json_under_home() {
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", "/home/u");
+    }
+
+    let path = claude_json_path();
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+
+    assert_eq!(path, Some(std::path::PathBuf::from("/home/u/.claude.json")));
+}

@@ -31,6 +31,7 @@ fn from_routine_populates_derived_fields() {
         schedule: "@daily".into(),
         title: "My Title".into(),
         agent: "claude".into(),
+        model: None,
         prompt: "p".into(),
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],

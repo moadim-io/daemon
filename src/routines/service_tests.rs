@@ -38,6 +38,7 @@ impl Drop for TempHome {
 /// Build a routine with overridable identity, title, timestamps, and repository URL.
 fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: title.to_string(),
@@ -107,6 +108,7 @@ fn svc_list_sorts_by_title_case_insensitively() {
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        model: None,
         schedule: "@daily".into(),
         title: "Valid Title".into(),
         agent: "claude".into(),
@@ -123,6 +125,7 @@ fn valid_create_request() -> CreateRoutineRequest {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        model: None,
         schedule: None,
         title: None,
         agent: None,
@@ -145,6 +148,7 @@ fn svc_create_rejects_blank_title() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             title: "   ".into(),
             ..valid_create_request()
         },
@@ -161,6 +165,7 @@ fn svc_create_rejects_blank_prompt() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             prompt: String::new(),
             ..valid_create_request()
         },
@@ -177,6 +182,7 @@ fn svc_create_rejects_zero_ttl_secs() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             ttl_secs: Some(0),
             ..valid_create_request()
         },
@@ -193,6 +199,7 @@ fn svc_create_rejects_zero_max_runtime_secs() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             max_runtime_secs: Some(0),
             tags: vec![],
             ..valid_create_request()
@@ -209,6 +216,7 @@ fn svc_create_persists_machines() {
     let resp = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             machines: vec!["alpha".into(), "beta".into()],
             ..valid_create_request()
         },
@@ -226,6 +234,7 @@ fn svc_update_sets_machines() {
         &store,
         "upd-machines",
         UpdateRoutineRequest {
+            model: None,
             machines: Some(vec!["server".into()]),
             ..empty_update_request()
         },
@@ -243,6 +252,7 @@ fn svc_update_rejects_blank_title() {
         &store,
         "upd-blank-title",
         UpdateRoutineRequest {
+            model: None,
             title: Some("  ".into()),
             ..empty_update_request()
         },
@@ -259,6 +269,7 @@ fn svc_update_rejects_blank_prompt() {
         &store,
         "upd-blank-prompt",
         UpdateRoutineRequest {
+            model: None,
             prompt: Some("\t\n".into()),
             ..empty_update_request()
         },
@@ -275,6 +286,7 @@ fn svc_update_rejects_zero_durations() {
         &store,
         "upd-zero-secs",
         UpdateRoutineRequest {
+            model: None,
             ttl_secs: Some(0),
             ..empty_update_request()
         },
@@ -284,6 +296,7 @@ fn svc_update_rejects_zero_durations() {
         &store,
         "upd-zero-secs",
         UpdateRoutineRequest {
+            model: None,
             max_runtime_secs: Some(0),
             tags: None,
             ..empty_update_request()
@@ -301,6 +314,7 @@ fn svc_create_rejects_ttl_above_cron_ceiling() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "*/5 * * * *".into(),
             ttl_secs: Some(1800),
             ..valid_create_request()
@@ -317,6 +331,7 @@ fn svc_create_rejects_max_runtime_above_cron_ceiling() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "*/5 * * * *".into(),
             max_runtime_secs: Some(1800),
             ..valid_create_request()
@@ -342,6 +357,7 @@ fn svc_create_accepts_secs_at_cron_ceiling() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "*/5 * * * *".into(),
             // Same slug as the pre-seeded routine.
             title: "  at   ceiling ZZZ ".into(),
@@ -366,6 +382,7 @@ fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
         &store,
         "upd-ttl-ceiling",
         UpdateRoutineRequest {
+            model: None,
             ttl_secs: Some(1800),
             ..empty_update_request()
         },
@@ -393,6 +410,7 @@ fn svc_update_rejects_secs_above_new_schedule_ceiling() {
         &store,
         "upd-new-sched",
         UpdateRoutineRequest {
+            model: None,
             schedule: Some("*/5 * * * *".into()),
             max_runtime_secs: Some(1800),
             ..empty_update_request()
@@ -414,6 +432,7 @@ fn svc_create_rejects_duplicate_slug() {
         let first = svc_create(
             &store,
             CreateRoutineRequest {
+                model: None,
                 schedule: "@daily".into(),
                 title: title.into(),
                 agent: "claude".into(),
@@ -431,6 +450,7 @@ fn svc_create_rejects_duplicate_slug() {
         let conflict = svc_create(
             &store,
             CreateRoutineRequest {
+                model: None,
                 schedule: "@daily".into(),
                 // Different casing/spacing, same slug.
                 title: "  svc create   DUP zzz ".into(),
@@ -464,6 +484,7 @@ fn svc_create_rejects_malformed_agent_config() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Svc Create Malformed ZZZ".into(),
             agent: agent_name.into(),
@@ -496,6 +517,7 @@ fn svc_create_rejects_unreadable_agent_config() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Svc Create Unreadable ZZZ".into(),
             agent: agent_name.into(),
@@ -535,6 +557,7 @@ fn svc_update_rejects_malformed_agent_config() {
         &store,
         "upd-mal-id",
         UpdateRoutineRequest {
+            model: None,
             schedule: None,
             title: None,
             agent: Some(agent_name.into()),
@@ -579,6 +602,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
             &store,
             "other-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 // Rename "other" into the slug already owned by "keep".
                 title: Some(title_keep.into()),
@@ -615,6 +639,7 @@ fn svc_update_sets_ttl_secs() {
             &store,
             "ttl-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 title: None,
                 agent: None,
@@ -652,6 +677,7 @@ fn svc_update_sets_max_runtime_secs() {
             &store,
             "max-runtime-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 title: None,
                 agent: None,
@@ -798,6 +824,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+                model: None,
                 schedule: "@daily".into(),
                 title: title.into(),
                 agent: "claude".into(),
@@ -829,6 +856,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
             &store,
             "upd-sync-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 title: None,
                 agent: None,
@@ -905,6 +933,7 @@ fn svc_create_syncs_crontab_on_success() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+                model: None,
                 schedule: "@daily".into(),
                 title: title.into(),
                 agent: "claude".into(),
@@ -938,6 +967,7 @@ fn svc_update_syncs_crontab_on_success() {
             &store,
             "upd-sync-ok-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 title: None,
                 agent: None,
@@ -1039,6 +1069,7 @@ fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
 /// Build a create request with the given title and an otherwise-valid body.
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        model: None,
         schedule: "@daily".into(),
         title: title.into(),
         agent: "claude".into(),
@@ -1091,6 +1122,7 @@ fn svc_create_rejects_unknown_agent() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Svc Create Unknown Agent ZZZ".into(),
             agent: "no-such-agent-zzz".into(),
@@ -1128,6 +1160,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
             &store,
             "title-guard-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 title: Some(title.into()),
                 agent: None,
@@ -1162,6 +1195,7 @@ fn svc_create_accepts_builtin_agent() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: title.into(),
             agent: "claude".into(),
@@ -1195,6 +1229,7 @@ fn svc_update_rejects_unknown_agent() {
         &store,
         "upd-agent-id",
         UpdateRoutineRequest {
+            model: None,
             schedule: None,
             title: None,
             agent: Some("no-such-agent-zzz".into()),
@@ -1226,6 +1261,7 @@ fn svc_create_rejects_blank_repository_url() {
         let result = svc_create(
             &store,
             CreateRoutineRequest {
+                model: None,
                 schedule: "@daily".into(),
                 title: "Svc Create Blank Repo ZZZ".into(),
                 agent: "claude".into(),
@@ -1256,6 +1292,7 @@ fn svc_create_rejects_blank_repository_branch() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Svc Create Blank Branch ZZZ".into(),
             agent: "claude".into(),
@@ -1286,6 +1323,7 @@ fn svc_create_trims_repository_entries() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: title.into(),
             agent: "claude".into(),
@@ -1324,6 +1362,7 @@ fn svc_update_rejects_blank_repository_url() {
         &store,
         "upd-repo-id",
         UpdateRoutineRequest {
+            model: None,
             schedule: None,
             title: None,
             agent: None,
@@ -1401,6 +1440,7 @@ fn svc_create_rejects_empty_prompt() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Svc Create Empty Prompt ZZZ".into(),
             agent: "claude".into(),
@@ -1425,6 +1465,7 @@ fn svc_create_rejects_whitespace_prompt() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Svc Create Whitespace Prompt ZZZ".into(),
             agent: "claude".into(),
@@ -1459,6 +1500,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
         &store,
         "empty-prompt-id",
         UpdateRoutineRequest {
+            model: None,
             schedule: None,
             title: None,
             agent: None,
@@ -1524,6 +1566,7 @@ fn svc_create_returns_internal_on_write_failure() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             title: title.into(),
             ..valid_create_request()
         },
@@ -1546,6 +1589,7 @@ fn svc_create_rejects_blank_tag() {
         let result = svc_create(
             &store,
             CreateRoutineRequest {
+                model: None,
                 tags: vec![tag.to_string()],
                 ..valid_create_request()
             },
@@ -1572,6 +1616,7 @@ fn svc_update_none_schedule_uses_existing_schedule() {
             &store,
             "upd-none-sched-id",
             UpdateRoutineRequest {
+                model: None,
                 prompt: Some("updated prompt".into()),
                 ..empty_update_request()
             },
@@ -1599,6 +1644,7 @@ fn svc_update_with_explicit_schedule_applies_it() {
             &store,
             "upd-expl-sched-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: Some("@daily".into()),
                 ..empty_update_request()
             },
@@ -1633,6 +1679,7 @@ fn svc_update_returns_internal_on_write_failure() {
         &store,
         "upd-write-fail-id",
         UpdateRoutineRequest {
+            model: None,
             prompt: Some("changed".into()),
             ..empty_update_request()
         },
@@ -1676,6 +1723,7 @@ fn svc_update_returns_internal_on_remove_dir_failure_after_title_change() {
         &store,
         "upd-rm-fail-id",
         UpdateRoutineRequest {
+            model: None,
             title: Some(new_title.into()),
             ..empty_update_request()
         },
@@ -1749,6 +1797,7 @@ fn svc_update_not_found_when_no_schedule_and_id_missing() {
             &store,
             "nonexistent-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: None,
                 ..empty_update_request()
             },
@@ -1768,6 +1817,7 @@ fn svc_update_not_found_when_schedule_provided_and_id_missing() {
             &store,
             "nonexistent-id",
             UpdateRoutineRequest {
+                model: None,
                 schedule: Some("@daily".into()),
                 ..empty_update_request()
             },
@@ -1786,6 +1836,7 @@ fn svc_create_trims_and_stores_tags() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             tags: vec!["  triage  ".into(), "nightly".into()],
             ..create_req_with_title(title)
         },
@@ -1814,6 +1865,7 @@ fn svc_update_rejects_and_sets_tags() {
         &store,
         "upd-tags-id",
         UpdateRoutineRequest {
+            model: None,
             tags: Some(vec![" ".into()]),
             ..empty_update_request()
         },
@@ -1824,12 +1876,81 @@ fn svc_update_rejects_and_sets_tags() {
         &store,
         "upd-tags-id",
         UpdateRoutineRequest {
+            model: None,
             tags: Some(vec!["  ops  ".into()]),
             ..empty_update_request()
         },
     )
     .unwrap();
     assert_eq!(updated.routine.tags, vec!["ops".to_string()]);
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_trims_model_and_blank_normalizes_to_none() {
+    // Covers both arms of `normalize_model` via `svc_create`: surrounding whitespace is
+    // trimmed and stored, while a blank/whitespace-only value is stored as `None`.
+    crate::routines::ensure_default_agents();
+    let title = "Svc Create Model ZZZ";
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        CreateRoutineRequest {
+            model: Some("  claude-sonnet-4-6  ".into()),
+            ..create_req_with_title(title)
+        },
+    )
+    .unwrap();
+    assert_eq!(created.routine.model, Some("claude-sonnet-4-6".to_string()));
+    svc_delete(&store, &created.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+
+    let title2 = "Svc Create Blank Model ZZZ";
+    let created2 = svc_create(
+        &store,
+        CreateRoutineRequest {
+            model: Some("   ".into()),
+            ..create_req_with_title(title2)
+        },
+    )
+    .unwrap();
+    assert_eq!(created2.routine.model, None);
+    svc_delete(&store, &created2.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title2));
+}
+
+#[test]
+fn svc_update_sets_and_clears_model() {
+    // Covers the apply arm of the `model` handling in `svc_update`: a non-blank value is
+    // trimmed and stored, and a subsequent blank value clears it back to `None`.
+    let title = "Svc Update Model ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-model-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-model-id".into(), routine);
+
+    let updated = svc_update(
+        &store,
+        "upd-model-id",
+        UpdateRoutineRequest {
+            model: Some("  claude-opus-4-8  ".into()),
+            ..empty_update_request()
+        },
+    )
+    .unwrap();
+    assert_eq!(updated.routine.model, Some("claude-opus-4-8".to_string()));
+
+    let cleared = svc_update(
+        &store,
+        "upd-model-id",
+        UpdateRoutineRequest {
+            model: Some("  ".into()),
+            ..empty_update_request()
+        },
+    )
+    .unwrap();
+    assert_eq!(cleared.routine.model, None);
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }

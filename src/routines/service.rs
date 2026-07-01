@@ -270,6 +270,20 @@ fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
     Ok(normalized)
 }
 
+/// Normalize an optional model ID: trims it and collapses blank/whitespace-only input to `None`, so
+/// a cleared text field on the create/edit form is stored as "no override" rather than an empty
+/// string.
+fn normalize_model(model: Option<String>) -> Option<String> {
+    model.and_then(|model| {
+        let trimmed = model.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
@@ -310,6 +324,7 @@ pub fn svc_create(
         schedule: normalize_schedule(&req.schedule),
         title: req.title,
         agent: req.agent,
+        model: normalize_model(req.model),
         prompt: req.prompt,
         repositories,
         machines: req.machines,
@@ -403,6 +418,9 @@ pub fn svc_update(
     }
     if let Some(agent) = req.agent {
         routine.agent = agent;
+    }
+    if let Some(model) = req.model {
+        routine.model = normalize_model(Some(model));
     }
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;

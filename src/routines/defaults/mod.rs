@@ -57,6 +57,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         schedule: normalize_schedule(spec.schedule),
         title: spec.title.to_string(),
         agent: spec.agent.to_string(),
+        model: None,
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
         // Self-assign a fresh default to the machine seeding it, so it actually runs out of the box
@@ -97,6 +98,8 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         schedule,
         title: spec.title.to_string(),
         agent: spec.agent.to_string(),
+        // Model is user-owned, like `tags`: never overridden by the spec.
+        model: cur.model.clone(),
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
         // Machine targeting is user-owned, like `enabled`: carry the existing choice across a

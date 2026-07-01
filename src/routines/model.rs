@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::command::slugify;
+use super::flags::list_flags;
 use crate::paths::{agent_toml_path, routine_toml_path};
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
@@ -169,6 +170,9 @@ pub struct RoutineResponse {
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
     pub timezone: Option<String>,
+    /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
+    /// listings can badge it without a separate `list_flags` round-trip per routine.
+    pub flag_count: usize,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -196,18 +200,19 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
+        let slug = slugify(&routine.title);
         let agent_registered = agent_toml_path(&routine.agent).exists();
-        let file_path = routine_toml_path(&slugify(&routine.title))
-            .to_string_lossy()
-            .into_owned();
+        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let flag_count = list_flags(&slug).len();
         Self {
             routine,
             agent_registered,
             file_path,
             schedule_description,
             timezone,
+            flag_count,
         }
     }
 }

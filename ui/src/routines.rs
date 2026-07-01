@@ -79,6 +79,29 @@ pub struct Routine {
     pub file_path: String,
     #[serde(default)]
     pub schedule_description: Option<String>,
+    /// Number of open flags raised against this routine (see [`Flag`]).
+    #[serde(default)]
+    pub flag_count: usize,
+}
+
+/// Whether a flag file is committed to version control or kept machine-local.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagScope {
+    General,
+    Local,
+}
+
+/// A flag raised against a routine (mirrors the server `Flag`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Flag {
+    pub filename: String,
+    #[serde(rename = "type")]
+    pub flag_type: String,
+    pub description: String,
+    pub scope: FlagScope,
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -248,6 +271,29 @@ async fn api_logs(id: &str) -> Result<String, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.text().await.map_err(|e| e.to_string())
+}
+
+async fn api_flags(id: &str) -> Result<Vec<Flag>, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/flags"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<Flag>>().await.map_err(|e| e.to_string())
+}
+
+async fn api_resolve_flag(id: &str, filename: &str) -> Result<(), String> {
+    let resp = Request::delete(&format!("/api/v1/routines/{id}/flags/{filename}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
 }
 
 // ─── Faceted filter ───────────────────────────────────────────────────────────
@@ -625,6 +671,7 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    Flags(String),
     /// Pre-filled create form cloned from an existing routine.
     Clone(Box<Routine>),
 }
@@ -863,6 +910,7 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    GoToFlags(String),
     /// Open the create form pre-filled with a copy of the named routine.
     GoToClone(String),
     OpenEdit(String),
@@ -913,6 +961,7 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToFlags(id) => s.page = RPage::Flags(id),
             RAction::GoToClone(id) => {
                 if let Some(source) = s.routines.iter().find(|x| x.id == id) {
                     s.page = RPage::Clone(Box::new(source.clone()));
@@ -1144,6 +1193,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_logs = {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::GoToLogs(id)))
+    };
+    let on_flags = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToFlags(id)))
     };
     let on_back = {
         let state = state.clone();
@@ -1561,6 +1614,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             .unwrap_or_default();
                         html! { <RoutineLogs id={id} title={title} on_back={on_back} /> }
                     },
+                    RPage::Flags(id) => {
+                        let title = routines.iter()
+                            .find(|r| r.id == id)
+                            .map(|r| r.title.clone())
+                            .unwrap_or_default();
+                        html! { <RoutineFlags id={id} title={title} on_back={on_back} /> }
+                    },
                     RPage::List => html! {
                         <main>
                             <GlobalLockBanner status={lock_status} on_unlock={on_unlock_all} />
@@ -1633,6 +1693,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
+                                            on_flags={on_flags}
                                             on_clear_filters={on_clear_filters}
                                         />
                                     },
@@ -2186,6 +2247,7 @@ pub struct TableProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_flags: Callback<String>,
     pub on_clear_filters: Callback<()>,
 }
 
@@ -2296,6 +2358,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                                         on_toggle={props.on_toggle.clone()}
                                         on_trigger={props.on_trigger.clone()}
                                         on_logs={props.on_logs.clone()}
+                                        on_flags={props.on_flags.clone()}
                                     />
                                 }) }
                             </>
@@ -2349,6 +2412,7 @@ pub struct RowProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_flags: Callback<String>,
 }
 
 #[function_component(RoutineRow)]
@@ -2389,6 +2453,11 @@ pub fn routine_row(props: &RowProps) -> Html {
     };
     let on_logs = {
         let cb = props.on_logs.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_flags = {
+        let cb = props.on_flags.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -2523,6 +2592,12 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
+                    <button class="act-btn flags" title="Open flags" onclick={on_flags}>
+                        {"FLAGS"}
+                        if r.flag_count > 0 {
+                            <span class="flag-badge">{r.flag_count}</span>
+                        }
+                    </button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
                     <button class="act-btn clone" title="Duplicate routine" aria-label="Duplicate routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
@@ -3108,6 +3183,123 @@ pub fn routine_logs(props: &LogsProps) -> Html {
                 loading={*loading}
                 err={(*err).clone()}
             />
+        </main>
+    }
+}
+
+// ─── Flags page ───────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct FlagsProps {
+    pub id: String,
+    pub title: String,
+    pub on_back: Callback<()>,
+}
+
+#[function_component(RoutineFlags)]
+pub fn routine_flags(props: &FlagsProps) -> Html {
+    let flags: UseStateHandle<Vec<Flag>> = use_state(Vec::new);
+    let loading = use_state(|| true);
+    let err: UseStateHandle<Option<String>> = use_state(|| None);
+
+    let load = {
+        let id = props.id.clone();
+        let flags = flags.clone();
+        let loading = loading.clone();
+        let err = err.clone();
+        move || {
+            let id = id.clone();
+            let flags = flags.clone();
+            let loading = loading.clone();
+            let err = err.clone();
+            loading.set(true);
+            spawn_local(async move {
+                match api_flags(&id).await {
+                    Ok(list) => {
+                        flags.set(list);
+                        err.set(None);
+                    }
+                    Err(e) => err.set(Some(e)),
+                }
+                loading.set(false);
+            });
+        }
+    };
+
+    {
+        let load = load.clone();
+        use_effect_with(props.id.clone(), move |_| {
+            load();
+        });
+    }
+
+    let on_back = {
+        let cb = props.on_back.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_refresh = {
+        let load = load.clone();
+        Callback::from(move |_: MouseEvent| load())
+    };
+
+    let body = if *loading {
+        html! { <div class="empty"><div class="spinner"></div></div> }
+    } else if let Some(msg) = (*err).clone() {
+        html! { <div class="logs-error">{msg}</div> }
+    } else if flags.is_empty() {
+        html! {
+            <div class="empty">
+                <div class="empty-icon">{"⚑"}</div>
+                <div class="empty-msg">{"NO OPEN FLAGS"}</div>
+            </div>
+        }
+    } else {
+        let id = props.id.clone();
+        html! {
+            <div class="flags-list">
+                { for flags.iter().map(|flag| {
+                    let on_resolve = {
+                        let id = id.clone();
+                        let filename = flag.filename.clone();
+                        let load = load.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            let id = id.clone();
+                            let filename = filename.clone();
+                            let load = load.clone();
+                            spawn_local(async move {
+                                if api_resolve_flag(&id, &filename).await.is_ok() {
+                                    load();
+                                }
+                            });
+                        })
+                    };
+                    let scope_label = match flag.scope {
+                        FlagScope::General => "general",
+                        FlagScope::Local => "local",
+                    };
+                    html! {
+                        <div class="flag-item" key={flag.filename.clone()}>
+                            <div class="flag-item-hd">
+                                <span class="flag-type">{&flag.flag_type}</span>
+                                <span class="flag-scope">{scope_label}</span>
+                                <button class="btn btn-ghost btn-sm" onclick={on_resolve}>{"RESOLVE"}</button>
+                            </div>
+                            <div class="flag-desc">{&flag.description}</div>
+                        </div>
+                    }
+                }) }
+            </div>
+        }
+    };
+
+    html! {
+        <main class="logs-page">
+            <div class="page-hd">
+                <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
+                <div class="page-title">{format!("FLAGS / {}", props.title)}</div>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
+            </div>
+            {body}
         </main>
     }
 }

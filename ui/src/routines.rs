@@ -48,6 +48,7 @@ pub struct Routine {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub repositories: Vec<Repository>,

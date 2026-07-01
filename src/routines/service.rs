@@ -587,7 +587,7 @@ fn validate_flag_field(field: &str, value: &str) -> Result<(), AppError> {
 }
 
 /// Parse a `scope` string into a [`FlagScope`], returning `400 BadRequest` on unknown values.
-/// Mirrors [`parse_lock_scope`] in `handlers.rs`.
+/// Mirrors `parse_lock_scope` in `handlers.rs`.
 fn parse_flag_scope(scope: &str) -> Result<FlagScope, AppError> {
     match scope {
         "general" => Ok(FlagScope::General),

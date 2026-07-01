@@ -12,7 +12,7 @@
 //! - `service` — store-mutating service functions (list/get/create/update/delete/trigger/logs).
 //! - `cleanup` — auto-removal of finished, expired run workbenches (per-routine TTL).
 //! - `ical` — iCalendar (`.ics`) export of upcoming routine fire times.
-//! - `flags` — agent-raised gap/bug/edge-case notes attached to a routine (see [`flags`]).
+//! - `flags` — agent-raised gap/bug/edge-case notes attached to a routine.
 //! - `handlers` — the Axum HTTP handlers.
 
 mod agents;

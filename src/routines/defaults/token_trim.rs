@@ -70,7 +70,7 @@ calls, same outputs, same decision logic. When in doubt, keep the instruction.
 
 ```bash
 git -C ~/.config/moadim checkout -b token-trim/$(date +%Y%m%d-%H%M)
-# Edit the relevant routine.toml / prompt.md file(s) under ~/.config/moadim/routines/.
+# Edit the relevant <slug>/prompts/prompt.pure.md file(s) under ~/.config/moadim/routines/.
 # Only touch routine prompt files. Do NOT modify moadim daemon config.
 git -C ~/.config/moadim add -A
 git -C ~/.config/moadim commit -m \"routines: trim token cost in <routine-name>\"

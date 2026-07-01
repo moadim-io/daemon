@@ -1,6 +1,6 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
-use crate::paths::{routine_prompt_path, routine_scheduled_state_path};
+use crate::paths::{routine_compiled_prompt_path, routine_scheduled_state_path};
 
 use super::agents::AgentCommand;
 use super::model::Routine;
@@ -29,7 +29,7 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
-/// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
+/// Compose the `prompt.compiled.md` body: a repositories-as-context preamble followed by the prompt.
 ///
 /// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
 /// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
@@ -272,7 +272,9 @@ pub(crate) fn system_prompt_stmts(
 /// command is `;`-joined (no newlines) so it fits one crontab line.
 pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
     let slug = slugify(&routine.title);
-    let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
+    let prompt_path = routine_compiled_prompt_path(&slug)
+        .to_string_lossy()
+        .into_owned();
     let scheduled_state_path = routine_scheduled_state_path(&slug)
         .to_string_lossy()
         .into_owned();

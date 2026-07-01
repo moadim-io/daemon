@@ -444,6 +444,7 @@ fn routine_body_serializes_all_fields() {
             "title".into(),
             "agent".into(),
             "prompt".into(),
+            Some("keep it small".into()),
             Some("[]".into()),
             Some("[\"work\"]".into()),
             Some(30),
@@ -455,6 +456,7 @@ fn routine_body_serializes_all_fields() {
     )
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
+    assert_eq!(value["goal"], Value::String("keep it small".to_string()));
     assert_eq!(value["repositories"], Value::Array(vec![]));
     assert_eq!(
         value["machines"],
@@ -479,6 +481,7 @@ fn routine_body_rejects_bad_repositories() {
             "t".into(),
             "a".into(),
             "p".into(),
+            None,
             Some("{bad".into()),
             None,
             None,
@@ -514,6 +517,7 @@ fn routine_body_rejects_bad_machines() {
             "t".into(),
             "a".into(),
             "p".into(),
+            None,
             None,
             Some("{bad".into()),
             None,

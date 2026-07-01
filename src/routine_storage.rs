@@ -26,6 +26,9 @@ struct RoutineToml {
     agent: Option<String>,
     /// Task prompt.
     prompt: Option<String>,
+    /// Short (≤5 line) goal statement; absent means unset.
+    #[serde(default)]
+    goal: Option<String>,
     /// Context repositories.
     #[serde(default)]
     repositories: Vec<Repository>,
@@ -128,6 +131,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         title,
         agent: toml.agent?,
         prompt: toml.prompt.unwrap_or_default(),
+        goal: toml.goal,
         repositories: toml.repositories,
         machines: toml.machines,
         enabled: toml.enabled.unwrap_or(true),
@@ -170,6 +174,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
         prompt: Some(routine.prompt.clone()),
+        goal: routine.goal.clone(),
         repositories: routine.repositories.clone(),
         machines: routine.machines.clone(),
         enabled: Some(routine.enabled),

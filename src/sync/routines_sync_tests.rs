@@ -10,6 +10,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         title: title.to_string(),
         agent: agent.to_string(),
         prompt: "p".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,

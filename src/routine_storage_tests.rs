@@ -10,6 +10,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "task".to_string(),
+        goal: None,
         repositories: vec![Repository {
             repository: "https://example.com/r.git".to_string(),
             branch: Some("main".to_string()),

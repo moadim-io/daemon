@@ -223,7 +223,21 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+    assert_eq!(
+        parse(argv(&["restart"])),
+        Command::Restart { interactive: false }
+    );
+}
+
+#[test]
+fn restart_command_interactive_flag() {
+    for flag in ["-i", "--interactive"] {
+        assert_eq!(
+            parse(argv(&["restart", flag])),
+            Command::Restart { interactive: true },
+            "flag {flag} should select interactive restart"
+        );
+    }
 }
 
 #[test]

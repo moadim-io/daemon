@@ -1,7 +1,7 @@
 //! Routines tab: list, create, edit, trigger, logs, and delete agent-driven scheduled jobs.
 //!
-//! Mirrors the cron-jobs UI but targets the `/routines` API. A routine launches an AI agent
-//! (claude, codex, …) on a schedule instead of running a handler script.
+//! Targets the `/routines` API. A routine launches an AI agent (claude, codex, …) on a
+//! schedule.
 
 use std::cell::Cell;
 use std::collections::BTreeSet;
@@ -48,6 +48,7 @@ pub struct Routine {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -645,7 +646,7 @@ pub enum RView {
     Day,
 }
 
-/// Column the routine table is sorted by (click-to-sort, matching the cron-jobs table pattern).
+/// Column the routine table is sorted by (click-to-sort).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RCol {
     Title,
@@ -1737,7 +1738,7 @@ pub struct StatsBarProps {
 /// Cross-filterable KPI stat tiles for the Routines page.
 ///
 /// Clicking ENABLED / DISABLED / DUE SOON applies (or clears, if already active)
-/// the matching status facet on the list below, matching the Cron Jobs page pattern.
+/// the matching status facet on the list below.
 #[function_component(RoutineStatsBar)]
 pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);

@@ -1,6 +1,6 @@
 //! Host-side unit tests for the routines faceted filter: the `RoutineStatusFacet`,
 //! `AgentFacet`, `RoutineMachineFacet` codecs and the pure `RoutineFilter` matching
-//! + list helpers. No DOM/wasm dependency (mirrors the `cron_jobs_tests.rs` convention).
+//! + list helpers. No DOM/wasm dependency (mirrors the `schedule_tests.rs` convention).
 
 use super::*;
 use chrono::TimeZone;

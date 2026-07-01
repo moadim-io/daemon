@@ -1045,13 +1045,21 @@ pub fn cron_jobs_page(props: &CronJobsPageProps) -> Html {
 
     // `/` focuses the search box from anywhere on the page (skipped while the
     // user is already typing in a field), matching the GitHub/Slack convention
-    // and complementing the ⌘K command palette.
+    // and complementing the ⌘K command palette. Escape dismisses whichever
+    // cron-job modal/dialog is currently open.
     let search_ref = use_node_ref();
     {
         let search_ref = search_ref.clone();
+        let state = state.clone();
         use_effect_with((), move |_| {
             let on_key =
                 Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if event.key() == "Escape" {
+                        if state.modal != CModal::None {
+                            state.dispatch(CAction::CloseModal);
+                        }
+                        return;
+                    }
                     if event.key() != "/" || event.meta_key() || event.ctrl_key() || event.alt_key()
                     {
                         return;

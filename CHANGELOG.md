@@ -42,6 +42,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
+  rename-machine dialogs, the routine edit/delete-confirm modals, and the
+  cron-job edit/delete-confirm modals now all close on `Esc`, matching the
+  command palette's existing behavior.
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

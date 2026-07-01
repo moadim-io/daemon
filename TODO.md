@@ -12,7 +12,6 @@ This is a list of todos for consumption, in a pr remove the todo you have implem
 - Auto-stamp the release version/date into CHANGELOG.md from the `chore(release)` step so the `## [Unreleased]` section rolls over on tag
 - Add a CI check that the topmost `## [x.y.z]` heading in CHANGELOG.md matches `Cargo.toml`'s version on tag pushes, so a release tag can't ship with a stale changelog version
 - Have a commands folder for all the cli commands, we want to work with colocation of files
-- Dismiss any open UI modal/dialog (edit, delete-confirm, shutdown-confirm) with the Esc key
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
 - Enrich `moadim status --json` with the server's liveness details from `GET /health` (e.g. `uptime_secs`) so a single call returns running-state + age, not just the local PID

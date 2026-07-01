@@ -253,7 +253,7 @@ async fn build_app_serves_root_uncompressed_without_accept_encoding() {
 
 #[tokio::test]
 async fn build_app_serves_root_with_etag() {
-    let app = build_app(new_store(), crate::routines::new_store());
+    let app = build_app(crate::routines::new_store());
     let resp = app
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
@@ -279,7 +279,7 @@ async fn build_app_serves_root_with_etag() {
 async fn build_app_returns_304_when_if_none_match_matches() {
     // Issue #401: a client that already has the current build sends back the ETag it was given
     // and should get a bodyless 304 instead of re-downloading the ~1.1 MB SPA.
-    let app = build_app(new_store(), crate::routines::new_store());
+    let app = build_app(crate::routines::new_store());
     let first = app
         .clone()
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -317,7 +317,7 @@ async fn build_app_returns_304_when_if_none_match_matches() {
 #[tokio::test]
 async fn build_app_serves_root_when_if_none_match_stale() {
     // A stale/mismatched If-None-Match must fall through to the normal 200 body, not a 304.
-    let app = build_app(new_store(), crate::routines::new_store());
+    let app = build_app(crate::routines::new_store());
     let resp = app
         .oneshot(
             Request::builder()

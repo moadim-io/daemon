@@ -9,13 +9,18 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.18.0"
+version = "0.19.1"
 edition = "2021"
-description = "Loop engine for AI agents — cron jobs and routines over REST, MCP, and a built-in web UI"
+# Floor set by the transitive proc-macro build dependency `darling 0.23`
+# (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
+# `rust-version = "1.88.0"`. Bumping this is a deliberate, CHANGELOG-worthy
+# change — see CONTRIBUTING.md.
+rust-version = "1.88"
+description = "Loop engine for AI agents — routines over REST, MCP, and a built-in web UI"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
 homepage = "https://moadim.io"
-keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+keywords = ["scheduler", "mcp", "automation", "rest"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
@@ -34,6 +39,7 @@ toml = "1.1"
 rmcp = { version = "1.7.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 schemars = "1"
 tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.7", features = ["compression-gzip"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
@@ -61,6 +67,9 @@ min_ident_chars = "deny"
 uninlined_format_args = "deny"
 # Reject leftover `dbg!` debugging macros so they never ship to production.
 dbg_macro = "deny"
+# Reject `async fn`s that never `.await` anything — they don't need to be
+# async, and being async needlessly propagates async-ness to callers.
+unused_async = "deny"
 # Prefer `map_or`/`map_or_else`/`is_ok_and` over `.map(f).unwrap_or(_)`.
 map_unwrap_or = "deny"
 # Require a trailing `;` on the last statement of a `()`-returning block so
@@ -80,3 +89,12 @@ redundant_closure_for_method_calls = "deny"
 # reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
 # would move). It states "borrow and iterate" at a glance.
 explicit_iter_loop = "deny"
+# Reject `use some::module::*;` glob imports. Explicit imports make it clear
+# at the call site which module a name comes from, avoid silent breakage or
+# ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
+# "go to definition" unambiguous.
+wildcard_imports = "deny"
+# Reject `match` arms with identical bodies — either the arm is dead code
+# already covered by another pattern, or the duplication is an unintentional
+# bug where the bodies were meant to differ.
+match_same_arms = "deny"

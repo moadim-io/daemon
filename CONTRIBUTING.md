@@ -139,6 +139,10 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 ## Releasing
 
+See [RELEASING.md](RELEASING.md) for the full walkthrough, the current
+manual step, and the reasoning behind how this pipeline is built. Short
+version below.
+
 Releases are driven by [Changesets](https://github.com/changesets/changesets).
 Changeset files accumulate silently on `main` as PRs land (each one required
 by the `unreleased-entry` check above) until someone decides it's time to

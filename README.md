@@ -401,6 +401,8 @@ moadim status --json   # same, as a machine-readable JSON object
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
 moadim trigger <id>    # trigger a routine to run now, outside its schedule
+moadim enable <id>     # enable a routine so it resumes firing on schedule
+moadim disable <id>    # disable a routine so it stops firing until re-enabled
 moadim restart         # stop a running server (if any) and start a fresh one
 moadim stop            # ask a running server to stop
 moadim stop --json     # same, as a machine-readable JSON object
@@ -415,6 +417,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Exits `0` when running, `3` when not. |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
 | `moadim trigger <id>` | —          | Sends `POST /api/v1/routines/{id}/trigger` to the running server, launching the routine immediately outside its schedule (the terminal equivalent of the REST/MCP on-demand trigger). Prints `triggered routine <id>` on success. Exits `0` when triggered, `3` when no server is reachable, and `1` with `no routine with id <id>` on a `404`. (`moadim run <id>` is kept as a hidden back-compat alias.) |
+| `moadim enable <id>` / `moadim disable <id>` | — | Reads the routine's current `enabled` state (`GET /api/v1/routines/{id}`) and, if it isn't already at the target, sets it via `PATCH /api/v1/routines/{id}`. Idempotent: re-enabling an already-enabled routine (or vice versa) prints `routine <id> already enabled; no change` and exits `0` without writing. Add `--json` for `{"id":"…","enabled":bool,"changed":bool}`. Exits `0` on success, `3` when no server is reachable, and `1` with `no routine with id <id>` on a `404`. |
 
 `status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch
 on `$?` without parsing stdout: they exit `0` when a server is running (and `cleanup` swept, `stop`

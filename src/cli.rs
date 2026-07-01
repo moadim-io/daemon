@@ -74,6 +74,22 @@ pub enum Command {
         /// UUID of the routine to trigger.
         id: String,
     },
+    /// Enable a routine (resume firing on its schedule) by UUID. `json` requests
+    /// machine-readable output.
+    Enable {
+        /// UUID of the routine to enable.
+        id: String,
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
+    /// Disable a routine (stop firing on its schedule until re-enabled) by UUID. `json` requests
+    /// machine-readable output.
+    Disable {
+        /// UUID of the routine to disable.
+        id: String,
+        /// Emit machine-readable JSON output instead of human-readable text.
+        json: bool,
+    },
     /// Register the daemon as an OS service (launchd on macOS, systemd user on Linux).
     Install,
     /// Remove the OS service registration created by [`Command::Install`].
@@ -124,6 +140,22 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
             Some(id) => Command::Trigger { id: id.clone() },
             None => Command::Help,
         },
+        // `enable <id>` / `disable <id>` flip a routine's `enabled` flag. Without an id there is
+        // nothing to enable/disable, so fall back to help rather than silently no-op'ing.
+        Some("enable") => match args.get(1) {
+            Some(id) => Command::Enable {
+                id: id.clone(),
+                json: wants_json(&args[2..]),
+            },
+            None => Command::Help,
+        },
+        Some("disable") => match args.get(1) {
+            Some(id) => Command::Disable {
+                id: id.clone(),
+                json: wants_json(&args[2..]),
+            },
+            None => Command::Help,
+        },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
         Some("-h" | "--help" | "help") => Command::Help,
@@ -167,6 +199,8 @@ pub fn print_help() {
          \x20   status [--json]        show whether a server is running\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
+         \x20   enable <id> [--json]   enable a routine so it resumes firing on schedule\n\
+         \x20   disable <id> [--json]  disable a routine so it stops firing until re-enabled\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration and managed crontab blocks\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
@@ -374,6 +408,81 @@ pub fn trigger(id: String) -> anyhow::Result<i32> {
             println!("moadim is not running");
             Ok(liveness_exit_code(false))
         }
+    }
+}
+
+/// Enable a routine (resume firing on its schedule) by UUID, via `PATCH /routines/{id}`.
+/// Idempotent: enabling an already-enabled routine is reported as a no-op rather than an error.
+/// `json` requests machine-readable output. See [`set_routine_enabled`] for the shared behavior.
+pub fn enable(id: String, json: bool) -> anyhow::Result<i32> {
+    set_routine_enabled(id, true, json)
+}
+
+/// Disable a routine (stop firing on its schedule until re-enabled) by UUID, via
+/// `PATCH /routines/{id}`. Idempotent: disabling an already-disabled routine is reported as a
+/// no-op rather than an error. `json` requests machine-readable output. See
+/// [`set_routine_enabled`] for the shared behavior.
+pub fn disable(id: String, json: bool) -> anyhow::Result<i32> {
+    set_routine_enabled(id, false, json)
+}
+
+/// Shared implementation for [`enable`]/[`disable`]: read the routine's current `enabled` state via
+/// `GET /routines/{id}`, skip the write when it already matches `target` (idempotent no-op), and
+/// otherwise `PATCH` it to `target`.
+///
+/// Returns the process exit code to surface: `0` on success (whether changed or a no-op), and
+/// [`EXIT_NOT_RUNNING`] (via [`liveness_exit_code`]) when no server is reachable. An unknown
+/// routine (`404`) or an unexpected status from either request bubbles up as an `Err`, so it exits
+/// non-zero with a message instead of silently succeeding or panicking.
+fn set_routine_enabled(id: String, target: bool, json: bool) -> anyhow::Result<i32> {
+    let path = format!("/api/v1/routines/{id}");
+    let current_body = match http_request_json("GET", &path, None) {
+        Ok((200, body)) => body,
+        Ok((404, _)) => anyhow::bail!("no routine with id {id}"),
+        Ok((status, _)) => anyhow::bail!("unexpected response from server: HTTP {status}"),
+        Err(_) => {
+            println!("moadim is not running");
+            return Ok(liveness_exit_code(false));
+        }
+    };
+    let already_at_target = serde_json::from_str::<serde_json::Value>(&current_body)
+        .ok()
+        .and_then(|value| value.get("enabled").and_then(serde_json::Value::as_bool))
+        == Some(target);
+    if already_at_target {
+        print_routine_enabled_result(&id, target, false, json);
+        return Ok(liveness_exit_code(true));
+    }
+    let body = format!("{{\"enabled\":{target}}}");
+    match http_request_json("PATCH", &path, Some(&body)) {
+        Ok((200, _)) => {
+            print_routine_enabled_result(&id, target, true, json);
+            Ok(liveness_exit_code(true))
+        }
+        Ok((404, _)) => anyhow::bail!("no routine with id {id}"),
+        Ok((status, _)) => anyhow::bail!("unexpected response from server: HTTP {status}"),
+        Err(_) => {
+            println!("moadim is not running");
+            Ok(liveness_exit_code(false))
+        }
+    }
+}
+
+/// Print the `enable`/`disable` result: a human-readable confirmation (or no-op notice), or with
+/// `json`, a `{"id":…,"enabled":bool,"changed":bool}` object.
+fn print_routine_enabled_result(id: &str, enabled: bool, changed: bool, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "id": id, "enabled": enabled, "changed": changed })
+        );
+        return;
+    }
+    let verb = if enabled { "enabled" } else { "disabled" };
+    if changed {
+        println!("routine {id} {verb}");
+    } else {
+        println!("routine {id} already {verb}; no change");
     }
 }
 

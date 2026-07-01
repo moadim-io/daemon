@@ -1,10 +1,10 @@
 //! Prune a reaped workbench's stale entry from the shared `~/.claude.json`.
 //!
-//! The built-in `claude` agent's `setup` step ([`crate::routines::agents::claude_code`]) seeds a
+//! The built-in `claude` agent's `setup` step (`crate::routines::agents::claude_code`) seeds a
 //! `projects[<workbench-abs-path>]` entry into `~/.claude.json` on every run, keyed by the
-//! workbench's absolute path (`~/.moadim/workbenches/{slug}-{ts}`, always unique). Once
-//! [`crate::routines::cleanup`] reaps that workbench directory, nothing removes the matching entry,
-//! so the file grows by one dead entry per run, forever. [`prune_project`] removes it using the same
+//! workbench's absolute path (`~/.moadim/workbenches/{slug}-{ts}`, always unique). Once the cleanup
+//! sweep (`crate::routines::cleanup`) reaps that workbench directory, nothing removes the matching
+//! entry, so the file grows by one dead entry per run, forever. [`prune_project`] removes it using the same
 //! flock-guarded read -> modify -> atomic-replace pattern the setup step's python one-liner already
 //! uses (`~/.claude.json.lock`, temp file + rename), so a concurrent `claude` process — or another
 //! workbench's setup step running at the same time — never observes a torn or half-written file.

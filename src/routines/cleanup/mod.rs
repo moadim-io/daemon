@@ -140,7 +140,7 @@ fn watchdog_dir(
 
 /// Best-effort prune of the `projects[<path>]` entry from `~/.claude.json` after the workbench
 /// directory at `path` (named `name`) was reaped, so the shared Claude Code config the built-in
-/// `claude` agent seeds on every run (see [`crate::routines::agents::claude_code`]) does not
+/// `claude` agent seeds on every run (see `crate::routines::agents::claude_code`) does not
 /// accumulate one dead entry per run, forever. Failures are logged, not propagated — a stale
 /// `~/.claude.json` entry never blocks the wider cleanup sweep.
 fn prune_claude_json(path: &Path, name: &str) {

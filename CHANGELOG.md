@@ -53,6 +53,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **TTL preset row in the routine form.** The `WORKBENCH TTL` field required
+  typing a raw second count from memory (e.g. `604800` for 7 days). Added
+  `1h` / `1d` / `7d` / `30d` preset buttons under the input, mirroring the
+  existing cron schedule presets.
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

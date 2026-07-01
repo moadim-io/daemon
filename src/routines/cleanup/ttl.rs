@@ -16,25 +16,34 @@ use super::super::model::Routine;
 /// can't be computed, and the retention for orphaned workbenches whose routine was since deleted.
 pub const MAX_TTL_SECS: u64 = 60 * 60;
 
+/// Cron-derived retention ceiling for a routine running on `schedule`:
+/// `min(MAX_TTL_SECS, cron interval)`.
+///
+/// An explicit `ttl_secs` above this is silently clamped by [`Routine::effective_ttl_secs`], so
+/// create/update validation rejects it instead (#468).
+pub(crate) fn ttl_ceiling_secs(schedule: &str) -> u64 {
+    MAX_TTL_SECS.min(cron_interval_secs(schedule).unwrap_or(MAX_TTL_SECS))
+}
+
+/// Seconds between the next two scheduled runs of `schedule`, or `None` if it can't be parsed or two
+/// future fire times can't be computed. For irregular schedules this is the interval starting now;
+/// since it only matters when below [`MAX_TTL_SECS`], sub-hour schedules (the only ones it changes)
+/// have a constant interval regardless of `now`.
+pub(super) fn cron_interval_secs(schedule: &str) -> Option<u64> {
+    let cron = schedule.parse::<Cron>().ok()?;
+    let mut fires = cron.iter_after(Local::now());
+    let first = fires.next()?;
+    let second = fires.next()?;
+    u64::try_from((second - first).num_seconds()).ok()
+}
+
 impl Routine {
     /// Retention for this routine's finished workbenches.
     ///
     /// `min(MAX_TTL_SECS, cron interval)`, then further lowered by an explicit `ttl_secs` if set.
     /// An explicit `ttl_secs` can only shorten retention, never raise it above the cron-derived cap.
     pub fn effective_ttl_secs(&self) -> u64 {
-        let ceiling = MAX_TTL_SECS.min(self.cron_interval_secs().unwrap_or(MAX_TTL_SECS));
+        let ceiling = ttl_ceiling_secs(&self.schedule);
         self.ttl_secs.map_or(ceiling, |secs| secs.min(ceiling))
-    }
-
-    /// Seconds between the next two scheduled runs, or `None` if the schedule can't be parsed or two
-    /// future fire times can't be computed. For irregular schedules this is the interval starting
-    /// now; since it only matters when below [`MAX_TTL_SECS`], sub-hour schedules (the only ones it
-    /// changes) have a constant interval regardless of `now`.
-    pub(super) fn cron_interval_secs(&self) -> Option<u64> {
-        let cron = self.schedule.parse::<Cron>().ok()?;
-        let mut fires = cron.iter_after(Local::now());
-        let first = fires.next()?;
-        let second = fires.next()?;
-        u64::try_from((second - first).num_seconds()).ok()
     }
 }

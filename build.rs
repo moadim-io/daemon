@@ -1,4 +1,4 @@
-//! Build script: generates `schemas/job.schema.json` and the embedded UI HTML.
+//! Build script: generates the embedded UI HTML.
 
 #[path = "src/build/mod.rs"]
 mod build;
@@ -6,7 +6,6 @@ mod build;
 fn main() {
     println!("cargo:rerun-if-changed=ui/index.html");
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=schemas/job.schema.json");
     // Re-stamp the embedded git provenance whenever HEAD moves (new commit or
     // checkout) or the index changes (staging). Harmless when these paths are
     // absent (e.g. a crates.io tarball): cargo just watches paths that never

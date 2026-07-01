@@ -285,3 +285,92 @@ fn ensure_default_routines_logs_and_skips_on_write_failure() {
         }
     });
 }
+
+#[test]
+fn is_default_slug_matches_only_built_ins() {
+    let spec = &DEFAULT_ROUTINES[0];
+    assert!(is_default_slug(&slugify(spec.title)));
+    assert!(!is_default_slug("not-a-real-default"));
+}
+
+#[test]
+fn tombstoned_default_is_not_reseeded() {
+    // #265: a default absent from the store *because it was tombstoned* must stay absent, unlike
+    // one that is merely never-seeded (covered by `ensure_default_routines_seeds_empty_store`).
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let slug = slugify(spec.title);
+        record_removed_default(&slug);
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        assert!(
+            !after
+                .values()
+                .any(|routine| slugify(&routine.title) == slug),
+            "a tombstoned default must not be re-created on startup"
+        );
+    });
+}
+
+#[test]
+fn tombstoning_one_default_does_not_suppress_the_others() {
+    with_redirected_home(|_home| {
+        let removed_spec = &DEFAULT_ROUTINES[0];
+        record_removed_default(&slugify(removed_spec.title));
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        for spec in &DEFAULT_ROUTINES[1..] {
+            let slug = slugify(spec.title);
+            assert!(
+                after
+                    .values()
+                    .any(|routine| slugify(&routine.title) == slug),
+                "non-tombstoned default {:?} should still be seeded",
+                spec.title
+            );
+        }
+    });
+}
+
+#[test]
+fn clearing_tombstone_lets_default_reseed() {
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let slug = slugify(spec.title);
+        record_removed_default(&slug);
+        clear_removed_default(&slug);
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        assert!(
+            after
+                .values()
+                .any(|routine| slugify(&routine.title) == slug),
+            "clearing the tombstone must let the default be re-seeded"
+        );
+    });
+}
+
+#[test]
+fn record_removed_default_is_idempotent_and_persists_across_reads() {
+    with_redirected_home(|_home| {
+        let slug = "some-default";
+        record_removed_default(slug);
+        record_removed_default(slug);
+        assert_eq!(read_removed_defaults().len(), 1);
+
+        clear_removed_default(slug);
+        assert!(read_removed_defaults().is_empty());
+        // Clearing an already-cleared (or never-set) tombstone is a no-op, not an error.
+        clear_removed_default(slug);
+        assert!(read_removed_defaults().is_empty());
+    });
+}

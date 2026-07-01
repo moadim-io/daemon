@@ -14,6 +14,7 @@ use super::cleanup::{
     cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
 };
 use super::command::{build_routine_command, slugify};
+use super::defaults::{clear_removed_default, is_default_slug, record_removed_default};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
     RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
@@ -337,6 +338,11 @@ pub fn svc_create(
     store
         .lock_recover()
         .insert(routine.id.clone(), routine.clone());
+    // A user re-creating a routine under a tombstoned default's title is a deliberate "bring it
+    // back" signal (#265) — clear the tombstone so a future startup can seed the default again.
+    if is_default_slug(&slug) {
+        clear_removed_default(&slug);
+    }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine create failed: {err}");
     }
@@ -456,9 +462,17 @@ pub fn svc_update(
 }
 
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
+///
+/// When `id` is a built-in default, records a tombstone (#265) so
+/// [`super::defaults::ensure_default_routines`] does not resurrect it, enabled, on the next
+/// startup — deleting a default is a deliberate "I never want this" gesture, not a no-op.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
-    remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
+    let slug = slugify(&routine.title);
+    remove_routine_dir(&slug).map_err(|_| AppError::Internal)?;
+    if is_default_slug(&slug) {
+        record_removed_default(&slug);
+    }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
     }

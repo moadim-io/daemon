@@ -67,6 +67,9 @@ min_ident_chars = "deny"
 uninlined_format_args = "deny"
 # Reject leftover `dbg!` debugging macros so they never ship to production.
 dbg_macro = "deny"
+# Reject `async fn`s that never `.await` anything — they don't need to be
+# async, and being async needlessly propagates async-ness to callers.
+unused_async = "deny"
 # Prefer `map_or`/`map_or_else`/`is_ok_and` over `.map(f).unwrap_or(_)`.
 map_unwrap_or = "deny"
 # Require a trailing `;` on the last statement of a `()`-returning block so

@@ -42,8 +42,21 @@ async fn frame_ancestors_blocks_framing() {
         .unwrap();
 
     assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
+    // Full CSP header value (#551): `frame-ancestors 'none'` is retained from #406, plus the
+    // hardening described on `SECURITY_HEADERS` — `default-src 'self'` with explicit `object-src`
+    // / `base-uri` / `form-action` denials so an injected `<script>`, `<base>`, or off-origin
+    // `<form>` cannot act on behalf of the unauthenticated destructive API.
     assert_eq!(
         resp.headers().get("content-security-policy").unwrap(),
-        "frame-ancestors 'none'"
+        "default-src 'self'; \
+         script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; \
+         style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+         font-src 'self' https://fonts.gstatic.com; \
+         img-src 'self' data:; \
+         connect-src 'self'; \
+         base-uri 'none'; \
+         form-action 'none'; \
+         object-src 'none'; \
+         frame-ancestors 'none'"
     );
 }

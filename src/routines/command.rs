@@ -334,6 +334,12 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
         stmts.push(setup.clone());
     }
+    // Capture the agent's exit status to a `$WB`-relative `exit_code` file (the pane's cwd is
+    // already `$WB` via `-c` below, so a bare relative path lands there) once it finishes. `$WB` is
+    // a plain shell variable, not exported, so it would not survive into the new pane's process —
+    // the relative path sidesteps that instead of exporting it. Written after the invocation, not
+    // piped through it, so it never pollutes `agent.log`.
+    let invocation = format!("{invocation}; echo $? > exit_code");
     stmts.push(format!(
         r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
         shell_quote(&invocation)

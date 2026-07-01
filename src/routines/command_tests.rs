@@ -149,6 +149,34 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
 }
 
 #[test]
+fn build_routine_command_captures_exit_code_in_workbench() {
+    // The tmux pane's shell is a fresh process that never inherits the (unexported) `$WB` shell
+    // variable, so the exit-code capture must use a `$WB`-relative path (the pane's cwd, set via
+    // `-c "$WB"`) rather than reference `$WB` again inside the invocation.
+    let routine = make_routine("Cmd Exit Code Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--prompt".to_string(), "{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(r#"; echo $? > exit_code"#),
+        "expected exit-code capture appended to the agent invocation in: {cmd}"
+    );
+    assert!(
+        !cmd.contains(r#"echo $? > "$WB/exit_code""#),
+        "exit-code capture must use a workbench-relative path, not $WB, in: {cmd}"
+    );
+    // Written inside the same tmux command as the invocation, after it and before `pipe-pane`.
+    let session = cmd.find(r#"tmux new-session"#).unwrap();
+    let exit_code = cmd.find("echo $? > exit_code").unwrap();
+    let pipe_pane = cmd.find("tmux pipe-pane").unwrap();
+    assert!(session < exit_code && exit_code < pipe_pane);
+}
+
+#[test]
 fn cron_path_falls_back_to_root_home_when_home_unset() {
     // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
     // fallback arm, so the `~/.local/bin` etc. entries are anchored under `/root`.

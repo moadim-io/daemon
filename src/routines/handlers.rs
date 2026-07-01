@@ -13,12 +13,12 @@ use crate::global_lock::{LockScope, LockStatus};
 
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, IcalFeedQuery, Routine, RoutineListQuery,
-    RoutineResponse, RoutineStore, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, IcalFeedQuery, LogsQuery, Routine, RoutineListQuery,
+    RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger,
-    svc_trigger_scheduled, svc_update,
+    svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_run_log, svc_runs,
+    svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/lock`.
@@ -224,15 +224,33 @@ pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse>
     Json(svc_cleanup(&store))
 }
 
-/// `GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.
+/// `GET /routines/{id}/logs` — return a run's `agent.log` as plain text.
+///
+/// With `?run=<id>` (a [`RunSummary::id`] from `GET /routines/{id}/runs`) returns that specific
+/// run's log; without it, the newest run's, matching prior behavior.
 #[utoipa::path(get, path = "/routines/{id}/logs",
-    params(("id" = String, Path, description = "Routine UUID")),
+    params(("id" = String, Path, description = "Routine UUID"), LogsQuery),
     responses((status = 200, description = "Log file contents as plain text"), (status = 404, description = "Not found")))]
 pub async fn get_logs(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
+    Query(query): Query<LogsQuery>,
 ) -> Result<String, AppError> {
-    svc_logs(&store, &id)
+    match query.run {
+        Some(run) => svc_run_log(&store, &id, &run),
+        None => svc_logs(&store, &id),
+    }
+}
+
+/// `GET /routines/{id}/runs` — list this routine's runs, newest first.
+#[utoipa::path(get, path = "/routines/{id}/runs",
+    params(("id" = String, Path, description = "Routine UUID")),
+    responses((status = 200, body = Vec<RunSummary>), (status = 404, description = "Not found")))]
+pub async fn list_runs(
+    State(store): State<RoutineStore>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<RunSummary>>, AppError> {
+    Ok(Json(svc_runs(&store, &id)?))
 }
 
 #[cfg(test)]

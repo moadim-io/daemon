@@ -995,3 +995,34 @@ fn clone_title_does_not_double_prefix() {
 fn clone_title_preserves_empty_string() {
     assert_eq!(clone_title(""), "Copy of ");
 }
+
+// ── run_status ──────────────────────────────────────────────────────────────
+
+fn make_run(running: bool, exit_code: Option<i32>) -> RunSummary {
+    RunSummary {
+        id: "slug-1000".into(),
+        started_at: 1000,
+        running,
+        exit_code,
+    }
+}
+
+#[test]
+fn run_status_running_takes_priority_over_exit_code() {
+    assert_eq!(run_status(&make_run(true, Some(0))), ("RUNNING", "dormant"));
+}
+
+#[test]
+fn run_status_zero_exit_is_ok() {
+    assert_eq!(run_status(&make_run(false, Some(0))), ("OK", "healthy"));
+}
+
+#[test]
+fn run_status_nonzero_exit_is_dead() {
+    assert_eq!(run_status(&make_run(false, Some(1))), ("EXIT", "dead"));
+}
+
+#[test]
+fn run_status_missing_exit_code_is_unknown() {
+    assert_eq!(run_status(&make_run(false, None)), ("UNKNOWN", "disabled"));
+}

@@ -610,8 +610,46 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.",
+        "summary": "`GET /routines/{id}/logs` — return a run's `agent.log` as plain text.",
+        "description": "With `?run=<id>` (a [`RunSummary::id`] from `GET /routines/{id}/runs`) returns that specific\nrun's log; without it, the newest run's, matching prior behavior.",
         "operationId": "get_logs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "run",
+            "in": "query",
+            "description": "A specific run's workbench directory name (from [`RunSummary::id`]), or absent for the\nnewest run.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/runs": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs` — list this routine's runs, newest first.",
+        "operationId": "list_runs",
         "parameters": [
           {
             "name": "id",
@@ -625,7 +663,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Log file contents as plain text"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummary"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "Not found"
@@ -1161,6 +1209,39 @@
           "title",
           "repository"
         ]
+      },
+      "RunSummary": {
+        "type": "object",
+        "description": "One past or in-progress execution of a routine, derived from its workbench directory.\n\nThere is no separate run-record store: a run *is* a `{slug}-{ts}` workbench directory under\n`~/.moadim/workbenches/`, so this is assembled on demand from the filesystem and the live tmux\nsession table rather than persisted.",
+        "required": [
+          "id",
+          "started_at",
+          "running"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Process exit status of the agent command, or `None` while still running or if the run\nfinished before exit-code capture existed."
+          },
+          "id": {
+            "type": "string",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`); pass as `?run=` to `GET\n/routines/{id}/logs` to fetch this run's log."
+          },
+          "running": {
+            "type": "boolean",
+            "description": "Whether the run's tmux session is still alive."
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) the run was triggered, parsed from the workbench directory name.",
+            "minimum": 0
+          }
+        }
       },
       "SetMachineRequest": {
         "type": "object",

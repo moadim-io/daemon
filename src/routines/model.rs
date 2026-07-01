@@ -79,6 +79,16 @@ pub struct IcalFeedQuery {
     pub routine: Option<String>,
 }
 
+/// Query parameters for `GET /routines/{id}/logs`.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct LogsQuery {
+    /// A specific run's workbench directory name (from [`RunSummary::id`]), or absent for the
+    /// newest run.
+    pub run: Option<String>,
+}
+
 /// A persisted routine: a scheduled AI-agent task.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Routine {
@@ -217,6 +227,25 @@ impl RoutineResponse {
 pub struct CleanupResponse {
     /// Number of finished, expired run workbenches removed by this sweep.
     pub removed: usize,
+}
+
+/// One past or in-progress execution of a routine, derived from its workbench directory.
+///
+/// There is no separate run-record store: a run *is* a `{slug}-{ts}` workbench directory under
+/// `~/.moadim/workbenches/`, so this is assembled on demand from the filesystem and the live tmux
+/// session table rather than persisted.
+#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
+pub struct RunSummary {
+    /// Workbench directory name (`{slug}-{unix_secs}`); pass as `?run=` to `GET
+    /// /routines/{id}/logs` to fetch this run's log.
+    pub id: String,
+    /// Unix timestamp (seconds) the run was triggered, parsed from the workbench directory name.
+    pub started_at: u64,
+    /// Whether the run's tmux session is still alive.
+    pub running: bool,
+    /// Process exit status of the agent command, or `None` while still running or if the run
+    /// finished before exit-code capture existed.
+    pub exit_code: Option<i32>,
 }
 
 /// Thread-safe shared store of routines keyed by ID.

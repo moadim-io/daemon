@@ -250,6 +250,40 @@ async fn api_logs(id: &str) -> Result<String, String> {
     resp.text().await.map_err(|e| e.to_string())
 }
 
+async fn api_run_log(id: &str, run: &str) -> Result<String, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/logs?run={run}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| e.to_string())
+}
+
+/// One run of a routine, mirroring the server's `RunSummary` (`GET /routines/{id}/runs`).
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RunSummary {
+    pub id: String,
+    pub started_at: u64,
+    pub running: bool,
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+}
+
+async fn api_runs(id: &str) -> Result<Vec<RunSummary>, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/runs"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<RunSummary>>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ─── Faceted filter ───────────────────────────────────────────────────────────
 //
 // Pure, host-testable filtering of the loaded routines. The view binds a search
@@ -2972,25 +3006,57 @@ pub struct LogsProps {
     pub on_back: Callback<()>,
 }
 
+/// Which panel the Logs page shows: the raw log of the selected run, or the run-history list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogsTab {
+    Log,
+    Runs,
+}
+
+/// A run's status as a short label + [`RunSummary`]-derived health-badge variant, mirroring the
+/// health-badge convention used for routine rows.
+fn run_status(run: &RunSummary) -> (&'static str, &'static str) {
+    if run.running {
+        return ("RUNNING", "dormant");
+    }
+    match run.exit_code {
+        Some(0) => ("OK", "healthy"),
+        Some(code) if code != 0 => ("EXIT", "dead"),
+        _ => ("UNKNOWN", "disabled"),
+    }
+}
+
 #[function_component(RoutineLogs)]
 pub fn routine_logs(props: &LogsProps) -> Html {
+    let tab = use_state(|| LogsTab::Log);
+    let selected_run: UseStateHandle<Option<String>> = use_state(|| None);
     let content: UseStateHandle<Option<String>> = use_state(|| None);
     let loading = use_state(|| true);
     let err: UseStateHandle<Option<String>> = use_state(|| None);
+    let runs: UseStateHandle<Vec<RunSummary>> = use_state(Vec::new);
+    let runs_err: UseStateHandle<Option<String>> = use_state(|| None);
 
-    let load = {
+    // Fetches `run`'s log (or the newest run's, when `None`) and records the selection so a
+    // manual refresh reloads the same run rather than snapping back to the newest.
+    let load_log = {
         let id = props.id.clone();
+        let selected_run = selected_run.clone();
         let content = content.clone();
         let loading = loading.clone();
         let err = err.clone();
-        move || {
+        move |run: Option<String>| {
             let id = id.clone();
+            selected_run.set(run.clone());
             let content = content.clone();
             let loading = loading.clone();
             let err = err.clone();
             loading.set(true);
             spawn_local(async move {
-                match api_logs(&id).await {
+                let result = match &run {
+                    Some(run) => api_run_log(&id, run).await,
+                    None => api_logs(&id).await,
+                };
+                match result {
                     Ok(text) => {
                         content.set(Some(text));
                         err.set(None);
@@ -3002,10 +3068,32 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         }
     };
 
+    let load_runs = {
+        let id = props.id.clone();
+        let runs = runs.clone();
+        let runs_err = runs_err.clone();
+        move || {
+            let id = id.clone();
+            let runs = runs.clone();
+            let runs_err = runs_err.clone();
+            spawn_local(async move {
+                match api_runs(&id).await {
+                    Ok(list) => {
+                        runs.set(list);
+                        runs_err.set(None);
+                    }
+                    Err(e) => runs_err.set(Some(e)),
+                }
+            });
+        }
+    };
+
     {
-        let load = load.clone();
+        let load_log = load_log.clone();
+        let load_runs = load_runs.clone();
         use_effect_with(props.id.clone(), move |_| {
-            load();
+            load_log(None);
+            load_runs();
         });
     }
 
@@ -3014,8 +3102,35 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
     let on_refresh = {
-        let load = load.clone();
-        Callback::from(move |_: MouseEvent| load())
+        let load_log = load_log.clone();
+        let load_runs = load_runs.clone();
+        let selected_run = selected_run.clone();
+        Callback::from(move |_: MouseEvent| {
+            load_log((*selected_run).clone());
+            load_runs();
+        })
+    };
+    let on_select_run = Callback::from({
+        let load_log = load_log.clone();
+        let tab = tab.clone();
+        move |run_id: String| {
+            load_log(Some(run_id));
+            tab.set(LogsTab::Log);
+        }
+    });
+
+    let mk_tab = |t: LogsTab, label: &'static str| {
+        let cls = if *tab == t {
+            "view-btn active"
+        } else {
+            "view-btn"
+        };
+        let tab_handle = tab.clone();
+        html! {
+            <button class={cls} onclick={Callback::from(move |_: MouseEvent| tab_handle.set(t))}>
+                { label }
+            </button>
+        }
     };
 
     html! {
@@ -3023,14 +3138,85 @@ pub fn routine_logs(props: &LogsProps) -> Html {
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.title)}</div>
+                <div class="view-toggle">
+                    { mk_tab(LogsTab::Log, "LOG") }
+                    { mk_tab(LogsTab::Runs, "RUNS") }
+                </div>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
-            <LogViewer
-                content={(*content).clone()}
-                loading={*loading}
-                err={(*err).clone()}
-            />
+            {
+                if *tab == LogsTab::Runs {
+                    html! { <RunsList runs={(*runs).clone()} err={(*runs_err).clone()} on_select={on_select_run} /> }
+                } else {
+                    html! {
+                        <LogViewer
+                            content={(*content).clone()}
+                            loading={*loading}
+                            err={(*err).clone()}
+                        />
+                    }
+                }
+            }
         </main>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct RunsListProps {
+    runs: Vec<RunSummary>,
+    err: Option<String>,
+    on_select: Callback<String>,
+}
+
+/// Run-history table: newest run first, each row showing relative start time, live/finished
+/// status, and exit code — click a row to view that run's log (switches to the LOG tab).
+#[function_component(RunsList)]
+fn runs_list(props: &RunsListProps) -> Html {
+    if let Some(err) = &props.err {
+        return html! { <div class="table-wrap"><div class="logs-error">{format!("Error: {err}")}</div></div> };
+    }
+    if props.runs.is_empty() {
+        return html! {
+            <div class="table-wrap">
+                <div class="empty">
+                    <div class="empty-icon">{"⊘"}</div>
+                    <div class="empty-msg">{"NO RUNS YET"}</div>
+                </div>
+            </div>
+        };
+    }
+    html! {
+        <div class="table-wrap">
+            <table class="runs-table">
+                <thead>
+                    <tr>
+                        <th>{"STARTED"}</th>
+                        <th>{"STATUS"}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    { for props.runs.iter().map(|run| {
+                        let (label, variant) = run_status(run);
+                        let status = match run.exit_code {
+                            Some(code) if !run.running && code != 0 => format!("{label} {code}"),
+                            _ => label.to_string(),
+                        };
+                        let badge_class = format!("health-badge {variant}");
+                        let on_select = props.on_select.clone();
+                        let run_id = run.id.clone();
+                        html! {
+                            <tr
+                                class="run-row"
+                                onclick={Callback::from(move |_: MouseEvent| on_select.emit(run_id.clone()))}
+                            >
+                                <td>{ reltime(run.started_at) }</td>
+                                <td><span class={badge_class}>{ status }</span></td>
+                            </tr>
+                        }
+                    }) }
+                </tbody>
+            </table>
+        </div>
     }
 }
 

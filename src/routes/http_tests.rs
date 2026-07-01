@@ -657,6 +657,35 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // runs (no workbenches yet — empty list)
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/routines/{id}/runs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let runs: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(runs.is_empty());
+
+    // logs?run=<unknown> — a run id that doesn't belong to this routine is 404, not the newest log
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/routines/{id}/logs?run=not-a-real-run-123"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
     // DELETE
     let resp = build_app(routines.clone())
         .oneshot(
@@ -698,6 +727,7 @@ async fn router_routine_not_found_paths() {
         ("POST", "/trigger"),
         ("POST", "/scheduled-trigger"),
         ("GET", "/logs"),
+        ("GET", "/runs"),
     ] {
         let resp = build_app(crate::routines::new_store())
             .oneshot(

@@ -134,7 +134,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
-    assert!(cmd.contains("'codex exec prompt.md'"));
+    assert!(cmd.contains("codex exec prompt.md"));
 }
 
 #[test]
@@ -731,4 +731,141 @@ fn svc_logs_ignores_other_routine_with_shared_slug_prefix() {
 
     std::fs::remove_dir_all(&mine).unwrap();
     std::fs::remove_dir_all(&other).unwrap();
+}
+
+#[test]
+fn svc_runs_not_found() {
+    assert!(svc_runs(&new_store(), "missing").is_err());
+}
+
+#[test]
+fn svc_runs_empty_when_no_workbenches() {
+    let store = new_store();
+    let mut routine = make_routine("runs-empty");
+    routine.title = "Runs Cov Empty CCC".into();
+    store.lock().unwrap().insert("runs-empty".into(), routine);
+    assert!(svc_runs(&store, "runs-empty").unwrap().is_empty());
+}
+
+#[test]
+fn svc_runs_lists_newest_first_with_exit_code_and_ignores_other_routines() {
+    let store = new_store();
+    let mut routine = make_routine("runs-list");
+    routine.title = "Runs Cov List DDD".into();
+    let slug = slugify(&routine.title);
+    store.lock().unwrap().insert("runs-list".into(), routine);
+
+    let wb = crate::paths::workbenches_dir();
+    let old = wb.join(format!("{slug}-1000"));
+    let new = wb.join(format!("{slug}-2000"));
+    // Shares the bare `{slug}-` prefix but belongs to a different routine's slug — must be
+    // excluded (same anti-leak requirement as `svc_logs`).
+    let other = wb.join(format!("{slug}-extra-3000"));
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&new).unwrap();
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(old.join("exit_code"), "0\n").unwrap();
+    std::fs::write(new.join("exit_code"), "1").unwrap();
+
+    let runs = svc_runs(&store, "runs-list").unwrap();
+    assert_eq!(runs.len(), 2, "expected only this routine's own two runs");
+    assert_eq!(runs[0].id, format!("{slug}-2000"));
+    assert_eq!(runs[0].started_at, 2000);
+    assert!(!runs[0].running, "no live tmux session in tests");
+    assert_eq!(runs[0].exit_code, Some(1));
+    assert_eq!(runs[1].id, format!("{slug}-1000"));
+    assert_eq!(runs[1].exit_code, Some(0));
+
+    std::fs::remove_dir_all(&old).unwrap();
+    std::fs::remove_dir_all(&new).unwrap();
+    std::fs::remove_dir_all(&other).unwrap();
+}
+
+#[test]
+fn svc_runs_exit_code_absent_when_file_missing_or_unparseable() {
+    let store = new_store();
+    let mut routine = make_routine("runs-noexit");
+    routine.title = "Runs Cov NoExit EEE".into();
+    let slug = slugify(&routine.title);
+    store.lock().unwrap().insert("runs-noexit".into(), routine);
+
+    let wb = crate::paths::workbenches_dir();
+    let no_file = wb.join(format!("{slug}-4000"));
+    let bad_file = wb.join(format!("{slug}-5000"));
+    std::fs::create_dir_all(&no_file).unwrap();
+    std::fs::create_dir_all(&bad_file).unwrap();
+    std::fs::write(bad_file.join("exit_code"), "not-a-number").unwrap();
+
+    let runs = svc_runs(&store, "runs-noexit").unwrap();
+    assert!(runs.iter().all(|run| run.exit_code.is_none()));
+
+    std::fs::remove_dir_all(&no_file).unwrap();
+    std::fs::remove_dir_all(&bad_file).unwrap();
+}
+
+#[test]
+fn svc_run_log_not_found_for_unknown_routine() {
+    assert!(svc_run_log(&new_store(), "missing", "whatever-1000").is_err());
+}
+
+#[test]
+fn svc_run_log_rejects_run_not_belonging_to_routine() {
+    let store = new_store();
+    let mut routine = make_routine("run-log-bad");
+    routine.title = "Run Log Cov Bad FFF".into();
+    store.lock().unwrap().insert("run-log-bad".into(), routine);
+
+    // Neither a real workbench of this routine nor anything on disk — and even a path-
+    // traversal-shaped value must be rejected rather than joined onto `workbenches_dir()`.
+    assert!(svc_run_log(&store, "run-log-bad", "../../etc/passwd").is_err());
+}
+
+#[test]
+fn svc_run_log_returns_specific_runs_log() {
+    let store = new_store();
+    let mut routine = make_routine("run-log-ok");
+    routine.title = "Run Log Cov Ok GGG".into();
+    let slug = slugify(&routine.title);
+    store.lock().unwrap().insert("run-log-ok".into(), routine);
+
+    let wb = crate::paths::workbenches_dir();
+    let old = wb.join(format!("{slug}-1000"));
+    let new = wb.join(format!("{slug}-2000"));
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&new).unwrap();
+    std::fs::write(old.join("agent.log"), "old-log").unwrap();
+    std::fs::write(new.join("agent.log"), "new-log").unwrap();
+
+    // Unlike `svc_logs` (always newest), an explicit `run` fetches that exact one.
+    assert_eq!(
+        svc_run_log(&store, "run-log-ok", &format!("{slug}-1000")).unwrap(),
+        "old-log"
+    );
+    assert_eq!(
+        svc_run_log(&store, "run-log-ok", &format!("{slug}-2000")).unwrap(),
+        "new-log"
+    );
+
+    std::fs::remove_dir_all(&old).unwrap();
+    std::fs::remove_dir_all(&new).unwrap();
+}
+
+#[test]
+fn svc_run_log_empty_when_agent_log_missing() {
+    let store = new_store();
+    let mut routine = make_routine("run-log-nofile");
+    routine.title = "Run Log Cov NoFile HHH".into();
+    let slug = slugify(&routine.title);
+    store
+        .lock()
+        .unwrap()
+        .insert("run-log-nofile".into(), routine);
+
+    let dir = crate::paths::workbenches_dir().join(format!("{slug}-6000"));
+    std::fs::create_dir_all(&dir).unwrap();
+    assert_eq!(
+        svc_run_log(&store, "run-log-nofile", &format!("{slug}-6000")).unwrap(),
+        ""
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }

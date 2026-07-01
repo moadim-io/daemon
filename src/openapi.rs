@@ -29,6 +29,7 @@
         crate::routines::lock,
         crate::routines::unlock,
         crate::routines::get_logs,
+        crate::routines::list_runs,
         crate::routines::ical_feed,
     ),
     components(schemas(
@@ -38,6 +39,7 @@
         crate::routines::CreateRoutineRequest,
         crate::routines::UpdateRoutineRequest,
         crate::routines::CleanupResponse,
+        crate::routines::RunSummary,
         crate::routines::RoutineSort,
         crate::routines::SortOrder,
         crate::routes::http::HealthResponse,

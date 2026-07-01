@@ -11,13 +11,19 @@ use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{
-    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
+    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, run_session_alive,
+    ttl_ceiling_secs,
 };
 use super::command::{build_routine_command, slugify};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
-    RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
+    RoutineSort, RoutineStore, RunSummary, SortOrder, UpdateRoutineRequest,
 };
+
+/// Most-recent runs [`svc_runs`] returns, newest first; mirrors the 100-run cap the original
+/// observability proposal (#23) specified for a persisted run-record store, kept here even though
+/// runs are derived from workbench directories rather than a separate log.
+const MAX_RUNS: usize = 100;
 
 /// Reject a blank (empty or whitespace-only) required text field.
 ///
@@ -573,6 +579,85 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         return Ok(String::new());
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+}
+
+/// List this routine's runs (its `{slug}-{ts}` workbench directories), newest first, capped at
+/// [`MAX_RUNS`].
+///
+/// Each run's `running` state reflects whether its tmux session currently exists; its `exit_code`
+/// is read from the run's `exit_code` file (written after the agent invocation exits — see
+/// [`super::command::build_routine_command`]), absent for runs still in progress or predating that
+/// capture.
+pub fn svc_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let slug = slugify(&routine.title);
+    let mut runs = workbench_dirs_for_slug(&slug)
+        .into_iter()
+        .map(|(ts, dir)| run_summary(ts, &dir))
+        .collect::<Vec<_>>();
+    runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
+    runs.truncate(MAX_RUNS);
+    Ok(runs)
+}
+
+/// Return the `agent.log` contents of one specific run (`run`, a workbench directory name)
+/// belonging to routine `id`.
+///
+/// `run` is matched against the routine's *actual* workbench directories rather than joined onto
+/// [`workbenches_dir`] directly, so an unrecognized or cross-routine value can never escape it or
+/// read another routine's run.
+pub fn svc_run_log(store: &RoutineStore, id: &str, run: &str) -> Result<String, AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let slug = slugify(&routine.title);
+    let found = workbench_dirs_for_slug(&slug)
+        .into_iter()
+        .any(|(_, dir)| dir == run);
+    if !found {
+        return Err(AppError::NotFound);
+    }
+    let log_path = workbenches_dir().join(run).join("agent.log");
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+}
+
+/// List `(trigger_timestamp, dir_name)` for every workbench directory owned by `slug` (an *exact*
+/// slug match, so `logs` never picks up `logs-extra`'s runs).
+fn workbench_dirs_for_slug(slug: &str) -> Vec<(u64, String)> {
+    let Ok(entries) = std::fs::read_dir(workbenches_dir()) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let (dir_slug, ts) = parse_workbench_name(&name)?;
+            (dir_slug == slug).then_some((ts, name))
+        })
+        .collect()
+}
+
+/// Build a [`RunSummary`] for workbench `dir`, triggered at `ts`.
+fn run_summary(ts: u64, dir: &str) -> RunSummary {
+    let running = run_session_alive(&format!("moadim-{dir}"));
+    let exit_code = std::fs::read_to_string(workbenches_dir().join(dir).join("exit_code"))
+        .ok()
+        .and_then(|contents| contents.trim().parse::<i32>().ok());
+    RunSummary {
+        id: dir.to_string(),
+        started_at: ts,
+        running,
+        exit_code: if running { None } else { exit_code },
+    }
 }
 
 #[cfg(test)]

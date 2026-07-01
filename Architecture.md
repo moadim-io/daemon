@@ -90,6 +90,7 @@ Middleware stack (outermost first): `logger` → `fs_location`.
 | `delete_routine` | `routines::svc_delete` |
 | `trigger_routine` | `routines::svc_trigger` |
 | `routine_logs` | `routines::svc_logs` |
+| `list_routine_runs` | `routines::svc_runs` |
 | `list_agents` | `routines::available_agents` |
 | `cleanup_workbenches` | `routines::svc_cleanup` |
 

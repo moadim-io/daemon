@@ -331,6 +331,7 @@ pub(crate) fn build_app_with_shutdown(
             post(routines::scheduled_trigger),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
+        .route("/routines/{id}/runs", get(routines::list_runs))
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
         .fallback(api_not_found);

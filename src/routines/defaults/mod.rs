@@ -88,7 +88,11 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
     let up_to_date = cur.schedule == schedule
         && cur.agent == spec.agent
         && cur.prompt == spec.prompt
-        && cur.repositories.is_empty();
+        && cur.repositories.is_empty()
+        // An empty machines list means the default never fires: treat it as "not yet seeded"
+        // so it gets re-seeded with the current machine (e.g. after upgrading from a build
+        // that predates the machines field).
+        && !cur.machines.is_empty();
     if up_to_date {
         return None;
     }
@@ -101,7 +105,13 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         repositories: Vec::new(),
         // Machine targeting is user-owned, like `enabled`: carry the existing choice across a
         // spec-driven reconcile so a default reassigned (or unassigned) by the user stays that way.
-        machines: cur.machines.clone(),
+        // Exception: if the list was empty (routine seeded before the machines field existed),
+        // seed it with the current machine so the default actually runs out of the box.
+        machines: if cur.machines.is_empty() {
+            vec![crate::machine::current_machine()]
+        } else {
+            cur.machines.clone()
+        },
         enabled: cur.enabled,
         source: "managed".to_string(),
         created_at: cur.created_at,

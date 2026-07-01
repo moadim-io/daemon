@@ -89,3 +89,8 @@ redundant_closure_for_method_calls = "deny"
 # reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
 # would move). It states "borrow and iterate" at a glance.
 explicit_iter_loop = "deny"
+# Reject `use some::module::*;` glob imports. Explicit imports make it clear
+# at the call site which module a name comes from, avoid silent breakage or
+# ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
+# "go to definition" unambiguous.
+wildcard_imports = "deny"

@@ -60,6 +60,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- Enabled the `clippy::wildcard_imports` lint. It flags `use some::module::*;`
+  glob imports, which obscure where a name comes from at the call site, can
+  silently change behavior when the globbed module gains a new item, and
+  defeat "go to definition" tooling. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
 - Enabled the `clippy::unused_async` lint. It flags `async fn`s (and async
   closures/blocks) that never `.await` anything internally, which needlessly
   propagate async-ness up the call stack and pull in a `Future` state machine

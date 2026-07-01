@@ -53,6 +53,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Repository filter for the Routines table.** The REST `GET /routines`
+  endpoint has supported a `?repository=` filter for a while, but the web UI
+  had no way to use it — the only client-side facets were status, agent, and
+  machine. Added a REPOSITORY dropdown to the Routines filter bar (mirroring
+  the existing agent/machine facet pattern), populated from the distinct
+  repository URLs across loaded routines, so operators can narrow a dense
+  routines list to a single repo without hand-editing the query string.
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

@@ -4,19 +4,15 @@
 
 This is a list of todos for consumption, in a pr remove the todo you have implemented and add any new ones you think of.
 
-- Add a `cargo xtask spellcheck` (or `make spell`) wrapper that installs and runs `typos` so contributors don't need to know the tool name
 - Add a `test + coverage` CI job that mirrors the pre-push hook's final gate (`cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'`) so the 100% coverage contract is enforced in PRs, not just locally
 - Add a CI step (or weekly scheduled job) that checks whether a newer `crate-ci/typos` release exists than the pinned tag and opens/updates a tracking issue, so the pin gets bumped on a cadence instead of drifting silently
 - Add a day-detail popover to the routines calendar: clicking a day lists each fire time (HH:MM) with its routine, and a "run now" shortcut per routine
 - Link the routines calendar UI to the new `GET /routines.ics` feed: add a "SUBSCRIBE" button that copies the feed URL (the endpoint already supports a per-routine `?routine=<id>` filter)
-- Auto-stamp the release version/date into CHANGELOG.md from the `chore(release)` step so the `## [Unreleased]` section rolls over on tag
-- Add a CI check that the topmost `## [x.y.z]` heading in CHANGELOG.md matches `Cargo.toml`'s version on tag pushes, so a release tag can't ship with a stale changelog version
 - Have a commands folder for all the cli commands, we want to work with colocation of files
 - Dismiss any open UI modal/dialog (edit, delete-confirm, shutdown-confirm) with the Esc key
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
 - Enrich `moadim status --json` with the server's liveness details from `GET /health` (e.g. `uptime_secs`) so a single call returns running-state + age, not just the local PID
-- Have `moadim cleanup --json` include the bound `address` field too (`{"running":bool,"removed":N,"address":…}`), so every `--json` command surfaces the endpoint it talked to, matching `status`/`stop`
 - Add a `cli_tests` assertion that `status --json` and `stop --json` produce the SAME set of object keys, so the two shapes can't silently drift apart again as fields are added
 - Add a CLI integration test (spawn a real listener on an ephemeral port, point the probe at it) that exercises the `status`/`cleanup`/`stop` network paths end-to-end, lifting `cli.rs` off its ~27% coverage floor toward the repo's 100% line-coverage gate
 - Add a `moadim status --wait[=SECS]` flag that polls `GET /health` until the server is reachable (or the timeout elapses), exiting 0 on success and the existing exit-3 on timeout, so scripts can block on startup instead of sleeping

@@ -11,6 +11,31 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-02
+
+### Removed
+
+- **Removed the cron-job feature.** Moadim scheduled two kinds of things —
+  "cron jobs" (a schedule + a handler script) and "routines" (a schedule + an
+  AI-agent prompt). The project's focus is AI-agent routines, so the cron-job
+  half — the `CronJob`/`CronStore` model, the `/api/v1/cron-jobs*` REST routes,
+  the `*_cron_job` MCP tools, the `moadim cron-jobs` CLI subcommand, the
+  `~/.config/moadim/jobs/` and `~/.config/moadim/handlers/` directories, and
+  the job-specific crontab block — has been removed. Routines are unaffected
+  and keep their own crontab block, REST routes, MCP tools, and CLI
+  subcommand. (#842)
+
+### Changed
+
+- **`list_routines` omits routine prompts by default.** The prompt is the
+  largest field on a routine and is rarely needed when scanning a listing, so it
+  bloated `GET /routines` responses and burned MCP context tokens on every call.
+  The `prompt` key is now absent from list entries unless the caller opts in with
+  `include_prompts=true` (a new boolean on the `list_routines` MCP tool and the
+  `GET /routines` query string). `get_routine` / `GET /routines/{id}` are
+  unaffected and always return the prompt; `routine.toml` persistence is
+  unchanged. (#824)
+
 ### Documentation
 
 - **Added `CODE_OF_CONDUCT.md`.** The repo had a `CONTRIBUTING.md` and
@@ -27,6 +52,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **The daemon never killed hung routine tmux sessions when launched via
+  launchd/systemd.** Those managers start `moadim --interactive` with a
+  minimal `PATH` (e.g. macOS launchd's `/usr/bin:/bin:/usr/sbin:/sbin`) that
+  hides a Homebrew- or npm-installed `tmux`. The daemon's own cleanup/watchdog
+  sweep shelled out to `tmux` directly (no login shell), so every
+  liveness/kill probe silently failed and read as "session already dead" —
+  a hung run's workbench got TTL-reaped while its real tmux session and agent
+  process kept running, untracked, forever. `resolve_tmux_bin` now also
+  searches common install locations (Homebrew, `/usr/local/bin`,
+  `~/.local/bin`) when `tmux` isn't on `PATH`, and the generated launchd
+  plist now sets a real `PATH` via `EnvironmentVariables`.
 - **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
   each added a `unused_async = "deny"` entry under `[lints.clippy]` in
   `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't
@@ -39,6 +75,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   page reporting the *previous* version. Corrected the version token and added
   a regression test (`cli::cli_tests::man_page_version_matches_cargo_pkg_version`)
   that fails when the two drift again. (#556)
+- Locked the `--json` machine-readable contract with a regression test
+  (`cli::cli_tests::status_stop_cleanup_json_share_the_same_address`) asserting
+  `status --json`, `stop --json`, and `cleanup --json` all surface the same
+  `address` value, so the three shapes can't silently drift apart again. (#245)
+- Removed two dead `AppError::NotFound` arms in `svc_update` (`routines/service.rs`):
+  the function already checks the routine's existence once, up front, while
+  holding the store's lock continuously for the rest of the call, so the two
+  later re-fetches could never actually miss. The two tests written to cover
+  those unreachable arms were accidental duplicates of the same first-check
+  path; merged them into one `svc_update_not_found_when_id_missing` test that
+  covers both request shapes against the real, single `NotFound` path.
 
 ### Added
 
@@ -49,6 +96,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- Enabled the `clippy::wildcard_imports` lint. It flags `use some::module::*;`
+  glob imports, which obscure where a name comes from at the call site, can
+  silently change behavior when the globbed module gains a new item, and
+  defeat "go to definition" tooling. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
 - Enabled the `clippy::unused_async` lint. It flags `async fn`s (and async
   closures/blocks) that never `.await` anything internally, which needlessly
   propagate async-ness up the call stack and pull in a `Future` state machine
@@ -60,6 +112,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `CompressionLayer`, cutting the ~1.1 MB SPA payload (and the OpenAPI JSON
   under `/docs`) several-fold on every load/refresh for clients that
   advertise gzip support. A no-op for clients that don't. (#399)
+- Bumped `tower-http` from `0.6.11` to `0.7.0`. No source changes needed —
+  the only feature used (`compression-gzip`'s `CompressionLayer`) is
+  API-compatible across the bump.
 - Declared `rust-version = "1.88"` (MSRV) in the root `Cargo.toml` and
   `ui/Cargo.toml`, matching the floor already required transitively by
   `darling 0.23`, so `cargo install moadim` on an older stable toolchain now
@@ -76,6 +131,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   posture was never enforced on PRs and a dashboard lint regression could
   merge to `main` fully green, only surfacing via the local hook (if a
   contributor had it installed) or at release time.
+- `build_app_with_shutdown` cloned `store` and `routines` into `app_state`,
+  then cloned them *again* from the original bindings for the MCP service
+  closure — `clippy::redundant_clone` flags the second pair as dead clones
+  since the originals are never read afterward. Reordered to clone once
+  (for the MCP closure) before moving the originals into `app_state`,
+  dropping two unnecessary `Arc` clone+drop pairs per router build. No
+  behavior change.
 
 ### Fixed
 
@@ -1131,7 +1193,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/moadim-io/daemon/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/moadim-io/daemon/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/moadim-io/daemon/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/moadim-io/daemon/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0

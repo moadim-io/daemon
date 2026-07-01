@@ -62,6 +62,10 @@ pub struct RoutineListQuery {
     /// When `true`, only return routines whose `machines` list includes the current machine.
     /// Defaults to `false` (return all routines, preserving backwards compatibility).
     pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
 }
 
 /// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
@@ -92,6 +96,12 @@ pub struct Routine {
     #[serde(default)]
     pub model: Option<String>,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]

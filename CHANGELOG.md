@@ -53,6 +53,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **SUBSCRIBE button on the routines calendar.** The calendar view's nav bar
+  now has a SUBSCRIBE button that copies the `/api/v1/routines.ics` feed URL
+  to the clipboard, so wiring the feed into an external calendar app no
+  longer requires reading the API docs to find the endpoint.
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

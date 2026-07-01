@@ -995,3 +995,21 @@ fn clone_title_does_not_double_prefix() {
 fn clone_title_preserves_empty_string() {
     assert_eq!(clone_title(""), "Copy of ");
 }
+
+// ── ics_feed_url ────────────────────────────────────────────────────────────────
+
+#[test]
+fn ics_feed_url_joins_origin_and_path() {
+    assert_eq!(
+        ics_feed_url("https://moadim.example.com"),
+        "https://moadim.example.com/api/v1/routines.ics"
+    );
+}
+
+#[test]
+fn ics_feed_url_preserves_port() {
+    assert_eq!(
+        ics_feed_url("http://localhost:8787"),
+        "http://localhost:8787/api/v1/routines.ics"
+    );
+}

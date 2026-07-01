@@ -13,7 +13,7 @@
 //! workbenches (routine since deleted) fall back to `MAX_TTL_SECS` / `MAX_RUNTIME_SECS`.
 //!
 //! Reaping a workbench also prunes its matching `projects[<workbench>]` entry from the shared
-//! `~/.claude.json` (see [`crate::utils::claude_json`]), which the built-in `claude` agent's `setup`
+//! `~/.claude.json` (see `crate::utils::claude_json`), which the built-in `claude` agent's `setup`
 //! step seeds on every run — otherwise that file would accumulate one dead entry per reaped run,
 //! forever.
 

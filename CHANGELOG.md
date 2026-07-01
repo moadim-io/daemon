@@ -27,6 +27,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
+  each added a `unused_async = "deny"` entry under `[lints.clippy]` in
+  `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't
+  understand TOML semantics. The resulting duplicate key made every `cargo`
+  invocation fail immediately with `error: duplicate key` before compiling a
+  single crate. Removed the duplicate entry so the workspace builds again.
 - `docs/moadim.1`'s `.TH` header reported a stale `moadim 0.16.0` even though
   `Cargo.toml` had moved on to 0.18.0 — the hand-maintained man page has no
   build-time link to the crate version, so a release could silently ship a man

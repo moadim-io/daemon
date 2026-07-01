@@ -34,6 +34,11 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- `moadim --help` now documents every flag the parser accepts, including the
+  `-f`/`--foreground` and `-d`/`--detach`/`--daemon` aliases and the `--version`
+  long form, so the help text can no longer silently drift from what `moadim`
+  actually parses; a new test asserts every accepted flag appears in the help
+  text (#340).
 - Renamed the misleading `last_triggered_at` field to **`last_manual_trigger_at`**
   on both routines and cron jobs (TOML, REST/OpenAPI, MCP tool descriptions, and
   the web UI). The field was only ever updated by *manual* triggers, never by

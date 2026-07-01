@@ -53,6 +53,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **`ETag` + `304 Not Modified` for the web UI.** `GET /` (and the SPA fallback
+  for client-routed paths) now sends a strong `ETag` for the embedded ~1.1 MB
+  `index.html`, and honors a matching `If-None-Match` with a bodyless `304`
+  instead of re-sending the full body on every load/refresh. `Cache-Control:
+  no-cache` keeps the browser revalidating on each request rather than trusting
+  a local TTL, since the content can change on any daemon upgrade. (#401)
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`

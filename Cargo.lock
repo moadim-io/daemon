@@ -1633,6 +1633,7 @@ dependencies = [
  "env_logger",
  "gethostname",
  "iana-time-zone",
+ "libc",
  "log",
  "rmcp",
  "schemars",

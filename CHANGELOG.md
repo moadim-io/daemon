@@ -39,6 +39,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   page reporting the *previous* version. Corrected the version token and added
   a regression test (`cli::cli_tests::man_page_version_matches_cargo_pkg_version`)
   that fails when the two drift again. (#556)
+- Locked the `--json` machine-readable contract with a regression test
+  (`cli::cli_tests::status_stop_cleanup_json_share_the_same_address`) asserting
+  `status --json`, `stop --json`, and `cleanup --json` all surface the same
+  `address` value, so the three shapes can't silently drift apart again. (#245)
 
 ### Added
 

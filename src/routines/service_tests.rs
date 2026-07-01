@@ -130,7 +130,10 @@ fn svc_list_includes_prompt_when_requested() {
     let list = svc_list(&store, &query);
     assert_eq!(list[0].routine.prompt, "do the thing");
     let json = serde_json::to_value(&list[0]).unwrap();
-    assert_eq!(json.get("prompt").and_then(|v| v.as_str()), Some("do the thing"));
+    assert_eq!(
+        json.get("prompt").and_then(|value| value.as_str()),
+        Some("do the thing")
+    );
 }
 
 /// Build a minimal valid create request; callers tweak the field under test.

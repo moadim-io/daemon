@@ -2,7 +2,7 @@
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
+    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing routines"),
     // Host-relative server URL: Swagger UI resolves "Try it out" requests against the origin the
     // docs were loaded from, so it follows a custom MOADIM_BIND_ADDR port or a reverse proxy instead
     // of a hardcoded 127.0.0.1:5784 that breaks the moment the daemon isn't bound there (issue #385).
@@ -13,15 +13,8 @@
         crate::routes::http::restart,
         crate::routes::http::echo,
         crate::routes::http::get_current_machine,
+        crate::routes::http::put_machine,
         crate::routes::http::list_machines,
-        crate::cron_jobs::list,
-        crate::cron_jobs::create,
-        crate::cron_jobs::get,
-        crate::cron_jobs::replace,
-        crate::cron_jobs::update,
-        crate::cron_jobs::delete,
-        crate::cron_jobs::trigger,
-        crate::cron_jobs::get_logs,
         crate::routines::list,
         crate::routines::list_agents,
         crate::routines::create,
@@ -39,11 +32,6 @@
         crate::routines::ical_feed,
     ),
     components(schemas(
-        crate::cron_jobs::CronJob,
-        crate::cron_jobs::CronJobResponse,
-        crate::cron_jobs::CronJobSourceType,
-        crate::cron_jobs::CreateRequest,
-        crate::cron_jobs::UpdateRequest,
         crate::routines::Routine,
         crate::routines::Repository,
         crate::routines::RoutineResponse,
@@ -59,6 +47,7 @@
         crate::routes::http::EchoRequest,
         crate::routes::http::EchoResponse,
         crate::routes::http::MachineResponse,
+        crate::routes::http::SetMachineRequest,
         crate::global_lock::LockStatus,
         crate::routines::LockRequest,
     ))

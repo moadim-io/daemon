@@ -1,8 +1,14 @@
 {
-  "name": "moadim-server",
+  "name": "moadim",
+  "version": "0.19.1",
   "private": true,
   "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "changeset": "changeset",
+    "version-packages": "node scripts/release/version-and-sync.mjs"
+  },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "block-no-verify": "^1.3.0"
   }
 }

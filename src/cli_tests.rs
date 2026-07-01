@@ -304,8 +304,8 @@ fn data_keywords_route_to_data_command_with_full_argv() {
     // The keyword itself with no further args still routes to the data dispatcher (which then
     // surfaces clap's usage error), rather than the lifecycle parser.
     assert_eq!(
-        parse(argv(&["cron-jobs"])),
-        Command::Data(argv(&["cron-jobs"]))
+        parse(argv(&["routines"])),
+        Command::Data(argv(&["routines"]))
     );
 }
 
@@ -536,6 +536,35 @@ fn cleanup_json_address_reflects_bind_override() {
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 
+/// Lock the machine-readable contract across all three `--json` commands: `status`, `stop`, and
+/// `cleanup` must each surface `address`, and — since they all describe the same bound endpoint —
+/// the value must be identical across all three, so the shapes can't silently drift apart again.
+#[test]
+fn status_stop_cleanup_json_share_the_same_address() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+
+    let expected = serde_json::json!("127.0.0.1:6000");
+    assert!(
+        status["address"].is_string(),
+        "status --json must include address"
+    );
+    assert!(
+        stop["address"].is_string(),
+        "stop --json must include address"
+    );
+    assert!(
+        cleanup["address"].is_string(),
+        "cleanup --json must include address"
+    );
+    assert_eq!(status["address"], expected);
+    assert_eq!(stop["address"], expected);
+    assert_eq!(cleanup["address"], expected);
+}
+
 #[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();
@@ -666,9 +695,43 @@ fn pid_file_write_read_clear_roundtrip() {
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     write_pid_file().unwrap();
     assert_eq!(read_pid_file(), Some(std::process::id()));
-    assert!(crate::paths::config_gitignore_path().exists());
-    // A second write hits the "gitignore already exists, skip" branch.
+    let gitignore = crate::paths::config_gitignore_path();
+    assert!(gitignore.exists());
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "gitignore must cover *.local.*"
+    );
+    // Manually remove one pattern; a second write must restore it without
+    // duplicating the patterns already present.
+    std::fs::write(&gitignore, "*.pid\n*.log\n").unwrap();
     write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "missing pattern must be re-added"
+    );
+    assert_eq!(
+        content.matches("*.pid").count(),
+        1,
+        "existing patterns must not duplicate"
+    );
+    // Write a file with all patterns but no trailing newline; the next write
+    // must insert the newline separator before appending (line 495 branch).
+    std::fs::write(&gitignore, "*.pid\n*.log").unwrap();
+    write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "must append after no-trailing-newline content"
+    );
+    // All patterns present → early return (line 492 branch). Call twice; second is a no-op.
+    write_pid_file().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&gitignore).unwrap(),
+        content,
+        "no-op write must not change file"
+    );
     clear_pid_file();
     assert!(read_pid_file().is_none());
     // A garbage pid file parses to None rather than panicking.
@@ -742,4 +805,145 @@ fn spawn_restart_launches_a_detached_helper() {
     let pid = spawn_restart().unwrap();
     assert!(pid > 0);
     let _ = std::fs::remove_dir_all(&home);
+}
+
+// ─── Additional coverage tests ────────────────────────────────────────────────
+
+#[test]
+fn machine_command_carries_remaining_args() {
+    // Covers the `Some("machine") => Command::Machine(args[1..].to_vec())` branch.
+    assert_eq!(
+        parse(argv(&["machine", "show"])),
+        Command::Machine(argv(&["show"]))
+    );
+    // "machine" alone yields an empty vec (the sub-dispatcher handles the error).
+    assert_eq!(parse(argv(&["machine"])), Command::Machine(vec![]));
+}
+
+#[test]
+fn parse_health_rejects_version_non_string() {
+    // Covers the `.as_str()?` None arm: version is present but not a string.
+    assert_eq!(parse_health(r#"{"uptime_secs":1,"version":42}"#), None);
+}
+
+#[test]
+fn write_pid_file_errors_when_config_dir_is_blocked() {
+    // A regular file sitting where the config dir should be causes create_dir_all to fail.
+    let base = temp_home("pid-dir-blocked");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(write_pid_file().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn write_pid_file_errors_when_pid_path_is_directory() {
+    // create_dir_all succeeds but writing the pid as a file fails because
+    // a directory already occupies the pid file path.
+    let base = temp_home("pid-path-is-dir");
+    let config_dir = base.join(".config/moadim");
+    // Create a DIRECTORY at the pid file path instead of a plain file.
+    std::fs::create_dir_all(config_dir.join("moadim.pid")).unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(write_pid_file().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn spawn_detached_errors_when_log_dir_creation_blocked() {
+    // A file at the config-dir path blocks create_dir_all for the log parent dir.
+    let base = temp_home("spawn-log-blocked");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(spawn_detached().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn spawn_detached_errors_when_log_file_path_is_directory() {
+    // create_dir_all for the log parent dir succeeds (the config dir exists), but
+    // opening the log file fails because a directory occupies that exact path.
+    let base = temp_home("spawn-log-is-dir");
+    let config_dir = base.join(".config/moadim");
+    // Place a DIRECTORY at daemon.log so the OpenOptions::open fails.
+    std::fs::create_dir_all(config_dir.join("daemon.log")).unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(spawn_detached().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn run_background_errors_when_stop_running_times_out() {
+    // A server that never stops causes stop_running_and_wait() to time out and
+    // return Err, which run_background() propagates (the `?` error branch at L208).
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("runbg-stop-err");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
+    assert!(run_background().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_errors_when_stop_running_times_out() {
+    // Same as above but exercises the `?` error branch at L225 (inside `restart()`).
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("restart-stop-err");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
+    assert!(restart().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_errors_when_spawn_detached_fails() {
+    // Server not running → restart() tries spawn_detached() → blocked log dir → Err.
+    // Exercises the `?` error branch at L231 (let new_pid = spawn_detached()?).
+    let base = temp_home("restart-spawn-err");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(restart().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn run_background_errors_when_spawn_detached_fails() {
+    // Server not running → run_background() → start_detached_and_report() →
+    // spawn_detached() fails → Err propagated.
+    // Exercises the `?` error branch at L251 (let pid = spawn_detached()?).
+    let base = temp_home("runbg-spawn-err");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(run_background().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// `docs/moadim.1` hand-mirrors the CLI and hardcodes its own version in the `.TH` header
+/// (e.g. `"moadim 0.16.0"`). Nothing previously kept that in lockstep with `Cargo.toml`, so a
+/// release could silently ship a man page reporting the *previous* version (issue #556). Fail
+/// loudly on drift instead.
+#[test]
+fn man_page_version_matches_cargo_pkg_version() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/moadim.1");
+    let man_page = std::fs::read_to_string(path).expect("docs/moadim.1 should exist");
+    let th_line = man_page
+        .lines()
+        .find(|line| line.starts_with(".TH MOADIM"))
+        .expect("docs/moadim.1 should have a .TH header line");
+    let expected = format!("\"moadim {}\"", env!("CARGO_PKG_VERSION"));
+    assert!(
+        th_line.contains(&expected),
+        "docs/moadim.1 .TH header is stale: expected it to contain {expected:?}, got: {th_line:?}\n\
+         Update the version token in docs/moadim.1 to match Cargo.toml."
+    );
 }

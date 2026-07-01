@@ -62,6 +62,10 @@ pub struct RoutineListQuery {
     /// When `true`, only return routines whose `machines` list includes the current machine.
     /// Defaults to `false` (return all routines, preserving backwards compatibility).
     pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
 }
 
 /// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
@@ -88,6 +92,12 @@ pub struct Routine {
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
@@ -136,6 +146,10 @@ pub struct Routine {
     /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
+    /// Defaults to empty; each entry is trimmed and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -248,6 +262,10 @@ pub struct CreateRoutineRequest {
     /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
+    /// and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -272,6 +290,8 @@ pub struct UpdateRoutineRequest {
     pub ttl_secs: Option<u64>,
     /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
     pub max_runtime_secs: Option<u64>,
+    /// New tags list, or `None` to keep the existing value.
+    pub tags: Option<Vec<String>>,
 }
 
 #[cfg(test)]

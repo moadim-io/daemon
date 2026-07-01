@@ -82,7 +82,7 @@ pub enum Command {
     Help,
     /// Print the binary version.
     Version,
-    /// A data-plane subcommand (`cron-jobs`, `routines`, `agents`, `echo`) handled by the clap-based
+    /// A data-plane subcommand (`routines`, `agents`, `echo`) handled by the clap-based
     /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
     /// argv (including the subcommand keyword) for clap to parse.
     Data(Vec<String>),
@@ -94,7 +94,7 @@ pub enum Command {
 
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
 /// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
-pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "schedule", "agents", "echo"];
+pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "echo"];
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
@@ -103,7 +103,6 @@ pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "schedule",
 pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
-        None => Command::Background,
         Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("machine") => Command::Machine(args[1..].to_vec()),
         Some("restart") => Command::Restart,
@@ -126,10 +125,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
-        Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
-        Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
+        None | Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
         Some(_) => Command::Help,
     }
 }
@@ -150,7 +148,7 @@ fn wants_quiet(rest: &[String]) -> bool {
 pub fn print_help() {
     let bind_addr = bind_addr();
     println!(
-        "moadim — cron/MCP/REST server with a web control panel\n\
+        "moadim — routine scheduler with an MCP/REST API and a web control panel\n\
          \n\
          USAGE:\n\
          \x20   moadim [MODE]\n\
@@ -168,15 +166,14 @@ pub fn print_help() {
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
-         \x20   uninstall              remove the OS service registration and managed crontab blocks\n\
+         \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
          DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
-         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
          \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
-         \x20   schedule  trigger <id> trigger a routine or cron job by ID (used by run.sh wrappers)\n\
+         \x20   schedule  trigger <id> trigger a routine by ID (used by the routines crontab line)\n\
          \x20   agents                 list available agent keys\n\
          \x20   echo <message>         echo a message via the server\n\
          \n\
@@ -474,15 +471,32 @@ pub fn write_pid_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Write a `.gitignore` into the config dir so generated runtime files (`*.pid`, `*.log`) and
-/// per-machine state (`*.local.*`, e.g. `machine.local.toml`) stay out of version control when users
-/// track `~/.config/moadim` in a dotfiles repo shared across machines.
-/// Best-effort: failure to write it is not fatal to starting the daemon.
+/// Ensure the config dir `.gitignore` contains all required patterns on every start.
+///
+/// Reads the existing file (if any), appends any missing patterns, and writes back only when
+/// something changed. Preserves user-added entries. Best-effort: failure is not fatal.
 fn ensure_config_gitignore() {
+    const REQUIRED: &[&str] = &["*.pid", "*.log", "*.local.*"];
     let gitignore = crate::paths::config_gitignore_path();
-    if !gitignore.exists() {
-        let _ = std::fs::write(&gitignore, "*.pid\n*.log\n*.local.*\n");
+    let existing = std::fs::read_to_string(&gitignore).unwrap_or_default();
+    let lines: Vec<&str> = existing.lines().collect();
+    let missing: Vec<&str> = REQUIRED
+        .iter()
+        .copied()
+        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
+        .collect();
+    if missing.is_empty() {
+        return;
     }
+    let mut content = existing.clone();
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    for pattern in &missing {
+        content.push_str(pattern);
+        content.push('\n');
+    }
+    let _ = std::fs::write(&gitignore, &content);
 }
 
 /// Remove the pid file. Best-effort: a missing file is not an error.
@@ -589,15 +603,21 @@ fn http_request_core(
         .parse()
         .expect("bind address is a valid socket address");
     let mut stream = std::net::TcpStream::connect_timeout(&addr, timeout)?;
-    stream.set_read_timeout(Some(timeout))?;
-    stream.set_write_timeout(Some(timeout))?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .expect("set read timeout on loopback TCP stream");
+    stream
+        .set_write_timeout(Some(timeout))
+        .expect("set write timeout on loopback TCP stream");
     let payload = body.unwrap_or_default();
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: {addr_str}\r\nContent-Type: application/json\r\n\
          Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
-    stream.write_all(req.as_bytes())?;
+    stream
+        .write_all(req.as_bytes())
+        .expect("write HTTP request to local server");
     let mut resp = String::new();
     // A failed read after a clean shutdown can still yield the status line we already received.
     let _ = stream.read_to_string(&mut resp);
@@ -660,14 +680,16 @@ pub fn spawn_restart() -> anyhow::Result<u32> {
 fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
     use std::process::{Command as Proc, Stdio};
 
-    let exe = std::env::current_exe()?;
+    let exe = std::env::current_exe().expect("resolve current executable path");
     let log_path = crate::paths::daemon_log_file();
     std::fs::create_dir_all(log_path.parent().expect("daemon log path has a parent dir"))?;
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path)?;
-    let err = out.try_clone()?;
+    let err = out
+        .try_clone()
+        .expect("clone log file handle for stderr redirect");
 
     let mut cmd = Proc::new(exe);
     cmd.stdin(Stdio::null())
@@ -676,7 +698,8 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     configure(&mut cmd);
     detach(&mut cmd);
 
-    let child = cmd.spawn()?;
+    #[allow(clippy::zombie_processes)]
+    let child = cmd.spawn().expect("spawn detached moadim child process");
     Ok(child.id())
 }
 

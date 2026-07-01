@@ -583,6 +583,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
     }
@@ -673,4 +674,23 @@ fn effective_ttl_falls_back_to_cap_when_schedule_never_fires() {
         routine_with("0 0 30 2 *", Some(15)).effective_ttl_secs(),
         15
     );
+}
+
+// ─── parse_workbench_name overflow (L55) ─────────────────────────────────────
+
+#[test]
+fn parse_workbench_name_overflowing_timestamp_returns_none() {
+    // All-digit suffix that is too large to fit in u64 (20 nines > u64::MAX):
+    // the digit-only guard passes but `ts.parse::<u64>().ok()` returns None → function returns None.
+    assert!(parse_workbench_name("slug-99999999999999999999").is_none());
+}
+
+// ─── cron_interval_secs second-fire None (L36) ───────────────────────────────
+
+#[test]
+fn cron_interval_secs_returns_none_when_second_fire_not_found() {
+    // A 7-field cron restricted to year 4999 fires exactly once: Jan 1 4999 00:00:00.
+    // The first `fires.next()` → Some (L35 taken as Some); the second `fires.next()` advances
+    // into year 5000 which exceeds croner's YEAR_UPPER_LIMIT → iterator returns None (L36).
+    assert!(super::ttl::cron_interval_secs("0 0 0 1 1 * 4999").is_none());
 }

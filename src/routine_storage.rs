@@ -56,6 +56,9 @@ struct RoutineToml {
     /// the daemon default.
     #[serde(default)]
     max_runtime_secs: Option<u64>,
+    /// Free-form labels for the routine; absent means no tags.
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
@@ -135,6 +138,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         last_scheduled_trigger_at,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
+        tags: toml.tags,
     })
 }
 
@@ -176,8 +180,11 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         last_manual_trigger_at: None,
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
+        tags: routine.tags.clone(),
     };
-    let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
+    let text = toml::to_string_pretty(&toml_routine).expect(
+        "RoutineToml serialization cannot fail for a struct with only primitive and Option fields",
+    );
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:
     // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
@@ -202,7 +209,8 @@ fn write_runtime_state(slug: &str, last_manual_trigger_at: Option<u64>) -> std::
             let state = RuntimeState {
                 last_manual_trigger_at,
             };
-            let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
+            let text = toml::to_string_pretty(&state)
+                .expect("RuntimeState serialization cannot fail for a struct with only an Option<u64> field");
             atomic_write(&path, text.as_bytes())?;
         }
         None => {

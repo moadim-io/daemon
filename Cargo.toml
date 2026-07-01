@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.19.0"
+version = "0.19.1"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -94,3 +94,7 @@ explicit_iter_loop = "deny"
 # ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
 # "go to definition" unambiguous.
 wildcard_imports = "deny"
+# Reject `match` arms with identical bodies — either the arm is dead code
+# already covered by another pattern, or the duplication is an unintentional
+# bug where the bodies were meant to differ.
+match_same_arms = "deny"

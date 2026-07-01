@@ -11,6 +11,26 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-07-01
+
+### Fixed
+
+- **The routines page failed to load with "missing field `prompt`".** PR #825
+  made `GET /routines` omit the `prompt` field from each routine's JSON by
+  default, but the UI's separately-mirrored `Routine` struct never got a
+  matching `#[serde(default)]` on that field, so the wasm client's
+  deserialization broke on every list fetch.
+
+### Added
+
+- **Repository filter for the Routines table.** The REST `GET /routines`
+  endpoint has supported a `?repository=` filter for a while, but the web UI
+  had no way to use it — the only client-side facets were status, agent, and
+  machine. Added a REPOSITORY dropdown to the Routines filter bar (mirroring
+  the existing agent/machine facet pattern), populated from the distinct
+  repository URLs across loaded routines, so operators can narrow a dense
+  routines list to a single repo without hand-editing the query string.
+
 ## [0.19.0] - 2026-07-02
 
 ### Removed
@@ -93,13 +113,15 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
-- **Structured JSON logging.** Set `MOADIM_LOG_FORMAT=json` to switch `daemon.log`
-  (and foreground stdout) from `env_logger`'s human-readable format to one JSON
-  object per line (`ts`, `level`, `target`, `msg`), so a `launchd`/`systemd`-run
-  daemon can ship its log into an aggregator (Loki, ELK, Vector, CloudWatch)
-  without regex-scraping free-form text. Opt-in — the variable unset keeps the
-  current text format byte-for-byte, and `RUST_LOG` level filtering is unchanged
-  in both formats. (#416)
+- **`actionlint`/`shellcheck` CI gate.** New `.github/workflows/actionlint.yml`
+  runs `actionlint` (via `raven-actions/actionlint`, pinned to a commit SHA) on
+  every PR and on push to `main`, statically validating workflow YAML —
+  syntax, `${{ }}` expressions, the `needs`/`if`/matrix job graph, event
+  triggers, action input names — and, with `shellcheck` enabled by default,
+  linting every embedded `run:` block. Previously a typo'd key, a bad
+  expression, or an unquoted shell variable in `.github/workflows/` only
+  surfaced when the workflow actually ran on `main` or a release tag.
+  Documented in `CONTRIBUTING.md` alongside the other lint tooling. (#454)
 
 ### Changed
 
@@ -1200,7 +1222,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1

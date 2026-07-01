@@ -27,11 +27,24 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: >
+          Git ref to check out. Empty (the default) means "use the ref that
+          triggered this run" — set only by changeset-release.yml, which
+          calls this workflow directly to test a branch (changeset-release/main)
+          other than the one that triggered it.
+        required: false
+        type: string
 
 # Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
-# so superseded test runs don't pile up and burn CI minutes.
+# so superseded test runs don't pile up and burn CI minutes. Literal "test"
+# prefix, not ${{ github.workflow }} — see lint.yml's comment: workflow_call
+# callers (cut-release.yml) would otherwise collide lint and test onto the
+# same concurrency group and race-cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: test-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,6 +53,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1

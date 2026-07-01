@@ -27,6 +27,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Fixed
 
+- **The committed `prebuilt.html` fallback UI was stale and silently missing
+  features.** `build.rs` inlines the compiled Yew UI into `prebuilt.html` and
+  falls back to that committed copy whenever `trunk` isn't installed at build
+  time (e.g. `cargo install moadim` from a git checkout, or a Docker build
+  without trunk) — but nothing verified it stayed in sync with `ui/src`. It had
+  drifted: the copy on `main` was missing the machine-name badge, machine
+  filter, and rename-machine dialog entirely, even though that code had long
+  since landed. Regenerated `prebuilt.html` and added a `prebuilt-ui` CI job
+  that rebuilds it with trunk on every PR touching `ui/` and fails if the
+  committed copy doesn't match, so this can't silently regress again.
 - **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
   each added a `unused_async = "deny"` entry under `[lints.clippy]` in
   `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't

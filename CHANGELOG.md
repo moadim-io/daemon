@@ -62,9 +62,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   bare `cargo clippy`. In this non-virtual workspace (the root `Cargo.toml`
   declares both a `[package]` and `[workspace]`), the bare form only checks
   the root `moadim` package, so the `ui` member crate was never type-checked
-  or linted by the hook. `.github/workflows/lint.yml`'s `clippy` job has the
-  same gap and needs the same `--workspace` flag; tracked as follow-up since
-  this PR's credentials can't push workflow-file changes.
+  or linted by the hook.
+- `.github/workflows/lint.yml`'s `clippy` job now runs `cargo clippy
+  --workspace --all-targets -- -D warnings` too, closing the matching gap in
+  CI: previously the bare `cargo clippy --all-targets` only checked the root
+  `moadim` package, so `ui/Cargo.toml`'s `[lints.clippy] all = "deny"`
+  posture was never enforced on PRs and a dashboard lint regression could
+  merge to `main` fully green, only surfacing via the local hook (if a
+  contributor had it installed) or at release time.
 
 ### Fixed
 
@@ -74,8 +79,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `Routine` by #505, and `cron_jobs::unassigned_count` /
   `routines::unassigned_routines_count` were dead code left over from before
   #771 made the "Unassigned" machine facet a permanent filter option. None of
-  this was caught because `ui` was outside the pre-push clippy gate (see the
-  `--workspace` fix above) and CI's equivalent gate has the same blind spot.
+  this was caught because `ui` was outside the pre-push clippy gate and CI's
+  equivalent gate had the same blind spot (now closed, see `--workspace`
+  fix above).
 
 ## [0.18.0] — 2026-06-30
 

@@ -86,3 +86,7 @@ redundant_closure_for_method_calls = "deny"
 # reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
 # would move). It states "borrow and iterate" at a glance.
 explicit_iter_loop = "deny"
+# Reject `async fn`s (and async closures/blocks) that never `.await` anything
+# internally — needless async propagates up the call stack and pulls in a
+# `Future` state machine for work that's actually synchronous.
+unused_async = "deny"

@@ -43,6 +43,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Changed
 
+- Enabled the `clippy::unused_async` lint. It flags `async fn`s (and async
+  closures/blocks) that never `.await` anything internally, which needlessly
+  propagate async-ness up the call stack and pull in a `Future` state machine
+  for work that's actually synchronous. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
+  (#803)
 - **Gzip-compressed HTTP responses.** The Axum router now negotiates
   `Accept-Encoding` and gzip-compresses response bodies via a `tower-http`
   `CompressionLayer`, cutting the ~1.1 MB SPA payload (and the OpenAPI JSON

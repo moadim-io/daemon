@@ -7,7 +7,7 @@
 
 > **Loop engineering, on a schedule.** Stop prompting your agents — design the loop that prompts them.
 >
-> **Cron jobs that run while you sleep.** One port. Three interfaces. Zero drift.
+> **Agent routines that run while you sleep.** One port. Three interfaces. Zero drift.
 >
 > _Set the loop. Forget the keyboard. moadim fires the prompt so you don't have to._
 
@@ -17,14 +17,14 @@
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env" && cargo install --locked moadim && moadim
 ```
 
-Rust server that schedules **cron jobs** (run a script) and **routines** (run an
-AI agent), exposing both over three interfaces simultaneously:
+Rust server that schedules **routines** (run an AI agent on a cron schedule),
+exposing them over three interfaces simultaneously:
 
-- **UI** (`http://localhost:5784/`) — browser dashboard for managing jobs and routines
+- **UI** (`http://localhost:5784/`) — browser dashboard for managing routines
 - **REST** (`http://localhost:5784/api/v1`) — standard HTTP API for browsers, CLI tools, and services; Swagger UI at `/docs`
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
-All three share the same port. Jobs and routines created through any interface are
+All three share the same port. Routines created through any interface are
 automatically synced to the OS crontab so they actually run on schedule. See
 [Routines](#routines) for the agent-loop engine, or
 [`docs/comparison.md`](docs/comparison.md) for how moadim compares to cron,
@@ -39,7 +39,7 @@ building and installing:
 | ---------- | ------------ | ------- |
 | Rust/Cargo | building and installing moadim | <https://rustup.rs> |
 | `tmux`     | launching routine agents — every scheduled routine starts its agent inside a tmux session. **Without `tmux`, routine runs silently fail to launch.** | `brew install tmux` (macOS) · `apt install tmux` (Debian/Ubuntu) |
-| `crontab`  | scheduling — moadim writes managed jobs and routines into the OS crontab so they fire on schedule | preinstalled on macOS; `apt install cron` (Debian/Ubuntu) |
+| `crontab`  | scheduling — moadim writes managed routines into the OS crontab so they fire on schedule | preinstalled on macOS; `apt install cron` (Debian/Ubuntu) |
 
 The daemon reports whether `tmux` resolves on its `PATH` in `GET /api/v1/health`
 (under `dependencies`) and logs a warning at startup when it is missing, so a
@@ -92,13 +92,10 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 
 > _Close the loop. Skip the keyboard. Loop engineering, shipped as a daemon._
 
-- Jobs created via REST or MCP are written into your OS crontab automatically
-- Job declarations live in `~/.config/moadim/jobs/` — git-trackable, diff-friendly
-- Handlers are executable scripts in `~/.config/moadim/handlers/` — any language, also git-trackable
-- **Routines** schedule an AI agent instead of a script — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines))
+- Routines created via REST or MCP are written into your OS crontab automatically
+- **Routines** schedule an AI agent — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines)) — git-trackable, diff-friendly
 - **Agents** are a registry of coding agents (`claude`, …) under `~/.config/moadim/agents/<name>.toml`, referenced by routines
 - Each routine run executes in a throwaway **workbench** under `~/.moadim/workbenches/` (a separate tree from the config dir), reaped on an hourly cleanup sweep
-- `job.local.toml` per job for secrets and machine-specific overrides that stay off-git
 - Same REST and MCP interface — no logic duplication between protocols
 - API spec auto-generated at build time into `apis/`
 
@@ -106,21 +103,6 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 
 ```
 ~/.config/moadim/
-├── jobs/
-│   ├── daily-report/
-│   │   ├── job.toml        # tracked — commit this
-│   │   ├── job.local.toml  # untracked — local overrides (secrets, machine-specific config)
-│   │   └── job.local.log         # untracked — runtime log
-│   ├── cleanup-temp/
-│   │   ├── job.toml
-│   │   └── job.local.log
-│   └── sync-calendar/
-│       ├── job.toml
-│       └── job.local.toml
-├── handlers/
-│   ├── send-report.sh
-│   ├── cleanup-temp.py
-│   └── sync-calendar.sh
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
 │       ├── routine.toml       # tracked — schedule, agent, prompt, repositories
@@ -139,122 +121,31 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 
 > _Your crontab, your rules — moadim keeps its own block in sync._
 
-Moadim owns a single block inside your crontab. Everything outside that block is untouched.
+Moadim owns a single block inside your crontab for routines. Everything outside that block is untouched.
 
 ```
-# BEGIN MOADIM
-# Managed by moadim — edits here are overwritten on the next sync
-30 9 * * 1-5 /home/user/.config/moadim/handlers/send-report # moadim:uuid
-0 0 * * 0 /home/user/.config/moadim/handlers/cleanup-temp # moadim:uuid
-# END MOADIM
+# BEGIN MOADIM-ROUTINES
+# Managed by moadim — routines (agent tmux sessions)
+* * * * * /…/moadim schedule trigger '<id>' # moadim-routine:<id>
+# END MOADIM-ROUTINES
 ```
 
-**Forward sync (moadim → crontab):** any time you create, update, or delete a job via the UI, REST, or MCP, the crontab block is rewritten immediately. Disabled jobs are excluded from the block.
+**Forward sync (moadim → crontab):** any time you create, update, or delete a routine via the UI, REST, or MCP, the crontab block is rewritten immediately. Disabled routines are excluded from the block.
 
-**Reverse sync (crontab → moadim) is not currently enabled.** Edit jobs through the UI, REST, or MCP rather than by hand: manual changes inside the block do **not** sync back into moadim and are overwritten by the next forward sync. (The reverse-sync parser exists but is not wired to run — tracked in [#218](https://github.com/moadim-io/daemon/issues/218).)
+**Reverse sync (crontab → moadim) is not implemented.** Edit routines through the UI, REST, or MCP rather than by hand: manual changes inside the block do **not** sync back into moadim and are overwritten by the next forward sync.
 
 **Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`) are also accepted. `@reboot` and `@midnight` are **not** supported via the API and are rejected with `400 Bad Request`.
 
-**Timezone:** because jobs run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
-
-## Handlers
-
-Handlers are executable scripts under `~/.config/moadim/handlers/`. The `handler` field in `job.toml` is the filename without extension.
-
-```
-handlers/send-report.sh      ← handler = "send-report"
-handlers/cleanup-temp.py     ← handler = "cleanup-temp"
-```
-
-Any executable works — shell, Python, Node, compiled binary. The server passes job metadata as environment variables prefixed with `MOADIM_`.
-
-```sh
-#!/usr/bin/env bash
-# ~/.config/moadim/handlers/send-report.sh
-
-curl -s -X POST "https://api.example.com/report" \
-  -H "Authorization: Bearer $MOADIM_API_KEY" \
-  -d "recipient=$MOADIM_RECIPIENT"
-```
-
-Multiple jobs can share one handler, differing only in schedule or metadata:
-
-```
-jobs/daily-report/job.toml   → handler = "send-report"
-jobs/weekly-digest/job.toml  → handler = "send-report"
-```
-
-Handlers are git-trackable alongside jobs:
-
-```sh
-cd ~/.config/moadim
-git add jobs/ handlers/
-git commit -m "initial jobs and handlers"
-```
-
-## Job declarations
-
-Each job is a folder under `~/.config/moadim/jobs/`. The folder name is the job ID.
-
-Each job folder contains an auto-generated `.gitignore` that excludes `*.local.*` and `*.log` files — no manual setup needed.
-
-### `job.toml`
-
-Tracked configuration — schedule, handler, and shared metadata.
-
-```toml
-# ~/.config/moadim/jobs/daily-report/job.toml
-
-schedule = "30 9 * * 1-5"   # cron expression (min hour dom month dow)
-handler  = "send-report"     # filename in ~/.config/moadim/handlers/ (no extension)
-enabled  = true              # omit to default to true
-
-[metadata]
-recipient = "team@example.com"
-timezone  = "Asia/Jerusalem"
-```
-
-| Field        | Type   | Required | Description                                                            |
-| ------------ | ------ | -------- | ---------------------------------------------------------------------- |
-| `schedule`   | string | yes      | Cron expression: `min hour dom month dow` or `@hourly`/`@daily`/`@weekly`/`@monthly`/`@yearly`/`@annually`. |
-| `handler`    | string | yes      | Script name in `handlers/` (without extension)                         |
-| `enabled`    | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.             |
-| `[metadata]` | table  | no       | Key/value pairs passed to the handler as `MOADIM_*` env vars.          |
-
-### `job.local.toml`
-
-Untracked overrides — machine-specific values or secrets that should not be committed. Loaded after `job.toml`; local values win on any conflict.
-
-```toml
-# ~/.config/moadim/jobs/daily-report/job.local.toml
-
-enabled = false           # overrides job.toml enabled = true → job is paused locally
-
-[metadata]
-api_key = "sk-..."        # secret — never commit
-recipient = "me@local"    # overrides job.toml recipient
-```
-
-### `job.local.log`
-
-Append-only log written by the server on each run. Gitignored via `*.local.*`. Readable in the UI via the LOGS button or `GET /api/v1/cron-jobs/{id}/logs`.
-
-```
-2026-06-11T09:30:00Z [daily-report] run started
-2026-06-11T09:30:01Z [daily-report] run finished OK (1.2s)
-```
+**Timezone:** because routines run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
 
 ## Routines
 
-> _Cron jobs run a script. Routines run an agent._
-
-A **routine** is a scheduled AI-agent task — the agent-driven sibling of a cron
-job. Where a job fires a handler script, a routine fires a prompt at a coding
+A **routine** is a scheduled AI-agent task: it fires a prompt at a coding
 agent (e.g. Claude) on a cron schedule, each run inside its own throwaway
 workbench.
 
 Routines are stored as folders under `~/.config/moadim/routines/<id>/`,
-git-trackable just like jobs:
+git-trackable:
 
 ```
 ~/.config/moadim/routines/
@@ -423,22 +314,12 @@ with a message on stderr.
 
 ### Data commands
 
-Beyond lifecycle, the CLI exposes **every** cron-job and routine action the REST API and MCP tools
+Beyond lifecycle, the CLI exposes **every** routine action the REST API and MCP tools
 do — they are thin clients that send the same JSON to the running server and print its response
 (pretty-printed JSON, or raw text for logs / the iCalendar feed). Like `status`/`stop`/`cleanup`,
 they exit `3` when no server is reachable and `1` on a non-2xx response.
 
 ```sh
-# Cron jobs (alias: `cron`)
-moadim cron-jobs create --schedule "0 9 * * *" --handler send-report
-moadim cron-jobs list
-moadim cron-jobs get <id>
-moadim cron-jobs update <id> --schedule "0 10 * * *" --enabled false
-moadim cron-jobs replace <id> --schedule "0 9 * * *" --handler send-report
-moadim cron-jobs trigger <id>
-moadim cron-jobs logs <id>
-moadim cron-jobs delete <id>
-
 # Routines (alias: `routine`)
 moadim routines create --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..." \
   --repositories '[{"repository":"https://github.com/me/repo","branch":"main"}]'
@@ -457,7 +338,7 @@ moadim echo "hello"           # echo via the server (with a server timestamp)
 ```
 
 Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.
-`--metadata` (cron) and `--repositories` (routines) take raw JSON. Optional flags map to a PATCH so
+`--repositories` (routines) takes raw JSON. Optional flags map to a PATCH so
 only what you pass changes; `create`/`replace` send the full object.
 
 ### Scripting
@@ -495,19 +376,12 @@ press the **STOP** button in the UI header, run `moadim stop`, or send
 `POST /shutdown`. (During development, `cargo run -- --interactive` keeps it in
 the foreground.)
 
-Starts on `http://127.0.0.1:5784`. On startup the server:
-
-1. Loads all managed jobs from `~/.config/moadim/jobs/`.
-2. Loads all routines, seeds any missing built-in default routines, and rewrites
-   the **routines** crontab block — so a block that went stale while the server
-   was stopped (e.g. emptied by an earlier run) is regenerated and scheduled
-   routines keep firing.
-
-The **job** crontab block is _not_ rewritten at startup; it is kept current on
-each job create/update/delete (see [Crontab sync](#crontab-sync)). Reverse sync
-(crontab → moadim) is not run in either direction, so manual edits inside the
-managed blocks are never imported — they are overwritten by the next forward
-sync.
+Starts on `http://127.0.0.1:5784`. On startup the server loads all routines,
+seeds any missing built-in default routines, and rewrites the **routines**
+crontab block — so a block that went stale while the server was stopped (e.g.
+emptied by an earlier run) is regenerated and scheduled routines keep firing.
+Reverse sync (crontab → moadim) is not run, so manual edits inside the managed
+block are never imported — they are overwritten by the next forward sync.
 
 ### Bind address
 

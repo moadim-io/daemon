@@ -21,7 +21,7 @@ pub(super) fn unit_path() -> anyhow::Result<PathBuf> {
 pub(super) fn render_unit(exe: &Path) -> String {
     format!(
         "[Unit]\n\
-         Description=moadim cron/MCP/REST daemon\n\
+         Description=moadim routine scheduler / MCP/REST daemon\n\
          After=network.target\n\
          \n\
          [Service]\n\

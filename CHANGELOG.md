@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Changed
+
+- **`list_routines` omits routine prompts by default.** The prompt is the
+  largest field on a routine and is rarely needed when scanning a listing, so it
+  bloated `GET /routines` responses and burned MCP context tokens on every call.
+  The `prompt` key is now absent from list entries unless the caller opts in with
+  `include_prompts=true` (a new boolean on the `list_routines` MCP tool and the
+  `GET /routines` query string). `get_routine` / `GET /routines/{id}` are
+  unaffected and always return the prompt; `routine.toml` persistence is
+  unchanged. (#824)
+
 ### Documentation
 
 - **Added `CODE_OF_CONDUCT.md`.** The repo had a `CONTRIBUTING.md` and

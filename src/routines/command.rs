@@ -9,12 +9,19 @@ use super::model::Routine;
 ///
 /// Lowercases, replaces each run of non-alphanumeric characters with a single `-`, and trims
 /// leading/trailing `-`. Returns `"routine"` if nothing usable remains.
+///
+/// Alphanumeric is judged with `char::is_alphanumeric` (Unicode-aware), so non-Latin scripts —
+/// Hebrew, Cyrillic, Greek, CJK — and accented Latin letters (`é`, `ü`, `ñ`) are preserved rather
+/// than dropped. This keeps internationalized titles meaningful and, crucially, distinct: without
+/// it, every all-non-ASCII title collapsed to the `"routine"` fallback and the slug namespace had a
+/// single slot, so a second such routine was refused as a duplicate.
 pub(crate) fn slugify(title: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
     for ch in title.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
+        if ch.is_alphanumeric() {
+            // `char::to_lowercase` is Unicode-aware and may yield more than one char.
+            out.extend(ch.to_lowercase());
             prev_dash = false;
         } else if !prev_dash {
             out.push('-');

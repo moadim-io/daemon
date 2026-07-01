@@ -56,8 +56,18 @@ fn write_then_load_round_trips() {
         write_routine(&routine).unwrap();
 
         assert!(crate::paths::routine_toml_path(&slug).exists());
-        assert!(crate::paths::routine_prompt_path(&slug).exists());
+        assert!(crate::paths::routine_pure_prompt_path(&slug).exists());
+        assert!(crate::paths::routine_compiled_prompt_path(&slug).exists());
         assert!(crate::paths::routine_gitignore_path(&slug).exists());
+        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+        assert!(
+            !toml_text.contains("prompt"),
+            "routine.toml must not carry the prompt: {toml_text}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(crate::paths::routine_pure_prompt_path(&slug)).unwrap(),
+            "task"
+        );
 
         let loaded = load_routine_from_dir(&slug).unwrap();
         assert_eq!(loaded.id, id);
@@ -101,7 +111,8 @@ fn prompt_file_contains_composed_prompt() {
         let title = "Rs Prompt Routine";
         let slug = slugify(title);
         write_routine(&make_routine("rs-prompt-id", title)).unwrap();
-        let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+        let prompt =
+            std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
         assert!(prompt.contains("# Workbench"));
         assert!(prompt.contains("https://example.com/r.git (branch main)"));
         assert!(prompt.contains("task"));
@@ -110,9 +121,9 @@ fn prompt_file_contains_composed_prompt() {
 
 #[test]
 fn write_routine_persists_composed_prompt_sidecar_with_repos() {
-    // Focused coverage for the `atomic_write(routine_prompt_path, compose_prompt(..))`
+    // Focused coverage for the `atomic_write(routine_compiled_prompt_path, compose_prompt(..))`
     // call in `write_routine`: a routine with a non-empty prompt AND repositories runs
-    // `compose_prompt` fully, and the composed body lands in prompt.md on disk.
+    // `compose_prompt` fully, and the composed body lands in prompts/prompt.compiled.md on disk.
     with_override_home(|_home| {
         let id = "rs-prompt-sidecar-id";
         let title = "Rs Prompt Sidecar Routine";
@@ -132,19 +143,23 @@ fn write_routine_persists_composed_prompt_sidecar_with_repos() {
 
         write_routine(&routine).unwrap();
 
-        let written = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+        let written =
+            std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
         assert_eq!(written, compose_prompt(&routine));
         assert!(written.contains("https://example.com/a.git (branch dev)"));
         assert!(written.contains("https://example.com/b.git\n"));
         assert!(written.contains("line one\nline two"));
+
+        let pure = std::fs::read_to_string(crate::paths::routine_pure_prompt_path(&slug)).unwrap();
+        assert_eq!(pure, "line one\nline two");
     });
 }
 
 #[test]
 fn write_routine_errors_when_prompt_sidecar_write_fails() {
-    // Covers the error-propagation (`?`) on the prompt `atomic_write` in `write_routine`:
+    // Covers the error-propagation (`?`) on the pure-prompt `atomic_write` in `write_routine`:
     // the routine dir, gitignore, and `routine.toml` all write successfully, but a
-    // non-empty directory occupies the `prompt.md` path, so the atomic rename over it
+    // non-empty directory occupies the `prompt.pure.md` path, so the atomic rename over it
     // fails and `write_routine` returns that error.
     with_override_home(|_home| {
         let id = "rs-prompt-write-fail-id";
@@ -152,8 +167,8 @@ fn write_routine_errors_when_prompt_sidecar_write_fails() {
         let slug = slugify(title);
         let dir = crate::paths::routine_dir(&slug);
         std::fs::create_dir_all(&dir).unwrap();
-        // Block prompt.md with a *non-empty* directory so the atomic rename over it fails.
-        let prompt_dir = crate::paths::routine_prompt_path(&slug);
+        // Block prompt.pure.md with a *non-empty* directory so the atomic rename over it fails.
+        let prompt_dir = crate::paths::routine_pure_prompt_path(&slug);
         std::fs::create_dir_all(&prompt_dir).unwrap();
         std::fs::write(prompt_dir.join("occupant"), "keep me non-empty").unwrap();
 
@@ -162,6 +177,35 @@ fn write_routine_errors_when_prompt_sidecar_write_fails() {
 
         // routine.toml was written successfully before the prompt step failed.
         assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(
+            prompt_dir.is_dir(),
+            "the blocking prompt dir is left in place"
+        );
+    });
+}
+
+#[test]
+fn write_routine_errors_when_compiled_prompt_sidecar_write_fails() {
+    // Covers the error-propagation (`?`) on the compiled-prompt `atomic_write` in `write_routine`:
+    // routine.toml and the pure-prompt sidecar both write successfully, but a non-empty directory
+    // occupies the `prompt.compiled.md` path, so the atomic rename over it fails.
+    with_override_home(|_home| {
+        let id = "rs-compiled-prompt-write-fail-id";
+        let title = "Rs Compiled Prompt Write Fail Routine";
+        let slug = slugify(title);
+        let dir = crate::paths::routine_dir(&slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Block prompt.compiled.md with a *non-empty* directory so the atomic rename over it fails.
+        let prompt_dir = crate::paths::routine_compiled_prompt_path(&slug);
+        std::fs::create_dir_all(&prompt_dir).unwrap();
+        std::fs::write(prompt_dir.join("occupant"), "keep me non-empty").unwrap();
+
+        let err = write_routine(&make_routine(id, title)).unwrap_err();
+        let _ = err;
+
+        // routine.toml and the pure prompt were both written successfully before this step failed.
+        assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(crate::paths::routine_pure_prompt_path(&slug).exists());
         assert!(
             prompt_dir.is_dir(),
             "the blocking prompt dir is left in place"
@@ -477,12 +521,14 @@ fn migrate_routine_dirs_moves_legacy_uuid_dir_to_slug() {
 
         migrate_routine_dirs();
 
-        // Legacy dir removed; canonical slug dir now holds toml + prompt.
+        // Legacy dir removed; canonical slug dir now holds toml + prompt sidecars, with the
+        // legacy toml `prompt` field carried over into the new prompts/prompt.pure.md sidecar.
         assert!(!legacy_dir.exists(), "legacy UUID dir should be removed");
         assert!(crate::paths::routine_toml_path(&slug).exists());
-        assert!(crate::paths::routine_prompt_path(&slug).exists());
+        assert!(crate::paths::routine_compiled_prompt_path(&slug).exists());
         let loaded = load_routine_from_dir(&slug).unwrap();
         assert_eq!(loaded.id, id, "UUID id preserved across the dir migration");
+        assert_eq!(loaded.prompt, "task");
     });
 }
 
@@ -493,9 +539,9 @@ fn repersist_routines_recreates_missing_prompt_sidecar() {
         let title = "Rs Repersist Routine";
         let slug = slugify(title);
         write_routine(&make_routine(id, title)).unwrap();
-        // Simulate the sync-only state: prompt.md gone, only run.sh-style dir remains.
-        std::fs::remove_file(crate::paths::routine_prompt_path(&slug)).unwrap();
-        assert!(!crate::paths::routine_prompt_path(&slug).exists());
+        // Simulate the sync-only state: prompt.compiled.md gone, only run.sh-style dir remains.
+        std::fs::remove_file(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
+        assert!(!crate::paths::routine_compiled_prompt_path(&slug).exists());
 
         let mut map = HashMap::new();
         map.insert(id.to_string(), make_routine(id, title));
@@ -503,7 +549,7 @@ fn repersist_routines_recreates_missing_prompt_sidecar() {
         repersist_routines(&store);
 
         assert!(
-            crate::paths::routine_prompt_path(&slug).exists(),
+            crate::paths::routine_compiled_prompt_path(&slug).exists(),
             "repersist should recreate the prompt sidecar"
         );
     });
@@ -609,6 +655,192 @@ fn migrate_prompt_files_public_wrapper_runs() {
     // override home (no routines dir yet, so it returns without doing anything).
     with_override_home(|_home| {
         migrate_prompt_files();
+    });
+}
+
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_missing_dir_returns() {
+    // The scan directory does not exist, so `read_dir` errors and the function returns early.
+    let missing = scratch_dir("prompts-subfolder-missing");
+    migrate_prompts_to_subfolder_from_dir(&missing);
+    assert!(!missing.exists());
+}
+
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_migrates_legacy_layout() {
+    let dir = scratch_dir("prompts-subfolder-migrate");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // A plain file in the scan dir exercises the non-directory `continue` branch.
+    std::fs::write(dir.join("loose.txt"), "ignore me").unwrap();
+
+    // A legacy routine dir: top-level prompt.md (composed) + routine.toml carrying the raw
+    // prompt in its (legacy) `prompt` field, no `prompts/` subfolder yet.
+    let legacy = dir.join("legacy-routine");
+    std::fs::create_dir_all(&legacy).unwrap();
+    std::fs::write(legacy.join("prompt.md"), "old composed body").unwrap();
+    std::fs::write(
+        legacy.join("routine.toml"),
+        "title = \"Legacy\"\nschedule = \"@daily\"\nagent = \"claude\"\nprompt = \"raw prompt\"\n",
+    )
+    .unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    assert!(
+        !legacy.join("prompt.md").exists(),
+        "top-level prompt.md should be moved"
+    );
+    assert_eq!(
+        std::fs::read_to_string(legacy.join("prompts").join("prompt.compiled.md")).unwrap(),
+        "old composed body"
+    );
+    assert_eq!(
+        std::fs::read_to_string(legacy.join("prompts").join("prompt.pure.md")).unwrap(),
+        "raw prompt"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_skips_already_migrated() {
+    // A dir already in the new layout (both prompts/ files present, no top-level prompt.md) is
+    // left untouched: the `!new_compiled.exists()` and `!pure.exists()` guards both short-circuit.
+    let dir = scratch_dir("prompts-subfolder-skip");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let routine = dir.join("already-migrated");
+    let prompts = routine.join("prompts");
+    std::fs::create_dir_all(&prompts).unwrap();
+    std::fs::write(prompts.join("prompt.compiled.md"), "compiled").unwrap();
+    std::fs::write(prompts.join("prompt.pure.md"), "pure").unwrap();
+    std::fs::write(
+        routine.join("routine.toml"),
+        "title = \"Already\"\nschedule = \"@daily\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    assert_eq!(
+        std::fs::read_to_string(prompts.join("prompt.compiled.md")).unwrap(),
+        "compiled"
+    );
+    assert_eq!(
+        std::fs::read_to_string(prompts.join("prompt.pure.md")).unwrap(),
+        "pure"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_defaults_missing_legacy_prompt_to_empty() {
+    // A routine dir with no prompts/ subfolder and no legacy `prompt` field in routine.toml (nor
+    // any routine.toml at all) still gets an (empty) prompt.pure.md written.
+    let dir = scratch_dir("prompts-subfolder-no-legacy");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let routine = dir.join("no-legacy-prompt");
+    std::fs::create_dir_all(&routine).unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    assert_eq!(
+        std::fs::read_to_string(routine.join("prompts").join("prompt.pure.md")).unwrap(),
+        ""
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_logs_on_create_dir_failure() {
+    // A regular FILE occupies the `prompts` path, so `create_dir_all(prompts_dir)` fails and the
+    // entry is skipped entirely (logged, `continue`).
+    let dir = scratch_dir("prompts-subfolder-create-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let routine = dir.join("blocked-routine");
+    std::fs::create_dir_all(&routine).unwrap();
+    std::fs::write(routine.join("prompts"), "i block the prompts dir").unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    assert!(
+        routine.join("prompts").is_file(),
+        "the blocking file is left in place"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_logs_on_rename_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // prompts/ already exists (writable), but the routine dir itself is read-only, so removing
+    // the top-level prompt.md as part of the rename fails.
+    let dir = scratch_dir("prompts-subfolder-rename-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let routine = dir.join("rename-fail-routine");
+    std::fs::create_dir_all(routine.join("prompts")).unwrap();
+    std::fs::write(routine.join("prompt.md"), "old composed body").unwrap();
+    std::fs::write(routine.join("prompts").join("prompt.pure.md"), "pure").unwrap();
+    std::fs::set_permissions(&routine, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    std::fs::set_permissions(&routine, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        routine.join("prompt.md").exists(),
+        "the rename could not happen, so the old file remains"
+    );
+    assert!(!routine.join("prompts").join("prompt.compiled.md").exists());
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_logs_on_pure_write_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // prompts/ exists but is read-only, so writing the extracted prompt.pure.md fails.
+    let dir = scratch_dir("prompts-subfolder-write-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let routine = dir.join("write-fail-routine");
+    let prompts = routine.join("prompts");
+    std::fs::create_dir_all(&prompts).unwrap();
+    std::fs::write(
+        routine.join("routine.toml"),
+        "title = \"Write Fail\"\nschedule = \"@daily\"\nagent = \"claude\"\nprompt = \"raw\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&prompts, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    std::fs::set_permissions(&prompts, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        !prompts.join("prompt.pure.md").exists(),
+        "the write could not happen"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn migrate_prompts_to_subfolder_public_wrapper_runs() {
+    // Exercises the public wrapper, which simply delegates to the inner variant scanning an empty
+    // override home (no routines dir yet, so it returns without doing anything).
+    with_override_home(|_home| {
+        migrate_prompts_to_subfolder();
     });
 }
 

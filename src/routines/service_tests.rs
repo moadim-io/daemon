@@ -2021,9 +2021,10 @@ fn svc_create_flag_persists_and_refreshes_prompt() {
     assert_eq!(flag.flag_type, "bug");
     assert_eq!(flag.description, "broken thing");
 
-    // prompt.md is refreshed with the new open flag so the next run sees it.
+    // prompt.compiled.md is refreshed with the new open flag so the next run sees it.
     let slug = slugify(title);
-    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    let prompt =
+        std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
     assert!(prompt.contains("Open flags"));
     assert!(prompt.contains("broken thing"));
 }
@@ -2086,6 +2087,7 @@ fn svc_resolve_flag_deletes_and_refreshes_prompt() {
 
     assert!(svc_list_flags(&store, &id).unwrap().is_empty());
     let slug = slugify(title);
-    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    let prompt =
+        std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
     assert!(!prompt.contains("Open flags"));
 }

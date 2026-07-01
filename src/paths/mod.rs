@@ -82,10 +82,23 @@ pub fn routine_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.toml")
 }
 
-/// Returns the path to `{routines_dir}/{id}/prompt.md`.
+/// Returns the path to `{routines_dir}/{id}/prompts/`.
 #[must_use]
-pub fn routine_prompt_path(id: &str) -> PathBuf {
-    routine_dir(id).join("prompt.md")
+pub fn routine_prompts_dir(id: &str) -> PathBuf {
+    routine_dir(id).join("prompts")
+}
+
+/// Returns the path to `{routines_dir}/{id}/prompts/prompt.pure.md`, the raw user-authored prompt.
+#[must_use]
+pub fn routine_pure_prompt_path(id: &str) -> PathBuf {
+    routine_prompts_dir(id).join("prompt.pure.md")
+}
+
+/// Returns the path to `{routines_dir}/{id}/prompts/prompt.compiled.md`, the composed prompt
+/// (repositories preamble + pure prompt) that the launch command copies into the workbench.
+#[must_use]
+pub fn routine_compiled_prompt_path(id: &str) -> PathBuf {
+    routine_prompts_dir(id).join("prompt.compiled.md")
 }
 
 /// Returns the path to `{routines_dir}/{id}/.gitignore`.

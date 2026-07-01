@@ -105,8 +105,10 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 ~/.config/moadim/
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
-│       ├── routine.toml       # tracked — schedule, agent, prompt, repositories
-│       ├── prompt.md          # tracked — the rendered prompt handed to the agent
+│       ├── routine.toml       # tracked — schedule, agent, repositories
+│       ├── prompts/
+│       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+│       │   └── prompt.compiled.md  # tracked — the rendered prompt handed to the agent
 │       └── .gitignore         # generated — excludes *.local.* and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
@@ -149,8 +151,10 @@ git-trackable:
 ```
 ~/.config/moadim/routines/
 └── nightly-triage/
-    ├── routine.toml   # tracked — schedule, agent, prompt, repositories
-    ├── prompt.md      # tracked — the rendered prompt handed to the agent
+    ├── routine.toml   # tracked — schedule, agent, repositories
+    ├── prompts/
+    │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+    │   └── prompt.compiled.md  # tracked — the rendered prompt handed to the agent
     └── .gitignore     # generated — excludes *.local.* and *.log
 ```
 

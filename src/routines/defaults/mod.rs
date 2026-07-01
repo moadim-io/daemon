@@ -137,7 +137,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
 /// For each [`DEFAULT_ROUTINES`] entry: if a routine with the same slug is already in `store`, it is
 /// refreshed via [`reconcile`] (daemon-owned content updated, the user's `enabled` toggle preserved)
 /// and only rewritten when it drifted; otherwise a fresh enabled routine is created. Persists each
-/// affected routine (`routine.toml` + `prompt.md` + `.gitignore`) and inserts it into `store` so the
+/// affected routine (`routine.toml` + `prompts/` sidecars + `.gitignore`) and inserts it into `store` so the
 /// subsequent crontab sync schedules it. Best-effort: a write failure is logged and skipped rather
 /// than aborting startup. Call once at startup after [`crate::routine_storage::load_store`] and
 /// before the crontab sync.

@@ -178,7 +178,7 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
 /// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
 ///
 /// The prompt is the one field that defines what a routine actually does. A blank
-/// prompt still produces a valid `prompt.md` (just the moadim preamble + repo list),
+/// prompt still produces a valid `prompt.compiled.md` (just the moadim preamble + repo list),
 /// so the routine fires on every cron tick and launches an agent with no task —
 /// silently burning scheduled runs and the user's agent/API budget (issue #224).
 /// Shared by the create and update paths so the REST and MCP surfaces reject it
@@ -228,7 +228,7 @@ fn validate_title(title: &str) -> Result<(), AppError> {
 /// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
 /// normalized copy with surrounding whitespace trimmed.
 ///
-/// `repository` is a free-form string rendered verbatim into the agent's `prompt.md` preamble by
+/// `repository` is a free-form string rendered verbatim into the agent's `prompt.compiled.md` preamble by
 /// `compose_prompt` (see #241), so a blank or padded entry yields a broken `- ` clone bullet. An
 /// empty list is valid — this only guards the contents of non-empty entries. Mirrors the
 /// `validate_cron` / `validate_agent` boundary checks for the other routine fields (#224/#226).
@@ -295,7 +295,7 @@ fn normalize_model(model: Option<String>) -> Option<String> {
     })
 }
 
-/// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
+/// Validate `req`, assign a UUID, persist (routine.toml + prompts/ sidecars), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
@@ -629,7 +629,8 @@ fn routine_and_slug(store: &RoutineStore, id: &str) -> Result<(Routine, String),
 
 /// Raise a new flag against routine `id`. `flag_type` and `description` must be non-blank;
 /// `scope` is `"general"` (committed) or `"local"` (gitignored). Refreshes the routine's
-/// `prompt.md` afterward so the next run's "Open flags" section (see `compose_prompt`) includes it.
+/// `prompts/prompt.compiled.md` afterward so the next run's "Open flags" section (see
+/// `compose_prompt`) includes it.
 pub fn svc_create_flag(
     store: &RoutineStore,
     id: &str,
@@ -656,7 +657,8 @@ pub fn svc_list_flags(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppEr
 /// Resolve (delete) the flag named `filename` under routine `id`.
 ///
 /// `NotFound` when the routine does not exist, `filename` is unsafe, or names no existing flag.
-/// Refreshes `prompt.md` afterward so a resolved flag stops appearing in the next run's prompt.
+/// Refreshes `prompts/prompt.compiled.md` afterward so a resolved flag stops appearing in the next
+/// run's prompt.
 pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Result<(), AppError> {
     let (routine, slug) = routine_and_slug(store, id)?;
     let resolved = flags::resolve_flag(&slug, filename).map_err(|_| AppError::Internal)?;

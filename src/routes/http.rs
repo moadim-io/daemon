@@ -254,17 +254,22 @@ pub(crate) fn build_app_with_shutdown(
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
 
+    // Clone before moving `store`/`routines` into `app_state` below — each is needed by both the
+    // REST router (via `app_state`) and the MCP service closure, so exactly one clone per value is
+    // required. Cloning from `app_state` afterward (as this used to do) produced an extra,
+    // immediately-dropped clone of each `Arc` per call.
+    let mcp_store = store.clone();
+    let mcp_routines = routines.clone();
+
     let app_state = AppState {
-        store: store.clone(),
+        store,
         handlers: new_registry(),
-        routines: routines.clone(),
+        routines,
         uptime_start: now_secs(),
         shutdown: shutdown_signal,
     };
 
-    let mcp_store = store.clone();
     let mcp_handlers = app_state.handlers.clone();
-    let mcp_routines = routines.clone();
     let uptime_start = app_state.uptime_start;
     let mcp_shutdown = app_state.shutdown.clone();
     let mcp_service = StreamableHttpService::new(

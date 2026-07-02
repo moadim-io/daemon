@@ -388,7 +388,12 @@ pub(crate) fn build_app_with_shutdown(
         .route("/routines/{id}/logs", get(routines::get_logs))
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
-        .fallback(api_not_found);
+        .fallback(api_not_found)
+        // Per-request deadline (issue #402): scoped to the REST API only, so the long-lived
+        // `/mcp` SSE stream (nested separately below) is never subject to it.
+        .layer(middleware::from_fn(middlewares::timeout::request_timeout(
+            middlewares::timeout::API_REQUEST_TIMEOUT,
+        )));
 
     Router::new()
         .route("/", get(index))

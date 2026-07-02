@@ -2,4 +2,4 @@
 "moadim": patch
 ---
 
-Mark routine `VEVENT`s `TRANSPARENT` so the iCal feed never blocks free/busy lookups (#461).
+Add test coverage for the `X-MICROSOFT-CDO-BUSYSTATUS:FREE` hint emitted alongside `TRANSP:TRANSPARENT` on routine iCal `VEVENT`s (#461).

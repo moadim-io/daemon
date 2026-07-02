@@ -20,14 +20,14 @@ fn test_shutdown() -> crate::routes::http::ShutdownSignal {
 struct TempHome;
 
 impl TempHome {
-    fn set() -> TempHome {
+    fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-mcptest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome
+        Self
     }
 }
 

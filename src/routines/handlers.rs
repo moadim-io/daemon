@@ -158,7 +158,11 @@ pub async fn update(
     Ok(Json(svc_update(&store, &id, body)?))
 }
 
-/// `PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).
+/// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
+///
+/// Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.
+/// A client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to
+/// default) should not rely on this route for that; use `PATCH` and set every field explicitly.
 #[utoipa::path(put, path = "/routines/{id}",
     params(("id" = String, Path, description = "Routine UUID")),
     request_body = UpdateRoutineRequest,

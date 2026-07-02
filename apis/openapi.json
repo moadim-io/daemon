@@ -483,7 +483,8 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).",
+        "summary": "`PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.",
+        "description": "Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.\nA client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to\ndefault) should not rely on this route for that; use `PATCH` and set every field explicitly.",
         "operationId": "replace",
         "parameters": [
           {

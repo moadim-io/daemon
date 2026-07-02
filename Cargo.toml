@@ -107,3 +107,8 @@ wildcard_imports = "deny"
 # already covered by another pattern, or the duplication is an unintentional
 # bug where the bodies were meant to differ.
 match_same_arms = "deny"
+# Prefer `Self`/`Self::Variant` over spelling out the concrete type name
+# inside its own `impl` block. `Self` always tracks the current type, so
+# renaming the type requires zero edits inside the `impl` block, and it's
+# the idiomatic way to say "same type as the one being implemented".
+use_self = "deny"

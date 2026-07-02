@@ -11,19 +11,19 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe { std::env::set_var(name, value) }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 
     /// Ensure `name` is unset for the duration of the guard.
-    fn unset(name: &'static str) -> EnvGuard {
+    fn unset(name: &'static str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe { std::env::remove_var(name) }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 

@@ -26,6 +26,7 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         agent_registered: false,
         file_path: String::new(),
         schedule_description: human.map(Into::into),
+        goal: None,
         flag_count: 0,
     }
 }

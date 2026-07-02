@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -147,6 +148,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         title: "Valid Title".into(),
         agent: "claude".into(),
         prompt: "do the thing".into(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -164,6 +166,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         title: None,
         agent: None,
         prompt: None,
+        goal: None,
         repositories: None,
         machines: None,
         enabled: None,
@@ -201,6 +204,7 @@ fn svc_create_rejects_blank_prompt() {
         CreateRoutineRequest {
             model: None,
             prompt: String::new(),
+            goal: None,
             ..valid_create_request()
         },
     );
@@ -305,6 +309,7 @@ fn svc_update_rejects_blank_prompt() {
         UpdateRoutineRequest {
             model: None,
             prompt: Some("\t\n".into()),
+            goal: None,
             ..empty_update_request()
         },
     );
@@ -471,6 +476,7 @@ fn svc_create_rejects_duplicate_slug() {
                 title: title.into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
+                goal: None,
                 repositories: vec![],
                 machines: vec![crate::machine::current_machine()],
                 enabled: true,
@@ -490,6 +496,7 @@ fn svc_create_rejects_duplicate_slug() {
                 title: "  svc create   DUP zzz ".into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
+                goal: None,
                 repositories: vec![],
                 machines: vec![crate::machine::current_machine()],
                 enabled: true,
@@ -523,6 +530,7 @@ fn svc_create_rejects_malformed_agent_config() {
             title: "Svc Create Malformed ZZZ".into(),
             agent: agent_name.into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -556,6 +564,7 @@ fn svc_create_rejects_unreadable_agent_config() {
             title: "Svc Create Unreadable ZZZ".into(),
             agent: agent_name.into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![],
             tags: vec![],
@@ -596,6 +605,7 @@ fn svc_update_rejects_malformed_agent_config() {
             title: None,
             agent: Some(agent_name.into()),
             prompt: None,
+            goal: None,
             repositories: None,
             machines: None,
             enabled: None,
@@ -642,6 +652,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
                 title: Some(title_keep.into()),
                 agent: None,
                 prompt: None,
+                goal: None,
                 repositories: None,
                 machines: None,
                 enabled: None,
@@ -678,6 +689,7 @@ fn svc_update_sets_ttl_secs() {
                 title: None,
                 agent: None,
                 prompt: None,
+                goal: None,
                 repositories: None,
                 machines: None,
                 enabled: None,
@@ -716,6 +728,7 @@ fn svc_update_sets_max_runtime_secs() {
                 title: None,
                 agent: None,
                 prompt: None,
+                goal: None,
                 repositories: None,
                 machines: None,
                 enabled: None,
@@ -863,6 +876,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 title: title.into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
+                goal: None,
                 repositories: vec![],
                 machines: vec![crate::machine::current_machine()],
                 enabled: true,
@@ -873,6 +887,110 @@ fn svc_create_warns_when_crontab_sync_fails() {
         )
         .unwrap();
         assert_eq!(created.routine.title, title);
+    });
+}
+
+#[test]
+fn svc_create_rejects_goal_over_five_lines() {
+    let _home = TempHome::set();
+    // A goal is meant to be a glanceable "why" (≤5 lines); a 6-line value is rejected at create
+    // time with `BadRequest`, mirroring the other content bounds.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            schedule: "@daily".into(),
+            title: "Svc Create Long Goal ZZZ".into(),
+            agent: "claude".into(),
+            model: None,
+            prompt: "p".into(),
+            goal: Some("a\nb\nc\nd\ne\nf".into()),
+            repositories: vec![],
+            machines: vec![],
+            enabled: true,
+            ttl_secs: None,
+            max_runtime_secs: None,
+            tags: vec![],
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("goal"), "got {msg:?}"),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+}
+
+#[test]
+fn svc_create_trims_and_persists_goal() {
+    let _home = TempHome::set();
+    // A present goal is trimmed and stored, and it survives a reload from disk.
+    let title = "Svc Create Goal ZZZ";
+    let store = new_store();
+    with_empty_path(|| {
+        let created = svc_create(
+            &store,
+            CreateRoutineRequest {
+                schedule: "@daily".into(),
+                title: title.into(),
+                agent: "claude".into(),
+                model: None,
+                prompt: "p".into(),
+                goal: Some("  keep the backlog small  ".into()),
+                repositories: vec![],
+                machines: vec![crate::machine::current_machine()],
+                enabled: true,
+                ttl_secs: None,
+                max_runtime_secs: None,
+                tags: vec![],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            created.routine.goal.as_deref(),
+            Some("keep the backlog small")
+        );
+        // Reloading the store from disk yields the same goal (persisted to routine.toml).
+        let reloaded = crate::routine_storage::load_store();
+        let stored = reloaded
+            .lock()
+            .unwrap()
+            .get(&created.routine.id)
+            .cloned()
+            .expect("routine persisted");
+        assert_eq!(stored.goal.as_deref(), Some("keep the backlog small"));
+    });
+}
+
+#[test]
+fn svc_update_clears_goal_with_empty_string() {
+    let _home = TempHome::set();
+    // `Some("")` on update clears the goal; `None` would instead keep the existing value.
+    let title = "Svc Update Clear Goal ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("upd-goal-id", title, 1, 1);
+    routine.goal = Some("old goal".into());
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-goal-id".into(), routine);
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "upd-goal-id",
+            UpdateRoutineRequest {
+                schedule: None,
+                title: None,
+                agent: None,
+                model: None,
+                prompt: None,
+                goal: Some(String::new()),
+                repositories: None,
+                machines: None,
+                enabled: None,
+                ttl_secs: None,
+                max_runtime_secs: None,
+                tags: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.goal, None);
     });
 }
 
@@ -895,6 +1013,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 title: None,
                 agent: None,
                 prompt: Some("changed".into()),
+                goal: None,
                 repositories: None,
                 machines: None,
                 enabled: None,
@@ -972,6 +1091,7 @@ fn svc_create_syncs_crontab_on_success() {
                 title: title.into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
+                goal: None,
                 repositories: vec![],
                 machines: vec![crate::machine::current_machine()],
                 enabled: true,
@@ -1006,6 +1126,7 @@ fn svc_update_syncs_crontab_on_success() {
                 title: None,
                 agent: None,
                 prompt: Some("changed".into()),
+                goal: None,
                 repositories: None,
                 machines: None,
                 enabled: None,
@@ -1352,6 +1473,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -1405,6 +1527,7 @@ fn svc_create_rejects_unknown_agent() {
             title: "Svc Create Unknown Agent ZZZ".into(),
             agent: "no-such-agent-zzz".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -1443,6 +1566,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 title: Some(title.into()),
                 agent: None,
                 prompt: None,
+                goal: None,
                 repositories: None,
                 machines: None,
                 enabled: None,
@@ -1478,6 +1602,7 @@ fn svc_create_accepts_builtin_agent() {
             title: title.into(),
             agent: "claude".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -1512,6 +1637,7 @@ fn svc_update_rejects_unknown_agent() {
             title: None,
             agent: Some("no-such-agent-zzz".into()),
             prompt: None,
+            goal: None,
             repositories: None,
             machines: None,
             enabled: None,
@@ -1544,6 +1670,7 @@ fn svc_create_rejects_blank_repository_url() {
                 title: "Svc Create Blank Repo ZZZ".into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
+                goal: None,
                 repositories: vec![Repository {
                     repository: url.into(),
                     branch: None,
@@ -1575,6 +1702,7 @@ fn svc_create_rejects_blank_repository_branch() {
             title: "Svc Create Blank Branch ZZZ".into(),
             agent: "claude".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![Repository {
                 repository: "https://github.com/octocat/Hello-World".into(),
                 branch: Some("  ".into()),
@@ -1606,6 +1734,7 @@ fn svc_create_trims_repository_entries() {
             title: title.into(),
             agent: "claude".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![Repository {
                 repository: "  https://github.com/octocat/Hello-World  ".into(),
                 branch: Some("  main  ".into()),
@@ -1645,6 +1774,7 @@ fn svc_update_rejects_blank_repository_url() {
             title: None,
             agent: None,
             prompt: None,
+            goal: None,
             repositories: Some(vec![Repository {
                 repository: " ".into(),
                 branch: None,
@@ -1723,6 +1853,7 @@ fn svc_create_rejects_empty_prompt() {
             title: "Svc Create Empty Prompt ZZZ".into(),
             agent: "claude".into(),
             prompt: "".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![],
             tags: vec![],
@@ -1748,6 +1879,7 @@ fn svc_create_rejects_whitespace_prompt() {
             title: "Svc Create Whitespace Prompt ZZZ".into(),
             agent: "claude".into(),
             prompt: "   \n\t".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![],
             tags: vec![],
@@ -1783,6 +1915,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
             title: None,
             agent: None,
             prompt: Some("   ".into()),
+            goal: None,
             repositories: None,
             machines: None,
             tags: None,
@@ -1896,6 +2029,7 @@ fn svc_update_none_schedule_uses_existing_schedule() {
             UpdateRoutineRequest {
                 model: None,
                 prompt: Some("updated prompt".into()),
+                goal: None,
                 ..empty_update_request()
             },
         )
@@ -1959,6 +2093,7 @@ fn svc_update_returns_internal_on_write_failure() {
         UpdateRoutineRequest {
             model: None,
             prompt: Some("changed".into()),
+            goal: None,
             ..empty_update_request()
         },
     );

@@ -7,6 +7,7 @@ pub(super) const SPEC: DefaultRoutine = DefaultRoutine {
     schedule: "0 7 * * 0",
     agent: "claude",
     prompt: PROMPT,
+    goal: "Keep the user's agent workflows token-efficient by auditing recent usage and trimming waste each week.",
 };
 
 /// Task prompt handed to the agent.

@@ -11,6 +11,19 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Optional `goal` for routines.** A routine can now carry a very short (at most
+  5 lines) statement of its goal — the "why" behind the prompt. It is optional
+  (default unset), persisted in the tracked `routine.toml`, and rendered into the
+  agent's `prompt.md` as a `## Goal` preamble ahead of the task. Settable across
+  every surface: REST (`goal` on the create/update bodies), MCP
+  (`create_routine`/`update_routine`), the CLI (`--goal` on
+  `routines create|replace|update`), and the web UI (a field in the routine
+  form). The value is trimmed; a goal longer than 5 lines is rejected with
+  `400 Bad Request`, and sending an empty string on update clears it. The three
+  built-in default routines now ship with a goal. (#827)
+
 ## [0.20.0] - 2026-07-02
 
 Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagged in `cli::parse` (issue #719): the bare `None` arm into the `Background` arm, and the redundant explicit `-h`/`--help`/`help` arm that the trailing wildcard already covered.

@@ -163,6 +163,7 @@ git-trackable:
 | `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
+| `goal`         | string | no       | A very short (≤5 lines) statement of the routine's goal — the "why" behind the prompt. Rendered into `prompt.md` as a `## Goal` preamble. |
 | `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |

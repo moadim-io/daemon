@@ -10,6 +10,7 @@ fn make_routine(id: &str) -> Routine {
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![Repository {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
@@ -93,6 +94,27 @@ fn compose_prompt_without_repositories_omits_clone_header() {
     assert!(!prompt.contains("clone any you need"));
     assert!(!prompt.contains("\n- "));
     assert!(prompt.contains("do the thing"));
+}
+
+#[test]
+fn compose_prompt_renders_goal_section_when_set() {
+    let mut routine = make_routine("x");
+    routine.goal = Some("Keep the PR backlog small.".to_string());
+    let prompt = compose_prompt(&routine);
+    // The goal appears as a `## Goal` section before the `---` prompt separator.
+    let goal_at = prompt.find("## Goal").expect("goal section present");
+    let sep_at = prompt.find("\n---\n").expect("prompt separator present");
+    assert!(goal_at < sep_at, "goal must precede the prompt");
+    assert!(prompt.contains("Keep the PR backlog small."));
+}
+
+#[test]
+fn compose_prompt_omits_goal_section_when_unset_or_blank() {
+    let mut routine = make_routine("x");
+    routine.goal = None;
+    assert!(!compose_prompt(&routine).contains("## Goal"));
+    routine.goal = Some("   \n\t".to_string());
+    assert!(!compose_prompt(&routine).contains("## Goal"));
 }
 
 #[test]
@@ -530,6 +552,7 @@ fn svc_create_invalid_cron_rejected() {
         agent: "claude".into(),
         model: None,
         prompt: "p".into(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -551,6 +574,7 @@ fn svc_create_update_delete_lifecycle() {
             title: "Cov Routine".into(),
             agent: "claude".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -574,6 +598,7 @@ fn svc_create_update_delete_lifecycle() {
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
             prompt: Some("p2".into()),
+            goal: None,
             repositories: Some(vec![Repository {
                 repository: "r".into(),
                 branch: None,
@@ -604,6 +629,7 @@ fn svc_update_not_found() {
         agent: None,
         model: None,
         prompt: None,
+        goal: None,
         repositories: None,
         machines: None,
         enabled: None,
@@ -627,6 +653,7 @@ fn svc_update_invalid_cron_rejected() {
         agent: None,
         model: None,
         prompt: None,
+        goal: None,
         repositories: None,
         machines: None,
         enabled: None,

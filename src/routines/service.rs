@@ -320,6 +320,29 @@ fn normalize_model(model: Option<String>) -> Option<String> {
     })
 }
 
+/// Maximum number of lines a routine `goal` may span. The goal is meant to be a glanceable "why"
+/// rendered as a `## Goal` preamble in `prompt.md`, not a second prompt, so it is capped short.
+const MAX_GOAL_LINES: usize = 5;
+
+/// Normalize and bound an optional routine `goal`, returning the value to store.
+///
+/// The goal is a very short statement of *why* a routine exists, rendered into the agent's
+/// `prompt.md` as a `## Goal` preamble. It is optional: a `None` or blank (empty/whitespace-only)
+/// value clears it (`Ok(None)`). A present goal is trimmed and must span at most
+/// [`MAX_GOAL_LINES`] lines, so it stays a glanceable summary rather than a second prompt. Shared
+/// by the create and update paths so the REST and MCP surfaces bound it identically.
+fn validate_goal(goal: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(trimmed) = goal.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if trimmed.lines().count() > MAX_GOAL_LINES {
+        return Err(AppError::BadRequest(format!(
+            "goal must be at most {MAX_GOAL_LINES} lines"
+        )));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompts/ sidecars), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
@@ -345,6 +368,7 @@ pub fn svc_create(
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
     let tags = validate_tags(&req.tags)?;
+    let goal = validate_goal(req.goal.as_deref())?;
     let machines = validate_machines(&req.machines)?;
     let slug = slugify(&req.title);
     {
@@ -363,6 +387,7 @@ pub fn svc_create(
         agent: req.agent,
         model: normalize_model(req.model),
         prompt: req.prompt,
+        goal,
         repositories,
         machines,
         enabled: req.enabled,
@@ -414,6 +439,11 @@ pub fn svc_update(
     };
     let tags = match req.tags {
         Some(ref tags) => Some(validate_tags(tags)?),
+        None => None,
+    };
+    // `Some(None)` clears the goal (empty string sent), `Some(Some(_))` sets it, `None` keeps it.
+    let goal = match req.goal {
+        Some(ref goal) => Some(validate_goal(Some(goal))?),
         None => None,
     };
     let machines = match req.machines {
@@ -473,6 +503,9 @@ pub fn svc_update(
     }
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;
+    }
+    if let Some(goal) = goal {
+        routine.goal = goal;
     }
     if let Some(repositories) = repositories {
         routine.repositories = repositories;

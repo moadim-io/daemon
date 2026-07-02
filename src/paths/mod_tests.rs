@@ -36,6 +36,13 @@ fn routine_dir_is_child_of_routines_dir() {
 }
 
 #[test]
+fn routines_readme_path_in_routines_dir() {
+    let path = routines_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), routines_dir());
+}
+
+#[test]
 fn routine_toml_path_filename() {
     let path = routine_toml_path("abc");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "routine.toml");
@@ -106,6 +113,13 @@ fn agents_dir_ends_with_agents() {
 fn agent_toml_path_appends_name_and_extension() {
     let path = agent_toml_path("claude");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "claude.toml");
+}
+
+#[test]
+fn agents_readme_path_in_agents_dir() {
+    let path = agents_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), agents_dir());
 }
 
 #[test]

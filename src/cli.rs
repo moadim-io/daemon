@@ -572,12 +572,14 @@ pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
     std::fs::create_dir_all(path.parent().expect("pid file path has a parent dir"))?;
     ensure_config_gitignore();
-    ensure_config_readme();
+    ensure_readme(&crate::paths::config_readme_path(), CONFIG_README);
+    ensure_readme(&crate::paths::routines_readme_path(), ROUTINES_README);
+    ensure_readme(&crate::paths::agents_readme_path(), AGENTS_README);
     std::fs::write(&path, std::process::id().to_string())?;
     Ok(())
 }
 
-/// Orientation doc seeded into the config dir on every start; see [`ensure_config_readme`].
+/// Orientation doc seeded into the config dir on every start; see [`ensure_readme`].
 const CONFIG_README: &str = "\
 # moadim config
 
@@ -585,13 +587,8 @@ This is moadim's config directory (`$XDG_CONFIG_HOME/moadim`, default `~/.config
 It is git-trackable — commit it (or the parts you want to keep) to version-control your
 routines and agents across machines.
 
-- `routines/<id>/` — one directory per routine (a scheduled agent). Holds `routine.toml`
-  (the schedule, agent, and repositories), `prompts/prompt.pure.md` (the prompt you wrote)
-  and `prompts/prompt.compiled.md` (the composed prompt copied into each run's workbench),
-  `flags/` (open questions an agent raised mid-run), and `.local.` sidecars
-  (`state.local.toml`, `scheduled.local.toml`) recording daemon-written runtime state that's
-  gitignored on purpose.
-- `agents/<name>.toml` — the agent registry referenced by routines (e.g. `claude`).
+- `routines/` — one directory per routine (a scheduled agent); see its own `README.md`.
+- `agents/` — the agent registry referenced by routines; see its own `README.md`.
 - `machine.local.toml` — this machine's identity, used to match a routine's `machines`
   targeting list. Gitignored: it's per-machine, not shared.
 - `moadim.pid`, `daemon.log` — daemon-managed runtime files. Gitignored.
@@ -600,16 +597,50 @@ routines and agents across machines.
 Full docs: https://github.com/moadim-io/daemon
 ";
 
-/// Seed the config dir with a `README.md` explaining its layout, if one isn't already there.
+/// Orientation doc seeded into `routines/` on every start; see [`ensure_readme`].
+const ROUTINES_README: &str = "\
+# moadim routines
+
+Each subdirectory here is one routine (a prompt + schedule + agent, run on a cron schedule).
+
+- `<id>/routine.toml` — the schedule, agent, and repositories.
+- `<id>/prompts/prompt.pure.md` — the prompt you wrote.
+- `<id>/prompts/prompt.compiled.md` — the composed prompt (repositories preamble + pure
+  prompt) copied into each run's workbench.
+- `<id>/flags/` — open questions an agent raised mid-run: a gap, bug, edge case, or question
+  it couldn't resolve.
+- `<id>/state.local.toml`, `<id>/scheduled.local.toml` — gitignored sidecars recording
+  daemon-written runtime state (last manual/scheduled trigger times).
+
+Full docs: https://github.com/moadim-io/daemon
+";
+
+/// Orientation doc seeded into `agents/` on every start; see [`ensure_readme`].
+const AGENTS_README: &str = "\
+# moadim agents
+
+The agent registry referenced by routines. Each `<name>.toml` here (e.g. `claude.toml`)
+describes one coding agent: the command to launch it and any agent-specific settings.
+Routines reference an agent by name in their `routine.toml`.
+
+Full docs: https://github.com/moadim-io/daemon
+";
+
+/// Seed `path` with `content` if it doesn't already exist, creating its parent directory as
+/// needed.
 ///
-/// Runs on every start alongside [`ensure_config_gitignore`]. Only writes when the file is
+/// Runs on every start for the config dir and each of its generated subdirectories
+/// (`routines/`, `agents/`), alongside [`ensure_config_gitignore`]. Only writes when the file is
 /// missing, so a user's edits are never clobbered. Best-effort: failure is not fatal.
-fn ensure_config_readme() {
-    let readme = crate::paths::config_readme_path();
-    if readme.exists() {
+fn ensure_readme(path: &std::path::Path, content: &str) {
+    if path.exists() {
         return;
     }
-    let _ = std::fs::write(&readme, CONFIG_README);
+    let parent = path.parent().expect("readme path has a parent dir");
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let _ = std::fs::write(path, content);
 }
 
 /// Ensure the config dir `.gitignore` contains all required patterns on every start.

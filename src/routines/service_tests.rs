@@ -2993,7 +2993,9 @@ fn svc_rename_machine_warns_when_crontab_sync_fails() {
     // name after this failure.
     let saved_machine = std::env::var_os("MOADIM_MACHINE");
     // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
-    unsafe { std::env::set_var("MOADIM_MACHINE", "new-machine"); }
+    unsafe {
+        std::env::set_var("MOADIM_MACHINE", "new-machine");
+    }
     let mut routine = make_routine("rename-warn", "Warn", 1, 1);
     routine.machines = vec!["old-machine".into()];
     let store = store_with(vec![routine]);
@@ -3020,12 +3022,13 @@ fn svc_rename_machine_warns_when_write_fails() {
     // Point MOADIM_HOME_OVERRIDE at a regular file so that `write_routine`'s
     // `create_dir_all` call fails (can't create a directory inside a file).
     // The warn path at lines 575-576 is exercised; the in-memory store is still updated.
-    let blocking_file =
-        std::env::temp_dir().join(format!("moadim-block-{}", uuid::Uuid::new_v4()));
+    let blocking_file = std::env::temp_dir().join(format!("moadim-block-{}", uuid::Uuid::new_v4()));
     std::fs::write(&blocking_file, b"").expect("create blocking file");
     let saved_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
     // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
-    unsafe { std::env::set_var("MOADIM_HOME_OVERRIDE", &blocking_file); }
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &blocking_file);
+    }
     let mut routine = make_routine("rename-wf", "Write Fail", 1, 1);
     routine.machines = vec!["old-machine".into()];
     let store = store_with(vec![routine]);

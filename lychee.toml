@@ -1,0 +1,46 @@
+# Configuration for the `lychee` Markdown link checker run by
+# .github/workflows/lychee.yml (issue #431). See
+# https://lychee.cli.rs/usage/config/ for the full schema.
+#
+# The gate is meant to be signal, not noise: known-flaky/placeholder hosts are
+# ignored outright, and transient failures get retried before a link is
+# declared dead, so only durably-broken links fail CI.
+
+# Directories that hold build artifacts or dependencies, not hand-written
+# docs — scanning them only wastes CI time and can false-positive on
+# generated content.
+exclude_path = [
+  "target/",
+  "node_modules/",
+]
+
+# Loopback dev-server URL documented in README.md's "Bind address" section
+# (`http://localhost:5784/docs`); nothing listens on it outside a running
+# local server, so it can never resolve in CI.
+exclude_loopback = true
+
+# Placeholder domains used in examples/config snippets, never meant to
+# resolve to a real host.
+exclude = [
+  '^https?://(.*\.)?example\.(com|org|net)',
+  # trunkrs.dev (linked from CONTRIBUTING.md's Prerequisites) sits behind a
+  # bot wall that 403s automated/CI requests (including a real browser UA
+  # from this network) regardless of reachability — a known false positive,
+  # not a dead link. Verified manually before adding; revisit if the site
+  # changes its bot-protection setup.
+  '^https?://(www\.)?trunkrs\.dev',
+]
+
+# Retry/backoff so a transient network blip or upstream rate limit doesn't
+# fail the gate — only a durably-dead link should.
+max_retries = 3
+retry_wait_time = 5
+timeout = 20
+
+# Some hosts (e.g. shields.io, crates.io) reject bare HEAD requests, so use
+# GET directly rather than false-positiving on those.
+method = "get"
+
+# Treat "too many requests" as acceptable rather than a broken link — it
+# means the host is alive, just rate-limiting us.
+accept = ["200..=299", "429"]

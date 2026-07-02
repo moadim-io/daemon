@@ -340,7 +340,15 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+    assert_eq!(parse(argv(&["restart"])), Command::Restart { json: false });
+}
+
+#[test]
+fn restart_command_with_json_flag() {
+    assert_eq!(
+        parse(argv(&["restart", "--json"])),
+        Command::Restart { json: true }
+    );
 }
 
 #[test]
@@ -391,6 +399,17 @@ fn restart_rotation_line_reads_none_when_nothing_was_running() {
         restart_rotation_line(None, 456),
         "restarted: pid none -> 456"
     );
+}
+
+#[test]
+fn restart_json_reports_old_and_new_pid() {
+    let value: serde_json::Value = serde_json::from_str(&restart_json(Some(123), 456)).unwrap();
+    assert_eq!(value["old"], serde_json::json!(123));
+    assert_eq!(value["new"], serde_json::json!(456));
+
+    let fresh: serde_json::Value = serde_json::from_str(&restart_json(None, 456)).unwrap();
+    assert!(fresh["old"].is_null());
+    assert_eq!(fresh["new"], serde_json::json!(456));
 }
 
 #[test]
@@ -1035,7 +1054,16 @@ fn restart_starts_fresh_when_none_running() {
     let home = temp_home("restart-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart().unwrap();
+    restart(false).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_json_skips_human_text_when_none_running() {
+    let home = temp_home("restart-fresh-json");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    restart(true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -1049,7 +1077,21 @@ fn restart_replaces_running_server() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart().unwrap();
+    restart(false).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_json_reports_old_pid_when_running() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("restart-running-json");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "2000");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    write_pid_file().unwrap();
+    server.stop_after(Duration::from_millis(80));
+    restart(true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -1218,7 +1260,7 @@ fn restart_errors_when_stop_running_times_out() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
-    assert!(restart().is_err());
+    assert!(restart(false).is_err());
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -1231,7 +1273,7 @@ fn restart_errors_when_spawn_detached_fails() {
     std::fs::write(base.join(".config/moadim"), "block").unwrap();
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert!(restart().is_err());
+    assert!(restart(false).is_err());
     let _ = std::fs::remove_dir_all(&base);
 }
 

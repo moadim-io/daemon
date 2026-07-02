@@ -390,12 +390,14 @@ pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
 }
 
 /// Render the `stop` result as a one-line JSON object:
-/// `{"running":bool,"pid":N|null,"address":…}`, matching `status --json`'s shape exactly so both
-/// can be parsed uniformly. `running` is `true` when a running server was asked to shut down, and
-/// `false` when none was reachable. `pid` is the process that was stopped (read from the pid file
-/// before the shutdown request), or `null` when no pid file was present. `address` is the bound
-/// address the request was sent to ([`bind_addr`], honoring the `MOADIM_BIND_ADDR` override) so it
-/// stays identical to `status --json` under a non-default bind.
+/// `{"running":bool,"pid":N|null,"address":…}` — a subset of `status --json`'s shape (which
+/// additionally folds in server-sourced `uptime_secs`/`version`; see
+/// `status_and_stop_json_share_a_common_key_set`), so both can still be parsed uniformly on their
+/// shared fields. `running` is `true` when a running server was asked to shut down, and `false`
+/// when none was reachable. `pid` is the process that was stopped (read from the pid file before
+/// the shutdown request), or `null` when no pid file was present. `address` is the bound address
+/// the request was sent to ([`bind_addr`], honoring the `MOADIM_BIND_ADDR` override) so it stays
+/// identical to `status --json` under a non-default bind.
 fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,

@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- Every routine run now records its terminal exit status into `$WB/exit_code`,
+  so a finished-but-failed run is distinguishable from a successful one. The
+  agent invocation is suffixed with `; echo $? > exit_code` (shared by the
+  scheduled and manual `trigger` launch paths), and the max-runtime watchdog
+  writes the distinct `killed` sentinel instead of a misleading `0`. This is the
+  underlying signal future run-outcome features (failure alerts, `/metrics`
+  failure counts, run history) build on. (#453)
+
 ### Fixed
 
 - The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the

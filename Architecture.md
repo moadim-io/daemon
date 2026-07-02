@@ -136,7 +136,7 @@ crontab block:
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
 <sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.md $WB/; \
-  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
+  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>; echo $? > exit_code'; \
   tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
 # END MOADIM-ROUTINES
 ```
@@ -147,6 +147,15 @@ output via `pipe-pane`. The prompt reaches the agent as a process **argument** (
 placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection readiness race. The
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
+
+**Per-run exit status.** The agent invocation is suffixed with `; echo $? > exit_code`, so when the
+agent process ends, its terminal exit status is recorded into `$WB/exit_code` (the pane's cwd is the
+workbench). This makes a finished-but-failed run distinguishable from a successful one: `0` means the
+agent exited cleanly, a non-zero value preserves an agent error (crash, auth failure, panic), and the
+literal sentinel `killed` (written by the watchdog, below — not `echo`) marks a force-killed run. The
+file lives in the workbench and survives until the run is reaped under the normal `ttl_secs` rules.
+The capture is the underlying signal for run-outcome consumers (failure alerts, `/metrics` failure
+counts, run history); none of those are implemented here.
 
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
@@ -160,8 +169,9 @@ Finished run workbenches are reaped automatically by an hourly background sweep
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
 the same sweep includes a watchdog that force-kills any session whose run has exceeded the routine's
 `max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 1h) — bounding a hung agent that never exits —
-recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
-`ttl_secs` rules.
+recording the kill in the run's `agent.log` and writing the `killed` sentinel to its `exit_code`
+(see *Per-run exit status* above), after which the workbench is reaped under the normal `ttl_secs`
+rules.
 
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.md`, `{workbench}` → `.`,

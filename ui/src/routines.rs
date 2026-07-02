@@ -1251,12 +1251,20 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
 
     // `/` focuses the search box (while not already typing in another field),
     // matching the GitHub/Slack convention and complementing the ⌘K palette.
+    // Escape dismisses whichever routine modal/dialog is currently open.
     let search_ref = use_node_ref();
     {
         let search_ref = search_ref.clone();
+        let state = state.clone();
         use_effect_with((), move |_| {
             let on_key =
                 Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if event.key() == "Escape" {
+                        if state.modal != RModal::None {
+                            state.dispatch(RAction::CloseModal);
+                        }
+                        return;
+                    }
                     if event.key() != "/" || event.meta_key() || event.ctrl_key() || event.alt_key()
                     {
                         return;

@@ -128,6 +128,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
+  rename-machine dialogs and the routine edit/delete-confirm modals now all
+  close on `Esc`, matching the command palette's existing behavior.
 - An interactive foreground start (`moadim -i` / `--interactive`) now preflights
   for an already-running daemon and refuses with a clear, actionable message
   (naming the running pid when known and pointing at `moadim stop` /

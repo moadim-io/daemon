@@ -17,6 +17,12 @@ name: Test
 # 100% line coverage on current stable Rust, so a `--fail-under-lines 100` CI
 # job would be red on arrival and block every PR. Enforcing it in CI is tracked
 # as follow-up work once the coverage gap is closed (see issue #150).
+#
+# The `coverage` job below DOES run the same `cargo llvm-cov` command (same
+# --ignore-filename-regex exclusion, so the number is comparable to the local
+# hook) and publishes it as a step summary table. It deliberately omits
+# --fail-under-lines, so it only reports the metric and can never fail the
+# build on coverage percentage (see issue #526).
 
 # Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
 # read repository contents to check out and run the test suite.
@@ -71,3 +77,42 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  coverage:
+    name: cargo llvm-cov (report only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust (with llvm-tools-preview)
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Scoped so this job's target/ artifacts (built with llvm-cov's
+          # instrumentation flags) don't clobber the `test`/`clippy` jobs'
+          # cache entries.
+          shared-key: coverage
+
+      - name: Install cargo-llvm-cov
+        run: cargo install --locked cargo-llvm-cov
+
+      - name: Generate coverage summary
+        # Mirror the pre-push hook's `cargo llvm-cov` invocation, including
+        # the same --ignore-filename-regex exclusion, so this number stays
+        # comparable to the local hook's. This is deliberately non-gating:
+        # --fail-under-lines is NOT passed, so this step (and the job) can
+        # never fail the build on coverage percentage — it only surfaces the
+        # metric on the PR. See the NOTE above and issue #526.
+        run: |
+          {
+            echo '## Code coverage (report only, not gating)'
+            echo ''
+            echo '```'
+            cargo llvm-cov --ignore-filename-regex 'src/main\.rs' --summary-only
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

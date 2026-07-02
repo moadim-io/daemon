@@ -250,6 +250,7 @@ fn referenced_machines_unions_routines() {
         schedule: "0 9 * * *".to_string(),
         title: "Routine One".to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do".to_string(),
         repositories: Vec::new(),
         machines: vec!["laptop".to_string(), "server".to_string()],
@@ -260,6 +261,8 @@ fn referenced_machines_unions_routines() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         max_runtime_secs: None,
     };
@@ -317,6 +320,7 @@ fn run_list_with_referenced_machine() {
         schedule: "0 9 * * *".to_string(),
         title: "Routine".to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do".to_string(),
         repositories: Vec::new(),
         machines: vec!["alpha".to_string()],
@@ -327,6 +331,8 @@ fn run_list_with_referenced_machine() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         max_runtime_secs: None,
     };

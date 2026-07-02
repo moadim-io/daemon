@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.19.1"
+    "version": "0.20.0"
   },
   "servers": [
     {
@@ -483,7 +483,8 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).",
+        "summary": "`PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.",
+        "description": "Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.\nA client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to\ndefault) should not rely on this route for that; use `PATCH` and set every field explicitly.",
         "operationId": "replace",
         "parameters": [
           {
@@ -921,6 +922,13 @@
             "description": "Max wall-clock seconds a run may execute before the watchdog kills its hung\nsession. `None` uses the default cap (`MAX_RUNTIME_SECS`).",
             "minimum": 0
           },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model ID to run the agent with, or `None` to use the agent's own default. A\nblank/whitespace-only value is treated the same as `None`."
+          },
           "prompt": {
             "type": "string",
             "description": "Task prompt."
@@ -1252,6 +1260,13 @@
             "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module.",
             "minimum": 0
           },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model ID to run the agent with (e.g. `\"claude-sonnet-4-6\"`), passed as `--model` on the\nagent invocation. `None` uses the agent's own default."
+          },
           "prompt": {
             "type": "string",
             "description": "The task prompt handed to the agent.\n\nOmitted from serialized output when empty. A persisted routine always has a\nnon-blank prompt (enforced by `validate_prompt`), so this never affects\n`routine.toml` persistence; it lets list responses drop the prompt by blanking\nit in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`)."
@@ -1266,6 +1281,24 @@
           "schedule": {
             "type": "string",
             "description": "Cron expression defining when the routine runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
+          },
+          "skip_runs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Number of upcoming scheduled fires still to skip, or `None`.\n\nDecremented (and cleared once it reaches zero) on each skipped scheduled fire; manual\ntriggers do not consume it. Mutually exclusive with `snoozed_until`.",
+            "minimum": 0
+          },
+          "snoozed_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) until which scheduled (cron) fires are skipped, or `None`.\n\nCleared automatically the first time a scheduled fire observes `now >= snoozed_until`, which\nalso runs that fire. Manual triggers ([`crate::routines::svc_trigger`]) ignore this entirely.\nSet via the `snooze_routine` MCP tool; mutually exclusive with `skip_runs`.",
+            "minimum": 0
           },
           "source": {
             "type": "string",
@@ -1309,10 +1342,15 @@
             "type": "object",
             "required": [
               "agent_registered",
+              "agent_command_available",
               "file_path",
               "flag_count"
             ],
             "properties": {
+              "agent_command_available": {
+                "type": "boolean",
+                "description": "`true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable\non the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a\npresent, well-formed agent config yet reference a binary that isn't installed, in which\ncase the cron firing launches a tmux session that dies immediately with \"command not\nfound\" — a silent no-op indistinguishable from a healthy routine by `agent_registered`\nalone. `false` whenever the agent config is missing, unreadable, or malformed, since no\n`command` can be resolved in that case either."
+              },
               "agent_registered": {
                 "type": "boolean",
                 "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`."
@@ -1425,6 +1463,13 @@
             "format": "int64",
             "description": "New max runtime (seconds) for a single run, or `None` to keep the existing value.",
             "minimum": 0
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears\nthe model back to the agent's own default."
           },
           "prompt": {
             "type": [

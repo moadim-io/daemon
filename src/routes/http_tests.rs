@@ -252,6 +252,86 @@ async fn build_app_serves_root_uncompressed_without_accept_encoding() {
 }
 
 #[tokio::test]
+async fn build_app_serves_root_with_etag() {
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let etag = resp
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("ETag header present")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(etag.starts_with('"') && etag.ends_with('"'));
+    assert_eq!(
+        resp.headers()
+            .get(axum::http::header::CACHE_CONTROL)
+            .unwrap(),
+        "no-cache"
+    );
+}
+
+#[tokio::test]
+async fn build_app_returns_304_when_if_none_match_matches() {
+    // Issue #401: a client that already has the current build sends back the ETag it was given
+    // and should get a bodyless 304 instead of re-downloading the ~1.1 MB SPA.
+    let app = build_app(crate::routines::new_store());
+    let first = app
+        .clone()
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let etag = first
+        .headers()
+        .get(axum::http::header::ETAG)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header(axum::http::header::IF_NONE_MATCH, &etag)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(
+        resp.headers().get(axum::http::header::ETAG).unwrap(),
+        etag.as_str()
+    );
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(body.is_empty(), "304 response must not carry a body");
+}
+
+#[tokio::test]
+async fn build_app_serves_root_when_if_none_match_stale() {
+    // A stale/mismatched If-None-Match must fall through to the normal 200 body, not a 304.
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header(axum::http::header::IF_NONE_MATCH, "\"not-the-real-etag\"")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn build_app_sets_security_headers_on_ui_and_api() {
     // The whole router carries the security headers (issue #406, hardened further in #551):
     // assert on a representative UI response (the SPA at `/`) and a representative API response
@@ -314,6 +394,7 @@ async fn build_app_serves_machines() {
     routines.lock().unwrap().insert(
         "r1".to_string(),
         crate::routines::Routine {
+            model: None,
             id: "r1".to_string(),
             schedule: "@daily".to_string(),
             title: "R".to_string(),
@@ -328,6 +409,8 @@ async fn build_app_serves_machines() {
             updated_at: 0,
             last_manual_trigger_at: None,
             last_scheduled_trigger_at: None,
+            snoozed_until: None,
+            skip_runs: None,
             ttl_secs: None,
             max_runtime_secs: None,
         },
@@ -1002,6 +1085,7 @@ async fn router_serves_routines_ical_feed() {
     routines.lock().unwrap().insert(
         "r1".to_string(),
         crate::routines::Routine {
+            model: None,
             id: "r1".to_string(),
             schedule: "@daily".to_string(),
             title: "My Routine".to_string(),
@@ -1015,6 +1099,8 @@ async fn router_serves_routines_ical_feed() {
             updated_at: 0,
             last_manual_trigger_at: None,
             last_scheduled_trigger_at: None,
+            snoozed_until: None,
+            skip_runs: None,
             tags: vec![],
             ttl_secs: None,
             max_runtime_secs: None,
@@ -1221,6 +1307,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         schedule: "@daily".to_string(),
         title: title.to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do the thing".to_string(),
         repositories: vec![],
         enabled: true,
@@ -1229,6 +1316,8 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         machines: vec![],
         tags: vec![],
         ttl_secs: None,

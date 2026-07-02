@@ -75,6 +75,10 @@ enum RoutineCmd {
         /// Agent registry key to launch.
         #[arg(long)]
         agent: String,
+        /// Model ID to run the agent with (e.g. `claude-sonnet-4-6`); omit to use the agent's own
+        /// default.
+        #[arg(long)]
+        model: Option<String>,
         /// Task prompt.
         #[arg(long)]
         prompt: String,
@@ -118,6 +122,9 @@ enum RoutineCmd {
         /// New agent registry key.
         #[arg(long)]
         agent: Option<String>,
+        /// New model ID, or an empty string to clear the override back to the agent's own default.
+        #[arg(long)]
+        model: Option<String>,
         /// New prompt.
         #[arg(long)]
         prompt: Option<String>,
@@ -154,6 +161,10 @@ enum RoutineCmd {
         /// Agent registry key to launch.
         #[arg(long)]
         agent: String,
+        /// Model ID to run the agent with (e.g. `claude-sonnet-4-6`); omit to use the agent's own
+        /// default.
+        #[arg(long)]
+        model: Option<String>,
         /// Task prompt.
         #[arg(long)]
         prompt: String,
@@ -238,6 +249,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
             repositories,
             machines,
@@ -249,6 +261,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
             repositories,
             machines,
@@ -267,6 +280,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
             repositories,
             machines,
@@ -279,6 +293,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             insert_opt(&mut map, "schedule", schedule.map(Value::String));
             insert_opt(&mut map, "title", title.map(Value::String));
             insert_opt(&mut map, "agent", agent.map(Value::String));
+            insert_opt(&mut map, "model", model.map(Value::String));
             insert_opt(&mut map, "prompt", prompt.map(Value::String));
             match insert_json_opt(&mut map, "repositories", repositories) {
                 Ok(()) => {}
@@ -308,6 +323,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
             repositories,
             machines,
@@ -319,6 +335,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
             repositories,
             machines,
@@ -351,6 +368,7 @@ fn routine_body(
     schedule: String,
     title: String,
     agent: String,
+    model: Option<String>,
     prompt: String,
     repositories: Option<String>,
     machines: Option<String>,
@@ -363,6 +381,7 @@ fn routine_body(
     map.insert("schedule".to_string(), Value::String(schedule));
     map.insert("title".to_string(), Value::String(title));
     map.insert("agent".to_string(), Value::String(agent));
+    insert_opt(&mut map, "model", model.map(Value::String));
     map.insert("prompt".to_string(), Value::String(prompt));
     insert_json_opt(&mut map, "repositories", repositories)?;
     insert_json_opt(&mut map, "machines", machines)?;

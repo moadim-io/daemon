@@ -32,13 +32,13 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -66,7 +66,7 @@ struct FakeServer {
 
 impl FakeServer {
     /// Start a server on an ephemeral port answering every connection with `status` and `body`.
-    fn start(status: u16, body: &str) -> FakeServer {
+    fn start(status: u16, body: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -91,7 +91,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             stop,
             handle: Some(handle),

@@ -83,12 +83,20 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
 /// already matches and no write is needed. The user-owned [`Routine::enabled`] toggle is always
 /// carried over from `cur` — so a default the user turned off stays off — as are its `id`,
 /// `created_at`, `last_manual_trigger_at`, `last_scheduled_trigger_at`, and `tags`.
+///
+/// Special case: if `cur.machines` is empty the routine is dormant and can never run. This is the
+/// legacy state for defaults seeded before machine-awareness was added. To repair it, an empty
+/// machines list is treated as a drift trigger and replaced with the current machine, matching what
+/// [`materialize`] does for freshly created defaults. (#723)
 fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> {
     let schedule = normalize_schedule(spec.schedule);
     let up_to_date = cur.schedule == schedule
         && cur.agent == spec.agent
         && cur.prompt == spec.prompt
-        && cur.repositories.is_empty();
+        && cur.repositories.is_empty()
+        // An empty machines list means the routine can never run; treat it as drift so the
+        // current machine is seeded and the routine becomes active again (#723).
+        && !cur.machines.is_empty();
     if up_to_date {
         return None;
     }
@@ -100,8 +108,14 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         prompt: spec.prompt.to_string(),
         repositories: Vec::new(),
         // Machine targeting is user-owned, like `enabled`: carry the existing choice across a
-        // spec-driven reconcile so a default reassigned (or unassigned) by the user stays that way.
-        machines: cur.machines.clone(),
+        // spec-driven reconcile so a default reassigned (or unassigned) by the user stays that
+        // way. Exception: an empty list means the routine is dormant (legacy pre-machine-awareness
+        // state); seed the current machine so it starts running out of the box (#723).
+        machines: if cur.machines.is_empty() {
+            vec![crate::machine::current_machine()]
+        } else {
+            cur.machines.clone()
+        },
         enabled: cur.enabled,
         source: "managed".to_string(),
         created_at: cur.created_at,

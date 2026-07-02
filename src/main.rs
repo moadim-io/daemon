@@ -17,6 +17,8 @@ mod filesystem;
 /// Global lock sentinel that halts all routine scheduling and triggers without modifying routine
 /// enabled states.
 mod global_lock;
+/// `log` backend initialization: human-readable by default, opt-in JSON via `MOADIM_LOG_FORMAT`.
+mod logging;
 /// Machine identity for multi-machine deployments (per-machine routine/job targeting).
 mod machine;
 /// Axum middleware stack.
@@ -92,11 +94,10 @@ fn uninstall() -> anyhow::Result<()> {
 async fn run_server() -> anyhow::Result<()> {
     // Initialize the logging backend so the `log::*` call sites across the daemon actually emit;
     // without an installed backend the `log` facade is a silent no-op and startup, crontab-sync,
-    // and HTTP-request diagnostics are dropped. Defaults to the `info` level and is overridable via
-    // `RUST_LOG`. A detached daemon redirects stderr to its log file, so these lines land there
-    // with timestamps and levels. Use `try_init` to avoid panicking if a backend is already set.
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .try_init();
+    // and HTTP-request diagnostics are dropped. A detached daemon redirects stderr to its log
+    // file, so these lines land there with timestamps and levels. See `logging` for format
+    // selection (`MOADIM_LOG_FORMAT`) and level filtering (`RUST_LOG`).
+    logging::init();
     // tmux is a hard runtime dependency: every routine agent launches via `tmux new-session`. When
     // it is missing the launch command silently no-ops (the statements are `;`-joined), so warn
     // loudly at startup rather than letting scheduled runs vanish. Also surfaced in `GET /health`.

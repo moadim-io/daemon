@@ -15,6 +15,12 @@ on:
         required: true
         type: string
 
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only checks
+# out the repo to build and publish to crates.io (via CARGO_REGISTRY_TOKEN,
+# a separate secret) — it never pushes back to GitHub.
+permissions:
+  contents: read
+
 jobs:
   publish:
     name: Publish

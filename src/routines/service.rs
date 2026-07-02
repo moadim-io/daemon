@@ -551,6 +551,29 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
     Ok(routine)
 }
 
+/// Resolve the `sh` executable to invoke for a routine launch.
+///
+/// Honours the `MOADIM_SH_BIN` environment variable when set, falling back to the platform shell
+/// (`sh`) otherwise. The override exists so tests can point the spawn at a shim instead of running
+/// a real login shell.
+///
+/// In **test builds**, when no `MOADIM_SH_BIN` shim is configured this never falls back to the
+/// real `sh`: it returns a path that cannot exist, so the spawn fails harmlessly instead of
+/// launching a real agent process. This closes the same structural gap `crontab_bin()`
+/// ([`crate::sync::crontab_bin`]) closes for crontab I/O (issue #175) — a test that forgets to
+/// clear `PATH` or shim this binary still cannot execute a real command on the developer's
+/// machine (issue #217). Tests that need a working spawn set `MOADIM_SH_BIN` to a shim.
+fn sh_bin() -> String {
+    if let Ok(bin) = std::env::var("MOADIM_SH_BIN") {
+        return bin;
+    }
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-sh-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "sh".to_string();
+    fallback
+}
+
 /// Set or clear a routine's snooze state, skipping its upcoming *scheduled* fires (see
 /// [`svc_trigger_scheduled`]) without touching `enabled` or the crontab. Manual triggers
 /// ([`svc_trigger`]) always ignore snooze.
@@ -591,7 +614,7 @@ fn spawn_routine_command(routine: &Routine) {
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.
-            let mut command = std::process::Command::new("sh");
+            let mut command = std::process::Command::new(sh_bin());
             command.arg("-lc").arg(&cmd);
             // Reap the child in the background so the short-lived launcher shell does not
             // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).

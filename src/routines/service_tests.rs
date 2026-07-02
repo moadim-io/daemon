@@ -2337,3 +2337,47 @@ fn svc_resolve_flag_deletes_and_refreshes_prompt() {
         std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
     assert!(!prompt.contains("Open flags"));
 }
+
+// ─── sh_bin test-build guard (issue #217) ─────────────────────────────────
+
+#[test]
+fn sh_bin_never_resolves_to_real_sh_in_test_builds() {
+    // Structural guard for issue #217: in a test build, with no `MOADIM_SH_BIN` shim
+    // configured, `sh_bin()` must never fall back to the real `sh`, so a test that forgets
+    // to clear `PATH` (or shim this binary) cannot launch a real agent process. The
+    // resolved path must also not exist, so the eventual spawn fails harmlessly.
+    let saved = std::env::var_os("MOADIM_SH_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::remove_var("MOADIM_SH_BIN");
+    }
+    let bin = sh_bin();
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
+            None => std::env::remove_var("MOADIM_SH_BIN"),
+        }
+    }
+    assert_ne!(bin, "sh", "test build must not fall back to the real sh");
+    assert!(
+        !std::path::Path::new(&bin).exists(),
+        "test-build sh_bin() fallback must not resolve to a real executable"
+    );
+}
+
+#[test]
+fn sh_bin_honors_override() {
+    let saved = std::env::var_os("MOADIM_SH_BIN");
+    // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_SH_BIN", "/custom/shim/sh");
+    }
+    let bin = sh_bin();
+    unsafe {
+        match saved {
+            Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
+            None => std::env::remove_var("MOADIM_SH_BIN"),
+        }
+    }
+    assert_eq!(bin, "/custom/shim/sh");
+}

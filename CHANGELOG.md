@@ -11,6 +11,17 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Tests
+
+- Added a `cli_tests` regression guard (`status_and_stop_json_share_a_common_key_set`)
+  asserting that every object key `stop --json` emits also appears in
+  `status --json`, so the shared `{running,pid,address}` base contract between
+  the two `--json` shapes can't silently drift apart as fields are added to
+  one side but not the other. `status --json` may carry additional
+  server-sourced fields (`uptime_secs`, `version`) that `stop --json` omits;
+  see `status_and_stop_json_share_the_same_shape` for the value-level guard on
+  the shared subset.
+
 ### Fixed
 
 - The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the
@@ -38,6 +49,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the existing agent/machine facet pattern), populated from the distinct
   repository URLs across loaded routines, so operators can narrow a dense
   routines list to a single repo without hand-editing the query string.
+>>>>>>> origin/main
 
 ## [0.19.0] - 2026-07-02
 

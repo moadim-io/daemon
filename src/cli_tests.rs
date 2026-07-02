@@ -213,6 +213,40 @@ fn stop_json_reports_running_pid_and_address() {
     assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
+/// Collect the top-level object keys of a JSON document into an order-independent set.
+fn json_key_set(json: &str) -> std::collections::BTreeSet<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn status_and_stop_json_share_a_common_key_set() {
+    // `status --json` and `stop --json` share a common `{running,pid,address}` base so consumers
+    // can parse either uniformly; `status` additionally folds in server-sourced `uptime_secs`/
+    // `version` (see `status_and_stop_json_share_the_same_shape`, which guards the shared fields'
+    // *values*). Here we guard the key *sets*: every key `stop` emits must also appear in `status`,
+    // for both the running and the down/null-pid branches, so a key can't be dropped from one side
+    // without the drift being caught.
+    assert!(
+        json_key_set(&stop_json(true, Some(42))).is_subset(&json_key_set(&status_json(
+            true,
+            Some(42),
+            None
+        ))),
+        "every key in stop --json must also appear in status --json (running branch)"
+    );
+    assert!(
+        json_key_set(&stop_json(false, None))
+            .is_subset(&json_key_set(&status_json(false, None, None))),
+        "every key in stop --json must also appear in status --json (down branch)"
+    );
+}
+
 #[test]
 fn liveness_exit_code_maps_running_to_codes() {
     // A reachable server exits 0; a missing one exits the documented EXIT_NOT_RUNNING.

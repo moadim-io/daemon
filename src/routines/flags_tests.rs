@@ -163,6 +163,22 @@ fn list_flags_skips_unparsable_filenames() {
 }
 
 #[test]
+fn list_flags_skips_md_files_that_dont_match_the_flag_shape() {
+    let _home = TempHome::set();
+    let dir = crate::paths::routine_flags_dir("r1");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Ends in `.md` (passes the extension check) but has no `-` to split a timestamp off of.
+    std::fs::write(dir.join("README.md"), "not a flag").unwrap();
+    // Has a `-`, but the token after it isn't a valid timestamp.
+    std::fs::write(dir.join("bug-notatimestamp.md"), "bug\n\njunk\n").unwrap();
+    std::fs::write(dir.join("bug-100.md"), "bug\n\nreal\n").unwrap();
+
+    let flags = list_flags("r1");
+    assert_eq!(flags.len(), 1);
+    assert_eq!(flags[0].description, "real");
+}
+
+#[test]
 fn list_flags_defaults_missing_description_to_empty() {
     let _home = TempHome::set();
     let dir = crate::paths::routine_flags_dir("r1");

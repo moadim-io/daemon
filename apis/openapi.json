@@ -1309,10 +1309,15 @@
             "type": "object",
             "required": [
               "agent_registered",
+              "agent_command_available",
               "file_path",
               "flag_count"
             ],
             "properties": {
+              "agent_command_available": {
+                "type": "boolean",
+                "description": "`true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable\non the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a\npresent, well-formed agent config yet reference a binary that isn't installed, in which\ncase the cron firing launches a tmux session that dies immediately with \"command not\nfound\" — a silent no-op indistinguishable from a healthy routine by `agent_registered`\nalone. `false` whenever the agent config is missing, unreadable, or malformed, since no\n`command` can be resolved in that case either."
+              },
               "agent_registered": {
                 "type": "boolean",
                 "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`."

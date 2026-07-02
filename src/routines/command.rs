@@ -120,6 +120,24 @@ pub(crate) fn tmux_available() -> bool {
         .is_some_and(|path| tmux_available_in(&path))
 }
 
+/// Whether `command` resolves to a file on the given `:`-separated `path` list.
+///
+/// Generalizes [`tmux_available_in`] to an arbitrary executable name: a routine's agent `command`
+/// (e.g. `claude`, `codex`) is launched the same way `tmux` is — unresolved, it makes the cron
+/// firing a silent no-op. Used to distinguish "agent config present" from "agent binary actually
+/// runnable" in [`super::model::RoutineResponse`]. Injectable for tests via the `path` argument;
+/// see [`agent_command_available`] for the live-`PATH` variant.
+pub(crate) fn agent_command_available_in(path: &str, command: &str) -> bool {
+    bin_dir_in(path, command).is_some()
+}
+
+/// Whether `command` resolves on the daemon's live `PATH`. Returns `false` when `PATH` is unset.
+pub(crate) fn agent_command_available(command: &str) -> bool {
+    std::env::var("PATH")
+        .ok()
+        .is_some_and(|path| agent_command_available_in(&path, command))
+}
+
 /// Common install locations to probe for `tmux` when it is not on `path` at all.
 ///
 /// Split out so [`resolve_tmux_bin_from`] can be exercised in tests against fake, temp-dir-anchored

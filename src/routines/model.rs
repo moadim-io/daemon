@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::command::slugify;
+use super::agents::load_agent_command;
+use super::command::{agent_command_available, slugify};
 use super::flags::list_flags;
 use crate::paths::{agent_toml_path, routine_toml_path};
 
@@ -161,6 +162,14 @@ pub struct RoutineResponse {
     pub routine: Routine,
     /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`.
     pub agent_registered: bool,
+    /// `true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable
+    /// on the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a
+    /// present, well-formed agent config yet reference a binary that isn't installed, in which
+    /// case the cron firing launches a tmux session that dies immediately with "command not
+    /// found" — a silent no-op indistinguishable from a healthy routine by `agent_registered`
+    /// alone. `false` whenever the agent config is missing, unreadable, or malformed, since no
+    /// `command` can be resolved in that case either.
+    pub agent_command_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
     /// Human-readable description of the schedule, including the timezone the
@@ -202,6 +211,8 @@ impl RoutineResponse {
     pub fn from_routine(routine: Routine) -> Self {
         let slug = slugify(&routine.title);
         let agent_registered = agent_toml_path(&routine.agent).exists();
+        let agent_command_available = load_agent_command(&routine.agent)
+            .is_ok_and(|agent| agent_command_available(&agent.command));
         let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
@@ -209,6 +220,7 @@ impl RoutineResponse {
         Self {
             routine,
             agent_registered,
+            agent_command_available,
             file_path,
             schedule_description,
             timezone,

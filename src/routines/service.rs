@@ -572,7 +572,10 @@ pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) 
     };
     for routine in &updated {
         if let Err(err) = write_routine(routine) {
-            log::warn!("failed to persist machine rename for routine {}: {err}", routine.id);
+            log::warn!(
+                "failed to persist machine rename for routine {}: {err}",
+                routine.id
+            );
         }
     }
     if !updated.is_empty() {

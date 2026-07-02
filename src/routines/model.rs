@@ -139,6 +139,19 @@ pub struct Routine {
     /// routine can't clobber it.
     #[serde(default)]
     pub last_scheduled_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) until which scheduled (cron) fires are skipped, or `None`.
+    ///
+    /// Cleared automatically the first time a scheduled fire observes `now >= snoozed_until`, which
+    /// also runs that fire. Manual triggers ([`crate::routines::svc_trigger`]) ignore this entirely.
+    /// Set via the `snooze_routine` MCP tool; mutually exclusive with `skip_runs`.
+    #[serde(default)]
+    pub snoozed_until: Option<u64>,
+    /// Number of upcoming scheduled fires still to skip, or `None`.
+    ///
+    /// Decremented (and cleared once it reaches zero) on each skipped scheduled fire; manual
+    /// triggers do not consume it. Mutually exclusive with `snoozed_until`.
+    #[serde(default)]
+    pub skip_runs: Option<u32>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are

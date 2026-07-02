@@ -35,6 +35,8 @@ fn routine(
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         tags: vec![],
         agent_registered: false,
@@ -856,6 +858,46 @@ fn health_fully_configured_is_healthy() {
 }
 
 #[test]
+fn health_snoozed_until_future_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_snoozed_until_past_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_skip_runs_above_zero_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(2),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_skip_runs_zero_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(0),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
 fn health_priority_order_dormant_most_urgent() {
     assert!(
         RoutineHealth::Dormant.priority() < RoutineHealth::DeadSchedule.priority(),
@@ -863,7 +905,8 @@ fn health_priority_order_dormant_most_urgent() {
     );
     assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
     assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
-    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Healthy.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Snoozed.priority());
+    assert!(RoutineHealth::Snoozed.priority() < RoutineHealth::Healthy.priority());
 }
 
 // ── sort by RCol::Health ──────────────────────────────────────────────────────

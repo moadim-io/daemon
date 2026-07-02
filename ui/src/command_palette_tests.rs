@@ -19,6 +19,8 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         tags: vec![],
         agent_registered: false,

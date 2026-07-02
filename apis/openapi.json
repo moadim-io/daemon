@@ -1282,6 +1282,24 @@
             "type": "string",
             "description": "Cron expression defining when the routine runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
           },
+          "skip_runs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Number of upcoming scheduled fires still to skip, or `None`.\n\nDecremented (and cleared once it reaches zero) on each skipped scheduled fire; manual\ntriggers do not consume it. Mutually exclusive with `snoozed_until`.",
+            "minimum": 0
+          },
+          "snoozed_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) until which scheduled (cron) fires are skipped, or `None`.\n\nCleared automatically the first time a scheduled fire observes `now >= snoozed_until`, which\nalso runs that fire. Manual triggers ([`crate::routines::svc_trigger`]) ignore this entirely.\nSet via the `snooze_routine` MCP tool; mutually exclusive with `skip_runs`.",
+            "minimum": 0
+          },
           "source": {
             "type": "string",
             "description": "`\"managed\"` for routines owned by this server."

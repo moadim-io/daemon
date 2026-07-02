@@ -71,6 +71,8 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         updated_at: now,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         max_runtime_secs: None,
         tags: Vec::new(),
@@ -83,7 +85,8 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
 /// repositories list) drifted from the spec and the routine must be rewritten, or `None` when `cur`
 /// already matches and no write is needed. The user-owned [`Routine::enabled`] toggle is always
 /// carried over from `cur` — so a default the user turned off stays off — as are its `id`,
-/// `created_at`, `last_manual_trigger_at`, `last_scheduled_trigger_at`, and `tags`.
+/// `created_at`, `last_manual_trigger_at`, `last_scheduled_trigger_at`, `snoozed_until`,
+/// `skip_runs`, and `tags`.
 ///
 /// Special case: if `cur.machines` is empty the routine is dormant and can never run. This is the
 /// legacy state for defaults seeded before machine-awareness was added. To repair it, an empty
@@ -125,6 +128,10 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         updated_at: now,
         last_manual_trigger_at: cur.last_manual_trigger_at,
         last_scheduled_trigger_at: cur.last_scheduled_trigger_at,
+        // Snooze state is daemon-owned but not spec-derived: carry it over so a reconcile (e.g. a
+        // prompt tweak upstream) doesn't silently wake a routine the agent chose to snooze.
+        snoozed_until: cur.snoozed_until,
+        skip_runs: cur.skip_runs,
         ttl_secs: cur.ttl_secs,
         max_runtime_secs: cur.max_runtime_secs,
         // Tags are user-owned, like `enabled`: never overridden by the spec.

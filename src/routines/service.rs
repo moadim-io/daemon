@@ -345,6 +345,8 @@ pub fn svc_create(
         updated_at: now,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
         tags,
@@ -507,16 +509,72 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// untouched — the spawned command records `last_scheduled_trigger_at` in the routine's
 /// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
 /// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
+///
+/// A routine snoozed via [`svc_snooze`] (`snoozed_until` in the future, or `skip_runs` above zero)
+/// is skipped here instead of spawned: `snoozed_until` clears itself once elapsed (that fire then
+/// runs), `skip_runs` decrements once per skipped fire and clears at zero. [`svc_trigger`] (manual)
+/// ignores both fields entirely, by design.
 pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
+    let mut lock = store.lock_recover();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+
+    if let Some(until) = routine.snoozed_until {
+        if now_secs() < until {
+            return Err(AppError::Locked(format!("routine snoozed until {until}")));
+        }
+        routine.snoozed_until = None;
+        let routine = routine.clone();
+        drop(lock);
+        write_routine(&routine).map_err(|_| AppError::Internal)?;
+        spawn_routine_command(&routine);
+        return Ok(routine);
+    }
+    if let Some(runs) = routine.skip_runs {
+        if runs > 0 {
+            routine.skip_runs = (runs > 1).then_some(runs - 1);
+            let routine = routine.clone();
+            drop(lock);
+            write_routine(&routine).map_err(|_| AppError::Internal)?;
+            return Err(AppError::Locked(format!(
+                "routine snoozed, skipping this scheduled run ({} more to skip)",
+                routine.skip_runs.unwrap_or(0)
+            )));
+        }
+    }
+
+    let routine = routine.clone();
+    drop(lock);
     spawn_routine_command(&routine);
+    Ok(routine)
+}
+
+/// Set or clear a routine's snooze state, skipping its upcoming *scheduled* fires (see
+/// [`svc_trigger_scheduled`]) without touching `enabled` or the crontab. Manual triggers
+/// ([`svc_trigger`]) always ignore snooze.
+///
+/// `snoozed_until` and `skip_runs` are mutually exclusive: passing both `Some` is a
+/// [`AppError::BadRequest`]. Passing both `None` clears an active snooze.
+pub fn svc_snooze(
+    store: &RoutineStore,
+    id: &str,
+    snoozed_until: Option<u64>,
+    skip_runs: Option<u32>,
+) -> Result<Routine, AppError> {
+    if snoozed_until.is_some() && skip_runs.is_some() {
+        return Err(AppError::BadRequest(
+            "snoozed_until and skip_runs are mutually exclusive; set only one".into(),
+        ));
+    }
+    let mut lock = store.lock_recover();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    routine.snoozed_until = snoozed_until;
+    routine.skip_runs = skip_runs;
+    let routine = routine.clone();
+    drop(lock);
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
     Ok(routine)
 }
 

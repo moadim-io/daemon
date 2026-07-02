@@ -52,6 +52,8 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         updated_at,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -1096,6 +1098,250 @@ fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
         let triggered = svc_trigger_scheduled(&store, "trig-sched-id").unwrap();
         assert!(triggered.last_manual_trigger_at.is_none());
     });
+}
+
+#[test]
+fn svc_trigger_scheduled_skips_when_snoozed_until_future() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let mut routine = make_routine("sched-snooze-future-id", "Sched Snooze Future ZZZ", 1, 1);
+    routine.snoozed_until = Some(now_secs() + 3600);
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-snooze-future-id".into(), routine);
+
+    let result = svc_trigger_scheduled(&store, "sched-snooze-future-id");
+    assert!(
+        matches!(result, Err(AppError::Locked(_))),
+        "expected Locked error, got {result:?}"
+    );
+    // No workbench spawn attempted and no disk write: snoozed_until survives unchanged in-store.
+    assert!(store
+        .lock()
+        .unwrap()
+        .get("sched-snooze-future-id")
+        .unwrap()
+        .snoozed_until
+        .is_some());
+}
+
+#[test]
+fn svc_trigger_scheduled_clears_snoozed_until_once_elapsed_and_spawns() {
+    let _home = TempHome::set();
+    let agent_name = "svc-sched-snooze-elapsed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    std::fs::write(
+        crate::paths::agent_toml_path(agent_name),
+        "command = \"true\"\nargs = []\n",
+    )
+    .unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("sched-snooze-elapsed-id", "Sched Snooze Elapsed ZZZ", 1, 1);
+    routine.agent = agent_name.into();
+    routine.snoozed_until = Some(1); // long past
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-snooze-elapsed-id".into(), routine);
+
+    with_empty_path(|| {
+        let triggered = svc_trigger_scheduled(&store, "sched-snooze-elapsed-id").unwrap();
+        assert_eq!(triggered.snoozed_until, None);
+    });
+    // The in-memory store reflects the clear too, not just the returned value.
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .get("sched-snooze-elapsed-id")
+            .unwrap()
+            .snoozed_until,
+        None
+    );
+}
+
+#[test]
+fn svc_trigger_scheduled_skip_runs_zero_spawns_normally() {
+    // skip_runs: Some(0) is a degenerate but reachable state (e.g. svc_snooze called with
+    // skip_runs: Some(0)) and must behave like None: nothing to skip, spawn as normal.
+    let _home = TempHome::set();
+    let agent_name = "svc-sched-skip-runs-zero-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    std::fs::write(
+        crate::paths::agent_toml_path(agent_name),
+        "command = \"true\"\nargs = []\n",
+    )
+    .unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("sched-skip-runs-zero-id", "Sched Skip Runs Zero ZZZ", 1, 1);
+    routine.agent = agent_name.into();
+    routine.skip_runs = Some(0);
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-skip-runs-zero-id".into(), routine);
+
+    with_empty_path(|| {
+        let triggered = svc_trigger_scheduled(&store, "sched-skip-runs-zero-id").unwrap();
+        assert_eq!(triggered.skip_runs, Some(0));
+    });
+}
+
+#[test]
+fn svc_trigger_scheduled_decrements_skip_runs_without_spawning() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let mut routine = make_routine("sched-skip-runs-id", "Sched Skip Runs ZZZ", 1, 1);
+    routine.skip_runs = Some(2);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-skip-runs-id".into(), routine);
+
+    let result = svc_trigger_scheduled(&store, "sched-skip-runs-id");
+    assert!(
+        matches!(result, Err(AppError::Locked(_))),
+        "expected Locked error, got {result:?}"
+    );
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .get("sched-skip-runs-id")
+            .unwrap()
+            .skip_runs,
+        Some(1),
+        "skip_runs must decrement in the in-memory store, not just on disk"
+    );
+}
+
+#[test]
+fn svc_trigger_scheduled_skip_runs_clears_at_zero_then_spawns_next_fire() {
+    let _home = TempHome::set();
+    let agent_name = "svc-sched-skip-zero-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    std::fs::write(
+        crate::paths::agent_toml_path(agent_name),
+        "command = \"true\"\nargs = []\n",
+    )
+    .unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("sched-skip-zero-id", "Sched Skip Zero ZZZ", 1, 1);
+    routine.agent = agent_name.into();
+    routine.skip_runs = Some(1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-skip-zero-id".into(), routine);
+
+    // First fire: the last skip, skip_runs clears to None.
+    let first = svc_trigger_scheduled(&store, "sched-skip-zero-id");
+    assert!(matches!(first, Err(AppError::Locked(_))));
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .get("sched-skip-zero-id")
+            .unwrap()
+            .skip_runs,
+        None
+    );
+
+    // Second fire: nothing left to skip, spawns normally.
+    with_empty_path(|| {
+        let second = svc_trigger_scheduled(&store, "sched-skip-zero-id").unwrap();
+        assert_eq!(second.skip_runs, None);
+    });
+}
+
+#[test]
+fn svc_trigger_manual_bypasses_snooze() {
+    let _home = TempHome::set();
+    let agent_name = "svc-trigger-bypass-snooze-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    std::fs::write(
+        crate::paths::agent_toml_path(agent_name),
+        "command = \"true\"\nargs = []\n",
+    )
+    .unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("trig-bypass-snooze-id", "Trig Bypass Snooze ZZZ", 1, 1);
+    routine.agent = agent_name.into();
+    routine.snoozed_until = Some(now_secs() + 3600);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-bypass-snooze-id".into(), routine);
+
+    with_empty_path(|| {
+        let triggered = svc_trigger(&store, "trig-bypass-snooze-id").unwrap();
+        assert!(triggered.last_manual_trigger_at.is_some());
+        // Manual trigger ignores snooze entirely: the field is left untouched.
+        assert!(triggered.snoozed_until.is_some());
+    });
+}
+
+#[test]
+fn svc_snooze_missing_routine_not_found() {
+    let _home = TempHome::set();
+    assert!(matches!(
+        svc_snooze(&new_store(), "nope", Some(1), None),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_snooze_rejects_both_modes_set() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let routine = make_routine("snooze-both-id", "Snooze Both ZZZ", 1, 1);
+    store
+        .lock()
+        .unwrap()
+        .insert("snooze-both-id".into(), routine);
+
+    let result = svc_snooze(&store, "snooze-both-id", Some(1), Some(1));
+    assert!(
+        matches!(result, Err(AppError::BadRequest(_))),
+        "expected BadRequest, got {result:?}"
+    );
+}
+
+#[test]
+fn svc_snooze_sets_and_clears() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let routine = make_routine("snooze-set-clear-id", "Snooze Set Clear ZZZ", 1, 1);
+    store
+        .lock()
+        .unwrap()
+        .insert("snooze-set-clear-id".into(), routine);
+
+    let snoozed = svc_snooze(&store, "snooze-set-clear-id", Some(999), None).unwrap();
+    assert_eq!(snoozed.snoozed_until, Some(999));
+    assert_eq!(snoozed.skip_runs, None);
+    assert_eq!(
+        crate::routine_storage::load_store()
+            .lock()
+            .unwrap()
+            .get("snooze-set-clear-id")
+            .map(|routine| routine.snoozed_until),
+        Some(Some(999)),
+        "svc_snooze must persist to disk, not just the in-memory store"
+    );
+
+    let cleared = svc_snooze(&store, "snooze-set-clear-id", None, None).unwrap();
+    assert_eq!(cleared.snoozed_until, None);
+    assert_eq!(cleared.skip_runs, None);
 }
 
 /// Build a create request with the given title and an otherwise-valid body.

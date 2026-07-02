@@ -272,6 +272,94 @@ fn trigger_routine_tool_not_found_is_error() {
     assert!(result.is_error.unwrap_or(false));
 }
 
+#[test]
+fn snooze_routine_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id: "no-such".into(),
+            snoozed_until: Some(1),
+            skip_runs: None,
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn snooze_routine_tool_both_modes_set_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id,
+            snoozed_until: Some(1),
+            skip_runs: Some(1),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn snooze_routine_tool_sets_and_clears_snooze() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // skip_runs mode
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id: id.clone(),
+            snoozed_until: None,
+            skip_runs: Some(3),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    assert_eq!(
+        routines.lock().unwrap().get(&id).unwrap().skip_runs,
+        Some(3)
+    );
+
+    // clear (both None)
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id: id.clone(),
+            snoozed_until: None,
+            skip_runs: None,
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    assert_eq!(routines.lock().unwrap().get(&id).unwrap().skip_runs, None);
+}
+
 // ── parity tools: agents / logs / shutdown ──────────────────────────────────────
 
 #[test]

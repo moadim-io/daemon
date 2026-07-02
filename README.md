@@ -166,9 +166,11 @@ git-trackable:
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `goal`         | string | no       | A very short (≤5 lines) statement of the routine's goal — the "why" behind the prompt. Rendered into `prompt.md` as a `## Goal` preamble. |
 | `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
+| `machines`     | list   | no       | Machine identities this routine runs on (matched against `machine.local.toml`). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
+| `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
 
 **Workbenches and cleanup:** each run executes in a workbench under
 `~/.moadim/workbenches/`. Finished, expired workbenches are reaped on an

@@ -93,6 +93,10 @@ pub struct Routine {
     pub title: String,
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
+    /// Model ID to run the agent with (e.g. `"claude-sonnet-4-6"`), passed as `--model` on the
+    /// agent invocation. `None` uses the agent's own default.
+    #[serde(default)]
+    pub model: Option<String>,
     /// The task prompt handed to the agent.
     ///
     /// Omitted from serialized output when empty. A persisted routine always has a
@@ -260,6 +264,10 @@ pub struct CreateRoutineRequest {
     pub title: String,
     /// Agent registry key to launch.
     pub agent: String,
+    /// Model ID to run the agent with, or `None` to use the agent's own default. A
+    /// blank/whitespace-only value is treated the same as `None`.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Task prompt.
     pub prompt: String,
     /// Repositories to list as context (defaults to empty).
@@ -295,6 +303,9 @@ pub struct UpdateRoutineRequest {
     pub title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     pub agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    pub model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.

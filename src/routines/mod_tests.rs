@@ -4,6 +4,7 @@ use super::*;
 
 fn make_routine(id: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: "My Routine".to_string(),
@@ -506,6 +507,7 @@ fn svc_create_invalid_cron_rejected() {
         schedule: "not-a-cron".into(),
         title: "t".into(),
         agent: "claude".into(),
+        model: None,
         prompt: "p".into(),
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
@@ -523,6 +525,7 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Cov Routine".into(),
             agent: "claude".into(),
@@ -545,6 +548,7 @@ fn svc_create_update_delete_lifecycle() {
         &store,
         &id,
         UpdateRoutineRequest {
+            model: None,
             schedule: Some("@weekly".into()),
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
@@ -577,6 +581,7 @@ fn svc_update_not_found() {
         schedule: None,
         title: Some("x".into()),
         agent: None,
+        model: None,
         prompt: None,
         repositories: None,
         machines: None,
@@ -599,6 +604,7 @@ fn svc_update_invalid_cron_rejected() {
         schedule: Some("bad".into()),
         title: None,
         agent: None,
+        model: None,
         prompt: None,
         repositories: None,
         machines: None,

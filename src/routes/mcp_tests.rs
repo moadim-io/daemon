@@ -104,6 +104,7 @@ fn echo_tool_returns_message() {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        model: None,
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
         agent: "claude".into(),
@@ -186,6 +187,7 @@ fn create_get_update_trigger_delete_routine_success() {
             schedule: None,
             title: Some("Renamed".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,
@@ -233,6 +235,7 @@ fn update_routine_tool_not_found_is_error() {
             schedule: None,
             title: Some("x".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,

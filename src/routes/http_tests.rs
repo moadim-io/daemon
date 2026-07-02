@@ -314,6 +314,7 @@ async fn build_app_serves_machines() {
     routines.lock().unwrap().insert(
         "r1".to_string(),
         crate::routines::Routine {
+            model: None,
             id: "r1".to_string(),
             schedule: "@daily".to_string(),
             title: "R".to_string(),
@@ -1002,6 +1003,7 @@ async fn router_serves_routines_ical_feed() {
     routines.lock().unwrap().insert(
         "r1".to_string(),
         crate::routines::Routine {
+            model: None,
             id: "r1".to_string(),
             schedule: "@daily".to_string(),
             title: "My Routine".to_string(),
@@ -1221,6 +1223,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         schedule: "@daily".to_string(),
         title: title.to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do the thing".to_string(),
         repositories: vec![],
         enabled: true,

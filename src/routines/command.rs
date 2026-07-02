@@ -320,6 +320,15 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     for arg in &agent.args {
         invocation.push(substitute(arg, workbench_ref, prompt_file_ref));
     }
+    // Routine-level model override, by convention supported as `--model <id>` across the built-in
+    // agents (`claude`, `codex`, `hermes`). Appended after the agent's own args so it wins over any
+    // default the agent config sets. `shell_quote` guards against the model ID (user input) breaking
+    // out of the invocation, which the surrounding `shell_quote(&invocation)` call re-escapes as a
+    // whole when it embeds this into the cron line.
+    if let Some(model) = &routine.model {
+        invocation.push("--model".to_string());
+        invocation.push(shell_quote(model));
+    }
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![

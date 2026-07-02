@@ -6,6 +6,7 @@ use crate::routines::model::Routine;
 /// Build a minimal routine for command-construction tests.
 fn make_routine(title: &str) -> Routine {
     Routine {
+        model: None,
         id: "cmd-test-id".to_string(),
         schedule: "@daily".to_string(),
         title: title.to_string(),
@@ -421,4 +422,49 @@ fn bin_dir_returns_none_when_path_unset() {
             std::env::set_var("PATH", prev);
         }
     }
+}
+
+#[test]
+fn build_routine_command_appends_model_override() {
+    // A routine-level model override is appended to the invocation as `--model <id>`, shell-quoted
+    // to guard against the (user-controlled) model ID breaking out of the cron line.
+    let mut routine = make_routine("Cmd Model Routine");
+    routine.model = Some("claude-sonnet-4-6".to_string());
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--permission-mode".to_string(), "auto".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The whole invocation is itself shell-quoted once for the `tmux new-session` argument, which
+    // re-escapes the inner `shell_quote(model)` quotes into `'\''`, so assert on ordering and
+    // content rather than the exact (implementation-detail) escaped byte sequence.
+    let args_pos = cmd.find("--permission-mode auto").unwrap();
+    let model_pos = cmd.find("--model").unwrap();
+    assert!(
+        model_pos > args_pos,
+        "expected --model after the agent's own args in: {cmd}"
+    );
+    assert!(
+        cmd[model_pos..].contains("claude-sonnet-4-6"),
+        "expected model id after --model in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_omits_model_flag_when_unset() {
+    // No routine-level model override means the invocation is unchanged from the agent's own args.
+    let routine = make_routine("Cmd No Model Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        !cmd.contains("--model"),
+        "expected no --model flag in: {cmd}"
+    );
 }

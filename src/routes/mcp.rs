@@ -2,7 +2,7 @@
 
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
     tool, tool_router,
 };
 use schemars::JsonSchema;
@@ -120,14 +120,14 @@ struct UpdateRoutineInput {
 
 /// Wrap a serializable value in a successful `CallToolResult`.
 fn ok(val: impl serde::Serialize) -> CallToolResult {
-    CallToolResult::success(vec![Content::text(
+    CallToolResult::success(vec![ContentBlock::text(
         serde_json::to_string(&val).unwrap_or_default(),
     )])
 }
 
 /// Wrap an error message in a failed `CallToolResult`.
 fn err(msg: impl std::fmt::Display) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(msg.to_string())])
+    CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
 
 #[tool_router(server_handler)]

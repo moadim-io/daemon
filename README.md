@@ -107,7 +107,6 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │   └── nightly-triage/
 │       ├── routine.toml       # tracked — schedule, agent, prompt, repositories
 │       ├── prompt.md          # tracked — the rendered prompt handed to the agent
-│       ├── run.sh             # generated — the crontab entry invokes this
 │       └── .gitignore         # generated — excludes *.local.* and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
@@ -152,7 +151,6 @@ git-trackable:
 └── nightly-triage/
     ├── routine.toml   # tracked — schedule, agent, prompt, repositories
     ├── prompt.md      # tracked — the rendered prompt handed to the agent
-    ├── run.sh         # generated — the crontab entry invokes this
     └── .gitignore     # generated — excludes *.local.* and *.log
 ```
 

@@ -181,7 +181,14 @@ fn create_get_update_trigger_delete_routine_success() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 
-    // update
+    // trigger (records the manual trigger) — while still enabled, before the disabling update below
+    let result = handler
+        .trigger_routine(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+
+    // update (also disables — svc_trigger refuses a disabled routine, see
+    // `trigger_routine_tool_returns_error_when_disabled`)
     let result = handler
         .update_routine(Parameters(UpdateRoutineInput {
             id: id.clone(),
@@ -198,12 +205,6 @@ fn create_get_update_trigger_delete_routine_success() {
             max_runtime_secs: None,
             tags: None,
         }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-
-    // trigger (records the manual trigger)
-    let result = handler
-        .trigger_routine(Parameters(IdInput { id: id.clone() }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 
@@ -361,6 +362,92 @@ fn snooze_routine_tool_sets_and_clears_snooze() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     assert_eq!(routines.lock().unwrap().get(&id).unwrap().skip_runs, None);
+}
+
+#[test]
+fn trigger_routine_tool_returns_error_when_disabled() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let result = handler
+        .create_routine(Parameters(crate::routines::CreateRoutineRequest {
+            enabled: false,
+            ..make_create_routine_req()
+        }))
+        .unwrap();
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let result = handler.trigger_routine(Parameters(IdInput { id })).unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn set_power_saving_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .set_power_saving(Parameters(SetPowerSavingInput {
+            id: "no-such".into(),
+            active: true,
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn set_power_saving_tool_blocks_trigger_without_touching_enabled() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let result = handler
+        .set_power_saving(Parameters(SetPowerSavingInput {
+            id: id.clone(),
+            active: true,
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    assert!(routines.lock().unwrap().get(&id).unwrap().enabled);
+
+    let result = handler
+        .trigger_routine(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+
+    // clear
+    let result = handler
+        .set_power_saving(Parameters(SetPowerSavingInput {
+            id: id.clone(),
+            active: false,
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    assert!(!routines.lock().unwrap().get(&id).unwrap().power_saving);
+
+    let result = handler.trigger_routine(Parameters(IdInput { id })).unwrap();
+    assert!(!result.is_error.unwrap_or(false));
 }
 
 // ── parity tools: agents / logs / shutdown ──────────────────────────────────────

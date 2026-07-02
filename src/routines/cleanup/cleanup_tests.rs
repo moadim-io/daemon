@@ -698,6 +698,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,

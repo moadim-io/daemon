@@ -91,6 +91,10 @@ struct RuntimeState {
     /// [`crate::routines::Routine::skip_runs`].
     #[serde(default)]
     skip_runs: Option<u32>,
+    /// Whether firing is paused for power saving. See
+    /// [`crate::routines::Routine::power_saving`].
+    #[serde(default)]
+    power_saving: bool,
 }
 
 /// Scheduler-written runtime state for a routine, persisted to the gitignored
@@ -177,6 +181,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         last_scheduled_trigger_at,
         snoozed_until: runtime_state.snoozed_until,
         skip_runs: runtime_state.skip_runs,
+        power_saving: runtime_state.power_saving,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         tags: toml.tags,
@@ -254,6 +259,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
     if routine.last_manual_trigger_at.is_none()
         && routine.snoozed_until.is_none()
         && routine.skip_runs.is_none()
+        && !routine.power_saving
     {
         if path.exists() {
             std::fs::remove_file(&path)?;
@@ -264,6 +270,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         last_manual_trigger_at: routine.last_manual_trigger_at,
         snoozed_until: routine.snoozed_until,
         skip_runs: routine.skip_runs,
+        power_saving: routine.power_saving,
     };
     let text = toml::to_string_pretty(&state)
         .expect("RuntimeState serialization cannot fail for a struct with only Option fields");

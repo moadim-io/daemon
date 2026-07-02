@@ -797,6 +797,7 @@
           "crate::routines"
         ],
         "summary": "`POST /routines/{id}/trigger` — manually run a routine outside its schedule.",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`svc_trigger`].",
         "operationId": "trigger",
         "parameters": [
           {
@@ -1285,6 +1286,10 @@
               "null"
             ],
             "description": "Model ID to run the agent with (e.g. `\"claude-sonnet-4-6\"`), passed as `--model` on the\nagent invocation. `None` uses the agent's own default."
+          },
+          "power_saving": {
+            "type": "boolean",
+            "description": "Whether scheduled and manual firing is paused to conserve resources, independent of\n[`Routine::enabled`].\n\n`enabled` is user-owned intent (\"I want this routine on/off\"); `power_saving` is a\nsystem/policy throttle layered on top — both must hold for a firing to launch an agent\n(`enabled && !power_saving`). Never mutated by `svc_create`/`svc_update` (set via\n[`crate::routines::svc_set_power_saving`] instead), so it survives a config edit the same\nway `snoozed_until` and `skip_runs` do. Daemon-owned runtime state: persisted in the\ngitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`."
           },
           "prompt": {
             "type": "string",

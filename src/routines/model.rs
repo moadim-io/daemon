@@ -156,6 +156,17 @@ pub struct Routine {
     /// triggers do not consume it. Mutually exclusive with `snoozed_until`.
     #[serde(default)]
     pub skip_runs: Option<u32>,
+    /// Whether scheduled and manual firing is paused to conserve resources, independent of
+    /// [`Routine::enabled`].
+    ///
+    /// `enabled` is user-owned intent ("I want this routine on/off"); `power_saving` is a
+    /// system/policy throttle layered on top — both must hold for a firing to launch an agent
+    /// (`enabled && !power_saving`). Never mutated by `svc_create`/`svc_update` (set via
+    /// [`crate::routines::svc_set_power_saving`] instead), so it survives a config edit the same
+    /// way `snoozed_until` and `skip_runs` do. Daemon-owned runtime state: persisted in the
+    /// gitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`.
+    #[serde(default)]
+    pub power_saving: bool,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are

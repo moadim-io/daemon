@@ -30,10 +30,12 @@ wildcards = "allow"
 workspace-default-features = "allow"
 external-default-features = "allow"
 deny = []
-# rand 0.10 and the wasm component tooling pull a newer getrandom/wit-bindgen
-# than the rest of the tree; both major versions are maintained upstream, so
-# this is noise rather than a real duplication problem worth failing CI over.
-skip = ["getrandom", "wit-bindgen"]
+# rand 0.10 pulls a newer getrandom than the rest of the tree; both major
+# versions are maintained upstream, so this is noise rather than a real
+# duplication problem worth failing CI over. (wit-bindgen was listed here too,
+# but it isn't actually in the dependency tree — `cargo deny check` has been
+# printing an `unmatched-skip` warning on every run because of it.)
+skip = ["getrandom"]
 
 [sources]
 unknown-registry = "warn"

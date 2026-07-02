@@ -1,22 +1,51 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::mcp::MoadimMcp;
-use crate::cron_jobs::{self, new_registry, AppState, CronStore, ShutdownSignal};
 use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{
+        header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH},
+        HeaderMap, StatusCode,
+    },
     middleware,
-    routing::{get, post},
+    response::{IntoResponse, Response},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, LazyLock};
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use utoipa_swagger_ui::SwaggerUi;
+
+/// Shared signal that asks the running server to shut down gracefully.
+///
+/// The `/shutdown` route calls [`tokio::sync::Notify::notify_one`] on this; the serving loop awaits
+/// it and begins a graceful shutdown. A stored permit means notifying before the loop registers its
+/// waiter is safe (the later `notified()` returns immediately).
+pub type ShutdownSignal = Arc<tokio::sync::Notify>;
+
+/// Combined Axum application state holding the routine store.
+#[derive(Clone)]
+pub struct AppState {
+    /// Shared routine (agent-driven job) store.
+    pub routines: RoutineStore,
+    /// Unix timestamp (seconds) when the server started.
+    pub uptime_start: u64,
+    /// Fired by the `/shutdown` route to ask the server to stop.
+    pub shutdown: ShutdownSignal,
+}
+
+impl axum::extract::FromRef<AppState> for RoutineStore {
+    fn from_ref(state: &AppState) -> Self {
+        state.routines.clone()
+    }
+}
 
 /// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
 /// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
@@ -64,11 +93,47 @@ pub struct EchoResponse {
     pub timestamp: u64,
 }
 
+/// The embedded SPA HTML, baked into the binary at compile time.
+const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
+
+/// Strong `ETag` for [`INDEX_HTML`], computed once from its content.
+///
+/// `DefaultHasher::new()` uses fixed keys (unlike `HashMap`'s randomized default), so this is
+/// deterministic across restarts of the same binary and only changes when a new build embeds
+/// different bytes. It isn't cryptographic — an `ETag` just needs to change when the content
+/// does, not resist tampering.
+static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    INDEX_HTML.hash(&mut hasher);
+    format!("\"{:016x}\"", hasher.finish())
+});
+
 /// `GET /` — serve the web client (single-page UI).
+///
+/// Sends a strong `ETag` for the ~1.1 MB embedded SPA and honors `If-None-Match` with a bodyless
+/// `304 Not Modified`, so a client that already has the current build only pays for the request
+/// round-trip on reload, not a re-download of the full body (issue #401). `Cache-Control:
+/// no-cache` forces that revalidation on every load rather than trusting a local TTL, since the
+/// content can change on any daemon upgrade.
 #[utoipa::path(get, path = "/",
-    responses((status = 200, description = "Web client HTML", body = str)))]
-pub async fn index() -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
+    responses(
+        (status = 200, description = "Web client HTML", body = str),
+        (status = 304, description = "Client's cached copy is still current"),
+    ))]
+pub async fn index(headers: HeaderMap) -> Response {
+    let etag = INDEX_ETAG.as_str();
+    let not_modified = headers
+        .get(IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == etag);
+    if not_modified {
+        return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
+    }
+    (
+        [(ETAG, etag), (CACHE_CONTROL, "no-cache")],
+        axum::response::Html(INDEX_HTML),
+    )
+        .into_response()
 }
 
 /// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
@@ -170,8 +235,8 @@ pub struct MachineResponse {
 
 /// `GET /machine` — the current machine's resolved identity.
 ///
-/// Returns the name this daemon uses to match `machines[]` targeting lists on routines and cron
-/// jobs. Useful for clients (e.g. the UI) that want to default their views to local entries only.
+/// Returns the name this daemon uses to match `machines[]` targeting lists on routines. Useful for
+/// clients (e.g. the UI) that want to default their views to local entries only.
 #[utoipa::path(get, path = "/machine",
     responses((status = 200, body = MachineResponse)))]
 pub async fn get_current_machine() -> Json<MachineResponse> {
@@ -216,10 +281,10 @@ pub async fn put_machine(
 /// `GET /machines` — distinct machine names this daemon knows about.
 ///
 /// There is no central machine registry, so the "known" set is the union of every `machines`
-/// targeting list declared by a routine or cron job, plus this machine's own resolved identity
+/// targeting list declared by a routine, plus this machine's own resolved identity
 /// ([`crate::machine::current_machine`]) so the local machine is always pickable even before
 /// anything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the
-/// `moadim machine list` CLI but reads the live in-memory stores instead of disk.
+/// `moadim machine list` CLI but reads the live in-memory store instead of disk.
 #[utoipa::path(get, path = "/machines",
     responses((status = 200, body = Vec<String>, description = "Known machine names, sorted")))]
 pub async fn list_machines(State(state): State<AppState>) -> Json<Vec<String>> {
@@ -229,9 +294,6 @@ pub async fn list_machines(State(state): State<AppState>) -> Json<Vec<String>> {
     for routine in state.routines.lock_recover().values() {
         names.extend(routine.machines.iter().cloned());
     }
-    for job in state.store.lock_recover().values() {
-        names.extend(job.machines.iter().cloned());
-    }
     Json(names.into_iter().collect())
 }
 
@@ -240,13 +302,12 @@ pub async fn list_machines(State(state): State<AppState>) -> Json<Vec<String>> {
 /// The shutdown signal is created internally; callers that need to trigger shutdown out of band
 /// (the serving loop) should use [`build_app_with_shutdown`].
 #[cfg(test)]
-pub(crate) fn build_app(store: CronStore, routines: RoutineStore) -> Router {
-    build_app_with_shutdown(store, routines, Arc::new(tokio::sync::Notify::new()))
+pub(crate) fn build_app(routines: RoutineStore) -> Router {
+    build_app_with_shutdown(routines, Arc::new(tokio::sync::Notify::new()))
 }
 
 /// Build the Axum router, wiring `shutdown` into the app state so the `/shutdown` route can fire it.
 pub(crate) fn build_app_with_shutdown(
-    store: CronStore,
     routines: RoutineStore,
     shutdown_signal: ShutdownSignal,
 ) -> Router {
@@ -254,24 +315,23 @@ pub(crate) fn build_app_with_shutdown(
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
 
+    // Clone before moving `routines` into `app_state` below — it's needed by both the REST router
+    // (via `app_state`) and the MCP service closure, so exactly one clone is required. Cloning from
+    // `app_state` afterward (as this used to do) produced an extra, immediately-dropped clone of the
+    // `Arc` per call.
+    let mcp_routines = routines.clone();
+
     let app_state = AppState {
-        store: store.clone(),
-        handlers: new_registry(),
-        routines: routines.clone(),
+        routines,
         uptime_start: now_secs(),
         shutdown: shutdown_signal,
     };
 
-    let mcp_store = store.clone();
-    let mcp_handlers = app_state.handlers.clone();
-    let mcp_routines = routines.clone();
     let uptime_start = app_state.uptime_start;
     let mcp_shutdown = app_state.shutdown.clone();
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(MoadimMcp::new(
-                mcp_store.clone(),
-                mcp_handlers.clone(),
                 mcp_routines.clone(),
                 uptime_start,
                 mcp_shutdown.clone(),
@@ -282,7 +342,7 @@ pub(crate) fn build_app_with_shutdown(
     );
 
     // All REST endpoints live under the `/api/v1` prefix so the root path space is free for the
-    // client-routed web UI (e.g. `/cron-jobs`, `/routines` resolve to UI pages, not JSON).
+    // client-routed web UI (e.g. `/routines` resolves to a UI page, not JSON).
     let api = Router::new()
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
@@ -290,16 +350,6 @@ pub(crate) fn build_app_with_shutdown(
         .route("/echo", post(echo))
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
-        .route("/cron-jobs", get(cron_jobs::list).post(cron_jobs::create))
-        .route(
-            "/cron-jobs/{id}",
-            get(cron_jobs::get)
-                .put(cron_jobs::replace)
-                .patch(cron_jobs::update)
-                .delete(cron_jobs::delete),
-        )
-        .route("/cron-jobs/{id}/trigger", post(cron_jobs::trigger))
-        .route("/cron-jobs/{id}/logs", get(cron_jobs::get_logs))
         .route("/agents", get(routines::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
@@ -322,6 +372,14 @@ pub(crate) fn build_app_with_shutdown(
             "/routines/{id}/scheduled-trigger",
             post(routines::scheduled_trigger),
         )
+        .route(
+            "/routines/{id}/flags",
+            get(routines::list_flags).post(routines::create_flag),
+        )
+        .route(
+            "/routines/{id}/flags/{filename}",
+            delete(routines::resolve_flag),
+        )
         .route("/routines/{id}/logs", get(routines::get_logs))
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
@@ -340,18 +398,21 @@ pub(crate) fn build_app_with_shutdown(
             use utoipa::OpenApi as _;
             SwaggerUi::new("/docs").url("/docs/openapi.json", crate::openapi::ApiDoc::openapi())
         })
-        // SPA fallback: client-routed pages (`/cron-jobs`, `/routines`) and refreshes on them return
-        // the app HTML so the Yew router can resolve the path on load.
+        // SPA fallback: client-routed pages (`/routines`) and refreshes on them return the app
+        // HTML so the Yew router can resolve the path on load.
         .fallback(get(index))
         .layer(middleware::from_fn(
             middlewares::security_headers::security_headers,
         ))
-        .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         // Outermost layer: negotiates `Accept-Encoding` and gzip-compresses response bodies
         // (notably the ~1.1 MB SPA `index.html` and the OpenAPI JSON under `/docs`). A no-op
         // for clients that don't advertise gzip support (issue #399).
         .layer(CompressionLayer::new())
+        // Outermost of all: a panicking handler would otherwise unwind straight through Hyper,
+        // resetting the connection with no response and no logged error (issue #337). Catch it
+        // here and answer with a plain 500 instead.
+        .layer(CatchPanicLayer::new())
         .with_state(app_state)
 }
 
@@ -368,7 +429,6 @@ pub(crate) fn write_openapi_spec(path: &std::path::Path) {
 
 /// Serve the application on `listener`, shutting down when `shutdown` resolves.
 pub async fn run_with_listener_until(
-    store: CronStore,
     routines: RoutineStore,
     listener: tokio::net::TcpListener,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
@@ -412,7 +472,7 @@ pub async fn run_with_listener_until(
                     .await;
         }
     });
-    let app = build_app_with_shutdown(store, routines, signal.clone());
+    let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
     // the `/shutdown` route fires `signal` (the UI "STOP" button / `moadim stop`).

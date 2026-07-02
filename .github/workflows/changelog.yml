@@ -1,12 +1,12 @@
 name: Changelog
 
-# Require a CHANGELOG.md update on any PR that touches `src/` or `ui/`, so
-# user-facing or behavioral changes are documented as they land ("Today's
-# TODO, tomorrow's changelog"). Docs-, CI-, and test-only PRs are exempt — the
-# gate only fires when product code under src/ or ui/ changes. Add the
-# `skip-changelog` label to a PR to bypass the check for deliberately
-# undocumented src/ui changes. Dependabot PRs are exempt — dependency bumps
-# don't need a hand-written changelog entry.
+# Require a changeset on any PR that touches `src/` or `ui/`, so user-facing
+# or behavioral changes are documented as they land ("Today's TODO, tomorrow's
+# changelog"). Docs-, CI-, and test-only PRs are exempt — the gate only fires
+# when product code under src/ or ui/ changes. Add the `skip-changelog` label
+# to a PR to bypass the check for deliberately undocumented src/ui changes.
+# Dependabot PRs are exempt — dependency bumps don't need a hand-written
+# changeset.
 
 on:
   pull_request:
@@ -16,6 +16,12 @@ on:
 # check out the repo and read CHANGELOG.md / the diff, never writes anything.
 permissions:
   contents: read
+
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded changelog checks don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   changelog:
@@ -36,12 +42,25 @@ jobs:
               - 'src/**'
               - 'ui/**'
 
-      - name: Require a CHANGELOG entry when src/ or ui/ changed
-        if: steps.filter.outputs.code == 'true'
-        uses: dangoslen/changelog-enforcer@8b5e9dc3121363bb7c0115f8533404d92af382de # v3.7.0
+      - name: Install pnpm
+        if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Install Node.js
+        if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          changeLogPath: CHANGELOG.md
-          skipLabels: skip-changelog
-          missingUpdateErrorMessage: >-
-            PR changes src/ or ui/ but CHANGELOG.md was not updated. Add a bullet
-            under '## [Unreleased]', or apply the 'skip-changelog' label.
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+        run: pnpm install --frozen-lockfile
+
+      - name: Require a changeset when src/ or ui/ changed
+        if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+        run: |
+          pnpm exec changeset status --since=origin/main || {
+            echo "::error::PR changes src/ or ui/ but no changeset was added. Run 'pnpm changeset', or apply the 'skip-changelog' label."
+            exit 1
+          }

@@ -124,6 +124,51 @@ fn reconcile_keeps_enabled_default_enabled() {
     assert!(updated.enabled);
 }
 
+#[test]
+fn reconcile_treats_empty_machines_as_drift_and_seeds_current_machine() {
+    // Legacy default routines seeded before machine-awareness were stored with an empty
+    // `machines` list, leaving them permanently dormant. `reconcile` must detect this
+    // as drift (even when all other daemon-owned fields are current) and seed the current
+    // machine so the routine becomes active. (#723)
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.machines = Vec::new(); // simulate pre-machine-awareness legacy state
+    let updated = reconcile(spec, &cur, 200)
+        .expect("empty machines list must be treated as drift and trigger a rewrite");
+    assert!(
+        !updated.machines.is_empty(),
+        "reconcile must seed the current machine when cur.machines is empty"
+    );
+}
+
+#[test]
+fn reconcile_returns_none_when_machines_already_set_and_otherwise_current() {
+    // A correctly seeded routine (non-empty machines, current content) must NOT be rewritten
+    // just because reconcile now inspects the machines list.
+    let spec = &DEFAULT_ROUTINES[0];
+    let cur = materialize(spec, 100);
+    assert!(
+        !cur.machines.is_empty(),
+        "materialize must assign a machine — test pre-condition"
+    );
+    assert!(
+        reconcile(spec, &cur, 200).is_none(),
+        "a routine with current content and a non-empty machines list must not trigger a rewrite"
+    );
+}
+
+#[test]
+fn materialize_assigns_non_empty_machines_list() {
+    // materialize must always seed the current machine so a freshly created default runs
+    // immediately instead of being dormant (#723).
+    let spec = &DEFAULT_ROUTINES[0];
+    let routine = materialize(spec, 0);
+    assert!(
+        !routine.machines.is_empty(),
+        "materialize must assign the current machine to a freshly seeded default routine"
+    );
+}
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

@@ -1,6 +1,6 @@
 //! Host-side unit tests for the routines faceted filter: the `RoutineStatusFacet`,
 //! `AgentFacet`, `RoutineMachineFacet` codecs and the pure `RoutineFilter` matching
-//! + list helpers. No DOM/wasm dependency (mirrors the `cron_jobs_tests.rs` convention).
+//! + list helpers. No DOM/wasm dependency (mirrors the `schedule_tests.rs` convention).
 
 use super::*;
 use chrono::TimeZone;
@@ -35,11 +35,14 @@ fn routine(
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         tags: vec![],
         agent_registered: false,
         file_path: String::new(),
         schedule_description: None,
+        flag_count: 0,
     }
 }
 
@@ -51,6 +54,23 @@ fn now() -> DateTime<Local> {
 /// DueSoon window matching `DUE_SOON_WINDOW_SECS`.
 fn window() -> Duration {
     Duration::seconds(DUE_SOON_WINDOW_SECS)
+}
+
+// ── Deserialization ────────────────────────────────────────────────────────────
+
+/// `GET /routines` omits `prompt` by default (see #825); the UI's hand-mirrored
+/// `Routine` struct must tolerate that or every routines-list fetch fails (#849).
+#[test]
+fn routine_deserializes_without_prompt_field() {
+    let json = r#"{
+        "id": "r1",
+        "schedule": "0 0 * * *",
+        "title": "T",
+        "agent": "a",
+        "enabled": true
+    }"#;
+    let routine: Routine = serde_json::from_str(json).unwrap();
+    assert_eq!(routine.prompt, "");
 }
 
 // ── RoutineStatusFacet codecs ─────────────────────────────────────────────────
@@ -89,6 +109,25 @@ fn agent_facet_decodes_a_plain_name_as_named() {
     assert_eq!(
         AgentFacet::from_value("codex"),
         AgentFacet::Named("codex".into())
+    );
+}
+
+// ── RepositoryFacet codecs ─────────────────────────────────────────────────────
+
+#[test]
+fn repository_facet_roundtrips_and_defaults_to_all() {
+    let all = RepositoryFacet::All;
+    let named = RepositoryFacet::Named("github.com/org/repo".into());
+    assert_eq!(RepositoryFacet::from_value(&all.as_value()), all);
+    assert_eq!(RepositoryFacet::from_value(&named.as_value()), named);
+    assert_eq!(RepositoryFacet::default(), RepositoryFacet::All);
+}
+
+#[test]
+fn repository_facet_decodes_a_plain_url_as_named() {
+    assert_eq!(
+        RepositoryFacet::from_value("github.com/org/repo"),
+        RepositoryFacet::Named("github.com/org/repo".into())
     );
 }
 
@@ -163,6 +202,12 @@ fn is_active_detects_each_facet() {
         ..Default::default()
     };
     assert!(m.is_active());
+
+    let r = RoutineFilter {
+        repository: RepositoryFacet::Named("github.com/org/repo".into()),
+        ..Default::default()
+    };
+    assert!(r.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -293,6 +338,39 @@ fn machine_specific_matches_only_that_machine() {
     let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
     assert!(f.matches(&m1, now(), window()));
     assert!(!f.matches(&m2_only, now(), window()));
+    assert!(!f.matches(&none, now(), window()));
+}
+
+// ── Repository facet matching ─────────────────────────────────────────────────
+
+#[test]
+fn repository_all_matches_regardless_of_repositories() {
+    let f = RoutineFilter::default();
+    let with = routine("a", "t", "claude", "0 * * * *", &[], &["repo-a"], true);
+    let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&with, now(), window()));
+    assert!(f.matches(&without, now(), window()));
+}
+
+#[test]
+fn repository_named_matches_only_routines_listing_that_repository() {
+    let f = RoutineFilter {
+        repository: RepositoryFacet::Named("repo-a".into()),
+        ..Default::default()
+    };
+    let hit = routine(
+        "a",
+        "t",
+        "claude",
+        "0 * * * *",
+        &[],
+        &["repo-a", "repo-b"],
+        true,
+    );
+    let other = routine("b", "t", "claude", "0 * * * *", &[], &["repo-b"], true);
+    let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&other, now(), window()));
     assert!(!f.matches(&none, now(), window()));
 }
 
@@ -428,6 +506,32 @@ fn distinct_machines_r_returns_sorted_unique_machines() {
     ];
     let machines = distinct_machines_r(&routines);
     assert_eq!(machines, vec!["m1", "m2", "m3"]);
+}
+
+#[test]
+fn distinct_repositories_returns_sorted_unique_repositories() {
+    let routines = vec![
+        routine(
+            "a",
+            "t",
+            "claude",
+            "0 * * * *",
+            &[],
+            &["repo-b", "repo-a"],
+            true,
+        ),
+        routine(
+            "b",
+            "t",
+            "claude",
+            "0 * * * *",
+            &[],
+            &["repo-a", "repo-c"],
+            true,
+        ),
+    ];
+    let repos = distinct_repositories(&routines);
+    assert_eq!(repos, vec!["repo-a", "repo-b", "repo-c"]);
 }
 
 // ── Bulk selection reducer actions ────────────────────────────────────────────
@@ -754,6 +858,46 @@ fn health_fully_configured_is_healthy() {
 }
 
 #[test]
+fn health_snoozed_until_future_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_snoozed_until_past_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_skip_runs_above_zero_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(2),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_skip_runs_zero_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(0),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
 fn health_priority_order_dormant_most_urgent() {
     assert!(
         RoutineHealth::Dormant.priority() < RoutineHealth::DeadSchedule.priority(),
@@ -761,7 +905,8 @@ fn health_priority_order_dormant_most_urgent() {
     );
     assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
     assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
-    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Healthy.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Snoozed.priority());
+    assert!(RoutineHealth::Snoozed.priority() < RoutineHealth::Healthy.priority());
 }
 
 // ── sort by RCol::Health ──────────────────────────────────────────────────────
@@ -994,4 +1139,22 @@ fn clone_title_does_not_double_prefix() {
 #[test]
 fn clone_title_preserves_empty_string() {
     assert_eq!(clone_title(""), "Copy of ");
+}
+
+// ── ics_feed_url ────────────────────────────────────────────────────────────────
+
+#[test]
+fn ics_feed_url_joins_origin_and_path() {
+    assert_eq!(
+        ics_feed_url("https://moadim.example.com"),
+        "https://moadim.example.com/api/v1/routines.ics"
+    );
+}
+
+#[test]
+fn ics_feed_url_preserves_port() {
+    assert_eq!(
+        ics_feed_url("http://localhost:8787"),
+        "http://localhost:8787/api/v1/routines.ics"
+    );
 }

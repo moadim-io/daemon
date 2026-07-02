@@ -35,7 +35,13 @@ fn stop_and_status_commands() {
             quiet: false
         }
     );
-    assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
+    assert_eq!(
+        parse(argv(&["status"])),
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
+    );
 }
 
 #[test]
@@ -47,7 +53,10 @@ fn cleanup_command() {
 fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["status", "--json"])),
-        Command::Status { json: true }
+        Command::Status {
+            json: true,
+            wait_secs: None
+        }
     );
     assert_eq!(
         parse(argv(&["cleanup", "--json"])),
@@ -101,8 +110,49 @@ fn json_flag_only_applies_to_its_command() {
     // An unrelated trailing flag does not switch on JSON output.
     assert_eq!(
         parse(argv(&["status", "--verbose"])),
-        Command::Status { json: false }
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
     );
+}
+
+#[test]
+fn wait_flag_only_applies_to_status() {
+    // A bare `--wait` uses the default timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait"])),
+        Command::Status {
+            json: false,
+            wait_secs: Some(DEFAULT_WAIT_SECS)
+        }
+    );
+    // `--wait=SECS` uses the given timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait=5"])),
+        Command::Status {
+            json: false,
+            wait_secs: Some(5)
+        }
+    );
+    // `--wait` and `--json` compose; order does not matter.
+    assert_eq!(
+        parse(argv(&["status", "--json", "--wait=5"])),
+        Command::Status {
+            json: true,
+            wait_secs: Some(5)
+        }
+    );
+    // A malformed `--wait=` value is ignored rather than panicking or defaulting to a wait.
+    assert_eq!(
+        parse(argv(&["status", "--wait=nope"])),
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
+    );
+    // A bare `--wait` (no subcommand) is an unknown arg, not a status request.
+    assert_eq!(parse(argv(&["--wait"])), Command::Help);
 }
 
 #[test]
@@ -188,6 +238,39 @@ fn fetch_health_is_none_when_no_server() {
 }
 
 #[test]
+fn wait_until_returns_true_immediately_when_check_already_passes() {
+    assert!(wait_until(|| true, Duration::from_secs(0)));
+}
+
+#[test]
+fn wait_until_calls_check_at_least_once_even_with_zero_timeout() {
+    let calls = std::cell::Cell::new(0);
+    let succeeded = wait_until(
+        || {
+            calls.set(calls.get() + 1);
+            false
+        },
+        Duration::from_secs(0),
+    );
+    assert!(!succeeded);
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn wait_until_polls_until_check_flips_true() {
+    let calls = std::cell::Cell::new(0);
+    let succeeded = wait_until(
+        || {
+            calls.set(calls.get() + 1);
+            calls.get() >= 3
+        },
+        Duration::from_secs(5),
+    );
+    assert!(succeeded);
+    assert_eq!(calls.get(), 3);
+}
+
+#[test]
 fn cleanup_json_reports_removed_and_running() {
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
@@ -213,6 +296,40 @@ fn stop_json_reports_running_pid_and_address() {
     assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
+/// Collect the top-level object keys of a JSON document into an order-independent set.
+fn json_key_set(json: &str) -> std::collections::BTreeSet<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn status_and_stop_json_share_a_common_key_set() {
+    // `status --json` and `stop --json` share a common `{running,pid,address}` base so consumers
+    // can parse either uniformly; `status` additionally folds in server-sourced `uptime_secs`/
+    // `version` (see `status_and_stop_json_share_the_same_shape`, which guards the shared fields'
+    // *values*). Here we guard the key *sets*: every key `stop` emits must also appear in `status`,
+    // for both the running and the down/null-pid branches, so a key can't be dropped from one side
+    // without the drift being caught.
+    assert!(
+        json_key_set(&stop_json(true, Some(42))).is_subset(&json_key_set(&status_json(
+            true,
+            Some(42),
+            None
+        ))),
+        "every key in stop --json must also appear in status --json (running branch)"
+    );
+    assert!(
+        json_key_set(&stop_json(false, None))
+            .is_subset(&json_key_set(&status_json(false, None, None))),
+        "every key in stop --json must also appear in status --json (down branch)"
+    );
+}
+
 #[test]
 fn liveness_exit_code_maps_running_to_codes() {
     // A reachable server exits 0; a missing one exits the documented EXIT_NOT_RUNNING.
@@ -223,7 +340,15 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart);
+    assert_eq!(parse(argv(&["restart"])), Command::Restart { json: false });
+}
+
+#[test]
+fn restart_command_with_json_flag() {
+    assert_eq!(
+        parse(argv(&["restart", "--json"])),
+        Command::Restart { json: true }
+    );
 }
 
 #[test]
@@ -277,6 +402,17 @@ fn restart_rotation_line_reads_none_when_nothing_was_running() {
 }
 
 #[test]
+fn restart_json_reports_old_and_new_pid() {
+    let value: serde_json::Value = serde_json::from_str(&restart_json(Some(123), 456)).unwrap();
+    assert_eq!(value["old"], serde_json::json!(123));
+    assert_eq!(value["new"], serde_json::json!(456));
+
+    let fresh: serde_json::Value = serde_json::from_str(&restart_json(None, 456)).unwrap();
+    assert!(fresh["old"].is_null());
+    assert_eq!(fresh["new"], serde_json::json!(456));
+}
+
+#[test]
 fn help_and_version_flags() {
     for flag in ["-h", "--help", "help"] {
         assert_eq!(parse(argv(&[flag])), Command::Help, "flag {flag}");
@@ -304,8 +440,8 @@ fn data_keywords_route_to_data_command_with_full_argv() {
     // The keyword itself with no further args still routes to the data dispatcher (which then
     // surfaces clap's usage error), rather than the lifecycle parser.
     assert_eq!(
-        parse(argv(&["cron-jobs"])),
-        Command::Data(argv(&["cron-jobs"]))
+        parse(argv(&["routines"])),
+        Command::Data(argv(&["routines"]))
     );
 }
 
@@ -373,13 +509,13 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -418,11 +554,29 @@ struct FakeServer {
 
 impl FakeServer {
     /// Start a server on an ephemeral port answering with `status` and `body` while alive.
-    fn start(status: u16, body: String) -> FakeServer {
+    fn start(status: u16, body: String) -> Self {
+        Self::start_with_liveness(status, body, true)
+    }
+
+    /// Start a server that answers connections but stays "down" (accepts and drops, no response)
+    /// until `delay` elapses, then starts answering — simulating a server that comes up shortly
+    /// after launch, to exercise a polling client like `status --wait`.
+    fn start_after(status: u16, body: String, delay: Duration) -> Self {
+        let server = Self::start_with_liveness(status, body, false);
+        let alive = Arc::clone(&server.alive);
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            alive.store(true, Ordering::SeqCst);
+        });
+        server
+    }
+
+    /// Start a server on an ephemeral port, initially alive or not per `initial_alive`.
+    fn start_with_liveness(status: u16, body: String, initial_alive: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
-        let alive = Arc::new(AtomicBool::new(true));
+        let alive = Arc::new(AtomicBool::new(initial_alive));
         let stop = Arc::new(AtomicBool::new(false));
         let alive_loop = Arc::clone(&alive);
         let stop_loop = Arc::clone(&stop);
@@ -447,7 +601,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             alive,
             stop,
@@ -536,6 +690,136 @@ fn cleanup_json_address_reflects_bind_override() {
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 
+/// Lock the machine-readable contract across all three `--json` commands: `status`, `stop`, and
+/// `cleanup` must each surface `address`, and — since they all describe the same bound endpoint —
+/// the value must be identical across all three, so the shapes can't silently drift apart again.
+#[test]
+fn status_stop_cleanup_json_share_the_same_address() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+
+    let expected = serde_json::json!("127.0.0.1:6000");
+    assert!(
+        status["address"].is_string(),
+        "status --json must include address"
+    );
+    assert!(
+        stop["address"].is_string(),
+        "stop --json must include address"
+    );
+    assert!(
+        cleanup["address"].is_string(),
+        "cleanup --json must include address"
+    );
+    assert_eq!(status["address"], expected);
+    assert_eq!(stop["address"], expected);
+    assert_eq!(cleanup["address"], expected);
+}
+
+// ─── README `--json` shape drift guard ─────────────────────────────────────────
+//
+// The README documents the exact `--json` object shape for `status`/`cleanup`/`stop` as a
+// script-facing stability promise (see the "Scripting" table). Nothing previously pinned those
+// documented key sets to the *actual* keys the `*_json` formatters emit, so a field renamed, added,
+// or removed in code (or in the README) could drift silently. The tests below parse the documented
+// shape literal straight out of README.md and assert it names exactly the same keys the formatter
+// produces; the exit-code half of the same contract is already locked by
+// `status_reports_down_when_no_server`/`status_reports_running_with_pid` and their `stop`/`cleanup`
+// counterparts.
+
+/// Return the top-level object keys named by a `--json` shape literal, e.g. turn
+/// `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` into `["running", "pid", "address"]`.
+/// The shapes documented in README.md never nest an object/array or embed a comma inside a string
+/// value, so splitting on top-level commas and taking each field's pre-colon, quote-trimmed key is
+/// sufficient (no JSON parser needed).
+fn shape_keys(shape: &str) -> Vec<String> {
+    shape
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split(',')
+        .map(|field| {
+            field
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .trim_matches('"')
+                .to_string()
+        })
+        .collect()
+}
+
+/// Extract the documented `--json` shape literal (the `{...}` text) from the README "Scripting"
+/// table row whose first cell is `` `moadim <command> --json` ``.
+fn readme_json_shape(command: &str) -> String {
+    let readme = include_str!("../README.md");
+    let marker = format!("`moadim {command} --json`");
+    let line = readme
+        .lines()
+        .find(|line| line.contains(&marker))
+        .unwrap_or_else(|| panic!("README scripting table has no row for {marker}"));
+    let start = line.find('{').expect("shape literal starts with `{`");
+    let end = line[start..]
+        .find('}')
+        .map(|offset| start + offset)
+        .expect("shape literal ends with `}`");
+    line[start..=end].to_string()
+}
+
+/// Sorted object keys of a `--json` formatter's output, for order-independent comparison against
+/// [`shape_keys`].
+fn actual_keys(json: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(json).expect("formatter emits valid JSON");
+    let mut keys: Vec<String> = value
+        .as_object()
+        .expect("formatter emits a JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn readme_status_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("status"));
+    documented.sort();
+    let health = HealthInfo {
+        uptime_secs: 42,
+        version: "0.1.0".to_string(),
+    };
+    assert_eq!(
+        documented,
+        actual_keys(&status_json(true, Some(7), Some(health))),
+        "README `moadim status --json` shape has drifted from status_json's actual keys"
+    );
+}
+
+#[test]
+fn readme_cleanup_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("cleanup"));
+    documented.sort();
+    assert_eq!(
+        documented,
+        actual_keys(&cleanup_json(3, true)),
+        "README `moadim cleanup --json` shape has drifted from cleanup_json's actual keys"
+    );
+}
+
+#[test]
+fn readme_stop_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("stop"));
+    documented.sort();
+    assert_eq!(
+        documented,
+        actual_keys(&stop_json(true, Some(7))),
+        "README `moadim stop --json` shape has drifted from stop_json's actual keys"
+    );
+}
+
 #[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();
@@ -579,8 +863,8 @@ fn status_reports_down_when_no_server() {
     let home = temp_home("status-down");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(status(false).unwrap(), EXIT_NOT_RUNNING);
-    assert_eq!(status(true).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(true, None).unwrap(), EXIT_NOT_RUNNING);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -592,8 +876,31 @@ fn status_reports_running_with_pid() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     // A pid file makes the human-readable "running (pid N)" suffix branch run.
     write_pid_file().unwrap();
-    assert_eq!(status(false).unwrap(), 0);
-    assert_eq!(status(true).unwrap(), 0);
+    assert_eq!(status(false, None).unwrap(), 0);
+    assert_eq!(status(true, None).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_times_out_when_server_never_comes_up() {
+    let home = temp_home("status-wait-timeout");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    // Zero seconds still probes once before giving up, so this returns promptly.
+    assert_eq!(status(false, Some(0)).unwrap(), EXIT_NOT_RUNNING);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_succeeds_once_server_comes_up() {
+    let server = FakeServer::start_after(200, String::new(), Duration::from_millis(100));
+    let home = temp_home("status-wait-success");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    // The first probe (no `--wait`) misses since the server isn't up yet...
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    // ...but `--wait` polls past the 100ms delay and observes it come up.
+    assert_eq!(status(false, Some(5)).unwrap(), 0);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -747,7 +1054,16 @@ fn restart_starts_fresh_when_none_running() {
     let home = temp_home("restart-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart().unwrap();
+    restart(false).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_json_skips_human_text_when_none_running() {
+    let home = temp_home("restart-fresh-json");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    restart(true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -761,8 +1077,84 @@ fn restart_replaces_running_server() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart().unwrap();
+    restart(false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_json_reports_old_pid_when_running() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("restart-running-json");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "2000");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    write_pid_file().unwrap();
+    server.stop_after(Duration::from_millis(80));
+    restart(true).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn foreground_already_running_message_names_pid_when_known() {
+    let with_pid = foreground_already_running_message(Some(4321));
+    assert!(with_pid.contains("(pid 4321)"));
+    assert!(with_pid.contains("moadim stop"));
+    assert!(with_pid.contains("moadim restart"));
+    // With no pid file the message omits the suffix but keeps the guidance.
+    let without_pid = foreground_already_running_message(None);
+    assert!(!without_pid.contains("(pid"));
+    assert!(without_pid.contains("refusing to start a second foreground instance"));
+}
+
+#[test]
+fn foreground_preflight_refuses_when_running() {
+    assert!(foreground_preflight(true, Some(7)).is_err());
+    assert!(foreground_preflight(true, None).is_err());
+}
+
+#[test]
+fn foreground_preflight_proceeds_when_not_running() {
+    assert!(foreground_preflight(false, None).is_ok());
+}
+
+#[test]
+fn ensure_not_running_for_foreground_ok_when_no_server() {
+    let home = temp_home("fg-down");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(ensure_not_running_for_foreground().is_ok());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_refuses_when_server_up() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("fg-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_skips_for_daemonized_child() {
+    // The launcher-spawned child carries MOADIM_DAEMONIZED and must be allowed to bind even while
+    // the (about-to-be-replaced) server is still answering probes.
+    let server = FakeServer::start(200, String::new());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "1");
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_ok());
 }
 
 #[test]
@@ -868,7 +1260,7 @@ fn restart_errors_when_stop_running_times_out() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
-    assert!(restart().is_err());
+    assert!(restart(false).is_err());
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -881,7 +1273,7 @@ fn restart_errors_when_spawn_detached_fails() {
     std::fs::write(base.join(".config/moadim"), "block").unwrap();
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert!(restart().is_err());
+    assert!(restart(false).is_err());
     let _ = std::fs::remove_dir_all(&base);
 }
 

@@ -36,6 +36,18 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
+/// Literal prefix every routine fire's tmux session name begins with; the remainder is
+/// `{slug}-{fire's $TS}` (see the `SESS=` line in [`build_routine_command`]).
+pub(crate) const TMUX_SESSION_PREFIX: &str = "moadim-";
+
+/// The tmux session-name prefix shared by every fire of the routine identified by `slug` —
+/// `{TMUX_SESSION_PREFIX}{slug}-`, matching every session name [`build_routine_command`] can
+/// produce for it regardless of `$TS`. Used by the overlap guard (#514) to detect whether *any*
+/// fire of this routine already has a live session, not just one exact `$TS`.
+pub(crate) fn tmux_session_prefix(slug: &str) -> String {
+    format!("{TMUX_SESSION_PREFIX}{slug}-")
+}
+
 /// Compose the `prompt.compiled.md` body: a repositories-as-context preamble, the prompt, and — when
 /// the routine has any — an "Open flags" section listing gaps/bugs/edge cases the agent raised on a
 /// previous run (see [`super::flags`]) that no one has resolved yet.
@@ -372,7 +384,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         ),
         format!("SLUG={}", shell_quote(&slug)),
         format!(r#"WB={}/"$SLUG-$TS""#, shell_quote(&workbenches_base)),
-        r#"SESS="moadim-$SLUG-$TS""#.to_string(),
+        format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$TS""#),
         r#"mkdir -p "$WB""#.to_string(),
     ];
     stmts.extend(system_prompt_stmts(

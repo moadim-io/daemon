@@ -11,9 +11,10 @@ use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{
-    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
+    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name,
+    tmux_session_prefix_alive, ttl_ceiling_secs,
 };
-use super::command::{build_routine_command, slugify};
+use super::command::{build_routine_command, slugify, tmux_session_prefix};
 use super::flags::{self, Flag, FlagScope};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
@@ -632,7 +633,8 @@ pub fn svc_snooze(
 }
 
 /// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
-/// the agent config cannot be loaded or the process cannot be spawned.
+/// the agent config cannot be loaded, a previous fire of this routine is still running, or the
+/// process cannot be spawned.
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
@@ -640,6 +642,21 @@ pub fn svc_snooze(
 fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
+            // Overlap guard (#514): a routine has no built-in mutual exclusion between fires, so a
+            // run outliving its schedule interval would otherwise pile up concurrent agent sessions
+            // all acting on the same target — duplicate PRs/issues, racing pushes. Every fire's tmux
+            // session name shares the same `moadim-{slug}-` prefix (see `build_routine_command`); if
+            // any of them is still alive, skip this fire instead of launching a second one.
+            let session_prefix = tmux_session_prefix(&slugify(&routine.title));
+            if tmux_session_prefix_alive(&session_prefix) {
+                log::warn!(
+                    "trigger: routine {:?} skipped — a previous run (tmux session prefix {:?}) is \
+                     still active (overlap guard)",
+                    routine.id,
+                    session_prefix,
+                );
+                return;
+            }
             let cmd = build_routine_command(routine, &agent);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same

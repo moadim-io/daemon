@@ -42,6 +42,28 @@ pub(super) fn tmux_session_alive(session: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Return `true` if any tmux session whose name starts with `prefix` currently exists.
+///
+/// Unlike [`tmux_session_alive`]'s exact match, this is for the per-routine overlap guard (#514):
+/// a routine's fires all share `{routine::command::tmux_session_prefix}` but differ by `$TS`, so
+/// detecting "is a previous fire of this routine still running" means matching the prefix, not one
+/// exact session name. A missing `tmux` binary, an empty session list, or a non-zero exit (no
+/// server running) all read as "not alive" — mirroring `tmux_session_alive`'s "no tmux, nothing to
+/// guard against" stance.
+pub(crate) fn tmux_session_prefix_alive(prefix: &str) -> bool {
+    std::process::Command::new(tmux_bin())
+        .arg("list-sessions")
+        .arg("-F")
+        .arg("#{session_name}")
+        .output()
+        .is_ok_and(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .any(|name| name.starts_with(prefix))
+        })
+}
+
 /// Force-kill the tmux session named `session` (best-effort).
 ///
 /// Uses an exact (`=`) target match, mirroring [`tmux_session_alive`]. Failures (no `tmux`, session

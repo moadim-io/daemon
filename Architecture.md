@@ -147,6 +147,12 @@ placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
 
+Before either path launches, the daemon checks for a live tmux session under the routine's
+`moadim-<slug>-` prefix (any `$TS` suffix) and skips the fire — logging a warning instead of
+spawning — if one is still running. This overlap guard prevents a run that outlives its schedule
+interval from piling up concurrent agent sessions against the same target (duplicate PRs/issues,
+racing pushes); see `routines::service::spawn_routine_command`.
+
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
 instants so external calendars can subscribe without an embedded `VTIMEZONE`. The optional

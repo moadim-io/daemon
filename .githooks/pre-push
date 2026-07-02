@@ -48,10 +48,11 @@ cargo fmt --check
 
 # ── 3. Lint ───────────────────────────────────────────────────────────────────
 # Match the CI clippy gate (.github/workflows/lint.yml) exactly: lint every
-# target (tests, examples, benches), and treat warnings as errors. Bare
-# `cargo clippy` skips test code and only warns, so it can pass here yet fail
-# CI — keep the two in lockstep so a green local push stays green in CI.
-cargo clippy --all-targets -- -D warnings
+# target (tests, examples, benches) across the whole workspace (including the
+# `ui` member crate), and treat warnings as errors. Bare `cargo clippy` skips
+# test code and only lints the root package, so it can pass here yet fail CI —
+# keep the two in lockstep so a green local push stays green in CI.
+cargo clippy --workspace --all-targets -- -D warnings
 
 # ── 4. Coverage ───────────────────────────────────────────────────────────────
 # Requires: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
@@ -68,34 +69,37 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 # ── 5. Changelog ────────────────────────────────────────────────────────────────
 # Mirror the CI `Changelog` workflow (.github/workflows/changelog.yml) locally so
-# pushes that would fail the changelog-enforcer check are caught before they hit
-# CI. If the commits being pushed touch `src/` or `ui/`, CHANGELOG.md must also be
-# touched in the same range. Set SKIP_CHANGELOG=1 to bypass (the local equivalent
-# of the `skip-changelog` PR label) for deliberately undocumented src/ui changes.
+# pushes that would fail the `changeset status` check are caught before they hit
+# CI. If the commits being pushed touch `src/` or `ui/`, a new `.changeset/*.md`
+# file must be present in the same range. Set SKIP_CHANGELOG=1 to bypass (the
+# local equivalent of the `skip-changelog` PR label) for deliberately
+# undocumented src/ui changes.
 if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
-  echo "Checking CHANGELOG.md update for src/ or ui/ changes..."
+  echo "Checking for a changeset covering src/ or ui/ changes..."
   # Range being pushed: everything on HEAD not yet on the upstream main branch,
   # via the merge-base with origin/main.
   base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
   if [ -z "$base" ]; then
-    echo "  Skipping changelog check (no origin/main to diff against)."
+    echo "  Skipping changeset check (no origin/main to diff against)."
   else
     changed="$(git diff --name-only "$base"...HEAD)"
     code_changed=0
-    changelog_changed=0
+    changeset_added=0
     for path in $changed; do
       case "$path" in
         src/*|ui/*) code_changed=1 ;;
-        CHANGELOG.md) changelog_changed=1 ;;
+        .changeset/*.md)
+          [ "$(basename "$path")" != "README.md" ] && changeset_added=1
+          ;;
       esac
     done
-    if [ "$code_changed" = "1" ] && [ "$changelog_changed" = "0" ]; then
+    if [ "$code_changed" = "1" ] && [ "$changeset_added" = "0" ]; then
       echo ""
-      echo "  FAIL: changes under src/ or ui/ but CHANGELOG.md was not updated."
-      echo "  Add a bullet under '## [Unreleased]', or set SKIP_CHANGELOG=1 to bypass"
-      echo "  (the local equivalent of the 'skip-changelog' PR label)."
+      echo "  FAIL: changes under src/ or ui/ but no changeset was added."
+      echo "  Run 'pnpm changeset', or set SKIP_CHANGELOG=1 to bypass (the local"
+      echo "  equivalent of the 'skip-changelog' PR label)."
       exit 1
     fi
-    echo "Changelog check passed."
+    echo "Changeset check passed."
   fi
 fi

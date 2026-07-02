@@ -4,6 +4,7 @@ use super::*;
 
 fn make_routine(id: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: "My Routine".to_string(),
@@ -20,6 +21,8 @@ fn make_routine(id: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -38,6 +41,25 @@ fn slugify_empty_falls_back() {
     assert_eq!(slugify(""), "routine");
     assert_eq!(slugify("---"), "routine");
     assert_eq!(slugify("!@#$"), "routine");
+}
+
+#[test]
+fn slugify_preserves_non_ascii_letters() {
+    // Hebrew and CJK titles must not collapse to the "routine" fallback (#262).
+    assert_eq!(slugify("עדכון יומי"), "עדכון-יומי");
+    assert_eq!(slugify("日次レポート"), "日次レポート");
+    assert_eq!(slugify("Отчёт"), "отчёт");
+    // Latin diacritics are kept rather than silently dropped.
+    assert_eq!(slugify("Café Report"), "café-report");
+}
+
+#[test]
+fn slugify_distinct_non_ascii_titles_produce_distinct_slugs() {
+    let slug_one = slugify("עדכון יומי");
+    let slug_two = slugify("דוח שבועי");
+    assert_ne!(slug_one, "routine");
+    assert_ne!(slug_two, "routine");
+    assert_ne!(slug_one, slug_two);
 }
 
 #[test]
@@ -71,6 +93,35 @@ fn compose_prompt_without_repositories_omits_clone_header() {
     assert!(!prompt.contains("clone any you need"));
     assert!(!prompt.contains("\n- "));
     assert!(prompt.contains("do the thing"));
+}
+
+#[test]
+fn compose_prompt_omits_open_flags_section_when_none() {
+    let routine = make_routine("x");
+    let prompt = compose_prompt(&routine);
+    assert!(!prompt.contains("Open flags"));
+}
+
+#[test]
+fn compose_prompt_includes_open_flags_section() {
+    let mut routine = make_routine("x");
+    routine.title = "Compose Prompt Flags Test ZZZ".to_string();
+    let slug = slugify(&routine.title);
+    flags::create_flag(
+        &slug,
+        "bug",
+        "the thing is broken",
+        flags::FlagScope::General,
+    )
+    .unwrap();
+    flags::create_flag(&slug, "gap", "missing context", flags::FlagScope::Local).unwrap();
+
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Open flags"));
+    assert!(prompt.contains("**bug** (general): the thing is broken"));
+    assert!(prompt.contains("**gap** (local): missing context"));
+
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
 }
 
 #[test]
@@ -477,6 +528,7 @@ fn svc_create_invalid_cron_rejected() {
         schedule: "not-a-cron".into(),
         title: "t".into(),
         agent: "claude".into(),
+        model: None,
         prompt: "p".into(),
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
@@ -494,6 +546,7 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Cov Routine".into(),
             agent: "claude".into(),
@@ -510,12 +563,13 @@ fn svc_create_update_delete_lifecycle() {
     let id = created.routine.id.clone();
     // folder is slug of the title, not the UUID
     assert!(crate::paths::routine_toml_path("cov-routine").exists());
-    assert!(crate::paths::routine_prompt_path("cov-routine").exists());
+    assert!(crate::paths::routine_compiled_prompt_path("cov-routine").exists());
 
     let updated = svc_update(
         &store,
         &id,
         UpdateRoutineRequest {
+            model: None,
             schedule: Some("@weekly".into()),
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
@@ -548,6 +602,7 @@ fn svc_update_not_found() {
         schedule: None,
         title: Some("x".into()),
         agent: None,
+        model: None,
         prompt: None,
         repositories: None,
         machines: None,
@@ -570,6 +625,7 @@ fn svc_update_invalid_cron_rejected() {
         schedule: Some("bad".into()),
         title: None,
         agent: None,
+        model: None,
         prompt: None,
         repositories: None,
         machines: None,

@@ -387,12 +387,20 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
     ];
-    stmts.extend(system_prompt_stmts(
+
+    // Everything from here on runs with stdout/stderr redirected into the workbench itself, so a
+    // failure in the setup step or the tmux launch leaves a readable trace instead of being handed
+    // to cron's mail spool (silently discarded on the headless hosts this daemon targets — see
+    // #375). `$WB` already exists (created by the `mkdir` above), so the redirect target is valid.
+    // The `cp`/disclosure guards below still `tee` their own abort reason into `agent.log`
+    // explicitly; under this wrapper that message also lands in `launch.log`, which is harmless.
+    let mut inner_stmts = Vec::new();
+    inner_stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
         &routine.title,
         &agent.instructions_file,
     ));
-    stmts.extend([
+    inner_stmts.extend([
         // Fail-fast if the routine's source prompt is missing. The statements are `;`-joined, so a
         // bare `cp` failure would be ignored and the agent would launch with an empty
         // `"$(cat prompt.md)"` argument — a blank, task-less session. Abort instead, recording the
@@ -404,13 +412,17 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     ]);
     if let Some(setup) = &agent.setup {
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
-        stmts.push(setup.clone());
+        inner_stmts.push(setup.clone());
     }
-    stmts.push(format!(
+    inner_stmts.push(format!(
         r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
         shell_quote(&invocation)
     ));
-    stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
+    inner_stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
+    stmts.push(format!(
+        r#"{{ {} ; }} >> "$WB/launch.log" 2>&1"#,
+        inner_stmts.join("; ")
+    ));
     stmts.join("; ")
 }
 

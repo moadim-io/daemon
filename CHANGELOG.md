@@ -15,6 +15,27 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagged in `cli::parse` (issue #719): the bare `None` arm into the `Background` arm, and the redundant explicit `-h`/`--help`/`help` arm that the trailing wildcard already covered.
 
+### Added
+
+- **Routine flags.** A routine's agent runs unattended inside tmux with no
+  channel back to a human — until now. It (or a human, via MCP/HTTP) can
+  raise a flag against a routine: a free-text `type` (e.g. `"bug"`, `"gap"`,
+  `"edge_case"`, `"question"`) and free-text `description`, stored as
+  `general` (committed) or `local` (gitignored) under the routine's
+  `flags/` folder. New MCP tools `create_flag`, `list_flags`, `resolve_flag`
+  and matching `/api/v1/routines/{id}/flags` REST endpoints. Open flags are
+  injected into the routine's `prompt.md` on the next run so the agent sees
+  what it flagged before, and the UI shows a flag-count badge with a
+  read-only flags page to review and resolve them.
+
+- **Structured JSON logging.** Set `MOADIM_LOG_FORMAT=json` to switch `daemon.log`
+  (and foreground stdout) from `env_logger`'s human-readable format to one JSON
+  object per line (`ts`, `level`, `target`, `msg`), so a `launchd`/`systemd`-run
+  daemon can ship its log into an aggregator (Loki, ELK, Vector, CloudWatch)
+  without regex-scraping free-form text. Opt-in — the variable unset keeps the
+  current text format byte-for-byte, and `RUST_LOG` level filtering is unchanged
+  in both formats. (#416)
+
 ### Changed
 
 - **Hardened the dashboard's Content-Security-Policy.** Every response's CSP
@@ -37,28 +58,22 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   machine, restoring the routine to an active state without any manual intervention.
   (#723)
 
-### Added
+- The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the
+  committed `apis/openapi.json`) no longer advertises a frozen `0.1.0`. The
+  hardcoded `version` literal was dropped from the `#[openapi(info(...))]`
+  attribute so utoipa derives it from `CARGO_PKG_VERSION`, keeping the spec
+  version in lockstep with the crate.
 
-- **Routine flags.** A routine's agent runs unattended inside tmux with no
-  channel back to a human — until now. It (or a human, via MCP/HTTP) can
-  raise a flag against a routine: a free-text `type` (e.g. `"bug"`, `"gap"`,
-  `"edge_case"`, `"question"`) and free-text `description`, stored as
-  `general` (committed) or `local` (gitignored) under the routine's
-  `flags/` folder. New MCP tools `create_flag`, `list_flags`, `resolve_flag`
-  and matching `/api/v1/routines/{id}/flags` REST endpoints. Open flags are
-  injected into the routine's `prompt.md` on the next run so the agent sees
-  what it flagged before, and the UI shows a flag-count badge with a
-  read-only flags page to review and resolve them.
+### Tests
 
-### Added
-
-- **Structured JSON logging.** Set `MOADIM_LOG_FORMAT=json` to switch `daemon.log`
-  (and foreground stdout) from `env_logger`'s human-readable format to one JSON
-  object per line (`ts`, `level`, `target`, `msg`), so a `launchd`/`systemd`-run
-  daemon can ship its log into an aggregator (Loki, ELK, Vector, CloudWatch)
-  without regex-scraping free-form text. Opt-in — the variable unset keeps the
-  current text format byte-for-byte, and `RUST_LOG` level filtering is unchanged
-  in both formats. (#416)
+- Added a `cli_tests` regression guard (`status_and_stop_json_share_a_common_key_set`)
+  asserting that every object key `stop --json` emits also appears in
+  `status --json`, so the shared `{running,pid,address}` base contract between
+  the two `--json` shapes can't silently drift apart as fields are added to
+  one side but not the other. `status --json` may carry additional
+  server-sourced fields (`uptime_secs`, `version`) that `stop --json` omits;
+  see `status_and_stop_json_share_the_same_shape` for the value-level guard on
+  the shared subset.
 
 ## [0.19.1] - 2026-07-01
 
@@ -121,6 +136,16 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- **Workbench launch path now derived from `paths::workbenches_dir()`.** The
+  generated cron launch command hardcoded `WB="$HOME/.moadim/workbenches/$SLUG-$TS"`
+  instead of going through the same seam the reaper (`routines/cleanup/mod.rs`)
+  and the LOGS view (`routines/service.rs`) already use. With
+  `MOADIM_HOME_OVERRIDE` set, this meant a run was *launched* under one path but
+  *reaped and listed* under another — leaking workbenches the reaper never sees
+  and leaving the LOGS view empty for real runs. The launch command now resolves
+  its base through `paths::workbenches_dir()`, with a regression test asserting
+  the two stay in sync under the override. No behavior change for the default
+  install. (#601)
 - **The daemon never killed hung routine tmux sessions when launched via
   launchd/systemd.** Those managers start `moadim --interactive` with a
   minimal `PATH` (e.g. macOS launchd's `/usr/bin:/bin:/usr/sbin:/sbin`) that
@@ -144,6 +169,14 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   page reporting the *previous* version. Corrected the version token and added
   a regression test (`cli::cli_tests::man_page_version_matches_cargo_pkg_version`)
   that fails when the two drift again. (#556)
+- **`slugify` dropped every non-ASCII character.** Routine titles written in
+  Hebrew, CJK, or Cyrillic (or Latin letters with diacritics like `é`/`ü`)
+  slugified to an empty string and fell back to the generic `"routine"` name,
+  so a second such routine collided on create (`409`) and the on-disk
+  workbench dir / tmux session name gave no hint which routine it belonged
+  to. `slugify` now uses `char::is_alphanumeric`/`char::to_lowercase` (Unicode
+  scalar values, not ASCII-only), so non-Latin titles keep their content and
+  two distinct non-Latin titles produce distinct slugs. (#262)
 - Locked the `--json` machine-readable contract with a regression test
   (`cli::cli_tests::status_stop_cleanup_json_share_the_same_address`) asserting
   `status --json`, `stop --json`, and `cleanup --json` all surface the same
@@ -155,13 +188,56 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   those unreachable arms were accidental duplicates of the same first-check
   path; merged them into one `svc_update_not_found_when_id_missing` test that
   covers both request shapes against the real, single `NotFound` path.
+- Nothing previously verified the README's documented `--json` object shapes
+  for `status`/`cleanup`/`stop` against the keys the CLI actually emits, so a
+  field renamed, added, or removed in `cli.rs` could drift silently from the
+  script-facing contract in `README.md`. Added
+  `cli::cli_tests::readme_status_json_shape_matches_actual_keys` and its
+  `cleanup`/`stop` counterparts, which parse the documented shape literal
+  straight out of `README.md` and assert it names exactly the keys
+  `status_json`/`cleanup_json`/`stop_json` produce. (#345)
 
 ### Added
 
+- **`ETag` + `304 Not Modified` for the web UI.** `GET /` (and the SPA fallback
+  for client-routed paths) now sends a strong `ETag` for the embedded ~1.1 MB
+  `index.html`, and honors a matching `If-None-Match` with a bodyless `304`
+  instead of re-sending the full body on every load/refresh. `Cache-Control:
+  no-cache` keeps the browser revalidating on each request rather than trusting
+  a local TTL, since the content can change on any daemon upgrade. (#401)
+- **SUBSCRIBE button on the routines calendar.** The calendar view's nav bar
+  now has a SUBSCRIBE button that copies the `/api/v1/routines.ics` feed URL
+  to the clipboard, so wiring the feed into an external calendar app no
+  longer requires reading the API docs to find the endpoint.
+- **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
+  server answers or `SECS` elapse (default 30) instead of checking once, so a
+  launch script can block on startup (`moadim && moadim status --wait`) rather
+  than sleeping a fixed guess before probing. Exits `0` once reachable and the
+  existing `3` on timeout, matching the `status`/`cleanup`/`stop` exit-code
+  contract.
+- **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
+  rename-machine dialogs and the routine edit/delete-confirm modals now all
+  close on `Esc`, matching the command palette's existing behavior.
+- An interactive foreground start (`moadim -i` / `--interactive`) now preflights
+  for an already-running daemon and refuses with a clear, actionable message
+  (naming the running pid when known and pointing at `moadim stop` /
+  `moadim restart`) instead of proceeding to bind and dying with an opaque
+  `Address already in use (os error 48)`. The launcher-spawned background child
+  (which also runs `--interactive`) is exempt via the `MOADIM_DAEMONIZED` marker,
+  so background/restart launches are unaffected (#298).
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
+- **`agent_command_available` on routine responses.** `RoutineResponse` (returned
+  by `GET`/`POST`/`PUT`/`DELETE` `/routines`) now reports whether the routine's
+  agent `command` (e.g. `claude`, `codex`) actually resolves on the daemon's
+  `PATH`, distinct from the existing `agent_registered` (which only checks that
+  `<agent>.toml` exists). A routine with a present, well-formed agent config but
+  an uninstalled binary previously looked identically healthy to one that could
+  actually run — the cron firing launches a tmux session that dies immediately
+  with "command not found," a silent no-op. Clients can now tell the two states
+  apart instead of inferring it from `agent.log` after the fact. (#383)
 - **`actionlint`/`shellcheck` CI gate.** New `.github/workflows/actionlint.yml`
   runs `actionlint` (via `raven-actions/actionlint`, pinned to a commit SHA) on
   every PR and on push to `main`, statically validating workflow YAML —

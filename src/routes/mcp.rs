@@ -2,7 +2,7 @@
 
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
     tool, tool_router,
 };
 use schemars::JsonSchema;
@@ -98,6 +98,9 @@ struct UpdateRoutineInput {
     title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
@@ -117,14 +120,14 @@ struct UpdateRoutineInput {
 
 /// Wrap a serializable value in a successful `CallToolResult`.
 fn ok(val: impl serde::Serialize) -> CallToolResult {
-    CallToolResult::success(vec![Content::text(
+    CallToolResult::success(vec![ContentBlock::text(
         serde_json::to_string(&val).unwrap_or_default(),
     )])
 }
 
 /// Wrap an error message in a failed `CallToolResult`.
 fn err(msg: impl std::fmt::Display) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(msg.to_string())])
+    CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
 
 #[tool_router(server_handler)]
@@ -234,6 +237,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             title: input.title,
             agent: input.agent,
+            model: input.model,
             prompt: input.prompt,
             repositories: input.repositories,
             machines: input.machines,

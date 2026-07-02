@@ -36,7 +36,7 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
-rmcp = { version = "1.7.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "2.0.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 schemars = "1"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.7", features = ["compression-gzip"] }
@@ -107,3 +107,14 @@ wildcard_imports = "deny"
 # already covered by another pattern, or the duplication is an unintentional
 # bug where the bodies were meant to differ.
 match_same_arms = "deny"
+# Prefer `Self`/`Self::Variant` over spelling out the concrete type name
+# inside its own `impl` block. `Self` always tracks the current type, so
+# renaming the type requires zero edits inside the `impl` block, and it's
+# the idiomatic way to say "same type as the one being implemented".
+use_self = "deny"
+# Reject `{:?}` (Debug) formatting of a `Path`/`PathBuf` in user-facing output
+# (log lines, error messages). Debug-formats a path with surrounding quotes and
+# escaped separators/backslashes, which reads oddly and diverges from every
+# other path already printed via `.display()` in this codebase. `Path::display`
+# is the correct, consistent way to show a filesystem path to a human.
+unnecessary_debug_formatting = "deny"

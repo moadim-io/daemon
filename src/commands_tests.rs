@@ -32,13 +32,13 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -66,7 +66,7 @@ struct FakeServer {
 
 impl FakeServer {
     /// Start a server on an ephemeral port answering every connection with `status` and `body`.
-    fn start(status: u16, body: &str) -> FakeServer {
+    fn start(status: u16, body: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -91,7 +91,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             stop,
             handle: Some(handle),
@@ -210,6 +210,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "t",
             "--agent",
             "a",
+            "--model",
+            "claude-sonnet-4-6",
             "--prompt",
             "p",
             "--disabled",
@@ -228,6 +230,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "rid",
             "--title",
             "t2",
+            "--model",
+            "",
             "--repositories",
             "[]",
             "--enabled",
@@ -336,6 +340,7 @@ fn routine_body_serializes_all_fields() {
             "* * * * *".into(),
             "title".into(),
             "agent".into(),
+            Some("claude-sonnet-4-6".into()),
             "prompt".into(),
             Some("[]".into()),
             Some("[\"work\"]".into()),
@@ -348,6 +353,10 @@ fn routine_body_serializes_all_fields() {
     )
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
+    assert_eq!(
+        value["model"],
+        Value::String("claude-sonnet-4-6".to_string())
+    );
     assert_eq!(value["repositories"], Value::Array(vec![]));
     assert_eq!(
         value["machines"],
@@ -371,6 +380,7 @@ fn routine_body_rejects_bad_repositories() {
             "* * * * *".into(),
             "t".into(),
             "a".into(),
+            None,
             "p".into(),
             Some("{bad".into()),
             None,
@@ -391,6 +401,7 @@ fn routine_body_rejects_bad_machines() {
             "* * * * *".into(),
             "t".into(),
             "a".into(),
+            None,
             "p".into(),
             None,
             Some("{bad".into()),

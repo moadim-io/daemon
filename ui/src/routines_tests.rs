@@ -54,6 +54,23 @@ fn window() -> Duration {
     Duration::seconds(DUE_SOON_WINDOW_SECS)
 }
 
+// ── Deserialization ────────────────────────────────────────────────────────────
+
+/// `GET /routines` omits `prompt` by default (see #825); the UI's hand-mirrored
+/// `Routine` struct must tolerate that or every routines-list fetch fails (#849).
+#[test]
+fn routine_deserializes_without_prompt_field() {
+    let json = r#"{
+        "id": "r1",
+        "schedule": "0 0 * * *",
+        "title": "T",
+        "agent": "a",
+        "enabled": true
+    }"#;
+    let routine: Routine = serde_json::from_str(json).unwrap();
+    assert_eq!(routine.prompt, "");
+}
+
 // ── RoutineStatusFacet codecs ─────────────────────────────────────────────────
 
 #[test]
@@ -1079,4 +1096,22 @@ fn clone_title_does_not_double_prefix() {
 #[test]
 fn clone_title_preserves_empty_string() {
     assert_eq!(clone_title(""), "Copy of ");
+}
+
+// ── ics_feed_url ────────────────────────────────────────────────────────────────
+
+#[test]
+fn ics_feed_url_joins_origin_and_path() {
+    assert_eq!(
+        ics_feed_url("https://moadim.example.com"),
+        "https://moadim.example.com/api/v1/routines.ics"
+    );
+}
+
+#[test]
+fn ics_feed_url_preserves_port() {
+    assert_eq!(
+        ics_feed_url("http://localhost:8787"),
+        "http://localhost:8787/api/v1/routines.ics"
+    );
 }

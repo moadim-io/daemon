@@ -35,8 +35,8 @@ impl FlagScope {
     /// The filename suffix (including the leading `.`) this scope's flag files carry.
     fn suffix(self) -> &'static str {
         match self {
-            FlagScope::General => ".md",
-            FlagScope::Local => ".local.md",
+            Self::General => ".md",
+            Self::Local => ".local.md",
         }
     }
 }

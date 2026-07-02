@@ -305,7 +305,8 @@ pub fn shell() -> Html {
     }
 
     // Global ⌘K / Ctrl-K listener that toggles the command palette from any
-    // page. Registered once on mount and torn down on unmount.
+    // page, and Escape to dismiss whichever shell-level dialog is open.
+    // Registered once on mount and torn down on unmount.
     {
         let state = state.clone();
         use_effect_with((), move |_| {
@@ -316,6 +317,12 @@ pub fn shell() -> Html {
                     {
                         event.prevent_default();
                         state.dispatch(ShellAction::TogglePalette);
+                    } else if event.key() == "Escape" {
+                        if state.show_shutdown {
+                            state.dispatch(ShellAction::CloseShutdown);
+                        } else if state.show_rename_machine {
+                            state.dispatch(ShellAction::CloseRenameMachine);
+                        }
                     }
                 }));
             let window = web_sys::window().expect("window exists");

@@ -3,6 +3,7 @@
 use crate::paths::{routine_prompt_path, routine_scheduled_state_path};
 
 use super::agents::AgentCommand;
+use super::flags::{list_flags, FlagScope};
 use super::model::Routine;
 
 /// Slugify `title` into a filesystem- and tmux-safe identifier.
@@ -29,7 +30,9 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
-/// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
+/// Compose the `prompt.md` body: a repositories-as-context preamble, the prompt, and — when the
+/// routine has any — an "Open flags" section listing gaps/bugs/edge cases the agent raised on a
+/// previous run (see [`super::flags`]) that no one has resolved yet.
 ///
 /// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
 /// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
@@ -54,6 +57,21 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
     body.push_str("\n---\n");
     body.push_str(&routine.prompt);
     body.push('\n');
+
+    let flags = list_flags(&slugify(&routine.title));
+    if !flags.is_empty() {
+        body.push_str("\n---\n# Open flags\n\nRaised on a previous run and not yet resolved:\n\n");
+        for flag in &flags {
+            let scope = match flag.scope {
+                FlagScope::General => "general",
+                FlagScope::Local => "local",
+            };
+            body.push_str(&format!(
+                "- **{}** ({scope}): {}\n",
+                flag.flag_type, flag.description
+            ));
+        }
+    }
     body
 }
 

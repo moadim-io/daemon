@@ -12,6 +12,7 @@ By participating in this project you agree to abide by our
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
+| [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
 | [pnpm](https://pnpm.io/installation) | Runs [Changesets](https://github.com/changesets/changesets) (`pnpm install` once, then `pnpm changeset`) — see [Workflow](#workflow) below |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
@@ -60,6 +61,22 @@ the repo root — you don't need to know the crate/binary name to run it.
 Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
 `schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`
 flags, add it to `[default.extend-words]` there.
+
+Lint the workflow files under `.github/workflows/` (YAML syntax, `${{ }}`
+expressions, the `needs`/`if`/matrix job graph, action input names, and,
+via `shellcheck`, every embedded `run:` block) with
+[`actionlint`](https://github.com/rhysd/actionlint):
+
+```sh
+brew install actionlint shellcheck   # or: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+actionlint
+```
+
+`actionlint` picks up `shellcheck` from `PATH` automatically if it's
+installed; without it, shell-script findings in `run:` blocks are silently
+skipped. This mirrors the CI gate in
+[`actionlint.yml`](.github/workflows/actionlint.yml), so a clean local run
+means the CI job will pass too.
 
 ## Reporting security issues
 
@@ -122,22 +139,30 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 ## Releasing
 
-Releases are driven by [Changesets](https://github.com/changesets/changesets).
-As changeset files land on `main`, [`changeset-release.yml`](.github/workflows/changeset-release.yml)
-keeps a standing "Version Packages" PR up to date — it bumps `package.json`,
-syncs that version into `Cargo.toml`/`Cargo.lock`
-([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
-and rolls the pending changesets into a new dated `CHANGELOG.md` section.
-Merge that PR when you're ready to cut a release.
+See [RELEASING.md](RELEASING.md) for the full walkthrough, the current
+manual step, and the reasoning behind how this pipeline is built. Short
+version below.
 
-To cut one manually instead (e.g. a hotfix, or the bot workflow is
-unavailable):
+Releases are driven by [Changesets](https://github.com/changesets/changesets).
+Changeset files accumulate silently on `main` as PRs land (each one required
+by the `unreleased-entry` check above) until someone decides it's time to
+ship: trigger [`cut-release.yml`](.github/workflows/cut-release.yml) —
+`gh workflow run cut-release.yml`, or "Run workflow" on the Actions tab. It
+bumps `package.json`, syncs that version into `Cargo.toml`/`Cargo.lock`
+([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
+rolls the pending changesets into a new dated `CHANGELOG.md` section, verifies
+the result through the same lint/test gates a PR would get, and pushes it
+straight to `main` — no PR. (There used to be a bot-maintained "Version
+Packages" PR instead; it required GitHub Actions to be allowed to open PRs,
+which this org disables, so it never actually worked. See #849.)
+
+To cut one manually instead (e.g. a hotfix, or the workflow is unavailable):
 
 1. `pnpm version-packages` — runs the same bump + sync locally.
 2. Review the diff (`package.json`, `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md`).
 3. Commit, open a PR, and merge to `main`.
 
-Either way, on merge [`auto-release.yml`](.github/workflows/auto-release.yml)
+Either way, on landing on `main`, [`auto-release.yml`](.github/workflows/auto-release.yml)
 detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
 ([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
 ([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag

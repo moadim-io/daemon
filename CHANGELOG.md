@@ -510,6 +510,13 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   current machine on mount and default the existing machine facet filter to it; users can change
   the filter to "Any" to see all machines. Closes #726.
 
+- **UI: group-by dimension for the Routines table.** A GROUP BY selector in the table toolbar
+  lets operators partition the routine list into labelled sections by **agent** (e.g. `claude`,
+  `codex`), **machine** (first assigned machine, or `(unassigned)` when none), or **status**
+  (Enabled / Disabled). Selecting "None" (the default) restores the existing flat list. The
+  selector is hidden in Calendar and Day views where grouping is not applicable. Mirrors the
+  identical GroupBy feature on the Cron Jobs page. Closes #744.
+
 ## [0.16.0] - 2026-06-26
 
 ### Changed

@@ -947,6 +947,7 @@ pub enum RAction {
     SetMachineFacet(RoutineMachineFacet),
     SetRepositoryFacet(RepositoryFacet),
     ClearFilters,
+    /// Change the group-by dimension for the table view.
     SetGroupBy(RGroupBy),
     SortByCol(RCol),
     Upsert(Box<Routine>),

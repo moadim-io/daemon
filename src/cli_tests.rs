@@ -4,7 +4,7 @@ use super::*;
 
 /// Build a `Vec<String>` from string literals for [`parse`].
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|arg| arg.to_string()).collect()
+    args.iter().map(ToString::to_string).collect()
 }
 
 #[test]
@@ -35,7 +35,13 @@ fn stop_and_status_commands() {
             quiet: false
         }
     );
-    assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
+    assert_eq!(
+        parse(argv(&["status"])),
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
+    );
 }
 
 #[test]
@@ -47,7 +53,10 @@ fn cleanup_command() {
 fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["status", "--json"])),
-        Command::Status { json: true }
+        Command::Status {
+            json: true,
+            wait_secs: None
+        }
     );
     assert_eq!(
         parse(argv(&["cleanup", "--json"])),
@@ -101,24 +110,164 @@ fn json_flag_only_applies_to_its_command() {
     // An unrelated trailing flag does not switch on JSON output.
     assert_eq!(
         parse(argv(&["status", "--verbose"])),
-        Command::Status { json: false }
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
     );
 }
 
 #[test]
+fn wait_flag_only_applies_to_status() {
+    // A bare `--wait` uses the default timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait"])),
+        Command::Status {
+            json: false,
+            wait_secs: Some(DEFAULT_WAIT_SECS)
+        }
+    );
+    // `--wait=SECS` uses the given timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait=5"])),
+        Command::Status {
+            json: false,
+            wait_secs: Some(5)
+        }
+    );
+    // `--wait` and `--json` compose; order does not matter.
+    assert_eq!(
+        parse(argv(&["status", "--json", "--wait=5"])),
+        Command::Status {
+            json: true,
+            wait_secs: Some(5)
+        }
+    );
+    // A malformed `--wait=` value is ignored rather than panicking or defaulting to a wait.
+    assert_eq!(
+        parse(argv(&["status", "--wait=nope"])),
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
+    );
+    // A bare `--wait` (no subcommand) is an unknown arg, not a status request.
+    assert_eq!(parse(argv(&["--wait"])), Command::Help);
+}
+
+#[test]
 fn status_json_reports_running_pid_and_address() {
-    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(42))).unwrap();
+    let health = HealthInfo {
+        uptime_secs: 8123,
+        version: "1.2.3".to_string(),
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(42), Some(health))).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["pid"], serde_json::json!(42));
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+    assert_eq!(value["uptime_secs"], serde_json::json!(8123));
+    assert_eq!(value["version"], serde_json::json!("1.2.3"));
 }
 
 #[test]
 fn status_json_null_pid_when_unknown_or_down() {
-    let value: serde_json::Value = serde_json::from_str(&status_json(false, None)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&status_json(false, None, None)).unwrap();
     assert_eq!(value["running"], serde_json::json!(false));
     assert!(value["pid"].is_null());
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
+    // Server-sourced fields are null when no /health was folded in.
+    assert!(value["uptime_secs"].is_null());
+    assert!(value["version"].is_null());
+}
+
+#[test]
+fn parse_health_reads_uptime_and_version() {
+    let body = r#"{"status":"ok","uptime_secs":42,"running":true,"version":"9.9.9"}"#;
+    assert_eq!(
+        parse_health(body),
+        Some(HealthInfo {
+            uptime_secs: 42,
+            version: "9.9.9".to_string(),
+        })
+    );
+}
+
+#[test]
+fn parse_health_rejects_malformed_or_incomplete_bodies() {
+    // Not JSON at all.
+    assert_eq!(parse_health("not json"), None);
+    // Missing version.
+    assert_eq!(parse_health(r#"{"uptime_secs":1}"#), None);
+    // Missing uptime_secs.
+    assert_eq!(parse_health(r#"{"version":"1.0.0"}"#), None);
+    // Wrong types.
+    assert_eq!(
+        parse_health(r#"{"uptime_secs":"x","version":"1.0.0"}"#),
+        None
+    );
+}
+
+#[test]
+fn fetch_health_parses_a_well_formed_health_response() {
+    let server = FakeServer::start(
+        200,
+        r#"{"status":"ok","uptime_secs":7,"running":true,"version":"3.2.1"}"#.to_string(),
+    );
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(
+        fetch_health(),
+        Some(HealthInfo {
+            uptime_secs: 7,
+            version: "3.2.1".to_string(),
+        })
+    );
+}
+
+#[test]
+fn fetch_health_is_none_on_non_200_status() {
+    let server = FakeServer::start(503, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(fetch_health(), None);
+}
+
+#[test]
+fn fetch_health_is_none_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(fetch_health(), None);
+}
+
+#[test]
+fn wait_until_returns_true_immediately_when_check_already_passes() {
+    assert!(wait_until(|| true, Duration::from_secs(0)));
+}
+
+#[test]
+fn wait_until_calls_check_at_least_once_even_with_zero_timeout() {
+    let calls = std::cell::Cell::new(0);
+    let succeeded = wait_until(
+        || {
+            calls.set(calls.get() + 1);
+            false
+        },
+        Duration::from_secs(0),
+    );
+    assert!(!succeeded);
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn wait_until_polls_until_check_flips_true() {
+    let calls = std::cell::Cell::new(0);
+    let succeeded = wait_until(
+        || {
+            calls.set(calls.get() + 1);
+            calls.get() >= 3
+        },
+        Duration::from_secs(5),
+    );
+    assert!(succeeded);
+    assert_eq!(calls.get(), 3);
 }
 
 #[test]
@@ -126,10 +275,12 @@ fn cleanup_json_reports_removed_and_running() {
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["removed"], serde_json::json!(3));
+    assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
 
     let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+    assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
 #[test]
@@ -143,6 +294,40 @@ fn stop_json_reports_running_pid_and_address() {
     assert_eq!(down["running"], serde_json::json!(false));
     assert!(down["pid"].is_null());
     assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
+}
+
+/// Collect the top-level object keys of a JSON document into an order-independent set.
+fn json_key_set(json: &str) -> std::collections::BTreeSet<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn status_and_stop_json_share_a_common_key_set() {
+    // `status --json` and `stop --json` share a common `{running,pid,address}` base so consumers
+    // can parse either uniformly; `status` additionally folds in server-sourced `uptime_secs`/
+    // `version` (see `status_and_stop_json_share_the_same_shape`, which guards the shared fields'
+    // *values*). Here we guard the key *sets*: every key `stop` emits must also appear in `status`,
+    // for both the running and the down/null-pid branches, so a key can't be dropped from one side
+    // without the drift being caught.
+    assert!(
+        json_key_set(&stop_json(true, Some(42))).is_subset(&json_key_set(&status_json(
+            true,
+            Some(42),
+            None
+        ))),
+        "every key in stop --json must also appear in status --json (running branch)"
+    );
+    assert!(
+        json_key_set(&stop_json(false, None))
+            .is_subset(&json_key_set(&status_json(false, None, None))),
+        "every key in stop --json must also appear in status --json (down branch)"
+    );
 }
 
 #[test]
@@ -162,6 +347,34 @@ fn restart_command() {
 fn install_and_uninstall_commands() {
     assert_eq!(parse(argv(&["install"])), Command::Install);
     assert_eq!(parse(argv(&["uninstall"])), Command::Uninstall);
+}
+
+#[test]
+fn trigger_command_carries_the_routine_id() {
+    assert_eq!(
+        parse(argv(&["trigger", "abc-123"])),
+        Command::Trigger {
+            id: "abc-123".to_string()
+        }
+    );
+}
+
+#[test]
+fn run_is_a_back_compat_alias_for_trigger() {
+    // `run` was the original subcommand name; it stays as a hidden alias of `trigger`.
+    assert_eq!(
+        parse(argv(&["run", "abc-123"])),
+        Command::Trigger {
+            id: "abc-123".to_string()
+        }
+    );
+}
+
+#[test]
+fn trigger_without_an_id_falls_back_to_help() {
+    // Nothing to trigger without an id, so it shows usage rather than silently no-op'ing.
+    assert_eq!(parse(argv(&["trigger"])), Command::Help);
+    assert_eq!(parse(argv(&["run"])), Command::Help);
 }
 
 #[test]
@@ -193,6 +406,24 @@ fn help_and_version_flags() {
 #[test]
 fn unknown_arg_falls_back_to_help() {
     assert_eq!(parse(argv(&["--nonsense"])), Command::Help);
+}
+
+#[test]
+fn data_keywords_route_to_data_command_with_full_argv() {
+    for keyword in DATA_COMMANDS {
+        let args = argv(&[keyword, "list"]);
+        assert_eq!(
+            parse(args.clone()),
+            Command::Data(args),
+            "keyword {keyword}"
+        );
+    }
+    // The keyword itself with no further args still routes to the data dispatcher (which then
+    // surfaces clap's usage error), rather than the lifecycle parser.
+    assert_eq!(
+        parse(argv(&["routines"])),
+        Command::Data(argv(&["routines"]))
+    );
 }
 
 #[test]
@@ -259,13 +490,13 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -304,11 +535,29 @@ struct FakeServer {
 
 impl FakeServer {
     /// Start a server on an ephemeral port answering with `status` and `body` while alive.
-    fn start(status: u16, body: String) -> FakeServer {
+    fn start(status: u16, body: String) -> Self {
+        Self::start_with_liveness(status, body, true)
+    }
+
+    /// Start a server that answers connections but stays "down" (accepts and drops, no response)
+    /// until `delay` elapses, then starts answering — simulating a server that comes up shortly
+    /// after launch, to exercise a polling client like `status --wait`.
+    fn start_after(status: u16, body: String, delay: Duration) -> Self {
+        let server = Self::start_with_liveness(status, body, false);
+        let alive = Arc::clone(&server.alive);
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            alive.store(true, Ordering::SeqCst);
+        });
+        server
+    }
+
+    /// Start a server on an ephemeral port, initially alive or not per `initial_alive`.
+    fn start_with_liveness(status: u16, body: String, initial_alive: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
-        let alive = Arc::new(AtomicBool::new(true));
+        let alive = Arc::new(AtomicBool::new(initial_alive));
         let stop = Arc::new(AtomicBool::new(false));
         let alive_loop = Arc::clone(&alive);
         let stop_loop = Arc::clone(&stop);
@@ -333,7 +582,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             alive,
             stop,
@@ -385,8 +634,171 @@ fn bind_addr_honors_override() {
 #[test]
 fn status_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
-    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7))).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+#[test]
+fn stop_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+/// `status --json` and `stop --json` advertise the same `{running,pid,address}` base contract, so a
+/// client can parse either uniformly. Guard that every field in `stop` is present in `status` with
+/// the same value (including the override-aware `address`) so the two shapes can't silently drift
+/// apart. `status` carries additional fields (`uptime_secs`, `version`) that `stop` omits.
+#[test]
+fn status_and_stop_json_share_the_same_shape() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    // Every key in `stop` must appear in `status` with the same value.
+    for (key, val) in stop.as_object().unwrap() {
+        assert_eq!(
+            &status[key], val,
+            "field {key} differs between status and stop"
+        );
+    }
+}
+
+#[test]
+fn cleanup_json_address_reflects_bind_override() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+    assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+/// Lock the machine-readable contract across all three `--json` commands: `status`, `stop`, and
+/// `cleanup` must each surface `address`, and — since they all describe the same bound endpoint —
+/// the value must be identical across all three, so the shapes can't silently drift apart again.
+#[test]
+fn status_stop_cleanup_json_share_the_same_address() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+
+    let expected = serde_json::json!("127.0.0.1:6000");
+    assert!(
+        status["address"].is_string(),
+        "status --json must include address"
+    );
+    assert!(
+        stop["address"].is_string(),
+        "stop --json must include address"
+    );
+    assert!(
+        cleanup["address"].is_string(),
+        "cleanup --json must include address"
+    );
+    assert_eq!(status["address"], expected);
+    assert_eq!(stop["address"], expected);
+    assert_eq!(cleanup["address"], expected);
+}
+
+// ─── README `--json` shape drift guard ─────────────────────────────────────────
+//
+// The README documents the exact `--json` object shape for `status`/`cleanup`/`stop` as a
+// script-facing stability promise (see the "Scripting" table). Nothing previously pinned those
+// documented key sets to the *actual* keys the `*_json` formatters emit, so a field renamed, added,
+// or removed in code (or in the README) could drift silently. The tests below parse the documented
+// shape literal straight out of README.md and assert it names exactly the same keys the formatter
+// produces; the exit-code half of the same contract is already locked by
+// `status_reports_down_when_no_server`/`status_reports_running_with_pid` and their `stop`/`cleanup`
+// counterparts.
+
+/// Return the top-level object keys named by a `--json` shape literal, e.g. turn
+/// `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` into `["running", "pid", "address"]`.
+/// The shapes documented in README.md never nest an object/array or embed a comma inside a string
+/// value, so splitting on top-level commas and taking each field's pre-colon, quote-trimmed key is
+/// sufficient (no JSON parser needed).
+fn shape_keys(shape: &str) -> Vec<String> {
+    shape
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split(',')
+        .map(|field| {
+            field
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .trim_matches('"')
+                .to_string()
+        })
+        .collect()
+}
+
+/// Extract the documented `--json` shape literal (the `{...}` text) from the README "Scripting"
+/// table row whose first cell is `` `moadim <command> --json` ``.
+fn readme_json_shape(command: &str) -> String {
+    let readme = include_str!("../README.md");
+    let marker = format!("`moadim {command} --json`");
+    let line = readme
+        .lines()
+        .find(|line| line.contains(&marker))
+        .unwrap_or_else(|| panic!("README scripting table has no row for {marker}"));
+    let start = line.find('{').expect("shape literal starts with `{`");
+    let end = line[start..]
+        .find('}')
+        .map(|offset| start + offset)
+        .expect("shape literal ends with `}`");
+    line[start..=end].to_string()
+}
+
+/// Sorted object keys of a `--json` formatter's output, for order-independent comparison against
+/// [`shape_keys`].
+fn actual_keys(json: &str) -> Vec<String> {
+    let value: serde_json::Value = serde_json::from_str(json).expect("formatter emits valid JSON");
+    let mut keys: Vec<String> = value
+        .as_object()
+        .expect("formatter emits a JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn readme_status_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("status"));
+    documented.sort();
+    let health = HealthInfo {
+        uptime_secs: 42,
+        version: "0.1.0".to_string(),
+    };
+    assert_eq!(
+        documented,
+        actual_keys(&status_json(true, Some(7), Some(health))),
+        "README `moadim status --json` shape has drifted from status_json's actual keys"
+    );
+}
+
+#[test]
+fn readme_cleanup_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("cleanup"));
+    documented.sort();
+    assert_eq!(
+        documented,
+        actual_keys(&cleanup_json(3, true)),
+        "README `moadim cleanup --json` shape has drifted from cleanup_json's actual keys"
+    );
+}
+
+#[test]
+fn readme_stop_json_shape_matches_actual_keys() {
+    let mut documented = shape_keys(&readme_json_shape("stop"));
+    documented.sort();
+    assert_eq!(
+        documented,
+        actual_keys(&stop_json(true, Some(7))),
+        "README `moadim stop --json` shape has drifted from stop_json's actual keys"
+    );
 }
 
 #[test]
@@ -432,8 +844,8 @@ fn status_reports_down_when_no_server() {
     let home = temp_home("status-down");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(status(false).unwrap(), EXIT_NOT_RUNNING);
-    assert_eq!(status(true).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(true, None).unwrap(), EXIT_NOT_RUNNING);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -445,8 +857,31 @@ fn status_reports_running_with_pid() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     // A pid file makes the human-readable "running (pid N)" suffix branch run.
     write_pid_file().unwrap();
-    assert_eq!(status(false).unwrap(), 0);
-    assert_eq!(status(true).unwrap(), 0);
+    assert_eq!(status(false, None).unwrap(), 0);
+    assert_eq!(status(true, None).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_times_out_when_server_never_comes_up() {
+    let home = temp_home("status-wait-timeout");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    // Zero seconds still probes once before giving up, so this returns promptly.
+    assert_eq!(status(false, Some(0)).unwrap(), EXIT_NOT_RUNNING);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_succeeds_once_server_comes_up() {
+    let server = FakeServer::start_after(200, String::new(), Duration::from_millis(100));
+    let home = temp_home("status-wait-success");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    // The first probe (no `--wait`) misses since the server isn't up yet...
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    // ...but `--wait` polls past the 100ms delay and observes it come up.
+    assert_eq!(status(false, Some(5)).unwrap(), 0);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -485,19 +920,90 @@ fn cleanup_errors_on_unexpected_status() {
 }
 
 #[test]
+fn trigger_triggers_routine_when_server_responds() {
+    let server = FakeServer::start(200, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(trigger("some-id".to_string()).unwrap(), 0);
+}
+
+#[test]
+fn trigger_reports_unknown_routine_on_404() {
+    // A 404 from the trigger route means no routine has that id — a user error, surfaced as a
+    // non-zero exit via the bubbled `Err`, distinct from "server not running".
+    let server = FakeServer::start(404, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(trigger("missing".to_string()).is_err());
+}
+
+#[test]
+fn trigger_errors_on_unexpected_status() {
+    let server = FakeServer::start(500, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(trigger("some-id".to_string()).is_err());
+}
+
+#[test]
+fn trigger_reports_not_running_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(trigger("some-id".to_string()).unwrap(), EXIT_NOT_RUNNING);
+}
+
+#[test]
 fn pid_file_write_read_clear_roundtrip() {
     let home = temp_home("pidfile");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     write_pid_file().unwrap();
     assert_eq!(read_pid_file(), Some(std::process::id()));
-    assert!(crate::paths::config_gitignore_path().exists());
-    // A second write hits the "gitignore already exists, skip" branch.
+    let gitignore = crate::paths::config_gitignore_path();
+    assert!(gitignore.exists());
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "gitignore must cover *.local.*"
+    );
+    // Manually remove one pattern; a second write must restore it without
+    // duplicating the patterns already present.
+    std::fs::write(&gitignore, "*.pid\n*.log\n").unwrap();
     write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "missing pattern must be re-added"
+    );
+    assert_eq!(
+        content.matches("*.pid").count(),
+        1,
+        "existing patterns must not duplicate"
+    );
+    // Write a file with all patterns but no trailing newline; the next write
+    // must insert the newline separator before appending (line 495 branch).
+    std::fs::write(&gitignore, "*.pid\n*.log").unwrap();
+    write_pid_file().unwrap();
+    let content = std::fs::read_to_string(&gitignore).unwrap();
+    assert!(
+        content.contains("*.local.*"),
+        "must append after no-trailing-newline content"
+    );
+    // All patterns present → early return (line 492 branch). Call twice; second is a no-op.
+    write_pid_file().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&gitignore).unwrap(),
+        content,
+        "no-op write must not change file"
+    );
     clear_pid_file();
     assert!(read_pid_file().is_none());
     // A garbage pid file parses to None rather than panicking.
     std::fs::write(crate::paths::pid_file(), "not-a-pid").unwrap();
     assert!(read_pid_file().is_none());
+    // A pid file recording a dead process (u32::MAX is never a live PID on Unix) is reconciled
+    // against liveness: reported as absent and cleaned up best-effort so it doesn't linger.
+    std::fs::write(crate::paths::pid_file(), u32::MAX.to_string()).unwrap();
+    assert!(read_pid_file().is_none());
+    assert!(!crate::paths::pid_file().exists());
+    // A pid file recording a live process (this test process) reads back unchanged.
+    std::fs::write(crate::paths::pid_file(), std::process::id().to_string()).unwrap();
+    assert_eq!(read_pid_file(), Some(std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -545,4 +1051,220 @@ fn restart_replaces_running_server() {
     server.stop_after(Duration::from_millis(80));
     restart().unwrap();
     let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn foreground_already_running_message_names_pid_when_known() {
+    let with_pid = foreground_already_running_message(Some(4321));
+    assert!(with_pid.contains("(pid 4321)"));
+    assert!(with_pid.contains("moadim stop"));
+    assert!(with_pid.contains("moadim restart"));
+    // With no pid file the message omits the suffix but keeps the guidance.
+    let without_pid = foreground_already_running_message(None);
+    assert!(!without_pid.contains("(pid"));
+    assert!(without_pid.contains("refusing to start a second foreground instance"));
+}
+
+#[test]
+fn foreground_preflight_refuses_when_running() {
+    assert!(foreground_preflight(true, Some(7)).is_err());
+    assert!(foreground_preflight(true, None).is_err());
+}
+
+#[test]
+fn foreground_preflight_proceeds_when_not_running() {
+    assert!(foreground_preflight(false, None).is_ok());
+}
+
+#[test]
+fn ensure_not_running_for_foreground_ok_when_no_server() {
+    let home = temp_home("fg-down");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(ensure_not_running_for_foreground().is_ok());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_refuses_when_server_up() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("fg-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_skips_for_daemonized_child() {
+    // The launcher-spawned child carries MOADIM_DAEMONIZED and must be allowed to bind even while
+    // the (about-to-be-replaced) server is still answering probes.
+    let server = FakeServer::start(200, String::new());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "1");
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_ok());
+}
+
+#[test]
+fn spawn_restart_launches_a_detached_helper() {
+    // The helper is `current_exe --background`; under the test harness that exe is the test binary,
+    // which rejects `--background` and exits immediately, so this only verifies the spawn succeeds
+    // and returns a PID without leaving a real server behind.
+    let home = temp_home("spawn-restart");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    let pid = spawn_restart().unwrap();
+    assert!(pid > 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+// ─── Additional coverage tests ────────────────────────────────────────────────
+
+#[test]
+fn machine_command_carries_remaining_args() {
+    // Covers the `Some("machine") => Command::Machine(args[1..].to_vec())` branch.
+    assert_eq!(
+        parse(argv(&["machine", "show"])),
+        Command::Machine(argv(&["show"]))
+    );
+    // "machine" alone yields an empty vec (the sub-dispatcher handles the error).
+    assert_eq!(parse(argv(&["machine"])), Command::Machine(vec![]));
+}
+
+#[test]
+fn parse_health_rejects_version_non_string() {
+    // Covers the `.as_str()?` None arm: version is present but not a string.
+    assert_eq!(parse_health(r#"{"uptime_secs":1,"version":42}"#), None);
+}
+
+#[test]
+fn write_pid_file_errors_when_config_dir_is_blocked() {
+    // A regular file sitting where the config dir should be causes create_dir_all to fail.
+    let base = temp_home("pid-dir-blocked");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(write_pid_file().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn write_pid_file_errors_when_pid_path_is_directory() {
+    // create_dir_all succeeds but writing the pid as a file fails because
+    // a directory already occupies the pid file path.
+    let base = temp_home("pid-path-is-dir");
+    let config_dir = base.join(".config/moadim");
+    // Create a DIRECTORY at the pid file path instead of a plain file.
+    std::fs::create_dir_all(config_dir.join("moadim.pid")).unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(write_pid_file().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn spawn_detached_errors_when_log_dir_creation_blocked() {
+    // A file at the config-dir path blocks create_dir_all for the log parent dir.
+    let base = temp_home("spawn-log-blocked");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(spawn_detached().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn spawn_detached_errors_when_log_file_path_is_directory() {
+    // create_dir_all for the log parent dir succeeds (the config dir exists), but
+    // opening the log file fails because a directory occupies that exact path.
+    let base = temp_home("spawn-log-is-dir");
+    let config_dir = base.join(".config/moadim");
+    // Place a DIRECTORY at daemon.log so the OpenOptions::open fails.
+    std::fs::create_dir_all(config_dir.join("daemon.log")).unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    assert!(spawn_detached().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn run_background_errors_when_stop_running_times_out() {
+    // A server that never stops causes stop_running_and_wait() to time out and
+    // return Err, which run_background() propagates (the `?` error branch at L208).
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("runbg-stop-err");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
+    assert!(run_background().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_errors_when_stop_running_times_out() {
+    // Same as above but exercises the `?` error branch at L225 (inside `restart()`).
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("restart-stop-err");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
+    assert!(restart().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_errors_when_spawn_detached_fails() {
+    // Server not running → restart() tries spawn_detached() → blocked log dir → Err.
+    // Exercises the `?` error branch at L231 (let new_pid = spawn_detached()?).
+    let base = temp_home("restart-spawn-err");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(restart().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn run_background_errors_when_spawn_detached_fails() {
+    // Server not running → run_background() → start_detached_and_report() →
+    // spawn_detached() fails → Err propagated.
+    // Exercises the `?` error branch at L251 (let pid = spawn_detached()?).
+    let base = temp_home("runbg-spawn-err");
+    std::fs::create_dir_all(base.join(".config")).unwrap();
+    std::fs::write(base.join(".config/moadim"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(run_background().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// `docs/moadim.1` hand-mirrors the CLI and hardcodes its own version in the `.TH` header
+/// (e.g. `"moadim 0.16.0"`). Nothing previously kept that in lockstep with `Cargo.toml`, so a
+/// release could silently ship a man page reporting the *previous* version (issue #556). Fail
+/// loudly on drift instead.
+#[test]
+fn man_page_version_matches_cargo_pkg_version() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/moadim.1");
+    let man_page = std::fs::read_to_string(path).expect("docs/moadim.1 should exist");
+    let th_line = man_page
+        .lines()
+        .find(|line| line.starts_with(".TH MOADIM"))
+        .expect("docs/moadim.1 should have a .TH header line");
+    let expected = format!("\"moadim {}\"", env!("CARGO_PKG_VERSION"));
+    assert!(
+        th_line.contains(&expected),
+        "docs/moadim.1 .TH header is stale: expected it to contain {expected:?}, got: {th_line:?}\n\
+         Update the version token in docs/moadim.1 to match Cargo.toml."
+    );
 }

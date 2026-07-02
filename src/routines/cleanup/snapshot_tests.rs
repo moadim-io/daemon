@@ -8,17 +8,21 @@ use super::*;
 
 fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
     Routine {
+        model: None,
         id: "id".into(),
         schedule: schedule.into(),
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
     }

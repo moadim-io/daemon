@@ -4,14 +4,12 @@
 
 This is a list of todos for consumption, in a pr remove the todo you have implemented and add any new ones you think of.
 
-- Add a `test + coverage` CI job that mirrors the pre-push hook's final gate (`cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'`) so the 100% coverage contract is enforced in PRs, not just locally
 - Add a CI step (or weekly scheduled job) that checks whether a newer `crate-ci/typos` release exists than the pinned tag and opens/updates a tracking issue, so the pin gets bumped on a cadence instead of drifting silently
 - Add a day-detail popover to the routines calendar: clicking a day lists each fire time (HH:MM) with its routine, and a "run now" shortcut per routine
 - Auto-stamp the release version/date into CHANGELOG.md from the `chore(release)` step so the `## [Unreleased]` section rolls over on tag
 - Have a commands folder for all the cli commands, we want to work with colocation of files
 - Add a TTL preset row (1h / 1d / 7d / 30d) under the WORKBENCH TTL input in the routine form, mirroring the cron schedule presets
 - Show a humanized retention countdown ("expires in 2d" / "expired") per finished run in the routine LOGS view, derived from the run's finish time and the routine's effective TTL
-- Add a CLI integration test (spawn a real listener on an ephemeral port, point the probe at it) that exercises the `status`/`cleanup`/`stop` network paths end-to-end, lifting `cli.rs` off its ~27% coverage floor toward the repo's 100% line-coverage gate
 - Add a `moadim restart --interactive` (or `-i`) flavor that restarts the daemon in the foreground attached to the terminal instead of detached, mirroring `moadim -i`
 - Have `moadim restart` emit its PID-rotation summary as a `--json` object (`{"old":N|null,"new":M}`) too, mirroring the `status`/`cleanup` `--json` contract
 - Give `moadim restart` a `--quiet`/`-q` flag that prints only the rotation line (`restarted: pid <old> -> <new>`) and suppresses the UI/stop/logs hint block, for script consumption

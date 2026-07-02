@@ -666,7 +666,7 @@ impl FakeServer {
     /// one request per call (e.g. `enable`'s GET-then-PATCH) can be driven through a distinct
     /// response for each. A status of `0` is a sentinel for "drop the connection without
     /// responding", simulating that request landing on a server that is no longer reachable.
-    fn start_sequence(responses: Vec<(u16, String)>) -> FakeServer {
+    fn start_sequence(responses: Vec<(u16, String)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -701,7 +701,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             alive,
             stop,

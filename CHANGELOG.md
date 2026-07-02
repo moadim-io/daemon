@@ -11,6 +11,55 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-02
+
+Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagged in `cli::parse` (issue #719): the bare `None` arm into the `Background` arm, and the redundant explicit `-h`/`--help`/`help` arm that the trailing wildcard already covered.
+
+### Changed
+
+- **Hardened the dashboard's Content-Security-Policy.** Every response's CSP
+  previously carried only `frame-ancestors 'none'` (#406's anti-clickjacking
+  fix), leaving `script-src`/`style-src`/`default-src` unset and an injected
+  inline `<script>` or `<base>` tag entirely unblocked — a real gap given the
+  dashboard drives an unauthenticated loopback API with destructive controls
+  (create/trigger/delete routines, `POST /shutdown`). The CSP now sets
+  `default-src 'self'` and explicit `script-src`, `style-src`, `font-src`,
+  `img-src`, `connect-src`, `base-uri 'none'`, `form-action 'none'`, and
+  `object-src 'none'` directives verified against the bundled Yew/WASM SPA and
+  Swagger UI, while keeping `frame-ancestors 'none'`. (#551)
+
+### Fixed
+
+- **Default routines with empty `machines` list now self-repair.** Default routines
+  seeded before machine-awareness was introduced could be left permanently dormant
+  (empty `machines` list, so no machine ever matched them). The daemon now detects
+  an empty machines list during the startup reconcile pass and seeds the current
+  machine, restoring the routine to an active state without any manual intervention.
+  (#723)
+
+### Added
+
+- **Routine flags.** A routine's agent runs unattended inside tmux with no
+  channel back to a human — until now. It (or a human, via MCP/HTTP) can
+  raise a flag against a routine: a free-text `type` (e.g. `"bug"`, `"gap"`,
+  `"edge_case"`, `"question"`) and free-text `description`, stored as
+  `general` (committed) or `local` (gitignored) under the routine's
+  `flags/` folder. New MCP tools `create_flag`, `list_flags`, `resolve_flag`
+  and matching `/api/v1/routines/{id}/flags` REST endpoints. Open flags are
+  injected into the routine's `prompt.md` on the next run so the agent sees
+  what it flagged before, and the UI shows a flag-count badge with a
+  read-only flags page to review and resolve them.
+
+### Added
+
+- **Structured JSON logging.** Set `MOADIM_LOG_FORMAT=json` to switch `daemon.log`
+  (and foreground stdout) from `env_logger`'s human-readable format to one JSON
+  object per line (`ts`, `level`, `target`, `msg`), so a `launchd`/`systemd`-run
+  daemon can ship its log into an aggregator (Loki, ELK, Vector, CloudWatch)
+  without regex-scraping free-form text. Opt-in — the variable unset keeps the
+  current text format byte-for-byte, and `RUST_LOG` level filtering is unchanged
+  in both formats. (#416)
+
 ## [0.19.1] - 2026-07-01
 
 ### Fixed
@@ -1222,7 +1271,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/moadim-io/daemon/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0

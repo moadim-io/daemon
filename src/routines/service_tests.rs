@@ -684,6 +684,73 @@ fn svc_update_rejects_renaming_into_existing_slug() {
 }
 
 #[test]
+fn svc_update_migrates_workbenches_on_rename() {
+    let _home = TempHome::set();
+    // Covers #267: renaming a routine must not strand its prior workbenches under the old
+    // slug, or `svc_logs` and the cleanup watchdog silently lose track of them.
+    let old_title = "Svc Update Rename Old ZZZ";
+    let new_title = "Svc Update Rename New ZZZ";
+    let old_slug = slugify(old_title);
+    let new_slug = slugify(new_title);
+    let store = store_with(vec![make_routine("rename-id", old_title, 1, 1)]);
+
+    let workbenches = crate::paths::workbenches_dir();
+    let old_dir = workbenches.join(format!("{old_slug}-1000"));
+    std::fs::create_dir_all(&old_dir).unwrap();
+    std::fs::write(old_dir.join("agent.log"), "prior run log").unwrap();
+
+    // An unparseable directory name alongside it: skipped by `parse_workbench_name`, left
+    // untouched by the migration.
+    let unparseable = workbenches.join("not-a-workbench-name");
+    std::fs::create_dir_all(&unparseable).unwrap();
+
+    // A second old-slug workbench (older than the one above, so it never wins "newest") whose
+    // destination is already occupied by a *non-empty* directory, so `std::fs::rename` fails for
+    // it: covers the best-effort warn-and-skip branch. The source is left in place rather than
+    // silently dropped.
+    let blocked_old = workbenches.join(format!("{old_slug}-500"));
+    std::fs::create_dir_all(&blocked_old).unwrap();
+    let blocked_new = workbenches.join(format!("{new_slug}-500"));
+    std::fs::create_dir_all(&blocked_new).unwrap();
+    std::fs::write(blocked_new.join("marker"), "occupied").unwrap();
+
+    with_empty_path(|| {
+        svc_update(
+            &store,
+            "rename-id",
+            UpdateRoutineRequest {
+                title: Some(new_title.into()),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+    });
+
+    // The old-slug workbench is gone and its content now lives under the new slug, keyed by
+    // the same trigger timestamp.
+    assert!(!old_dir.exists());
+    let migrated = workbenches.join(format!("{new_slug}-1000"));
+    assert_eq!(
+        std::fs::read_to_string(migrated.join("agent.log")).unwrap(),
+        "prior run log"
+    );
+
+    // The unparseable directory is untouched.
+    assert!(unparseable.exists());
+
+    // The blocked rename left the source in place and the occupied destination unchanged.
+    assert!(blocked_old.exists());
+    assert_eq!(
+        std::fs::read_to_string(blocked_new.join("marker")).unwrap(),
+        "occupied"
+    );
+
+    // `svc_logs` (which looks up by the *current* slug) can still find the newest migrated run.
+    let logs = svc_logs(&store, "rename-id").unwrap();
+    assert_eq!(logs, "prior run log");
+}
+
+#[test]
 fn svc_update_sets_ttl_secs() {
     let _home = TempHome::set();
     // Covers the `req.ttl_secs` apply branch in `svc_update`.

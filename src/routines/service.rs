@@ -531,6 +531,7 @@ pub fn svc_update(
     let new_slug = slugify(&routine.title);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     if new_slug != old_slug {
+        migrate_workbenches(&old_slug, &new_slug);
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
     }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
@@ -699,6 +700,36 @@ fn spawn_routine_command(routine: &Routine) {
 pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
     CleanupResponse {
         removed: cleanup_expired_workbenches(store),
+    }
+}
+
+/// Rename every existing workbench directory from `old_slug` to `new_slug`, preserving each run's
+/// trigger timestamp (`{old_slug}-{ts}` -> `{new_slug}-{ts}`).
+///
+/// Called from [`svc_update`] when a routine's title (and thus slug) changes. Workbenches are keyed
+/// by slug, not the routine's stable UUID, so without this migration a rename would strand every
+/// prior run under the old slug: [`svc_logs`] (which looks up by *current* slug) would find nothing,
+/// and an in-flight run would fall through to the cleanup watchdog's orphan defaults instead of the
+/// routine's own `ttl_secs`/`max_runtime_secs` (#267). A failed rename is logged and skipped rather
+/// than failing the update itself — this is best-effort history preservation, not a correctness
+/// requirement of the rename.
+fn migrate_workbenches(old_slug: &str, new_slug: &str) {
+    let Ok(entries) = std::fs::read_dir(workbenches_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
+            continue;
+        };
+        if dir_slug != old_slug {
+            continue;
+        }
+        let from = workbenches_dir().join(&name);
+        let to = workbenches_dir().join(format!("{new_slug}-{ts}"));
+        if let Err(err) = std::fs::rename(&from, &to) {
+            log::warn!("failed to migrate workbench {name} to {new_slug}-{ts}: {err}");
+        }
     }
 }
 

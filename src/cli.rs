@@ -82,7 +82,7 @@ pub enum Command {
     Help,
     /// Print the binary version.
     Version,
-    /// A data-plane subcommand (`cron-jobs`, `routines`, `agents`, `echo`) handled by the clap-based
+    /// A data-plane subcommand (`routines`, `agents`, `echo`) handled by the clap-based
     /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
     /// argv (including the subcommand keyword) for clap to parse.
     Data(Vec<String>),
@@ -94,7 +94,7 @@ pub enum Command {
 
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
 /// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
-pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "schedule", "agents", "echo"];
+pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "echo"];
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
@@ -103,7 +103,6 @@ pub(crate) const DATA_COMMANDS: &[&str] = &["cron-jobs", "routines", "schedule",
 pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
-        None => Command::Background,
         Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("machine") => Command::Machine(args[1..].to_vec()),
         Some("restart") => Command::Restart,
@@ -126,10 +125,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
-        Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
-        Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
+        None | Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
         Some(_) => Command::Help,
     }
 }
@@ -150,7 +148,7 @@ fn wants_quiet(rest: &[String]) -> bool {
 pub fn print_help() {
     let bind_addr = bind_addr();
     println!(
-        "moadim — cron/MCP/REST server with a web control panel\n\
+        "moadim — routine scheduler with an MCP/REST API and a web control panel\n\
          \n\
          USAGE:\n\
          \x20   moadim [MODE]\n\
@@ -168,15 +166,14 @@ pub fn print_help() {
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
-         \x20   uninstall              remove the OS service registration and managed crontab blocks\n\
+         \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V            show the version\n\
          \n\
          DATA COMMANDS (talk to the running server over HTTP; pass --help for flags):\n\
-         \x20   cron-jobs <create|list|get|update|replace|delete|trigger|logs> ...\n\
          \x20   routines  <create|list|get|update|replace|delete|trigger|logs|ical> ...\n\
-         \x20   schedule  trigger <id> trigger a routine or cron job by ID (used by run.sh wrappers)\n\
+         \x20   schedule  trigger <id> trigger a routine by ID (used by the routines crontab line)\n\
          \x20   agents                 list available agent keys\n\
          \x20   echo <message>         echo a message via the server\n\
          \n\
@@ -208,6 +205,49 @@ pub fn run_background() -> anyhow::Result<()> {
         crate::restart::stop_running_and_wait()?;
     }
     start_detached_and_report("started")
+}
+
+/// Refuse an interactive foreground start (`moadim -i`) when a server is already reachable on the
+/// bind address, instead of letting the later bind fail with an opaque OS error
+/// (`Address already in use (os error 48)`) that gives no hint a real daemon is already up.
+///
+/// Unlike [`run_background`], which silently stops and replaces a running instance, an interactive
+/// run *refuses* and points at `moadim stop` / `moadim restart`: attaching a second foreground
+/// process to the terminal is rarely what the user intended, and silently killing the existing one
+/// would be a surprising side effect of `-i`.
+///
+/// The launcher-spawned background child also runs with `--interactive`, but it *is* the freshly
+/// started server (the launcher already stopped any prior instance), so the preflight is skipped for
+/// it via the [`DAEMONIZED_ENV`] marker.
+pub fn ensure_not_running_for_foreground() -> anyhow::Result<()> {
+    if std::env::var_os(DAEMONIZED_ENV).is_some() {
+        return Ok(());
+    }
+    foreground_preflight(is_running(), read_pid_file())
+}
+
+/// Decide the foreground-start preflight outcome from whether a server is already reachable and its
+/// pid: `Ok(())` to proceed with the bind, or an error carrying user-facing guidance.
+///
+/// Split from [`ensure_not_running_for_foreground`] so both outcomes are unit-testable without a
+/// live network probe.
+fn foreground_preflight(running: bool, pid: Option<u32>) -> anyhow::Result<()> {
+    if running {
+        anyhow::bail!("{}", foreground_already_running_message(pid));
+    }
+    Ok(())
+}
+
+/// User-facing message when an interactive start is refused: names the running pid when known and
+/// points at the commands that resolve it.
+fn foreground_already_running_message(pid: Option<u32>) -> String {
+    let suffix = pid
+        .map(|process_id| format!(" (pid {process_id})"))
+        .unwrap_or_default();
+    format!(
+        "moadim is already running{suffix}; refusing to start a second foreground instance. \
+         Stop it with `moadim stop`, or replace it with `moadim restart`."
+    )
 }
 
 /// Stop a running background server (if any) and start a fresh detached instance.

@@ -27,6 +27,25 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: >
+          Git ref to check out. Empty (the default) means "use the ref that
+          triggered this run" — set only by changeset-release.yml, which
+          calls this workflow directly to test a branch (changeset-release/main)
+          other than the one that triggered it.
+        required: false
+        type: string
+
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded test runs don't pile up and burn CI minutes. Literal "test"
+# prefix, not ${{ github.workflow }} — see lint.yml's comment: workflow_call
+# callers (cut-release.yml) would otherwise collide lint and test onto the
+# same concurrency group and race-cancel each other.
+concurrency:
+  group: test-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -34,20 +53,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
 
-      - name: Cache cargo registry (registry only, not target)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          # Scoped so the `test` and `clippy` jobs' target/ artifacts (built
+          # with different flags: plain build vs --all-targets clippy) don't
+          # clobber each other's cache entry.
+          shared-key: test
 
       - name: Run tests
         run: cargo test

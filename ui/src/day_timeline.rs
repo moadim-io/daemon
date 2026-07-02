@@ -1,8 +1,8 @@
 //! Shared "day" calendar view: a single day's fire times laid out on a scrollable
-//! 24-hour timeline. Used by both the routines and cron-jobs pages.
+//! 24-hour timeline. Used by the routines page.
 //!
-//! The caller maps its own items (routines, cron jobs) to [`TimelineItem`]s — a label
-//! plus a cron schedule — and this component computes each item's fire times for the
+//! The caller maps its own items (routines) to [`TimelineItem`]s — a label plus a
+//! cron schedule — and this component computes each item's fire times for the
 //! selected day and buckets them into hour rows.
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Timelike};

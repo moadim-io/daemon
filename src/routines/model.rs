@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::command::slugify;
+use super::agents::load_agent_command;
+use super::command::{agent_command_available, slugify};
+use super::flags::list_flags;
 use crate::paths::{agent_toml_path, routine_toml_path};
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
@@ -62,6 +64,10 @@ pub struct RoutineListQuery {
     /// When `true`, only return routines whose `machines` list includes the current machine.
     /// Defaults to `false` (return all routines, preserving backwards compatibility).
     pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
 }
 
 /// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
@@ -87,7 +93,17 @@ pub struct Routine {
     pub title: String,
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
+    /// Model ID to run the agent with (e.g. `"claude-sonnet-4-6"`), passed as `--model` on the
+    /// agent invocation. `None` uses the agent's own default.
+    #[serde(default)]
+    pub model: Option<String>,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
@@ -150,6 +166,14 @@ pub struct RoutineResponse {
     pub routine: Routine,
     /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`.
     pub agent_registered: bool,
+    /// `true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable
+    /// on the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a
+    /// present, well-formed agent config yet reference a binary that isn't installed, in which
+    /// case the cron firing launches a tmux session that dies immediately with "command not
+    /// found" — a silent no-op indistinguishable from a healthy routine by `agent_registered`
+    /// alone. `false` whenever the agent config is missing, unreadable, or malformed, since no
+    /// `command` can be resolved in that case either.
+    pub agent_command_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
     /// Human-readable description of the schedule, including the timezone the
@@ -159,6 +183,9 @@ pub struct RoutineResponse {
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
     pub timezone: Option<String>,
+    /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
+    /// listings can badge it without a separate `list_flags` round-trip per routine.
+    pub flag_count: usize,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -186,18 +213,22 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
+        let slug = slugify(&routine.title);
         let agent_registered = agent_toml_path(&routine.agent).exists();
-        let file_path = routine_toml_path(&slugify(&routine.title))
-            .to_string_lossy()
-            .into_owned();
+        let agent_command_available = load_agent_command(&routine.agent)
+            .is_ok_and(|agent| agent_command_available(&agent.command));
+        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let flag_count = list_flags(&slug).len();
         Self {
             routine,
             agent_registered,
+            agent_command_available,
             file_path,
             schedule_description,
             timezone,
+            flag_count,
         }
     }
 }
@@ -233,6 +264,10 @@ pub struct CreateRoutineRequest {
     pub title: String,
     /// Agent registry key to launch.
     pub agent: String,
+    /// Model ID to run the agent with, or `None` to use the agent's own default. A
+    /// blank/whitespace-only value is treated the same as `None`.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Task prompt.
     pub prompt: String,
     /// Repositories to list as context (defaults to empty).
@@ -268,6 +303,9 @@ pub struct UpdateRoutineRequest {
     pub title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     pub agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    pub model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.

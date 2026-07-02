@@ -71,7 +71,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             instructions_file: "CLAUDE.md".to_string(),
             setup: None,
         };
-        let cmd = build_routine_command(&routine, &agent);
+        let cmd = build_routine_command(&routine, &agent, true);
         // The resolved tmux dir is baked into the exported PATH.
         assert!(
             cmd.contains(&dir_str),
@@ -94,7 +94,7 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
         .to_string_lossy()
         .into_owned();
@@ -112,6 +112,34 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
 }
 
 #[test]
+fn build_routine_command_omits_scheduled_sidecar_stamp_for_manual_trigger() {
+    // Regression test for #478: a manual trigger (`svc_trigger`, `stamp_scheduled: false`) must not
+    // write the `scheduled.local.toml` sidecar at all — otherwise the daemon reads it back into
+    // `last_scheduled_trigger_at` on the next load and falsely reports a cron firing that never
+    // happened. Only the scheduled/crontab path (`svc_trigger_scheduled`, `stamp_scheduled: true`,
+    // covered by `build_routine_command_stamps_scheduled_trigger_sidecar` above) writes it.
+    let routine = make_routine("Cmd Manual Trigger No Stamp Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent, false);
+    assert!(
+        !cmd.contains("last_scheduled_trigger_at"),
+        "manual trigger must not stamp last_scheduled_trigger_at: {cmd}"
+    );
+    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
+        .to_string_lossy()
+        .into_owned();
+    assert!(
+        !cmd.contains(&sidecar),
+        "manual trigger must not reference the scheduled.local.toml sidecar path: {cmd}"
+    );
+}
+
+#[test]
 fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     // The routine-origin disclosure write into `$WB/CLAUDE.md` must fail-fast, mirroring the
     // `cp prompt.md` guard: a failed redirect (read-only/full $HOME, unwritable $WB, disk-quota)
@@ -124,7 +152,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
 
     // The primary write is guarded with an aborting `|| { ...; exit 1; }`.
     let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
@@ -436,7 +464,7 @@ fn build_routine_command_appends_model_override() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     // The whole invocation is itself shell-quoted once for the `tmux new-session` argument, which
     // re-escapes the inner `shell_quote(model)` quotes into `'\''`, so assert on ordering and
     // content rather than the exact (implementation-detail) escaped byte sequence.
@@ -462,7 +490,7 @@ fn build_routine_command_omits_model_flag_when_unset() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     assert!(
         !cmd.contains("--model"),
         "expected no --model flag in: {cmd}"

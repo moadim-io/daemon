@@ -306,7 +306,16 @@ pub(crate) fn system_prompt_stmts(
 /// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
-pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
+///
+/// `stamp_scheduled` gates the `last_scheduled_trigger_at` sidecar write (see below): pass `true`
+/// only for the real scheduled/crontab firing path ([`super::service::svc_trigger_scheduled`]) —
+/// a manual trigger ([`super::service::svc_trigger`]) must pass `false` so it never falsely records
+/// that the cron schedule fired.
+pub(crate) fn build_routine_command(
+    routine: &Routine,
+    agent: &AgentCommand,
+    stamp_scheduled: bool,
+) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_prompt_path(&slug).to_string_lossy().into_owned();
     let scheduled_state_path = routine_scheduled_state_path(&slug)
@@ -344,6 +353,8 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
+    ];
+    if stamp_scheduled {
         // Record this scheduled firing. This command stamps the fire time into the routine's
         // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
         // `last_scheduled_trigger_at` on load. (The cron line calls `moadim schedule trigger`, which
@@ -351,15 +362,21 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // trigger.) Written before the prompt-copy guard below so an aborted run still records that
         // the schedule fired, and best-effort (`|| true`) so a sidecar write failure never blocks
         // launching the agent.
-        format!(
+        //
+        // Gated on `stamp_scheduled` so a manual trigger (`svc_trigger`, `stamp_scheduled: false`)
+        // never writes this sidecar — only the real scheduled/crontab path
+        // (`svc_trigger_scheduled`) does, preserving the manual-vs-scheduled distinction (#478).
+        stmts.push(format!(
             r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
             shell_quote(&scheduled_state_path)
-        ),
+        ));
+    }
+    stmts.extend([
         format!("SLUG={}", shell_quote(&slug)),
         r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
-    ];
+    ]);
     stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
         &routine.title,

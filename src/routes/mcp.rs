@@ -63,6 +63,29 @@ struct UnlockRoutinesInput {
     scope: String,
 }
 
+/// Input for the `create_flag` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct CreateFlagInput {
+    /// UUID of the routine to flag.
+    id: String,
+    /// Free-text flag category. Common examples: "bug", "gap", "edge_case", "question", "blocker"
+    /// — any string is accepted.
+    r#type: String,
+    /// Free-text description of what's unclear.
+    description: String,
+    /// `"general"` (committed, shared via git) or `"local"` (gitignored, machine-local).
+    scope: String,
+}
+
+/// Input for the `resolve_flag` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct ResolveFlagInput {
+    /// UUID of the flagged routine.
+    id: String,
+    /// Flag filename, as returned by `create_flag`/`list_flags`.
+    filename: String,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -75,6 +98,9 @@ struct UpdateRoutineInput {
     title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
@@ -211,6 +237,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             title: input.title,
             agent: input.agent,
+            model: input.model,
             prompt: input.prompt,
             repositories: input.repositories,
             machines: input.machines,
@@ -263,6 +290,57 @@ impl MoadimMcp {
     #[tool(description = "List the available agent registry keys a routine can launch")]
     fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::available_agents()))
+    }
+
+    /// Raise a new flag against a routine, refreshing its `prompt.md` so the next run's "Open
+    /// flags" section includes it.
+    #[tool(
+        description = "Flag something unclear about a routine mid-run — a gap, bug, edge case, or question the agent hit with no other channel to surface it (the run happens unattended inside tmux). `type` is free text (common examples: \"bug\", \"gap\", \"edge_case\", \"question\", \"blocker\"); `scope` is \"general\" (committed, shared via git) or \"local\" (gitignored, machine-local). Unresolved flags are shown back to the agent in the routine's prompt on its next run."
+    )]
+    fn create_flag(
+        &self,
+        Parameters(CreateFlagInput {
+            id,
+            r#type,
+            description,
+            scope,
+        }): Parameters<CreateFlagInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_create_flag(&self.routines, &id, &r#type, &description, &scope) {
+                Ok(flag) => ok(flag),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// List every open flag raised against a routine.
+    #[tool(description = "List open flags raised against a routine, oldest first")]
+    fn list_flags(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match routines::svc_list_flags(&self.routines, &id) {
+            Ok(flags) => ok(flags),
+            Err(error) => err(error),
+        })
+    }
+
+    /// Resolve (delete) a flag by filename, refreshing `prompt.md` so it stops appearing in the
+    /// next run's prompt.
+    #[tool(
+        description = "Resolve a routine flag by filename (as returned by create_flag/list_flags), removing it"
+    )]
+    fn resolve_flag(
+        &self,
+        Parameters(ResolveFlagInput { id, filename }): Parameters<ResolveFlagInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_resolve_flag(&self.routines, &id, &filename) {
+                Ok(()) => ok(serde_json::json!({ "status": "resolved" })),
+                Err(error) => err(error),
+            },
+        )
     }
 
     /// Return the newest run log for a routine, or an error if the routine does not exist.

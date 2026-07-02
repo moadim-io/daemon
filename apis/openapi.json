@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.1.0"
+    "version": "0.19.1"
   },
   "servers": [
     {
@@ -605,6 +605,127 @@
         }
       }
     },
+    "/routines/{id}/flags": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/flags` — list open flags raised against a routine.",
+        "operationId": "list_flags",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flag"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/{id}/flags` — raise a new flag against a routine.",
+        "operationId": "create_flag",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFlagRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flag"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid type/description/scope"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/flags/{filename}": {
+      "delete": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.",
+        "operationId": "resolve_flag",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "description": "Flag filename, as returned by create/list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resolved"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/logs": {
       "get": {
         "tags": [
@@ -743,6 +864,29 @@
           }
         }
       },
+      "CreateFlagRequest": {
+        "type": "object",
+        "description": "Request body for `POST /routines/{id}/flags`.",
+        "required": [
+          "type",
+          "description",
+          "scope"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Free-text description of what's unclear."
+          },
+          "scope": {
+            "type": "string",
+            "description": "`\"general\"` (committed, shared via git) or `\"local\"` (gitignored, machine-local)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Free-text flag category. Common examples: `\"bug\"`, `\"gap\"`, `\"edge_case\"`, `\"question\"`,\n`\"blocker\"` — any string is accepted."
+          }
+        }
+      },
       "CreateRoutineRequest": {
         "type": "object",
         "description": "Request body for creating a new routine.",
@@ -776,6 +920,13 @@
             "format": "int64",
             "description": "Max wall-clock seconds a run may execute before the watchdog kills its hung\nsession. `None` uses the default cap (`MAX_RUNTIME_SECS`).",
             "minimum": 0
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model ID to run the agent with, or `None` to use the agent's own default. A\nblank/whitespace-only value is treated the same as `None`."
           },
           "prompt": {
             "type": "string",
@@ -859,6 +1010,49 @@
             "minimum": 0
           }
         }
+      },
+      "Flag": {
+        "type": "object",
+        "description": "A single flag raised against a routine.",
+        "required": [
+          "filename",
+          "type",
+          "description",
+          "scope",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) the flag was created.",
+            "minimum": 0
+          },
+          "description": {
+            "type": "string",
+            "description": "Free-text body describing what's unclear."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Filename on disk under the routine's `flags/` dir; the handle used to resolve it."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/FlagScope",
+            "description": "Whether this flag is committed (general) or machine-local."
+          },
+          "type": {
+            "type": "string",
+            "description": "Free-text category, e.g. `\"bug\"`, `\"gap\"`, `\"edge_case\"`, `\"question\"`."
+          }
+        }
+      },
+      "FlagScope": {
+        "type": "string",
+        "description": "Whether a flag file is committed to version control or kept machine-local.",
+        "enum": [
+          "general",
+          "local"
+        ]
       },
       "HealthResponse": {
         "type": "object",
@@ -1065,6 +1259,13 @@
             "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module.",
             "minimum": 0
           },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model ID to run the agent with (e.g. `\"claude-sonnet-4-6\"`), passed as `--model` on the\nagent invocation. `None` uses the agent's own default."
+          },
           "prompt": {
             "type": "string",
             "description": "The task prompt handed to the agent.\n\nOmitted from serialized output when empty. A persisted routine always has a\nnon-blank prompt (enforced by `validate_prompt`), so this never affects\n`routine.toml` persistence; it lets list responses drop the prompt by blanking\nit in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`)."
@@ -1122,9 +1323,15 @@
             "type": "object",
             "required": [
               "agent_registered",
-              "file_path"
+              "agent_command_available",
+              "file_path",
+              "flag_count"
             ],
             "properties": {
+              "agent_command_available": {
+                "type": "boolean",
+                "description": "`true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable\non the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a\npresent, well-formed agent config yet reference a binary that isn't installed, in which\ncase the cron firing launches a tmux session that dies immediately with \"command not\nfound\" — a silent no-op indistinguishable from a healthy routine by `agent_registered`\nalone. `false` whenever the agent config is missing, unreadable, or malformed, since no\n`command` can be resolved in that case either."
+              },
               "agent_registered": {
                 "type": "boolean",
                 "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`."
@@ -1132,6 +1339,11 @@
               "file_path": {
                 "type": "string",
                 "description": "Absolute path to the routine's `routine.toml` file on disk."
+              },
+              "flag_count": {
+                "type": "integer",
+                "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
+                "minimum": 0
               },
               "schedule_description": {
                 "type": [
@@ -1232,6 +1444,13 @@
             "format": "int64",
             "description": "New max runtime (seconds) for a single run, or `None` to keep the existing value.",
             "minimum": 0
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears\nthe model back to the agent's own default."
           },
           "prompt": {
             "type": [

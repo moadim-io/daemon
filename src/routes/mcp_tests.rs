@@ -20,14 +20,14 @@ fn test_shutdown() -> crate::routes::http::ShutdownSignal {
 struct TempHome;
 
 impl TempHome {
-    fn set() -> TempHome {
+    fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-mcptest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome
+        Self
     }
 }
 
@@ -104,6 +104,7 @@ fn echo_tool_returns_message() {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        model: None,
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
         agent: "claude".into(),
@@ -186,6 +187,7 @@ fn create_get_update_trigger_delete_routine_success() {
             schedule: None,
             title: Some("Renamed".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,
@@ -233,6 +235,7 @@ fn update_routine_tool_not_found_is_error() {
             schedule: None,
             title: Some("x".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,
@@ -692,4 +695,124 @@ fn unlock_routines_returns_error_when_set_lock_fails() {
         std::env::remove_var("MOADIM_HOME_OVERRIDE");
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── flag tools ─────────────────────────────────────────────────────────────────
+
+/// Extract and parse the JSON text out of a tool result's first content item.
+fn result_json(result: &CallToolResult) -> serde_json::Value {
+    let text = match &result.content[0].raw {
+        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn create_flag_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .create_flag(Parameters(CreateFlagInput {
+            id: "no-such".into(),
+            r#type: "bug".into(),
+            description: "d".into(),
+            scope: "general".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn list_flags_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .list_flags(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn resolve_flag_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .resolve_flag(Parameters(ResolveFlagInput {
+            id: "no-such".into(),
+            filename: "bug-1.md".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn create_list_resolve_flag_lifecycle() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let created = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let id = result_json(&created)["id"].as_str().unwrap().to_string();
+
+    // create_flag
+    let result = handler
+        .create_flag(Parameters(CreateFlagInput {
+            id: id.clone(),
+            r#type: "bug".into(),
+            description: "broken thing".into(),
+            scope: "general".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let flag = result_json(&result);
+    assert_eq!(flag["type"], "bug");
+    let filename = flag["filename"].as_str().unwrap().to_string();
+
+    // list_flags
+    let result = handler
+        .list_flags(Parameters(IdInput { id: id.clone() }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let flags = result_json(&result);
+    assert_eq!(flags.as_array().unwrap().len(), 1);
+
+    // resolve_flag
+    let result = handler
+        .resolve_flag(Parameters(ResolveFlagInput {
+            id: id.clone(),
+            filename,
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+
+    let result = handler.list_flags(Parameters(IdInput { id })).unwrap();
+    assert_eq!(result_json(&result).as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn create_flag_invalid_scope_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+    let created = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let id = result_json(&created)["id"].as_str().unwrap().to_string();
+
+    let result = handler
+        .create_flag(Parameters(CreateFlagInput {
+            id,
+            r#type: "bug".into(),
+            description: "d".into(),
+            scope: "nowhere".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
 }

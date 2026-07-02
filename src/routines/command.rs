@@ -3,6 +3,7 @@
 use crate::paths::{routine_prompt_path, routine_scheduled_state_path};
 
 use super::agents::AgentCommand;
+use super::flags::{list_flags, FlagScope};
 use super::model::Routine;
 
 /// Slugify `title` into a filesystem- and tmux-safe identifier.
@@ -29,7 +30,9 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
-/// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
+/// Compose the `prompt.md` body: a repositories-as-context preamble, the prompt, and — when the
+/// routine has any — an "Open flags" section listing gaps/bugs/edge cases the agent raised on a
+/// previous run (see [`super::flags`]) that no one has resolved yet.
 ///
 /// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
 /// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
@@ -54,6 +57,21 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
     body.push_str("\n---\n");
     body.push_str(&routine.prompt);
     body.push('\n');
+
+    let flags = list_flags(&slugify(&routine.title));
+    if !flags.is_empty() {
+        body.push_str("\n---\n# Open flags\n\nRaised on a previous run and not yet resolved:\n\n");
+        for flag in &flags {
+            let scope = match flag.scope {
+                FlagScope::General => "general",
+                FlagScope::Local => "local",
+            };
+            body.push_str(&format!(
+                "- **{}** ({scope}): {}\n",
+                flag.flag_type, flag.description
+            ));
+        }
+    }
     body
 }
 
@@ -100,6 +118,24 @@ pub(crate) fn tmux_available() -> bool {
     std::env::var("PATH")
         .ok()
         .is_some_and(|path| tmux_available_in(&path))
+}
+
+/// Whether `command` resolves to a file on the given `:`-separated `path` list.
+///
+/// Generalizes [`tmux_available_in`] to an arbitrary executable name: a routine's agent `command`
+/// (e.g. `claude`, `codex`) is launched the same way `tmux` is — unresolved, it makes the cron
+/// firing a silent no-op. Used to distinguish "agent config present" from "agent binary actually
+/// runnable" in [`super::model::RoutineResponse`]. Injectable for tests via the `path` argument;
+/// see [`agent_command_available`] for the live-`PATH` variant.
+pub(crate) fn agent_command_available_in(path: &str, command: &str) -> bool {
+    bin_dir_in(path, command).is_some()
+}
+
+/// Whether `command` resolves on the daemon's live `PATH`. Returns `false` when `PATH` is unset.
+pub(crate) fn agent_command_available(command: &str) -> bool {
+    std::env::var("PATH")
+        .ok()
+        .is_some_and(|path| agent_command_available_in(&path, command))
 }
 
 /// Common install locations to probe for `tmux` when it is not on `path` at all.
@@ -283,6 +319,15 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let mut invocation = vec![agent.command.clone()];
     for arg in &agent.args {
         invocation.push(substitute(arg, workbench_ref, prompt_file_ref));
+    }
+    // Routine-level model override, by convention supported as `--model <id>` across the built-in
+    // agents (`claude`, `codex`, `hermes`). Appended after the agent's own args so it wins over any
+    // default the agent config sets. `shell_quote` guards against the model ID (user input) breaking
+    // out of the invocation, which the surrounding `shell_quote(&invocation)` call re-escapes as a
+    // whole when it embeds this into the cron line.
+    if let Some(model) = &routine.model {
+        invocation.push("--model".to_string());
+        invocation.push(shell_quote(model));
     }
     let invocation = invocation.join(" ");
 

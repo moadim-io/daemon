@@ -6,6 +6,7 @@ use chrono::{Local, TimeZone};
 
 fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: schedule.to_string(),
         title: "My Routine".to_string(),

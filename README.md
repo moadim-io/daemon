@@ -420,6 +420,26 @@ Export the variable in your shell profile to make the change stick across comman
 `127.0.0.1:5784` addresses shown above and in the `--json` payloads reflect the default; they
 follow `MOADIM_BIND_ADDR` when it is set.
 
+### Log format
+
+The server logs to stdout (foreground) or `~/.config/moadim/daemon.log` (background) using
+`env_logger`'s default human-readable format. Set `MOADIM_LOG_FORMAT=json` to switch to one JSON
+object per line instead, for shipping `daemon.log` into a log aggregator (Loki, ELK, Vector,
+CloudWatch, `jq`-based tooling):
+
+```sh
+MOADIM_LOG_FORMAT=json moadim -i
+```
+
+Each line carries `ts` (RFC 3339), `level`, `target`, and `msg`:
+
+```json
+{"ts":"2026-07-01T08:10:34.700305+00:00","level":"INFO","target":"moadim::routines::service","msg":"..."}
+```
+
+An unset or unrecognized value falls back to the default text format. `RUST_LOG` keeps filtering
+levels the same way in both formats.
+
 ## MCP usage
 
 > _This is where the loop closes: your agent reads, schedules, and re-fires its own jobs. Loop engineering with a daemon in the middle._

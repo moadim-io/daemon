@@ -5,6 +5,7 @@ use crate::routines::{new_store, slugify, Routine};
 
 fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "30 9 * * 1-5".to_string(),
         title: title.to_string(),

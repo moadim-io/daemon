@@ -401,6 +401,7 @@ async fn build_app_serves_machines() {
             title: "R".to_string(),
             agent: "claude".to_string(),
             prompt: "p".to_string(),
+            goal: None,
             repositories: vec![],
             machines: vec!["alpha-box".to_string(), "shared".to_string()],
             tags: vec![],
@@ -464,6 +465,11 @@ async fn build_app_serves_health() {
     assert!(
         json["dependencies"]["tmux"].is_boolean(),
         "health payload should carry a boolean dependencies.tmux flag, got: {json}"
+    );
+    // Likewise for python3, which the built-in `claude` agent's setup step depends on (#404).
+    assert!(
+        json["dependencies"]["python3"].is_boolean(),
+        "health payload should carry a boolean dependencies.python3 flag, got: {json}"
     );
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     // The resolved machine name is surfaced so clients can identify which daemon answered.
@@ -1092,6 +1098,7 @@ async fn router_serves_routines_ical_feed() {
             title: "My Routine".to_string(),
             agent: "claude".to_string(),
             prompt: "do the thing".to_string(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -1310,6 +1317,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         agent: "claude".to_string(),
         model: None,
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![],
         enabled: true,
         source: "managed".to_string(),

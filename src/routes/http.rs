@@ -54,6 +54,10 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
 pub struct DependencyHealth {
     /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
     pub tmux: bool,
+    /// Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`
+    /// step runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that
+    /// step fails silently and the routine still shows a healthy status (issue #404).
+    pub python3: bool,
 }
 
 /// Response body for `GET /health`.
@@ -161,6 +165,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         machine: crate::machine::current_machine(),
         dependencies: DependencyHealth {
             tmux: routines::tmux_available(),
+            python3: routines::agent_command_available("python3"),
         },
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),

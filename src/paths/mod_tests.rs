@@ -36,6 +36,13 @@ fn routine_dir_is_child_of_routines_dir() {
 }
 
 #[test]
+fn routines_readme_path_in_routines_dir() {
+    let path = routines_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), routines_dir());
+}
+
+#[test]
 fn routine_toml_path_filename() {
     let path = routine_toml_path("abc");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "routine.toml");
@@ -109,6 +116,13 @@ fn agent_toml_path_appends_name_and_extension() {
 }
 
 #[test]
+fn agents_readme_path_in_agents_dir() {
+    let path = agents_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), agents_dir());
+}
+
+#[test]
 fn moadim_home_ends_with_dot_moadim() {
     assert!(moadim_home().ends_with(".moadim"));
 }
@@ -131,6 +145,13 @@ fn workbenches_dir_under_moadim_home() {
 fn config_gitignore_path_in_config_dir() {
     let path = config_gitignore_path();
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), ".gitignore");
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
+fn config_readme_path_in_config_dir() {
+    let path = config_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
     assert_eq!(path.parent().unwrap(), config_dir());
 }
 

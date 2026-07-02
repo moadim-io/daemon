@@ -19,6 +19,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -408,6 +409,10 @@ pub(crate) fn build_app_with_shutdown(
         // (notably the ~1.1 MB SPA `index.html` and the OpenAPI JSON under `/docs`). A no-op
         // for clients that don't advertise gzip support (issue #399).
         .layer(CompressionLayer::new())
+        // Outermost of all: a panicking handler would otherwise unwind straight through Hyper,
+        // resetting the connection with no response and no logged error (issue #337). Catch it
+        // here and answer with a plain 500 instead.
+        .layer(CatchPanicLayer::new())
         .with_state(app_state)
 }
 

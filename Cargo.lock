@@ -2400,14 +2400,17 @@ dependencies = [
  "bitflags 2.13.0",
  "bytes",
  "futures-core",
+ "futures-util",
  "http 1.4.2",
  "http-body",
+ "http-body-util",
  "percent-encoding",
  "pin-project-lite",
  "tokio",
  "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

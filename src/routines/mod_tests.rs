@@ -133,7 +133,7 @@ fn build_routine_command_contains_expected_pieces() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
     // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
     assert!(cmd.contains("export PATH="));
@@ -163,7 +163,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
         instructions_file: "AGENTS.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     assert!(cmd.contains("'codex exec prompt.md'"));
 }
 
@@ -176,7 +176,7 @@ fn build_routine_command_writes_claude_md() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     // moadim-managed section written via printf %b
     assert!(cmd.contains("CLAUDE.md"), "CLAUDE.md write missing");
     assert!(
@@ -222,7 +222,7 @@ fn build_routine_command_writes_disclosure_to_codex_instructions_file() {
         instructions_file: "AGENTS.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     // The disclosure is written to AGENTS.md, the file Codex reads...
     assert!(
         cmd.contains(r#"> "$WB/AGENTS.md""#),
@@ -254,7 +254,7 @@ fn build_routine_command_aborts_when_prompt_missing() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     // The cp of the routine's source prompt must fail-fast: a missing source aborts the launch
     // instead of starting the agent with an empty "$(cat prompt.md)" argument (a task-less session).
     let cp_at = cmd.find("cp ").expect("cp in cmd");
@@ -280,7 +280,7 @@ fn build_routine_command_inserts_setup_before_launch() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: Some("seed-trust \"$WB\"".to_string()),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, true);
     let setup_at = cmd.find("seed-trust").expect("setup present");
     let launch_at = cmd.find("tmux new-session").expect("launch present");
     // setup runs before the agent launches
@@ -679,6 +679,76 @@ fn svc_trigger_with_agent_config_spawns() {
         for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().starts_with(&prefix) {
                 let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+}
+
+#[test]
+fn svc_trigger_manual_leaves_scheduled_sidecar_untouched_but_scheduled_path_writes_it() {
+    // Regression test for #478: a manual trigger (`svc_trigger`) must never write the
+    // `scheduled.local.toml` sidecar the daemon reads back into `last_scheduled_trigger_at` on
+    // load — only the real scheduled/crontab path (`svc_trigger_scheduled`) may. Uses a harmless
+    // `true` agent command (like `svc_trigger_with_agent_config_spawns` above) so the spawned shell
+    // runs for real and actually reaches the (conditionally gated) sidecar-write statement, then
+    // waits for it to finish before inspecting the filesystem.
+    let agent_name = "trigger-478-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"true\"\nargs = []\n").unwrap();
+
+    let manual_title = "Trigger 478 Manual ZZZ";
+    let manual_slug = slugify(manual_title);
+    let store = new_store();
+    let mut manual_routine = make_routine("trig-478-manual");
+    manual_routine.title = manual_title.into();
+    manual_routine.agent = agent_name.into();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-478-manual".into(), manual_routine.clone());
+    crate::routine_storage::write_routine(&manual_routine).unwrap();
+
+    let scheduled_title = "Trigger 478 Scheduled ZZZ";
+    let scheduled_slug = slugify(scheduled_title);
+    let mut scheduled_routine = make_routine("trig-478-scheduled");
+    scheduled_routine.title = scheduled_title.into();
+    scheduled_routine.agent = agent_name.into();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-478-scheduled".into(), scheduled_routine.clone());
+    crate::routine_storage::write_routine(&scheduled_routine).unwrap();
+
+    let manual_triggered = svc_trigger(&store, "trig-478-manual").unwrap();
+    assert!(manual_triggered.last_manual_trigger_at.is_some());
+    svc_trigger_scheduled(&store, "trig-478-scheduled").unwrap();
+
+    // Let both fire-and-forget shells finish.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
+    let manual_sidecar = crate::paths::routine_scheduled_state_path(&manual_slug);
+    assert!(
+        !manual_sidecar.exists(),
+        "manual trigger must not write the scheduled-fire sidecar"
+    );
+    let scheduled_sidecar = crate::paths::routine_scheduled_state_path(&scheduled_slug);
+    assert!(
+        scheduled_sidecar.exists(),
+        "scheduled trigger must still write the scheduled-fire sidecar"
+    );
+
+    // Cleanup: agent config, routine dirs, and any workbenches the spawned shells created.
+    std::fs::remove_file(&cfg).unwrap();
+    crate::routine_storage::remove_routine_dir(&manual_slug).unwrap();
+    crate::routine_storage::remove_routine_dir(&scheduled_slug).unwrap();
+    for title in [manual_title, scheduled_title] {
+        let prefix = format!("{}-", slugify(title));
+        if let Ok(entries) = std::fs::read_dir(crate::paths::workbenches_dir()) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
             }
         }
     }

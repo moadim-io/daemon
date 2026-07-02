@@ -485,6 +485,11 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 }
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
+///
+/// Passes `stamp_scheduled: false` to [`build_routine_command`] via [`spawn_routine_command`], so
+/// the spawned command records only this manual firing (`last_manual_trigger_at`, above) and never
+/// touches the scheduled-fire sidecar (`last_scheduled_trigger_at`) — see [`svc_trigger_scheduled`]
+/// for the path that does (#478).
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
@@ -495,7 +500,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
-    spawn_routine_command(&routine);
+    spawn_routine_command(&routine, false);
     Ok(routine)
 }
 
@@ -516,7 +521,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
-    spawn_routine_command(&routine);
+    spawn_routine_command(&routine, true);
     Ok(routine)
 }
 
@@ -525,11 +530,13 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
-/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths.
-fn spawn_routine_command(routine: &Routine) {
+/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths; `stamp_scheduled`
+/// distinguishes them and is forwarded to [`build_routine_command`], which gates the
+/// `last_scheduled_trigger_at` sidecar write on it (#478).
+fn spawn_routine_command(routine: &Routine, stamp_scheduled: bool) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
-            let cmd = build_routine_command(routine, &agent);
+            let cmd = build_routine_command(routine, &agent, stamp_scheduled);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.
@@ -539,12 +546,14 @@ fn spawn_routine_command(routine: &Routine) {
             // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
             crate::utils::process::spawn_and_reap(command, "routine command");
         }
-        Err(err) => log::warn!(
-            "trigger: cannot load agent {:?} ({}) for routine {:?}",
-            routine.agent,
-            err,
-            routine.id
-        ),
+        Err(err) => {
+            log::warn!(
+                "trigger: cannot load agent {:?} ({}) for routine {:?}",
+                routine.agent,
+                err,
+                routine.id
+            );
+        }
     }
 }
 

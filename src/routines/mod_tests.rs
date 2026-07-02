@@ -4,20 +4,27 @@ use super::*;
 
 fn make_routine(id: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![Repository {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
         }],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -38,6 +45,25 @@ fn slugify_empty_falls_back() {
 }
 
 #[test]
+fn slugify_preserves_non_ascii_letters() {
+    // Hebrew and CJK titles must not collapse to the "routine" fallback (#262).
+    assert_eq!(slugify("עדכון יומי"), "עדכון-יומי");
+    assert_eq!(slugify("日次レポート"), "日次レポート");
+    assert_eq!(slugify("Отчёт"), "отчёт");
+    // Latin diacritics are kept rather than silently dropped.
+    assert_eq!(slugify("Café Report"), "café-report");
+}
+
+#[test]
+fn slugify_distinct_non_ascii_titles_produce_distinct_slugs() {
+    let slug_one = slugify("עדכון יומי");
+    let slug_two = slugify("דוח שבועי");
+    assert_ne!(slug_one, "routine");
+    assert_ne!(slug_two, "routine");
+    assert_ne!(slug_one, slug_two);
+}
+
+#[test]
 fn compose_prompt_lists_repos_and_prompt() {
     let routine = make_routine("x");
     let prompt = compose_prompt(&routine);
@@ -55,6 +81,69 @@ fn compose_prompt_repo_without_branch() {
     }];
     let prompt = compose_prompt(&routine);
     assert!(prompt.contains("- git@example.com:a/b\n"));
+}
+
+#[test]
+fn compose_prompt_without_repositories_omits_clone_header() {
+    let mut routine = make_routine("x");
+    routine.repositories = vec![];
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Workbench"));
+    assert!(prompt.contains("You are working in an empty directory.\n"));
+    // No dangling "clone any you need:" header (and no empty bullet list) when there are no repos.
+    assert!(!prompt.contains("clone any you need"));
+    assert!(!prompt.contains("\n- "));
+    assert!(prompt.contains("do the thing"));
+}
+
+#[test]
+fn compose_prompt_renders_goal_section_when_set() {
+    let mut routine = make_routine("x");
+    routine.goal = Some("Keep the PR backlog small.".to_string());
+    let prompt = compose_prompt(&routine);
+    // The goal appears as a `## Goal` section before the `---` prompt separator.
+    let goal_at = prompt.find("## Goal").expect("goal section present");
+    let sep_at = prompt.find("\n---\n").expect("prompt separator present");
+    assert!(goal_at < sep_at, "goal must precede the prompt");
+    assert!(prompt.contains("Keep the PR backlog small."));
+}
+
+#[test]
+fn compose_prompt_omits_goal_section_when_unset_or_blank() {
+    let mut routine = make_routine("x");
+    routine.goal = None;
+    assert!(!compose_prompt(&routine).contains("## Goal"));
+    routine.goal = Some("   \n\t".to_string());
+    assert!(!compose_prompt(&routine).contains("## Goal"));
+}
+
+#[test]
+fn compose_prompt_omits_open_flags_section_when_none() {
+    let routine = make_routine("x");
+    let prompt = compose_prompt(&routine);
+    assert!(!prompt.contains("Open flags"));
+}
+
+#[test]
+fn compose_prompt_includes_open_flags_section() {
+    let mut routine = make_routine("x");
+    routine.title = "Compose Prompt Flags Test ZZZ".to_string();
+    let slug = slugify(&routine.title);
+    flags::create_flag(
+        &slug,
+        "bug",
+        "the thing is broken",
+        flags::FlagScope::General,
+    )
+    .unwrap();
+    flags::create_flag(&slug, "gap", "missing context", flags::FlagScope::Local).unwrap();
+
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Open flags"));
+    assert!(prompt.contains("**bug** (general): the thing is broken"));
+    assert!(prompt.contains("**gap** (local): missing context"));
+
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
 }
 
 #[test]
@@ -84,6 +173,7 @@ fn build_routine_command_contains_expected_pieces() {
             "--dangerously-skip-permissions".to_string(),
             "{prompt}".to_string(),
         ],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
@@ -113,6 +203,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
     let agent = AgentCommand {
         command: "codex".to_string(),
         args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
@@ -125,6 +216,7 @@ fn build_routine_command_writes_claude_md() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
@@ -162,11 +254,47 @@ fn build_routine_command_writes_claude_md() {
 }
 
 #[test]
+fn build_routine_command_writes_disclosure_to_codex_instructions_file() {
+    // Codex reads project instructions from AGENTS.md, not CLAUDE.md. The moadim-managed system
+    // prompt and routine-origin disclosure must land in the file the selected agent actually reads,
+    // otherwise a codex-backed routine never sees the mandatory disclosure.
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The disclosure is written to AGENTS.md, the file Codex reads...
+    assert!(
+        cmd.contains(r#"> "$WB/AGENTS.md""#),
+        "moadim prompt should be written to AGENTS.md for the codex agent"
+    );
+    assert!(
+        cmd.contains(r#">> "$WB/AGENTS.md""#),
+        "user prompt should be appended to AGENTS.md for the codex agent"
+    );
+    // ...and carries the same disclosure payload as the CLAUDE.md path.
+    assert!(
+        cmd.contains("Routine origin disclosure"),
+        "routine-origin disclosure section missing for codex"
+    );
+    assert!(cmd.contains("'My Routine'"), "routine title not injected");
+    // CLAUDE.md is not written for a codex routine: Codex would never read it.
+    assert!(
+        !cmd.contains("CLAUDE.md"),
+        "codex routine must not write the Claude-only CLAUDE.md"
+    );
+}
+
+#[test]
 fn build_routine_command_aborts_when_prompt_missing() {
     let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
@@ -192,6 +320,7 @@ fn build_routine_command_inserts_setup_before_launch() {
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec!["{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
         setup: Some("seed-trust \"$WB\"".to_string()),
     };
     let cmd = build_routine_command(&routine, &agent);
@@ -201,6 +330,45 @@ fn build_routine_command_inserts_setup_before_launch() {
     assert!(setup_at < launch_at);
     // inserted verbatim (not shell-quoted), $WB left for the runtime shell to expand
     assert!(cmd.contains("seed-trust \"$WB\""));
+}
+
+#[test]
+fn build_routine_command_redirects_launch_wrapper_to_launch_log() {
+    // Setup/tmux failures must not be silently mailed by cron on a headless host (#375): everything
+    // from the prompt copy through `tmux pipe-pane` runs inside a `{ … } >> "$WB/launch.log" 2>&1`
+    // group, so a failure anywhere in that wrapper leaves a readable trace in the workbench.
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: Some("seed-trust \"$WB\"".to_string()),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(r#"} >> "$WB/launch.log" 2>&1"#),
+        "expected the setup/launch wrapper to redirect into launch.log in: {cmd}"
+    );
+
+    // The redirect group opens after `mkdir -p "$WB"` (so $WB exists before anything tries to
+    // write into it) and closes after the final `tmux pipe-pane` statement.
+    let mkdir_at = cmd.find(r#"mkdir -p "$WB""#).expect("mkdir present");
+    let group_open_at = cmd[mkdir_at..].find('{').map(|off| mkdir_at + off).unwrap();
+    let setup_at = cmd.find("seed-trust").expect("setup present");
+    let pipe_pane_at = cmd.find("tmux pipe-pane").expect("pipe-pane present");
+    let redirect_at = cmd.find(r#"} >> "$WB/launch.log""#).unwrap();
+    assert!(
+        mkdir_at < group_open_at,
+        "mkdir must run before the redirected group opens"
+    );
+    assert!(
+        group_open_at < setup_at,
+        "setup must run inside the redirected group"
+    );
+    assert!(
+        pipe_pane_at < redirect_at,
+        "pipe-pane must run inside the redirected group"
+    );
 }
 
 #[test]
@@ -421,11 +589,15 @@ fn svc_create_invalid_cron_rejected() {
         schedule: "not-a-cron".into(),
         title: "t".into(),
         agent: "claude".into(),
+        model: None,
         prompt: "p".into(),
+        goal: None,
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: vec![],
     };
     assert!(svc_create(&store, req).is_err());
 }
@@ -436,37 +608,45 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Cov Routine".into(),
             agent: "claude".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
+            machines: vec![crate::machine::current_machine()],
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: vec![],
         },
     )
     .unwrap();
     let id = created.routine.id.clone();
     // folder is slug of the title, not the UUID
     assert!(crate::paths::routine_toml_path("cov-routine").exists());
-    assert!(crate::paths::routine_prompt_path("cov-routine").exists());
+    assert!(crate::paths::routine_compiled_prompt_path("cov-routine").exists());
 
     let updated = svc_update(
         &store,
         &id,
         UpdateRoutineRequest {
+            model: None,
             schedule: Some("@weekly".into()),
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
             prompt: Some("p2".into()),
+            goal: None,
             repositories: Some(vec![Repository {
                 repository: "r".into(),
                 branch: None,
             }]),
+            machines: None,
             enabled: Some(false),
             ttl_secs: None,
             max_runtime_secs: None,
+            tags: None,
         },
     )
     .unwrap();
@@ -486,11 +666,15 @@ fn svc_update_not_found() {
         schedule: None,
         title: Some("x".into()),
         agent: None,
+        model: None,
         prompt: None,
+        goal: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -506,11 +690,15 @@ fn svc_update_invalid_cron_rejected() {
         schedule: Some("bad".into()),
         title: None,
         agent: None,
+        model: None,
         prompt: None,
+        goal: None,
         repositories: None,
+        machines: None,
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        tags: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }
@@ -539,8 +727,11 @@ fn svc_trigger_records_time_without_agent_config() {
 }
 
 #[test]
-fn load_agent_command_missing_returns_none() {
-    assert!(load_agent_command("definitely-not-an-agent-zzz").is_none());
+fn load_agent_command_missing_returns_missing_error() {
+    assert!(matches!(
+        load_agent_command("definitely-not-an-agent-zzz"),
+        Err(crate::routines::AgentLoadError::Missing)
+    ));
 }
 
 #[test]

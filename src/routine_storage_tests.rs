@@ -5,6 +5,7 @@ use crate::routines::{slugify, Repository, Routine};
 
 fn make_routine(id: &str, title: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: title.to_string(),

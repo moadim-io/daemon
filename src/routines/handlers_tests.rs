@@ -17,7 +17,7 @@ impl TempHome {
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome(dir)
+        Self(dir)
     }
 }
 

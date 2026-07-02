@@ -33,15 +33,15 @@ pub enum SyncError {
 impl std::fmt::Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SyncError::CrontabCommand(msg) => write!(f, "crontab: {msg}"),
-            SyncError::Io(err) => write!(f, "io: {err}"),
+            Self::CrontabCommand(msg) => write!(f, "crontab: {msg}"),
+            Self::Io(err) => write!(f, "io: {err}"),
         }
     }
 }
 
 impl From<std::io::Error> for SyncError {
     fn from(err: std::io::Error) -> Self {
-        SyncError::Io(err)
+        Self::Io(err)
     }
 }
 

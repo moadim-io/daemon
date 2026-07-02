@@ -67,6 +67,13 @@ fn routine_state_path_filename() {
 }
 
 #[test]
+fn routine_flags_dir_is_child_of_routine_dir() {
+    let path = routine_flags_dir("abc");
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "flags");
+    assert_eq!(path.parent().unwrap(), routine_dir("abc"));
+}
+
+#[test]
 fn agents_dir_ends_with_agents() {
     let path = agents_dir().to_string_lossy().into_owned();
     assert!(

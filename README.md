@@ -289,6 +289,7 @@ moadim                 # start detached, print the PID, return to the shell
 moadim --interactive   # run in the foreground, attached to the terminal (Ctrl-C to stop)
 moadim status          # report whether a server is running
 moadim status --json   # same, as a machine-readable JSON object
+moadim status --wait   # poll until a server answers (or 30s elapse) instead of checking once
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
 moadim trigger <id>    # trigger a routine to run now, outside its schedule
@@ -303,7 +304,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
 | `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
-| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Exits `0` when running, `3` when not. |
+| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Add `--wait[=SECS]` to poll `GET /health` every 200ms until it answers or `SECS` elapse (default 30) instead of checking once, so a launch script can block on startup rather than sleeping blindly. Exits `0` when running, `3` when not (including a `--wait` timeout). |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
 | `moadim trigger <id>` | —          | Sends `POST /api/v1/routines/{id}/trigger` to the running server, launching the routine immediately outside its schedule (the terminal equivalent of the REST/MCP on-demand trigger). Prints `triggered routine <id>` on success. Exits `0` when triggered, `3` when no server is reachable, and `1` with `no routine with id <id>` on a `404`. (`moadim run <id>` is kept as a hidden back-compat alias.) |
 
@@ -366,6 +367,10 @@ fi
 # Grab the running server's PID for a downstream check (empty when not running).
 pid=$(moadim status --json | jq -r '.pid // empty')
 
+# Block until the just-launched server answers (or 10s pass) instead of a blind sleep.
+moadim
+moadim status --wait=10 --json | jq -r .running
+
 # Reap expired routine workbenches and report how many were freed.
 removed=$(moadim cleanup --json | jq -r .removed)
 echo "moadim: reaped ${removed} workbench(es)"
@@ -414,6 +419,26 @@ keeps looking at the default `127.0.0.1:5784` and will report the relocated serv
 Export the variable in your shell profile to make the change stick across commands. All the
 `127.0.0.1:5784` addresses shown above and in the `--json` payloads reflect the default; they
 follow `MOADIM_BIND_ADDR` when it is set.
+
+### Log format
+
+The server logs to stdout (foreground) or `~/.config/moadim/daemon.log` (background) using
+`env_logger`'s default human-readable format. Set `MOADIM_LOG_FORMAT=json` to switch to one JSON
+object per line instead, for shipping `daemon.log` into a log aggregator (Loki, ELK, Vector,
+CloudWatch, `jq`-based tooling):
+
+```sh
+MOADIM_LOG_FORMAT=json moadim -i
+```
+
+Each line carries `ts` (RFC 3339), `level`, `target`, and `msg`:
+
+```json
+{"ts":"2026-07-01T08:10:34.700305+00:00","level":"INFO","target":"moadim::routines::service","msg":"..."}
+```
+
+An unset or unrecognized value falls back to the default text format. `RUST_LOG` keeps filtering
+levels the same way in both formats.
 
 ## MCP usage
 

@@ -11,6 +11,45 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Tests
+
+- Added a `cli_tests` regression guard (`status_and_stop_json_share_a_common_key_set`)
+  asserting that every object key `stop --json` emits also appears in
+  `status --json`, so the shared `{running,pid,address}` base contract between
+  the two `--json` shapes can't silently drift apart as fields are added to
+  one side but not the other. `status --json` may carry additional
+  server-sourced fields (`uptime_secs`, `version`) that `stop --json` omits;
+  see `status_and_stop_json_share_the_same_shape` for the value-level guard on
+  the shared subset.
+
+### Fixed
+
+- The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the
+  committed `apis/openapi.json`) no longer advertises a frozen `0.1.0`. The
+  hardcoded `version` literal was dropped from the `#[openapi(info(...))]`
+  attribute so utoipa derives it from `CARGO_PKG_VERSION`, keeping the spec
+  version in lockstep with the crate (now `0.19.1`).
+
+## [0.19.1] - 2026-07-01
+
+### Fixed
+
+- **The routines page failed to load with "missing field `prompt`".** PR #825
+  made `GET /routines` omit the `prompt` field from each routine's JSON by
+  default, but the UI's separately-mirrored `Routine` struct never got a
+  matching `#[serde(default)]` on that field, so the wasm client's
+  deserialization broke on every list fetch.
+
+### Added
+
+- **Repository filter for the Routines table.** The REST `GET /routines`
+  endpoint has supported a `?repository=` filter for a while, but the web UI
+  had no way to use it — the only client-side facets were status, agent, and
+  machine. Added a REPOSITORY dropdown to the Routines filter bar (mirroring
+  the existing agent/machine facet pattern), populated from the distinct
+  repository URLs across loaded routines, so operators can narrow a dense
+  routines list to a single repo without hand-editing the query string.
+
 ## [0.19.0] - 2026-07-02
 
 ### Removed
@@ -95,10 +134,48 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   instead of re-sending the full body on every load/refresh. `Cache-Control:
   no-cache` keeps the browser revalidating on each request rather than trusting
   a local TTL, since the content can change on any daemon upgrade. (#401)
+- **SUBSCRIBE button on the routines calendar.** The calendar view's nav bar
+  now has a SUBSCRIBE button that copies the `/api/v1/routines.ics` feed URL
+  to the clipboard, so wiring the feed into an external calendar app no
+  longer requires reading the API docs to find the endpoint.
+- **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
+  server answers or `SECS` elapse (default 30) instead of checking once, so a
+  launch script can block on startup (`moadim && moadim status --wait`) rather
+  than sleeping a fixed guess before probing. Exits `0` once reachable and the
+  existing `3` on timeout, matching the `status`/`cleanup`/`stop` exit-code
+  contract.
+- **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
+  rename-machine dialogs and the routine edit/delete-confirm modals now all
+  close on `Esc`, matching the command palette's existing behavior.
+- An interactive foreground start (`moadim -i` / `--interactive`) now preflights
+  for an already-running daemon and refuses with a clear, actionable message
+  (naming the running pid when known and pointing at `moadim stop` /
+  `moadim restart`) instead of proceeding to bind and dying with an opaque
+  `Address already in use (os error 48)`. The launcher-spawned background child
+  (which also runs `--interactive`) is exempt via the `MOADIM_DAEMONIZED` marker,
+  so background/restart launches are unaffected (#298).
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
   field, so clients can tell which machine answered without a second request. (#778)
+- **`agent_command_available` on routine responses.** `RoutineResponse` (returned
+  by `GET`/`POST`/`PUT`/`DELETE` `/routines`) now reports whether the routine's
+  agent `command` (e.g. `claude`, `codex`) actually resolves on the daemon's
+  `PATH`, distinct from the existing `agent_registered` (which only checks that
+  `<agent>.toml` exists). A routine with a present, well-formed agent config but
+  an uninstalled binary previously looked identically healthy to one that could
+  actually run — the cron firing launches a tmux session that dies immediately
+  with "command not found," a silent no-op. Clients can now tell the two states
+  apart instead of inferring it from `agent.log` after the fact. (#383)
+- **`actionlint`/`shellcheck` CI gate.** New `.github/workflows/actionlint.yml`
+  runs `actionlint` (via `raven-actions/actionlint`, pinned to a commit SHA) on
+  every PR and on push to `main`, statically validating workflow YAML —
+  syntax, `${{ }}` expressions, the `needs`/`if`/matrix job graph, event
+  triggers, action input names — and, with `shellcheck` enabled by default,
+  linting every embedded `run:` block. Previously a typo'd key, a bad
+  expression, or an unquoted shell variable in `.github/workflows/` only
+  surfaced when the workflow actually ran on `main` or a release tag.
+  Documented in `CONTRIBUTING.md` alongside the other lint tooling. (#454)
 
 ### Changed
 
@@ -1199,7 +1276,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1

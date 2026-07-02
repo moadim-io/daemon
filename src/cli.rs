@@ -62,6 +62,9 @@ pub enum Command {
     Status {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
+        /// When present, poll up to this many seconds for a server to become reachable instead of
+        /// checking once, so scripts can block on startup rather than sleeping blindly.
+        wait_secs: Option<u64>,
     },
     /// Ask a running server to reap finished, expired routine run workbenches now. `json` requests
     /// machine-readable output.
@@ -103,7 +106,6 @@ pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "e
 pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
-        None => Command::Background,
         Some(first) if DATA_COMMANDS.contains(&first) => Command::Data(args),
         Some("machine") => Command::Machine(args[1..].to_vec()),
         Some("restart") => Command::Restart,
@@ -113,6 +115,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
+            wait_secs: wants_wait(&args[1..]),
         },
         Some("cleanup") => Command::Cleanup {
             json: wants_json(&args[1..]),
@@ -126,10 +129,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
-        Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
-        Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
+        None | Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
         Some(_) => Command::Help,
     }
 }
@@ -144,6 +146,24 @@ fn wants_json(rest: &[String]) -> bool {
 /// `stop` suppress its human-readable status line.
 fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
+}
+
+/// Default poll timeout for a bare `--wait` (no explicit seconds) on `status`.
+const DEFAULT_WAIT_SECS: u64 = 30;
+
+/// Whether `--wait` or `--wait=SECS` appears among `status`'s trailing arguments, requesting that
+/// it poll for a server to come up instead of checking once. A bare `--wait` uses
+/// [`DEFAULT_WAIT_SECS`]; `--wait=SECS` uses the given timeout. Returns `None` when neither form is
+/// present, or `--wait=` is followed by something that does not parse as a `u64`.
+fn wants_wait(rest: &[String]) -> Option<u64> {
+    rest.iter().find_map(|arg| {
+        if arg == "--wait" {
+            Some(DEFAULT_WAIT_SECS)
+        } else {
+            arg.strip_prefix("--wait=")
+                .and_then(|secs| secs.parse().ok())
+        }
+    })
 }
 
 /// Print usage help to stdout.
@@ -164,7 +184,8 @@ pub fn print_help() {
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
-         \x20   status [--json]        show whether a server is running\n\
+         \x20   status [--json] [--wait[=SECS]] show whether a server is running (--wait: poll until\n\
+         \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
@@ -207,6 +228,49 @@ pub fn run_background() -> anyhow::Result<()> {
         crate::restart::stop_running_and_wait()?;
     }
     start_detached_and_report("started")
+}
+
+/// Refuse an interactive foreground start (`moadim -i`) when a server is already reachable on the
+/// bind address, instead of letting the later bind fail with an opaque OS error
+/// (`Address already in use (os error 48)`) that gives no hint a real daemon is already up.
+///
+/// Unlike [`run_background`], which silently stops and replaces a running instance, an interactive
+/// run *refuses* and points at `moadim stop` / `moadim restart`: attaching a second foreground
+/// process to the terminal is rarely what the user intended, and silently killing the existing one
+/// would be a surprising side effect of `-i`.
+///
+/// The launcher-spawned background child also runs with `--interactive`, but it *is* the freshly
+/// started server (the launcher already stopped any prior instance), so the preflight is skipped for
+/// it via the [`DAEMONIZED_ENV`] marker.
+pub fn ensure_not_running_for_foreground() -> anyhow::Result<()> {
+    if std::env::var_os(DAEMONIZED_ENV).is_some() {
+        return Ok(());
+    }
+    foreground_preflight(is_running(), read_pid_file())
+}
+
+/// Decide the foreground-start preflight outcome from whether a server is already reachable and its
+/// pid: `Ok(())` to proceed with the bind, or an error carrying user-facing guidance.
+///
+/// Split from [`ensure_not_running_for_foreground`] so both outcomes are unit-testable without a
+/// live network probe.
+fn foreground_preflight(running: bool, pid: Option<u32>) -> anyhow::Result<()> {
+    if running {
+        anyhow::bail!("{}", foreground_already_running_message(pid));
+    }
+    Ok(())
+}
+
+/// User-facing message when an interactive start is refused: names the running pid when known and
+/// points at the commands that resolve it.
+fn foreground_already_running_message(pid: Option<u32>) -> String {
+    let suffix = pid
+        .map(|process_id| format!(" (pid {process_id})"))
+        .unwrap_or_default();
+    format!(
+        "moadim is already running{suffix}; refusing to start a second foreground instance. \
+         Stop it with `moadim stop`, or replace it with `moadim restart`."
+    )
 }
 
 /// Stop a running background server (if any) and start a fresh detached instance.
@@ -379,10 +443,20 @@ pub fn trigger(id: String) -> anyhow::Result<i32> {
 /// Report whether a server is running, with its PID when known. With `json`, emits a single
 /// machine-readable object instead of the human-readable line.
 ///
+/// When `wait_secs` is `Some`, and no server answers on the first check, polls `GET /health`
+/// every [`WAIT_POLL_INTERVAL`] until one does or the timeout elapses, so a caller can block on
+/// startup (`moadim & moadim status --wait`) instead of sleeping blindly before probing.
+///
 /// Returns the process exit code to surface: `0` when a server is reachable, and
-/// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout.
-pub fn status(json: bool) -> anyhow::Result<i32> {
-    let running = is_running();
+/// [`EXIT_NOT_RUNNING`] when not (including after a `--wait` timeout), so scripts can branch on
+/// `$?` without parsing stdout.
+pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
+    let mut running = is_running();
+    if !running {
+        if let Some(secs) = wait_secs {
+            running = wait_until(is_running, Duration::from_secs(secs));
+        }
+    }
     let pid = read_pid_file();
     if json {
         // Fold the server's own /health (uptime + version) into the object so a single
@@ -562,6 +636,25 @@ fn paths_daemon_log() -> String {
 /// Returns `true` if a server answers `GET /health` on [`BIND_ADDR`].
 pub(crate) fn is_running() -> bool {
     matches!(http_request("GET", "/api/v1/health"), Ok(200))
+}
+
+/// Interval between liveness probes while [`wait_until`] polls for a server to come up.
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Call `check` repeatedly (sleeping [`WAIT_POLL_INTERVAL`] between attempts) until it returns
+/// `true` or `timeout` elapses. Returns whether it ever returned `true`. Always calls `check` at
+/// least once, even when `timeout` is zero.
+fn wait_until(mut check: impl FnMut() -> bool, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if check() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(WAIT_POLL_INTERVAL);
+    }
 }
 
 /// Send a minimal HTTP/1.1 request to the local server and return the response status code.

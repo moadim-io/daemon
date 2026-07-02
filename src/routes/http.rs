@@ -13,7 +13,7 @@ use axum::{
     },
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -370,6 +370,14 @@ pub(crate) fn build_app_with_shutdown(
         .route(
             "/routines/{id}/scheduled-trigger",
             post(routines::scheduled_trigger),
+        )
+        .route(
+            "/routines/{id}/flags",
+            get(routines::list_flags).post(routines::create_flag),
+        )
+        .route(
+            "/routines/{id}/flags/{filename}",
+            delete(routines::resolve_flag),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting

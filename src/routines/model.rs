@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::command::slugify;
+use super::agents::load_agent_command;
+use super::command::{agent_command_available, slugify};
+use super::flags::list_flags;
 use crate::paths::{agent_toml_path, routine_toml_path};
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
@@ -59,6 +61,24 @@ pub struct RoutineListQuery {
     pub sort: RoutineSort,
     /// Sort direction (default: ascending).
     pub order: SortOrder,
+    /// When `true`, only return routines whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all routines, preserving backwards compatibility).
+    pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
+}
+
+/// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct IcalFeedQuery {
+    /// Render only the fire times of the routine with this UUID. Absent (the default)
+    /// renders every enabled routine. An unknown or disabled id yields a well-formed
+    /// empty calendar.
+    pub routine: Option<String>,
 }
 
 /// A persisted routine: a scheduled AI-agent task.
@@ -73,11 +93,27 @@ pub struct Routine {
     pub title: String,
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
+    /// Model ID to run the agent with (e.g. `"claude-sonnet-4-6"`), passed as `--model` on the
+    /// agent invocation. `None` uses the agent's own default.
+    #[serde(default)]
+    pub model: Option<String>,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines this routine runs on. Each daemon schedules a routine only when this list names its
+    /// own machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so
+    /// a routine is dormant until explicitly assigned. Lets one shared config repo drive different
+    /// routines on different machines.
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether the routine is active.
     pub enabled: bool,
     /// `"managed"` for routines owned by this server.
@@ -87,13 +123,39 @@ pub struct Routine {
     /// Unix timestamp (seconds) when the routine was last updated.
     pub updated_at: u64,
     /// Unix timestamp (seconds) when the routine was last manually triggered, if ever.
-    pub last_triggered_at: Option<u64>,
+    ///
+    /// Only manual triggers (`trigger_routine`) update this; scheduled cron firings run the built
+    /// command directly and do not. Accepts the legacy `last_triggered_at` key on deserialize.
+    #[serde(alias = "last_triggered_at")]
+    pub last_manual_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.
+    ///
+    /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
+    /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
+    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns stamps this
+    /// timestamp into the gitignored `scheduled.local.toml` sidecar at fire time (via its `printf`
+    /// step); the daemon reads it back on load. The daemon never writes this field directly (it is
+    /// absent from `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a
+    /// routine can't clobber it.
+    #[serde(default)]
+    pub last_scheduled_trigger_at: Option<u64>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
     /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills
+    /// its (hung) tmux session, after which the workbench is reaped under the normal TTL rules.
+    /// `None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A
+    /// session still within this bound is never touched. The cap and
+    /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
+    /// Defaults to empty; each entry is trimmed and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -104,6 +166,14 @@ pub struct RoutineResponse {
     pub routine: Routine,
     /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`.
     pub agent_registered: bool,
+    /// `true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable
+    /// on the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a
+    /// present, well-formed agent config yet reference a binary that isn't installed, in which
+    /// case the cron firing launches a tmux session that dies immediately with "command not
+    /// found" — a silent no-op indistinguishable from a healthy routine by `agent_registered`
+    /// alone. `false` whenever the agent config is missing, unreadable, or malformed, since no
+    /// `command` can be resolved in that case either.
+    pub agent_command_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
     /// Human-readable description of the schedule, including the timezone the
@@ -113,6 +183,9 @@ pub struct RoutineResponse {
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
     pub timezone: Option<String>,
+    /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
+    /// listings can badge it without a separate `list_flags` round-trip per routine.
+    pub flag_count: usize,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -140,18 +213,22 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
+        let slug = slugify(&routine.title);
         let agent_registered = agent_toml_path(&routine.agent).exists();
-        let file_path = routine_toml_path(&slugify(&routine.title))
-            .to_string_lossy()
-            .into_owned();
+        let agent_command_available = load_agent_command(&routine.agent)
+            .is_ok_and(|agent| agent_command_available(&agent.command));
+        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let flag_count = list_flags(&slug).len();
         Self {
             routine,
             agent_registered,
+            agent_command_available,
             file_path,
             schedule_description,
             timezone,
+            flag_count,
         }
     }
 }
@@ -187,11 +264,18 @@ pub struct CreateRoutineRequest {
     pub title: String,
     /// Agent registry key to launch.
     pub agent: String,
+    /// Model ID to run the agent with, or `None` to use the agent's own default. A
+    /// blank/whitespace-only value is treated the same as `None`.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Task prompt.
     pub prompt: String,
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Machines to run this routine on (defaults to empty = runs nowhere until assigned).
+    #[serde(default)]
+    pub machines: Vec<String>,
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
@@ -199,6 +283,14 @@ pub struct CreateRoutineRequest {
     /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Max wall-clock seconds a run may execute before the watchdog kills its hung
+    /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
+    #[serde(default)]
+    pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
+    /// and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -211,14 +303,23 @@ pub struct UpdateRoutineRequest {
     pub title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     pub agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    pub model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     pub prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
+    /// New machines targeting list, or `None` to keep the existing value.
+    pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
     /// New workbench TTL (seconds), or `None` to keep the existing value.
     pub ttl_secs: Option<u64>,
+    /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
+    pub max_runtime_secs: Option<u64>,
+    /// New tags list, or `None` to keep the existing value.
+    pub tags: Option<Vec<String>>,
 }
 
 #[cfg(test)]

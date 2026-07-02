@@ -29,7 +29,9 @@ pub use linux::{install, uninstall};
 #[cfg(all(test, target_os = "linux"))]
 use linux::{render_unit, unit_path};
 #[cfg(all(test, target_os = "macos"))]
-use macos::{plist_path, render_plist, xml_escape};
+use macos::{
+    launchctl_bin, plist_path, plist_path_from_home, render_plist, write_plist, xml_escape,
+};
 
 // ── Unsupported platforms ────────────────────────────────────────────────────
 

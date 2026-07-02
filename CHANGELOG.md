@@ -11,12 +11,32 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **Optional `goal` for routines.** A routine can now carry a very short (at most
+  5 lines) statement of its goal — the "why" behind the prompt. It is optional
+  (default unset), persisted in the tracked `routine.toml`, and rendered into the
+  agent's `prompt.md` as a `## Goal` preamble ahead of the task. Settable across
+  every surface: REST (`goal` on the create/update bodies), MCP
+  (`create_routine`/`update_routine`), the CLI (`--goal` on
+  `routines create|replace|update`), and the web UI (a field in the routine
+  form). The value is trimmed; a goal longer than 5 lines is rejected with
+  `400 Bad Request`, and sending an empty string on update clears it. The three
+  built-in default routines now ship with a goal. (#827)
+
 ## [0.20.0] - 2026-07-02
 
 Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagged in `cli::parse` (issue #719): the bare `None` arm into the `Background` arm, and the redundant explicit `-h`/`--help`/`help` arm that the trailing wildcard already covered.
 
 ### Added
 
+- **CI now enforces `cargo test` and the 100% line-coverage gate.** Previously
+  CI only ran fmt + clippy (`lint.yml`); `cargo test` and
+  `cargo llvm-cov --fail-under-lines 100` lived solely in the local pre-push
+  hook, so a PR from a fork (or from a contributor who skipped hook setup)
+  could break tests or drop coverage and still go green. A new `coverage` job
+  in `test.yml` mirrors the pre-push hook's `cargo-llvm-cov` invocation
+  exactly, keeping the local gate and CI in lockstep. (#150)
 - **Routine flags.** A routine's agent runs unattended inside tmux with no
   channel back to a human — until now. It (or a human, via MCP/HTTP) can
   raise a flag against a routine: a free-text `type` (e.g. `"bug"`, `"gap"`,
@@ -304,6 +324,15 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   this was caught because `ui` was outside the pre-push clippy gate and CI's
   equivalent gate had the same blind spot (now closed, see `--workspace`
   fix above).
+
+### Fixed
+
+- **Flaky `restart` test under `cargo llvm-cov`.** `stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops`
+  used a 60ms timeout against an 80ms fake-server stop delay, leaving margins too
+  tight to survive the scheduling jitter and slowdown that coverage
+  instrumentation adds, so it intermittently failed the pre-push 100%-coverage
+  gate. Widened to a 300ms timeout against a 450ms stop delay so the same
+  code path is still exercised with headroom to spare.
 
 ## [0.18.0] — 2026-06-30
 

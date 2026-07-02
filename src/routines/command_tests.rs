@@ -12,6 +12,7 @@ fn make_routine(title: &str) -> Routine {
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do it".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,

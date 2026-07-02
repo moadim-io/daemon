@@ -169,6 +169,9 @@ detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
 must not already exist, and `Cargo.toml`'s version must match the topmost
 changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 
+`publish.yml` authenticates to crates.io via [Trusted Publishing](https://crates.io/docs/trusted-publishing)
+(OIDC) — no `CARGO_REGISTRY_TOKEN` secret involved.
+
 ## Code conventions
 
 - New REST routes go in `src/routes/http.rs`; register them in the router

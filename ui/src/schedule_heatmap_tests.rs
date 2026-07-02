@@ -232,6 +232,7 @@ fn routine(schedule: &str, enabled: bool) -> Routine {
         agent_registered: false,
         file_path: String::new(),
         schedule_description: None,
+        goal: None,
         flag_count: 0,
     }
 }

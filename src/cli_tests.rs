@@ -1027,6 +1027,46 @@ fn pid_file_write_read_clear_roundtrip() {
 }
 
 #[test]
+fn write_pid_file_seeds_readmes_without_clobbering_edits() {
+    let home = temp_home("pidfile-readme");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    write_pid_file().unwrap();
+    let config_readme = crate::paths::config_readme_path();
+    let routines_readme = crate::paths::routines_readme_path();
+    let agents_readme = crate::paths::agents_readme_path();
+    assert!(config_readme.exists());
+    assert!(routines_readme.exists());
+    assert!(agents_readme.exists());
+    assert!(std::fs::read_to_string(&config_readme)
+        .unwrap()
+        .contains("moadim config"));
+    assert!(std::fs::read_to_string(&routines_readme)
+        .unwrap()
+        .contains("moadim routines"));
+    assert!(std::fs::read_to_string(&agents_readme)
+        .unwrap()
+        .contains("moadim agents"));
+    // A second start must not overwrite a user's edits to any of the READMEs.
+    std::fs::write(&config_readme, "custom notes").unwrap();
+    std::fs::write(&routines_readme, "custom notes").unwrap();
+    std::fs::write(&agents_readme, "custom notes").unwrap();
+    write_pid_file().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&config_readme).unwrap(),
+        "custom notes"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&routines_readme).unwrap(),
+        "custom notes"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&agents_readme).unwrap(),
+        "custom notes"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn run_background_starts_when_none_running() {
     let home = temp_home("runbg-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
@@ -1197,6 +1237,21 @@ fn write_pid_file_errors_when_config_dir_is_blocked() {
     std::fs::write(base.join(".config/moadim"), "block").unwrap();
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
     assert!(write_pid_file().is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn write_pid_file_skips_readme_when_its_subdir_is_blocked() {
+    // A regular file sitting where `routines/` should be blocks that README's create_dir_all,
+    // but write_pid_file is best-effort here and must still succeed overall.
+    let base = temp_home("readme-subdir-blocked");
+    let config_dir = base.join(".config/moadim");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(config_dir.join("routines"), "block").unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    write_pid_file().unwrap();
+    assert!(crate::paths::config_readme_path().exists());
+    assert!(!crate::paths::routines_readme_path().exists());
     let _ = std::fs::remove_dir_all(&base);
 }
 

@@ -2,7 +2,9 @@
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing routines"),
+    // `version` is intentionally omitted so utoipa derives it from `CARGO_PKG_VERSION`,
+    // keeping the spec in lockstep with the crate instead of a frozen literal (see issue #309).
+    info(title = "Moadim Server API", description = "REST API for managing routines"),
     // Host-relative server URL: Swagger UI resolves "Try it out" requests against the origin the
     // docs were loaded from, so it follows a custom MOADIM_BIND_ADDR port or a reverse proxy instead
     // of a hardcoded 127.0.0.1:5784 that breaks the moment the daemon isn't bound there (issue #385).

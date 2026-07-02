@@ -104,6 +104,32 @@ pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> 
         .replace("{prompt}", r#""$(cat prompt.md)""#)
 }
 
+/// Conservative cap on a single inlined `{prompt}` argument, matching Linux's
+/// `MAX_ARG_STRLEN` (`32 * PAGE_SIZE` = 128 KiB on the common 4 KiB page size) — the
+/// tighter of the two platform limits an inlined prompt is exposed to (macOS's
+/// combined arg+env budget, `kern.argmax`, is roughly double). An agent using
+/// `{prompt_file}` instead is never subject to this: the prompt reaches the process
+/// as a file path, not a single oversized argv entry.
+pub(crate) const MAX_INLINE_PROMPT_BYTES: usize = 128 * 1024;
+
+/// Byte length of `routine`'s composed prompt when `agent` would inline it into a
+/// single process argument that exceeds [`MAX_INLINE_PROMPT_BYTES`]; `None` when the
+/// agent doesn't use `{prompt}` at all, or the composed prompt fits.
+///
+/// Only agents whose `args` template contains the literal `{prompt}` placeholder are
+/// at risk (see [`substitute`]) — `claude`, the shipped default, is one of them
+/// (#443). A large composed prompt (routine `prompt` + the repositories preamble +
+/// accumulated open flags, see [`compose_prompt`]) then makes the `execve` inside the
+/// launch's detached tmux session fail with `E2BIG`, silently no-oping the run
+/// instead of erroring anywhere visible.
+pub(crate) fn inline_prompt_overflow(routine: &Routine, agent: &AgentCommand) -> Option<usize> {
+    if !agent.args.iter().any(|arg| arg.contains("{prompt}")) {
+        return None;
+    }
+    let len = compose_prompt(routine).len();
+    (len > MAX_INLINE_PROMPT_BYTES).then_some(len)
+}
+
 /// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
 fn bin_dir(bin: &str) -> Option<String> {
     let path = std::env::var("PATH").ok()?;

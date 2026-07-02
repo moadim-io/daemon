@@ -13,7 +13,7 @@ use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{
     cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
 };
-use super::command::{build_routine_command, slugify};
+use super::command::{build_routine_command, inline_prompt_overflow, slugify};
 use super::flags::{self, Flag, FlagScope};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
@@ -671,7 +671,8 @@ pub fn svc_snooze(
 }
 
 /// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
-/// the agent config cannot be loaded or the process cannot be spawned.
+/// the agent config cannot be loaded, the composed prompt won't fit in an inlined `{prompt}`
+/// argument, or the process cannot be spawned.
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
@@ -679,6 +680,21 @@ pub fn svc_snooze(
 fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
+            // Guard against the silent `execve(E2BIG)` no-op an oversized `{prompt}` argument
+            // causes inside the detached tmux session (#443): the OS-level failure never
+            // surfaces anywhere, so catch it here instead and skip the launch with a visible
+            // warning, the same non-fatal shape as the agent-load-failure arm below.
+            if let Some(len) = inline_prompt_overflow(routine, &agent) {
+                log::warn!(
+                    "trigger: composed prompt for routine {:?} is {len} bytes, over the \
+                     inline-argument limit for agent {:?}; skipping launch (would fail silently \
+                     inside tmux otherwise) — switch the agent's args to {{prompt_file}} or \
+                     shorten the routine's prompt/open flags",
+                    routine.id,
+                    routine.agent,
+                );
+                return;
+            }
             let cmd = build_routine_command(routine, &agent);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same

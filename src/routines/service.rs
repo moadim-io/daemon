@@ -558,15 +558,15 @@ pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) 
     let updated: Vec<_> = {
         let mut lock = store.lock_recover();
         lock.values_mut()
-            .filter(|r| r.machines.iter().any(|m| m == old_name))
-            .map(|r| {
-                for m in &mut r.machines {
-                    if m == old_name {
-                        *m = new_name.to_string();
+            .filter(|routine| routine.machines.iter().any(|machine| machine == old_name))
+            .map(|routine| {
+                for machine in &mut routine.machines {
+                    if machine == old_name {
+                        *machine = new_name.to_string();
                     }
                 }
-                r.updated_at = now;
-                r.clone()
+                routine.updated_at = now;
+                routine.clone()
             })
             .collect()
     };

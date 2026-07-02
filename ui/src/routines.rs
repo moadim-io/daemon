@@ -79,6 +79,29 @@ pub struct Routine {
     pub file_path: String,
     #[serde(default)]
     pub schedule_description: Option<String>,
+    /// Number of open flags raised against this routine (see [`Flag`]).
+    #[serde(default)]
+    pub flag_count: usize,
+}
+
+/// Whether a flag file is committed to version control or kept machine-local.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagScope {
+    General,
+    Local,
+}
+
+/// A flag raised against a routine (mirrors the server `Flag`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Flag {
+    pub filename: String,
+    #[serde(rename = "type")]
+    pub flag_type: String,
+    pub description: String,
+    pub scope: FlagScope,
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -250,6 +273,29 @@ async fn api_logs(id: &str) -> Result<String, String> {
     resp.text().await.map_err(|e| e.to_string())
 }
 
+async fn api_flags(id: &str) -> Result<Vec<Flag>, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/flags"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<Flag>>().await.map_err(|e| e.to_string())
+}
+
+async fn api_resolve_flag(id: &str, filename: &str) -> Result<(), String> {
+    let resp = Request::delete(&format!("/api/v1/routines/{id}/flags/{filename}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
+}
+
 // ─── Faceted filter ───────────────────────────────────────────────────────────
 //
 // Pure, host-testable filtering of the loaded routines. The view binds a search
@@ -364,6 +410,35 @@ impl AgentFacet {
     }
 }
 
+/// Repository facet: all repositories, or one specific repository URL.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RepositoryFacet {
+    #[default]
+    All,
+    Named(String),
+}
+
+impl RepositoryFacet {
+    const REPOSITORY_ALL: &'static str = "\u{0}all";
+
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            RepositoryFacet::All => Self::REPOSITORY_ALL.to_string(),
+            RepositoryFacet::Named(r) => r.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        if v == Self::REPOSITORY_ALL {
+            RepositoryFacet::All
+        } else {
+            RepositoryFacet::Named(v.to_string())
+        }
+    }
+}
+
 /// Combined free-text + faceted filter applied client-side to the loaded routines.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RoutineFilter {
@@ -373,6 +448,7 @@ pub struct RoutineFilter {
     pub status: RoutineStatusFacet,
     pub agent: AgentFacet,
     pub machine: RoutineMachineFacet,
+    pub repository: RepositoryFacet,
 }
 
 impl RoutineFilter {
@@ -383,6 +459,7 @@ impl RoutineFilter {
             || self.status != RoutineStatusFacet::All
             || self.agent != AgentFacet::All
             || self.machine != RoutineMachineFacet::Any
+            || self.repository != RepositoryFacet::All
     }
 
     /// Does this routine survive the filter? Facets AND together.
@@ -410,6 +487,13 @@ impl RoutineFilter {
             RoutineMachineFacet::Any => {}
             RoutineMachineFacet::Unassigned if !r.machines.is_empty() => return false,
             RoutineMachineFacet::Machine(m) if !r.machines.iter().any(|x| x == m) => return false,
+            _ => {}
+        }
+        match &self.repository {
+            RepositoryFacet::All => {}
+            RepositoryFacet::Named(rp) if !r.repositories.iter().any(|x| x.repository == *rp) => {
+                return false
+            }
             _ => {}
         }
         let q = self.query.trim().to_lowercase();
@@ -567,6 +651,18 @@ pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
     set.into_iter().collect()
 }
 
+/// Distinct repository URLs across all routines, sorted.
+#[must_use]
+pub fn distinct_repositories(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        for repo in &r.repositories {
+            set.insert(repo.repository.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -575,6 +671,7 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    Flags(String),
     /// Pre-filled create form cloned from an existing routine.
     Clone(Box<Routine>),
 }
@@ -813,6 +910,7 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    GoToFlags(String),
     /// Open the create form pre-filled with a copy of the named routine.
     GoToClone(String),
     OpenEdit(String),
@@ -827,6 +925,7 @@ pub enum RAction {
     SetStatusFacet(RoutineStatusFacet),
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
+    SetRepositoryFacet(RepositoryFacet),
     ClearFilters,
     SetGroupBy(RGroupBy),
     SortByCol(RCol),
@@ -862,6 +961,7 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToFlags(id) => s.page = RPage::Flags(id),
             RAction::GoToClone(id) => {
                 if let Some(source) = s.routines.iter().find(|x| x.id == id) {
                     s.page = RPage::Clone(Box::new(source.clone()));
@@ -882,6 +982,7 @@ impl Reducible for RState {
             RAction::SetStatusFacet(st) => s.filter.status = st,
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
+            RAction::SetRepositoryFacet(rp) => s.filter.repository = rp,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
             RAction::SetGroupBy(by) => s.group_by = by,
             RAction::SortByCol(col) => {
@@ -1093,6 +1194,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::GoToLogs(id)))
     };
+    let on_flags = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToFlags(id)))
+    };
     let on_back = {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(RAction::GoToList))
@@ -1134,6 +1239,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_machine = {
         let state = state.clone();
         Callback::from(move |m: RoutineMachineFacet| state.dispatch(RAction::SetMachineFacet(m)))
+    };
+    let on_set_repository = {
+        let state = state.clone();
+        Callback::from(move |rp: RepositoryFacet| state.dispatch(RAction::SetRepositoryFacet(rp)))
     };
     let on_clear_filters = {
         let state = state.clone();
@@ -1462,6 +1571,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
+    let repository_options = distinct_repositories(&routines);
     let mut machine_options = distinct_machines_r(&routines);
     // Always include the current machine so the default filter option is visible in the dropdown
     // even before any routine targets it.
@@ -1504,6 +1614,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             .unwrap_or_default();
                         html! { <RoutineLogs id={id} title={title} on_back={on_back} /> }
                     },
+                    RPage::Flags(id) => {
+                        let title = routines.iter()
+                            .find(|r| r.id == id)
+                            .map(|r| r.title.clone())
+                            .unwrap_or_default();
+                        html! { <RoutineFlags id={id} title={title} on_back={on_back} /> }
+                    },
                     RPage::List => html! {
                         <main>
                             <GlobalLockBanner status={lock_status} on_unlock={on_unlock_all} />
@@ -1537,6 +1654,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 filter={filter.clone()}
                                 agents={agent_options}
                                 machines={machine_options}
+                                repositories={repository_options}
                                 shown={shown}
                                 total={total_routines}
                                 search_ref={search_ref.clone()}
@@ -1544,6 +1662,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_status={on_set_status}
                                 on_agent={on_set_agent}
                                 on_machine={on_set_machine}
+                                on_repository={on_set_repository}
                                 on_clear={on_clear_filters.clone()}
                             />
                             <RoutineBulkBar
@@ -1574,6 +1693,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
+                                            on_flags={on_flags}
                                             on_clear_filters={on_clear_filters}
                                         />
                                     },
@@ -1816,6 +1936,8 @@ pub struct FilterSortBarProps {
     pub agents: Vec<String>,
     /// Distinct machine ids across all routines, for the machine-facet options.
     pub machines: Vec<String>,
+    /// Distinct repository URLs across all routines, for the repository-facet options.
+    pub repositories: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -1825,6 +1947,7 @@ pub struct FilterSortBarProps {
     pub on_status: Callback<RoutineStatusFacet>,
     pub on_agent: Callback<AgentFacet>,
     pub on_machine: Callback<RoutineMachineFacet>,
+    pub on_repository: Callback<RepositoryFacet>,
     pub on_clear: Callback<()>,
 }
 
@@ -1859,6 +1982,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
             cb.emit(RoutineMachineFacet::from_value(&select.value()));
         })
     };
+    let on_repository_change = {
+        let cb = props.on_repository.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(RepositoryFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -1866,6 +1996,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
     let status_val = props.filter.status.as_str();
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
+    let repository_val = props.filter.repository.as_value();
     let active = props.filter.is_active();
 
     html! {
@@ -1902,6 +2033,14 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                         selected={machine_val == RMACHINE_UNASSIGNED}>{"None"}</option>
                     { for props.machines.iter().map(|m| html! {
                         <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
+                    }) }
+                </select>
+                <span class="filter-label">{"REPOSITORY"}</span>
+                <select class="filter-select" aria-label="Repository filter" onchange={on_repository_change}>
+                    <option value={RepositoryFacet::REPOSITORY_ALL}
+                        selected={repository_val == RepositoryFacet::REPOSITORY_ALL}>{"Any"}</option>
+                    { for props.repositories.iter().map(|r| html! {
+                        <option value={r.clone()} selected={repository_val == *r}>{r.clone()}</option>
                     }) }
                 </select>
             </div>
@@ -2108,6 +2247,7 @@ pub struct TableProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_flags: Callback<String>,
     pub on_clear_filters: Callback<()>,
 }
 
@@ -2218,6 +2358,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                                         on_toggle={props.on_toggle.clone()}
                                         on_trigger={props.on_trigger.clone()}
                                         on_logs={props.on_logs.clone()}
+                                        on_flags={props.on_flags.clone()}
                                     />
                                 }) }
                             </>
@@ -2271,6 +2412,7 @@ pub struct RowProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_flags: Callback<String>,
 }
 
 #[function_component(RoutineRow)]
@@ -2311,6 +2453,11 @@ pub fn routine_row(props: &RowProps) -> Html {
     };
     let on_logs = {
         let cb = props.on_logs.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_flags = {
+        let cb = props.on_flags.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -2445,6 +2592,12 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
+                    <button class="act-btn flags" title="Open flags" onclick={on_flags}>
+                        {"FLAGS"}
+                        if r.flag_count > 0 {
+                            <span class="flag-badge">{r.flag_count}</span>
+                        }
+                    </button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
                     <button class="act-btn clone" title="Duplicate routine" aria-label="Duplicate routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
@@ -3030,6 +3183,123 @@ pub fn routine_logs(props: &LogsProps) -> Html {
                 loading={*loading}
                 err={(*err).clone()}
             />
+        </main>
+    }
+}
+
+// ─── Flags page ───────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct FlagsProps {
+    pub id: String,
+    pub title: String,
+    pub on_back: Callback<()>,
+}
+
+#[function_component(RoutineFlags)]
+pub fn routine_flags(props: &FlagsProps) -> Html {
+    let flags: UseStateHandle<Vec<Flag>> = use_state(Vec::new);
+    let loading = use_state(|| true);
+    let err: UseStateHandle<Option<String>> = use_state(|| None);
+
+    let load = {
+        let id = props.id.clone();
+        let flags = flags.clone();
+        let loading = loading.clone();
+        let err = err.clone();
+        move || {
+            let id = id.clone();
+            let flags = flags.clone();
+            let loading = loading.clone();
+            let err = err.clone();
+            loading.set(true);
+            spawn_local(async move {
+                match api_flags(&id).await {
+                    Ok(list) => {
+                        flags.set(list);
+                        err.set(None);
+                    }
+                    Err(e) => err.set(Some(e)),
+                }
+                loading.set(false);
+            });
+        }
+    };
+
+    {
+        let load = load.clone();
+        use_effect_with(props.id.clone(), move |_| {
+            load();
+        });
+    }
+
+    let on_back = {
+        let cb = props.on_back.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_refresh = {
+        let load = load.clone();
+        Callback::from(move |_: MouseEvent| load())
+    };
+
+    let body = if *loading {
+        html! { <div class="empty"><div class="spinner"></div></div> }
+    } else if let Some(msg) = (*err).clone() {
+        html! { <div class="logs-error">{msg}</div> }
+    } else if flags.is_empty() {
+        html! {
+            <div class="empty">
+                <div class="empty-icon">{"⚑"}</div>
+                <div class="empty-msg">{"NO OPEN FLAGS"}</div>
+            </div>
+        }
+    } else {
+        let id = props.id.clone();
+        html! {
+            <div class="flags-list">
+                { for flags.iter().map(|flag| {
+                    let on_resolve = {
+                        let id = id.clone();
+                        let filename = flag.filename.clone();
+                        let load = load.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            let id = id.clone();
+                            let filename = filename.clone();
+                            let load = load.clone();
+                            spawn_local(async move {
+                                if api_resolve_flag(&id, &filename).await.is_ok() {
+                                    load();
+                                }
+                            });
+                        })
+                    };
+                    let scope_label = match flag.scope {
+                        FlagScope::General => "general",
+                        FlagScope::Local => "local",
+                    };
+                    html! {
+                        <div class="flag-item" key={flag.filename.clone()}>
+                            <div class="flag-item-hd">
+                                <span class="flag-type">{&flag.flag_type}</span>
+                                <span class="flag-scope">{scope_label}</span>
+                                <button class="btn btn-ghost btn-sm" onclick={on_resolve}>{"RESOLVE"}</button>
+                            </div>
+                            <div class="flag-desc">{&flag.description}</div>
+                        </div>
+                    }
+                }) }
+            </div>
+        }
+    };
+
+    html! {
+        <main class="logs-page">
+            <div class="page-hd">
+                <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
+                <div class="page-title">{format!("FLAGS / {}", props.title)}</div>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
+            </div>
+            {body}
         </main>
     }
 }

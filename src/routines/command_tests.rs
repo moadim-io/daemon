@@ -240,6 +240,29 @@ fn tmux_available_false_when_path_unset() {
 }
 
 #[test]
+fn agent_command_available_in_true_when_fake_command_present() {
+    // A temp dir containing a fake agent executable resolves as available — the "present" branch
+    // of the injectable detection helper.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-agentcmd-present-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("fake-agent-cmd");
+    std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    assert!(agent_command_available_in(
+        &dir.to_string_lossy(),
+        "fake-agent-cmd"
+    ));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn resolve_tmux_bin_from_prefers_path_over_fallbacks() {
     // tmux present on `path` -> returned immediately, fallback_dirs never consulted (Some-arm of
     // `bin_dir_in`, early return before the fallback loop).
@@ -251,6 +274,21 @@ fn resolve_tmux_bin_from_prefers_path_over_fallbacks() {
     let dir_str = dir.to_string_lossy().into_owned();
     let resolved = resolve_tmux_bin_from(&dir_str, &["/definitely/not/here".to_string()]);
     assert_eq!(resolved, format!("{dir_str}/tmux"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_command_available_in_false_when_dir_has_no_command() {
+    // A temp dir without the named executable resolves as missing.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-agentcmd-missing-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    assert!(!agent_command_available_in(
+        &dir.to_string_lossy(),
+        "fake-agent-cmd"
+    ));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -310,6 +348,42 @@ fn resolve_tmux_bin_reads_live_path_and_home() {
     });
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_command_available_reads_live_path_present() {
+    // `agent_command_available()` reads the process `PATH`; pointed at a dir with the fake command
+    // it returns true, exercising the `is_some_and(..)` Some/true arm.
+    let dir = std::env::temp_dir().join(format!("moadim-agentcmd-live-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("fake-agent-cmd");
+    std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    with_path(&dir, || assert!(agent_command_available("fake-agent-cmd")));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_command_available_false_when_path_unset() {
+    // With PATH removed entirely, `std::env::var("PATH").ok()` is None and `is_some_and` short-
+    // circuits to false — the missing-PATH arm.
+    let saved = std::env::var_os("PATH");
+    // SAFETY: single-threaded test harness; restored immediately below.
+    unsafe {
+        std::env::remove_var("PATH");
+    }
+    assert!(!agent_command_available("definitely-not-a-real-binary-xyz"));
+    unsafe {
+        if let Some(prev) = saved {
+            std::env::set_var("PATH", prev);
+        }
+    }
 }
 
 #[test]

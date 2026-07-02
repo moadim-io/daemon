@@ -14,14 +14,14 @@ use std::sync::{Arc, Mutex};
 struct TempHome(std::path::PathBuf);
 
 impl TempHome {
-    fn set() -> TempHome {
+    fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-svctest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome(dir)
+        Self(dir)
     }
 }
 
@@ -1969,4 +1969,123 @@ fn svc_update_sets_and_clears_model() {
     assert_eq!(cleared.routine.model, None);
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_flag_not_found() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let result = svc_create_flag(&store, "missing", "bug", "desc", "general");
+    assert!(matches!(result, Err(AppError::NotFound)));
+}
+
+#[test]
+fn svc_create_flag_rejects_blank_type_and_description() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag Blank ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+
+    assert!(matches!(
+        svc_create_flag(&store, &id, "  ", "desc", "general"),
+        Err(AppError::BadRequest(_))
+    ));
+    assert!(matches!(
+        svc_create_flag(&store, &id, "bug", "  ", "general"),
+        Err(AppError::BadRequest(_))
+    ));
+}
+
+#[test]
+fn svc_create_flag_rejects_unknown_scope() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag Scope ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+
+    assert!(matches!(
+        svc_create_flag(&store, &id, "bug", "desc", "nowhere"),
+        Err(AppError::BadRequest(_))
+    ));
+}
+
+#[test]
+fn svc_create_flag_persists_and_refreshes_prompt() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let title = "Svc Flag Create ZZZ";
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id.clone();
+
+    let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
+    assert_eq!(flag.flag_type, "bug");
+    assert_eq!(flag.description, "broken thing");
+
+    // prompt.md is refreshed with the new open flag so the next run sees it.
+    let slug = slugify(title);
+    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    assert!(prompt.contains("Open flags"));
+    assert!(prompt.contains("broken thing"));
+}
+
+#[test]
+fn svc_list_flags_not_found() {
+    let _home = TempHome::set();
+    let store = new_store();
+    assert!(matches!(
+        svc_list_flags(&store, "missing"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_list_flags_returns_created_flags() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag List ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+    svc_create_flag(&store, &id, "bug", "d1", "general").unwrap();
+    svc_create_flag(&store, &id, "gap", "d2", "local").unwrap();
+
+    let flags = svc_list_flags(&store, &id).unwrap();
+    assert_eq!(flags.len(), 2);
+}
+
+#[test]
+fn svc_resolve_flag_not_found_routine() {
+    let _home = TempHome::set();
+    let store = new_store();
+    assert!(matches!(
+        svc_resolve_flag(&store, "missing", "bug-1.md"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_resolve_flag_not_found_flag() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag Resolve Miss ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+    assert!(matches!(
+        svc_resolve_flag(&store, &id, "no-such-flag.md"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_resolve_flag_deletes_and_refreshes_prompt() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let title = "Svc Flag Resolve ZZZ";
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id.clone();
+    let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
+
+    svc_resolve_flag(&store, &id, &flag.filename).unwrap();
+
+    assert!(svc_list_flags(&store, &id).unwrap().is_empty());
+    let slug = slugify(title);
+    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    assert!(!prompt.contains("Open flags"));
 }

@@ -75,6 +75,35 @@ fn compose_prompt_without_repositories_omits_clone_header() {
 }
 
 #[test]
+fn compose_prompt_omits_open_flags_section_when_none() {
+    let routine = make_routine("x");
+    let prompt = compose_prompt(&routine);
+    assert!(!prompt.contains("Open flags"));
+}
+
+#[test]
+fn compose_prompt_includes_open_flags_section() {
+    let mut routine = make_routine("x");
+    routine.title = "Compose Prompt Flags Test ZZZ".to_string();
+    let slug = slugify(&routine.title);
+    flags::create_flag(
+        &slug,
+        "bug",
+        "the thing is broken",
+        flags::FlagScope::General,
+    )
+    .unwrap();
+    flags::create_flag(&slug, "gap", "missing context", flags::FlagScope::Local).unwrap();
+
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Open flags"));
+    assert!(prompt.contains("**bug** (general): the thing is broken"));
+    assert!(prompt.contains("**gap** (local): missing context"));
+
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
 fn substitute_replaces_placeholders() {
     assert_eq!(
         substitute("read {prompt_file} in {workbench}", ".", "prompt.md"),

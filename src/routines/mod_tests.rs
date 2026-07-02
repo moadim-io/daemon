@@ -4,6 +4,7 @@ use super::*;
 
 fn make_routine(id: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: "My Routine".to_string(),
@@ -71,6 +72,35 @@ fn compose_prompt_without_repositories_omits_clone_header() {
     assert!(!prompt.contains("clone any you need"));
     assert!(!prompt.contains("\n- "));
     assert!(prompt.contains("do the thing"));
+}
+
+#[test]
+fn compose_prompt_omits_open_flags_section_when_none() {
+    let routine = make_routine("x");
+    let prompt = compose_prompt(&routine);
+    assert!(!prompt.contains("Open flags"));
+}
+
+#[test]
+fn compose_prompt_includes_open_flags_section() {
+    let mut routine = make_routine("x");
+    routine.title = "Compose Prompt Flags Test ZZZ".to_string();
+    let slug = slugify(&routine.title);
+    flags::create_flag(
+        &slug,
+        "bug",
+        "the thing is broken",
+        flags::FlagScope::General,
+    )
+    .unwrap();
+    flags::create_flag(&slug, "gap", "missing context", flags::FlagScope::Local).unwrap();
+
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Open flags"));
+    assert!(prompt.contains("**bug** (general): the thing is broken"));
+    assert!(prompt.contains("**gap** (local): missing context"));
+
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
 }
 
 #[test]
@@ -477,6 +507,7 @@ fn svc_create_invalid_cron_rejected() {
         schedule: "not-a-cron".into(),
         title: "t".into(),
         agent: "claude".into(),
+        model: None,
         prompt: "p".into(),
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
@@ -494,6 +525,7 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Cov Routine".into(),
             agent: "claude".into(),
@@ -516,6 +548,7 @@ fn svc_create_update_delete_lifecycle() {
         &store,
         &id,
         UpdateRoutineRequest {
+            model: None,
             schedule: Some("@weekly".into()),
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
@@ -548,6 +581,7 @@ fn svc_update_not_found() {
         schedule: None,
         title: Some("x".into()),
         agent: None,
+        model: None,
         prompt: None,
         repositories: None,
         machines: None,
@@ -570,6 +604,7 @@ fn svc_update_invalid_cron_rejected() {
         schedule: Some("bad".into()),
         title: None,
         agent: None,
+        model: None,
         prompt: None,
         repositories: None,
         machines: None,

@@ -9,18 +9,18 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.18.0"
+version = "0.19.1"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
 # `rust-version = "1.88.0"`. Bumping this is a deliberate, CHANGELOG-worthy
 # change — see CONTRIBUTING.md.
 rust-version = "1.88"
-description = "Loop engine for AI agents — cron jobs and routines over REST, MCP, and a built-in web UI"
+description = "Loop engine for AI agents — routines over REST, MCP, and a built-in web UI"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
 homepage = "https://moadim.io"
-keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+keywords = ["scheduler", "mcp", "automation", "rest"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
@@ -83,6 +83,15 @@ manual_let_else = "deny"
 # wrapping it in a closure that only forwards the receiver
 # (`|e| e.ok()`, `|s| s.to_string()`).
 redundant_closure_for_method_calls = "deny"
+# Forbid `.unwrap()` in production code: a panic in a long-running daemon process
+# kills the server without a graceful shutdown, swallowing the in-flight request
+# and leaving connected agents in an undefined state. All error paths must instead
+# propagate via `?` or be handled explicitly so the structured error responses and
+# logging this daemon provides remain intact. Production code is already clean, so
+# `deny` locks in that state and keeps every future error path deliberate.
+# Test code is exempt because test modules are gated with `#[cfg(test)]` and
+# legitimately use `.unwrap()` to assert invariants.
+unwrap_used = "deny"
 # Prefer `for x in &collection` / `for x in &mut collection` over the explicit
 # `for x in collection.iter()` / `.iter_mut()` form. The reference syntax is
 # shorter, is the idiomatic way to iterate without consuming, and avoids the
@@ -94,3 +103,18 @@ explicit_iter_loop = "deny"
 # ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
 # "go to definition" unambiguous.
 wildcard_imports = "deny"
+# Reject `match` arms with identical bodies — either the arm is dead code
+# already covered by another pattern, or the duplication is an unintentional
+# bug where the bodies were meant to differ.
+match_same_arms = "deny"
+# Prefer `Self`/`Self::Variant` over spelling out the concrete type name
+# inside its own `impl` block. `Self` always tracks the current type, so
+# renaming the type requires zero edits inside the `impl` block, and it's
+# the idiomatic way to say "same type as the one being implemented".
+use_self = "deny"
+# Reject `{:?}` (Debug) formatting of a `Path`/`PathBuf` in user-facing output
+# (log lines, error messages). Debug-formats a path with surrounding quotes and
+# escaped separators/backslashes, which reads oddly and diverges from every
+# other path already printed via `.display()` in this codebase. `Path::display`
+# is the correct, consistent way to show a filesystem path to a human.
+unnecessary_debug_formatting = "deny"

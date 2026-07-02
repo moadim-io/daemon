@@ -8,6 +8,7 @@ use super::*;
 
 fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
     Routine {
+        model: None,
         id: "id".into(),
         schedule: schedule.into(),
         title: title.into(),

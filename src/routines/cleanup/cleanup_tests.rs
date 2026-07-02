@@ -570,6 +570,7 @@ fn cleanup_expired_workbenches_kills_a_live_hung_session() {
 
 fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
     super::super::model::Routine {
+        model: None,
         id: "x".into(),
         schedule: schedule.into(),
         title: "t".into(),

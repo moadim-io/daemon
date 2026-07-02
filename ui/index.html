@@ -994,6 +994,28 @@
     .act-btn.logs { color: var(--text-ghost); }
     .act-btn.logs:hover { color: var(--text-mid); border-color: var(--border-hi); }
 
+    .act-btn.flags { color: var(--text-ghost); display: inline-flex; align-items: center; gap: 4px; }
+    .act-btn.flags:hover { color: var(--text-mid); border-color: var(--border-hi); }
+    .flag-badge {
+      display: inline-block;
+      min-width: 14px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 9px;
+      line-height: 14px;
+      text-align: center;
+    }
+
+    .flags-list { display: flex; flex-direction: column; gap: 1px; margin: 16px; }
+    .flag-item { padding: 12px 16px; border: 1px solid var(--border); background: var(--bg-2); }
+    .flag-item-hd { display: flex; align-items: center; gap: 8px; }
+    .flag-type { font-family: var(--mono); font-size: 11px; color: var(--text-hi); text-transform: uppercase; }
+    .flag-scope { font-size: 10px; color: var(--text-ghost); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+    .flag-item-hd .btn { margin-left: auto; }
+    .flag-desc { margin-top: 6px; font-size: 12px; color: var(--text-mid); white-space: pre-wrap; }
+
     /* ── Schedule fire preview ── */
     .sched-preview-btn {
       display: inline-block;

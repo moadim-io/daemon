@@ -11,19 +11,19 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe { std::env::set_var(name, value) }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 
     /// Ensure `name` is unset for the duration of the guard.
-    fn unset(name: &'static str) -> EnvGuard {
+    fn unset(name: &'static str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe { std::env::remove_var(name) }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -241,7 +241,7 @@ fn resolve_prefers_env_over_file() {
 // ─── referenced_machines ───────────────────────────────────────────────────
 
 #[test]
-fn referenced_machines_unions_routines_and_jobs() {
+fn referenced_machines_unions_routines() {
     let home = temp_home("referenced");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
 
@@ -250,6 +250,7 @@ fn referenced_machines_unions_routines_and_jobs() {
         schedule: "0 9 * * *".to_string(),
         title: "Routine One".to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do".to_string(),
         repositories: Vec::new(),
         machines: vec!["laptop".to_string(), "server".to_string()],
@@ -265,22 +266,8 @@ fn referenced_machines_unions_routines_and_jobs() {
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
 
-    let job = crate::cron_jobs::CronJob {
-        id: "j1".to_string(),
-        schedule: "0 9 * * *".to_string(),
-        handler: "h".to_string(),
-        metadata: serde_json::json!({}),
-        machines: vec!["server".to_string(), "work".to_string()],
-        enabled: true,
-        source: "managed".to_string(),
-        created_at: 0,
-        updated_at: 0,
-        last_manual_trigger_at: None,
-    };
-    crate::storage::write_job(&job).expect("write job");
-
     let names = referenced_machines();
-    let expected: std::collections::BTreeSet<String> = ["laptop", "server", "work"]
+    let expected: std::collections::BTreeSet<String> = ["laptop", "server"]
         .iter()
         .map(ToString::to_string)
         .collect();
@@ -331,6 +318,7 @@ fn run_list_with_referenced_machine() {
         schedule: "0 9 * * *".to_string(),
         title: "Routine".to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do".to_string(),
         repositories: Vec::new(),
         machines: vec!["alpha".to_string()],

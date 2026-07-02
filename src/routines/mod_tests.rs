@@ -333,6 +333,45 @@ fn build_routine_command_inserts_setup_before_launch() {
 }
 
 #[test]
+fn build_routine_command_redirects_launch_wrapper_to_launch_log() {
+    // Setup/tmux failures must not be silently mailed by cron on a headless host (#375): everything
+    // from the prompt copy through `tmux pipe-pane` runs inside a `{ … } >> "$WB/launch.log" 2>&1`
+    // group, so a failure anywhere in that wrapper leaves a readable trace in the workbench.
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: Some("seed-trust \"$WB\"".to_string()),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(r#"} >> "$WB/launch.log" 2>&1"#),
+        "expected the setup/launch wrapper to redirect into launch.log in: {cmd}"
+    );
+
+    // The redirect group opens after `mkdir -p "$WB"` (so $WB exists before anything tries to
+    // write into it) and closes after the final `tmux pipe-pane` statement.
+    let mkdir_at = cmd.find(r#"mkdir -p "$WB""#).expect("mkdir present");
+    let group_open_at = cmd[mkdir_at..].find('{').map(|off| mkdir_at + off).unwrap();
+    let setup_at = cmd.find("seed-trust").expect("setup present");
+    let pipe_pane_at = cmd.find("tmux pipe-pane").expect("pipe-pane present");
+    let redirect_at = cmd.find(r#"} >> "$WB/launch.log""#).unwrap();
+    assert!(
+        mkdir_at < group_open_at,
+        "mkdir must run before the redirected group opens"
+    );
+    assert!(
+        group_open_at < setup_at,
+        "setup must run inside the redirected group"
+    );
+    assert!(
+        pipe_pane_at < redirect_at,
+        "pipe-pane must run inside the redirected group"
+    );
+}
+
+#[test]
 fn ensure_default_agents_writes_parsable_configs() {
     let dir = std::env::temp_dir().join("moadim-agents-defaults-test");
     let _ = std::fs::remove_dir_all(&dir);

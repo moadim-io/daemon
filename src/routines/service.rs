@@ -545,6 +545,43 @@ pub fn svc_update(
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Rename `old_name` to `new_name` in every routine's `machines` list, persist each changed
+/// routine to disk, and sync the crontab so the new machine identity takes effect immediately.
+///
+/// Called automatically by `put_machine` so that renaming this daemon's machine identity also
+/// updates all the routines that targeted it by the old name.
+pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) {
+    if old_name == new_name {
+        return;
+    }
+    let now = now_secs();
+    let updated: Vec<_> = {
+        let mut lock = store.lock_recover();
+        lock.values_mut()
+            .filter(|r| r.machines.iter().any(|m| m == old_name))
+            .map(|r| {
+                for m in &mut r.machines {
+                    if m == old_name {
+                        *m = new_name.to_string();
+                    }
+                }
+                r.updated_at = now;
+                r.clone()
+            })
+            .collect()
+    };
+    for routine in &updated {
+        if let Err(err) = write_routine(routine) {
+            log::warn!("failed to persist machine rename for routine {}: {err}", routine.id);
+        }
+    }
+    if !updated.is_empty() {
+        if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+            log::warn!("crontab sync after machine rename failed: {err}");
+        }
+    }
+}
+
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;

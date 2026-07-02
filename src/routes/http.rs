@@ -262,6 +262,9 @@ pub struct SetMachineRequest {
 /// Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name
 /// is empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;
 /// setting the name here persists it for when the env var is absent.
+///
+/// As a side-effect, every routine whose `machines` list contained the old name is updated in
+/// memory, on disk, and in the crontab so that the rename propagates atomically.
 #[utoipa::path(put, path = "/machine",
     request_body = SetMachineRequest,
     responses(
@@ -270,12 +273,16 @@ pub struct SetMachineRequest {
         (status = 500, description = "Write failed"),
     ))]
 pub async fn put_machine(
+    State(state): State<AppState>,
     Json(body): Json<SetMachineRequest>,
 ) -> Result<Json<MachineResponse>, (StatusCode, String)> {
-    match crate::machine::set_machine(&body.name) {
-        Ok(()) => Ok(Json(MachineResponse {
-            name: body.name.trim().to_string(),
-        })),
+    let old_name = crate::machine::current_machine();
+    let new_name = body.name.trim().to_string();
+    match crate::machine::set_machine(&new_name) {
+        Ok(()) => {
+            routines::svc_rename_machine(&state.routines, &old_name, &new_name);
+            Ok(Json(MachineResponse { name: new_name }))
+        }
         Err(err) if err.kind() == std::io::ErrorKind::InvalidInput => {
             Err((StatusCode::BAD_REQUEST, err.to_string()))
         }

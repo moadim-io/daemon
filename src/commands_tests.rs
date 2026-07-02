@@ -113,7 +113,7 @@ impl Drop for FakeServer {
 #[test]
 fn help_and_version_return_zero() {
     assert_eq!(run(argv(&["--help"])), 0);
-    assert_eq!(run(argv(&["cron-jobs", "--help"])), 0);
+    assert_eq!(run(argv(&["routines", "--help"])), 0);
     assert_eq!(run(argv(&["--version"])), 0);
 }
 
@@ -122,43 +122,12 @@ fn usage_errors_return_two() {
     // No subcommand, an unknown subcommand, and a missing required group all map to exit 2.
     assert_eq!(run(argv(&[])), 2);
     assert_eq!(run(argv(&["nonsense"])), 2);
-    assert_eq!(run(argv(&["cron-jobs"])), 2);
+    assert_eq!(run(argv(&["routines"])), 2);
 }
 
 #[test]
 fn invalid_json_flags_return_two_without_a_server() {
     // Body builders reject malformed JSON before any request is sent.
-    assert_eq!(
-        run(argv(&[
-            "cron-jobs",
-            "create",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-            "--metadata",
-            "{bad",
-        ])),
-        2
-    );
-    assert_eq!(
-        run(argv(&[
-            "cron-jobs",
-            "replace",
-            "id",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-            "--metadata",
-            "{bad",
-        ])),
-        2
-    );
-    assert_eq!(
-        run(argv(&["cron-jobs", "update", "id", "--metadata", "{bad"])),
-        2
-    );
     assert_eq!(
         run(argv(&[
             "routines",
@@ -204,11 +173,7 @@ fn invalid_json_flags_return_two_without_a_server() {
         ])),
         2
     );
-    // Malformed --machines JSON is rejected on the cron-job and routine update paths too.
-    assert_eq!(
-        run(argv(&["cron-jobs", "update", "id", "--machines", "{bad"])),
-        2
-    );
+    // Malformed --machines JSON is rejected on the routine update path too.
     assert_eq!(
         run(argv(&["routines", "update", "id", "--machines", "{bad"])),
         2
@@ -223,51 +188,6 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
     let _addr = EnvGuard::set(BIND_ENV, &server.addr);
 
     let calls: &[&[&str]] = &[
-        // cron jobs
-        &[
-            "cron-jobs",
-            "create",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-        ],
-        &[
-            "cron-jobs",
-            "create",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-            "--disabled",
-            "--metadata",
-            "{\"a\":1}",
-        ],
-        &["cron-jobs", "list"],
-        &["cron", "get", "abc"],
-        &[
-            "cron-jobs",
-            "update",
-            "abc",
-            "--schedule",
-            "* * * * *",
-            "--metadata",
-            "{\"a\":1}",
-            "--enabled",
-            "true",
-        ],
-        &[
-            "cron-jobs",
-            "replace",
-            "abc",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-        ],
-        &["cron-jobs", "delete", "abc"],
-        &["cron-jobs", "trigger", "abc"],
-        &["cron-jobs", "logs", "abc"],
         // routines
         &[
             "routines",
@@ -295,6 +215,10 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "--disabled",
             "--repositories",
             "[]",
+            "--tag",
+            "triage",
+            "--tag",
+            "nightly",
         ],
         &["routines", "list"],
         &["routines", "get", "rid"],
@@ -312,6 +236,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "10",
             "--max-runtime-secs",
             "20",
+            "--tag",
+            "ops",
         ],
         &[
             "routines",
@@ -346,7 +272,7 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
 fn logs_print_raw_when_body_is_not_json() {
     let server = FakeServer::start(200, "plain log line\nsecond line");
     let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-    assert_eq!(run(argv(&["cron-jobs", "logs", "abc"])), 0);
+    assert_eq!(run(argv(&["routines", "logs", "abc"])), 0);
 }
 
 #[test]
@@ -362,13 +288,13 @@ fn non_2xx_status_returns_one() {
     {
         let server = FakeServer::start(404, "{\"error\":\"not found\"}");
         let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-        assert_eq!(run(argv(&["cron-jobs", "get", "missing"])), 1);
+        assert_eq!(run(argv(&["routines", "get", "missing"])), 1);
     }
     // An empty error body exercises the "skip the body" branch.
     {
         let server = FakeServer::start(500, "");
         let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-        assert_eq!(run(argv(&["cron-jobs", "list"])), 1);
+        assert_eq!(run(argv(&["routines", "list"])), 1);
     }
 }
 
@@ -376,7 +302,7 @@ fn non_2xx_status_returns_one() {
 fn no_server_returns_not_running_exit_code() {
     let _addr = EnvGuard::set(BIND_ENV, UNREACHABLE_ADDR);
     assert_eq!(
-        run(argv(&["cron-jobs", "list"])),
+        run(argv(&["routines", "list"])),
         crate::cli::EXIT_NOT_RUNNING
     );
     // `schedule trigger` reaches the same not-running path.
@@ -404,33 +330,6 @@ fn object_and_to_body_build_compact_json() {
 }
 
 #[test]
-fn cron_body_sets_enabled_from_disabled_flag() {
-    let enabled: Value = serde_json::from_str(
-        &cron_body("* * * * *".into(), "h".into(), None, None, false).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(enabled["enabled"], Value::Bool(true));
-    let disabled: Value =
-        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, None, true).unwrap())
-            .unwrap();
-    assert_eq!(disabled["enabled"], Value::Bool(false));
-}
-
-#[test]
-fn cron_body_rejects_bad_metadata() {
-    assert_eq!(
-        cron_body(
-            "* * * * *".into(),
-            "h".into(),
-            Some("{bad".into()),
-            None,
-            false
-        ),
-        Err(2)
-    );
-}
-
-#[test]
 fn routine_body_serializes_all_fields() {
     let value: Value = serde_json::from_str(
         &routine_body(
@@ -442,6 +341,7 @@ fn routine_body_serializes_all_fields() {
             Some("[\"work\"]".into()),
             Some(30),
             Some(60),
+            vec!["triage".to_string(), "nightly".to_string()],
             false,
         )
         .unwrap(),
@@ -454,6 +354,13 @@ fn routine_body_serializes_all_fields() {
         Value::Array(vec![Value::String("work".to_string())])
     );
     assert_eq!(value["ttl_secs"], Value::from(30));
+    assert_eq!(
+        value["tags"],
+        Value::Array(vec![
+            Value::String("triage".to_string()),
+            Value::String("nightly".to_string()),
+        ])
+    );
     assert_eq!(value["enabled"], Value::Bool(true));
 }
 
@@ -469,6 +376,27 @@ fn routine_body_rejects_bad_repositories() {
             None,
             None,
             None,
+            vec![],
+            false,
+        ),
+        Err(2)
+    );
+}
+
+#[test]
+fn routine_body_rejects_bad_machines() {
+    // Covers the `?` error branch on the `machines` insert_json_opt call (L509).
+    assert_eq!(
+        routine_body(
+            "* * * * *".into(),
+            "t".into(),
+            "a".into(),
+            "p".into(),
+            None,
+            Some("{bad".into()),
+            None,
+            None,
+            vec![],
             false,
         ),
         Err(2)

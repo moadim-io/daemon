@@ -26,6 +26,16 @@ fn second_default_is_the_1_percent() {
 }
 
 #[test]
+fn third_default_is_token_trim() {
+    let spec = &DEFAULT_ROUTINES[2];
+    assert_eq!(spec.title, "Token Trim");
+    assert!(spec.prompt.contains("list_routines"));
+    assert!(spec.prompt.contains("update_routine"));
+    assert!(spec.prompt.contains("NOT_REPO"));
+    assert!(spec.prompt.contains("token"));
+}
+
+#[test]
 fn every_schedule_is_a_valid_cron() {
     for spec in DEFAULT_ROUTINES {
         let normalized = normalize_schedule(spec.schedule);
@@ -114,6 +124,51 @@ fn reconcile_keeps_enabled_default_enabled() {
     assert!(updated.enabled);
 }
 
+#[test]
+fn reconcile_treats_empty_machines_as_drift_and_seeds_current_machine() {
+    // Legacy default routines seeded before machine-awareness were stored with an empty
+    // `machines` list, leaving them permanently dormant. `reconcile` must detect this
+    // as drift (even when all other daemon-owned fields are current) and seed the current
+    // machine so the routine becomes active. (#723)
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.machines = Vec::new(); // simulate pre-machine-awareness legacy state
+    let updated = reconcile(spec, &cur, 200)
+        .expect("empty machines list must be treated as drift and trigger a rewrite");
+    assert!(
+        !updated.machines.is_empty(),
+        "reconcile must seed the current machine when cur.machines is empty"
+    );
+}
+
+#[test]
+fn reconcile_returns_none_when_machines_already_set_and_otherwise_current() {
+    // A correctly seeded routine (non-empty machines, current content) must NOT be rewritten
+    // just because reconcile now inspects the machines list.
+    let spec = &DEFAULT_ROUTINES[0];
+    let cur = materialize(spec, 100);
+    assert!(
+        !cur.machines.is_empty(),
+        "materialize must assign a machine — test pre-condition"
+    );
+    assert!(
+        reconcile(spec, &cur, 200).is_none(),
+        "a routine with current content and a non-empty machines list must not trigger a rewrite"
+    );
+}
+
+#[test]
+fn materialize_assigns_non_empty_machines_list() {
+    // materialize must always seed the current machine so a freshly created default runs
+    // immediately instead of being dormant (#723).
+    let spec = &DEFAULT_ROUTINES[0];
+    let routine = materialize(spec, 0);
+    assert!(
+        !routine.machines.is_empty(),
+        "materialize must assign the current machine to a freshly seeded default routine"
+    );
+}
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -130,17 +185,24 @@ fn scratch_home() -> std::path::PathBuf {
 fn with_redirected_home(body: impl FnOnce(&std::path::Path)) {
     let home = scratch_home();
     std::fs::create_dir_all(&home).unwrap();
-    let previous = std::env::var_os("HOME");
+    let previous_home = std::env::var_os("HOME");
+    let previous_xdg = std::env::var_os("XDG_CONFIG_HOME");
     // SAFETY: tests in this crate run single-threaded per binary; we set and immediately restore the
-    // override around this call.
+    // overrides around this call. XDG_CONFIG_HOME is also redirected so config_root() uses the
+    // temp home rather than a CI runner's real XDG path.
     unsafe {
         std::env::set_var("HOME", &home);
+        std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));
     }
     body(&home);
     unsafe {
-        match previous {
+        match previous_home {
             Some(value) => std::env::set_var("HOME", value),
             None => std::env::remove_var("HOME"),
+        }
+        match previous_xdg {
+            Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
         }
     }
     let _ = std::fs::remove_dir_all(&home);

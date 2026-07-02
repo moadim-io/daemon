@@ -40,10 +40,54 @@ fn from_routine_populates_derived_fields() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     };
     let resp = RoutineResponse::from_routine(routine);
     assert!(resp.schedule_description.is_some());
     assert!(resp.file_path.contains("routine.toml"));
+    assert_eq!(resp.flag_count, 0);
+}
+
+#[test]
+fn from_routine_counts_open_flags() {
+    let routine = Routine {
+        id: "rid2".into(),
+        schedule: "@daily".into(),
+        title: "Flag Count Model Test ZZZ".into(),
+        agent: "claude".into(),
+        prompt: "p".into(),
+        repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
+        enabled: true,
+        source: "managed".into(),
+        created_at: 0,
+        updated_at: 0,
+        last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        tags: vec![],
+        ttl_secs: None,
+        max_runtime_secs: None,
+    };
+    let slug = slugify(&routine.title);
+    crate::routines::flags::create_flag(
+        &slug,
+        "bug",
+        "d1",
+        crate::routines::flags::FlagScope::General,
+    )
+    .unwrap();
+    crate::routines::flags::create_flag(
+        &slug,
+        "gap",
+        "d2",
+        crate::routines::flags::FlagScope::Local,
+    )
+    .unwrap();
+
+    let resp = RoutineResponse::from_routine(routine);
+    assert_eq!(resp.flag_count, 2);
+
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
 }

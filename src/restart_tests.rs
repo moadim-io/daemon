@@ -242,3 +242,29 @@ fn timeout_and_poll_fall_back_to_defaults() {
         }
     }
 }
+
+/// Cover the `if let Some(pid) = read_pid_file() { kill_pid(pid); }` closing `}` when
+/// `read_pid_file()` returns `None` — i.e. the server is running but no pid file exists.
+/// The server then stops on its own (via `stop_after`) so the second `wait_until_stopped()`
+/// succeeds and `stop_running_and_wait` returns `Ok`.
+#[cfg(unix)]
+#[test]
+fn stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops() {
+    let server = FakeServer::start();
+    let home = temp_home("no-pid-file");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "60");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    // Deliberately write NO pid file: read_pid_file() will return None and the
+    // `if let Some(pid)` body is skipped, exercising the closing `}` on that branch.
+    //
+    // The server stops after the first wait has timed out but before the second wait ends.
+    server.stop_after(Duration::from_millis(80));
+    let result = stop_running_and_wait();
+    assert!(
+        result.is_ok(),
+        "should succeed once the server stops: {result:?}"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}

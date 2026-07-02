@@ -1,13 +1,13 @@
 //! Routines tab: list, create, edit, trigger, logs, and delete agent-driven scheduled jobs.
 //!
-//! Mirrors the cron-jobs UI but targets the `/routines` API. A routine launches an AI agent
-//! (claude, codex, …) on a schedule instead of running a handler script.
+//! Targets the `/routines` API. A routine launches an AI agent (claude, codex, …) on a
+//! schedule.
 
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
@@ -19,10 +19,13 @@ use yew::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::log_viewer::LogViewer;
-use crate::machines::MachinesPicker;
+use crate::machines::{api_current_machine, MachinesPicker};
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
-use crate::{describe_cron_live, parse_cron, reltime, ToastKind};
+use crate::schedule::{
+    fires_within, fmt_until, fmt_when, month_start, next_fire_after, next_fires,
+    occurrences_per_day, CAL_MONTHS, GRID_CELLS, WEEKDAYS,
+};
+use crate::{describe_cron_live, reltime, ToastKind};
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
@@ -45,6 +48,7 @@ pub struct Routine {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -65,6 +69,9 @@ pub struct Routine {
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
+    /// Free-form labels for the routine.
+    #[serde(default)]
+    pub tags: Vec<String>,
     // Derived (absent on the bare Routine returned by /trigger — default to safe values).
     #[serde(default)]
     pub agent_registered: bool,
@@ -72,6 +79,29 @@ pub struct Routine {
     pub file_path: String,
     #[serde(default)]
     pub schedule_description: Option<String>,
+    /// Number of open flags raised against this routine (see [`Flag`]).
+    #[serde(default)]
+    pub flag_count: usize,
+}
+
+/// Whether a flag file is committed to version control or kept machine-local.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagScope {
+    General,
+    Local,
+}
+
+/// A flag raised against a routine (mirrors the server `Flag`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Flag {
+    pub filename: String,
+    #[serde(rename = "type")]
+    pub flag_type: String,
+    pub description: String,
+    pub scope: FlagScope,
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,6 +116,8 @@ pub struct CreateRoutineRequest {
     pub enabled: bool,
     /// Workbench retention (seconds); `None` lets the server apply its default.
     pub ttl_secs: Option<u64>,
+    /// Free-form labels for the routine.
+    pub tags: Vec<String>,
 }
 
 /// Result of `POST /routines/cleanup` (mirrors the server `CleanupResponse`).
@@ -112,6 +144,8 @@ pub struct UpdateRoutineRequest {
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 // ─── API layer ────────────────────────────────────────────────────────────────
@@ -185,6 +219,35 @@ async fn api_trigger(id: &str) -> Result<Routine, String> {
     resp.json::<Routine>().await.map_err(|e| e.to_string())
 }
 
+/// Lock state as returned by `GET /api/v1/routines/lock`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+pub struct LockStatus {
+    pub shared: bool,
+    pub local: bool,
+    pub locked: bool,
+}
+
+async fn api_lock_status() -> Result<LockStatus, String> {
+    Request::get("/api/v1/routines/lock")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<LockStatus>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn api_unlock(scope: &str) -> Result<LockStatus, String> {
+    let resp = Request::delete(&format!("/api/v1/routines/lock?scope={scope}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<LockStatus>().await.map_err(|e| e.to_string())
+}
+
 async fn api_cleanup() -> Result<usize, String> {
     let resp = Request::post("/api/v1/routines/cleanup")
         .send()
@@ -208,6 +271,29 @@ async fn api_logs(id: &str) -> Result<String, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.text().await.map_err(|e| e.to_string())
+}
+
+async fn api_flags(id: &str) -> Result<Vec<Flag>, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/flags"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<Flag>>().await.map_err(|e| e.to_string())
+}
+
+async fn api_resolve_flag(id: &str, filename: &str) -> Result<(), String> {
+    let resp = Request::delete(&format!("/api/v1/routines/{id}/flags/{filename}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
 }
 
 // ─── Faceted filter ───────────────────────────────────────────────────────────
@@ -324,6 +410,35 @@ impl AgentFacet {
     }
 }
 
+/// Repository facet: all repositories, or one specific repository URL.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RepositoryFacet {
+    #[default]
+    All,
+    Named(String),
+}
+
+impl RepositoryFacet {
+    const REPOSITORY_ALL: &'static str = "\u{0}all";
+
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            RepositoryFacet::All => Self::REPOSITORY_ALL.to_string(),
+            RepositoryFacet::Named(r) => r.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        if v == Self::REPOSITORY_ALL {
+            RepositoryFacet::All
+        } else {
+            RepositoryFacet::Named(v.to_string())
+        }
+    }
+}
+
 /// Combined free-text + faceted filter applied client-side to the loaded routines.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RoutineFilter {
@@ -333,6 +448,7 @@ pub struct RoutineFilter {
     pub status: RoutineStatusFacet,
     pub agent: AgentFacet,
     pub machine: RoutineMachineFacet,
+    pub repository: RepositoryFacet,
 }
 
 impl RoutineFilter {
@@ -343,6 +459,7 @@ impl RoutineFilter {
             || self.status != RoutineStatusFacet::All
             || self.agent != AgentFacet::All
             || self.machine != RoutineMachineFacet::Any
+            || self.repository != RepositoryFacet::All
     }
 
     /// Does this routine survive the filter? Facets AND together.
@@ -372,6 +489,13 @@ impl RoutineFilter {
             RoutineMachineFacet::Machine(m) if !r.machines.iter().any(|x| x == m) => return false,
             _ => {}
         }
+        match &self.repository {
+            RepositoryFacet::All => {}
+            RepositoryFacet::Named(rp) if !r.repositories.iter().any(|x| x.repository == *rp) => {
+                return false
+            }
+            _ => {}
+        }
         let q = self.query.trim().to_lowercase();
         if !q.is_empty() {
             let repos = r
@@ -399,6 +523,95 @@ impl RoutineFilter {
         }
         true
     }
+}
+
+/// Returns the most-recent trigger timestamp across both manual and scheduled fires.
+/// `None` means the routine has never been triggered.
+///
+/// Uses the max of the two Optional timestamps so that whichever kind fired most
+/// recently is what the LAST FIRE column shows.
+pub(crate) fn last_fire_at(r: &Routine) -> Option<u64> {
+    match (r.last_manual_trigger_at, r.last_scheduled_trigger_at) {
+        (None, None) => None,
+        (Some(m), None) => Some(m),
+        (None, Some(s)) => Some(s),
+        (Some(m), Some(s)) => Some(m.max(s)),
+    }
+}
+
+// ─── Health status ────────────────────────────────────────────────────────────
+
+/// At-a-glance operational health derived from a routine's current fields.
+/// Covers the same fault categories as the Overview attention-reason triage
+/// plus the `Disabled` state so every row in the Routines table has a badge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoutineHealth {
+    /// Enabled but assigned to no machine — fires nowhere.
+    Dormant,
+    /// Enabled, has a machine, but the cron expression yields no future fire.
+    DeadSchedule,
+    /// Enabled, scheduled, has a machine, but agent config is missing.
+    AgentMissing,
+    /// `enabled: false` — intentionally paused.
+    Disabled,
+    /// Enabled, scheduled, has a machine, agent registered — fully operational.
+    Healthy,
+}
+
+impl RoutineHealth {
+    /// Lower number = more urgent. Ascending sort puts broken rows first.
+    pub(crate) fn priority(self) -> u8 {
+        match self {
+            RoutineHealth::Dormant => 0,
+            RoutineHealth::DeadSchedule => 1,
+            RoutineHealth::AgentMissing => 2,
+            RoutineHealth::Disabled => 3,
+            RoutineHealth::Healthy => 4,
+        }
+    }
+
+    /// Short uppercase label shown in the badge.
+    pub(crate) fn badge(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "DORMANT",
+            RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
+            RoutineHealth::AgentMissing => "AGENT MISSING",
+            RoutineHealth::Disabled => "DISABLED",
+            RoutineHealth::Healthy => "HEALTHY",
+        }
+    }
+
+    /// CSS class string for the badge `<span>`.
+    pub(crate) fn badge_class(self) -> &'static str {
+        match self {
+            RoutineHealth::Dormant => "health-badge dormant",
+            RoutineHealth::DeadSchedule => "health-badge dead",
+            RoutineHealth::AgentMissing => "health-badge agent-missing",
+            RoutineHealth::Disabled => "health-badge disabled",
+            RoutineHealth::Healthy => "health-badge healthy",
+        }
+    }
+}
+
+/// Derive the operational health of a routine as of `now`.
+///
+/// Faults are checked in priority order — `Dormant` outranks `DeadSchedule`
+/// which outranks `AgentMissing` — matching the Overview triage ordering.
+#[must_use]
+pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
+    if !r.enabled {
+        return RoutineHealth::Disabled;
+    }
+    if r.machines.iter().all(|m| m.trim().is_empty()) {
+        return RoutineHealth::Dormant;
+    }
+    if next_fire_after(&r.schedule, now).is_none() {
+        return RoutineHealth::DeadSchedule;
+    }
+    if !r.agent_registered {
+        return RoutineHealth::AgentMissing;
+    }
+    RoutineHealth::Healthy
 }
 
 /// Routines surviving `filter`, preserving the input order.
@@ -438,10 +651,16 @@ pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
     set.into_iter().collect()
 }
 
-/// Count of routines with no machine assigned.
+/// Distinct repository URLs across all routines, sorted.
 #[must_use]
-pub fn unassigned_routines_count(routines: &[Routine]) -> usize {
-    routines.iter().filter(|r| r.machines.is_empty()).count()
+pub fn distinct_repositories(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        for repo in &r.repositories {
+            set.insert(repo.repository.clone());
+        }
+    }
+    set.into_iter().collect()
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -452,6 +671,9 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    Flags(String),
+    /// Pre-filled create form cloned from an existing routine.
+    Clone(Box<Routine>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -471,12 +693,14 @@ pub enum RView {
     Day,
 }
 
-/// Column the routine table is sorted by (click-to-sort, matching the cron-jobs table pattern).
+/// Column the routine table is sorted by (click-to-sort).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RCol {
     Title,
     NextRun,
+    LastFire,
     Agent,
+    Health,
     Enabled,
     Updated,
 }
@@ -500,6 +724,96 @@ impl RDir {
     }
 }
 
+// ─── Group-by ────────────────────────────────────────────────────────────────
+
+/// Dimension used to partition the Routines table into labelled sections.
+/// Orthogonal to faceted filtering and column sorting — composes with both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RGroupBy {
+    #[default]
+    None,
+    /// Group by the routine's agent (claude, codex, …).
+    Agent,
+    /// Group by target machine; routines with no machine share an `(unassigned)` section.
+    Machine,
+    /// Group by enabled/disabled status.
+    Status,
+}
+
+impl RGroupBy {
+    /// Stable token stored as the `<select>` option value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RGroupBy::None => "none",
+            RGroupBy::Agent => "agent",
+            RGroupBy::Machine => "machine",
+            RGroupBy::Status => "status",
+        }
+    }
+
+    /// Parse a token back to a variant, defaulting to `None` for unknown values.
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "agent" => RGroupBy::Agent,
+            "machine" => RGroupBy::Machine,
+            "status" => RGroupBy::Status,
+            _ => RGroupBy::None,
+        }
+    }
+
+    /// Short human label shown in the selector dropdown.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            RGroupBy::None => "None",
+            RGroupBy::Agent => "Agent",
+            RGroupBy::Machine => "Machine",
+            RGroupBy::Status => "Status",
+        }
+    }
+}
+
+/// Group key for a single routine under the given dimension.
+#[must_use]
+pub fn routine_group_key(r: &Routine, by: RGroupBy) -> String {
+    match by {
+        RGroupBy::None => String::new(),
+        RGroupBy::Agent => r.agent.clone(),
+        RGroupBy::Machine => r
+            .machines
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "(unassigned)".to_string()),
+        RGroupBy::Status => {
+            if r.enabled {
+                "Enabled".to_string()
+            } else {
+                "Disabled".to_string()
+            }
+        }
+    }
+}
+
+/// Partition `routines` into `(group_label, routines_in_group)` pairs sorted
+/// alphabetically by label. Within each group the input order is preserved.
+/// When `by` is `None`, returns a single pair with an empty label.
+#[must_use]
+pub fn group_routines(routines: &[Routine], by: RGroupBy) -> Vec<(String, Vec<Routine>)> {
+    use std::collections::BTreeMap;
+    if by == RGroupBy::None {
+        return vec![(String::new(), routines.to_vec())];
+    }
+    let mut map: BTreeMap<String, Vec<Routine>> = BTreeMap::new();
+    for r in routines {
+        map.entry(routine_group_key(r, by))
+            .or_default()
+            .push(r.clone());
+    }
+    map.into_iter().collect()
+}
+
 /// Return `routines` sorted by `col` in `dir` order. When `col` is `None` the
 /// server/insertion order is preserved. Ties break by id for a stable sort.
 #[must_use]
@@ -519,6 +833,10 @@ pub fn sort_routines(
             RCol::Agent => a.agent.to_lowercase().cmp(&b.agent.to_lowercase()),
             RCol::Enabled => a.enabled.cmp(&b.enabled),
             RCol::Updated => a.updated_at.cmp(&b.updated_at),
+            RCol::Health => routine_health(a, now)
+                .priority()
+                .cmp(&routine_health(b, now).priority()),
+            RCol::LastFire => last_fire_at(a).cmp(&last_fire_at(b)),
             RCol::NextRun => {
                 let next_of = |r: &Routine| {
                     if r.enabled {
@@ -560,6 +878,12 @@ pub struct RState {
     pub sort_dir: RDir,
     /// IDs of currently selected routines (multiselect for bulk actions).
     pub selected: BTreeSet<String>,
+    /// Active group-by dimension; `None` renders a flat list.
+    pub group_by: RGroupBy,
+    /// Most recently fetched global lock status; `None` until the first fetch completes.
+    pub lock_status: Option<LockStatus>,
+    /// This machine's resolved name from the daemon, used to default the machine facet.
+    pub current_machine: Option<String>,
 }
 
 impl Default for RState {
@@ -574,6 +898,9 @@ impl Default for RState {
             sort_col: None,
             sort_dir: RDir::default(),
             selected: BTreeSet::new(),
+            group_by: RGroupBy::default(),
+            lock_status: None,
+            current_machine: None,
         }
     }
 }
@@ -583,6 +910,9 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    GoToFlags(String),
+    /// Open the create form pre-filled with a copy of the named routine.
+    GoToClone(String),
     OpenEdit(String),
     OpenConfirmDelete {
         id: String,
@@ -595,7 +925,9 @@ pub enum RAction {
     SetStatusFacet(RoutineStatusFacet),
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
+    SetRepositoryFacet(RepositoryFacet),
     ClearFilters,
+    SetGroupBy(RGroupBy),
     SortByCol(RCol),
     Upsert(Box<Routine>),
     Remove(String),
@@ -607,6 +939,10 @@ pub enum RAction {
     SelectAll(Vec<String>),
     /// Clear the entire selection.
     ClearSelection,
+    /// Received updated lock status from the server.
+    LockStatusLoaded(LockStatus),
+    /// Resolved current machine name received from the daemon; defaults machine facet to it.
+    CurrentMachineLoaded(String),
 }
 
 impl Reducible for RState {
@@ -625,6 +961,12 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToFlags(id) => s.page = RPage::Flags(id),
+            RAction::GoToClone(id) => {
+                if let Some(source) = s.routines.iter().find(|x| x.id == id) {
+                    s.page = RPage::Clone(Box::new(source.clone()));
+                }
+            }
             RAction::OpenEdit(id) => s.modal = RModal::Edit(id),
             RAction::OpenConfirmDelete { id, title } => {
                 s.modal = RModal::ConfirmDelete { id, title }
@@ -640,7 +982,9 @@ impl Reducible for RState {
             RAction::SetStatusFacet(st) => s.filter.status = st,
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
+            RAction::SetRepositoryFacet(rp) => s.filter.repository = rp,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
+            RAction::SetGroupBy(by) => s.group_by = by,
             RAction::SortByCol(col) => {
                 if s.sort_col == Some(col) {
                     s.sort_dir = s.sort_dir.flip();
@@ -676,6 +1020,13 @@ impl Reducible for RState {
             }
             RAction::ClearSelection => {
                 s.selected.clear();
+            }
+            RAction::LockStatusLoaded(status) => {
+                s.lock_status = Some(status);
+            }
+            RAction::CurrentMachineLoaded(name) => {
+                s.current_machine = Some(name.clone());
+                s.filter.machine = RoutineMachineFacet::Machine(name);
             }
         }
         s.into()
@@ -736,6 +1087,30 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         });
     }
 
+    // Fetch and apply the current machine as the default machine filter.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(name) = api_current_machine().await {
+                    state.dispatch(RAction::CurrentMachineLoaded(name));
+                }
+            });
+        });
+    }
+
+    // Fetch lock status on mount and whenever routines reload.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(status) = api_lock_status().await {
+                    state.dispatch(RAction::LockStatusLoaded(status));
+                }
+            });
+        });
+    }
+
     // Auto-refresh loop, re-armed whenever the chosen interval changes. `Off`
     // installs no loop (today's load-once behaviour); any cadence re-fetches the
     // list on that period via the existing endpoint. The cleanup flag stops the
@@ -781,6 +1156,28 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         })
     };
 
+    let on_unlock_all = {
+        let state = state.clone();
+        let toast = toast.clone();
+        let ok = ok_toast.clone();
+        Callback::from(move |_: MouseEvent| {
+            let state = state.clone();
+            let toast = toast.clone();
+            let ok = ok.clone();
+            spawn_local(async move {
+                match api_unlock("all").await {
+                    Ok(status) => {
+                        state.dispatch(RAction::LockStatusLoaded(status));
+                        ok("Routines unlocked");
+                    }
+                    Err(err_msg) => {
+                        toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err))
+                    }
+                }
+            })
+        })
+    };
+
     let on_new = {
         let state = state.clone();
         Callback::from(move |_: MouseEvent| state.dispatch(RAction::GoToNew))
@@ -797,6 +1194,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::GoToLogs(id)))
     };
+    let on_flags = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToFlags(id)))
+    };
     let on_back = {
         let state = state.clone();
         Callback::from(move |_: ()| state.dispatch(RAction::GoToList))
@@ -804,6 +1205,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_edit = {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::OpenEdit(id)))
+    };
+    let on_clone = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToClone(id)))
     };
     let on_ask_delete = {
         let state = state.clone();
@@ -814,6 +1219,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_view = {
         let state = state.clone();
         Callback::from(move |view: RView| state.dispatch(RAction::SetView(view)))
+    };
+    let on_set_group_by = {
+        let state = state.clone();
+        Callback::from(move |by: RGroupBy| state.dispatch(RAction::SetGroupBy(by)))
     };
     let on_set_query = {
         let state = state.clone();
@@ -830,6 +1239,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_machine = {
         let state = state.clone();
         Callback::from(move |m: RoutineMachineFacet| state.dispatch(RAction::SetMachineFacet(m)))
+    };
+    let on_set_repository = {
+        let state = state.clone();
+        Callback::from(move |rp: RepositoryFacet| state.dispatch(RAction::SetRepositoryFacet(rp)))
     };
     let on_clear_filters = {
         let state = state.clone();
@@ -993,6 +1406,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         machines: Some(req.machines),
                         enabled: Some(req.enabled),
                         ttl_secs: req.ttl_secs,
+                        tags: Some(req.tags),
                     };
                     match api_update(id, &upd).await {
                         Ok(r) => {
@@ -1144,19 +1558,29 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let loading = state.loading;
     let page = state.page.clone();
     let modal = state.modal.clone();
+    let lock_status = state.lock_status.clone();
     let view = state.view;
     let filter = state.filter.clone();
     let sort_col = state.sort_col;
     let sort_dir = state.sort_dir;
     let selected = state.selected.clone();
+    let group_by = state.group_by;
 
     // Faceted filter + sort applied client-side.
     let now_val = *now;
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
-    let machine_options = distinct_machines_r(&routines);
-    let has_unassigned = unassigned_routines_count(&routines) > 0;
+    let repository_options = distinct_repositories(&routines);
+    let mut machine_options = distinct_machines_r(&routines);
+    // Always include the current machine so the default filter option is visible in the dropdown
+    // even before any routine targets it.
+    if let Some(cm) = &state.current_machine {
+        if !machine_options.contains(cm) {
+            machine_options.push(cm.clone());
+            machine_options.sort();
+        }
+    }
     let filter_active = filter.is_active();
     let visible = {
         let filtered = filter_routines(&routines, &filter, now_val, window);
@@ -1176,6 +1600,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                     RPage::New => html! {
                         <RoutineForm editing={None} on_cancel={on_cancel} on_save={on_create} />
                     },
+                    RPage::Clone(source) => {
+                        let mut pre = *source;
+                        pre.title = clone_title(&pre.title);
+                        html! {
+                            <RoutineForm editing={Some(pre)} on_cancel={on_cancel} on_save={on_create} />
+                        }
+                    },
                     RPage::Logs(id) => {
                         let title = routines.iter()
                             .find(|r| r.id == id)
@@ -1183,8 +1614,16 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             .unwrap_or_default();
                         html! { <RoutineLogs id={id} title={title} on_back={on_back} /> }
                     },
+                    RPage::Flags(id) => {
+                        let title = routines.iter()
+                            .find(|r| r.id == id)
+                            .map(|r| r.title.clone())
+                            .unwrap_or_default();
+                        html! { <RoutineFlags id={id} title={title} on_back={on_back} /> }
+                    },
                     RPage::List => html! {
                         <main>
+                            <GlobalLockBanner status={lock_status} on_unlock={on_unlock_all} />
                             <RoutineStatsBar
                                 routines={routines.clone()}
                                 now={now_val}
@@ -1199,6 +1638,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         updated_at_ms={*updated_at}
                                         on_change={on_set_interval}
                                     />
+                                    if view == RView::Table {
+                                        <RoutineGroupBySelector
+                                            group_by={group_by}
+                                            on_change={on_set_group_by}
+                                        />
+                                    }
                                     <ViewToggle view={view} on_set_view={on_set_view} />
                                     <button class="btn btn-ghost btn-sm" onclick={on_cleanup}
                                         title="Reap finished, expired run workbenches now">{"CLEANUP NOW"}</button>
@@ -1209,7 +1654,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 filter={filter.clone()}
                                 agents={agent_options}
                                 machines={machine_options}
-                                has_unassigned={has_unassigned}
+                                repositories={repository_options}
                                 shown={shown}
                                 total={total_routines}
                                 search_ref={search_ref.clone()}
@@ -1217,6 +1662,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_status={on_set_status}
                                 on_agent={on_set_agent}
                                 on_machine={on_set_machine}
+                                on_repository={on_set_repository}
                                 on_clear={on_clear_filters.clone()}
                             />
                             <RoutineBulkBar
@@ -1239,24 +1685,28 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_select_all={on_select_all}
                                             sort_col={sort_col}
                                             sort_dir={sort_dir}
+                                            group_by={group_by}
                                             on_sort={on_col_sort}
                                             on_edit={on_edit}
+                                            on_clone={on_clone}
                                             on_delete={on_ask_delete}
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
+                                            on_flags={on_flags}
                                             on_clear_filters={on_clear_filters}
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
+                                            id: Some(r.id.clone()),
                                             label: r.title.clone(),
                                             schedule: r.schedule.clone(),
                                         }).collect::<Vec<_>>();
-                                        html! { <DayTimeline items={items} loading={loading} /> }
+                                        html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit)} /> }
                                     },
                                 }
                             }
@@ -1291,6 +1741,48 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     }
 }
 
+// ─── Global lock banner ───────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct GlobalLockBannerProps {
+    /// Current lock status; `None` hides the banner (status not yet fetched).
+    pub status: Option<LockStatus>,
+    /// Called when the user clicks UNLOCK ALL.
+    pub on_unlock: Callback<MouseEvent>,
+}
+
+/// Banner shown above the routine list when the global lock is active.
+///
+/// Displays which sentinel(s) are present (SHARED / LOCAL) and an UNLOCK ALL button
+/// that removes both with `DELETE /api/v1/routines/lock?scope=all`.
+#[function_component(GlobalLockBanner)]
+pub fn global_lock_banner(props: &GlobalLockBannerProps) -> Html {
+    let Some(ref status) = props.status else {
+        return html! {};
+    };
+    if !status.locked {
+        return html! {};
+    }
+    html! {
+        <div class="lock-banner">
+            <div class="lock-banner-msg">
+                {"⚠ ROUTINES GLOBALLY LOCKED — scheduling and manual triggers paused"}
+                if status.shared {
+                    <span class="lock-scope-tag">{"SHARED .lock"}</span>
+                }
+                if status.local {
+                    <span class="lock-scope-tag">{"LOCAL .local.lock"}</span>
+                }
+            </div>
+            <div class="lock-banner-acts">
+                <button class="btn btn-ghost btn-sm" onclick={props.on_unlock.clone()}>
+                    {"UNLOCK ALL"}
+                </button>
+            </div>
+        </div>
+    }
+}
+
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
@@ -1307,7 +1799,7 @@ pub struct StatsBarProps {
 /// Cross-filterable KPI stat tiles for the Routines page.
 ///
 /// Clicking ENABLED / DISABLED / DUE SOON applies (or clears, if already active)
-/// the matching status facet on the list below, matching the Cron Jobs page pattern.
+/// the matching status facet on the list below.
 #[function_component(RoutineStatsBar)]
 pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
@@ -1396,6 +1888,45 @@ pub fn view_toggle(props: &ViewToggleProps) -> Html {
     }
 }
 
+// ─── Group-by selector ────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct GroupBySelectorProps {
+    pub group_by: RGroupBy,
+    pub on_change: Callback<RGroupBy>,
+}
+
+/// Drop-down that lets the operator choose how to partition the Routines table.
+/// Placed in the section toolbar next to the view toggle; hidden for Calendar/Day views.
+#[function_component(RoutineGroupBySelector)]
+pub fn routine_group_by_selector(props: &GroupBySelectorProps) -> Html {
+    let on_change = props.on_change.clone();
+    let on_select = Callback::from(move |e: Event| {
+        let select: HtmlSelectElement = e.target_unchecked_into();
+        on_change.emit(RGroupBy::from_str(&select.value()));
+    });
+    let cur = props.group_by.as_str();
+    html! {
+        <div class="group-by-ctrl">
+            <label class="filter-label" for="routine-group-by-select">{"GROUP BY"}</label>
+            <select
+                id="routine-group-by-select"
+                class="filter-select"
+                aria-label="Group routines by"
+                onchange={on_select}
+            >
+                { for [RGroupBy::None, RGroupBy::Agent, RGroupBy::Machine, RGroupBy::Status].iter()
+                    .map(|&by| html! {
+                        <option value={by.as_str()} selected={cur == by.as_str()}>
+                            { by.label() }
+                        </option>
+                    })
+                }
+            </select>
+        </div>
+    }
+}
+
 // ─── Filter & sort bar ────────────────────────────────────────────────────────
 
 #[derive(Properties, PartialEq)]
@@ -1405,8 +1936,8 @@ pub struct FilterSortBarProps {
     pub agents: Vec<String>,
     /// Distinct machine ids across all routines, for the machine-facet options.
     pub machines: Vec<String>,
-    /// Whether at least one dormant (no-machine) routine exists.
-    pub has_unassigned: bool,
+    /// Distinct repository URLs across all routines, for the repository-facet options.
+    pub repositories: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -1416,6 +1947,7 @@ pub struct FilterSortBarProps {
     pub on_status: Callback<RoutineStatusFacet>,
     pub on_agent: Callback<AgentFacet>,
     pub on_machine: Callback<RoutineMachineFacet>,
+    pub on_repository: Callback<RepositoryFacet>,
     pub on_clear: Callback<()>,
 }
 
@@ -1450,6 +1982,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
             cb.emit(RoutineMachineFacet::from_value(&select.value()));
         })
     };
+    let on_repository_change = {
+        let cb = props.on_repository.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(RepositoryFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -1457,6 +1996,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
     let status_val = props.filter.status.as_str();
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
+    let repository_val = props.filter.repository.as_value();
     let active = props.filter.is_active();
 
     html! {
@@ -1489,18 +2029,18 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                 <span class="filter-label">{"MACHINE"}</span>
                 <select class="filter-select" aria-label="Machine filter" onchange={on_machine_change}>
                     <option value={RMACHINE_ANY} selected={machine_val == RMACHINE_ANY}>{"Any"}</option>
-                    {
-                        if props.has_unassigned {
-                            html! {
-                                <option value={RMACHINE_UNASSIGNED}
-                                    selected={machine_val == RMACHINE_UNASSIGNED}>{"Unassigned"}</option>
-                            }
-                        } else {
-                            html! {}
-                        }
-                    }
+                    <option value={RMACHINE_UNASSIGNED}
+                        selected={machine_val == RMACHINE_UNASSIGNED}>{"None"}</option>
                     { for props.machines.iter().map(|m| html! {
                         <option value={m.clone()} selected={machine_val == *m}>{m.clone()}</option>
+                    }) }
+                </select>
+                <span class="filter-label">{"REPOSITORY"}</span>
+                <select class="filter-select" aria-label="Repository filter" onchange={on_repository_change}>
+                    <option value={RepositoryFacet::REPOSITORY_ALL}
+                        selected={repository_val == RepositoryFacet::REPOSITORY_ALL}>{"Any"}</option>
+                    { for props.repositories.iter().map(|r| html! {
+                        <option value={r.clone()} selected={repository_val == *r}>{r.clone()}</option>
                     }) }
                 </select>
             </div>
@@ -1525,62 +2065,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 
-const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const MONTHS: [&str; 12] = [
-    "JANUARY",
-    "FEBRUARY",
-    "MARCH",
-    "APRIL",
-    "MAY",
-    "JUNE",
-    "JULY",
-    "AUGUST",
-    "SEPTEMBER",
-    "OCTOBER",
-    "NOVEMBER",
-    "DECEMBER",
-];
-/// Cells in the month grid: 6 weeks × 7 days, always, so the layout never reflows.
-const GRID_CELLS: usize = 42;
-/// Upper bound on fire-time iterations per routine across the visible grid. A `@hourly`
-/// routine fires ~1008 times across 42 days; this leaves headroom while bounding cost.
-const MAX_OCCURRENCES: usize = 4000;
-
-/// First day of the month `offset` months away from the month containing `today`.
-fn month_start(today: NaiveDate, offset: i32) -> NaiveDate {
-    let total = today.year() * 12 + today.month0() as i32 + offset;
-    let year = total.div_euclid(12);
-    let month0 = total.rem_euclid(12) as u32;
-    NaiveDate::from_ymd_opt(year, month0 + 1, 1).unwrap_or(today)
-}
-
-/// One routine's fire counts per grid cell over `[grid_start, grid_start + 42 days)`.
-fn occurrences_per_day(schedule: &str, grid_start: NaiveDate) -> Option<[u32; GRID_CELLS]> {
-    let cron = parse_cron(schedule)?;
-    let start_naive = grid_start.and_hms_opt(0, 0, 0)?;
-    // Step back one second so an occurrence exactly at midnight on the first cell counts.
-    let start = Local
-        .from_local_datetime(&start_naive)
-        .earliest()?
-        .checked_sub_signed(Duration::seconds(1))?;
-    let mut counts = [0u32; GRID_CELLS];
-    for dt in cron.iter_after(start).take(MAX_OCCURRENCES) {
-        let day = (dt.date_naive() - grid_start).num_days();
-        if day < 0 {
-            continue;
-        }
-        if day as usize >= GRID_CELLS {
-            break;
-        }
-        counts[day as usize] += 1;
-    }
-    Some(counts)
-}
-
 #[derive(Properties, PartialEq)]
 pub struct CalendarProps {
     pub routines: Vec<Routine>,
     pub loading: bool,
+    /// When set, clicking a calendar chip opens the edit modal for that routine.
+    #[prop_or_default]
+    pub on_edit: Option<Callback<String>>,
 }
 
 #[function_component(RoutineCalendar)]
@@ -1611,20 +2102,21 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
 
     // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
-    let mut cells: Vec<Vec<(String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each entry is (id, title, count) so chips can dispatch the edit modal on click.
+    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
     let mut scheduled = 0usize;
     for r in props.routines.iter().filter(|r| r.enabled) {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((r.title.clone(), c));
+                    cells[i].push((r.id.clone(), r.title.clone(), c));
                 }
             }
         }
     }
 
-    let month_label = format!("{} {}", MONTHS[first.month0() as usize], first.year());
+    let month_label = format!("{} {}", CAL_MONTHS[first.month0() as usize], first.year());
 
     let body = if scheduled == 0 {
         html! {
@@ -1654,13 +2146,19 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                             <div class={cls}>
                                 <div class="cal-daynum">{date.day()}</div>
                                 <div class="cal-hits">
-                                    { for hits.iter().take(4).map(|(title, count)| {
+                                    { for hits.iter().take(4).map(|(id, title, count)| {
                                         let label = if *count > 1 {
                                             format!("{title} ×{count}")
                                         } else {
                                             title.clone()
                                         };
-                                        html! { <div class="cal-chip" title={label.clone()}>{label}</div> }
+                                        let on_chip = props.on_edit.as_ref().map(|cb| {
+                                            let cb = cb.clone();
+                                            let id = id.clone();
+                                            Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+                                        });
+                                        let chip_cls = if on_chip.is_some() { "cal-chip clickable" } else { "cal-chip" };
+                                        html! { <div class={chip_cls} title={label.clone()} onclick={on_chip}>{label}</div> }
                                     }) }
                                     if hits.len() > 4 {
                                         <div class="cal-more">{format!("+{} more", hits.len() - 4)}</div>
@@ -1739,13 +2237,17 @@ pub struct TableProps {
     pub sort_col: Option<RCol>,
     /// Direction of the active column sort.
     pub sort_dir: RDir,
+    /// Active group-by dimension; `None` renders a flat list.
+    pub group_by: RGroupBy,
     /// Fired when the user clicks a sortable column header.
     pub on_sort: Callback<RCol>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_flags: Callback<String>,
     pub on_clear_filters: Callback<()>,
 }
 
@@ -1818,28 +2320,49 @@ pub fn routine_table(props: &TableProps) -> Html {
                         { sort_th("TITLE", RCol::Title, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"SCHEDULE"}</th>
                         { sort_th("NEXT RUN", RCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
+                        { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
+                        <th>{"TAGS"}</th>
                         <th>{"TTL"}</th>
+                        { sort_th("HEALTH", RCol::Health, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("ENABLED", RCol::Enabled, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("UPDATED", RCol::Updated, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    { for props.routines.iter().map(|r| html! {
-                        <RoutineRow
-                            key={r.id.clone()}
-                            routine={r.clone()}
-                            now={props.now}
-                            selected={props.selected.contains(&r.id)}
-                            on_select={props.on_select.clone()}
-                            on_edit={props.on_edit.clone()}
-                            on_delete={props.on_delete.clone()}
-                            on_toggle={props.on_toggle.clone()}
-                            on_trigger={props.on_trigger.clone()}
-                            on_logs={props.on_logs.clone()}
-                        />
+                    { for group_routines(&props.routines, props.group_by).into_iter().map(|(label, group)| {
+                        let count = group.len();
+                        let grouped = props.group_by != RGroupBy::None;
+                        html! {
+                            <>
+                                if grouped {
+                                    <tr class="group-hd" key={format!("ghd-{label}")}>
+                                        <td colspan="12">
+                                            <span class="group-label">{label.clone()}</span>
+                                            <span class="group-count">{format!("({count})")}</span>
+                                        </td>
+                                    </tr>
+                                }
+                                { for group.into_iter().map(|r| html! {
+                                    <RoutineRow
+                                        key={r.id.clone()}
+                                        routine={r.clone()}
+                                        now={props.now}
+                                        selected={props.selected.contains(&r.id)}
+                                        on_select={props.on_select.clone()}
+                                        on_edit={props.on_edit.clone()}
+                                        on_clone={props.on_clone.clone()}
+                                        on_delete={props.on_delete.clone()}
+                                        on_toggle={props.on_toggle.clone()}
+                                        on_trigger={props.on_trigger.clone()}
+                                        on_logs={props.on_logs.clone()}
+                                        on_flags={props.on_flags.clone()}
+                                    />
+                                }) }
+                            </>
+                        }
                     }) }
                 </tbody>
             </table>
@@ -1884,14 +2407,18 @@ pub struct RowProps {
     /// Fired when the selection checkbox is clicked.
     pub on_select: Callback<String>,
     pub on_edit: Callback<String>,
+    pub on_clone: Callback<String>,
     pub on_delete: Callback<(String, String)>,
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_flags: Callback<String>,
 }
 
 #[function_component(RoutineRow)]
 pub fn routine_row(props: &RowProps) -> Html {
+    let preview_open = use_state(|| false);
+
     let r = &props.routine;
     let cron_text = r.schedule_description.as_deref().unwrap_or("—").to_string();
     let updated = reltime(r.updated_at);
@@ -1899,6 +2426,11 @@ pub fn routine_row(props: &RowProps) -> Html {
 
     let on_edit = {
         let cb = props.on_edit.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_clone = {
+        let cb = props.on_clone.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -1924,6 +2456,11 @@ pub fn routine_row(props: &RowProps) -> Html {
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
+    let on_flags = {
+        let cb = props.on_flags.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
 
     let on_select = {
         let cb = props.on_select.clone();
@@ -1931,25 +2468,55 @@ pub fn routine_row(props: &RowProps) -> Html {
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
 
-    let last_run: Html = {
-        let manual = r.last_manual_trigger_at;
-        let scheduled = r.last_scheduled_trigger_at;
-        match (manual, scheduled) {
-            (None, None) => html! {
-                <div class="cell-triggered" style="color:var(--text-ghost)">{"never fired"}</div>
-            },
-            (Some(m), Some(s)) if m >= s => html! {
-                <div class="cell-triggered">{format!("↻ {}", reltime(m))}</div>
-            },
-            (Some(_m), Some(s)) => html! {
-                <div class="cell-triggered">{format!("⏱ {}", reltime(s))}</div>
-            },
-            (Some(m), None) => html! {
-                <div class="cell-triggered">{format!("↻ {}", reltime(m))}</div>
-            },
-            (None, Some(s)) => html! {
-                <div class="cell-triggered">{format!("⏱ {}", reltime(s))}</div>
-            },
+    let on_preview_toggle = {
+        let preview_open = preview_open.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            preview_open.set(!*preview_open);
+        })
+    };
+
+    let fires_panel = if *preview_open {
+        let fires = next_fires(&r.schedule, props.now, 10);
+        if fires.is_empty() {
+            html! { <div class="fires-panel"><div class="fires-empty">{"— no future fires —"}</div></div> }
+        } else {
+            let now = props.now;
+            html! {
+                <div class="fires-panel">
+                    <div class="fires-hd">{"NEXT 10 FIRES"}</div>
+                    { for fires.iter().map(|t| html! {
+                        <div class="fires-item">
+                            <span class="fires-when">{fmt_when(now, *t)}</span>
+                            <span class="fires-until">{fmt_until(now, *t)}</span>
+                        </div>
+                    }) }
+                </div>
+            }
+        }
+    } else {
+        html! {}
+    };
+
+    let preview_btn_class = if *preview_open {
+        "sched-preview-btn open"
+    } else {
+        "sched-preview-btn"
+    };
+
+    // LAST FIRE: most-recent trigger timestamp from last_fire_at, icon chosen by type.
+    // ↻ = the most-recent fire was a manual trigger; ⏱ = it was a scheduled fire.
+    let last_fire: Html = match last_fire_at(r) {
+        None => html! { <span class="muted">{"—"}</span> },
+        Some(ts) => {
+            let manual = r.last_manual_trigger_at;
+            let scheduled = r.last_scheduled_trigger_at;
+            let icon = if manual.is_some_and(|m| scheduled.is_none_or(|s| m >= s)) {
+                "↻"
+            } else {
+                "⏱"
+            };
+            html! { <div class="cell-triggered">{format!("{icon} {}", reltime(ts))}</div> }
         }
     };
 
@@ -1978,8 +2545,17 @@ pub fn routine_row(props: &RowProps) -> Html {
             <td>
                 <div class="cell-schedule">{&r.schedule}</div>
                 <div class="cell-schedule-human">{cron_text}</div>
+                <button
+                    class={preview_btn_class}
+                    title="Preview next fire times"
+                    aria-label="Preview next scheduled fire times"
+                    aria-expanded={(*preview_open).to_string()}
+                    onclick={on_preview_toggle}
+                >{"▸ fires"}</button>
+                {fires_panel}
             </td>
             <td>{next_run}</td>
+            <td>{last_fire}</td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>
@@ -1987,22 +2563,43 @@ pub fn routine_row(props: &RowProps) -> Html {
                 </span>
             </td>
             <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
+            <td>
+                {
+                    if r.tags.is_empty() {
+                        html! { <span class="cell-meta">{"—"}</span> }
+                    } else {
+                        html! {
+                            <span class="cell-meta" title={r.tags.join(", ")}>{ r.tags.join(", ") }</span>
+                        }
+                    }
+                }
+            </td>
             <td><span class="cell-meta" title="workbench retention for finished runs">{ format_ttl(r.ttl_secs) }</span></td>
+            <td>
+                <span class={routine_health(r, props.now).badge_class()}
+                    title={routine_health(r, props.now).badge()}>
+                    {routine_health(r, props.now).badge()}
+                </span>
+            </td>
             <td>
                 <label class="toggle">
                     <input type="checkbox" checked={r.enabled} onchange={on_toggle} />
                     <div class="toggle-track"></div>
                 </label>
             </td>
-            <td>
-                <div class="cell-time">{updated}</div>
-                {last_run}
-            </td>
+            <td><div class="cell-time">{updated}</div></td>
             <td>
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
+                    <button class="act-btn flags" title="Open flags" onclick={on_flags}>
+                        {"FLAGS"}
+                        if r.flag_count > 0 {
+                            <span class="flag-badge">{r.flag_count}</span>
+                        }
+                    </button>
                     <button class="act-btn edit" onclick={on_edit}>{"EDIT"}</button>
+                    <button class="act-btn clone" title="Duplicate routine" aria-label="Duplicate routine" onclick={on_clone}>{"⧉"}</button>
                     <button class="act-btn del" title="Delete routine" aria-label="Delete routine" onclick={on_delete}>{"✕"}</button>
                 </div>
             </td>
@@ -2017,6 +2614,17 @@ pub struct FormProps {
     pub editing: Option<Routine>,
     pub on_cancel: Callback<()>,
     pub on_save: Callback<CreateRoutineRequest>,
+}
+
+/// Title for a cloned routine: prepend "Copy of " when the original title does not
+/// already start with that prefix, preventing "Copy of Copy of …" accumulation.
+pub(crate) fn clone_title(title: &str) -> String {
+    const PREFIX: &str = "Copy of ";
+    if title.starts_with(PREFIX) {
+        title.to_string()
+    } else {
+        format!("{PREFIX}{title}")
+    }
 }
 
 /// Serialize repositories as one `url [branch]` line each for the textarea.
@@ -2040,6 +2648,20 @@ fn text_to_repos(text: &str) -> Vec<Repository> {
             let branch = it.next().map(|s| s.to_string());
             Some(Repository { repository, branch })
         })
+        .collect()
+}
+
+/// Join tags into a single comma-separated string for the input field.
+fn tags_to_text(tags: &[String]) -> String {
+    tags.join(", ")
+}
+
+/// Split a comma-separated input into trimmed, non-empty tags.
+fn text_to_tags(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
         .collect()
 }
 
@@ -2130,6 +2752,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             .unwrap_or_default()
     });
     let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
+    // Comma-separated tags; blank means no tags.
+    let tags_raw = use_state(|| {
+        editing
+            .as_ref()
+            .map(|r| tags_to_text(&r.tags))
+            .unwrap_or_default()
+    });
     // Blank means "use the server default"; otherwise the workbench TTL in seconds.
     let ttl_raw = use_state(|| {
         editing
@@ -2195,6 +2824,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             ttl_raw.set(i.value());
         })
     };
+    let on_tags = {
+        let tags_raw = tags_raw.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            tags_raw.set(i.value());
+        })
+    };
 
     let set_preset = |val: &'static str| {
         let schedule = schedule.clone();
@@ -2220,6 +2856,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let machines = machines.clone();
         let enabled = enabled.clone();
         let ttl_raw = ttl_raw.clone();
+        let tags_raw = tags_raw.clone();
         let saving = saving.clone();
         let cb = props.on_save.clone();
         Callback::from(move |_: MouseEvent| {
@@ -2236,6 +2873,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 machines: (*machines).clone(),
                 enabled: *enabled,
                 ttl_secs: parse_ttl(&ttl_raw),
+                tags: text_to_tags(&tags_raw),
             });
         })
     };
@@ -2301,6 +2939,14 @@ pub fn routine_form(props: &FormProps) -> Html {
                     value={(*repos_raw).clone()} oninput={on_repos} />
             </div>
             <MachinesPicker value={(*machines).clone()} on_change={on_machines} />
+            <div class="form-group">
+                <label class="form-label">
+                    {"TAGS "}
+                    <span style="color:var(--text-ghost)">{"(comma-separated)"}</span>
+                </label>
+                <input class="form-input" type="text" placeholder="triage, nightly"
+                    value={(*tags_raw).clone()} oninput={on_tags} autocomplete="off" spellcheck="false" />
+            </div>
             <div class="form-group">
                 <label class="form-label">
                     {"WORKBENCH TTL "}
@@ -2537,6 +3183,123 @@ pub fn routine_logs(props: &LogsProps) -> Html {
                 loading={*loading}
                 err={(*err).clone()}
             />
+        </main>
+    }
+}
+
+// ─── Flags page ───────────────────────────────────────────────────────────────
+
+#[derive(Properties, PartialEq)]
+pub struct FlagsProps {
+    pub id: String,
+    pub title: String,
+    pub on_back: Callback<()>,
+}
+
+#[function_component(RoutineFlags)]
+pub fn routine_flags(props: &FlagsProps) -> Html {
+    let flags: UseStateHandle<Vec<Flag>> = use_state(Vec::new);
+    let loading = use_state(|| true);
+    let err: UseStateHandle<Option<String>> = use_state(|| None);
+
+    let load = {
+        let id = props.id.clone();
+        let flags = flags.clone();
+        let loading = loading.clone();
+        let err = err.clone();
+        move || {
+            let id = id.clone();
+            let flags = flags.clone();
+            let loading = loading.clone();
+            let err = err.clone();
+            loading.set(true);
+            spawn_local(async move {
+                match api_flags(&id).await {
+                    Ok(list) => {
+                        flags.set(list);
+                        err.set(None);
+                    }
+                    Err(e) => err.set(Some(e)),
+                }
+                loading.set(false);
+            });
+        }
+    };
+
+    {
+        let load = load.clone();
+        use_effect_with(props.id.clone(), move |_| {
+            load();
+        });
+    }
+
+    let on_back = {
+        let cb = props.on_back.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(()))
+    };
+    let on_refresh = {
+        let load = load.clone();
+        Callback::from(move |_: MouseEvent| load())
+    };
+
+    let body = if *loading {
+        html! { <div class="empty"><div class="spinner"></div></div> }
+    } else if let Some(msg) = (*err).clone() {
+        html! { <div class="logs-error">{msg}</div> }
+    } else if flags.is_empty() {
+        html! {
+            <div class="empty">
+                <div class="empty-icon">{"⚑"}</div>
+                <div class="empty-msg">{"NO OPEN FLAGS"}</div>
+            </div>
+        }
+    } else {
+        let id = props.id.clone();
+        html! {
+            <div class="flags-list">
+                { for flags.iter().map(|flag| {
+                    let on_resolve = {
+                        let id = id.clone();
+                        let filename = flag.filename.clone();
+                        let load = load.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            let id = id.clone();
+                            let filename = filename.clone();
+                            let load = load.clone();
+                            spawn_local(async move {
+                                if api_resolve_flag(&id, &filename).await.is_ok() {
+                                    load();
+                                }
+                            });
+                        })
+                    };
+                    let scope_label = match flag.scope {
+                        FlagScope::General => "general",
+                        FlagScope::Local => "local",
+                    };
+                    html! {
+                        <div class="flag-item" key={flag.filename.clone()}>
+                            <div class="flag-item-hd">
+                                <span class="flag-type">{&flag.flag_type}</span>
+                                <span class="flag-scope">{scope_label}</span>
+                                <button class="btn btn-ghost btn-sm" onclick={on_resolve}>{"RESOLVE"}</button>
+                            </div>
+                            <div class="flag-desc">{&flag.description}</div>
+                        </div>
+                    }
+                }) }
+            </div>
+        }
+    };
+
+    html! {
+        <main class="logs-page">
+            <div class="page-hd">
+                <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
+                <div class="page-title">{format!("FLAGS / {}", props.title)}</div>
+                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
+            </div>
+            {body}
         </main>
     }
 }

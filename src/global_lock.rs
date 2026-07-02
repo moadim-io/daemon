@@ -20,7 +20,7 @@ pub enum LockScope {
 }
 
 /// Current state of both lock sentinels.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct LockStatus {
     /// Whether the committed `.lock` file is present.
     pub shared: bool,

@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::command::slugify;
+use super::flags::list_flags;
 use crate::paths::{agent_toml_path, routine_toml_path};
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
@@ -59,6 +60,24 @@ pub struct RoutineListQuery {
     pub sort: RoutineSort,
     /// Sort direction (default: ascending).
     pub order: SortOrder,
+    /// When `true`, only return routines whose `machines` list includes the current machine.
+    /// Defaults to `false` (return all routines, preserving backwards compatibility).
+    pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
+}
+
+/// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
+#[serde(default)]
+#[into_params(parameter_in = Query)]
+pub struct IcalFeedQuery {
+    /// Render only the fire times of the routine with this UUID. Absent (the default)
+    /// renders every enabled routine. An unknown or disabled id yields a well-formed
+    /// empty calendar.
+    pub routine: Option<String>,
 }
 
 /// A persisted routine: a scheduled AI-agent task.
@@ -74,6 +93,12 @@ pub struct Routine {
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
@@ -122,6 +147,10 @@ pub struct Routine {
     /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
+    /// Defaults to empty; each entry is trimmed and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -141,6 +170,9 @@ pub struct RoutineResponse {
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
     pub timezone: Option<String>,
+    /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
+    /// listings can badge it without a separate `list_flags` round-trip per routine.
+    pub flag_count: usize,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -168,18 +200,19 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
+        let slug = slugify(&routine.title);
         let agent_registered = agent_toml_path(&routine.agent).exists();
-        let file_path = routine_toml_path(&slugify(&routine.title))
-            .to_string_lossy()
-            .into_owned();
+        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let flag_count = list_flags(&slug).len();
         Self {
             routine,
             agent_registered,
             file_path,
             schedule_description,
             timezone,
+            flag_count,
         }
     }
 }
@@ -234,6 +267,10 @@ pub struct CreateRoutineRequest {
     /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
+    /// and must be non-blank.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -258,6 +295,8 @@ pub struct UpdateRoutineRequest {
     pub ttl_secs: Option<u64>,
     /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
     pub max_runtime_secs: Option<u64>,
+    /// New tags list, or `None` to keep the existing value.
+    pub tags: Option<Vec<String>>,
 }
 
 #[cfg(test)]

@@ -128,6 +128,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **SUBSCRIBE button on the routines calendar.** The calendar view's nav bar
+  now has a SUBSCRIBE button that copies the `/api/v1/routines.ics` feed URL
+  to the clipboard, so wiring the feed into an external calendar app no
+  longer requires reading the API docs to find the endpoint.
 - **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
   server answers or `SECS` elapse (default 30) instead of checking once, so a
   launch script can block on startup (`moadim && moadim status --wait`) rather

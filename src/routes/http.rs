@@ -472,6 +472,22 @@ pub async fn run_with_listener_until(
                     .await;
         }
     });
+    // Periodically warn when the binary on disk has moved on from the one this process is running
+    // (#167): an in-place upgrade with no daemon restart otherwise regenerates every routine's
+    // agent instructions — disclosure included — from stale, silently outdated logic.
+    let version_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::build_info::VERSION_DRIFT_CHECK_INTERVAL);
+        loop {
+            tick.tick().await;
+            let _ = tokio::task::spawn_blocking(|| {
+                if let Ok(exe) = std::env::current_exe() {
+                    let running = format!("moadim {}", crate::build_info::long_version());
+                    crate::build_info::warn_on_drift(&exe, &running);
+                }
+            })
+            .await;
+        }
+    });
     let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
@@ -488,6 +504,7 @@ pub async fn run_with_listener_until(
         .expect("axum serve failed");
     cleanup_task.abort();
     watchdog_task.abort();
+    version_task.abort();
     Ok(())
 }
 

@@ -977,9 +977,14 @@
         "type": "object",
         "description": "External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on\nthe daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency\ninstead of having routine runs silently no-op.",
         "required": [
-          "tmux"
+          "tmux",
+          "python3"
         ],
         "properties": {
+          "python3": {
+            "type": "boolean",
+            "description": "Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`\nstep runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that\nstep fails silently and the routine still shows a healthy status (issue #404)."
+          },
           "tmux": {
             "type": "boolean",
             "description": "Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`."

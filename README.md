@@ -41,9 +41,10 @@ building and installing:
 | `tmux`     | launching routine agents — every scheduled routine starts its agent inside a tmux session. **Without `tmux`, routine runs silently fail to launch.** | `brew install tmux` (macOS) · `apt install tmux` (Debian/Ubuntu) |
 | `crontab`  | scheduling — moadim writes managed routines into the OS crontab so they fire on schedule | preinstalled on macOS; `apt install cron` (Debian/Ubuntu) |
 
-The daemon reports whether `tmux` resolves on its `PATH` in `GET /api/v1/health`
-(under `dependencies`) and logs a warning at startup when it is missing, so a
-misconfigured host is easy to spot.
+The daemon reports whether `tmux` and `python3` resolve on its `PATH` in
+`GET /api/v1/health` (under `dependencies`) and logs a warning at startup when
+either is missing, so a misconfigured host is easy to spot. See the built-in
+`claude` agent's prerequisites below for why `python3` matters.
 
 ## Installation
 
@@ -204,9 +205,11 @@ things on the host beyond the `claude` CLI itself:
 
 - **`python3`** — the agent's `setup` step runs a short `python3` snippet to
   pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
-  approvals) so the unattended session never blocks on a prompt. If `python3` is
-  not on `PATH`, the setup step fails and the run no-ops — the routine still
-  shows a healthy (green) status, but the agent never actually launches.
+  approvals) so the unattended session never blocks on a prompt. If `python3`
+  is not on `PATH`, the setup step fails and the run no-ops. This is now
+  surfaced (not just silent): the daemon logs a startup warning and
+  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, though
+  the affected routine's own health dot still shows green.
 - **`tmux`** — every routine run is launched inside a tmux session (named after
   the run's workbench), so a tmux binary must be installed.
 

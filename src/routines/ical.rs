@@ -13,6 +13,10 @@ const HORIZON_DAYS: i64 = 30;
 const MAX_EVENTS_PER_ROUTINE: usize = 100;
 /// Product identifier advertised in the `PRODID` property.
 const PRODID: &str = "-//moadim//routines//EN";
+/// Duration assigned to each fire so it renders as a visible block rather than a
+/// zero-length instant. RFC 5545 requires a `VEVENT` to carry either `DTEND` or
+/// `DURATION`; a routine fire has no intrinsic end, so a short fixed window is used.
+const EVENT_DURATION: &str = "PT15M";
 /// Calendar display name (`X-WR-CALNAME`) for the unfiltered, all-routines feed.
 const DEFAULT_CAL_NAME: &str = "Moadim Routines";
 
@@ -165,6 +169,7 @@ fn build_ical_core(
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
             lines.push(format!("DTSTAMP:{dtstamp}"));
             lines.push(format!("DTSTART:{stamp}"));
+            lines.push(format!("DURATION:{EVENT_DURATION}"));
             // The feed is purely informational ("when will my loops fire?"), so a
             // fire must not consume the subscriber's free/busy time. RFC 5545
             // §3.8.2.7 defaults `TRANSP` to `OPAQUE` (counts as busy); mark each

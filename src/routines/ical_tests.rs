@@ -67,6 +67,18 @@ fn enabled_daily_routine_yields_events_within_horizon() {
 }
 
 #[test]
+fn every_event_carries_a_duration() {
+    // RFC 5545 requires each VEVENT to specify either DTEND or DURATION, otherwise
+    // calendar clients render it as a zero-length instant. Every fire must emit one.
+    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    assert_eq!(
+        count(&ics, "BEGIN:VEVENT"),
+        count(&ics, "DURATION:PT15M"),
+        "each VEVENT should carry exactly one DURATION line"
+    );
+}
+
+#[test]
 fn events_are_transparent_to_free_busy() {
     // The feed is informational: a fire must not consume the subscriber's
     // free/busy time (RFC 5545 §3.8.2.7 defaults TRANSP to OPAQUE = busy).

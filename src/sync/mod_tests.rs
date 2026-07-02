@@ -118,6 +118,41 @@ impl CronShim {
     fn store_contents(&self) -> String {
         std::fs::read_to_string(&self.store_file).unwrap_or_default()
     }
+
+    /// Build a shim whose `-` exits immediately *without reading stdin*,
+    /// emulating a `crontab` that rejects input early and closes its end of
+    /// the pipe mid-write. Used to exercise `write_crontab`'s write-failure
+    /// (broken pipe) path, distinct from `write_fails` which drains stdin
+    /// first and so never triggers a broken pipe.
+    fn write_pipe_closed() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronshim-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let store_file = base.join("store");
+
+        // No `cat` on the `-` branch: stdin is left unread and closed as soon
+        // as the shim exits, so a large enough write from the parent
+        // overflows the pipe buffer and observes a broken pipe.
+        let script_body = "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then exit 1; fi\n".to_string();
+
+        let script_path = base.join("crontab-shim.sh");
+        std::fs::write(&script_path, script_body).unwrap();
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1);
+        // the override is restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script_path);
+        }
+
+        Self {
+            base,
+            store_file,
+            previous,
+        }
+    }
 }
 
 impl Drop for CronShim {
@@ -280,6 +315,24 @@ fn write_crontab_errors_on_non_success_exit() {
             "expected exit message, got: {msg}"
         ),
         SyncError::Io(io) => panic!("expected CrontabCommand, got Io({io})"),
+    }
+    drop(shim);
+}
+
+#[test]
+fn write_crontab_errors_instead_of_panicking_on_broken_pipe() {
+    // The shim's `-` branch never reads stdin and exits immediately, so
+    // writing content larger than the OS pipe buffer must observe a broken
+    // pipe. Before this test, that write failure was `.expect()`'d into a
+    // panic instead of being returned as a `SyncError`.
+    let shim = CronShim::write_pipe_closed();
+    let big_content = "x".repeat(4 * 1024 * 1024);
+    let err = write_crontab(&big_content).unwrap_err();
+    match err {
+        SyncError::Io(_) => {}
+        SyncError::CrontabCommand(msg) => {
+            panic!("expected Io error from the broken pipe, got CrontabCommand({msg})")
+        }
     }
     drop(shim);
 }

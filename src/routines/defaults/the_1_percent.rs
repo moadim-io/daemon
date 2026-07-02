@@ -66,7 +66,7 @@ Good improvement examples:
 ```bash
 git -C ~/.config/moadim checkout -b 1pct/$(date +%Y%m%d-%H%M)
 # Edit/add/delete files under ~/.config/moadim/routines/ as needed.
-# Only touch routine.toml files. Do NOT modify moadim daemon config.
+# Only touch routine.toml / prompts/prompt.pure.md files. Do NOT modify moadim daemon config.
 git -C ~/.config/moadim add -A
 git -C ~/.config/moadim commit -m \"routines: <concise description>\"
 git -C ~/.config/moadim push -u origin HEAD

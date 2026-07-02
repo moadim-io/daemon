@@ -244,8 +244,7 @@
     .cmdk {
       align-self: flex-start;
       margin-top: 11vh;
-      width: 560px;
-      max-width: 92vw;
+      width: clamp(280px, 90vw, 560px);
       background: var(--bg-2);
       border: 1px solid var(--border-hi);
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
@@ -489,6 +488,7 @@
     .health-badge.dead          { border-color: var(--red);   color: var(--red);   background: var(--red-dim); }
     .health-badge.agent-missing { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
     .health-badge.disabled      { border-color: var(--border-hi); color: var(--text-dim); }
+    .health-badge.snoozed       { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
     .health-badge.healthy       { border-color: var(--accent); color: var(--accent); }
 
     .ov-name-link {
@@ -719,8 +719,7 @@
     .modal {
       background: var(--bg-2);
       border: 1px solid var(--border-hi);
-      width: 540px;
-      max-width: 92vw;
+      width: clamp(280px, 90vw, 540px);
       max-height: 88vh;
       overflow-y: auto;
       transform: translateY(10px);
@@ -860,8 +859,7 @@
       background: var(--bg-2);
       border: 1px solid var(--red);
       padding: 22px;
-      width: 350px;
-      max-width: 92vw;
+      width: clamp(240px, 90vw, 350px);
       transform: translateY(8px);
       transition: transform 0.15s;
     }
@@ -994,6 +992,28 @@
     .act-btn.logs { color: var(--text-ghost); }
     .act-btn.logs:hover { color: var(--text-mid); border-color: var(--border-hi); }
 
+    .act-btn.flags { color: var(--text-ghost); display: inline-flex; align-items: center; gap: 4px; }
+    .act-btn.flags:hover { color: var(--text-mid); border-color: var(--border-hi); }
+    .flag-badge {
+      display: inline-block;
+      min-width: 14px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 9px;
+      line-height: 14px;
+      text-align: center;
+    }
+
+    .flags-list { display: flex; flex-direction: column; gap: 1px; margin: 16px; }
+    .flag-item { padding: 12px 16px; border: 1px solid var(--border); background: var(--bg-2); }
+    .flag-item-hd { display: flex; align-items: center; gap: 8px; }
+    .flag-type { font-family: var(--mono); font-size: 11px; color: var(--text-hi); text-transform: uppercase; }
+    .flag-scope { font-size: 10px; color: var(--text-ghost); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+    .flag-item-hd .btn { margin-left: auto; }
+    .flag-desc { margin-top: 6px; font-size: 12px; color: var(--text-mid); white-space: pre-wrap; }
+
     /* ── Schedule fire preview ── */
     .sched-preview-btn {
       display: inline-block;
@@ -1101,7 +1121,7 @@
       font-family: var(--mono);
       font-size: 12px;
       padding: 6px 10px;
-      min-width: 240px;
+      min-width: clamp(140px, 40vw, 240px);
       outline: none;
       transition: border-color 0.12s;
     }
@@ -1180,7 +1200,7 @@
       font-size: 12px;
       letter-spacing: 0.14em;
       color: var(--text-hi);
-      min-width: 150px;
+      min-width: clamp(90px, 30vw, 150px);
       text-align: center;
     }
     .cal-nav .btn-ghost { margin-left: auto; }
@@ -1261,7 +1281,7 @@
       font-size: 12px;
       letter-spacing: 0.14em;
       color: var(--text-hi);
-      min-width: 180px;
+      min-width: clamp(110px, 35vw, 180px);
       text-align: center;
     }
     .day-nav .btn-ghost { margin-left: auto; }
@@ -1523,6 +1543,11 @@
       width: 100%;
       min-width: 720px;
       table-layout: fixed;
+    }
+    @media (max-width: 640px) {
+      table.heatmap { min-width: 480px; }
+      .hm-daylabel { width: 40px; }
+      .hm-cell { height: 16px; font-size: 8px; }
     }
     table.heatmap th, table.heatmap td { padding: 0; }
     .hm-corner, .hm-hcol {

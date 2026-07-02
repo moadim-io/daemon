@@ -2,7 +2,9 @@
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    info(title = "Moadim Server API", version = "0.1.0", description = "REST API for managing cron jobs"),
+    // `version` is intentionally omitted so utoipa derives it from `CARGO_PKG_VERSION`,
+    // keeping the spec in lockstep with the crate instead of a frozen literal (see issue #309).
+    info(title = "Moadim Server API", description = "REST API for managing routines"),
     // Host-relative server URL: Swagger UI resolves "Try it out" requests against the origin the
     // docs were loaded from, so it follows a custom MOADIM_BIND_ADDR port or a reverse proxy instead
     // of a hardcoded 127.0.0.1:5784 that breaks the moment the daemon isn't bound there (issue #385).
@@ -15,14 +17,6 @@
         crate::routes::http::get_current_machine,
         crate::routes::http::put_machine,
         crate::routes::http::list_machines,
-        crate::cron_jobs::list,
-        crate::cron_jobs::create,
-        crate::cron_jobs::get,
-        crate::cron_jobs::replace,
-        crate::cron_jobs::update,
-        crate::cron_jobs::delete,
-        crate::cron_jobs::trigger,
-        crate::cron_jobs::get_logs,
         crate::routines::list,
         crate::routines::list_agents,
         crate::routines::create,
@@ -38,13 +32,11 @@
         crate::routines::unlock,
         crate::routines::get_logs,
         crate::routines::ical_feed,
+        crate::routines::create_flag,
+        crate::routines::list_flags,
+        crate::routines::resolve_flag,
     ),
     components(schemas(
-        crate::cron_jobs::CronJob,
-        crate::cron_jobs::CronJobResponse,
-        crate::cron_jobs::CronJobSourceType,
-        crate::cron_jobs::CreateRequest,
-        crate::cron_jobs::UpdateRequest,
         crate::routines::Routine,
         crate::routines::Repository,
         crate::routines::RoutineResponse,
@@ -53,6 +45,9 @@
         crate::routines::CleanupResponse,
         crate::routines::RoutineSort,
         crate::routines::SortOrder,
+        crate::routines::Flag,
+        crate::routines::FlagScope,
+        crate::routines::CreateFlagRequest,
         crate::routes::http::HealthResponse,
         crate::routes::http::DependencyHealth,
         crate::routes::http::ShutdownResponse,

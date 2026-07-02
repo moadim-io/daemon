@@ -233,11 +233,7 @@ pub fn svc_ical(store: &RoutineStore) -> String {
 /// calendar (named [`DEFAULT_CAL_NAME`]) rather than an error, mirroring how a disabled
 /// routine already contributes no events.
 pub fn svc_ical_routine(store: &RoutineStore, id: &str) -> String {
-    let routine = store
-        .lock()
-        .expect("routine store lock poisoned")
-        .get(id)
-        .cloned();
+    let routine = store.lock_recover().get(id).cloned();
     match routine {
         Some(routine) => {
             let cal_name = routine.title.clone();

@@ -590,7 +590,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
 /// In **test builds**, when no `MOADIM_SH_BIN` shim is configured this never falls back to the
 /// real `sh`: it returns a path that cannot exist, so the spawn fails harmlessly instead of
 /// launching a real agent process. This closes the same structural gap `crontab_bin()`
-/// ([`crate::sync::crontab_bin`]) closes for crontab I/O (issue #175) — a test that forgets to
+/// (`crate::sync::crontab_bin`) closes for crontab I/O (issue #175) — a test that forgets to
 /// clear `PATH` or shim this binary still cannot execute a real command on the developer's
 /// machine (issue #217). Tests that need a working spawn set `MOADIM_SH_BIN` to a shim.
 fn sh_bin() -> String {

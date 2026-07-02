@@ -125,6 +125,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   those unreachable arms were accidental duplicates of the same first-check
   path; merged them into one `svc_update_not_found_when_id_missing` test that
   covers both request shapes against the real, single `NotFound` path.
+- Nothing previously verified the README's documented `--json` object shapes
+  for `status`/`cleanup`/`stop` against the keys the CLI actually emits, so a
+  field renamed, added, or removed in `cli.rs` could drift silently from the
+  script-facing contract in `README.md`. Added
+  `cli::cli_tests::readme_status_json_shape_matches_actual_keys` and its
+  `cleanup`/`stop` counterparts, which parse the documented shape literal
+  straight out of `README.md` and assert it names exactly the keys
+  `status_json`/`cleanup_json`/`stop_json` produce. (#345)
 
 ### Added
 

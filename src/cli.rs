@@ -572,8 +572,44 @@ pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
     std::fs::create_dir_all(path.parent().expect("pid file path has a parent dir"))?;
     ensure_config_gitignore();
+    ensure_config_readme();
     std::fs::write(&path, std::process::id().to_string())?;
     Ok(())
+}
+
+/// Orientation doc seeded into the config dir on every start; see [`ensure_config_readme`].
+const CONFIG_README: &str = "\
+# moadim config
+
+This is moadim's config directory (`$XDG_CONFIG_HOME/moadim`, default `~/.config/moadim`).
+It is git-trackable — commit it (or the parts you want to keep) to version-control your
+routines and agents across machines.
+
+- `routines/<id>/` — one directory per routine (a scheduled agent). Holds `routine.toml`
+  (the schedule, agent, and repositories), `prompts/prompt.pure.md` (the prompt you wrote)
+  and `prompts/prompt.compiled.md` (the composed prompt copied into each run's workbench),
+  `flags/` (open questions an agent raised mid-run), and `.local.` sidecars
+  (`state.local.toml`, `scheduled.local.toml`) recording daemon-written runtime state that's
+  gitignored on purpose.
+- `agents/<name>.toml` — the agent registry referenced by routines (e.g. `claude`).
+- `machine.local.toml` — this machine's identity, used to match a routine's `machines`
+  targeting list. Gitignored: it's per-machine, not shared.
+- `moadim.pid`, `daemon.log` — daemon-managed runtime files. Gitignored.
+- `.gitignore` — seeded and kept up to date by the daemon; append your own patterns freely.
+
+Full docs: https://github.com/moadim-io/daemon
+";
+
+/// Seed the config dir with a `README.md` explaining its layout, if one isn't already there.
+///
+/// Runs on every start alongside [`ensure_config_gitignore`]. Only writes when the file is
+/// missing, so a user's edits are never clobbered. Best-effort: failure is not fatal.
+fn ensure_config_readme() {
+    let readme = crate::paths::config_readme_path();
+    if readme.exists() {
+        return;
+    }
+    let _ = std::fs::write(&readme, CONFIG_README);
 }
 
 /// Ensure the config dir `.gitignore` contains all required patterns on every start.

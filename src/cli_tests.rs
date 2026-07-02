@@ -1027,6 +1027,22 @@ fn pid_file_write_read_clear_roundtrip() {
 }
 
 #[test]
+fn write_pid_file_seeds_readme_without_clobbering_edits() {
+    let home = temp_home("pidfile-readme");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    write_pid_file().unwrap();
+    let readme = crate::paths::config_readme_path();
+    assert!(readme.exists());
+    let content = std::fs::read_to_string(&readme).unwrap();
+    assert!(content.contains("moadim config"));
+    // A second start must not overwrite a user's edits to the README.
+    std::fs::write(&readme, "custom notes").unwrap();
+    write_pid_file().unwrap();
+    assert_eq!(std::fs::read_to_string(&readme).unwrap(), "custom notes");
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn run_background_starts_when_none_running() {
     let home = temp_home("runbg-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());

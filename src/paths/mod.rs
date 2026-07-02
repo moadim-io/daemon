@@ -183,6 +183,13 @@ pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
 }
 
+/// Returns the path to `{config_dir}/README.md`, a daemon-generated orientation doc explaining the
+/// config tree's layout for anyone who opens or git-tracks it directly.
+#[must_use]
+pub fn config_readme_path() -> PathBuf {
+    config_dir().join("README.md")
+}
+
 /// Returns the path to `~/.config/moadim/.lock`, a committed global lock that halts all routine
 /// scheduling and manual triggers when present. Checked into version control so the lock can be
 /// shared across machines via a git push/pull.

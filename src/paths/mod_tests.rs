@@ -135,6 +135,13 @@ fn config_gitignore_path_in_config_dir() {
 }
 
 #[test]
+fn config_readme_path_in_config_dir() {
+    let path = config_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
 fn pid_file_ends_with_moadim_pid() {
     let path = pid_file();
     assert!(

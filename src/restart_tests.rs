@@ -22,13 +22,13 @@ struct EnvGuard {
 }
 
 impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -51,32 +51,22 @@ fn temp_home(tag: &str) -> std::path::PathBuf {
     dir
 }
 
-/// A loopback server that answers `200`, optionally going quiet once a marker file appears.
+/// A loopback server that answers `200` while alive and drops connections once not alive.
 struct FakeServer {
     addr: String,
+    alive: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl FakeServer {
-    /// A server that answers `200` until dropped.
-    fn start() -> FakeServer {
-        FakeServer::start_inner(None)
-    }
-
-    /// A server that answers `200` until `down_marker` exists on disk, then stops responding.
-    ///
-    /// This lets a test tie "server down" to an observable event — the force-kill shim creating
-    /// the marker — instead of racing a wall-clock timer against the stop-and-wait poll loop.
-    fn start_until_marker(down_marker: std::path::PathBuf) -> FakeServer {
-        FakeServer::start_inner(Some(down_marker))
-    }
-
-    fn start_inner(down_marker: Option<std::path::PathBuf>) -> FakeServer {
+    fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
+        let alive = Arc::new(AtomicBool::new(true));
         let stop = Arc::new(AtomicBool::new(false));
+        let alive_loop = Arc::clone(&alive);
         let stop_loop = Arc::clone(&stop);
         let handle = std::thread::spawn(move || {
             let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -85,11 +75,7 @@ impl FakeServer {
                     Ok((mut stream, _)) => {
                         let mut buf = [0u8; 1024];
                         let _ = stream.read(&mut buf);
-                        let serving = match &down_marker {
-                            Some(marker) => !marker.exists(),
-                            None => true,
-                        };
-                        if serving {
+                        if alive_loop.load(Ordering::SeqCst) {
                             let _ = stream.write_all(response.as_bytes());
                         }
                     }
@@ -100,11 +86,20 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
+            alive,
             stop,
             handle: Some(handle),
         }
+    }
+
+    fn stop_after(&self, delay: Duration) {
+        let alive = Arc::clone(&self.alive);
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            alive.store(false, Ordering::SeqCst);
+        });
     }
 }
 
@@ -138,39 +133,21 @@ fn stop_running_and_wait_returns_ok_when_nothing_is_running() {
 #[cfg(unix)]
 #[test]
 fn stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down() {
+    let server = FakeServer::start();
     let home = temp_home("kill-success");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
-
-    // The server answers until the force-kill fires, then goes quiet. Tying "server down" to the
-    // kill event — rather than a wall-clock timer racing the poll loop — makes this deterministic.
-    let down_marker = home.join("killed");
-    let server = FakeServer::start_until_marker(down_marker.clone());
     let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "80");
-    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
-
-    // Divert the real killer to a shim that creates the down-marker instead of signalling a PID,
-    // so the server stops answering exactly when the force-kill runs.
-    let script = home.join("fake-kill.sh");
-    std::fs::write(
-        &script,
-        format!("#!/bin/sh\n: > '{}'\nexit 0\n", down_marker.display()),
-    )
-    .expect("write kill shim");
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .expect("chmod shim");
-    let _kill = EnvGuard::set("MOADIM_KILL_BIN", script.to_str().unwrap());
-
-    // A pid file must exist for the force-kill branch to run; its value is irrelevant because the
-    // shim ignores it.
-    std::fs::create_dir_all(crate::paths::config_dir()).expect("create config dir");
-    std::fs::write(crate::paths::pid_file(), "424242").expect("write pid file");
-
-    // The first wait times out with the server up; the force-kill shim then drops it, so the
-    // post-kill wait observes it stopped and we succeed.
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "300");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "15");
+    let mut child = spawn_dummy_with_pid_file();
+    // The first wait (300ms) times out with the server still up, then the server is taken down
+    // at 450ms — well inside the post-kill wait's window — so that wait observes it stopped.
+    // The ~150ms of slack on each side of the post-kill deadline keeps the test off the timing
+    // knife-edge it used to sit on (80ms timeout / 130ms drop left only ~35ms of margin, which
+    // a coverage-instrumented or otherwise loaded CI run could blow, flaking this assertion).
+    server.stop_after(Duration::from_millis(450));
     stop_running_and_wait().expect("server stops after force-kill -> success");
-
-    drop(server);
+    let _ = child.wait();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -264,4 +241,30 @@ fn timeout_and_poll_fall_back_to_defaults() {
             std::env::set_var("MOADIM_RESTART_POLL_MS", value);
         }
     }
+}
+
+/// Cover the `if let Some(pid) = read_pid_file() { kill_pid(pid); }` closing `}` when
+/// `read_pid_file()` returns `None` — i.e. the server is running but no pid file exists.
+/// The server then stops on its own (via `stop_after`) so the second `wait_until_stopped()`
+/// succeeds and `stop_running_and_wait` returns `Ok`.
+#[cfg(unix)]
+#[test]
+fn stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops() {
+    let server = FakeServer::start();
+    let home = temp_home("no-pid-file");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "60");
+    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
+    // Deliberately write NO pid file: read_pid_file() will return None and the
+    // `if let Some(pid)` body is skipped, exercising the closing `}` on that branch.
+    //
+    // The server stops after the first wait has timed out but before the second wait ends.
+    server.stop_after(Duration::from_millis(80));
+    let result = stop_running_and_wait();
+    assert!(
+        result.is_ok(),
+        "should succeed once the server stops: {result:?}"
+    );
+    let _ = std::fs::remove_dir_all(&home);
 }

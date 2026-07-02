@@ -1,6 +1,7 @@
 //! Point-in-time `slug -> TTL` / `slug -> max-runtime` snapshots of the routine store, used to
 //! drive a cleanup sweep without holding the store lock across filesystem and tmux work.
 
+use crate::utils::lock::LockRecover;
 use std::collections::HashMap;
 
 use super::super::command::slugify;
@@ -13,7 +14,7 @@ use super::ttl::MAX_TTL_SECS;
 /// Taken up front so the store lock is released before the sweep touches the filesystem and tmux —
 /// reaping a directory tree must not block routine reads/writes.
 pub fn snapshot_ttls(store: &RoutineStore) -> HashMap<String, u64> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     lock.values()
         .map(|routine| (slugify(&routine.title), routine.effective_ttl_secs()))
         .collect()
@@ -27,7 +28,7 @@ pub fn ttl_for(snapshot: &HashMap<String, u64>, slug: &str) -> u64 {
 
 /// Snapshot each routine's `slug -> effective max runtime` from the store. See [`snapshot_ttls`].
 pub fn snapshot_max_runtimes(store: &RoutineStore) -> HashMap<String, u64> {
-    let lock = store.lock().unwrap();
+    let lock = store.lock_recover();
     lock.values()
         .map(|routine| {
             (

@@ -27,6 +27,28 @@ async fn logger_passes_200_response_through() {
 }
 
 #[tokio::test]
+async fn logger_passes_health_response_through_at_debug() {
+    // `/api/v1/health` is logged at debug instead of info; exercise that branch
+    // so the health-poll path is covered and still forwards the response intact.
+    log::set_max_level(log::LevelFilter::Trace);
+    let app = Router::new()
+        .route("/api/v1/health", get(|| async { "ok" }))
+        .layer(middleware::from_fn(logger));
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn logger_passes_404_response_through() {
     let app = Router::new()
         .route("/exists", get(|| async { "ok" }))

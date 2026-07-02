@@ -321,10 +321,14 @@ with a message on stderr.
 
 ### Data commands
 
-Beyond lifecycle, the CLI exposes **every** routine action the REST API and MCP tools
+Beyond lifecycle, the CLI exposes the same routine actions the REST API and MCP tools
 do — they are thin clients that send the same JSON to the running server and print its response
 (pretty-printed JSON, or raw text for logs / the iCalendar feed). Like `status`/`stop`/`cleanup`,
 they exit `3` when no server is reachable and `1` on a non-2xx response.
+
+Routine flags (`create_flag`/`list_flags`/`resolve_flag`) and the global routine lock
+(`get_lock_status`/`lock_routines`/`unlock_routines`) are REST/MCP-only for now — there is no
+`moadim` subcommand for them yet.
 
 ```sh
 # Routines (alias: `routine`)

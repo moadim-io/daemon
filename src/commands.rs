@@ -1,7 +1,8 @@
 //! Data-plane CLI subcommands.
 //!
-//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so every action is reachable
-//! from the command line too. Each subcommand is a thin client: it serializes its flags into the
+//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so most actions are
+//! reachable from the command line too — routine flags and the global routine lock are
+//! REST/MCP-only for now. Each subcommand is a thin client: it serializes its flags into the
 //! same JSON the REST API expects, sends it to the running server over the loopback HTTP client in
 //! [`crate::cli`], and prints the server's response. The daemon must already be running
 //! (`moadim` / `moadim -i`); when it is not, these commands report that and exit

@@ -244,8 +244,7 @@
     .cmdk {
       align-self: flex-start;
       margin-top: 11vh;
-      width: 560px;
-      max-width: 92vw;
+      width: clamp(280px, 90vw, 560px);
       background: var(--bg-2);
       border: 1px solid var(--border-hi);
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
@@ -720,8 +719,7 @@
     .modal {
       background: var(--bg-2);
       border: 1px solid var(--border-hi);
-      width: 540px;
-      max-width: 92vw;
+      width: clamp(280px, 90vw, 540px);
       max-height: 88vh;
       overflow-y: auto;
       transform: translateY(10px);
@@ -861,8 +859,7 @@
       background: var(--bg-2);
       border: 1px solid var(--red);
       padding: 22px;
-      width: 350px;
-      max-width: 92vw;
+      width: clamp(240px, 90vw, 350px);
       transform: translateY(8px);
       transition: transform 0.15s;
     }
@@ -1124,7 +1121,7 @@
       font-family: var(--mono);
       font-size: 12px;
       padding: 6px 10px;
-      min-width: 240px;
+      min-width: clamp(140px, 40vw, 240px);
       outline: none;
       transition: border-color 0.12s;
     }
@@ -1203,7 +1200,7 @@
       font-size: 12px;
       letter-spacing: 0.14em;
       color: var(--text-hi);
-      min-width: 150px;
+      min-width: clamp(90px, 30vw, 150px);
       text-align: center;
     }
     .cal-nav .btn-ghost { margin-left: auto; }
@@ -1284,7 +1281,7 @@
       font-size: 12px;
       letter-spacing: 0.14em;
       color: var(--text-hi);
-      min-width: 180px;
+      min-width: clamp(110px, 35vw, 180px);
       text-align: center;
     }
     .day-nav .btn-ghost { margin-left: auto; }
@@ -1546,6 +1543,11 @@
       width: 100%;
       min-width: 720px;
       table-layout: fixed;
+    }
+    @media (max-width: 640px) {
+      table.heatmap { min-width: 480px; }
+      .hm-daylabel { width: 40px; }
+      .hm-cell { height: 16px; font-size: 8px; }
     }
     table.heatmap th, table.heatmap td { padding: 0; }
     .hm-corner, .hm-hcol {

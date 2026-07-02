@@ -530,6 +530,28 @@ fn svc_create_rejects_duplicate_slug() {
 }
 
 #[test]
+fn svc_create_trims_title_before_persisting() {
+    // Covers the title `.trim()` on the `svc_create` store path: a padded title is
+    // length-checked trimmed but must also be *stored* trimmed, so the disclosure /
+    // iCal SUMMARY / UI rows never render the surrounding whitespace.
+    let title = "Svc Create Trim ZZZ";
+    let store = new_store();
+    with_empty_path(|| {
+        let created = svc_create(
+            &store,
+            CreateRoutineRequest {
+                title: "   Svc Create Trim ZZZ   ".into(),
+                ..valid_create_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(created.routine.title, title);
+        svc_delete(&store, &created.routine.id).unwrap();
+    });
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
 fn svc_create_rejects_malformed_agent_config() {
     let _home = TempHome::set();
     // A referenced agent whose `<name>.toml` is present but unparseable is rejected at create time
@@ -825,6 +847,33 @@ fn svc_update_sets_max_runtime_secs() {
         .unwrap();
         assert_eq!(updated.routine.max_runtime_secs, Some(1234));
     });
+}
+
+#[test]
+fn svc_update_trims_title_before_persisting() {
+    // Covers the title `.trim()` on the `svc_update` apply path. Renaming with the
+    // same slug but different spacing/case must store the trimmed title.
+    let title = "Svc Update Trim ZZZ";
+    let store = new_store();
+    let routine = make_routine("trim-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("trim-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "trim-id",
+            UpdateRoutineRequest {
+                // Same slug, padded: applies the rename branch without a conflict.
+                title: Some("  Svc Update Trim ZZZ  ".into()),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.title, title);
+    });
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
 
 #[test]

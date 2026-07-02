@@ -318,6 +318,13 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let scheduled_state_path = routine_scheduled_state_path(&slug)
         .to_string_lossy()
         .into_owned();
+    // Resolve through the same seam the reaper (`cleanup/mod.rs`) and the LOGS view
+    // (`routines/service.rs`) use, rather than hardcoding `$HOME/.moadim/workbenches`: honoring
+    // `MOADIM_HOME_OVERRIDE` here keeps the path a run is launched at in sync with the paths those
+    // consumers scan, instead of drifting the moment either side changes.
+    let workbenches_base = crate::paths::workbenches_dir()
+        .to_string_lossy()
+        .into_owned();
 
     let prompt_file_ref = "prompt.md";
     let workbench_ref = ".";
@@ -362,7 +369,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
             shell_quote(&scheduled_state_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
-        r#"WB="$HOME/.moadim/workbenches/$SLUG-$TS""#.to_string(),
+        format!(r#"WB={}/"$SLUG-$TS""#, shell_quote(&workbenches_base)),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
     ];

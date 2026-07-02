@@ -150,6 +150,55 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
 }
 
 #[test]
+fn build_routine_command_workbench_base_tracks_moadim_home_override() {
+    // The `WB=` assignment must derive its base from `paths::workbenches_dir()` rather than a
+    // hardcoded `$HOME/.moadim/workbenches` literal, so a run is launched under the same base the
+    // reaper (`routines/cleanup/mod.rs`) and the LOGS view (`routines/service.rs`) scan. Exercise
+    // this under `MOADIM_HOME_OVERRIDE` — a divergence here would leak workbenches the reaper never
+    // sees and leave the LOGS view empty for real runs (see #601).
+    let dir = std::env::temp_dir().join(format!("moadim-cmd-home-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: the test harness runs single-threaded; the prior value is restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    }
+
+    let expected_base = crate::paths::workbenches_dir()
+        .to_string_lossy()
+        .into_owned();
+    let routine = make_routine("Cmd Workbench Base Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        match previous {
+            Some(prev) => std::env::set_var("MOADIM_HOME_OVERRIDE", prev),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        cmd.contains(&format!(
+            r#"WB={}/"$SLUG-$TS""#,
+            shell_quote(&expected_base)
+        )),
+        "expected WB base derived from paths::workbenches_dir() ({expected_base}) in: {cmd}"
+    );
+    assert!(
+        !cmd.contains(r#"WB="$HOME/.moadim/workbenches"#),
+        "expected the hardcoded $HOME/.moadim/workbenches literal to be gone, got: {cmd}"
+    );
+}
+
+#[test]
 fn cron_path_falls_back_to_root_home_when_home_unset() {
     // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
     // fallback arm, so the `~/.local/bin` etc. entries are anchored under `/root`.

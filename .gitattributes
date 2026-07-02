@@ -1,0 +1,16 @@
+# Normalize line endings: Git stores text with LF, checks out native EOL.
+* text=auto
+
+# Generated and vendored files. Marking them `linguist-generated` collapses
+# their diffs in pull requests and excludes them from GitHub's repository
+# language statistics, so the ~1.1 MB embedded UI bundle and the lockfiles
+# stop skewing the language breakdown and flooding code review.
+#
+# This mirrors the generated/vendored set already excluded from spell-check in
+# `typos.toml` (see CONTRIBUTING.md): the embedded UI HTML, lockfiles, the
+# OpenAPI document, and the generated JSON Schema.
+prebuilt.html      linguist-generated -diff
+Cargo.lock         linguist-generated
+pnpm-lock.yaml     linguist-generated
+apis/openapi.json  linguist-generated
+schemas/job.schema.json linguist-generated

@@ -20,14 +20,14 @@ fn test_shutdown() -> crate::routes::http::ShutdownSignal {
 struct TempHome;
 
 impl TempHome {
-    fn set() -> TempHome {
+    fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-mcptest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome
+        Self
     }
 }
 
@@ -104,6 +104,7 @@ fn echo_tool_returns_message() {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        model: None,
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
         agent: "claude".into(),
@@ -186,6 +187,7 @@ fn create_get_update_trigger_delete_routine_success() {
             schedule: None,
             title: Some("Renamed".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,
@@ -233,6 +235,7 @@ fn update_routine_tool_not_found_is_error() {
             schedule: None,
             title: Some("x".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,

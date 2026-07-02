@@ -24,6 +24,9 @@ struct RoutineToml {
     title: Option<String>,
     /// Agent registry key.
     agent: Option<String>,
+    /// Model ID override for the agent invocation; absent means the agent's own default.
+    #[serde(default)]
+    model: Option<String>,
     /// Task prompt.
     prompt: Option<String>,
     /// Context repositories.
@@ -127,6 +130,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         schedule: toml.schedule?,
         title,
         agent: toml.agent?,
+        model: toml.model,
         prompt: toml.prompt.unwrap_or_default(),
         repositories: toml.repositories,
         machines: toml.machines,
@@ -169,6 +173,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         schedule: Some(routine.schedule.clone()),
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
+        model: routine.model.clone(),
         prompt: Some(routine.prompt.clone()),
         repositories: routine.repositories.clone(),
         machines: routine.machines.clone(),
@@ -256,7 +261,10 @@ pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
         let new = entry.path().join("prompt.md");
         if old.exists() && !new.exists() {
             if let Err(err) = std::fs::rename(&old, &new) {
-                log::warn!("migrate_prompt_files: failed to rename {old:?}: {err}");
+                log::warn!(
+                    "migrate_prompt_files: failed to rename {}: {err}",
+                    old.display()
+                );
             }
         }
     }

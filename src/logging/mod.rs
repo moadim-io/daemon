@@ -5,8 +5,8 @@
 use std::io::Write;
 
 #[cfg(test)]
-#[path = "logging_tests.rs"]
-mod logging_tests;
+#[path = "tests.rs"]
+mod tests;
 
 /// Output format selected by `MOADIM_LOG_FORMAT`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -52,10 +52,9 @@ src/
 │
 ├── middlewares/
 │   ├── logger.rs             request/response logger
-│   ├── fs_location.rs        injects x-server-root / x-server-exe-dir headers
 │   └── security_headers.rs   adds CSP and related response headers
 │
-├── filesystem/mod.rs    FsLocation — server working dir + exe dir
+├── filesystem/mod.rs    FsLocation — server working dir + exe dir (surfaced via GET /health and the MCP `health` tool)
 ├── paths/mod.rs         path builders for ~/.config/moadim/routines/
 ├── machine/mod.rs       machine identity resolution (env/file/hostname)
 ├── service/             `moadim install`/`uninstall` OS-service registration (linux/macos)
@@ -84,7 +83,7 @@ ui/                      Yew workspace member (separate Cargo.toml)
 
 Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
-Middleware stack (outermost first): `CompressionLayer` → `logger` → `fs_location` → `security_headers`.
+Middleware stack (outermost first): `CompressionLayer` → `logger` → `security_headers`.
 
 ---
 

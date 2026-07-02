@@ -1251,12 +1251,20 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
 
     // `/` focuses the search box (while not already typing in another field),
     // matching the GitHub/Slack convention and complementing the ⌘K palette.
+    // Escape dismisses whichever routine modal/dialog is currently open.
     let search_ref = use_node_ref();
     {
         let search_ref = search_ref.clone();
+        let state = state.clone();
         use_effect_with((), move |_| {
             let on_key =
                 Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if event.key() == "Escape" {
+                        if state.modal != RModal::None {
+                            state.dispatch(RAction::CloseModal);
+                        }
+                        return;
+                    }
                     if event.key() != "/" || event.meta_key() || event.ctrl_key() || event.alt_key()
                     {
                         return;
@@ -1698,7 +1706,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} on_toast={Some(toast.clone())} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
@@ -2072,6 +2080,14 @@ pub struct CalendarProps {
     /// When set, clicking a calendar chip opens the edit modal for that routine.
     #[prop_or_default]
     pub on_edit: Option<Callback<String>>,
+    /// When set, enables the SUBSCRIBE button which copies the `/routines.ics` feed URL.
+    #[prop_or_default]
+    pub on_toast: Option<Callback<(String, ToastKind)>>,
+}
+
+/// Build the absolute URL of the routines iCalendar feed from a page origin.
+fn ics_feed_url(origin: &str) -> String {
+    format!("{origin}/api/v1/routines.ics")
 }
 
 #[function_component(RoutineCalendar)]
@@ -2090,6 +2106,23 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
         let offset = offset.clone();
         Callback::from(move |_: MouseEvent| offset.set(0))
     };
+    let on_subscribe = props.on_toast.clone().map(|on_toast| {
+        Callback::from(move |_: MouseEvent| {
+            let on_toast = on_toast.clone();
+            spawn_local(async move {
+                let Some(window) = web_sys::window() else {
+                    return;
+                };
+                let origin = window.location().origin().unwrap_or_default();
+                let url = ics_feed_url(&origin);
+                let promise = window.navigator().clipboard().write_text(&url);
+                match wasm_bindgen_futures::JsFuture::from(promise).await {
+                    Ok(_) => on_toast.emit(("Calendar feed URL copied".into(), ToastKind::Ok)),
+                    Err(_) => on_toast.emit(("Copy failed".into(), ToastKind::Err)),
+                }
+            });
+        })
+    });
 
     if props.loading {
         return html! {
@@ -2179,6 +2212,10 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                 <div class="cal-month">{month_label}</div>
                 <button class="btn-refresh" title="Next month" aria-label="Next month" onclick={on_next}>{"›"}</button>
                 <button class="btn btn-ghost btn-sm" onclick={on_today}>{"TODAY"}</button>
+                if let Some(on_subscribe) = on_subscribe {
+                    <button class="btn btn-ghost btn-sm" title="Copy the routines.ics feed URL"
+                        onclick={on_subscribe}>{"SUBSCRIBE"}</button>
+                }
             </div>
             {body}
         </div>

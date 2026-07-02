@@ -98,6 +98,9 @@ struct UpdateRoutineInput {
     title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
@@ -234,6 +237,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             title: input.title,
             agent: input.agent,
+            model: input.model,
             prompt: input.prompt,
             repositories: input.repositories,
             machines: input.machines,

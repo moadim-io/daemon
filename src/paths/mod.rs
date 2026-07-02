@@ -127,6 +127,14 @@ pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")
 }
 
+/// Returns the path to `{routines_dir}/{id}/flags/`, holding one file per open flag an agent (or a
+/// human, via MCP/HTTP) has raised against the routine — a gap, bug, edge case, or question it
+/// couldn't resolve mid-run. See [`crate::routines::flags`].
+#[must_use]
+pub fn routine_flags_dir(id: &str) -> PathBuf {
+    routine_dir(id).join("flags")
+}
+
 // ─── Agent registry ──────────────────────────────────────────────────────────
 
 /// Returns the path to `{config_dir}/agents/` (default `~/.config/moadim/agents/`).

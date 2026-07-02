@@ -1065,6 +1065,35 @@ fn svc_trigger_warns_when_spawn_fails() {
 }
 
 #[test]
+fn svc_trigger_skips_spawn_when_prompt_exceeds_inline_limit() {
+    let _home = TempHome::set();
+    // An agent whose args inline `{prompt}`, combined with a composed prompt over the
+    // inline-argument limit, must skip the spawn (#443) rather than launch a command doomed to
+    // fail silently inside tmux with `E2BIG`. The trigger still records its timestamp and
+    // returns Ok — the same non-fatal shape as `svc_trigger_warns_when_spawn_fails` above. `PATH`
+    // is left as-is (unlike that test): the skip must happen before a spawn is ever attempted, not
+    // because the shell can't be found.
+    let agent_name = "svc-trigger-oversized-prompt-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"true\"\nargs = [\"{prompt}\"]\n").unwrap();
+
+    let title = "Svc Trigger Oversized Prompt ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("trig-oversized-id", title, 1, 1);
+    routine.agent = agent_name.into();
+    routine.prompt = "x".repeat(crate::routines::MAX_INLINE_PROMPT_BYTES * 2);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-oversized-id".into(), routine);
+
+    let triggered = svc_trigger(&store, "trig-oversized-id").unwrap();
+    assert!(triggered.last_manual_trigger_at.is_some());
+}
+
+#[test]
 fn svc_trigger_scheduled_missing_routine_not_found() {
     let _home = TempHome::set();
     assert!(matches!(

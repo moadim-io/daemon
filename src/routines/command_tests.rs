@@ -519,3 +519,55 @@ fn build_routine_command_omits_model_flag_when_unset() {
         "expected no --model flag in: {cmd}"
     );
 }
+
+#[test]
+fn inline_prompt_overflow_none_for_prompt_file_agent_regardless_of_size() {
+    // `{prompt_file}` (codex/hermes) passes the prompt as a path, never as an inlined argument, so
+    // it is never subject to the inline-argument cap no matter how large the composed prompt is.
+    let mut routine = make_routine("Cmd Overflow Prompt File Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_none_when_composed_prompt_fits() {
+    let routine = make_routine("Cmd Overflow Small Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
+    // A `{prompt}` agent (the shipped `claude` default) with a composed prompt over the inline
+    // cap must be flagged, so the caller can skip a launch doomed to fail silently (#443).
+    let mut routine = make_routine("Cmd Overflow Large Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let overflow = inline_prompt_overflow(&routine, &agent);
+    assert_eq!(overflow, Some(compose_prompt(&routine).len()));
+    assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
+}

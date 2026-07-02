@@ -317,6 +317,24 @@ fn svc_update_rejects_blank_prompt() {
 }
 
 #[test]
+fn svc_update_rejects_goal_over_max_lines() {
+    let _home = TempHome::set();
+    // Covers the `validate_goal(Some(goal))?` error arm in `svc_update` (goal validation
+    // runs before the routine-existence check, so a non-existent id is fine here).
+    let store = store_with(vec![]);
+    let result = svc_update(
+        &store,
+        "missing",
+        UpdateRoutineRequest {
+            model: None,
+            goal: Some("l1\nl2\nl3\nl4\nl5\nl6".into()),
+            ..empty_update_request()
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
 fn svc_update_rejects_zero_durations() {
     let _home = TempHome::set();
     // Covers both `reject_zero_secs` error arms on the update path.
@@ -1284,6 +1302,33 @@ fn svc_trigger_scheduled_clears_snoozed_until_once_elapsed_and_spawns() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn svc_trigger_scheduled_returns_internal_on_write_failure_when_snooze_elapses() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L594: `write_routine(..).map_err(|_| AppError::Internal)?` in the
+    // snoozed-until-elapsed arm of `svc_trigger_scheduled`.
+    let _home = TempHome::set();
+    let title = "Sched Snooze Write Fail ZZZ";
+    let slug = slugify(title);
+    let store = new_store();
+    let mut routine = make_routine("sched-snooze-write-fail-id", title, 1, 1);
+    routine.snoozed_until = Some(1); // long past
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-snooze-write-fail-id".into(), routine);
+
+    let dir = crate::paths::routine_dir(&slug);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_trigger_scheduled(&store, "sched-snooze-write-fail-id");
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
 #[test]
 fn svc_trigger_scheduled_skip_runs_zero_spawns_normally() {
     // skip_runs: Some(0) is a degenerate but reachable state (e.g. svc_snooze called with
@@ -1339,6 +1384,33 @@ fn svc_trigger_scheduled_decrements_skip_runs_without_spawning() {
         Some(1),
         "skip_runs must decrement in the in-memory store, not just on disk"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_trigger_scheduled_returns_internal_on_write_failure_when_decrementing_skip_runs() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L603: `write_routine(..).map_err(|_| AppError::Internal)?` in the
+    // skip_runs-decrement arm of `svc_trigger_scheduled`.
+    let _home = TempHome::set();
+    let title = "Sched Skip Runs Write Fail ZZZ";
+    let slug = slugify(title);
+    let store = new_store();
+    let mut routine = make_routine("sched-skip-write-fail-id", title, 1, 1);
+    routine.skip_runs = Some(2);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("sched-skip-write-fail-id".into(), routine);
+
+    let dir = crate::paths::routine_dir(&slug);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_trigger_scheduled(&store, "sched-skip-write-fail-id");
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
 }
 
 #[test]
@@ -1463,6 +1535,31 @@ fn svc_snooze_sets_and_clears() {
     let cleared = svc_snooze(&store, "snooze-set-clear-id", None, None).unwrap();
     assert_eq!(cleared.snoozed_until, None);
     assert_eq!(cleared.skip_runs, None);
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_snooze_returns_internal_on_write_failure() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L663: `write_routine(..).map_err(|_| AppError::Internal)?` in `svc_snooze`.
+    let _home = TempHome::set();
+    let title = "Svc Snooze Write Fail ZZZ";
+    let slug = slugify(title);
+    let store = new_store();
+    let routine = make_routine("snooze-write-fail-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("snooze-write-fail-id".into(), routine);
+
+    let dir = crate::paths::routine_dir(&slug);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_snooze(&store, "snooze-write-fail-id", Some(999), None);
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
 }
 
 /// Build a create request with the given title and an otherwise-valid body.
@@ -2492,6 +2589,55 @@ fn svc_create_flag_persists_and_refreshes_prompt() {
     assert!(prompt.contains("broken thing"));
 }
 
+#[cfg(unix)]
+#[test]
+fn svc_create_flag_returns_internal_on_create_flag_failure() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L790: `flags::create_flag(..).map_err(|_| AppError::Internal)?` in
+    // `svc_create_flag`. The routine dir is read-only, so `create_flag`'s own
+    // `create_dir_all` for the nested `flags/` dir cannot create it.
+    let _home = TempHome::set();
+    let title = "Svc Flag Create Mkdir Fail ZZZ";
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id;
+
+    let dir = crate::paths::routine_dir(&slugify(title));
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_create_flag(&store, &id, "bug", "broken", "general");
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_create_flag_returns_internal_on_write_failure_after_flag_created() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L791: `write_routine(..).map_err(|_| AppError::Internal)?` in
+    // `svc_create_flag`, reached only once `create_flag` itself has already
+    // succeeded. Pre-create the `flags/` dir so `create_flag`'s own
+    // `create_dir_all` is a harmless no-op unaffected by the routine dir's
+    // permissions, then make the routine dir read-only so the re-persist of
+    // `routine.toml` fails.
+    let _home = TempHome::set();
+    let title = "Svc Flag Create Write Fail ZZZ";
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id;
+
+    let slug = slugify(title);
+    std::fs::create_dir_all(crate::paths::routine_flags_dir(&slug)).unwrap();
+    let dir = crate::paths::routine_dir(&slug);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_create_flag(&store, &id, "bug", "broken", "general");
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
 #[test]
 fn svc_list_flags_not_found() {
     let _home = TempHome::set();
@@ -2553,6 +2699,53 @@ fn svc_resolve_flag_deletes_and_refreshes_prompt() {
     let prompt =
         std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
     assert!(!prompt.contains("Open flags"));
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_resolve_flag_returns_internal_on_resolve_flag_failure() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L808: `flags::resolve_flag(..).map_err(|_| AppError::Internal)?` in
+    // `svc_resolve_flag`. The flags dir (not the routine dir) is made read-only,
+    // so `remove_file` for the flag can't remove an entry from its parent dir.
+    let _home = TempHome::set();
+    let title = "Svc Flag Resolve Rm Fail ZZZ";
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id;
+    let flag = svc_create_flag(&store, &id, "bug", "broken", "general").unwrap();
+
+    let flags_dir = crate::paths::routine_flags_dir(&slugify(title));
+    std::fs::set_permissions(&flags_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_resolve_flag(&store, &id, &flag.filename);
+
+    std::fs::set_permissions(&flags_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
+}
+
+#[cfg(unix)]
+#[test]
+fn svc_resolve_flag_returns_internal_on_write_failure_after_flag_resolved() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // Covers L812: `write_routine(..).map_err(|_| AppError::Internal)?` in
+    // `svc_resolve_flag`, reached only once `resolve_flag` itself has already
+    // succeeded. Only the routine dir (not the flags dir) is made read-only, so
+    // removing the flag file still works but re-persisting `routine.toml` fails.
+    let _home = TempHome::set();
+    let title = "Svc Flag Resolve Write Fail ZZZ";
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id;
+    let flag = svc_create_flag(&store, &id, "bug", "broken", "general").unwrap();
+
+    let dir = crate::paths::routine_dir(&slugify(title));
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = svc_resolve_flag(&store, &id, &flag.filename);
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(result, Err(AppError::Internal)));
 }
 
 // ─── sh_bin test-build guard (issue #217) ─────────────────────────────────

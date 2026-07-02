@@ -2921,6 +2921,87 @@ fn sh_bin_never_resolves_to_real_sh_in_test_builds() {
 }
 
 #[test]
+fn svc_rename_machine_no_op_when_names_equal() {
+    let _home = TempHome::set();
+    // Covers the early-return guard (`old == new`) in `svc_rename_machine`.
+    let mut routine = make_routine("rename-noop", "Noop", 1, 1);
+    routine.machines = vec!["old-machine".into()];
+    let store = store_with(vec![routine]);
+    // Must not panic or touch disk when the name does not change.
+    svc_rename_machine(&store, "old-machine", "old-machine");
+    let lock = store.lock_recover();
+    assert_eq!(
+        lock["rename-noop"].machines,
+        vec!["old-machine".to_string()],
+        "store must be unchanged after no-op rename"
+    );
+}
+
+#[test]
+fn svc_rename_machine_replaces_old_name_in_matching_routines() {
+    let _home = TempHome::set();
+    // Covers the core rename path: filter, map, write, sync.
+    let mut routine_a = make_routine("rename-a", "Alpha", 1, 1);
+    routine_a.machines = vec!["old-machine".into(), "other".into()];
+    let mut routine_b = make_routine("rename-b", "Beta", 2, 2);
+    routine_b.machines = vec!["unrelated".into()];
+    let store = store_with(vec![routine_a, routine_b]);
+    with_empty_path(|| {
+        svc_rename_machine(&store, "old-machine", "new-machine");
+    });
+    let lock = store.lock_recover();
+    assert_eq!(
+        lock["rename-a"].machines,
+        vec!["new-machine".to_string(), "other".to_string()],
+        "old name must be replaced with new name"
+    );
+    assert_eq!(
+        lock["rename-b"].machines,
+        vec!["unrelated".to_string()],
+        "unrelated routine must not be touched"
+    );
+}
+
+#[test]
+fn svc_rename_machine_skips_sync_when_no_routines_match() {
+    let _home = TempHome::set();
+    // Covers the `!updated.is_empty()` false branch — no crontab sync when nothing changed.
+    let mut routine = make_routine("rename-skip", "Skip", 1, 1);
+    routine.machines = vec!["other-machine".into()];
+    let store = store_with(vec![routine]);
+    // No crontab binary on PATH, but no sync should be attempted either.
+    with_empty_path(|| {
+        svc_rename_machine(&store, "old-machine", "new-machine");
+    });
+    let lock = store.lock_recover();
+    assert_eq!(
+        lock["rename-skip"].machines,
+        vec!["other-machine".to_string()],
+        "non-matching routine must not be modified"
+    );
+}
+
+#[test]
+fn svc_rename_machine_warns_when_crontab_sync_fails() {
+    let _home = TempHome::set();
+    // With `PATH` cleared the `crontab` binary cannot be spawned, so
+    // `sync_routines_to_crontab` errors and `svc_rename_machine` logs the warning but
+    // still updates the in-memory store.
+    let mut routine = make_routine("rename-warn", "Warn", 1, 1);
+    routine.machines = vec!["old-machine".into()];
+    let store = store_with(vec![routine]);
+    with_empty_path(|| {
+        svc_rename_machine(&store, "old-machine", "new-machine");
+    });
+    let lock = store.lock_recover();
+    assert_eq!(
+        lock["rename-warn"].machines,
+        vec!["new-machine".to_string()],
+        "in-memory store must reflect new name despite crontab failure"
+    );
+}
+
+#[test]
 fn sh_bin_honors_override() {
     let saved = std::env::var_os("MOADIM_SH_BIN");
     // SAFETY: single-threaded test harness (RUST_TEST_THREADS=1); restored below.

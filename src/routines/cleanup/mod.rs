@@ -61,6 +61,23 @@ fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
     now.saturating_sub(ts) > ttl
 }
 
+/// Best-effort *finish* time of a finished run, as unix seconds: the mtime of its `agent.log` (the
+/// last time the agent wrote output). Falls back to `trigger_ts` when the log is missing or its
+/// mtime is unreadable, and is clamped to at least `trigger_ts` so retention is never measured from
+/// a moment earlier than the run's own start.
+///
+/// Retention (TTL) is measured from finish, not from trigger (#174): a run consumes none of its
+/// keep-window while still executing, so a long run — or any run on a short-interval schedule — is
+/// still retained for the full `effective_ttl_secs` after it completes. The max-runtime watchdog
+/// continues to measure from `trigger_ts` (elapsed wall-clock since launch), which is correct.
+fn agent_log_finish_time(dir: &Path, trigger_ts: u64) -> u64 {
+    std::fs::metadata(dir.join("agent.log"))
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(trigger_ts, |elapsed| elapsed.as_secs().max(trigger_ts))
+}
+
 /// Watchdog decision for a single workbench: if its session is alive but the run has exceeded
 /// `max_runtime_for(slug)` it is hung — `kill` the session, note it in the run's `agent.log`, and
 /// report it as no longer alive. Returns whether the session should be treated as alive afterwards
@@ -139,9 +156,14 @@ fn watchdog_dir(
 /// 2. **Reap** — a finished run (session not alive, originally or after the kill) whose
 ///    `ttl_for(slug)` has elapsed is removed.
 ///
-/// A live session within its max runtime is left untouched. Returns the number of directories
-/// removed. `ttl_for`, `max_runtime_for`, `is_alive`, and `kill` are injected so the decision logic
-/// is unit-testable without a filesystem clock or a live tmux server.
+/// A live session within its max runtime is left untouched. The TTL reap decision is measured from
+/// each run's *finish* time (`finished_at(path, trigger_ts)`), not its trigger time, so a run is
+/// kept for the full window after it completes (#174); the watchdog still measures elapsed runtime
+/// from the trigger. `finished_at` is evaluated *before* the watchdog can force-kill the session, so
+/// a hung run's forced-kill note (which touches `agent.log`) never masquerades as a fresh finish.
+/// Returns the number of directories removed. `ttl_for`, `max_runtime_for`, `is_alive`, `kill`, and
+/// `finished_at` are injected so the decision logic is unit-testable without a filesystem clock or a
+/// live tmux server.
 fn reap_dir(
     dir: &Path,
     now: u64,
@@ -149,6 +171,7 @@ fn reap_dir(
     max_runtime_for: &dyn Fn(&str) -> u64,
     is_alive: &dyn Fn(&str) -> bool,
     kill: &dyn Fn(&str),
+    finished_at: &dyn Fn(&Path, u64) -> u64,
 ) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -162,6 +185,10 @@ fn reap_dir(
         let Some((slug, ts)) = parse_workbench_name(&name) else {
             continue;
         };
+        // Captured before `kill_if_hung` below: a forced kill appends a note to `agent.log`,
+        // which would otherwise bump its mtime to "now" and make a just-killed hung run look
+        // like it *just* finished, resetting its retention window instead of reaping it.
+        let finish_ts = finished_at(&entry.path(), ts);
         let session = format!("moadim-{name}");
         let alive = kill_if_hung(
             &entry.path(),
@@ -176,8 +203,9 @@ fn reap_dir(
             // Still running within its max runtime — never touched.
             continue;
         }
-        if !is_expired(now, ts, ttl_for(slug)) {
-            // Finished (or just killed) but its retention window has not elapsed yet.
+        if !is_expired(now, finish_ts, ttl_for(slug)) {
+            // Finished (or just killed) but its retention window has not elapsed yet — measured
+            // from when the run finished, so its own duration does not eat into retention.
             continue;
         }
         match std::fs::remove_dir_all(entry.path()) {
@@ -207,6 +235,7 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
         &max_runtime_for,
         &tmux_session_alive,
         &tmux_kill_session,
+        &agent_log_finish_time,
     )
 }
 

@@ -4,11 +4,13 @@ use super::*;
 
 fn make_routine(id: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![Repository {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
@@ -20,6 +22,8 @@ fn make_routine(id: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -38,6 +42,25 @@ fn slugify_empty_falls_back() {
     assert_eq!(slugify(""), "routine");
     assert_eq!(slugify("---"), "routine");
     assert_eq!(slugify("!@#$"), "routine");
+}
+
+#[test]
+fn slugify_preserves_non_ascii_letters() {
+    // Hebrew and CJK titles must not collapse to the "routine" fallback (#262).
+    assert_eq!(slugify("עדכון יומי"), "עדכון-יומי");
+    assert_eq!(slugify("日次レポート"), "日次レポート");
+    assert_eq!(slugify("Отчёт"), "отчёт");
+    // Latin diacritics are kept rather than silently dropped.
+    assert_eq!(slugify("Café Report"), "café-report");
+}
+
+#[test]
+fn slugify_distinct_non_ascii_titles_produce_distinct_slugs() {
+    let slug_one = slugify("עדכון יומי");
+    let slug_two = slugify("דוח שבועי");
+    assert_ne!(slug_one, "routine");
+    assert_ne!(slug_two, "routine");
+    assert_ne!(slug_one, slug_two);
 }
 
 #[test]
@@ -71,6 +94,56 @@ fn compose_prompt_without_repositories_omits_clone_header() {
     assert!(!prompt.contains("clone any you need"));
     assert!(!prompt.contains("\n- "));
     assert!(prompt.contains("do the thing"));
+}
+
+#[test]
+fn compose_prompt_renders_goal_section_when_set() {
+    let mut routine = make_routine("x");
+    routine.goal = Some("Keep the PR backlog small.".to_string());
+    let prompt = compose_prompt(&routine);
+    // The goal appears as a `## Goal` section before the `---` prompt separator.
+    let goal_at = prompt.find("## Goal").expect("goal section present");
+    let sep_at = prompt.find("\n---\n").expect("prompt separator present");
+    assert!(goal_at < sep_at, "goal must precede the prompt");
+    assert!(prompt.contains("Keep the PR backlog small."));
+}
+
+#[test]
+fn compose_prompt_omits_goal_section_when_unset_or_blank() {
+    let mut routine = make_routine("x");
+    routine.goal = None;
+    assert!(!compose_prompt(&routine).contains("## Goal"));
+    routine.goal = Some("   \n\t".to_string());
+    assert!(!compose_prompt(&routine).contains("## Goal"));
+}
+
+#[test]
+fn compose_prompt_omits_open_flags_section_when_none() {
+    let routine = make_routine("x");
+    let prompt = compose_prompt(&routine);
+    assert!(!prompt.contains("Open flags"));
+}
+
+#[test]
+fn compose_prompt_includes_open_flags_section() {
+    let mut routine = make_routine("x");
+    routine.title = "Compose Prompt Flags Test ZZZ".to_string();
+    let slug = slugify(&routine.title);
+    flags::create_flag(
+        &slug,
+        "bug",
+        "the thing is broken",
+        flags::FlagScope::General,
+    )
+    .unwrap();
+    flags::create_flag(&slug, "gap", "missing context", flags::FlagScope::Local).unwrap();
+
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("# Open flags"));
+    assert!(prompt.contains("**bug** (general): the thing is broken"));
+    assert!(prompt.contains("**gap** (local): missing context"));
+
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
 }
 
 #[test]
@@ -257,6 +330,45 @@ fn build_routine_command_inserts_setup_before_launch() {
     assert!(setup_at < launch_at);
     // inserted verbatim (not shell-quoted), $WB left for the runtime shell to expand
     assert!(cmd.contains("seed-trust \"$WB\""));
+}
+
+#[test]
+fn build_routine_command_redirects_launch_wrapper_to_launch_log() {
+    // Setup/tmux failures must not be silently mailed by cron on a headless host (#375): everything
+    // from the prompt copy through `tmux pipe-pane` runs inside a `{ … } >> "$WB/launch.log" 2>&1`
+    // group, so a failure anywhere in that wrapper leaves a readable trace in the workbench.
+    let routine = make_routine("rid");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["{prompt}".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: Some("seed-trust \"$WB\"".to_string()),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(r#"} >> "$WB/launch.log" 2>&1"#),
+        "expected the setup/launch wrapper to redirect into launch.log in: {cmd}"
+    );
+
+    // The redirect group opens after `mkdir -p "$WB"` (so $WB exists before anything tries to
+    // write into it) and closes after the final `tmux pipe-pane` statement.
+    let mkdir_at = cmd.find(r#"mkdir -p "$WB""#).expect("mkdir present");
+    let group_open_at = cmd[mkdir_at..].find('{').map(|off| mkdir_at + off).unwrap();
+    let setup_at = cmd.find("seed-trust").expect("setup present");
+    let pipe_pane_at = cmd.find("tmux pipe-pane").expect("pipe-pane present");
+    let redirect_at = cmd.find(r#"} >> "$WB/launch.log""#).unwrap();
+    assert!(
+        mkdir_at < group_open_at,
+        "mkdir must run before the redirected group opens"
+    );
+    assert!(
+        group_open_at < setup_at,
+        "setup must run inside the redirected group"
+    );
+    assert!(
+        pipe_pane_at < redirect_at,
+        "pipe-pane must run inside the redirected group"
+    );
 }
 
 #[test]
@@ -477,7 +589,9 @@ fn svc_create_invalid_cron_rejected() {
         schedule: "not-a-cron".into(),
         title: "t".into(),
         agent: "claude".into(),
+        model: None,
         prompt: "p".into(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -494,10 +608,12 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
             schedule: "@daily".into(),
             title: "Cov Routine".into(),
             agent: "claude".into(),
             prompt: "p".into(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -510,16 +626,18 @@ fn svc_create_update_delete_lifecycle() {
     let id = created.routine.id.clone();
     // folder is slug of the title, not the UUID
     assert!(crate::paths::routine_toml_path("cov-routine").exists());
-    assert!(crate::paths::routine_prompt_path("cov-routine").exists());
+    assert!(crate::paths::routine_compiled_prompt_path("cov-routine").exists());
 
     let updated = svc_update(
         &store,
         &id,
         UpdateRoutineRequest {
+            model: None,
             schedule: Some("@weekly".into()),
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
             prompt: Some("p2".into()),
+            goal: None,
             repositories: Some(vec![Repository {
                 repository: "r".into(),
                 branch: None,
@@ -548,7 +666,9 @@ fn svc_update_not_found() {
         schedule: None,
         title: Some("x".into()),
         agent: None,
+        model: None,
         prompt: None,
+        goal: None,
         repositories: None,
         machines: None,
         enabled: None,
@@ -570,7 +690,9 @@ fn svc_update_invalid_cron_rejected() {
         schedule: Some("bad".into()),
         title: None,
         agent: None,
+        model: None,
         prompt: None,
+        goal: None,
         repositories: None,
         machines: None,
         enabled: None,

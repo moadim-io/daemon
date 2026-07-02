@@ -9,6 +9,12 @@ use std::path::Path;
 /// The `tmux` executable, overridable via `MOADIM_TMUX_BIN`. In test builds, when no override is
 /// set, this resolves to a non-existent path so tmux probes/kills are harmless no-ops and tests
 /// never touch the real tmux server. Mirrors the `MOADIM_CRONTAB_BIN` seam (#211).
+///
+/// Outside tests, resolves via [`super::super::command::resolve_tmux_bin`] rather than the bare
+/// `"tmux"` name: launchd/systemd start the daemon with a minimal `PATH` that hides a Homebrew- or
+/// npm-installed `tmux`, which used to make every probe here silently fail (read as "session
+/// dead") — TTL-reaping a hung run's workbench while its tmux session and agent process kept
+/// running, untracked, forever.
 pub(super) fn tmux_bin() -> String {
     if let Ok(bin) = std::env::var("MOADIM_TMUX_BIN") {
         return bin;
@@ -16,7 +22,7 @@ pub(super) fn tmux_bin() -> String {
     #[cfg(test)]
     let fallback = "/nonexistent/moadim-test-tmux-guard".to_string();
     #[cfg(not(test))]
-    let fallback = "tmux".to_string();
+    let fallback = super::super::command::resolve_tmux_bin();
     fallback
 }
 

@@ -9,7 +9,6 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 
 mod command_palette;
-mod cron_jobs;
 mod day_timeline;
 mod log_viewer;
 mod machines;
@@ -19,7 +18,6 @@ mod routines;
 mod schedule;
 mod schedule_heatmap;
 use command_palette::CommandPalette;
-use cron_jobs::CronJobsPage;
 use overview::OverviewPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
@@ -84,16 +82,14 @@ pub struct Toast {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-/// Top-level pages, served at the root path space: `CronJobs` at `/cron-jobs` and `Routines` at
-/// `/routines`. The REST API is namespaced under `/api/v1`, so these UI paths never collide with it.
+/// Top-level pages, served at the root path space: `Routines` at `/routines` and `Heatmap` at
+/// `/heatmap`. The REST API is namespaced under `/api/v1`, so these UI paths never collide with it.
 /// The server returns the same self-contained HTML for any unmatched path (SPA fallback), letting
 /// these deep links and refreshes load the app so the router can resolve the path.
 #[derive(Clone, Routable, PartialEq)]
 pub enum Route {
     #[at("/")]
     Home,
-    #[at("/cron-jobs")]
-    CronJobs,
     #[at("/routines")]
     Routines,
     #[at("/heatmap")]
@@ -309,7 +305,8 @@ pub fn shell() -> Html {
     }
 
     // Global ⌘K / Ctrl-K listener that toggles the command palette from any
-    // page. Registered once on mount and torn down on unmount.
+    // page, and Escape to dismiss whichever shell-level dialog is open.
+    // Registered once on mount and torn down on unmount.
     {
         let state = state.clone();
         use_effect_with((), move |_| {
@@ -320,6 +317,12 @@ pub fn shell() -> Html {
                     {
                         event.prevent_default();
                         state.dispatch(ShellAction::TogglePalette);
+                    } else if event.key() == "Escape" {
+                        if state.show_shutdown {
+                            state.dispatch(ShellAction::CloseShutdown);
+                        } else if state.show_rename_machine {
+                            state.dispatch(ShellAction::CloseRenameMachine);
+                        }
                     }
                 }));
             let window = web_sys::window().expect("window exists");
@@ -427,7 +430,6 @@ pub fn shell() -> Html {
         let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
             Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
-            Route::CronJobs => html! { <CronJobsPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
             Route::Heatmap => html! { <HeatmapPage /> },
             Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
@@ -547,9 +549,6 @@ pub fn nav() -> Html {
         <nav class="tabs">
             <Link<Route> classes={classes!(cls(&Route::Home))} to={Route::Home}>
                 { "OVERVIEW" }
-            </Link<Route>>
-            <Link<Route> classes={classes!(cls(&Route::CronJobs))} to={Route::CronJobs}>
-                { "CRON JOBS" }
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Routines))} to={Route::Routines}>
                 { "ROUTINES" }
@@ -783,7 +782,7 @@ pub fn toast_stack(props: &ToastStackProps) -> Html {
     }
 }
 
-// ─── Utilities (shared with routines + cron_jobs modules) ─────────────────────
+// ─── Utilities (shared with the routines module) ───────────────────────────────
 
 /// Parse a cron expression into a `Cron`, normalizing the 7-field
 /// (sec min hour dom month dow year) form to 5-field to match server behaviour.

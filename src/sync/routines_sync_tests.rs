@@ -5,11 +5,13 @@ use crate::routines::{new_store, slugify, Routine};
 
 fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "30 9 * * 1-5".to_string(),
         title: title.to_string(),
         agent: agent.to_string(),
         prompt: "p".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -18,6 +20,8 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,

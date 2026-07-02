@@ -38,6 +38,9 @@ struct RoutineToml {
     /// `skip_serializing` keeps it out of every freshly written `routine.toml`.
     #[serde(default, skip_serializing)]
     prompt: Option<String>,
+    /// Short (≤5 line) goal statement; absent means unset.
+    #[serde(default)]
+    goal: Option<String>,
     /// Context repositories.
     #[serde(default)]
     repositories: Vec<Repository>,
@@ -163,6 +166,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         agent: toml.agent?,
         model: toml.model,
         prompt,
+        goal: toml.goal,
         repositories: toml.repositories,
         machines: toml.machines,
         enabled: toml.enabled.unwrap_or(true),
@@ -211,6 +215,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         model: routine.model.clone(),
         // Never written; the raw prompt now lives in the `prompts/prompt.pure.md` sidecar below.
         prompt: None,
+        goal: routine.goal.clone(),
         repositories: routine.repositories.clone(),
         machines: routine.machines.clone(),
         enabled: Some(routine.enabled),

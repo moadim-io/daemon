@@ -3,10 +3,11 @@
 use axum::{
     body::Body,
     http::{header::CONTENT_TYPE, Request, StatusCode},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use tower::ServiceExt;
+use tower_http::catch_panic::CatchPanicLayer;
 
 use super::{build_app, echo, health, run_with_listener_until, write_openapi_spec, AppState};
 use crate::utils::time::now_secs;
@@ -400,6 +401,7 @@ async fn build_app_serves_machines() {
             title: "R".to_string(),
             agent: "claude".to_string(),
             prompt: "p".to_string(),
+            goal: None,
             repositories: vec![],
             machines: vec!["alpha-box".to_string(), "shared".to_string()],
             tags: vec![],
@@ -463,6 +465,11 @@ async fn build_app_serves_health() {
     assert!(
         json["dependencies"]["tmux"].is_boolean(),
         "health payload should carry a boolean dependencies.tmux flag, got: {json}"
+    );
+    // Likewise for python3, which the built-in `claude` agent's setup step depends on (#404).
+    assert!(
+        json["dependencies"]["python3"].is_boolean(),
+        "health payload should carry a boolean dependencies.python3 flag, got: {json}"
     );
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     // The resolved machine name is surfaced so clients can identify which daemon answered.
@@ -1091,6 +1098,7 @@ async fn router_serves_routines_ical_feed() {
             title: "My Routine".to_string(),
             agent: "claude".to_string(),
             prompt: "do the thing".to_string(),
+            goal: None,
             repositories: vec![],
             machines: vec![crate::machine::current_machine()],
             enabled: true,
@@ -1309,6 +1317,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         agent: "claude".to_string(),
         model: None,
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![],
         enabled: true,
         source: "managed".to_string(),
@@ -1408,4 +1417,26 @@ async fn build_app_restart_route_returns_500_when_spawn_fails() {
         StatusCode::INTERNAL_SERVER_ERROR,
         "restart route should return 500 when spawn_restart fails"
     );
+}
+
+/// `CatchPanicLayer` is what stands between a panicking handler and a reset connection with no
+/// response (issue #337). `build_app`'s production routes never panic deliberately, so exercise
+/// the layer directly on a minimal router wired the same way, confirming it turns a panic into a
+/// plain 500 instead of the request erroring out.
+#[tokio::test]
+async fn catch_panic_layer_turns_a_handler_panic_into_a_500() {
+    async fn boom() -> StatusCode {
+        panic!("intentional test panic")
+    }
+
+    let app = Router::new()
+        .route("/boom", get(boom))
+        .layer(CatchPanicLayer::new());
+
+    let resp = app
+        .oneshot(Request::builder().uri("/boom").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

@@ -12,6 +12,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
+# check out the repo and read CHANGELOG.md / the diff, never writes anything.
+permissions:
+  contents: read
+
 # Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
 # so superseded changelog checks don't pile up and burn CI minutes.
 concurrency:

@@ -342,6 +342,7 @@ fn routine_body_serializes_all_fields() {
             "agent".into(),
             Some("claude-sonnet-4-6".into()),
             "prompt".into(),
+            Some("keep it small".into()),
             Some("[]".into()),
             Some("[\"work\"]".into()),
             Some(30),
@@ -353,6 +354,7 @@ fn routine_body_serializes_all_fields() {
     )
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
+    assert_eq!(value["goal"], Value::String("keep it small".to_string()));
     assert_eq!(
         value["model"],
         Value::String("claude-sonnet-4-6".to_string())
@@ -382,6 +384,7 @@ fn routine_body_rejects_bad_repositories() {
             "a".into(),
             None,
             "p".into(),
+            None,
             Some("{bad".into()),
             None,
             None,
@@ -403,6 +406,7 @@ fn routine_body_rejects_bad_machines() {
             "a".into(),
             None,
             "p".into(),
+            None,
             None,
             Some("{bad".into()),
             None,

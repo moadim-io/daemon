@@ -482,6 +482,14 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Added
 
+- **UI: clickable chips in Calendar and Day timeline views.** Schedule chips in the monthly
+  Calendar grid and the 24-hour Day timeline now open the edit modal when clicked, on the
+  Routines page. Previously these views were read-only; clicking a chip did
+  nothing. The chip carries the entity id through `TimelineItem` to the existing
+  `on_click` / `on_edit` callback, dispatching the same `OpenEdit` action as the table
+  EDIT button. Implements the contextual-click-to-edit pattern from leading scheduling dashboards
+  (Airflow calendar view, GitHub Actions timeline, Temporal UI). Closes #746 (see also #728, #748).
+
 - `moadim trigger <id>` triggers a routine to run immediately from the terminal,
   outside its schedule — the same on-demand run the REST API
   (`POST /routines/{id}/trigger`) and the MCP tool already expose. Prints

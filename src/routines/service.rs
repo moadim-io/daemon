@@ -3,10 +3,10 @@
 use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
-use crate::cron_jobs::{normalize_schedule, validate_cron};
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
+use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
@@ -14,6 +14,7 @@ use super::cleanup::{
     cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
 };
 use super::command::{build_routine_command, slugify};
+use super::flags::{self, Flag, FlagScope};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
     RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
@@ -108,7 +109,8 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
 /// Return the routines matching `query`, filtered and sorted as requested.
 ///
 /// The default query (no repository filter, sort by creation time ascending)
-/// reproduces the previous behaviour. The `repository` filter keeps routines
+/// reproduces the previous behaviour, except each routine's `prompt` is omitted
+/// unless `include_prompts` is `true`. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
 pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
     let lock = store.lock_recover();
@@ -148,9 +150,18 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
         routines.reverse();
     }
 
+    // Omit prompts by default: they are the largest field and rarely needed in a listing.
+    // Blanking triggers `skip_serializing_if` on `Routine::prompt`, dropping it from the JSON.
+    let include_prompts = query.include_prompts.unwrap_or(false);
+
     routines
         .into_iter()
-        .map(RoutineResponse::from_routine)
+        .map(|mut routine| {
+            if !include_prompts {
+                routine.prompt.clear();
+            }
+            RoutineResponse::from_routine(routine)
+        })
         .collect()
 }
 
@@ -382,7 +393,11 @@ pub fn svc_update(
     // update leaves the in-memory store untouched (#468).
     let effective_schedule = match req.schedule.as_deref() {
         Some(schedule) => normalize_schedule(schedule),
-        None => lock.get(id).ok_or(AppError::NotFound)?.schedule.clone(),
+        None => lock
+            .get(id)
+            .expect("id existence checked above, and the lock has been held continuously since")
+            .schedule
+            .clone(),
     };
     reject_over_ceiling(
         "ttl_secs",
@@ -394,7 +409,9 @@ pub fn svc_update(
         req.max_runtime_secs,
         max_runtime_ceiling_secs(&effective_schedule),
     )?;
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    let routine = lock
+        .get_mut(id)
+        .expect("id existence checked above, and the lock has been held continuously since");
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);
     }
@@ -557,6 +574,79 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         return Ok(String::new());
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+}
+
+/// Reject a blank (empty/whitespace-only) flag `type` or `description`.
+fn validate_flag_field(field: &str, value: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "flag {field} must not be empty"
+        )));
+    }
+    Ok(())
+}
+
+/// Parse a `scope` string into a [`FlagScope`], returning `400 BadRequest` on unknown values.
+/// Mirrors `parse_lock_scope` in `handlers.rs`.
+fn parse_flag_scope(scope: &str) -> Result<FlagScope, AppError> {
+    match scope {
+        "general" => Ok(FlagScope::General),
+        "local" => Ok(FlagScope::Local),
+        other => Err(AppError::BadRequest(format!(
+            "unknown flag scope {other:?}; use \"general\" or \"local\""
+        ))),
+    }
+}
+
+/// Look up a routine by `id` and derive its slug, `NotFound` if it does not exist.
+fn routine_and_slug(store: &RoutineStore, id: &str) -> Result<(Routine, String), AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let slug = slugify(&routine.title);
+    Ok((routine, slug))
+}
+
+/// Raise a new flag against routine `id`. `flag_type` and `description` must be non-blank;
+/// `scope` is `"general"` (committed) or `"local"` (gitignored). Refreshes the routine's
+/// `prompt.md` afterward so the next run's "Open flags" section (see `compose_prompt`) includes it.
+pub fn svc_create_flag(
+    store: &RoutineStore,
+    id: &str,
+    flag_type: &str,
+    description: &str,
+    scope: &str,
+) -> Result<Flag, AppError> {
+    validate_flag_field("type", flag_type)?;
+    validate_flag_field("description", description)?;
+    let scope = parse_flag_scope(scope)?;
+    let (routine, slug) = routine_and_slug(store, id)?;
+    let flag =
+        flags::create_flag(&slug, flag_type, description, scope).map_err(|_| AppError::Internal)?;
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    Ok(flag)
+}
+
+/// List every open flag raised against routine `id`, oldest first.
+pub fn svc_list_flags(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppError> {
+    let (_, slug) = routine_and_slug(store, id)?;
+    Ok(flags::list_flags(&slug))
+}
+
+/// Resolve (delete) the flag named `filename` under routine `id`.
+///
+/// `NotFound` when the routine does not exist, `filename` is unsafe, or names no existing flag.
+/// Refreshes `prompt.md` afterward so a resolved flag stops appearing in the next run's prompt.
+pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Result<(), AppError> {
+    let (routine, slug) = routine_and_slug(store, id)?;
+    let resolved = flags::resolve_flag(&slug, filename).map_err(|_| AppError::Internal)?;
+    if !resolved {
+        return Err(AppError::NotFound);
+    }
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    Ok(())
 }
 
 #[cfg(test)]

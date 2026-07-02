@@ -2,12 +2,12 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Moadim Server API",
-    "description": "REST API for managing cron jobs",
+    "description": "REST API for managing routines",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.1.0"
+    "version": "0.19.1"
   },
   "servers": [
     {
@@ -36,296 +36,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/cron-jobs": {
-      "get": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`GET /cron-jobs` — list all cron jobs sorted by creation time.",
-        "operationId": "list",
-        "parameters": [
-          {
-            "name": "local_only",
-            "in": "query",
-            "description": "When `true`, only return jobs whose `machines` list includes the current machine.\nDefaults to `false` (return all jobs, preserving backwards compatibility).",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CronJobResponse"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`POST /cron-jobs` — create a new cron job.",
-        "operationId": "create",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid cron expression"
-          }
-        }
-      }
-    },
-    "/cron-jobs/{id}": {
-      "get": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`GET /cron-jobs/{id}` — retrieve a single cron job by UUID.",
-        "operationId": "get",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).",
-        "operationId": "replace",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`DELETE /cron-jobs/{id}` — delete a cron job by UUID.",
-        "operationId": "delete",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`PATCH /cron-jobs/{id}` — partially update a cron job.",
-        "operationId": "update",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      }
-    },
-    "/cron-jobs/{id}/logs": {
-      "get": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`GET /cron-jobs/{id}/logs` — return the contents of the job's log file as plain text.",
-        "operationId": "get_logs",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Log file contents as plain text"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      }
-    },
-    "/cron-jobs/{id}/trigger": {
-      "post": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`POST /cron-jobs/{id}/trigger` — manually trigger a cron job outside its schedule.",
-        "operationId": "trigger",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJob"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
           }
         }
       }
@@ -391,7 +101,7 @@
           "crate::routes::http"
         ],
         "summary": "`GET /machine` — the current machine's resolved identity.",
-        "description": "Returns the name this daemon uses to match `machines[]` targeting lists on routines and cron\njobs. Useful for clients (e.g. the UI) that want to default their views to local entries only.",
+        "description": "Returns the name this daemon uses to match `machines[]` targeting lists on routines. Useful for\nclients (e.g. the UI) that want to default their views to local entries only.",
         "operationId": "get_current_machine",
         "responses": {
           "200": {
@@ -449,7 +159,7 @@
           "crate::routes::http"
         ],
         "summary": "`GET /machines` — distinct machine names this daemon knows about.",
-        "description": "There is no central machine registry, so the \"known\" set is the union of every `machines`\ntargeting list declared by a routine or cron job, plus this machine's own resolved identity\n([`crate::machine::current_machine`]) so the local machine is always pickable even before\nanything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the\n`moadim machine list` CLI but reads the live in-memory stores instead of disk.",
+        "description": "There is no central machine registry, so the \"known\" set is the union of every `machines`\ntargeting list declared by a routine, plus this machine's own resolved identity\n([`crate::machine::current_machine`]) so the local machine is always pickable even before\nanything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the\n`moadim machine list` CLI but reads the live in-memory store instead of disk.",
         "operationId": "list_machines",
         "responses": {
           "200": {
@@ -532,6 +242,15 @@
             "name": "local_only",
             "in": "query",
             "description": "When `true`, only return routines whose `machines` list includes the current machine.\nDefaults to `false` (return all routines, preserving backwards compatibility).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "include_prompts",
+            "in": "query",
+            "description": "When `true`, include each routine's `prompt` in the response. Defaults to `false`:\nthe prompt (often the largest field) is omitted so listings stay compact. Fetch a\nsingle routine with `svc_get` / `GET /routines/{id}` to always see its prompt.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -886,6 +605,127 @@
         }
       }
     },
+    "/routines/{id}/flags": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/flags` — list open flags raised against a routine.",
+        "operationId": "list_flags",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flag"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/{id}/flags` — raise a new flag against a routine.",
+        "operationId": "create_flag",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFlagRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flag"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid type/description/scope"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/flags/{filename}": {
+      "delete": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.",
+        "operationId": "resolve_flag",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "description": "Flag filename, as returned by create/list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resolved"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/logs": {
       "get": {
         "tags": [
@@ -1024,35 +864,26 @@
           }
         }
       },
-      "CreateRequest": {
+      "CreateFlagRequest": {
         "type": "object",
-        "description": "Request body for creating a new cron job.",
+        "description": "Request body for `POST /routines/{id}/flags`.",
         "required": [
-          "schedule",
-          "handler"
+          "type",
+          "description",
+          "scope"
         ],
         "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether to create the job in an enabled state (defaults to `true`)."
-          },
-          "handler": {
+          "description": {
             "type": "string",
-            "description": "Handler identifier to invoke when the schedule fires."
+            "description": "Free-text description of what's unclear."
           },
-          "machines": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Machines to run this job on (defaults to empty = runs nowhere until assigned)."
-          },
-          "metadata": {
-            "description": "Optional metadata (defaults to null)."
-          },
-          "schedule": {
+          "scope": {
             "type": "string",
-            "description": "Cron expression for the new job. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
+            "description": "`\"general\"` (committed, shared via git) or `\"local\"` (gitignored, machine-local)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Free-text flag category. Common examples: `\"bug\"`, `\"gap\"`, `\"edge_case\"`, `\"question\"`,\n`\"blocker\"` — any string is accepted."
           }
         }
       },
@@ -1127,119 +958,6 @@
           }
         }
       },
-      "CronJob": {
-        "type": "object",
-        "description": "A persisted cron job with scheduling and metadata.",
-        "required": [
-          "id",
-          "schedule",
-          "handler",
-          "metadata",
-          "enabled",
-          "source",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "created_at": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was created.",
-            "minimum": 0
-          },
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether the job is active."
-          },
-          "handler": {
-            "type": "string",
-            "description": "Identifier for the handler that processes the job."
-          },
-          "id": {
-            "type": "string",
-            "description": "Unique identifier (UUID v4)."
-          },
-          "last_manual_trigger_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.\n\nOnly manual triggers update this; scheduled cron firings run the built command directly and\ndo not. Accepts the legacy `last_triggered_at` key on deserialize.",
-            "minimum": 0
-          },
-          "machines": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Machines this job runs on. Each daemon schedules the job only when this list names its own\nmachine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so a\njob is dormant until explicitly assigned. Lets one shared config repo drive different jobs on\ndifferent machines."
-          },
-          "metadata": {
-            "description": "Arbitrary JSON metadata attached to the job."
-          },
-          "schedule": {
-            "type": "string",
-            "description": "Cron expression defining when the job runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
-          },
-          "source": {
-            "type": "string",
-            "description": "`\"managed\"` for jobs owned by this server; `\"system:*\"` for read-only system cron entries."
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was last updated.",
-            "minimum": 0
-          }
-        }
-      },
-      "CronJobResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CronJob",
-            "description": "The underlying cron job."
-          },
-          {
-            "type": "object",
-            "required": [
-              "source_type",
-              "handler_registered",
-              "file_path"
-            ],
-            "properties": {
-              "file_path": {
-                "type": "string",
-                "description": "Absolute path to the job's `job.toml` file on disk."
-              },
-              "handler_registered": {
-                "type": "boolean",
-                "description": "`true` if the job's handler appears in the server's handler registry."
-              },
-              "schedule_description": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Human-readable description of the schedule (e.g. `\"At 09:30, Monday through Friday\"`).\n`null` for expressions that cannot be parsed into a description (e.g. `@reboot`)."
-              },
-              "source_type": {
-                "$ref": "#/components/schemas/CronJobSourceType",
-                "description": "Whether the job is owned by this server or the host OS."
-              }
-            }
-          }
-        ],
-        "description": "A [`CronJob`] enriched with a flag indicating whether its handler is registered."
-      },
-      "CronJobSourceType": {
-        "type": "string",
-        "description": "Whether a cron job is owned by this server or discovered from the OS.",
-        "enum": [
-          "managed",
-          "system"
-        ]
-      },
       "DependencyHealth": {
         "type": "object",
         "description": "External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on\nthe daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency\ninstead of having routine runs silently no-op.",
@@ -1285,6 +1003,49 @@
             "minimum": 0
           }
         }
+      },
+      "Flag": {
+        "type": "object",
+        "description": "A single flag raised against a routine.",
+        "required": [
+          "filename",
+          "type",
+          "description",
+          "scope",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) the flag was created.",
+            "minimum": 0
+          },
+          "description": {
+            "type": "string",
+            "description": "Free-text body describing what's unclear."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Filename on disk under the routine's `flags/` dir; the handle used to resolve it."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/FlagScope",
+            "description": "Whether this flag is committed (general) or machine-local."
+          },
+          "type": {
+            "type": "string",
+            "description": "Free-text category, e.g. `\"bug\"`, `\"gap\"`, `\"edge_case\"`, `\"question\"`."
+          }
+        }
+      },
+      "FlagScope": {
+        "type": "string",
+        "description": "Whether a flag file is committed to version control or kept machine-local.",
+        "enum": [
+          "general",
+          "local"
+        ]
       },
       "HealthResponse": {
         "type": "object",
@@ -1433,7 +1194,6 @@
           "schedule",
           "title",
           "agent",
-          "prompt",
           "enabled",
           "source",
           "created_at",
@@ -1494,7 +1254,7 @@
           },
           "prompt": {
             "type": "string",
-            "description": "The task prompt handed to the agent."
+            "description": "The task prompt handed to the agent.\n\nOmitted from serialized output when empty. A persisted routine always has a\nnon-blank prompt (enforced by `validate_prompt`), so this never affects\n`routine.toml` persistence; it lets list responses drop the prompt by blanking\nit in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`)."
           },
           "repositories": {
             "type": "array",
@@ -1550,7 +1310,8 @@
             "required": [
               "agent_registered",
               "agent_command_available",
-              "file_path"
+              "file_path",
+              "flag_count"
             ],
             "properties": {
               "agent_command_available": {
@@ -1564,6 +1325,11 @@
               "file_path": {
                 "type": "string",
                 "description": "Absolute path to the routine's `routine.toml` file on disk."
+              },
+              "flag_count": {
+                "type": "integer",
+                "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
+                "minimum": 0
               },
               "schedule_description": {
                 "type": [
@@ -1627,46 +1393,6 @@
           "asc",
           "desc"
         ]
-      },
-      "UpdateRequest": {
-        "type": "object",
-        "description": "Request body for partially updating an existing cron job.",
-        "properties": {
-          "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "New enabled state, or `None` to keep the existing value."
-          },
-          "handler": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "New handler identifier, or `None` to keep the existing value."
-          },
-          "machines": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "description": "New machines targeting list, or `None` to keep the existing value."
-          },
-          "metadata": {
-            "description": "New metadata, or `None` to keep the existing value."
-          },
-          "schedule": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
-          }
-        }
       },
       "UpdateRoutineRequest": {
         "type": "object",

@@ -68,9 +68,9 @@ pub enum AgentLoadError {
 impl std::fmt::Display for AgentLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AgentLoadError::Missing => write!(f, "agent config not found"),
-            AgentLoadError::Unreadable(err) => write!(f, "unreadable agent config: {err}"),
-            AgentLoadError::Parse(err) => write!(f, "malformed agent TOML: {err}"),
+            Self::Missing => write!(f, "agent config not found"),
+            Self::Unreadable(err) => write!(f, "unreadable agent config: {err}"),
+            Self::Parse(err) => write!(f, "malformed agent TOML: {err}"),
         }
     }
 }

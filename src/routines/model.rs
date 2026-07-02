@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use super::agents::load_agent_command;
 use super::command::{agent_command_available, slugify};
+use super::flags::list_flags;
 use crate::paths::{agent_toml_path, routine_toml_path};
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
@@ -63,6 +64,10 @@ pub struct RoutineListQuery {
     /// When `true`, only return routines whose `machines` list includes the current machine.
     /// Defaults to `false` (return all routines, preserving backwards compatibility).
     pub local_only: Option<bool>,
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`:
+    /// the prompt (often the largest field) is omitted so listings stay compact. Fetch a
+    /// single routine with `svc_get` / `GET /routines/{id}` to always see its prompt.
+    pub include_prompts: Option<bool>,
 }
 
 /// Query parameters for `GET /routines.ics`: optionally scope the feed to one routine.
@@ -89,6 +94,12 @@ pub struct Routine {
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
     /// The task prompt handed to the agent.
+    ///
+    /// Omitted from serialized output when empty. A persisted routine always has a
+    /// non-blank prompt (enforced by `validate_prompt`), so this never affects
+    /// `routine.toml` persistence; it lets list responses drop the prompt by blanking
+    /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
@@ -168,6 +179,9 @@ pub struct RoutineResponse {
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
     pub timezone: Option<String>,
+    /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
+    /// listings can badge it without a separate `list_flags` round-trip per routine.
+    pub flag_count: usize,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -195,14 +209,14 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
+        let slug = slugify(&routine.title);
         let agent_registered = agent_toml_path(&routine.agent).exists();
         let agent_command_available = load_agent_command(&routine.agent)
             .is_ok_and(|agent| agent_command_available(&agent.command));
-        let file_path = routine_toml_path(&slugify(&routine.title))
-            .to_string_lossy()
-            .into_owned();
+        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let flag_count = list_flags(&slug).len();
         Self {
             routine,
             agent_registered,
@@ -210,6 +224,7 @@ impl RoutineResponse {
             file_path,
             schedule_description,
             timezone,
+            flag_count,
         }
     }
 }

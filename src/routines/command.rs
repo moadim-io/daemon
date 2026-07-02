@@ -3,6 +3,7 @@
 use crate::paths::{routine_prompt_path, routine_scheduled_state_path};
 
 use super::agents::AgentCommand;
+use super::flags::{list_flags, FlagScope};
 use super::model::Routine;
 
 /// Slugify `title` into a filesystem- and tmux-safe identifier.
@@ -29,7 +30,9 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
-/// Compose the `prompt.md` body: a repositories-as-context preamble followed by the prompt.
+/// Compose the `prompt.md` body: a repositories-as-context preamble, the prompt, and — when the
+/// routine has any — an "Open flags" section listing gaps/bugs/edge cases the agent raised on a
+/// previous run (see [`super::flags`]) that no one has resolved yet.
 ///
 /// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
 /// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
@@ -54,6 +57,21 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
     body.push_str("\n---\n");
     body.push_str(&routine.prompt);
     body.push('\n');
+
+    let flags = list_flags(&slugify(&routine.title));
+    if !flags.is_empty() {
+        body.push_str("\n---\n# Open flags\n\nRaised on a previous run and not yet resolved:\n\n");
+        for flag in &flags {
+            let scope = match flag.scope {
+                FlagScope::General => "general",
+                FlagScope::Local => "local",
+            };
+            body.push_str(&format!(
+                "- **{}** ({scope}): {}\n",
+                flag.flag_type, flag.description
+            ));
+        }
+    }
     body
 }
 
@@ -118,6 +136,49 @@ pub(crate) fn agent_command_available(command: &str) -> bool {
     std::env::var("PATH")
         .ok()
         .is_some_and(|path| agent_command_available_in(&path, command))
+}
+
+/// Common install locations to probe for `tmux` when it is not on `path` at all.
+///
+/// Split out so [`resolve_tmux_bin_from`] can be exercised in tests against fake, temp-dir-anchored
+/// fallback lists instead of these real absolute paths (which may or may not hold a real `tmux` on
+/// the machine running the tests).
+fn tmux_fallback_dirs(home: &str) -> Vec<String> {
+    vec![
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        format!("{home}/.local/bin"),
+    ]
+}
+
+/// Best-effort absolute path to `tmux`: first dir on `path` holding it, else the first of
+/// `fallback_dirs` holding it, else the bare `"tmux"` name.
+///
+/// Injectable variant of [`resolve_tmux_bin`] for tests. Mirrors the fallback list [`cron_path`]
+/// bakes into crontab lines: launchd/systemd start the daemon with a minimal `PATH`
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`) that hides a Homebrew- or npm-installed `tmux`, so the
+/// daemon's own tmux probes (`routines::cleanup::session`) would otherwise always fail to find it
+/// — every liveness check then reads as "not running", so a hung run's workbench gets TTL-reaped
+/// while the real tmux session and agent process are never killed and become permanently
+/// untracked. Returning the bare `"tmux"` name when it cannot be found anywhere leaves the
+/// caller's `Command::new` failing exactly as before.
+fn resolve_tmux_bin_from(path: &str, fallback_dirs: &[String]) -> String {
+    if let Some(dir) = bin_dir_in(path, "tmux") {
+        return format!("{dir}/tmux");
+    }
+    for dir in fallback_dirs {
+        if std::path::Path::new(dir).join("tmux").is_file() {
+            return format!("{dir}/tmux");
+        }
+    }
+    "tmux".to_string()
+}
+
+/// Live-`PATH`/`HOME` variant of [`resolve_tmux_bin_from`]; see its docs for why this exists.
+pub(crate) fn resolve_tmux_bin() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let path = std::env::var("PATH").unwrap_or_default();
+    resolve_tmux_bin_from(&path, &tmux_fallback_dirs(&home))
 }
 
 /// A short `PATH` for cron, since cron's default (`/usr/bin:/bin`) hides homebrew/npm-installed

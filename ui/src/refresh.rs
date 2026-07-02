@@ -1,11 +1,10 @@
 //! Live auto-refresh control for the data tables.
 //!
 //! Renders a Grafana/Datadog-style refresh-interval selector plus an "updated
-//! Ns ago" freshness cue, letting an operator keep the cron-jobs and routines
-//! lists current on a cadence they choose (Off / 5s / 15s / 30s / 60s) instead
-//! of reloading the SPA. The chosen interval is persisted to `localStorage`
-//! under a shared key, so it is consistent across both pages and survives
-//! navigation and reload.
+//! Ns ago" freshness cue, letting an operator keep the routines list current on
+//! a cadence they choose (Off / 5s / 15s / 30s / 60s) instead of reloading the
+//! SPA. The chosen interval is persisted to `localStorage`, so it is consistent
+//! across pages and survives navigation and reload.
 //!
 //! The interval codec and freshness formatting are pure and host-tested (see
 //! `refresh_tests.rs`); only the `RefreshControl` component, its 1s display
@@ -16,8 +15,8 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlSelectElement;
 use yew::prelude::*;
 
-/// `localStorage` key the selected interval persists under. Shared by both the
-/// cron-jobs and routines pages so the choice is fleet-wide.
+/// `localStorage` key the selected interval persists under. Shared so the
+/// choice is fleet-wide and consistent across pages.
 const STORAGE_KEY: &str = "moadim.refresh-interval";
 
 /// Operator-selectable auto-refresh cadence for a data table. `Off` (the

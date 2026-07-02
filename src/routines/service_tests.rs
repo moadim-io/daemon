@@ -14,14 +14,14 @@ use std::sync::{Arc, Mutex};
 struct TempHome(std::path::PathBuf);
 
 impl TempHome {
-    fn set() -> TempHome {
+    fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-svctest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome(dir)
+        Self(dir)
     }
 }
 
@@ -102,6 +102,38 @@ fn svc_list_sorts_by_title_case_insensitively() {
     assert_eq!(list[0].routine.id, "apple");
     assert_eq!(list[1].routine.id, "banana");
     assert_eq!(list[2].routine.id, "cherry");
+}
+
+#[test]
+fn svc_list_omits_prompt_by_default() {
+    let _home = TempHome::set();
+    // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
+    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
+    let list = svc_list(&store, &RoutineListQuery::default());
+    assert_eq!(list.len(), 1);
+    assert!(list[0].routine.prompt.is_empty());
+    let json = serde_json::to_value(&list[0]).unwrap();
+    assert!(
+        json.get("prompt").is_none(),
+        "prompt should be absent from the serialized listing, got {json}"
+    );
+}
+
+#[test]
+fn svc_list_includes_prompt_when_requested() {
+    let _home = TempHome::set();
+    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
+    let query = RoutineListQuery {
+        include_prompts: Some(true),
+        ..Default::default()
+    };
+    let list = svc_list(&store, &query);
+    assert_eq!(list[0].routine.prompt, "do the thing");
+    let json = serde_json::to_value(&list[0]).unwrap();
+    assert_eq!(
+        json.get("prompt").and_then(|value| value.as_str()),
+        Some("do the thing")
+    );
 }
 
 /// Build a minimal valid create request; callers tweak the field under test.
@@ -1739,40 +1771,26 @@ fn svc_trigger_returns_internal_on_write_failure() {
 }
 
 #[test]
-fn svc_update_not_found_when_no_schedule_and_id_missing() {
+fn svc_update_not_found_when_id_missing() {
     let _home = TempHome::set();
-    // Covers L359 error arm: `lock.get(id).ok_or(AppError::NotFound)?` fires when the
-    // routine does not exist in the store and no new schedule is provided.
+    // `svc_update` looks the id up once (to compute `old_slug`) while holding the store's
+    // lock for the rest of the function, so a missing id can only ever fail at that single,
+    // first lookup — regardless of whether a new schedule is supplied. This one test covers
+    // both request shapes; the later `lock.get`/`lock.get_mut` calls can no longer fail on a
+    // missing id, so they use `.expect(..)` instead of a second/third `NotFound` arm.
     let store = new_store(); // empty store
     with_empty_path(|| {
-        let result = svc_update(
-            &store,
-            "nonexistent-id",
-            UpdateRoutineRequest {
-                schedule: None,
-                ..empty_update_request()
-            },
-        );
-        assert!(matches!(result, Err(AppError::NotFound)));
-    });
-}
-
-#[test]
-fn svc_update_not_found_when_schedule_provided_and_id_missing() {
-    let _home = TempHome::set();
-    // Covers L371 error arm: `lock.get_mut(id).ok_or(AppError::NotFound)?` fires when
-    // the routine does not exist in the store and a new schedule is provided.
-    let store = new_store(); // empty store
-    with_empty_path(|| {
-        let result = svc_update(
-            &store,
-            "nonexistent-id",
-            UpdateRoutineRequest {
-                schedule: Some("@daily".into()),
-                ..empty_update_request()
-            },
-        );
-        assert!(matches!(result, Err(AppError::NotFound)));
+        for schedule in [None, Some("@daily".to_string())] {
+            let result = svc_update(
+                &store,
+                "nonexistent-id",
+                UpdateRoutineRequest {
+                    schedule,
+                    ..empty_update_request()
+                },
+            );
+            assert!(matches!(result, Err(AppError::NotFound)));
+        }
     });
 }
 
@@ -1832,4 +1850,123 @@ fn svc_update_rejects_and_sets_tags() {
     assert_eq!(updated.routine.tags, vec!["ops".to_string()]);
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_flag_not_found() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let result = svc_create_flag(&store, "missing", "bug", "desc", "general");
+    assert!(matches!(result, Err(AppError::NotFound)));
+}
+
+#[test]
+fn svc_create_flag_rejects_blank_type_and_description() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag Blank ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+
+    assert!(matches!(
+        svc_create_flag(&store, &id, "  ", "desc", "general"),
+        Err(AppError::BadRequest(_))
+    ));
+    assert!(matches!(
+        svc_create_flag(&store, &id, "bug", "  ", "general"),
+        Err(AppError::BadRequest(_))
+    ));
+}
+
+#[test]
+fn svc_create_flag_rejects_unknown_scope() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag Scope ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+
+    assert!(matches!(
+        svc_create_flag(&store, &id, "bug", "desc", "nowhere"),
+        Err(AppError::BadRequest(_))
+    ));
+}
+
+#[test]
+fn svc_create_flag_persists_and_refreshes_prompt() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let title = "Svc Flag Create ZZZ";
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id.clone();
+
+    let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
+    assert_eq!(flag.flag_type, "bug");
+    assert_eq!(flag.description, "broken thing");
+
+    // prompt.md is refreshed with the new open flag so the next run sees it.
+    let slug = slugify(title);
+    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    assert!(prompt.contains("Open flags"));
+    assert!(prompt.contains("broken thing"));
+}
+
+#[test]
+fn svc_list_flags_not_found() {
+    let _home = TempHome::set();
+    let store = new_store();
+    assert!(matches!(
+        svc_list_flags(&store, "missing"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_list_flags_returns_created_flags() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag List ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+    svc_create_flag(&store, &id, "bug", "d1", "general").unwrap();
+    svc_create_flag(&store, &id, "gap", "d2", "local").unwrap();
+
+    let flags = svc_list_flags(&store, &id).unwrap();
+    assert_eq!(flags.len(), 2);
+}
+
+#[test]
+fn svc_resolve_flag_not_found_routine() {
+    let _home = TempHome::set();
+    let store = new_store();
+    assert!(matches!(
+        svc_resolve_flag(&store, "missing", "bug-1.md"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_resolve_flag_not_found_flag() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let created = svc_create(&store, create_req_with_title("Svc Flag Resolve Miss ZZZ")).unwrap();
+    let id = created.routine.id.clone();
+    assert!(matches!(
+        svc_resolve_flag(&store, &id, "no-such-flag.md"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_resolve_flag_deletes_and_refreshes_prompt() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let title = "Svc Flag Resolve ZZZ";
+    let created = svc_create(&store, create_req_with_title(title)).unwrap();
+    let id = created.routine.id.clone();
+    let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
+
+    svc_resolve_flag(&store, &id, &flag.filename).unwrap();
+
+    assert!(svc_list_flags(&store, &id).unwrap().is_empty());
+    let slug = slugify(title);
+    let prompt = std::fs::read_to_string(crate::paths::routine_prompt_path(&slug)).unwrap();
+    assert!(!prompt.contains("Open flags"));
 }

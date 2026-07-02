@@ -11,17 +11,130 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Tests
+
+- Added a `cli_tests` regression guard (`status_and_stop_json_share_a_common_key_set`)
+  asserting that every object key `stop --json` emits also appears in
+  `status --json`, so the shared `{running,pid,address}` base contract between
+  the two `--json` shapes can't silently drift apart as fields are added to
+  one side but not the other. `status --json` may carry additional
+  server-sourced fields (`uptime_secs`, `version`) that `stop --json` omits;
+  see `status_and_stop_json_share_the_same_shape` for the value-level guard on
+  the shared subset.
+
 ### Fixed
 
+- The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the
+  committed `apis/openapi.json`) no longer advertises a frozen `0.1.0`. The
+  hardcoded `version` literal was dropped from the `#[openapi(info(...))]`
+  attribute so utoipa derives it from `CARGO_PKG_VERSION`, keeping the spec
+  version in lockstep with the crate (now `0.19.1`).
+
+## [0.19.1] - 2026-07-01
+
+### Fixed
+
+- **The routines page failed to load with "missing field `prompt`".** PR #825
+  made `GET /routines` omit the `prompt` field from each routine's JSON by
+  default, but the UI's separately-mirrored `Routine` struct never got a
+  matching `#[serde(default)]` on that field, so the wasm client's
+  deserialization broke on every list fetch.
+
+### Added
+
+- **Repository filter for the Routines table.** The REST `GET /routines`
+  endpoint has supported a `?repository=` filter for a while, but the web UI
+  had no way to use it — the only client-side facets were status, agent, and
+  machine. Added a REPOSITORY dropdown to the Routines filter bar (mirroring
+  the existing agent/machine facet pattern), populated from the distinct
+  repository URLs across loaded routines, so operators can narrow a dense
+  routines list to a single repo without hand-editing the query string.
+
+## [0.19.0] - 2026-07-02
+
+### Removed
+
+- **Removed the cron-job feature.** Moadim scheduled two kinds of things —
+  "cron jobs" (a schedule + a handler script) and "routines" (a schedule + an
+  AI-agent prompt). The project's focus is AI-agent routines, so the cron-job
+  half — the `CronJob`/`CronStore` model, the `/api/v1/cron-jobs*` REST routes,
+  the `*_cron_job` MCP tools, the `moadim cron-jobs` CLI subcommand, the
+  `~/.config/moadim/jobs/` and `~/.config/moadim/handlers/` directories, and
+  the job-specific crontab block — has been removed. Routines are unaffected
+  and keep their own crontab block, REST routes, MCP tools, and CLI
+  subcommand. (#842)
+
+### Changed
+
+- **`list_routines` omits routine prompts by default.** The prompt is the
+  largest field on a routine and is rarely needed when scanning a listing, so it
+  bloated `GET /routines` responses and burned MCP context tokens on every call.
+  The `prompt` key is now absent from list entries unless the caller opts in with
+  `include_prompts=true` (a new boolean on the `list_routines` MCP tool and the
+  `GET /routines` query string). `get_routine` / `GET /routines/{id}` are
+  unaffected and always return the prompt; `routine.toml` persistence is
+  unchanged. (#824)
+
+### Documentation
+
+- **Added `CODE_OF_CONDUCT.md`.** The repo had a `CONTRIBUTING.md` and
+  `SECURITY.md` but no documented standard of conduct or enforcement contact,
+  leaving GitHub's community-standards profile incomplete. Added a Contributor
+  Covenant v2.1 code of conduct with a real reporting contact, and linked it
+  from `CONTRIBUTING.md`. (#423)
+- The README's **Bind address** section now warns that the REST API and MCP
+  endpoint are unauthenticated, so `MOADIM_BIND_ADDR` should stay on a loopback
+  address: binding to a routable interface (a LAN IP or `0.0.0.0`) exposes
+  unauthenticated routine create/trigger — effectively remote code execution — to
+  the network. Recommends an authenticating reverse proxy / firewall for remote
+  access instead. (#253)
+
+### Fixed
+
+- **The daemon never killed hung routine tmux sessions when launched via
+  launchd/systemd.** Those managers start `moadim --interactive` with a
+  minimal `PATH` (e.g. macOS launchd's `/usr/bin:/bin:/usr/sbin:/sbin`) that
+  hides a Homebrew- or npm-installed `tmux`. The daemon's own cleanup/watchdog
+  sweep shelled out to `tmux` directly (no login shell), so every
+  liveness/kill probe silently failed and read as "session already dead" —
+  a hung run's workbench got TTL-reaped while its real tmux session and agent
+  process kept running, untracked, forever. `resolve_tmux_bin` now also
+  searches common install locations (Homebrew, `/usr/local/bin`,
+  `~/.local/bin`) when `tmux` isn't on `PATH`, and the generated launchd
+  plist now sets a real `PATH` via `EnvironmentVariables`.
+- **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
+  each added a `unused_async = "deny"` entry under `[lints.clippy]` in
+  `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't
+  understand TOML semantics. The resulting duplicate key made every `cargo`
+  invocation fail immediately with `error: duplicate key` before compiling a
+  single crate. Removed the duplicate entry so the workspace builds again.
 - `docs/moadim.1`'s `.TH` header reported a stale `moadim 0.16.0` even though
   `Cargo.toml` had moved on to 0.18.0 — the hand-maintained man page has no
   build-time link to the crate version, so a release could silently ship a man
   page reporting the *previous* version. Corrected the version token and added
   a regression test (`cli::cli_tests::man_page_version_matches_cargo_pkg_version`)
   that fails when the two drift again. (#556)
+- Locked the `--json` machine-readable contract with a regression test
+  (`cli::cli_tests::status_stop_cleanup_json_share_the_same_address`) asserting
+  `status --json`, `stop --json`, and `cleanup --json` all surface the same
+  `address` value, so the three shapes can't silently drift apart again. (#245)
+- Removed two dead `AppError::NotFound` arms in `svc_update` (`routines/service.rs`):
+  the function already checks the routine's existence once, up front, while
+  holding the store's lock continuously for the rest of the call, so the two
+  later re-fetches could never actually miss. The two tests written to cover
+  those unreachable arms were accidental duplicates of the same first-check
+  path; merged them into one `svc_update_not_found_when_id_missing` test that
+  covers both request shapes against the real, single `NotFound` path.
 
 ### Added
 
+- An interactive foreground start (`moadim -i` / `--interactive`) now preflights
+  for an already-running daemon and refuses with a clear, actionable message
+  (naming the running pid when known and pointing at `moadim stop` /
+  `moadim restart`) instead of proceeding to bind and dying with an opaque
+  `Address already in use (os error 48)`. The launcher-spawned background child
+  (which also runs `--interactive`) is exempt via the `MOADIM_DAEMONIZED` marker,
+  so background/restart launches are unaffected (#298).
 - **Machine name in health output.** `GET /health` and the MCP `health` tool now
   report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
   `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
@@ -35,9 +148,37 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   actually run — the cron firing launches a tmux session that dies immediately
   with "command not found," a silent no-op. Clients can now tell the two states
   apart instead of inferring it from `agent.log` after the fact. (#383)
+- **`actionlint`/`shellcheck` CI gate.** New `.github/workflows/actionlint.yml`
+  runs `actionlint` (via `raven-actions/actionlint`, pinned to a commit SHA) on
+  every PR and on push to `main`, statically validating workflow YAML —
+  syntax, `${{ }}` expressions, the `needs`/`if`/matrix job graph, event
+  triggers, action input names — and, with `shellcheck` enabled by default,
+  linting every embedded `run:` block. Previously a typo'd key, a bad
+  expression, or an unquoted shell variable in `.github/workflows/` only
+  surfaced when the workflow actually ran on `main` or a release tag.
+  Documented in `CONTRIBUTING.md` alongside the other lint tooling. (#454)
 
 ### Changed
 
+- Enabled the `clippy::wildcard_imports` lint. It flags `use some::module::*;`
+  glob imports, which obscure where a name comes from at the call site, can
+  silently change behavior when the globbed module gains a new item, and
+  defeat "go to definition" tooling. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
+- Enabled the `clippy::unused_async` lint. It flags `async fn`s (and async
+  closures/blocks) that never `.await` anything internally, which needlessly
+  propagate async-ness up the call stack and pull in a `Future` state machine
+  for work that's actually synchronous. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
+  (#803)
+- **Gzip-compressed HTTP responses.** The Axum router now negotiates
+  `Accept-Encoding` and gzip-compresses response bodies via a `tower-http`
+  `CompressionLayer`, cutting the ~1.1 MB SPA payload (and the OpenAPI JSON
+  under `/docs`) several-fold on every load/refresh for clients that
+  advertise gzip support. A no-op for clients that don't. (#399)
+- Bumped `tower-http` from `0.6.11` to `0.7.0`. No source changes needed —
+  the only feature used (`compression-gzip`'s `CompressionLayer`) is
+  API-compatible across the bump.
 - Declared `rust-version = "1.88"` (MSRV) in the root `Cargo.toml` and
   `ui/Cargo.toml`, matching the floor already required transitively by
   `darling 0.23`, so `cargo install moadim` on an older stable toolchain now
@@ -46,9 +187,21 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   bare `cargo clippy`. In this non-virtual workspace (the root `Cargo.toml`
   declares both a `[package]` and `[workspace]`), the bare form only checks
   the root `moadim` package, so the `ui` member crate was never type-checked
-  or linted by the hook. `.github/workflows/lint.yml`'s `clippy` job has the
-  same gap and needs the same `--workspace` flag; tracked as follow-up since
-  this PR's credentials can't push workflow-file changes.
+  or linted by the hook.
+- `.github/workflows/lint.yml`'s `clippy` job now runs `cargo clippy
+  --workspace --all-targets -- -D warnings` too, closing the matching gap in
+  CI: previously the bare `cargo clippy --all-targets` only checked the root
+  `moadim` package, so `ui/Cargo.toml`'s `[lints.clippy] all = "deny"`
+  posture was never enforced on PRs and a dashboard lint regression could
+  merge to `main` fully green, only surfacing via the local hook (if a
+  contributor had it installed) or at release time.
+- `build_app_with_shutdown` cloned `store` and `routines` into `app_state`,
+  then cloned them *again* from the original bindings for the MCP service
+  closure — `clippy::redundant_clone` flags the second pair as dead clones
+  since the originals are never read afterward. Reordered to clone once
+  (for the MCP closure) before moving the originals into `app_state`,
+  dropping two unnecessary `Arc` clone+drop pairs per router build. No
+  behavior change.
 
 ### Fixed
 
@@ -58,8 +211,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `Routine` by #505, and `cron_jobs::unassigned_count` /
   `routines::unassigned_routines_count` were dead code left over from before
   #771 made the "Unassigned" machine facet a permanent filter option. None of
-  this was caught because `ui` was outside the pre-push clippy gate (see the
-  `--workspace` fix above) and CI's equivalent gate has the same blind spot.
+  this was caught because `ui` was outside the pre-push clippy gate and CI's
+  equivalent gate had the same blind spot (now closed, see `--workspace`
+  fix above).
 
 ## [0.18.0] — 2026-06-30
 
@@ -1103,7 +1257,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/moadim-io/daemon/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/moadim-io/daemon/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/moadim-io/daemon/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/moadim-io/daemon/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0

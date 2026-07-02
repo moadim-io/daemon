@@ -213,6 +213,40 @@ fn stop_json_reports_running_pid_and_address() {
     assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
+/// Collect the top-level object keys of a JSON document into an order-independent set.
+fn json_key_set(json: &str) -> std::collections::BTreeSet<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn status_and_stop_json_share_a_common_key_set() {
+    // `status --json` and `stop --json` share a common `{running,pid,address}` base so consumers
+    // can parse either uniformly; `status` additionally folds in server-sourced `uptime_secs`/
+    // `version` (see `status_and_stop_json_share_the_same_shape`, which guards the shared fields'
+    // *values*). Here we guard the key *sets*: every key `stop` emits must also appear in `status`,
+    // for both the running and the down/null-pid branches, so a key can't be dropped from one side
+    // without the drift being caught.
+    assert!(
+        json_key_set(&stop_json(true, Some(42))).is_subset(&json_key_set(&status_json(
+            true,
+            Some(42),
+            None
+        ))),
+        "every key in stop --json must also appear in status --json (running branch)"
+    );
+    assert!(
+        json_key_set(&stop_json(false, None))
+            .is_subset(&json_key_set(&status_json(false, None, None))),
+        "every key in stop --json must also appear in status --json (down branch)"
+    );
+}
+
 #[test]
 fn liveness_exit_code_maps_running_to_codes() {
     // A reachable server exits 0; a missing one exits the documented EXIT_NOT_RUNNING.
@@ -304,8 +338,8 @@ fn data_keywords_route_to_data_command_with_full_argv() {
     // The keyword itself with no further args still routes to the data dispatcher (which then
     // surfaces clap's usage error), rather than the lifecycle parser.
     assert_eq!(
-        parse(argv(&["cron-jobs"])),
-        Command::Data(argv(&["cron-jobs"]))
+        parse(argv(&["routines"])),
+        Command::Data(argv(&["routines"]))
     );
 }
 
@@ -373,13 +407,13 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -418,7 +452,7 @@ struct FakeServer {
 
 impl FakeServer {
     /// Start a server on an ephemeral port answering with `status` and `body` while alive.
-    fn start(status: u16, body: String) -> FakeServer {
+    fn start(status: u16, body: String) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -447,7 +481,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             alive,
             stop,
@@ -534,6 +568,35 @@ fn cleanup_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
     let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
+}
+
+/// Lock the machine-readable contract across all three `--json` commands: `status`, `stop`, and
+/// `cleanup` must each surface `address`, and — since they all describe the same bound endpoint —
+/// the value must be identical across all three, so the shapes can't silently drift apart again.
+#[test]
+fn status_stop_cleanup_json_share_the_same_address() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
+    let status: serde_json::Value =
+        serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
+    let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
+    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+
+    let expected = serde_json::json!("127.0.0.1:6000");
+    assert!(
+        status["address"].is_string(),
+        "status --json must include address"
+    );
+    assert!(
+        stop["address"].is_string(),
+        "stop --json must include address"
+    );
+    assert!(
+        cleanup["address"].is_string(),
+        "cleanup --json must include address"
+    );
+    assert_eq!(status["address"], expected);
+    assert_eq!(stop["address"], expected);
+    assert_eq!(cleanup["address"], expected);
 }
 
 #[test]
@@ -763,6 +826,68 @@ fn restart_replaces_running_server() {
     server.stop_after(Duration::from_millis(80));
     restart().unwrap();
     let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn foreground_already_running_message_names_pid_when_known() {
+    let with_pid = foreground_already_running_message(Some(4321));
+    assert!(with_pid.contains("(pid 4321)"));
+    assert!(with_pid.contains("moadim stop"));
+    assert!(with_pid.contains("moadim restart"));
+    // With no pid file the message omits the suffix but keeps the guidance.
+    let without_pid = foreground_already_running_message(None);
+    assert!(!without_pid.contains("(pid"));
+    assert!(without_pid.contains("refusing to start a second foreground instance"));
+}
+
+#[test]
+fn foreground_preflight_refuses_when_running() {
+    assert!(foreground_preflight(true, Some(7)).is_err());
+    assert!(foreground_preflight(true, None).is_err());
+}
+
+#[test]
+fn foreground_preflight_proceeds_when_not_running() {
+    assert!(foreground_preflight(false, None).is_ok());
+}
+
+#[test]
+fn ensure_not_running_for_foreground_ok_when_no_server() {
+    let home = temp_home("fg-down");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(ensure_not_running_for_foreground().is_ok());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_refuses_when_server_up() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("fg-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_skips_for_daemonized_child() {
+    // The launcher-spawned child carries MOADIM_DAEMONIZED and must be allowed to bind even while
+    // the (about-to-be-replaced) server is still answering probes.
+    let server = FakeServer::start(200, String::new());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "1");
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_ok());
 }
 
 #[test]

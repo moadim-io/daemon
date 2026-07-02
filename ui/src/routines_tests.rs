@@ -1,6 +1,6 @@
 //! Host-side unit tests for the routines faceted filter: the `RoutineStatusFacet`,
 //! `AgentFacet`, `RoutineMachineFacet` codecs and the pure `RoutineFilter` matching
-//! + list helpers. No DOM/wasm dependency (mirrors the `cron_jobs_tests.rs` convention).
+//! + list helpers. No DOM/wasm dependency (mirrors the `schedule_tests.rs` convention).
 
 use super::*;
 use chrono::TimeZone;
@@ -35,10 +35,14 @@ fn routine(
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
+        tags: vec![],
         agent_registered: false,
         file_path: String::new(),
         schedule_description: None,
+        flag_count: 0,
     }
 }
 
@@ -50,6 +54,23 @@ fn now() -> DateTime<Local> {
 /// DueSoon window matching `DUE_SOON_WINDOW_SECS`.
 fn window() -> Duration {
     Duration::seconds(DUE_SOON_WINDOW_SECS)
+}
+
+// ── Deserialization ────────────────────────────────────────────────────────────
+
+/// `GET /routines` omits `prompt` by default (see #825); the UI's hand-mirrored
+/// `Routine` struct must tolerate that or every routines-list fetch fails (#849).
+#[test]
+fn routine_deserializes_without_prompt_field() {
+    let json = r#"{
+        "id": "r1",
+        "schedule": "0 0 * * *",
+        "title": "T",
+        "agent": "a",
+        "enabled": true
+    }"#;
+    let routine: Routine = serde_json::from_str(json).unwrap();
+    assert_eq!(routine.prompt, "");
 }
 
 // ── RoutineStatusFacet codecs ─────────────────────────────────────────────────
@@ -88,6 +109,25 @@ fn agent_facet_decodes_a_plain_name_as_named() {
     assert_eq!(
         AgentFacet::from_value("codex"),
         AgentFacet::Named("codex".into())
+    );
+}
+
+// ── RepositoryFacet codecs ─────────────────────────────────────────────────────
+
+#[test]
+fn repository_facet_roundtrips_and_defaults_to_all() {
+    let all = RepositoryFacet::All;
+    let named = RepositoryFacet::Named("github.com/org/repo".into());
+    assert_eq!(RepositoryFacet::from_value(&all.as_value()), all);
+    assert_eq!(RepositoryFacet::from_value(&named.as_value()), named);
+    assert_eq!(RepositoryFacet::default(), RepositoryFacet::All);
+}
+
+#[test]
+fn repository_facet_decodes_a_plain_url_as_named() {
+    assert_eq!(
+        RepositoryFacet::from_value("github.com/org/repo"),
+        RepositoryFacet::Named("github.com/org/repo".into())
     );
 }
 
@@ -162,6 +202,12 @@ fn is_active_detects_each_facet() {
         ..Default::default()
     };
     assert!(m.is_active());
+
+    let r = RoutineFilter {
+        repository: RepositoryFacet::Named("github.com/org/repo".into()),
+        ..Default::default()
+    };
+    assert!(r.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -292,6 +338,39 @@ fn machine_specific_matches_only_that_machine() {
     let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
     assert!(f.matches(&m1, now(), window()));
     assert!(!f.matches(&m2_only, now(), window()));
+    assert!(!f.matches(&none, now(), window()));
+}
+
+// ── Repository facet matching ─────────────────────────────────────────────────
+
+#[test]
+fn repository_all_matches_regardless_of_repositories() {
+    let f = RoutineFilter::default();
+    let with = routine("a", "t", "claude", "0 * * * *", &[], &["repo-a"], true);
+    let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&with, now(), window()));
+    assert!(f.matches(&without, now(), window()));
+}
+
+#[test]
+fn repository_named_matches_only_routines_listing_that_repository() {
+    let f = RoutineFilter {
+        repository: RepositoryFacet::Named("repo-a".into()),
+        ..Default::default()
+    };
+    let hit = routine(
+        "a",
+        "t",
+        "claude",
+        "0 * * * *",
+        &[],
+        &["repo-a", "repo-b"],
+        true,
+    );
+    let other = routine("b", "t", "claude", "0 * * * *", &[], &["repo-b"], true);
+    let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&other, now(), window()));
     assert!(!f.matches(&none, now(), window()));
 }
 
@@ -430,13 +509,29 @@ fn distinct_machines_r_returns_sorted_unique_machines() {
 }
 
 #[test]
-fn unassigned_routines_count_counts_empty_machine_lists() {
+fn distinct_repositories_returns_sorted_unique_repositories() {
     let routines = vec![
-        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true),
-        routine("c", "t", "claude", "0 * * * *", &[], &[], false),
+        routine(
+            "a",
+            "t",
+            "claude",
+            "0 * * * *",
+            &[],
+            &["repo-b", "repo-a"],
+            true,
+        ),
+        routine(
+            "b",
+            "t",
+            "claude",
+            "0 * * * *",
+            &[],
+            &["repo-a", "repo-c"],
+            true,
+        ),
     ];
-    assert_eq!(unassigned_routines_count(&routines), 2);
+    let repos = distinct_repositories(&routines);
+    assert_eq!(repos, vec!["repo-a", "repo-b", "repo-c"]);
 }
 
 // ── Bulk selection reducer actions ────────────────────────────────────────────
@@ -763,6 +858,46 @@ fn health_fully_configured_is_healthy() {
 }
 
 #[test]
+fn health_snoozed_until_future_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_snoozed_until_past_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_skip_runs_above_zero_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(2),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_skip_runs_zero_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(0),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
 fn health_priority_order_dormant_most_urgent() {
     assert!(
         RoutineHealth::Dormant.priority() < RoutineHealth::DeadSchedule.priority(),
@@ -770,7 +905,8 @@ fn health_priority_order_dormant_most_urgent() {
     );
     assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
     assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
-    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Healthy.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Snoozed.priority());
+    assert!(RoutineHealth::Snoozed.priority() < RoutineHealth::Healthy.priority());
 }
 
 // ── sort by RCol::Health ──────────────────────────────────────────────────────
@@ -809,6 +945,150 @@ fn sort_by_health_descending_puts_healthy_first() {
     let sorted = sort_routines(rs, Some(RCol::Health), RDir::Desc, now());
     assert_eq!(sorted[0].id, "healthy");
     assert_eq!(sorted[1].id, "dormant");
+}
+
+// ── RGroupBy codec ────────────────────────────────────────────────────────────
+
+#[test]
+fn r_group_by_as_str_roundtrips() {
+    for by in [
+        RGroupBy::None,
+        RGroupBy::Agent,
+        RGroupBy::Machine,
+        RGroupBy::Status,
+    ] {
+        assert_eq!(RGroupBy::from_str(by.as_str()), by);
+    }
+}
+
+#[test]
+fn r_group_by_default_is_none() {
+    assert_eq!(RGroupBy::default(), RGroupBy::None);
+}
+
+#[test]
+fn r_group_by_unknown_token_decodes_to_none() {
+    assert_eq!(RGroupBy::from_str("bogus"), RGroupBy::None);
+    assert_eq!(RGroupBy::from_str(""), RGroupBy::None);
+}
+
+// ── routine_group_key ─────────────────────────────────────────────────────────
+
+#[test]
+fn routine_group_key_agent_returns_agent_field() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Agent), "claude");
+}
+
+#[test]
+fn routine_group_key_machine_returns_first_machine() {
+    let r = routine(
+        "id1",
+        "t",
+        "claude",
+        "0 * * * *",
+        &["alpha", "beta"],
+        &[],
+        true,
+    );
+    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "alpha");
+}
+
+#[test]
+fn routine_group_key_machine_returns_unassigned_when_no_machines() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "(unassigned)");
+}
+
+#[test]
+fn routine_group_key_status_enabled() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Enabled");
+}
+
+#[test]
+fn routine_group_key_status_disabled() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], false);
+    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Disabled");
+}
+
+#[test]
+fn routine_group_key_none_returns_empty_string() {
+    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
+    assert_eq!(routine_group_key(&r, RGroupBy::None), "");
+}
+
+// ── group_routines ────────────────────────────────────────────────────────────
+
+#[test]
+fn group_routines_none_returns_single_group_with_all_routines() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "codex", "0 * * * *", &[], &[], false),
+    ];
+    let groups = group_routines(&rs, RGroupBy::None);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].0, "");
+    assert_eq!(groups[0].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_agent_creates_one_group_per_agent() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "codex", "0 * * * *", &[], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Agent);
+    // BTreeMap → alphabetical: claude, codex
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "claude");
+    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[1].0, "codex");
+    assert_eq!(groups[1].1.len(), 1);
+}
+
+#[test]
+fn group_routines_by_agent_preserves_input_order_within_group() {
+    let rs = vec![
+        routine("first", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("second", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Agent);
+    assert_eq!(groups[0].1[0].id, "first");
+    assert_eq!(groups[0].1[1].id, "second");
+}
+
+#[test]
+fn group_routines_by_machine_separates_unassigned() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &["worker-1"], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("c", "t", "claude", "0 * * * *", &["worker-1"], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Machine);
+    // alphabetical: "(unassigned)" sorts before "worker-1"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "(unassigned)");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "worker-1");
+    assert_eq!(groups[1].1.len(), 2);
+}
+
+#[test]
+fn group_routines_by_status_splits_enabled_and_disabled() {
+    let rs = vec![
+        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &[], &[], false),
+        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
+    ];
+    let groups = group_routines(&rs, RGroupBy::Status);
+    // alphabetical: "Disabled" before "Enabled"
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, "Disabled");
+    assert_eq!(groups[0].1.len(), 1);
+    assert_eq!(groups[1].0, "Enabled");
+    assert_eq!(groups[1].1.len(), 2);
 }
 
 // ── sort by RCol::LastFire ────────────────────────────────────────────────────
@@ -861,145 +1141,20 @@ fn clone_title_preserves_empty_string() {
     assert_eq!(clone_title(""), "Copy of ");
 }
 
-// ── RGroupBy codec ────────────────────────────────────────────────────────────
+// ── ics_feed_url ────────────────────────────────────────────────────────────────
 
 #[test]
-fn r_group_by_as_str_roundtrips() {
-    for by in [
-        RGroupBy::None,
-        RGroupBy::Agent,
-        RGroupBy::Machine,
-        RGroupBy::Status,
-    ] {
-        assert_eq!(RGroupBy::from_str(by.as_str()), by);
-    }
-}
-
-#[test]
-fn r_group_by_default_is_none() {
-    assert_eq!(RGroupBy::default(), RGroupBy::None);
-}
-
-#[test]
-fn r_group_by_unknown_token_decodes_to_none() {
-    assert_eq!(RGroupBy::from_str("bogus"), RGroupBy::None);
-    assert_eq!(RGroupBy::from_str(""), RGroupBy::None);
-}
-
-// ── routine_group_key ─────────────────────────────────────────────────────────
-
-#[test]
-fn routine_group_key_agent_returns_agent_field() {
-    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::Agent), "claude");
-}
-
-#[test]
-fn routine_group_key_machine_returns_first_machine() {
-    let r = routine(
-        "a",
-        "A",
-        "claude",
-        "0 * * * *",
-        &["alpha", "beta"],
-        &[],
-        true,
+fn ics_feed_url_joins_origin_and_path() {
+    assert_eq!(
+        ics_feed_url("https://moadim.example.com"),
+        "https://moadim.example.com/api/v1/routines.ics"
     );
-    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "alpha");
 }
 
 #[test]
-fn routine_group_key_machine_returns_unassigned_when_no_machines() {
-    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "(unassigned)");
-}
-
-#[test]
-fn routine_group_key_status_enabled() {
-    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Enabled");
-}
-
-#[test]
-fn routine_group_key_status_disabled() {
-    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], false);
-    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Disabled");
-}
-
-#[test]
-fn routine_group_key_none_returns_empty_string() {
-    let r = routine("a", "A", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::None), "");
-}
-
-// ── group_routines ────────────────────────────────────────────────────────────
-
-#[test]
-fn group_routines_none_returns_single_pair_with_empty_label() {
-    let rs = vec![
-        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "B", "codex", "0 * * * *", &[], &[], false),
-    ];
-    let groups = group_routines(&rs, RGroupBy::None);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].0, "");
-    assert_eq!(groups[0].1.len(), 2);
-}
-
-#[test]
-fn group_routines_agent_partitions_by_agent_sorted() {
-    let rs = vec![
-        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "B", "codex", "0 * * * *", &[], &[], true),
-        routine("c", "C", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Agent);
-    assert_eq!(groups.len(), 2);
-    // BTreeMap sorts alphabetically: "claude" < "codex"
-    assert_eq!(groups[0].0, "claude");
-    assert_eq!(groups[0].1.len(), 2);
-    assert_eq!(groups[1].0, "codex");
-    assert_eq!(groups[1].1.len(), 1);
-}
-
-#[test]
-fn group_routines_machine_uses_unassigned_for_empty_machines() {
-    let rs = vec![
-        routine("a", "A", "claude", "0 * * * *", &["m1"], &[], true),
-        routine("b", "B", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Machine);
-    assert_eq!(groups.len(), 2);
-    let labels: Vec<&str> = groups.iter().map(|(l, _)| l.as_str()).collect();
-    assert!(labels.contains(&"m1"));
-    assert!(labels.contains(&"(unassigned)"));
-}
-
-#[test]
-fn group_routines_status_partitions_enabled_and_disabled() {
-    let rs = vec![
-        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "B", "claude", "0 * * * *", &[], &[], false),
-        routine("c", "C", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Status);
-    assert_eq!(groups.len(), 2);
-    // BTreeMap: "Disabled" < "Enabled"
-    assert_eq!(groups[0].0, "Disabled");
-    assert_eq!(groups[0].1.len(), 1);
-    assert_eq!(groups[1].0, "Enabled");
-    assert_eq!(groups[1].1.len(), 2);
-}
-
-#[test]
-fn group_routines_preserves_within_group_input_order() {
-    let rs = vec![
-        routine("z", "Z", "claude", "0 * * * *", &[], &[], true),
-        routine("a", "A", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Agent);
-    assert_eq!(groups.len(), 1);
-    // Input order preserved within group
-    assert_eq!(groups[0].1[0].id, "z");
-    assert_eq!(groups[0].1[1].id, "a");
+fn ics_feed_url_preserves_port() {
+    assert_eq!(
+        ics_feed_url("http://localhost:8787"),
+        "http://localhost:8787/api/v1/routines.ics"
+    );
 }

@@ -12,6 +12,12 @@ fn never_expires_runtime(_slug: &str) -> u64 {
 /// A `kill` that does nothing (the watchdog is not expected to fire).
 fn noop_kill(_session: &str) {}
 
+/// A `finished_at` that reports each run's trigger timestamp as its finish time, isolating the TTL
+/// math from `agent.log` mtime so a test asserts reap decisions purely on the injected `ts`.
+fn finish_at_trigger(_dir: &std::path::Path, trigger_ts: u64) -> u64 {
+    trigger_ts
+}
+
 #[test]
 fn tmux_kill_session_is_best_effort_on_missing_session() {
     // The real tmux side-effect helper. Killing a session that does not exist (or running with no
@@ -205,6 +211,7 @@ fn reap_dir_removes_only_finished_and_expired() {
         &never_expires_runtime,
         &alive,
         &noop_kill,
+        &finish_at_trigger,
     );
 
     assert_eq!(removed, 1);
@@ -237,12 +244,90 @@ fn reap_dir_uses_per_slug_ttl() {
         &never_expires_runtime,
         &dead,
         &noop_kill,
+        &finish_at_trigger,
     );
 
     assert_eq!(removed, 1);
     assert!(!base.join("short-500").exists());
     assert!(base.join("long-500").exists());
 
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn reap_dir_measures_ttl_from_finish_not_trigger() {
+    // #174: retention is measured from when the run *finished*, not when it was triggered. A run
+    // whose duration exceeds its TTL must still be kept for the full window after it completes,
+    // while a long-finished run is reaped. Both dirs share trigger ts 100 (trigger-based age 900),
+    // so a trigger-based reaper would delete both; finish-based keeps the just-finished one.
+    let base = std::env::temp_dir().join("moadim-cleanup-finish-ttl-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+
+    touch_dir(&base, "longrun-100"); // triggered at 100, finished recently (at 900)
+    touch_dir(&base, "donelong-100"); // triggered at 100, finished long ago (at 100)
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 500u64; // retention window: 500s from finish
+    let dead = |_session: &str| false;
+    // Finish time is per-workbench: the long-running one finished at 900 (age 100 <= 500 -> kept);
+    // the other finished at 100 (age 900 > 500 -> reaped). Run duration never eats the window.
+    let finished_at = |dir: &std::path::Path, _ts: u64| {
+        if dir.file_name().unwrap() == "longrun-100" {
+            900
+        } else {
+            100
+        }
+    };
+
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &never_expires_runtime,
+        &dead,
+        &noop_kill,
+        &finished_at,
+    );
+
+    assert_eq!(removed, 1, "only the long-finished run is reaped");
+    assert!(
+        base.join("longrun-100").exists(),
+        "a run that finished within its TTL is retained even though its trigger age exceeds the TTL"
+    );
+    assert!(!base.join("donelong-100").exists());
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn agent_log_finish_time_falls_back_to_trigger_without_log() {
+    // No agent.log present -> the trigger timestamp is used as the finish time.
+    let base =
+        std::env::temp_dir().join(format!("moadim-cleanup-finishfn-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    assert_eq!(agent_log_finish_time(&base, 4242), 4242);
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn agent_log_finish_time_uses_log_mtime_clamped_to_trigger() {
+    // With an agent.log present, its mtime (a recent, large unix time) is used and is never less
+    // than the trigger timestamp.
+    let base = std::env::temp_dir().join(format!(
+        "moadim-cleanup-finishfn-mtime-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(base.join("agent.log"), b"done\n").unwrap();
+    // Trigger far in the past: the just-written log's mtime dominates, so finish > trigger.
+    let finish = agent_log_finish_time(&base, 1);
+    assert!(
+        finish > 1,
+        "fresh agent.log mtime should yield a finish time later than an ancient trigger"
+    );
+    // Trigger far in the future (clock skew): clamped up to the trigger, never below it.
+    assert_eq!(agent_log_finish_time(&base, u64::MAX), u64::MAX);
     std::fs::remove_dir_all(&base).unwrap();
 }
 
@@ -260,7 +345,15 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &max_runtime_for,
+        &alive,
+        &kill,
+        &finish_at_trigger,
+    );
 
     assert_eq!(removed, 1, "hung-then-killed workbench is reaped");
     assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
@@ -283,7 +376,15 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &max_runtime_for,
+        &alive,
+        &kill,
+        &finish_at_trigger,
+    );
 
     assert_eq!(
         removed, 0,
@@ -313,7 +414,15 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &dead, &kill);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &max_runtime_for,
+        &dead,
+        &kill,
+        &finish_at_trigger,
+    );
 
     assert_eq!(removed, 1);
     assert!(
@@ -419,7 +528,8 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
             &ttl_for,
             &never_expires_runtime,
             &dead,
-            &noop_kill
+            &noop_kill,
+            &finish_at_trigger
         ),
         0
     );
@@ -456,6 +566,7 @@ fn reap_dir_counts_zero_when_remove_fails() {
         &never_expires_runtime,
         &dead,
         &noop_kill,
+        &finish_at_trigger,
     );
     // A read-only parent makes `remove_dir_all` fail for an unprivileged user, so
     // the directory survives and the Err arm runs (0 removed). Root bypasses the
@@ -513,8 +624,64 @@ fn cleanup_expired_workbenches_scans_real_workbenches_dir() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+#[cfg(unix)]
+#[test]
+fn cleanup_expired_workbenches_kills_a_live_hung_session() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    // Drives the public entry point against a *live* session so the watchdog path runs end-to-end:
+    // a stub `tmux` that always exits 0 makes `tmux_session_alive` report the session as running
+    // (exercising its `status.success()` mapping over a real process), which in turn makes
+    // `cleanup_expired_workbenches` consult its `max_runtime_for` bound. An ancient timestamp puts
+    // the run past the (empty-store default) max runtime, so the session is force-killed, the kill
+    // is noted in agent.log, and the workbench is reaped. Complements
+    // `cleanup_expired_workbenches_scans_real_workbenches_dir`, which covers the no-tmux path.
+    let home = std::env::temp_dir().join(format!("moadim-cleanup-hung-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&home).unwrap();
+    // A stub tmux that ignores its args and always succeeds, so has-session/kill-session both "work".
+    let stub_tmux = home.join("stub-tmux");
+    std::fs::write(&stub_tmux, b"#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&stub_tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let prev_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+        std::env::set_var("MOADIM_TMUX_BIN", &stub_tmux);
+    }
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+    // Timestamp 1 → far past any max-runtime / TTL bound, and its session reports alive via the stub.
+    std::fs::create_dir_all(workbenches.join("hung-1")).unwrap();
+
+    let store = super::super::model::new_store();
+    let removed = cleanup_expired_workbenches(&store);
+
+    assert_eq!(
+        removed, 1,
+        "the live-but-overrun workbench is killed then reaped"
+    );
+    assert!(!workbenches.join("hung-1").exists());
+
+    // SAFETY: single-threaded harness; restore the saved overrides.
+    unsafe {
+        match prev_home {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+        match prev_tmux {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
     super::super::model::Routine {
+        model: None,
         id: "x".into(),
         schedule: schedule.into(),
         title: "t".into(),
@@ -528,6 +695,9 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
     }
@@ -618,4 +788,23 @@ fn effective_ttl_falls_back_to_cap_when_schedule_never_fires() {
         routine_with("0 0 30 2 *", Some(15)).effective_ttl_secs(),
         15
     );
+}
+
+// ─── parse_workbench_name overflow (L55) ─────────────────────────────────────
+
+#[test]
+fn parse_workbench_name_overflowing_timestamp_returns_none() {
+    // All-digit suffix that is too large to fit in u64 (20 nines > u64::MAX):
+    // the digit-only guard passes but `ts.parse::<u64>().ok()` returns None → function returns None.
+    assert!(parse_workbench_name("slug-99999999999999999999").is_none());
+}
+
+// ─── cron_interval_secs second-fire None (L36) ───────────────────────────────
+
+#[test]
+fn cron_interval_secs_returns_none_when_second_fire_not_found() {
+    // A 7-field cron restricted to year 4999 fires exactly once: Jan 1 4999 00:00:00.
+    // The first `fires.next()` → Some (L35 taken as Some); the second `fires.next()` advances
+    // into year 5000 which exceeds croner's YEAR_UPPER_LIMIT → iterator returns None (L36).
+    assert!(super::ttl::cron_interval_secs("0 0 0 1 1 * 4999").is_none());
 }

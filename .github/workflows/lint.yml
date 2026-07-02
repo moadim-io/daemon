@@ -8,13 +8,39 @@ name: Lint
 #
 # fmt and clippy run as separate jobs so a formatting failure and a lint failure
 # are reported independently. The build relies on the committed `prebuilt.html`
-# (build.rs falls back to it when trunk is absent), so no trunk or wasm target
-# is needed just to type-check and lint the server crate.
+# (build.rs falls back to it when trunk is absent), so no trunk step is needed
+# just to type-check and lint. The clippy job runs `--workspace` so the `ui`
+# member crate is linted too; `ui`'s deps (yew/gloo/web-sys) build fine on the
+# host target for clippy's purposes, so no wasm32 target install is required
+# here either.
 
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: >
+          Git ref to check out. Empty (the default) means "use the ref that
+          triggered this run" — set only by changeset-release.yml, which
+          calls this workflow directly to lint a branch (changeset-release/main)
+          other than the one that triggered it.
+        required: false
+        type: string
+
+# Cancel a stale run when a PR gets a new push, so superseded lint runs don't
+# pile up and burn CI minutes. Scoped per-workflow-per-ref so unrelated PRs
+# (and the push-to-main trigger) never cancel each other. Uses a literal
+# "lint" prefix rather than ${{ github.workflow }}: when called via
+# workflow_call (see cut-release.yml), github.workflow resolves to the
+# CALLER's name, so lint and test would otherwise share one group with each
+# other (and with the caller) and race-cancel one another. inputs.ref falls
+# back to github.ref for the normal pull_request/push triggers, where
+# inputs.ref is unset.
+concurrency:
+  group: lint-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fmt:
@@ -22,6 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Rust (with rustfmt)
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -37,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Rust (with clippy)
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -44,14 +74,19 @@ jobs:
           toolchain: stable
           components: clippy
 
-      - name: Cache cargo registry (registry only, not target)
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          # Scoped so the `clippy` job's --all-targets target/ artifacts
+          # don't clobber the `test` job's cache entry.
+          shared-key: clippy
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        # Match the local pre-push hook exactly: this is a non-virtual
+        # workspace (the root Cargo.toml declares both a [package] and a
+        # [workspace]), so a bare `cargo clippy` only checks the root
+        # `moadim` package and silently skips the `ui` member crate. Without
+        # `--workspace`, `ui/Cargo.toml`'s `[lints.clippy] all = "deny"` was
+        # never enforced here, so a PR could lint-regress the dashboard and
+        # still go fully green.
+        run: cargo clippy --workspace --all-targets -- -D warnings

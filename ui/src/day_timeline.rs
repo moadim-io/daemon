@@ -1,8 +1,8 @@
 //! Shared "day" calendar view: a single day's fire times laid out on a scrollable
-//! 24-hour timeline. Used by both the routines and cron-jobs pages.
+//! 24-hour timeline. Used by the routines page.
 //!
-//! The caller maps its own items (routines, cron jobs) to [`TimelineItem`]s — a label
-//! plus a cron schedule — and this component computes each item's fire times for the
+//! The caller maps its own items (routines) to [`TimelineItem`]s — a label plus a
+//! cron schedule — and this component computes each item's fire times for the
 //! selected day and buckets them into hour rows.
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Timelike};
@@ -29,6 +29,8 @@ const ZOOM_LEVELS: [i32; 4] = [40, 140, 300, 600];
 /// One schedulable thing on the timeline: a display label and its cron schedule.
 #[derive(Clone, PartialEq)]
 pub struct TimelineItem {
+    /// Optional entity ID emitted by `on_click` when a chip is clicked.
+    pub id: Option<String>,
     pub label: String,
     pub schedule: String,
 }
@@ -67,6 +69,9 @@ fn fire_times(schedule: &str, day: NaiveDate) -> Vec<NaiveTime> {
 pub struct DayTimelineProps {
     pub items: Vec<TimelineItem>,
     pub loading: bool,
+    /// When set, clicking a chip that has an `id` calls this with that id.
+    #[prop_or_default]
+    pub on_click: Option<Callback<String>>,
 }
 
 #[function_component(DayTimeline)]
@@ -125,16 +130,17 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
     };
 
     // Bucket every item's fire times into the hour rows.
-    let mut buckets: Vec<Vec<(NaiveTime, String)>> = vec![Vec::new(); 24];
+    // Each entry is (fire time, display label, optional entity id for click handling).
+    let mut buckets: Vec<Vec<(NaiveTime, String, Option<String>)>> = vec![Vec::new(); 24];
     let mut total = 0usize;
     for it in props.items.iter() {
         for t in fire_times(&it.schedule, day) {
-            buckets[t.hour() as usize].push((t, it.label.clone()));
+            buckets[t.hour() as usize].push((t, it.label.clone(), it.id.clone()));
             total += 1;
         }
     }
     for b in buckets.iter_mut() {
-        b.sort_by_key(|(t, _)| *t);
+        b.sort_by_key(|(t, _, _)| *t);
     }
 
     let date_label = format!(
@@ -189,15 +195,21 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
                         <div class={cls} ref={row_ref}>
                             {label}
                             <div class="day-hour-slot">
-                                { for slot.iter().map(|(t, lbl)| {
+                                { for slot.iter().map(|(t, lbl, id)| {
                                     let frac = (t.minute() as f32 + t.second() as f32 / 60.0) / 60.0;
                                     let style = if detailed {
                                         Some(format!("top:{:.3}%", frac * 100.0))
                                     } else {
                                         None
                                     };
+                                    let on_chip = props.on_click.as_ref().zip(id.as_ref()).map(|(cb, item_id)| {
+                                        let cb = cb.clone();
+                                        let item_id = item_id.clone();
+                                        Callback::from(move |_: MouseEvent| cb.emit(item_id.clone()))
+                                    });
+                                    let chip_cls = if on_chip.is_some() { "day-chip clickable" } else { "day-chip" };
                                     html! {
-                                        <div class="day-chip" style={style} title={lbl.clone()}>
+                                        <div class={chip_cls} style={style} title={lbl.clone()} onclick={on_chip}>
                                             <span class="day-chip-time">{format!("{:02}:{:02}", t.hour(), t.minute())}</span>
                                             <span class="day-chip-label">{lbl.clone()}</span>
                                         </div>

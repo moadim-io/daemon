@@ -26,9 +26,9 @@ use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_cronta
 use crate::utils::lock::LockRecover;
 
 /// Delimiter marking the start of the moadim routines crontab block.
-const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
+pub(crate) const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
 /// Delimiter marking the end of the moadim routines crontab block.
-const BLOCK_END: &str = "# END MOADIM-ROUTINES";
+pub(crate) const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
@@ -75,7 +75,16 @@ fn build_block(store: &RoutineStore) -> String {
     };
     warn_dormant_routines(&routines);
     routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
-    routines.sort_by_key(|routine| routine.created_at);
+    // The routines come off a `HashMap`, whose iteration order is unspecified, so routines that
+    // share a `created_at` (e.g. several seeded or batch-created in the same second) would otherwise
+    // emit in an arbitrary, run-to-run order. That churns the generated crontab block across syncs
+    // and defeats the `new_crontab == current` idempotency guard below, forcing a needless
+    // `crontab -` rewrite. Break ties on the stable routine id so the block is fully deterministic.
+    routines.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     let lines: Vec<String> = routines
         .iter()
@@ -127,7 +136,7 @@ fn warn_dormant_routines(routines: &[Routine]) {
 }
 
 /// Substring identifying a routine line inside the crontab block (`# moadim-routine:<id>`).
-const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
+pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 
 /// Write all enabled managed routines from `store` into the OS routines crontab block.
 ///

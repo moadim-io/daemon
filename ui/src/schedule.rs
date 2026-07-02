@@ -1,4 +1,4 @@
-//! Pure schedule math for the cron-jobs "next run" capability: given a cron
+//! Pure schedule math for the routines "next run" capability: given a cron
 //! expression and the current instant, compute the next fire time and format it
 //! both as an absolute *when* ("14:30", "tomorrow 09:00", "Jun 24, 09:00") and a
 //! relative countdown ("in 5m", "in 2h 10m", "in 3d").
@@ -85,7 +85,7 @@ pub(crate) fn fmt_when(now: DateTime<Local>, then: DateTime<Local>) -> String {
 
 // ─── Calendar grid utilities ──────────────────────────────────────────────────
 //
-// Shared by RoutineCalendar and CronJobCalendar.
+// Used by the routines calendar view.
 
 /// Day-of-week headers for the calendar grid.
 pub(crate) const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];

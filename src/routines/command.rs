@@ -10,12 +10,18 @@ use super::model::Routine;
 ///
 /// Lowercases, replaces each run of non-alphanumeric characters with a single `-`, and trims
 /// leading/trailing `-`. Returns `"routine"` if nothing usable remains.
+///
+/// Unicode-aware: uses [`char::is_alphanumeric`] / [`char::to_lowercase`] rather than the ASCII-only
+/// variants, so non-Latin titles (Hebrew, CJK, Cyrillic) and Latin letters with diacritics (`é`,
+/// `ü`) keep their content instead of collapsing to the `"routine"` fallback (#262). Both the
+/// on-disk workbench dir and the tmux session name are shell-quoted wherever the slug is embedded,
+/// so non-ASCII bytes there are safe.
 pub(crate) fn slugify(title: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
     for ch in title.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
+        if ch.is_alphanumeric() {
+            out.extend(ch.to_lowercase());
             prev_dash = false;
         } else if !prev_dash {
             out.push('-');

@@ -42,6 +42,25 @@ fn slugify_empty_falls_back() {
 }
 
 #[test]
+fn slugify_preserves_non_ascii_letters() {
+    // Hebrew and CJK titles must not collapse to the "routine" fallback (#262).
+    assert_eq!(slugify("עדכון יומי"), "עדכון-יומי");
+    assert_eq!(slugify("日次レポート"), "日次レポート");
+    assert_eq!(slugify("Отчёт"), "отчёт");
+    // Latin diacritics are kept rather than silently dropped.
+    assert_eq!(slugify("Café Report"), "café-report");
+}
+
+#[test]
+fn slugify_distinct_non_ascii_titles_produce_distinct_slugs() {
+    let slug_one = slugify("עדכון יומי");
+    let slug_two = slugify("דוח שבועי");
+    assert_ne!(slug_one, "routine");
+    assert_ne!(slug_two, "routine");
+    assert_ne!(slug_one, slug_two);
+}
+
+#[test]
 fn compose_prompt_lists_repos_and_prompt() {
     let routine = make_routine("x");
     let prompt = compose_prompt(&routine);

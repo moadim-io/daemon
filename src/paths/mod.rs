@@ -76,6 +76,13 @@ pub fn routine_dir(id: &str) -> PathBuf {
     routines_dir().join(id)
 }
 
+/// Returns the path to `{routines_dir}/README.md`, a daemon-generated orientation doc explaining
+/// the per-routine directory layout.
+#[must_use]
+pub fn routines_readme_path() -> PathBuf {
+    routines_dir().join("README.md")
+}
+
 /// Returns the path to `{routines_dir}/{id}/routine.toml`.
 #[must_use]
 pub fn routine_toml_path(id: &str) -> PathBuf {
@@ -162,6 +169,13 @@ pub fn agent_toml_path(name: &str) -> PathBuf {
     agents_dir().join(format!("{name}.toml"))
 }
 
+/// Returns the path to `{agents_dir}/README.md`, a daemon-generated orientation doc explaining the
+/// agent registry's file format.
+#[must_use]
+pub fn agents_readme_path() -> PathBuf {
+    agents_dir().join("README.md")
+}
+
 // ─── Daemon runtime files ────────────────────────────────────────────────────
 
 /// Returns the path to `{config_dir}/moadim.pid`, where the running server records its PID.
@@ -181,6 +195,13 @@ pub fn daemon_log_file() -> PathBuf {
 #[must_use]
 pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
+}
+
+/// Returns the path to `{config_dir}/README.md`, a daemon-generated orientation doc explaining the
+/// config tree's layout for anyone who opens or git-tracks it directly.
+#[must_use]
+pub fn config_readme_path() -> PathBuf {
+    config_dir().join("README.md")
 }
 
 /// Returns the path to `~/.config/moadim/.lock`, a committed global lock that halts all routine

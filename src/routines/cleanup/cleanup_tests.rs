@@ -687,6 +687,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         title: "t".into(),
         agent: "claude".into(),
         prompt: "p".into(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,

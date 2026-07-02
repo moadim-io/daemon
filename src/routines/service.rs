@@ -320,6 +320,29 @@ fn normalize_model(model: Option<String>) -> Option<String> {
     })
 }
 
+/// Maximum number of lines a routine `goal` may span. The goal is meant to be a glanceable "why"
+/// rendered as a `## Goal` preamble in `prompt.md`, not a second prompt, so it is capped short.
+const MAX_GOAL_LINES: usize = 5;
+
+/// Normalize and bound an optional routine `goal`, returning the value to store.
+///
+/// The goal is a very short statement of *why* a routine exists, rendered into the agent's
+/// `prompt.md` as a `## Goal` preamble. It is optional: a `None` or blank (empty/whitespace-only)
+/// value clears it (`Ok(None)`). A present goal is trimmed and must span at most
+/// [`MAX_GOAL_LINES`] lines, so it stays a glanceable summary rather than a second prompt. Shared
+/// by the create and update paths so the REST and MCP surfaces bound it identically.
+fn validate_goal(goal: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(trimmed) = goal.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if trimmed.lines().count() > MAX_GOAL_LINES {
+        return Err(AppError::BadRequest(format!(
+            "goal must be at most {MAX_GOAL_LINES} lines"
+        )));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 /// Validate `req`, assign a UUID, persist (routine.toml + prompts/ sidecars), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
@@ -345,6 +368,7 @@ pub fn svc_create(
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
     let tags = validate_tags(&req.tags)?;
+    let goal = validate_goal(req.goal.as_deref())?;
     let machines = validate_machines(&req.machines)?;
     let slug = slugify(&req.title);
     {
@@ -363,6 +387,7 @@ pub fn svc_create(
         agent: req.agent,
         model: normalize_model(req.model),
         prompt: req.prompt,
+        goal,
         repositories,
         machines,
         enabled: req.enabled,
@@ -414,6 +439,11 @@ pub fn svc_update(
     };
     let tags = match req.tags {
         Some(ref tags) => Some(validate_tags(tags)?),
+        None => None,
+    };
+    // `Some(None)` clears the goal (empty string sent), `Some(Some(_))` sets it, `None` keeps it.
+    let goal = match req.goal {
+        Some(ref goal) => Some(validate_goal(Some(goal))?),
         None => None,
     };
     let machines = match req.machines {
@@ -474,6 +504,9 @@ pub fn svc_update(
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;
     }
+    if let Some(goal) = goal {
+        routine.goal = goal;
+    }
     if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
@@ -498,6 +531,7 @@ pub fn svc_update(
     let new_slug = slugify(&routine.title);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     if new_slug != old_slug {
+        migrate_workbenches(&old_slug, &new_slug);
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
     }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
@@ -589,8 +623,8 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
 ///
 /// In **test builds**, when no `MOADIM_SH_BIN` shim is configured this never falls back to the
 /// real `sh`: it returns a path that cannot exist, so the spawn fails harmlessly instead of
-/// launching a real agent process. This closes the same structural gap `crontab_bin()`
-/// ([`crate::sync::crontab_bin`]) closes for crontab I/O (issue #175) — a test that forgets to
+/// launching a real agent process. This closes the same structural gap `crontab_bin()` in
+/// `crate::sync` closes for crontab I/O (issue #175) — a test that forgets to
 /// clear `PATH` or shim this binary still cannot execute a real command on the developer's
 /// machine (issue #217). Tests that need a working spawn set `MOADIM_SH_BIN` to a shim.
 fn sh_bin() -> String {
@@ -666,6 +700,36 @@ fn spawn_routine_command(routine: &Routine) {
 pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
     CleanupResponse {
         removed: cleanup_expired_workbenches(store),
+    }
+}
+
+/// Rename every existing workbench directory from `old_slug` to `new_slug`, preserving each run's
+/// trigger timestamp (`{old_slug}-{ts}` -> `{new_slug}-{ts}`).
+///
+/// Called from [`svc_update`] when a routine's title (and thus slug) changes. Workbenches are keyed
+/// by slug, not the routine's stable UUID, so without this migration a rename would strand every
+/// prior run under the old slug: [`svc_logs`] (which looks up by *current* slug) would find nothing,
+/// and an in-flight run would fall through to the cleanup watchdog's orphan defaults instead of the
+/// routine's own `ttl_secs`/`max_runtime_secs` (#267). A failed rename is logged and skipped rather
+/// than failing the update itself — this is best-effort history preservation, not a correctness
+/// requirement of the rename.
+fn migrate_workbenches(old_slug: &str, new_slug: &str) {
+    let Ok(entries) = std::fs::read_dir(workbenches_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
+            continue;
+        };
+        if dir_slug != old_slug {
+            continue;
+        }
+        let from = workbenches_dir().join(&name);
+        let to = workbenches_dir().join(format!("{new_slug}-{ts}"));
+        if let Err(err) = std::fs::rename(&from, &to) {
+            log::warn!("failed to migrate workbench {name} to {new_slug}-{ts}: {err}");
+        }
     }
 }
 

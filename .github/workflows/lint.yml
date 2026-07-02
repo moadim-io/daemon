@@ -29,6 +29,11 @@ on:
         required: false
         type: string
 
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
+# check out the repo to run cargo fmt/clippy.
+permissions:
+  contents: read
+
 # Cancel a stale run when a PR gets a new push, so superseded lint runs don't
 # pile up and burn CI minutes. Scoped per-workflow-per-ref so unrelated PRs
 # (and the push-to-main trigger) never cancel each other. Uses a literal

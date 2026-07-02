@@ -19,6 +19,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -53,6 +54,10 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
 pub struct DependencyHealth {
     /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
     pub tmux: bool,
+    /// Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`
+    /// step runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that
+    /// step fails silently and the routine still shows a healthy status (issue #404).
+    pub python3: bool,
 }
 
 /// Response body for `GET /health`.
@@ -160,6 +165,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         machine: crate::machine::current_machine(),
         dependencies: DependencyHealth {
             tmux: routines::tmux_available(),
+            python3: routines::agent_command_available("python3"),
         },
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),
@@ -408,6 +414,10 @@ pub(crate) fn build_app_with_shutdown(
         // (notably the ~1.1 MB SPA `index.html` and the OpenAPI JSON under `/docs`). A no-op
         // for clients that don't advertise gzip support (issue #399).
         .layer(CompressionLayer::new())
+        // Outermost of all: a panicking handler would otherwise unwind straight through Hyper,
+        // resetting the connection with no response and no logged error (issue #337). Catch it
+        // here and answer with a plain 500 instead.
+        .layer(CatchPanicLayer::new())
         .with_state(app_state)
 }
 

@@ -11,6 +11,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "task".to_string(),
+        goal: None,
         repositories: vec![Repository {
             repository: "https://example.com/r.git".to_string(),
             branch: Some("main".to_string()),
@@ -1084,14 +1085,20 @@ fn load_routine_from_dir_missing_agent_returns_none() {
 #[test]
 fn write_routine_fails_on_gitignore_write_error() {
     use std::os::unix::fs::PermissionsExt as _;
-    // Covers L155: `std::fs::write(&gitignore, ..)? ` — the dir exists but is read-only
-    // (and `.gitignore` is absent), so writing it fails and the error is propagated.
+    // Covers L202: `std::fs::write(&gitignore, ..)? ` — the dir (and its `prompts/`
+    // subdir) already exist but the dir is read-only, and `.gitignore` is absent, so
+    // writing it fails and the error is propagated.
+    //
+    // The `prompts/` subdir must be pre-created: `write_routine` calls
+    // `create_dir_all(routine_prompts_dir(&slug))` *before* the `.gitignore` write, and
+    // creating a not-yet-existing subdir under a read-only parent fails first, which
+    // would exercise that branch instead of the intended gitignore-write branch below.
     with_override_home(|_home| {
         let title = "Rs Gitignore Fail Routine";
         let slug = slugify(title);
         let dir = crate::paths::routine_dir(&slug);
-        // Create dir without a .gitignore, then lock it.
-        std::fs::create_dir_all(&dir).unwrap();
+        // Create dir and prompts/ without a .gitignore, then lock the dir.
+        std::fs::create_dir_all(crate::paths::routine_prompts_dir(&slug)).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
         let result = write_routine(&make_routine("rs-gitignore-fail-id", title));

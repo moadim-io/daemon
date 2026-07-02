@@ -154,7 +154,10 @@ pub fn ensure_default_agents() {
 /// Write missing built-in agent configs into `dir`. See [`ensure_default_agents`].
 pub(crate) fn ensure_default_agents_in(dir: &Path) {
     if let Err(err) = std::fs::create_dir_all(dir) {
-        log::warn!("ensure_default_agents: failed to create {dir:?}: {err}");
+        log::warn!(
+            "ensure_default_agents: failed to create {}: {err}",
+            dir.display()
+        );
         return;
     }
     for (name, contents) in DEFAULT_AGENT_CONFIGS {
@@ -163,7 +166,10 @@ pub(crate) fn ensure_default_agents_in(dir: &Path) {
             continue;
         }
         if let Err(err) = std::fs::write(&path, contents) {
-            log::warn!("ensure_default_agents: failed to write {path:?}: {err}");
+            log::warn!(
+                "ensure_default_agents: failed to write {}: {err}",
+                path.display()
+            );
         }
     }
 }

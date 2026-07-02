@@ -3,10 +3,11 @@
 use axum::{
     body::Body,
     http::{header::CONTENT_TYPE, Request, StatusCode},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use tower::ServiceExt;
+use tower_http::catch_panic::CatchPanicLayer;
 
 use super::{build_app, echo, health, run_with_listener_until, write_openapi_spec, AppState};
 use crate::utils::time::now_secs;
@@ -1402,4 +1403,26 @@ async fn build_app_restart_route_returns_500_when_spawn_fails() {
         StatusCode::INTERNAL_SERVER_ERROR,
         "restart route should return 500 when spawn_restart fails"
     );
+}
+
+/// `CatchPanicLayer` is what stands between a panicking handler and a reset connection with no
+/// response (issue #337). `build_app`'s production routes never panic deliberately, so exercise
+/// the layer directly on a minimal router wired the same way, confirming it turns a panic into a
+/// plain 500 instead of the request erroring out.
+#[tokio::test]
+async fn catch_panic_layer_turns_a_handler_panic_into_a_500() {
+    async fn boom() -> StatusCode {
+        panic!("intentional test panic")
+    }
+
+    let app = Router::new()
+        .route("/boom", get(boom))
+        .layer(CatchPanicLayer::new());
+
+    let resp = app
+        .oneshot(Request::builder().uri("/boom").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

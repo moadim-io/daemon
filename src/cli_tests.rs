@@ -795,6 +795,68 @@ fn restart_replaces_running_server() {
 }
 
 #[test]
+fn foreground_already_running_message_names_pid_when_known() {
+    let with_pid = foreground_already_running_message(Some(4321));
+    assert!(with_pid.contains("(pid 4321)"));
+    assert!(with_pid.contains("moadim stop"));
+    assert!(with_pid.contains("moadim restart"));
+    // With no pid file the message omits the suffix but keeps the guidance.
+    let without_pid = foreground_already_running_message(None);
+    assert!(!without_pid.contains("(pid"));
+    assert!(without_pid.contains("refusing to start a second foreground instance"));
+}
+
+#[test]
+fn foreground_preflight_refuses_when_running() {
+    assert!(foreground_preflight(true, Some(7)).is_err());
+    assert!(foreground_preflight(true, None).is_err());
+}
+
+#[test]
+fn foreground_preflight_proceeds_when_not_running() {
+    assert!(foreground_preflight(false, None).is_ok());
+}
+
+#[test]
+fn ensure_not_running_for_foreground_ok_when_no_server() {
+    let home = temp_home("fg-down");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert!(ensure_not_running_for_foreground().is_ok());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_refuses_when_server_up() {
+    let server = FakeServer::start(200, String::new());
+    let home = temp_home("fg-up");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "");
+    // SAFETY: single-threaded test execution; clear the marker so the live-probe path runs.
+    unsafe {
+        std::env::remove_var(DAEMONIZED_ENV);
+    }
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_err());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn ensure_not_running_for_foreground_skips_for_daemonized_child() {
+    // The launcher-spawned child carries MOADIM_DAEMONIZED and must be allowed to bind even while
+    // the (about-to-be-replaced) server is still answering probes.
+    let server = FakeServer::start(200, String::new());
+    let _daemonized = EnvGuard::set(DAEMONIZED_ENV, "1");
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(ensure_not_running_for_foreground().is_ok());
+}
+
+#[test]
 fn spawn_restart_launches_a_detached_helper() {
     // The helper is `current_exe --background`; under the test harness that exe is the test binary,
     // which rejects `--background` and exits immediately, so this only verifies the spawn succeeds

@@ -62,7 +62,10 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
-        cli::Command::Foreground => run_server().await,
+        cli::Command::Foreground => {
+            cli::ensure_not_running_for_foreground()?;
+            run_server().await
+        }
     }
 }
 

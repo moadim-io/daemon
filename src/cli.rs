@@ -207,6 +207,49 @@ pub fn run_background() -> anyhow::Result<()> {
     start_detached_and_report("started")
 }
 
+/// Refuse an interactive foreground start (`moadim -i`) when a server is already reachable on the
+/// bind address, instead of letting the later bind fail with an opaque OS error
+/// (`Address already in use (os error 48)`) that gives no hint a real daemon is already up.
+///
+/// Unlike [`run_background`], which silently stops and replaces a running instance, an interactive
+/// run *refuses* and points at `moadim stop` / `moadim restart`: attaching a second foreground
+/// process to the terminal is rarely what the user intended, and silently killing the existing one
+/// would be a surprising side effect of `-i`.
+///
+/// The launcher-spawned background child also runs with `--interactive`, but it *is* the freshly
+/// started server (the launcher already stopped any prior instance), so the preflight is skipped for
+/// it via the [`DAEMONIZED_ENV`] marker.
+pub fn ensure_not_running_for_foreground() -> anyhow::Result<()> {
+    if std::env::var_os(DAEMONIZED_ENV).is_some() {
+        return Ok(());
+    }
+    foreground_preflight(is_running(), read_pid_file())
+}
+
+/// Decide the foreground-start preflight outcome from whether a server is already reachable and its
+/// pid: `Ok(())` to proceed with the bind, or an error carrying user-facing guidance.
+///
+/// Split from [`ensure_not_running_for_foreground`] so both outcomes are unit-testable without a
+/// live network probe.
+fn foreground_preflight(running: bool, pid: Option<u32>) -> anyhow::Result<()> {
+    if running {
+        anyhow::bail!("{}", foreground_already_running_message(pid));
+    }
+    Ok(())
+}
+
+/// User-facing message when an interactive start is refused: names the running pid when known and
+/// points at the commands that resolve it.
+fn foreground_already_running_message(pid: Option<u32>) -> String {
+    let suffix = pid
+        .map(|process_id| format!(" (pid {process_id})"))
+        .unwrap_or_default();
+    format!(
+        "moadim is already running{suffix}; refusing to start a second foreground instance. \
+         Stop it with `moadim stop`, or replace it with `moadim restart`."
+    )
+}
+
 /// Stop a running background server (if any) and start a fresh detached instance.
 ///
 /// Unlike [`run_background`], which restarts only as a side effect of being asked to start while

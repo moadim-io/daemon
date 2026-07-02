@@ -466,6 +466,11 @@ async fn build_app_serves_health() {
         json["dependencies"]["tmux"].is_boolean(),
         "health payload should carry a boolean dependencies.tmux flag, got: {json}"
     );
+    // Likewise for python3, which the built-in `claude` agent's setup step depends on (#404).
+    assert!(
+        json["dependencies"]["python3"].is_boolean(),
+        "health payload should carry a boolean dependencies.python3 flag, got: {json}"
+    );
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     // The resolved machine name is surfaced so clients can identify which daemon answered.
     assert!(

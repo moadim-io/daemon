@@ -43,8 +43,15 @@ Stop a running background server.
 .B \-\-quiet
 suppresses the human-readable status line.
 .TP
-.BR "status " [ \-\-json ]
+.BR "status " [ \-\-json "] [" "\-\-wait" [ = SECS ]]
 Show whether a server is running.
+.B \-\-wait
+polls
+.B GET /health
+until the server answers or
+.I SECS
+elapses (default 30) instead of checking once, so scripts can block on
+startup instead of sleeping blindly.
 .TP
 .BR "cleanup " [ \-\-json ]
 Reap finished, expired routine workbenches now.
@@ -99,6 +106,11 @@ for a single-line, machine-readable object on stdout.
 Pass to
 .B stop
 to suppress its human-readable status line.
+.TP
+.BR "\-\-wait" [ = SECS ]
+Pass to
+.B status
+to poll for a server to come up (default 30s) instead of checking once.
 .SH EXIT STATUS
 .B status
 ,

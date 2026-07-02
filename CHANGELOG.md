@@ -128,6 +128,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ### Added
 
+- **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
+  server answers or `SECS` elapse (default 30) instead of checking once, so a
+  launch script can block on startup (`moadim && moadim status --wait`) rather
+  than sleeping a fixed guess before probing. Exits `0` once reachable and the
+  existing `3` on timeout, matching the `status`/`cleanup`/`stop` exit-code
+  contract.
 - **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
   rename-machine dialogs and the routine edit/delete-confirm modals now all
   close on `Esc`, matching the command palette's existing behavior.

@@ -62,6 +62,9 @@ pub enum Command {
     Status {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
+        /// When present, poll up to this many seconds for a server to become reachable instead of
+        /// checking once, so scripts can block on startup rather than sleeping blindly.
+        wait_secs: Option<u64>,
     },
     /// Ask a running server to reap finished, expired routine run workbenches now. `json` requests
     /// machine-readable output.
@@ -112,6 +115,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("status") => Command::Status {
             json: wants_json(&args[1..]),
+            wait_secs: wants_wait(&args[1..]),
         },
         Some("cleanup") => Command::Cleanup {
             json: wants_json(&args[1..]),
@@ -144,6 +148,24 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
+/// Default poll timeout for a bare `--wait` (no explicit seconds) on `status`.
+const DEFAULT_WAIT_SECS: u64 = 30;
+
+/// Whether `--wait` or `--wait=SECS` appears among `status`'s trailing arguments, requesting that
+/// it poll for a server to come up instead of checking once. A bare `--wait` uses
+/// [`DEFAULT_WAIT_SECS`]; `--wait=SECS` uses the given timeout. Returns `None` when neither form is
+/// present, or `--wait=` is followed by something that does not parse as a `u64`.
+fn wants_wait(rest: &[String]) -> Option<u64> {
+    rest.iter().find_map(|arg| {
+        if arg == "--wait" {
+            Some(DEFAULT_WAIT_SECS)
+        } else {
+            arg.strip_prefix("--wait=")
+                .and_then(|secs| secs.parse().ok())
+        }
+    })
+}
+
 /// Print usage help to stdout.
 pub fn print_help() {
     let bind_addr = bind_addr();
@@ -162,7 +184,8 @@ pub fn print_help() {
          COMMANDS:\n\
          \x20   restart                stop a running server (if any) and start a fresh background one\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
-         \x20   status [--json]        show whether a server is running\n\
+         \x20   status [--json] [--wait[=SECS]] show whether a server is running (--wait: poll until\n\
+         \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
@@ -420,10 +443,20 @@ pub fn trigger(id: String) -> anyhow::Result<i32> {
 /// Report whether a server is running, with its PID when known. With `json`, emits a single
 /// machine-readable object instead of the human-readable line.
 ///
+/// When `wait_secs` is `Some`, and no server answers on the first check, polls `GET /health`
+/// every [`WAIT_POLL_INTERVAL`] until one does or the timeout elapses, so a caller can block on
+/// startup (`moadim & moadim status --wait`) instead of sleeping blindly before probing.
+///
 /// Returns the process exit code to surface: `0` when a server is reachable, and
-/// [`EXIT_NOT_RUNNING`] when not, so scripts can branch on `$?` without parsing stdout.
-pub fn status(json: bool) -> anyhow::Result<i32> {
-    let running = is_running();
+/// [`EXIT_NOT_RUNNING`] when not (including after a `--wait` timeout), so scripts can branch on
+/// `$?` without parsing stdout.
+pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
+    let mut running = is_running();
+    if !running {
+        if let Some(secs) = wait_secs {
+            running = wait_until(is_running, Duration::from_secs(secs));
+        }
+    }
     let pid = read_pid_file();
     if json {
         // Fold the server's own /health (uptime + version) into the object so a single
@@ -603,6 +636,25 @@ fn paths_daemon_log() -> String {
 /// Returns `true` if a server answers `GET /health` on [`BIND_ADDR`].
 pub(crate) fn is_running() -> bool {
     matches!(http_request("GET", "/api/v1/health"), Ok(200))
+}
+
+/// Interval between liveness probes while [`wait_until`] polls for a server to come up.
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Call `check` repeatedly (sleeping [`WAIT_POLL_INTERVAL`] between attempts) until it returns
+/// `true` or `timeout` elapses. Returns whether it ever returned `true`. Always calls `check` at
+/// least once, even when `timeout` is zero.
+fn wait_until(mut check: impl FnMut() -> bool, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if check() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(WAIT_POLL_INTERVAL);
+    }
 }
 
 /// Send a minimal HTTP/1.1 request to the local server and return the response status code.

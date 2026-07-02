@@ -52,7 +52,9 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
-        cli::Command::Status { json } => std::process::exit(cli::status(json)?),
+        cli::Command::Status { json, wait_secs } => {
+            std::process::exit(cli::status(json, wait_secs)?)
+        }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),

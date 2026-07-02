@@ -35,7 +35,13 @@ fn stop_and_status_commands() {
             quiet: false
         }
     );
-    assert_eq!(parse(argv(&["status"])), Command::Status { json: false });
+    assert_eq!(
+        parse(argv(&["status"])),
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
+    );
 }
 
 #[test]
@@ -47,7 +53,10 @@ fn cleanup_command() {
 fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["status", "--json"])),
-        Command::Status { json: true }
+        Command::Status {
+            json: true,
+            wait_secs: None
+        }
     );
     assert_eq!(
         parse(argv(&["cleanup", "--json"])),
@@ -101,8 +110,49 @@ fn json_flag_only_applies_to_its_command() {
     // An unrelated trailing flag does not switch on JSON output.
     assert_eq!(
         parse(argv(&["status", "--verbose"])),
-        Command::Status { json: false }
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
     );
+}
+
+#[test]
+fn wait_flag_only_applies_to_status() {
+    // A bare `--wait` uses the default timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait"])),
+        Command::Status {
+            json: false,
+            wait_secs: Some(DEFAULT_WAIT_SECS)
+        }
+    );
+    // `--wait=SECS` uses the given timeout.
+    assert_eq!(
+        parse(argv(&["status", "--wait=5"])),
+        Command::Status {
+            json: false,
+            wait_secs: Some(5)
+        }
+    );
+    // `--wait` and `--json` compose; order does not matter.
+    assert_eq!(
+        parse(argv(&["status", "--json", "--wait=5"])),
+        Command::Status {
+            json: true,
+            wait_secs: Some(5)
+        }
+    );
+    // A malformed `--wait=` value is ignored rather than panicking or defaulting to a wait.
+    assert_eq!(
+        parse(argv(&["status", "--wait=nope"])),
+        Command::Status {
+            json: false,
+            wait_secs: None
+        }
+    );
+    // A bare `--wait` (no subcommand) is an unknown arg, not a status request.
+    assert_eq!(parse(argv(&["--wait"])), Command::Help);
 }
 
 #[test]
@@ -185,6 +235,39 @@ fn fetch_health_is_none_on_non_200_status() {
 fn fetch_health_is_none_when_no_server() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
     assert_eq!(fetch_health(), None);
+}
+
+#[test]
+fn wait_until_returns_true_immediately_when_check_already_passes() {
+    assert!(wait_until(|| true, Duration::from_secs(0)));
+}
+
+#[test]
+fn wait_until_calls_check_at_least_once_even_with_zero_timeout() {
+    let calls = std::cell::Cell::new(0);
+    let succeeded = wait_until(
+        || {
+            calls.set(calls.get() + 1);
+            false
+        },
+        Duration::from_secs(0),
+    );
+    assert!(!succeeded);
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn wait_until_polls_until_check_flips_true() {
+    let calls = std::cell::Cell::new(0);
+    let succeeded = wait_until(
+        || {
+            calls.set(calls.get() + 1);
+            calls.get() >= 3
+        },
+        Duration::from_secs(5),
+    );
+    assert!(succeeded);
+    assert_eq!(calls.get(), 3);
 }
 
 #[test]
@@ -453,10 +536,28 @@ struct FakeServer {
 impl FakeServer {
     /// Start a server on an ephemeral port answering with `status` and `body` while alive.
     fn start(status: u16, body: String) -> Self {
+        Self::start_with_liveness(status, body, true)
+    }
+
+    /// Start a server that answers connections but stays "down" (accepts and drops, no response)
+    /// until `delay` elapses, then starts answering — simulating a server that comes up shortly
+    /// after launch, to exercise a polling client like `status --wait`.
+    fn start_after(status: u16, body: String, delay: Duration) -> Self {
+        let server = Self::start_with_liveness(status, body, false);
+        let alive = Arc::clone(&server.alive);
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            alive.store(true, Ordering::SeqCst);
+        });
+        server
+    }
+
+    /// Start a server on an ephemeral port, initially alive or not per `initial_alive`.
+    fn start_with_liveness(status: u16, body: String, initial_alive: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
-        let alive = Arc::new(AtomicBool::new(true));
+        let alive = Arc::new(AtomicBool::new(initial_alive));
         let stop = Arc::new(AtomicBool::new(false));
         let alive_loop = Arc::clone(&alive);
         let stop_loop = Arc::clone(&stop);
@@ -642,8 +743,8 @@ fn status_reports_down_when_no_server() {
     let home = temp_home("status-down");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(status(false).unwrap(), EXIT_NOT_RUNNING);
-    assert_eq!(status(true).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(status(true, None).unwrap(), EXIT_NOT_RUNNING);
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -655,8 +756,31 @@ fn status_reports_running_with_pid() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     // A pid file makes the human-readable "running (pid N)" suffix branch run.
     write_pid_file().unwrap();
-    assert_eq!(status(false).unwrap(), 0);
-    assert_eq!(status(true).unwrap(), 0);
+    assert_eq!(status(false, None).unwrap(), 0);
+    assert_eq!(status(true, None).unwrap(), 0);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_times_out_when_server_never_comes_up() {
+    let home = temp_home("status-wait-timeout");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    // Zero seconds still probes once before giving up, so this returns promptly.
+    assert_eq!(status(false, Some(0)).unwrap(), EXIT_NOT_RUNNING);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn status_wait_succeeds_once_server_comes_up() {
+    let server = FakeServer::start_after(200, String::new(), Duration::from_millis(100));
+    let home = temp_home("status-wait-success");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    // The first probe (no `--wait`) misses since the server isn't up yet...
+    assert_eq!(status(false, None).unwrap(), EXIT_NOT_RUNNING);
+    // ...but `--wait` polls past the 100ms delay and observes it come up.
+    assert_eq!(status(false, Some(5)).unwrap(), 0);
     let _ = std::fs::remove_dir_all(&home);
 }
 

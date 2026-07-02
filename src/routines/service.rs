@@ -281,6 +281,31 @@ fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
     Ok(normalized)
 }
 
+/// Reject blank (empty/whitespace-only) `machines` entries and return a normalized copy with each
+/// entry trimmed and duplicates collapsed (first occurrence kept).
+///
+/// `machine::targets` matches this list by exact string equality against the resolved machine name
+/// (see #600). Left unvalidated, a whitespace-padded or typo'd entry can never match anything, and a
+/// non-empty list of *only* empty-string entries slips past the dormant-routine warning — which fires
+/// solely on `machines.is_empty()` — leaving a routine that runs nowhere with no warning at all.
+/// Trimming and rejecting blanks mirrors `validate_repositories`/`validate_tags`; the extra dedup
+/// step additionally stops `"host"` and `" host "` from persisting as if they targeted two machines.
+fn validate_machines(machines: &[String]) -> Result<Vec<String>, AppError> {
+    let mut normalized: Vec<String> = Vec::with_capacity(machines.len());
+    for (index, machine) in machines.iter().enumerate() {
+        let trimmed = machine.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "machines[{index}] must not be empty or whitespace-only"
+            )));
+        }
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
+    }
+    Ok(normalized)
+}
+
 /// Normalize an optional model ID: trims it and collapses blank/whitespace-only input to `None`, so
 /// a cleared text field on the create/edit form is stored as "no override" rather than an empty
 /// string.
@@ -320,6 +345,7 @@ pub fn svc_create(
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
     let tags = validate_tags(&req.tags)?;
+    let machines = validate_machines(&req.machines)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -338,7 +364,7 @@ pub fn svc_create(
         model: normalize_model(req.model),
         prompt: req.prompt,
         repositories,
-        machines: req.machines,
+        machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
@@ -388,6 +414,10 @@ pub fn svc_update(
     };
     let tags = match req.tags {
         Some(ref tags) => Some(validate_tags(tags)?),
+        None => None,
+    };
+    let machines = match req.machines {
+        Some(ref machines) => Some(validate_machines(machines)?),
         None => None,
     };
     let mut lock = store.lock_recover();
@@ -447,7 +477,7 @@ pub fn svc_update(
     if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
-    if let Some(machines) = req.machines {
+    if let Some(machines) = machines {
         routine.machines = machines;
     }
     if let Some(enabled) = req.enabled {

@@ -22,6 +22,8 @@ fn make_routine(id: &str, title: &str) -> Routine {
         updated_at: 6,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -1186,5 +1188,51 @@ fn write_runtime_state_fails_when_state_file_is_a_directory() {
             result.is_err(),
             "write_routine should fail when state.local.toml is a directory"
         );
+    });
+}
+
+#[test]
+fn snooze_fields_round_trip_through_sidecar_not_routine_toml() {
+    // Snooze state is ephemeral/daemon-owned, like last_manual_trigger_at: it lives in the
+    // gitignored state.local.toml sidecar, not the tracked routine.toml, and round-trips on load.
+    with_override_home(|_home| {
+        let title = "Rs Snooze Sidecar Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-snooze-sidecar-id", title);
+        routine.snoozed_until = Some(999_999);
+        write_routine(&routine).unwrap();
+
+        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+        assert!(
+            !toml_text.contains("snoozed_until"),
+            "routine.toml must not carry snooze state: {toml_text}"
+        );
+        let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
+        assert!(state_text.contains("snoozed_until"));
+
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.snoozed_until, Some(999_999));
+        assert_eq!(loaded.skip_runs, None);
+    });
+}
+
+#[test]
+fn skip_runs_round_trips_and_clearing_both_removes_sidecar() {
+    with_override_home(|_home| {
+        let title = "Rs Skip Runs Sidecar Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-skip-runs-sidecar-id", title);
+        routine.skip_runs = Some(3);
+        write_routine(&routine).unwrap();
+        assert!(crate::paths::routine_state_path(&slug).exists());
+        assert_eq!(load_routine_from_dir(&slug).unwrap().skip_runs, Some(3));
+
+        routine.skip_runs = None;
+        write_routine(&routine).unwrap();
+        assert!(
+            !crate::paths::routine_state_path(&slug).exists(),
+            "sidecar should be removed once no runtime state (trigger or snooze) remains"
+        );
+        assert_eq!(load_routine_from_dir(&slug).unwrap().skip_runs, None);
     });
 }

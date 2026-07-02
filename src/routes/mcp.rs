@@ -86,6 +86,19 @@ struct ResolveFlagInput {
     filename: String,
 }
 
+/// Input for the `snooze_routine` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SnoozeRoutineInput {
+    /// UUID of the routine to snooze.
+    id: String,
+    /// Unix timestamp (seconds) to skip scheduled fires until, or omit/null. Mutually exclusive
+    /// with `skip_runs`.
+    snoozed_until: Option<u64>,
+    /// Number of upcoming scheduled fires to skip, or omit/null. Mutually exclusive with
+    /// `snoozed_until`.
+    skip_runs: Option<u32>,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -276,6 +289,26 @@ impl MoadimMcp {
             Ok(routine) => ok(routine),
             Err(error) => err(error),
         })
+    }
+
+    /// Snooze a routine's scheduled fires without disabling it or touching manual triggers.
+    #[tool(
+        description = "Snooze a routine's scheduled (cron) fires without disabling it. Set snoozed_until (unix seconds) to skip fires until that time, or skip_runs (count) to skip that many upcoming scheduled fires — set exactly one, or neither to clear an active snooze. Manual triggers (trigger_routine) always bypass snooze and run normally."
+    )]
+    fn snooze_routine(
+        &self,
+        Parameters(SnoozeRoutineInput {
+            id,
+            snoozed_until,
+            skip_runs,
+        }): Parameters<SnoozeRoutineInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_snooze(&self.routines, &id, snoozed_until, skip_runs) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
     }
 
     /// Reap finished, expired run workbenches immediately, returning how many were removed.

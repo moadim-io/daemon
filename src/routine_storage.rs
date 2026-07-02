@@ -75,11 +75,19 @@ struct RoutineToml {
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
 /// sidecar so it never appears in the version-controlled `routine.toml`.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct RuntimeState {
     /// Unix timestamp of the last manual trigger, or `None` if it has never been triggered.
     #[serde(default)]
     last_manual_trigger_at: Option<u64>,
+    /// Unix timestamp until which scheduled fires are skipped, or `None`. See
+    /// [`crate::routines::Routine::snoozed_until`].
+    #[serde(default)]
+    snoozed_until: Option<u64>,
+    /// Count of upcoming scheduled fires still to skip, or `None`. See
+    /// [`crate::routines::Routine::skip_runs`].
+    #[serde(default)]
+    skip_runs: Option<u32>,
 }
 
 /// Scheduler-written runtime state for a routine, persisted to the gitignored
@@ -101,13 +109,13 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar, returning `None` when
-/// the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
-fn read_runtime_state(dir_name: &str) -> Option<u64> {
-    let text = std::fs::read_to_string(routine_state_path(dir_name)).ok()?;
-    toml::from_str::<RuntimeState>(&text)
-        .ok()?
-        .last_manual_trigger_at
+/// Read a routine's `state.local.toml` sidecar, defaulting to an empty [`RuntimeState`] when the
+/// sidecar is absent or unparsable (e.g. before the routine has ever been triggered or snoozed).
+fn read_runtime_state(dir_name: &str) -> RuntimeState {
+    std::fs::read_to_string(routine_state_path(dir_name))
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
 /// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar, returning
@@ -135,13 +143,17 @@ fn read_pure_prompt(dir_name: &str, legacy: Option<String>) -> String {
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
 /// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
 ///
-/// `last_manual_trigger_at` is read from the `state.local.toml` sidecar, falling back to the legacy
-/// `routine.toml` field for routines written before the runtime state was split out.
+/// `last_manual_trigger_at`, `snoozed_until`, and `skip_runs` are read from the `state.local.toml`
+/// sidecar; `last_manual_trigger_at` falls back to the legacy `routine.toml` field for routines
+/// written before the runtime state was split out.
 fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     let toml = read_routine_toml(&routine_toml_path(dir_name))?;
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
-    let last_manual_trigger_at = read_runtime_state(dir_name).or(toml.last_manual_trigger_at);
+    let runtime_state = read_runtime_state(dir_name);
+    let last_manual_trigger_at = runtime_state
+        .last_manual_trigger_at
+        .or(toml.last_manual_trigger_at);
     let last_scheduled_trigger_at = read_scheduled_state(dir_name);
     let prompt = read_pure_prompt(dir_name, toml.prompt);
     Some(Routine {
@@ -159,6 +171,8 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         updated_at: toml.updated_at.unwrap_or(0),
         last_manual_trigger_at,
         last_scheduled_trigger_at,
+        snoozed_until: runtime_state.snoozed_until,
+        skip_runs: runtime_state.skip_runs,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         tags: toml.tags,
@@ -222,31 +236,33 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         &routine_compiled_prompt_path(&slug),
         compose_prompt(routine).as_bytes(),
     )?;
-    write_runtime_state(&slug, routine.last_manual_trigger_at)?;
+    write_runtime_state(&slug, routine)?;
     Ok(())
 }
 
 /// Persist a routine's runtime state to its gitignored `state.local.toml` sidecar.
 ///
-/// Writes the sidecar (atomically) when `last_manual_trigger_at` is set, and removes any stale
-/// sidecar when it is `None`, so the on-disk state always mirrors the in-memory routine.
-fn write_runtime_state(slug: &str, last_manual_trigger_at: Option<u64>) -> std::io::Result<()> {
+/// Writes the sidecar (atomically) when any tracked field is set, and removes any stale sidecar
+/// when all are `None`, so the on-disk state always mirrors the in-memory routine.
+fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    match last_manual_trigger_at {
-        Some(_) => {
-            let state = RuntimeState {
-                last_manual_trigger_at,
-            };
-            let text = toml::to_string_pretty(&state)
-                .expect("RuntimeState serialization cannot fail for a struct with only an Option<u64> field");
-            atomic_write(&path, text.as_bytes())?;
+    if routine.last_manual_trigger_at.is_none()
+        && routine.snoozed_until.is_none()
+        && routine.skip_runs.is_none()
+    {
+        if path.exists() {
+            std::fs::remove_file(&path)?;
         }
-        None => {
-            if path.exists() {
-                std::fs::remove_file(&path)?;
-            }
-        }
+        return Ok(());
     }
+    let state = RuntimeState {
+        last_manual_trigger_at: routine.last_manual_trigger_at,
+        snoozed_until: routine.snoozed_until,
+        skip_runs: routine.skip_runs,
+    };
+    let text = toml::to_string_pretty(&state)
+        .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
+    atomic_write(&path, text.as_bytes())?;
     Ok(())
 }
 

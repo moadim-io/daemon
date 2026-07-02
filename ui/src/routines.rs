@@ -66,6 +66,14 @@ pub struct Routine {
     pub last_manual_trigger_at: Option<u64>,
     #[serde(default)]
     pub last_scheduled_trigger_at: Option<u64>,
+    /// Unix timestamp until which scheduled fires are skipped, or `None`. Mutually exclusive with
+    /// `skip_runs`.
+    #[serde(default)]
+    pub snoozed_until: Option<u64>,
+    /// Count of upcoming scheduled fires still to skip, or `None`. Mutually exclusive with
+    /// `snoozed_until`.
+    #[serde(default)]
+    pub skip_runs: Option<u32>,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,
@@ -554,6 +562,8 @@ pub enum RoutineHealth {
     AgentMissing,
     /// `enabled: false` — intentionally paused.
     Disabled,
+    /// Enabled, scheduled, agent registered, but the agent snoozed its own scheduled fires.
+    Snoozed,
     /// Enabled, scheduled, has a machine, agent registered — fully operational.
     Healthy,
 }
@@ -566,7 +576,8 @@ impl RoutineHealth {
             RoutineHealth::DeadSchedule => 1,
             RoutineHealth::AgentMissing => 2,
             RoutineHealth::Disabled => 3,
-            RoutineHealth::Healthy => 4,
+            RoutineHealth::Snoozed => 4,
+            RoutineHealth::Healthy => 5,
         }
     }
 
@@ -577,6 +588,7 @@ impl RoutineHealth {
             RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
             RoutineHealth::AgentMissing => "AGENT MISSING",
             RoutineHealth::Disabled => "DISABLED",
+            RoutineHealth::Snoozed => "SNOOZED",
             RoutineHealth::Healthy => "HEALTHY",
         }
     }
@@ -588,6 +600,7 @@ impl RoutineHealth {
             RoutineHealth::DeadSchedule => "health-badge dead",
             RoutineHealth::AgentMissing => "health-badge agent-missing",
             RoutineHealth::Disabled => "health-badge disabled",
+            RoutineHealth::Snoozed => "health-badge snoozed",
             RoutineHealth::Healthy => "health-badge healthy",
         }
     }
@@ -610,6 +623,13 @@ pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
     }
     if !r.agent_registered {
         return RoutineHealth::AgentMissing;
+    }
+    let snoozed = r
+        .snoozed_until
+        .is_some_and(|until| (until as i64) > now.timestamp())
+        || r.skip_runs.is_some_and(|runs| runs > 0);
+    if snoozed {
+        return RoutineHealth::Snoozed;
     }
     RoutineHealth::Healthy
 }

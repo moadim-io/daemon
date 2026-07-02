@@ -261,6 +261,8 @@ fn referenced_machines_unions_routines() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         max_runtime_secs: None,
     };
@@ -329,6 +331,8 @@ fn run_list_with_referenced_machine() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: None,
         max_runtime_secs: None,
     };

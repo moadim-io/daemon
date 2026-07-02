@@ -79,6 +79,18 @@ fn every_event_carries_a_duration() {
 }
 
 #[test]
+fn events_are_transparent_to_free_busy() {
+    // The feed is informational: a fire must not consume the subscriber's
+    // free/busy time (RFC 5545 §3.8.2.7 defaults TRANSP to OPAQUE = busy).
+    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    let events = count(&ics, "BEGIN:VEVENT");
+    assert!(events > 0, "expected at least one event");
+    // Exactly one TRANSP:TRANSPARENT (and Outlook free-busy hint) per VEVENT.
+    assert_eq!(count(&ics, "TRANSP:TRANSPARENT\r\n"), events);
+    assert_eq!(count(&ics, "X-MICROSOFT-CDO-BUSYSTATUS:FREE\r\n"), events);
+}
+
+#[test]
 fn disabled_routine_contributes_nothing() {
     let ics = build_ical(&[routine_with("r1", "@daily", false)], fixed_now());
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);

@@ -1,5 +1,5 @@
 //! Host-side unit tests for the log viewer's pure helpers.
-//! No DOM / wasm dependency — mirrors the schedule/overview/cron-jobs test conventions.
+//! No DOM / wasm dependency — mirrors the schedule/overview test conventions.
 
 use super::*;
 

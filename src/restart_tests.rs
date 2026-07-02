@@ -22,13 +22,13 @@ struct EnvGuard {
 }
 
 impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -60,7 +60,7 @@ struct FakeServer {
 }
 
 impl FakeServer {
-    fn start() -> FakeServer {
+    fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -86,7 +86,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             alive,
             stop,
@@ -254,13 +254,16 @@ fn stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops(
     let home = temp_home("no-pid-file");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "60");
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "300");
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     // Deliberately write NO pid file: read_pid_file() will return None and the
     // `if let Some(pid)` body is skipped, exercising the closing `}` on that branch.
     //
     // The server stops after the first wait has timed out but before the second wait ends.
-    server.stop_after(Duration::from_millis(80));
+    // 450ms (1.5x the 300ms timeout) leaves a wide margin on both sides of the deadline so
+    // CPU contention or coverage instrumentation overhead can't flip which window catches the
+    // stop (this previously used 60ms/80ms and flaked under `cargo llvm-cov`).
+    server.stop_after(Duration::from_millis(450));
     let result = stop_running_and_wait();
     assert!(
         result.is_ok(),

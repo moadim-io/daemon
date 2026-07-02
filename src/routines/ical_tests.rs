@@ -6,11 +6,13 @@ use chrono::{Local, TimeZone};
 
 fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: schedule.to_string(),
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![],
         enabled,
@@ -19,6 +21,8 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -297,6 +301,33 @@ fn svc_ical_routine_unknown_id_is_well_formed_empty_calendar() {
     assert!(ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
     assert!(ics.ends_with("END:VCALENDAR\r\n"));
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
+}
+
+#[test]
+fn svc_ical_routine_survives_a_poisoned_store_lock() {
+    // A `std::sync::Mutex` poisons permanently the instant any thread panics while
+    // holding the guard. `svc_ical_routine` must recover the guard (like every other
+    // store accessor) instead of propagating that poisoning as its own panic — see
+    // `utils::lock::LockRecover`.
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("r1".to_string(), routine_with("r1", "@daily", true));
+
+    let poisoner = std::sync::Arc::clone(&store);
+    let handle = std::thread::spawn(move || {
+        let _guard = poisoner.lock().expect("first lock is not yet poisoned");
+        panic!("poison the routine store");
+    });
+    assert!(
+        handle.join().is_err(),
+        "the spawned thread should have panicked"
+    );
+
+    let ics = svc_ical_routine(&store, "r1");
+    assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
+    assert!(ics.contains("BEGIN:VEVENT"));
 }
 
 #[test]

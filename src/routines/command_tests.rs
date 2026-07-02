@@ -6,11 +6,13 @@ use crate::routines::model::Routine;
 /// Build a minimal routine for command-construction tests.
 fn make_routine(title: &str) -> Routine {
     Routine {
+        model: None,
         id: "cmd-test-id".to_string(),
         schedule: "@daily".to_string(),
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do it".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -19,6 +21,8 @@ fn make_routine(title: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -149,6 +153,55 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
 }
 
 #[test]
+fn build_routine_command_workbench_base_tracks_moadim_home_override() {
+    // The `WB=` assignment must derive its base from `paths::workbenches_dir()` rather than a
+    // hardcoded `$HOME/.moadim/workbenches` literal, so a run is launched under the same base the
+    // reaper (`routines/cleanup/mod.rs`) and the LOGS view (`routines/service.rs`) scan. Exercise
+    // this under `MOADIM_HOME_OVERRIDE` — a divergence here would leak workbenches the reaper never
+    // sees and leave the LOGS view empty for real runs (see #601).
+    let dir = std::env::temp_dir().join(format!("moadim-cmd-home-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: the test harness runs single-threaded; the prior value is restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    }
+
+    let expected_base = crate::paths::workbenches_dir()
+        .to_string_lossy()
+        .into_owned();
+    let routine = make_routine("Cmd Workbench Base Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        match previous {
+            Some(prev) => std::env::set_var("MOADIM_HOME_OVERRIDE", prev),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        cmd.contains(&format!(
+            r#"WB={}/"$SLUG-$TS""#,
+            shell_quote(&expected_base)
+        )),
+        "expected WB base derived from paths::workbenches_dir() ({expected_base}) in: {cmd}"
+    );
+    assert!(
+        !cmd.contains(r#"WB="$HOME/.moadim/workbenches"#),
+        "expected the hardcoded $HOME/.moadim/workbenches literal to be gone, got: {cmd}"
+    );
+}
+
+#[test]
 fn cron_path_falls_back_to_root_home_when_home_unset() {
     // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
     // fallback arm, so the `~/.local/bin` etc. entries are anchored under `/root`.
@@ -239,6 +292,175 @@ fn tmux_available_false_when_path_unset() {
 }
 
 #[test]
+fn agent_command_available_in_true_when_fake_command_present() {
+    // A temp dir containing a fake agent executable resolves as available — the "present" branch
+    // of the injectable detection helper.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-agentcmd-present-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("fake-agent-cmd");
+    std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    assert!(agent_command_available_in(
+        &dir.to_string_lossy(),
+        "fake-agent-cmd"
+    ));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn resolve_tmux_bin_from_prefers_path_over_fallbacks() {
+    // tmux present on `path` -> returned immediately, fallback_dirs never consulted (Some-arm of
+    // `bin_dir_in`, early return before the fallback loop).
+    let dir =
+        std::env::temp_dir().join(format!("moadim-resolve-tmux-path-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("tmux"), "#!/bin/sh\n").unwrap();
+
+    let dir_str = dir.to_string_lossy().into_owned();
+    let resolved = resolve_tmux_bin_from(&dir_str, &["/definitely/not/here".to_string()]);
+    assert_eq!(resolved, format!("{dir_str}/tmux"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_command_available_in_false_when_dir_has_no_command() {
+    // A temp dir without the named executable resolves as missing.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-agentcmd-missing-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    assert!(!agent_command_available_in(
+        &dir.to_string_lossy(),
+        "fake-agent-cmd"
+    ));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn resolve_tmux_bin_from_falls_back_to_first_matching_fallback_dir() {
+    // Not on `path`, but present in the second fallback dir -> the `for` loop's `is_file()` Some
+    // (true) arm returns from there, having skipped the first (missing) dir.
+    let base =
+        std::env::temp_dir().join(format!("moadim-resolve-tmux-fb-{}", uuid::Uuid::new_v4()));
+    let missing = base.join("missing");
+    let present = base.join("present");
+    std::fs::create_dir_all(&present).unwrap();
+    std::fs::write(present.join("tmux"), "#!/bin/sh\n").unwrap();
+
+    let resolved = resolve_tmux_bin_from(
+        "",
+        &[
+            missing.to_string_lossy().into_owned(),
+            present.to_string_lossy().into_owned(),
+        ],
+    );
+    assert_eq!(resolved, format!("{}/tmux", present.to_string_lossy()));
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn resolve_tmux_bin_from_returns_bare_name_when_nowhere_found() {
+    // Neither `path` nor any fallback dir holds `tmux` -> the loop runs to completion and the
+    // final bare `"tmux"` fallback is returned.
+    let resolved = resolve_tmux_bin_from("", &["/definitely/not/here".to_string()]);
+    assert_eq!(resolved, "tmux");
+}
+
+#[test]
+fn tmux_fallback_dirs_are_anchored_under_home() {
+    let dirs = tmux_fallback_dirs("/home/u");
+    assert!(dirs.contains(&"/opt/homebrew/bin".to_string()));
+    assert!(dirs.contains(&"/usr/local/bin".to_string()));
+    assert!(dirs.contains(&"/home/u/.local/bin".to_string()));
+}
+
+#[test]
+fn resolve_tmux_bin_reads_live_path_and_home() {
+    // End-to-end live-env wrapper: with a fake tmux on PATH it resolves through the same
+    // `bin_dir_in` Some-arm as `resolve_tmux_bin_from`, proving the live `PATH`/`HOME` plumbing
+    // reaches it.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-resolve-tmux-live-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("tmux"), "#!/bin/sh\n").unwrap();
+
+    let dir_str = dir.to_string_lossy().into_owned();
+    with_path(&dir, || {
+        assert_eq!(resolve_tmux_bin(), format!("{dir_str}/tmux"));
+    });
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_command_available_reads_live_path_present() {
+    // `agent_command_available()` reads the process `PATH`; pointed at a dir with the fake command
+    // it returns true, exercising the `is_some_and(..)` Some/true arm.
+    let dir = std::env::temp_dir().join(format!("moadim-agentcmd-live-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("fake-agent-cmd");
+    std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    with_path(&dir, || assert!(agent_command_available("fake-agent-cmd")));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_command_available_false_when_path_unset() {
+    // With PATH removed entirely, `std::env::var("PATH").ok()` is None and `is_some_and` short-
+    // circuits to false — the missing-PATH arm.
+    let saved = std::env::var_os("PATH");
+    // SAFETY: single-threaded test harness; restored immediately below.
+    unsafe {
+        std::env::remove_var("PATH");
+    }
+    assert!(!agent_command_available("definitely-not-a-real-binary-xyz"));
+    unsafe {
+        if let Some(prev) = saved {
+            std::env::set_var("PATH", prev);
+        }
+    }
+}
+
+#[test]
+fn resolve_tmux_bin_falls_back_to_root_home_when_home_unset() {
+    // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
+    // fallback arm — mirrors `cron_path_falls_back_to_root_home_when_home_unset` for the identical
+    // pattern here. `home` is computed unconditionally before the PATH/fallback-dir search, so this
+    // covers the closure regardless of whether a real `tmux` is on the test machine's live PATH.
+    let saved = std::env::var_os("HOME");
+    // SAFETY: single-threaded test harness; restored immediately below.
+    unsafe {
+        std::env::remove_var("HOME");
+    }
+
+    let _ = resolve_tmux_bin();
+
+    unsafe {
+        match saved {
+            Some(prev) => std::env::set_var("HOME", prev),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+}
+
+#[test]
 fn bin_dir_returns_none_when_path_unset() {
     // With PATH removed entirely, `std::env::var("PATH").ok()?` short-circuits to None.
     let saved = std::env::var_os("PATH");
@@ -252,4 +474,101 @@ fn bin_dir_returns_none_when_path_unset() {
             std::env::set_var("PATH", prev);
         }
     }
+}
+
+#[test]
+fn build_routine_command_appends_model_override() {
+    // A routine-level model override is appended to the invocation as `--model <id>`, shell-quoted
+    // to guard against the (user-controlled) model ID breaking out of the cron line.
+    let mut routine = make_routine("Cmd Model Routine");
+    routine.model = Some("claude-sonnet-4-6".to_string());
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--permission-mode".to_string(), "auto".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The whole invocation is itself shell-quoted once for the `tmux new-session` argument, which
+    // re-escapes the inner `shell_quote(model)` quotes into `'\''`, so assert on ordering and
+    // content rather than the exact (implementation-detail) escaped byte sequence.
+    let args_pos = cmd.find("--permission-mode auto").unwrap();
+    let model_pos = cmd.find("--model").unwrap();
+    assert!(
+        model_pos > args_pos,
+        "expected --model after the agent's own args in: {cmd}"
+    );
+    assert!(
+        cmd[model_pos..].contains("claude-sonnet-4-6"),
+        "expected model id after --model in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_omits_model_flag_when_unset() {
+    // No routine-level model override means the invocation is unchanged from the agent's own args.
+    let routine = make_routine("Cmd No Model Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        !cmd.contains("--model"),
+        "expected no --model flag in: {cmd}"
+    );
+}
+
+#[test]
+fn inline_prompt_overflow_none_for_prompt_file_agent_regardless_of_size() {
+    // `{prompt_file}` (codex/hermes) passes the prompt as a path, never as an inlined argument, so
+    // it is never subject to the inline-argument cap no matter how large the composed prompt is.
+    let mut routine = make_routine("Cmd Overflow Prompt File Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_none_when_composed_prompt_fits() {
+    let routine = make_routine("Cmd Overflow Small Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
+    // A `{prompt}` agent (the shipped `claude` default) with a composed prompt over the inline
+    // cap must be flagged, so the caller can skip a launch doomed to fail silently (#443).
+    let mut routine = make_routine("Cmd Overflow Large Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let overflow = inline_prompt_overflow(&routine, &agent);
+    assert_eq!(overflow, Some(compose_prompt(&routine).len()));
+    assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
 }

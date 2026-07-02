@@ -27,7 +27,7 @@ pub use linux::{install, uninstall};
 // Bring the platform render/path helpers into this module's namespace so the shared
 // `service_tests` submodule can reach them via `super::*` regardless of which OS compiles.
 #[cfg(all(test, target_os = "linux"))]
-use linux::{render_unit, unit_path};
+use linux::{render_unit, systemctl_bin, unit_path, unit_path_from_config_dir, write_unit};
 #[cfg(all(test, target_os = "macos"))]
 use macos::{
     launchctl_bin, plist_path, plist_path_from_home, render_plist, write_plist, xml_escape,

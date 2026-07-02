@@ -21,9 +21,25 @@
 //! API keys, …): the daemon's trigger path spawns the agent under `sh -lc`, which sources
 //! `~/.profile`. Reverse sync is not implemented — routines are managed only through the API.
 
+use std::sync::{Mutex, OnceLock};
+
 use crate::routines::{load_agent_command, shell_quote, Routine, RoutineStore};
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 use crate::utils::lock::LockRecover;
+
+/// Process-wide lock serializing the crontab read-modify-write sequence.
+///
+/// `sync_routines_to_crontab` is invoked from many concurrent request handlers (REST, MCP) on a
+/// multi-threaded runtime. Each call does an unsynchronized `crontab -l` -> edit -> `crontab -`
+/// round trip; two calls whose round trips overlap can interleave, and the later `crontab -` wins
+/// outright — no merge, no error (issue #365). Taken as the very first thing in
+/// `sync_routines_to_crontab`, before the (separate) `RoutineStore` lock, so lock order is always
+/// crontab-lock -> store-lock and this can never deadlock against a caller that only takes the
+/// store lock.
+fn crontab_sync_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// Delimiter marking the start of the moadim routines crontab block.
 pub(crate) const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
@@ -150,6 +166,7 @@ pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 /// loaded fine but holds only disabled/unmanaged routines is *not* empty, so legitimately clearing
 /// the last routine still works.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
+    let _crontab_guard = crontab_sync_lock().lock_recover();
     let current = read_crontab()?;
     if store.lock_recover().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
         log::warn!(

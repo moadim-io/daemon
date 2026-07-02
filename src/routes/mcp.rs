@@ -2,7 +2,7 @@
 
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
     tool, tool_router,
 };
 use schemars::JsonSchema;
@@ -86,6 +86,19 @@ struct ResolveFlagInput {
     filename: String,
 }
 
+/// Input for the `snooze_routine` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SnoozeRoutineInput {
+    /// UUID of the routine to snooze.
+    id: String,
+    /// Unix timestamp (seconds) to skip scheduled fires until, or omit/null. Mutually exclusive
+    /// with `skip_runs`.
+    snoozed_until: Option<u64>,
+    /// Number of upcoming scheduled fires to skip, or omit/null. Mutually exclusive with
+    /// `snoozed_until`.
+    skip_runs: Option<u32>,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -98,6 +111,9 @@ struct UpdateRoutineInput {
     title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
@@ -117,14 +133,14 @@ struct UpdateRoutineInput {
 
 /// Wrap a serializable value in a successful `CallToolResult`.
 fn ok(val: impl serde::Serialize) -> CallToolResult {
-    CallToolResult::success(vec![Content::text(
+    CallToolResult::success(vec![ContentBlock::text(
         serde_json::to_string(&val).unwrap_or_default(),
     )])
 }
 
 /// Wrap an error message in a failed `CallToolResult`.
 fn err(msg: impl std::fmt::Display) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(msg.to_string())])
+    CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
 
 #[tool_router(server_handler)]
@@ -234,6 +250,7 @@ impl MoadimMcp {
             schedule: input.schedule,
             title: input.title,
             agent: input.agent,
+            model: input.model,
             prompt: input.prompt,
             repositories: input.repositories,
             machines: input.machines,
@@ -274,6 +291,26 @@ impl MoadimMcp {
         })
     }
 
+    /// Snooze a routine's scheduled fires without disabling it or touching manual triggers.
+    #[tool(
+        description = "Snooze a routine's scheduled (cron) fires without disabling it. Set snoozed_until (unix seconds) to skip fires until that time, or skip_runs (count) to skip that many upcoming scheduled fires — set exactly one, or neither to clear an active snooze. Manual triggers (trigger_routine) always bypass snooze and run normally."
+    )]
+    fn snooze_routine(
+        &self,
+        Parameters(SnoozeRoutineInput {
+            id,
+            snoozed_until,
+            skip_runs,
+        }): Parameters<SnoozeRoutineInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_snooze(&self.routines, &id, snoozed_until, skip_runs) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
+    }
+
     /// Reap finished, expired run workbenches immediately, returning how many were removed.
     #[tool(
         description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed."
@@ -288,8 +325,8 @@ impl MoadimMcp {
         Ok(ok(routines::available_agents()))
     }
 
-    /// Raise a new flag against a routine, refreshing its `prompt.md` so the next run's "Open
-    /// flags" section includes it.
+    /// Raise a new flag against a routine, refreshing its `prompt.compiled.md` so the next run's
+    /// "Open flags" section includes it.
     #[tool(
         description = "Flag something unclear about a routine mid-run — a gap, bug, edge case, or question the agent hit with no other channel to surface it (the run happens unattended inside tmux). `type` is free text (common examples: \"bug\", \"gap\", \"edge_case\", \"question\", \"blocker\"); `scope` is \"general\" (committed, shared via git) or \"local\" (gitignored, machine-local). Unresolved flags are shown back to the agent in the routine's prompt on its next run."
     )]
@@ -322,8 +359,8 @@ impl MoadimMcp {
         })
     }
 
-    /// Resolve (delete) a flag by filename, refreshing `prompt.md` so it stops appearing in the
-    /// next run's prompt.
+    /// Resolve (delete) a flag by filename, refreshing `prompt.compiled.md` so it stops appearing
+    /// in the next run's prompt.
     #[tool(
         description = "Resolve a routine flag by filename (as returned by create_flag/list_flags), removing it"
     )]

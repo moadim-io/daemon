@@ -52,17 +52,22 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
-        cli::Command::Status { json } => std::process::exit(cli::status(json)?),
+        cli::Command::Status { json, wait_secs } => {
+            std::process::exit(cli::status(json, wait_secs)?)
+        }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart => cli::restart(),
+        cli::Command::Restart { json } => cli::restart(json),
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
-        cli::Command::Foreground => run_server().await,
+        cli::Command::Foreground => {
+            cli::ensure_not_running_for_foreground()?;
+            run_server().await
+        }
     }
 }
 
@@ -106,20 +111,24 @@ async fn run_server() -> anyhow::Result<()> {
     }
     routines::ensure_default_agents();
     // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
-    // cron trigger after upgrade would fail on the launch command's `cp prompt.md` step.
+    // cron trigger after upgrade would fail on the launch command's `cp prompt.compiled.md` step.
     routine_storage::migrate_prompt_files();
+    // Move each routine's prompt file(s) into its prompts/ subfolder, and extract the raw prompt
+    // out of routine.toml into prompts/prompt.pure.md. Must run before migrate_routine_dirs and
+    // load_store, which both read the prompt from the new sidecar location.
+    routine_storage::migrate_prompts_to_subfolder();
     // Move legacy UUID-named routine dirs to the current slug-based layout before loading, so the
-    // store reflects the canonical dirs the crontab sync and the launch command's `cp prompt.md`
-    // both target.
+    // store reflects the canonical dirs the crontab sync and the launch command's
+    // `cp prompt.compiled.md` both target.
     routine_storage::migrate_routine_dirs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // Re-persist so every routine has its routine.toml + prompt.md sidecar in the slug dir (and any
+    // Re-persist so every routine has its routine.toml + prompts/ sidecars in the slug dir (and any
     // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
-    // command's `cp prompt.md` fails and the agent launches with an empty prompt).
+    // command's `cp prompt.compiled.md` fails and the agent launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next

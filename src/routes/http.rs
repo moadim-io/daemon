@@ -7,13 +7,18 @@ use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{
+        header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH},
+        HeaderMap, StatusCode,
+    },
     middleware,
+    response::{IntoResponse, Response},
     routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, LazyLock};
 use tower_http::compression::CompressionLayer;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -87,11 +92,47 @@ pub struct EchoResponse {
     pub timestamp: u64,
 }
 
+/// The embedded SPA HTML, baked into the binary at compile time.
+const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
+
+/// Strong `ETag` for [`INDEX_HTML`], computed once from its content.
+///
+/// `DefaultHasher::new()` uses fixed keys (unlike `HashMap`'s randomized default), so this is
+/// deterministic across restarts of the same binary and only changes when a new build embeds
+/// different bytes. It isn't cryptographic — an `ETag` just needs to change when the content
+/// does, not resist tampering.
+static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    INDEX_HTML.hash(&mut hasher);
+    format!("\"{:016x}\"", hasher.finish())
+});
+
 /// `GET /` — serve the web client (single-page UI).
+///
+/// Sends a strong `ETag` for the ~1.1 MB embedded SPA and honors `If-None-Match` with a bodyless
+/// `304 Not Modified`, so a client that already has the current build only pays for the request
+/// round-trip on reload, not a re-download of the full body (issue #401). `Cache-Control:
+/// no-cache` forces that revalidation on every load rather than trusting a local TTL, since the
+/// content can change on any daemon upgrade.
 #[utoipa::path(get, path = "/",
-    responses((status = 200, description = "Web client HTML", body = str)))]
-pub async fn index() -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!(concat!(env!("OUT_DIR"), "/index.html")))
+    responses(
+        (status = 200, description = "Web client HTML", body = str),
+        (status = 304, description = "Client's cached copy is still current"),
+    ))]
+pub async fn index(headers: HeaderMap) -> Response {
+    let etag = INDEX_ETAG.as_str();
+    let not_modified = headers
+        .get(IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == etag);
+    if not_modified {
+        return (StatusCode::NOT_MODIFIED, [(ETAG, etag)]).into_response();
+    }
+    (
+        [(ETAG, etag), (CACHE_CONTROL, "no-cache")],
+        axum::response::Html(INDEX_HTML),
+    )
+        .into_response()
 }
 
 /// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
@@ -362,7 +403,6 @@ pub(crate) fn build_app_with_shutdown(
         .layer(middleware::from_fn(
             middlewares::security_headers::security_headers,
         ))
-        .layer(middleware::from_fn(middlewares::fs_location::fs_location))
         .layer(middleware::from_fn(middlewares::logger::logger))
         // Outermost layer: negotiates `Accept-Encoding` and gzip-compresses response bodies
         // (notably the ~1.1 MB SPA `index.html` and the OpenAPI JSON under `/docs`). A no-op

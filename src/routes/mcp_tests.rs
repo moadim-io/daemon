@@ -20,14 +20,14 @@ fn test_shutdown() -> crate::routes::http::ShutdownSignal {
 struct TempHome;
 
 impl TempHome {
-    fn set() -> TempHome {
+    fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-mcptest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome
+        Self
     }
 }
 
@@ -64,8 +64,8 @@ fn health_content_contains_status() {
     let handler = make_handler();
     let result = handler.health().unwrap();
     let text = &result.content[0];
-    let json_str = match &text.raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let json_str = match &text {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -92,8 +92,8 @@ fn echo_tool_returns_message() {
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -104,6 +104,7 @@ fn echo_tool_returns_message() {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        model: None,
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
         agent: "claude".into(),
@@ -164,8 +165,8 @@ fn create_get_update_trigger_delete_routine_success() {
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -186,6 +187,7 @@ fn create_get_update_trigger_delete_routine_success() {
             schedule: None,
             title: Some("Renamed".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,
@@ -215,8 +217,8 @@ fn cleanup_workbenches_tool_returns_removed_count() {
     let handler = make_handler();
     let result = handler.cleanup_workbenches().unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let json_str = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let json_str = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -233,6 +235,7 @@ fn update_routine_tool_not_found_is_error() {
             schedule: None,
             title: Some("x".into()),
             agent: None,
+            model: None,
             prompt: None,
             repositories: None,
             machines: None,
@@ -269,6 +272,94 @@ fn trigger_routine_tool_not_found_is_error() {
     assert!(result.is_error.unwrap_or(false));
 }
 
+#[test]
+fn snooze_routine_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id: "no-such".into(),
+            snoozed_until: Some(1),
+            skip_runs: None,
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn snooze_routine_tool_both_modes_set_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id,
+            snoozed_until: Some(1),
+            skip_runs: Some(1),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn snooze_routine_tool_sets_and_clears_snooze() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+
+    let result = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // skip_runs mode
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id: id.clone(),
+            snoozed_until: None,
+            skip_runs: Some(3),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    assert_eq!(
+        routines.lock().unwrap().get(&id).unwrap().skip_runs,
+        Some(3)
+    );
+
+    // clear (both None)
+    let result = handler
+        .snooze_routine(Parameters(SnoozeRoutineInput {
+            id: id.clone(),
+            snoozed_until: None,
+            skip_runs: None,
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    assert_eq!(routines.lock().unwrap().get(&id).unwrap().skip_runs, None);
+}
+
 // ── parity tools: agents / logs / shutdown ──────────────────────────────────────
 
 #[test]
@@ -277,8 +368,8 @@ fn list_agents_tool_returns_array() {
     let handler = make_handler();
     let result = handler.list_agents().unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -294,8 +385,8 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
-    let text = match &created.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &created.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -306,8 +397,8 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
         .routine_logs(Parameters(IdInput { id: id.clone() }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -332,8 +423,8 @@ fn shutdown_tool_acknowledges() {
     let handler = make_handler();
     let result = handler.shutdown().unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -349,8 +440,8 @@ fn restart_tool_spawns_helper_and_acknowledges() {
     let handler = make_handler();
     let result = handler.restart().unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -364,8 +455,8 @@ fn get_lock_status_returns_unlocked_by_default() {
     let handler = make_handler();
     let result = handler.get_lock_status().unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -384,8 +475,8 @@ fn lock_routines_shared_creates_sentinel_and_returns_status() {
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -405,8 +496,8 @@ fn lock_routines_local_creates_sentinel_and_returns_status() {
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -439,8 +530,8 @@ fn unlock_routines_all_removes_both_sentinels() {
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -458,8 +549,8 @@ fn unlock_routines_shared_removes_only_shared() {
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -477,8 +568,8 @@ fn unlock_routines_local_removes_only_local() {
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -698,8 +789,8 @@ fn unlock_routines_returns_error_when_set_lock_fails() {
 
 /// Extract and parse the JSON text out of a tool result's first content item.
 fn result_json(result: &CallToolResult) -> serde_json::Value {
-    let text = match &result.content[0].raw {
-        rmcp::model::RawContent::Text(txt) => txt.text.clone(),
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
         _ => panic!("expected text content"),
     };
     serde_json::from_str(&text).unwrap()

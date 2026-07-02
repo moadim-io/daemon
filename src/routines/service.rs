@@ -3,10 +3,10 @@
 use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
-use crate::cron_jobs::{normalize_schedule, validate_cron};
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
+use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
@@ -14,6 +14,7 @@ use super::cleanup::{
     cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
 };
 use super::command::{build_routine_command, slugify};
+use super::flags::{self, Flag, FlagScope};
 use super::model::{
     CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
     RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
@@ -97,13 +98,19 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
             "agent {agent:?} has a malformed config: {err}"
         ))),
+        // An existing-but-unreadable config (e.g. permissions) would otherwise pass validation and
+        // leave a green-dot routine that never fires; surface it now instead of silently dropping it.
+        Err(AgentLoadError::Unreadable(err)) => Err(AppError::BadRequest(format!(
+            "agent {agent:?} has an unreadable config: {err}"
+        ))),
     }
 }
 
 /// Return the routines matching `query`, filtered and sorted as requested.
 ///
 /// The default query (no repository filter, sort by creation time ascending)
-/// reproduces the previous behaviour. The `repository` filter keeps routines
+/// reproduces the previous behaviour, except each routine's `prompt` is omitted
+/// unless `include_prompts` is `true`. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
 pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
     let lock = store.lock_recover();
@@ -143,9 +150,18 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
         routines.reverse();
     }
 
+    // Omit prompts by default: they are the largest field and rarely needed in a listing.
+    // Blanking triggers `skip_serializing_if` on `Routine::prompt`, dropping it from the JSON.
+    let include_prompts = query.include_prompts.unwrap_or(false);
+
     routines
         .into_iter()
-        .map(RoutineResponse::from_routine)
+        .map(|mut routine| {
+            if !include_prompts {
+                routine.prompt.clear();
+            }
+            RoutineResponse::from_routine(routine)
+        })
         .collect()
 }
 
@@ -157,6 +173,21 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
         .cloned()
         .ok_or(AppError::NotFound)?;
     Ok(RoutineResponse::from_routine(routine))
+}
+
+/// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
+///
+/// The prompt is the one field that defines what a routine actually does. A blank
+/// prompt still produces a valid `prompt.compiled.md` (just the moadim preamble + repo list),
+/// so the routine fires on every cron tick and launches an agent with no task —
+/// silently burning scheduled runs and the user's agent/API budget (issue #224).
+/// Shared by the create and update paths so the REST and MCP surfaces reject it
+/// identically, mirroring [`validate_cron`].
+fn validate_prompt(prompt: &str) -> Result<(), AppError> {
+    if prompt.trim().is_empty() {
+        return Err(AppError::BadRequest("prompt must not be empty".to_string()));
+    }
+    Ok(())
 }
 
 /// Upper bound on a routine title, in characters, to keep `CLAUDE.md`, crontab
@@ -197,7 +228,7 @@ fn validate_title(title: &str) -> Result<(), AppError> {
 /// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
 /// normalized copy with surrounding whitespace trimmed.
 ///
-/// `repository` is a free-form string rendered verbatim into the agent's `prompt.md` preamble by
+/// `repository` is a free-form string rendered verbatim into the agent's `prompt.compiled.md` preamble by
 /// `compose_prompt` (see #241), so a blank or padded entry yields a broken `- ` clone bullet. An
 /// empty list is valid — this only guards the contents of non-empty entries. Mirrors the
 /// `validate_cron` / `validate_agent` boundary checks for the other routine fields (#224/#226).
@@ -230,14 +261,48 @@ fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppErr
     Ok(normalized)
 }
 
-/// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
+/// Reject blank (empty/whitespace-only) `tags` entries and return a normalized copy with each tag
+/// trimmed.
+///
+/// Tags are free-form labels for grouping routines; an empty list is valid. This only guards the
+/// contents of non-empty entries, mirroring [`validate_repositories`]: a blank label carries no
+/// meaning and would render as an empty chip, so it is refused at edit time rather than stored.
+fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::with_capacity(tags.len());
+    for (index, tag) in tags.iter().enumerate() {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "tags[{index}] must not be empty or whitespace-only"
+            )));
+        }
+        normalized.push(trimmed.to_string());
+    }
+    Ok(normalized)
+}
+
+/// Normalize an optional model ID: trims it and collapses blank/whitespace-only input to `None`, so
+/// a cleared text field on the create/edit form is stored as "no override" rather than an empty
+/// string.
+fn normalize_model(model: Option<String>) -> Option<String> {
+    model.and_then(|model| {
+        let trimmed = model.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+/// Validate `req`, assign a UUID, persist (routine.toml + prompts/ sidecars), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
     validate_cron(&req.schedule)?;
     reject_blank("title", &req.title)?;
-    reject_blank("prompt", &req.prompt)?;
+    validate_prompt(&req.prompt)?;
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let ceiling_schedule = normalize_schedule(&req.schedule);
@@ -254,6 +319,7 @@ pub fn svc_create(
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
+    let tags = validate_tags(&req.tags)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -269,6 +335,7 @@ pub fn svc_create(
         schedule: normalize_schedule(&req.schedule),
         title: req.title,
         agent: req.agent,
+        model: normalize_model(req.model),
         prompt: req.prompt,
         repositories,
         machines: req.machines,
@@ -278,8 +345,11 @@ pub fn svc_create(
         updated_at: now,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
+        tags,
     };
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     store
@@ -305,7 +375,7 @@ pub fn svc_update(
         validate_title(title)?;
     }
     if let Some(ref prompt) = req.prompt {
-        reject_blank("prompt", prompt)?;
+        validate_prompt(prompt)?;
     }
     if let Some(ref agent) = req.agent {
         validate_agent(agent)?;
@@ -314,6 +384,10 @@ pub fn svc_update(
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
     let repositories = match req.repositories {
         Some(ref repos) => Some(validate_repositories(repos)?),
+        None => None,
+    };
+    let tags = match req.tags {
+        Some(ref tags) => Some(validate_tags(tags)?),
         None => None,
     };
     let mut lock = store.lock_recover();
@@ -336,7 +410,11 @@ pub fn svc_update(
     // update leaves the in-memory store untouched (#468).
     let effective_schedule = match req.schedule.as_deref() {
         Some(schedule) => normalize_schedule(schedule),
-        None => lock.get(id).ok_or(AppError::NotFound)?.schedule.clone(),
+        None => lock
+            .get(id)
+            .expect("id existence checked above, and the lock has been held continuously since")
+            .schedule
+            .clone(),
     };
     reject_over_ceiling(
         "ttl_secs",
@@ -348,7 +426,9 @@ pub fn svc_update(
         req.max_runtime_secs,
         max_runtime_ceiling_secs(&effective_schedule),
     )?;
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    let routine = lock
+        .get_mut(id)
+        .expect("id existence checked above, and the lock has been held continuously since");
     if let Some(schedule) = req.schedule {
         routine.schedule = normalize_schedule(&schedule);
     }
@@ -357,6 +437,9 @@ pub fn svc_update(
     }
     if let Some(agent) = req.agent {
         routine.agent = agent;
+    }
+    if let Some(model) = req.model {
+        routine.model = normalize_model(Some(model));
     }
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;
@@ -375,6 +458,9 @@ pub fn svc_update(
     }
     if let Some(max_runtime) = req.max_runtime_secs {
         routine.max_runtime_secs = Some(max_runtime);
+    }
+    if let Some(tags) = tags {
+        routine.tags = tags;
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();
@@ -423,16 +509,72 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// untouched — the spawned command records `last_scheduled_trigger_at` in the routine's
 /// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
 /// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
+///
+/// A routine snoozed via [`svc_snooze`] (`snoozed_until` in the future, or `skip_runs` above zero)
+/// is skipped here instead of spawned: `snoozed_until` clears itself once elapsed (that fire then
+/// runs), `skip_runs` decrements once per skipped fire and clears at zero. [`svc_trigger`] (manual)
+/// ignores both fields entirely, by design.
 pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
+    let mut lock = store.lock_recover();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+
+    if let Some(until) = routine.snoozed_until {
+        if now_secs() < until {
+            return Err(AppError::Locked(format!("routine snoozed until {until}")));
+        }
+        routine.snoozed_until = None;
+        let routine = routine.clone();
+        drop(lock);
+        write_routine(&routine).map_err(|_| AppError::Internal)?;
+        spawn_routine_command(&routine);
+        return Ok(routine);
+    }
+    if let Some(runs) = routine.skip_runs {
+        if runs > 0 {
+            routine.skip_runs = (runs > 1).then_some(runs - 1);
+            let routine = routine.clone();
+            drop(lock);
+            write_routine(&routine).map_err(|_| AppError::Internal)?;
+            return Err(AppError::Locked(format!(
+                "routine snoozed, skipping this scheduled run ({} more to skip)",
+                routine.skip_runs.unwrap_or(0)
+            )));
+        }
+    }
+
+    let routine = routine.clone();
+    drop(lock);
     spawn_routine_command(&routine);
+    Ok(routine)
+}
+
+/// Set or clear a routine's snooze state, skipping its upcoming *scheduled* fires (see
+/// [`svc_trigger_scheduled`]) without touching `enabled` or the crontab. Manual triggers
+/// ([`svc_trigger`]) always ignore snooze.
+///
+/// `snoozed_until` and `skip_runs` are mutually exclusive: passing both `Some` is a
+/// [`AppError::BadRequest`]. Passing both `None` clears an active snooze.
+pub fn svc_snooze(
+    store: &RoutineStore,
+    id: &str,
+    snoozed_until: Option<u64>,
+    skip_runs: Option<u32>,
+) -> Result<Routine, AppError> {
+    if snoozed_until.is_some() && skip_runs.is_some() {
+        return Err(AppError::BadRequest(
+            "snoozed_until and skip_runs are mutually exclusive; set only one".into(),
+        ));
+    }
+    let mut lock = store.lock_recover();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    routine.snoozed_until = snoozed_until;
+    routine.skip_runs = skip_runs;
+    let routine = routine.clone();
+    drop(lock);
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
     Ok(routine)
 }
 
@@ -446,13 +588,14 @@ fn spawn_routine_command(routine: &Routine) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
             let cmd = build_routine_command(routine, &agent);
-            if let Err(err) = std::process::Command::new("sh")
-                .arg("-lc")
-                .arg(&cmd)
-                .spawn()
-            {
-                log::warn!("trigger: failed to spawn routine command: {err}");
-            }
+            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
+            // manual trigger sources the user's `~/.profile` and the agent gets the same
+            // environment whether fired by cron or on demand.
+            let mut command = std::process::Command::new("sh");
+            command.arg("-lc").arg(&cmd);
+            // Reap the child in the background so the short-lived launcher shell does not
+            // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
+            crate::utils::process::spawn_and_reap(command, "routine command");
         }
         Err(err) => log::warn!(
             "trigger: cannot load agent {:?} ({}) for routine {:?}",
@@ -507,6 +650,81 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         return Ok(String::new());
     }
     std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+}
+
+/// Reject a blank (empty/whitespace-only) flag `type` or `description`.
+fn validate_flag_field(field: &str, value: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "flag {field} must not be empty"
+        )));
+    }
+    Ok(())
+}
+
+/// Parse a `scope` string into a [`FlagScope`], returning `400 BadRequest` on unknown values.
+/// Mirrors `parse_lock_scope` in `handlers.rs`.
+fn parse_flag_scope(scope: &str) -> Result<FlagScope, AppError> {
+    match scope {
+        "general" => Ok(FlagScope::General),
+        "local" => Ok(FlagScope::Local),
+        other => Err(AppError::BadRequest(format!(
+            "unknown flag scope {other:?}; use \"general\" or \"local\""
+        ))),
+    }
+}
+
+/// Look up a routine by `id` and derive its slug, `NotFound` if it does not exist.
+fn routine_and_slug(store: &RoutineStore, id: &str) -> Result<(Routine, String), AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let slug = slugify(&routine.title);
+    Ok((routine, slug))
+}
+
+/// Raise a new flag against routine `id`. `flag_type` and `description` must be non-blank;
+/// `scope` is `"general"` (committed) or `"local"` (gitignored). Refreshes the routine's
+/// `prompts/prompt.compiled.md` afterward so the next run's "Open flags" section (see
+/// `compose_prompt`) includes it.
+pub fn svc_create_flag(
+    store: &RoutineStore,
+    id: &str,
+    flag_type: &str,
+    description: &str,
+    scope: &str,
+) -> Result<Flag, AppError> {
+    validate_flag_field("type", flag_type)?;
+    validate_flag_field("description", description)?;
+    let scope = parse_flag_scope(scope)?;
+    let (routine, slug) = routine_and_slug(store, id)?;
+    let flag =
+        flags::create_flag(&slug, flag_type, description, scope).map_err(|_| AppError::Internal)?;
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    Ok(flag)
+}
+
+/// List every open flag raised against routine `id`, oldest first.
+pub fn svc_list_flags(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppError> {
+    let (_, slug) = routine_and_slug(store, id)?;
+    Ok(flags::list_flags(&slug))
+}
+
+/// Resolve (delete) the flag named `filename` under routine `id`.
+///
+/// `NotFound` when the routine does not exist, `filename` is unsafe, or names no existing flag.
+/// Refreshes `prompts/prompt.compiled.md` afterward so a resolved flag stops appearing in the next
+/// run's prompt.
+pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Result<(), AppError> {
+    let (routine, slug) = routine_and_slug(store, id)?;
+    let resolved = flags::resolve_flag(&slug, filename).map_err(|_| AppError::Internal)?;
+    if !resolved {
+        return Err(AppError::NotFound);
+    }
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    Ok(())
 }
 
 #[cfg(test)]

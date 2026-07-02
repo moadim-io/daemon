@@ -11,15 +11,29 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::global_lock::{LockScope, LockStatus};
 
-use super::ical::svc_ical;
+use super::flags::Flag;
+use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse,
-    RoutineStore, UpdateRoutineRequest,
+    CleanupResponse, CreateRoutineRequest, IcalFeedQuery, Routine, RoutineListQuery,
+    RoutineResponse, RoutineStore, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_cleanup, svc_create, svc_delete, svc_get, svc_list, svc_logs, svc_trigger,
-    svc_trigger_scheduled, svc_update,
+    svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_list, svc_list_flags,
+    svc_logs, svc_resolve_flag, svc_trigger, svc_trigger_scheduled, svc_update,
 };
+
+/// Request body for `POST /routines/{id}/flags`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct CreateFlagRequest {
+    /// Free-text flag category. Common examples: `"bug"`, `"gap"`, `"edge_case"`, `"question"`,
+    /// `"blocker"` — any string is accepted.
+    #[serde(rename = "type")]
+    pub flag_type: String,
+    /// Free-text description of what's unclear.
+    pub description: String,
+    /// `"general"` (committed, shared via git) or `"local"` (gitignored, machine-local).
+    pub scope: String,
+}
 
 /// Request body for `POST /routines/lock`.
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -144,7 +158,11 @@ pub async fn update(
     Ok(Json(svc_update(&store, &id, body)?))
 }
 
-/// `PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).
+/// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
+///
+/// Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.
+/// A client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to
+/// default) should not rely on this route for that; use `PATCH` and set every field explicitly.
 #[utoipa::path(put, path = "/routines/{id}",
     params(("id" = String, Path, description = "Routine UUID")),
     request_body = UpdateRoutineRequest,
@@ -198,12 +216,22 @@ pub async fn scheduled_trigger(
 ///
 /// Returns a `text/calendar` body suitable for subscribing to in an external calendar
 /// (Google Calendar, Apple Calendar, …) so upcoming runs show up alongside other events.
+/// With `?routine=<id>` the feed is scoped to a single routine (named after it); without
+/// it every enabled routine is rendered (issue #263).
 #[utoipa::path(get, path = "/routines.ics",
+    params(IcalFeedQuery),
     responses((status = 200, description = "iCalendar (text/calendar) feed of upcoming routine fire times")))]
-pub async fn ical_feed(State(store): State<RoutineStore>) -> impl IntoResponse {
+pub async fn ical_feed(
+    State(store): State<RoutineStore>,
+    Query(query): Query<IcalFeedQuery>,
+) -> impl IntoResponse {
+    let body = match query.routine.as_deref() {
+        Some(id) => svc_ical_routine(&store, id),
+        None => svc_ical(&store),
+    };
     (
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
-        svc_ical(&store),
+        body,
     )
 }
 
@@ -212,6 +240,46 @@ pub async fn ical_feed(State(store): State<RoutineStore>) -> impl IntoResponse {
     responses((status = 200, body = CleanupResponse, description = "Number of workbenches removed")))]
 pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse> {
     Json(svc_cleanup(&store))
+}
+
+/// `POST /routines/{id}/flags` — raise a new flag against a routine.
+#[utoipa::path(post, path = "/routines/{id}/flags",
+    params(("id" = String, Path, description = "Routine UUID")),
+    request_body = CreateFlagRequest,
+    responses((status = 201, body = Flag), (status = 400, description = "Invalid type/description/scope"), (status = 404, description = "Not found")))]
+pub async fn create_flag(
+    State(store): State<RoutineStore>,
+    Path(id): Path<String>,
+    Json(body): Json<CreateFlagRequest>,
+) -> Result<(StatusCode, Json<Flag>), AppError> {
+    let flag = svc_create_flag(&store, &id, &body.flag_type, &body.description, &body.scope)?;
+    Ok((StatusCode::CREATED, Json(flag)))
+}
+
+/// `GET /routines/{id}/flags` — list open flags raised against a routine.
+#[utoipa::path(get, path = "/routines/{id}/flags",
+    params(("id" = String, Path, description = "Routine UUID")),
+    responses((status = 200, body = Vec<Flag>), (status = 404, description = "Not found")))]
+pub async fn list_flags(
+    State(store): State<RoutineStore>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<Flag>>, AppError> {
+    Ok(Json(svc_list_flags(&store, &id)?))
+}
+
+/// `DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.
+#[utoipa::path(delete, path = "/routines/{id}/flags/{filename}",
+    params(
+        ("id" = String, Path, description = "Routine UUID"),
+        ("filename" = String, Path, description = "Flag filename, as returned by create/list"),
+    ),
+    responses((status = 204, description = "Resolved"), (status = 404, description = "Not found")))]
+pub async fn resolve_flag(
+    State(store): State<RoutineStore>,
+    Path((id, filename)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    svc_resolve_flag(&store, &id, &filename)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// `GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.
@@ -224,3 +292,7 @@ pub async fn get_logs(
 ) -> Result<String, AppError> {
     svc_logs(&store, &id)
 }
+
+#[cfg(test)]
+#[path = "handlers_tests.rs"]
+mod handlers_tests;

@@ -11,20 +11,450 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-02
+
+Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagged in `cli::parse` (issue #719): the bare `None` arm into the `Background` arm, and the redundant explicit `-h`/`--help`/`help` arm that the trailing wildcard already covered.
+
 ### Added
 
+- **Routine flags.** A routine's agent runs unattended inside tmux with no
+  channel back to a human — until now. It (or a human, via MCP/HTTP) can
+  raise a flag against a routine: a free-text `type` (e.g. `"bug"`, `"gap"`,
+  `"edge_case"`, `"question"`) and free-text `description`, stored as
+  `general` (committed) or `local` (gitignored) under the routine's
+  `flags/` folder. New MCP tools `create_flag`, `list_flags`, `resolve_flag`
+  and matching `/api/v1/routines/{id}/flags` REST endpoints. Open flags are
+  injected into the routine's `prompt.md` on the next run so the agent sees
+  what it flagged before, and the UI shows a flag-count badge with a
+  read-only flags page to review and resolve them.
+
+- **Structured JSON logging.** Set `MOADIM_LOG_FORMAT=json` to switch `daemon.log`
+  (and foreground stdout) from `env_logger`'s human-readable format to one JSON
+  object per line (`ts`, `level`, `target`, `msg`), so a `launchd`/`systemd`-run
+  daemon can ship its log into an aggregator (Loki, ELK, Vector, CloudWatch)
+  without regex-scraping free-form text. Opt-in — the variable unset keeps the
+  current text format byte-for-byte, and `RUST_LOG` level filtering is unchanged
+  in both formats. (#416)
+
+### Changed
+
+- **Hardened the dashboard's Content-Security-Policy.** Every response's CSP
+  previously carried only `frame-ancestors 'none'` (#406's anti-clickjacking
+  fix), leaving `script-src`/`style-src`/`default-src` unset and an injected
+  inline `<script>` or `<base>` tag entirely unblocked — a real gap given the
+  dashboard drives an unauthenticated loopback API with destructive controls
+  (create/trigger/delete routines, `POST /shutdown`). The CSP now sets
+  `default-src 'self'` and explicit `script-src`, `style-src`, `font-src`,
+  `img-src`, `connect-src`, `base-uri 'none'`, `form-action 'none'`, and
+  `object-src 'none'` directives verified against the bundled Yew/WASM SPA and
+  Swagger UI, while keeping `frame-ancestors 'none'`. (#551)
+
+### Fixed
+
+- **Default routines with empty `machines` list now self-repair.** Default routines
+  seeded before machine-awareness was introduced could be left permanently dormant
+  (empty `machines` list, so no machine ever matched them). The daemon now detects
+  an empty machines list during the startup reconcile pass and seeds the current
+  machine, restoring the routine to an active state without any manual intervention.
+  (#723)
+
+- The OpenAPI spec (`GET /api/v1`'s `info.version`, the Swagger UI, and the
+  committed `apis/openapi.json`) no longer advertises a frozen `0.1.0`. The
+  hardcoded `version` literal was dropped from the `#[openapi(info(...))]`
+  attribute so utoipa derives it from `CARGO_PKG_VERSION`, keeping the spec
+  version in lockstep with the crate.
+
+### Tests
+
+- Added a `cli_tests` regression guard (`status_and_stop_json_share_a_common_key_set`)
+  asserting that every object key `stop --json` emits also appears in
+  `status --json`, so the shared `{running,pid,address}` base contract between
+  the two `--json` shapes can't silently drift apart as fields are added to
+  one side but not the other. `status --json` may carry additional
+  server-sourced fields (`uptime_secs`, `version`) that `stop --json` omits;
+  see `status_and_stop_json_share_the_same_shape` for the value-level guard on
+  the shared subset.
+
+## [0.19.1] - 2026-07-01
+
+### Fixed
+
+- **The routines page failed to load with "missing field `prompt`".** PR #825
+  made `GET /routines` omit the `prompt` field from each routine's JSON by
+  default, but the UI's separately-mirrored `Routine` struct never got a
+  matching `#[serde(default)]` on that field, so the wasm client's
+  deserialization broke on every list fetch.
+
+### Added
+
+- **Repository filter for the Routines table.** The REST `GET /routines`
+  endpoint has supported a `?repository=` filter for a while, but the web UI
+  had no way to use it — the only client-side facets were status, agent, and
+  machine. Added a REPOSITORY dropdown to the Routines filter bar (mirroring
+  the existing agent/machine facet pattern), populated from the distinct
+  repository URLs across loaded routines, so operators can narrow a dense
+  routines list to a single repo without hand-editing the query string.
+
+## [0.19.0] - 2026-07-02
+
+### Removed
+
+- **Removed the cron-job feature.** Moadim scheduled two kinds of things —
+  "cron jobs" (a schedule + a handler script) and "routines" (a schedule + an
+  AI-agent prompt). The project's focus is AI-agent routines, so the cron-job
+  half — the `CronJob`/`CronStore` model, the `/api/v1/cron-jobs*` REST routes,
+  the `*_cron_job` MCP tools, the `moadim cron-jobs` CLI subcommand, the
+  `~/.config/moadim/jobs/` and `~/.config/moadim/handlers/` directories, and
+  the job-specific crontab block — has been removed. Routines are unaffected
+  and keep their own crontab block, REST routes, MCP tools, and CLI
+  subcommand. (#842)
+
+### Changed
+
+- **`list_routines` omits routine prompts by default.** The prompt is the
+  largest field on a routine and is rarely needed when scanning a listing, so it
+  bloated `GET /routines` responses and burned MCP context tokens on every call.
+  The `prompt` key is now absent from list entries unless the caller opts in with
+  `include_prompts=true` (a new boolean on the `list_routines` MCP tool and the
+  `GET /routines` query string). `get_routine` / `GET /routines/{id}` are
+  unaffected and always return the prompt; `routine.toml` persistence is
+  unchanged. (#824)
+
+### Documentation
+
+- **Added `CODE_OF_CONDUCT.md`.** The repo had a `CONTRIBUTING.md` and
+  `SECURITY.md` but no documented standard of conduct or enforcement contact,
+  leaving GitHub's community-standards profile incomplete. Added a Contributor
+  Covenant v2.1 code of conduct with a real reporting contact, and linked it
+  from `CONTRIBUTING.md`. (#423)
+- The README's **Bind address** section now warns that the REST API and MCP
+  endpoint are unauthenticated, so `MOADIM_BIND_ADDR` should stay on a loopback
+  address: binding to a routable interface (a LAN IP or `0.0.0.0`) exposes
+  unauthenticated routine create/trigger — effectively remote code execution — to
+  the network. Recommends an authenticating reverse proxy / firewall for remote
+  access instead. (#253)
+
+### Fixed
+
+- **Workbench launch path now derived from `paths::workbenches_dir()`.** The
+  generated cron launch command hardcoded `WB="$HOME/.moadim/workbenches/$SLUG-$TS"`
+  instead of going through the same seam the reaper (`routines/cleanup/mod.rs`)
+  and the LOGS view (`routines/service.rs`) already use. With
+  `MOADIM_HOME_OVERRIDE` set, this meant a run was *launched* under one path but
+  *reaped and listed* under another — leaking workbenches the reaper never sees
+  and leaving the LOGS view empty for real runs. The launch command now resolves
+  its base through `paths::workbenches_dir()`, with a regression test asserting
+  the two stay in sync under the override. No behavior change for the default
+  install. (#601)
+- **The daemon never killed hung routine tmux sessions when launched via
+  launchd/systemd.** Those managers start `moadim --interactive` with a
+  minimal `PATH` (e.g. macOS launchd's `/usr/bin:/bin:/usr/sbin:/sbin`) that
+  hides a Homebrew- or npm-installed `tmux`. The daemon's own cleanup/watchdog
+  sweep shelled out to `tmux` directly (no login shell), so every
+  liveness/kill probe silently failed and read as "session already dead" —
+  a hung run's workbench got TTL-reaped while its real tmux session and agent
+  process kept running, untracked, forever. `resolve_tmux_bin` now also
+  searches common install locations (Homebrew, `/usr/local/bin`,
+  `~/.local/bin`) when `tmux` isn't on `PATH`, and the generated launchd
+  plist now sets a real `PATH` via `EnvironmentVariables`.
+- **`cargo build` was broken on `main`.** Two independent PRs (#804 and #805)
+  each added a `unused_async = "deny"` entry under `[lints.clippy]` in
+  `Cargo.toml`, and both merged cleanly since git's line-based merge doesn't
+  understand TOML semantics. The resulting duplicate key made every `cargo`
+  invocation fail immediately with `error: duplicate key` before compiling a
+  single crate. Removed the duplicate entry so the workspace builds again.
+- `docs/moadim.1`'s `.TH` header reported a stale `moadim 0.16.0` even though
+  `Cargo.toml` had moved on to 0.18.0 — the hand-maintained man page has no
+  build-time link to the crate version, so a release could silently ship a man
+  page reporting the *previous* version. Corrected the version token and added
+  a regression test (`cli::cli_tests::man_page_version_matches_cargo_pkg_version`)
+  that fails when the two drift again. (#556)
+- **`slugify` dropped every non-ASCII character.** Routine titles written in
+  Hebrew, CJK, or Cyrillic (or Latin letters with diacritics like `é`/`ü`)
+  slugified to an empty string and fell back to the generic `"routine"` name,
+  so a second such routine collided on create (`409`) and the on-disk
+  workbench dir / tmux session name gave no hint which routine it belonged
+  to. `slugify` now uses `char::is_alphanumeric`/`char::to_lowercase` (Unicode
+  scalar values, not ASCII-only), so non-Latin titles keep their content and
+  two distinct non-Latin titles produce distinct slugs. (#262)
+- Locked the `--json` machine-readable contract with a regression test
+  (`cli::cli_tests::status_stop_cleanup_json_share_the_same_address`) asserting
+  `status --json`, `stop --json`, and `cleanup --json` all surface the same
+  `address` value, so the three shapes can't silently drift apart again. (#245)
+- Removed two dead `AppError::NotFound` arms in `svc_update` (`routines/service.rs`):
+  the function already checks the routine's existence once, up front, while
+  holding the store's lock continuously for the rest of the call, so the two
+  later re-fetches could never actually miss. The two tests written to cover
+  those unreachable arms were accidental duplicates of the same first-check
+  path; merged them into one `svc_update_not_found_when_id_missing` test that
+  covers both request shapes against the real, single `NotFound` path.
+- Nothing previously verified the README's documented `--json` object shapes
+  for `status`/`cleanup`/`stop` against the keys the CLI actually emits, so a
+  field renamed, added, or removed in `cli.rs` could drift silently from the
+  script-facing contract in `README.md`. Added
+  `cli::cli_tests::readme_status_json_shape_matches_actual_keys` and its
+  `cleanup`/`stop` counterparts, which parse the documented shape literal
+  straight out of `README.md` and assert it names exactly the keys
+  `status_json`/`cleanup_json`/`stop_json` produce. (#345)
+
+### Added
+
+- **`ETag` + `304 Not Modified` for the web UI.** `GET /` (and the SPA fallback
+  for client-routed paths) now sends a strong `ETag` for the embedded ~1.1 MB
+  `index.html`, and honors a matching `If-None-Match` with a bodyless `304`
+  instead of re-sending the full body on every load/refresh. `Cache-Control:
+  no-cache` keeps the browser revalidating on each request rather than trusting
+  a local TTL, since the content can change on any daemon upgrade. (#401)
+- **SUBSCRIBE button on the routines calendar.** The calendar view's nav bar
+  now has a SUBSCRIBE button that copies the `/api/v1/routines.ics` feed URL
+  to the clipboard, so wiring the feed into an external calendar app no
+  longer requires reading the API docs to find the endpoint.
+- **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
+  server answers or `SECS` elapse (default 30) instead of checking once, so a
+  launch script can block on startup (`moadim && moadim status --wait`) rather
+  than sleeping a fixed guess before probing. Exits `0` once reachable and the
+  existing `3` on timeout, matching the `status`/`cleanup`/`stop` exit-code
+  contract.
+- **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
+  rename-machine dialogs and the routine edit/delete-confirm modals now all
+  close on `Esc`, matching the command palette's existing behavior.
+- An interactive foreground start (`moadim -i` / `--interactive`) now preflights
+  for an already-running daemon and refuses with a clear, actionable message
+  (naming the running pid when known and pointing at `moadim stop` /
+  `moadim restart`) instead of proceeding to bind and dying with an opaque
+  `Address already in use (os error 48)`. The launcher-spawned background child
+  (which also runs `--interactive`) is exempt via the `MOADIM_DAEMONIZED` marker,
+  so background/restart launches are unaffected (#298).
+- **Machine name in health output.** `GET /health` and the MCP `health` tool now
+  report the daemon's resolved machine identity (from `MOADIM_MACHINE`,
+  `machine.local.toml`, or hostname — same as `GET /machine`) in a new `machine`
+  field, so clients can tell which machine answered without a second request. (#778)
+- **`agent_command_available` on routine responses.** `RoutineResponse` (returned
+  by `GET`/`POST`/`PUT`/`DELETE` `/routines`) now reports whether the routine's
+  agent `command` (e.g. `claude`, `codex`) actually resolves on the daemon's
+  `PATH`, distinct from the existing `agent_registered` (which only checks that
+  `<agent>.toml` exists). A routine with a present, well-formed agent config but
+  an uninstalled binary previously looked identically healthy to one that could
+  actually run — the cron firing launches a tmux session that dies immediately
+  with "command not found," a silent no-op. Clients can now tell the two states
+  apart instead of inferring it from `agent.log` after the fact. (#383)
+- **`actionlint`/`shellcheck` CI gate.** New `.github/workflows/actionlint.yml`
+  runs `actionlint` (via `raven-actions/actionlint`, pinned to a commit SHA) on
+  every PR and on push to `main`, statically validating workflow YAML —
+  syntax, `${{ }}` expressions, the `needs`/`if`/matrix job graph, event
+  triggers, action input names — and, with `shellcheck` enabled by default,
+  linting every embedded `run:` block. Previously a typo'd key, a bad
+  expression, or an unquoted shell variable in `.github/workflows/` only
+  surfaced when the workflow actually ran on `main` or a release tag.
+  Documented in `CONTRIBUTING.md` alongside the other lint tooling. (#454)
+
+### Changed
+
+- Enabled the `clippy::wildcard_imports` lint. It flags `use some::module::*;`
+  glob imports, which obscure where a name comes from at the call site, can
+  silently change behavior when the globbed module gains a new item, and
+  defeat "go to definition" tooling. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
+- Enabled the `clippy::unused_async` lint. It flags `async fn`s (and async
+  closures/blocks) that never `.await` anything internally, which needlessly
+  propagate async-ness up the call stack and pull in a `Future` state machine
+  for work that's actually synchronous. Zero existing violations, so this only
+  guards against the pattern creeping in going forward. No behavior change.
+  (#803)
+- **Gzip-compressed HTTP responses.** The Axum router now negotiates
+  `Accept-Encoding` and gzip-compresses response bodies via a `tower-http`
+  `CompressionLayer`, cutting the ~1.1 MB SPA payload (and the OpenAPI JSON
+  under `/docs`) several-fold on every load/refresh for clients that
+  advertise gzip support. A no-op for clients that don't. (#399)
+- Bumped `tower-http` from `0.6.11` to `0.7.0`. No source changes needed —
+  the only feature used (`compression-gzip`'s `CompressionLayer`) is
+  API-compatible across the bump.
+- Declared `rust-version = "1.88"` (MSRV) in the root `Cargo.toml` and
+  `ui/Cargo.toml`, matching the floor already required transitively by
+  `darling 0.23`, so `cargo install moadim` on an older stable toolchain now
+  fails with Cargo's clean MSRV message instead of an opaque compile error. (#326)
+- The local pre-push hook now runs `cargo clippy --workspace` instead of a
+  bare `cargo clippy`. In this non-virtual workspace (the root `Cargo.toml`
+  declares both a `[package]` and `[workspace]`), the bare form only checks
+  the root `moadim` package, so the `ui` member crate was never type-checked
+  or linted by the hook.
+- `.github/workflows/lint.yml`'s `clippy` job now runs `cargo clippy
+  --workspace --all-targets -- -D warnings` too, closing the matching gap in
+  CI: previously the bare `cargo clippy --all-targets` only checked the root
+  `moadim` package, so `ui/Cargo.toml`'s `[lints.clippy] all = "deny"`
+  posture was never enforced on PRs and a dashboard lint regression could
+  merge to `main` fully green, only surfacing via the local hook (if a
+  contributor had it installed) or at release time.
+- `build_app_with_shutdown` cloned `store` and `routines` into `app_state`,
+  then cloned them *again* from the original bindings for the MCP service
+  closure — `clippy::redundant_clone` flags the second pair as dead clones
+  since the originals are never read afterward. Reordered to clone once
+  (for the MCP closure) before moving the originals into `app_state`,
+  dropping two unnecessary `Arc` clone+drop pairs per router build. No
+  behavior change.
+
+### Fixed
+
+- Fixed the `ui` crate, which had silently stopped compiling: three test
+  fixtures (`command_palette_tests.rs`, `routines_tests.rs`,
+  `schedule_heatmap_tests.rs`) were missing the `tags` field added to
+  `Routine` by #505, and `cron_jobs::unassigned_count` /
+  `routines::unassigned_routines_count` were dead code left over from before
+  #771 made the "Unassigned" machine facet a permanent filter option. None of
+  this was caught because `ui` was outside the pre-push clippy gate and CI's
+  equivalent gate had the same blind spot (now closed, see `--workspace`
+  fix above).
+
+## [0.18.0] — 2026-06-30
+
+### Added
+
+- **Optional `tags` for routines.** Routines can now carry a free-form list of
+  string labels for grouping and organization. Tags are optional (default empty),
+  persisted in the tracked `routine.toml`, and settable across every surface: REST
+  (`tags` on the create/update bodies), MCP (`create_routine`/`update_routine`),
+  the CLI (repeatable `--tag` flag on `routines create|replace|update`), and the
+  web UI (a comma-separated field in the routine form plus a column in the table).
+  Blank or whitespace-only tags are rejected with `400 Bad Request`. (#502)
+
+## [0.17.1] — 2026-06-29
+
+### Changed
+
+- Machine filter in Routines and Cron Jobs views now always shows a **None** option
+  (routines/jobs with no machine assigned), replacing the previously conditional
+  "Unassigned" entry that only appeared when such items existed.
+
+### Fixed
+
+- `~/.config/moadim/.gitignore` required patterns (`*.pid`, `*.log`,
+  `*.local.*`) are now ensured on every daemon start instead of only when
+  the file is absent, so a manually edited or newly required entry is
+  restored automatically. (#770)
+
+## [0.17.0] — 2026-06-29
+
+### Added
+
+- Machine name badge in the header: the resolved `@ <name>` is shown as a
+  clickable chip. Clicking it opens a rename dialog that calls the new
+  `PUT /api/v1/machine` endpoint, writes the new name to
+  `machine.local.toml`, and updates the badge immediately on success.
+  Empty names are rejected (400). (#766)
+
+- `moadim uninstall` now clears the managed crontab blocks (both
+  `# BEGIN MOADIM-ROUTINES` and `# BEGIN MOADIM`) in addition to removing the OS
+  service, so `cron` stops firing routines/jobs against a daemon you uninstalled.
+  The routines block is cleared first because its marker is a superstring of the
+  cron-jobs marker (avoids the #324 collision). Best-effort and idempotent — a
+  crontab with no managed block, no crontab at all, or a failed service-removal
+  step still completes the cleanup — and it reports how many managed entries were
+  removed. (#380)
+
+- `GET /health` now reports a `dependencies` section (currently `{"tmux": bool}`)
+  so the UI/CLI can detect when the `tmux` runtime dependency is missing, and the
+  daemon logs a `warn!` at startup naming the missing binary. `tmux` is a hard
+  dependency — every routine agent launches inside a tmux session — but its
+  absence was previously unchecked and undocumented, so a host without `tmux`
+  made scheduled routine runs silently no-op. Detection reuses the existing
+  PATH probe (`tmux_available_in` / `tmux_available`) (#187).
+
+- `GET /routines.ics` accepts an optional **`?routine=<id>`** query param that
+  scopes the feed to a single routine, so a calendar client can subscribe to one
+  routine's fire times instead of the firehose of every routine on the host. The
+  filtered calendar is named after the routine (`X-WR-CALNAME`); an unknown or
+  disabled id yields a well-formed empty calendar (still `200 text/calendar`).
+  Without the param the feed is unchanged — every enabled routine (#263).
+
+- The generated routines crontab block is now deterministic when several
+  routines share the same `created_at`. The block is built from a `HashMap`,
+  whose iteration order is unspecified, so tied routines previously emitted in
+  an arbitrary, run-to-run order — churning the block across syncs and defeating
+  the idempotency guard, which forced a needless `crontab -` rewrite that
+  mutates the user's live crontab. Ties are now broken on the stable routine id.
+- **UI overview: "▶ RUN" quick-trigger button in the Upcoming Runs table.**
+  Each row in the UPCOMING RUNS table on the Overview page now carries a
+  `▶ RUN` button that fires the job's trigger endpoint
+  (`POST /api/v1/routines/{id}/trigger` or `/api/v1/cron-jobs/{id}/trigger`)
+  without leaving the page. A toast confirms success or surfaces the error.
+  Implements the "quick actions" best practice from CI/CD operations dashboards
+  (Cronitor, Temporal, GitHub Actions) where operators can fire jobs directly
+  from the at-a-glance view.
+- **iCal feed: carriage returns in routine titles/prompts no longer corrupt content lines.**
+  `escape_text` now normalises both bare `\r` and CRLF sequences to an escaped newline (`\n`)
+  before emitting them into a `TEXT` property value, satisfying RFC 5545 §3.3.11 which forbids
+  raw CR characters in content lines. Closes #181.
 - A `fmt + clippy` CI workflow (`.github/workflows/lint.yml`) that mirrors the
   pre-push hook (`cargo fmt --check`, `cargo clippy -- -D warnings`) on every PR
   and push to `main`, so style/lint regressions are caught in review without
   relying on local hooks.
 
+### Documentation
+
+- Documented the required external binaries (`tmux`, `crontab`) under a new
+  **Prerequisites** section in the README (#187).
+
 ### Changed
+
+- The built-in Claude agent now reads its project instructions from `AGENTS.md`,
+  the same file Codex uses, unifying the moadim-managed system prompt and
+  routine-origin disclosure onto a single instructions file across agents. Claude
+  Code loads `AGENTS.md` as a memory/context file, so the disclosure is honored
+  exactly as it was from `CLAUDE.md`. User-authored agent configs that omit
+  `instructions_file` still fall back to the historical `CLAUDE.md` default.
+
+- The request logger now records `GET /health` at `debug` instead of `info`.
+  The web UI polls `/health` continuously, so at the default `info` level those
+  two-lines-per-poll entries dominated `daemon.log` (thousands of lines a day on
+  an otherwise idle daemon) and buried every other request. Health polls remain
+  visible under `RUST_LOG=debug`; all other requests still log at `info`.
+
+- On first run (no `MOADIM_MACHINE` env var and no `machine.local.toml`), the
+  daemon now auto-generates a unique machine name (`machine-{8hex}`) and writes
+  it to `machine.local.toml` rather than silently falling back to the system
+  hostname. A `warn!` log names the generated value and points to
+  `moadim machine set <name>` to override it. If the write fails the hostname
+  fallback is preserved. Closes #762.
 
 - Enabled the `clippy::map_unwrap_or` lint and fixed the violations
   (`map(...).unwrap_or(...)` → `map_or(...)`). No behavior change.
 
 ### Fixed
+- iCal feeds now summarize long routine prompts in the DESCRIPTION field (first line, truncated to 120 chars) instead of embedding the full prompt, keeping calendar entries readable. (#185)
+- **6-field cron expressions no longer silently fail to fire.** `croner` accepts
+  6-field (`sec min hour dom month dow`) and 7-field expressions, but the OS
+  crontab only understands 5 fields. Both forms are now normalised to 5 fields
+  by dropping the leading seconds (and, for 7-field, the trailing year) before
+  the expression is stored or written to the crontab. Previously a 6-field
+  string was written verbatim, making the job malformed and silently inactive.
+  Closes #183.
 
+- **`moadim stop --json` now reports the real bound `address`.** Under a
+  `MOADIM_BIND_ADDR` override, `stop --json` emitted the hardcoded default
+  `127.0.0.1:5784` while `status --json` reported the actual address, so the two
+  `--json` objects disagreed despite the documented "identical shape" contract.
+  `stop_json` now uses `bind_addr()` like `status_json`. Added a regression test
+  plus a guard asserting `status`/`stop` produce the same object.
+
+- The pid file is now reconciled against process liveness before it is reported
+  or acted on. After a `kill -9`, panic, OOM kill, or power loss the graceful
+  shutdown path never runs, so the pid file lingers with a now-dead PID.
+  `read_pid_file()` now treats a recorded PID that is not a live process
+  (`kill -0` probe on Unix) as absent and cleans the stale file up best-effort.
+  `status`/`stop --json` therefore emit `pid: null` consistently with
+  `running: false` instead of a dead-or-PID-reused number, and `restart` never
+  force-kills a stale PID. (#315)
+
+- The daemon now writes its managed system prompt and routine-origin disclosure to the agent's designated instructions file (`AGENTS.md` for Codex). Previously the Codex agent received the disclosure via a separate mechanism. (#152)
+
+- An agent config that exists on disk but cannot be read (due to a permissions
+  error or path collision) is now reported as `AgentLoadError::Unreadable` rather
+  than `AgentLoadError::Missing`. Previously, any `read_to_string` failure was
+  silently mapped to `Missing`, causing `validate_agent` to accept the broken
+  config (it tolerates `Missing` for configs not yet created), leaving a
+  green-dot routine that silently never fires. The new `Unreadable` variant is
+  rejected at create/update time with a `BadRequest`, so the operator learns the
+  real cause immediately. (#445)
 - Loading a routine whose `routine.toml` is unparsable or missing a required
   field (title, schedule, or agent) now logs a `warn` naming the directory,
   instead of silently dropping the routine from the store, UI, API, and crontab
@@ -42,15 +472,32 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   OK the grant is remembered permanently; the background daemon never triggers the dialog again.
   A hint line is printed before the prompt so users know what to expect. Closes #730.
 
+- **Trigger-spawned processes are now reaped so the daemon no longer leaks zombie
+  (`<defunct>`) entries.** Both the routine trigger (`POST /routines/{id}/trigger`)
+  and the cron-job trigger (`POST /cron-jobs/{id}/trigger`) previously dropped
+  the spawned child handle without calling `wait()`, so every trigger leaked one
+  zombie for the daemon's lifetime. A new `utils::process::spawn_and_reap` utility
+  spawns the command and hands the child to a detached thread that reaps it.
+  (#212)
+
 ### Added
 
 - **UI: clickable chips in Calendar and Day timeline views.** Schedule chips in the monthly
-  Calendar grid and the 24-hour Day timeline now open the edit modal when clicked, on both the
-  Routines and Cron Jobs pages. Previously these views were read-only; clicking a chip did
+  Calendar grid and the 24-hour Day timeline now open the edit modal when clicked, on the
+  Routines page. Previously these views were read-only; clicking a chip did
   nothing. The chip carries the entity id through `TimelineItem` to the existing
   `on_click` / `on_edit` callback, dispatching the same `OpenEdit` action as the table
   EDIT button. Implements the contextual-click-to-edit pattern from leading scheduling dashboards
-  (Airflow calendar view, GitHub Actions timeline, Temporal UI). Closes #746.
+  (Airflow calendar view, GitHub Actions timeline, Temporal UI). Closes #746 (see also #728, #748).
+
+- `moadim trigger <id>` triggers a routine to run immediately from the terminal,
+  outside its schedule — the same on-demand run the REST API
+  (`POST /routines/{id}/trigger`) and the MCP tool already expose. Prints
+  `triggered routine <id>` and exits `0` on success, errors with
+  `no routine with id <id>` on a `404`, and prints `moadim is not running`
+  (exit `3`) when no server is reachable, matching the `status`/`cleanup`
+  exit-code contract. (`moadim run <id>` is accepted as a hidden back-compat
+  alias.)
 
 - **UI: group-by dimension for the Routines table.** A **GROUP BY** selector in the section
   toolbar lets operators partition the flat routine list into labelled sections by **Agent**,
@@ -63,7 +510,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   repositories, machines, TTL, enabled state). The title is automatically prefixed with
   "Copy of " (and the prefix is not doubled on repeated clones). Operators can adjust any field
   before saving; the result is a brand-new independent routine. Closes #715.
-
 - **Local-machine filter for routines and cron jobs.** A new `GET /api/v1/machine` endpoint
   returns the daemon's resolved machine name. `GET /routines` and `GET /cron-jobs` now accept a
   `local_only=true` query parameter that filters the response to entries targeting the current
@@ -71,6 +517,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   to `true` so MCP callers see local-first results. The UI routines and cron-jobs pages fetch the
   current machine on mount and default the existing machine facet filter to it; users can change
   the filter to "Any" to see all machines. Closes #726.
+
+- **UI: group-by dimension for the Routines table.** A GROUP BY selector in the table toolbar
+  lets operators partition the routine list into labelled sections by **agent** (e.g. `claude`,
+  `codex`), **machine** (first assigned machine, or `(unassigned)` when none), or **status**
+  (Enabled / Disabled). Selecting "None" (the default) restores the existing flat list. The
+  selector is hidden in Calendar and Day views where grouping is not applicable. Mirrors the
+  identical GroupBy feature on the Cron Jobs page. Closes #744.
 
 ## [0.16.0] - 2026-06-26
 
@@ -345,8 +798,7 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   first omitted fire time, so calendar subscribers can see the projection was
   capped and where it stops instead of the routine appearing to just end after a
   few days (#251).
-- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)
-- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+- Added a `MOADIM_TMUX_BIN` test seam to the cleanup sweep's tmux side-effects so tests never probe or kill sessions on the real tmux server; in test builds it falls back to a non-existent path. Mirrors the `MOADIM_CRONTAB_BIN` guard. (#215)- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
   OPAQUE, so subscribing to the `.ics` feed no longer marks the operator BUSY at
   every scheduled fire time. A fire is a momentary trigger, not reserved time. (#461)
 - Routine `update` now rejects a `ttl_secs` / `max_runtime_secs` that exceeds the
@@ -364,6 +816,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the origin the docs were served from, so it follows a custom `MOADIM_BIND_ADDR`
   port or a reverse proxy instead of failing against an address the daemon may not
   be bound to. (#385)
+- An agent config that exists on disk but cannot be read (due to a permissions
+  error or path collision) is now reported as `AgentLoadError::Unreadable` rather
+  than `AgentLoadError::Missing`. Previously, any `read_to_string` failure was
+  silently mapped to `Missing`, causing `validate_agent` to accept the broken
+  config (it tolerates `Missing` for configs not yet created), leaving a
+  green-dot routine that silently never fires. The new `Unreadable` variant is
+  rejected at create/update time with a `BadRequest`, so the operator learns the
+  real cause immediately. (#445)
 - The routine-origin disclosure write into the workbench `CLAUDE.md` now
   fail-fasts. Previously this `printf > "$WB/CLAUDE.md"` was `;`-joined with no
   failure guard, so if the write failed (read-only/full `$HOME`, an unwritable
@@ -417,7 +877,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   the manual-trigger `state.local.toml`, so re-persisting a routine can't clobber a
   scheduler-written timestamp. This makes scheduled vs. manual runs distinguishable
   and lets you spot schedules that have never actually fired (#155).
-
 - `moadim stop` accepts a `--quiet`/`-q` flag that suppresses the human-readable
   status line (`moadim is shutting down` / `moadim is not running`) while keeping
   the exit-code contract (`0` when a server was stopped, `3` when none was
@@ -468,6 +927,13 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- The config tree now honors `$XDG_CONFIG_HOME` per the XDG Base Directory
+  spec: when set to an absolute path, the config dir resolves to
+  `$XDG_CONFIG_HOME/moadim` instead of always `~/.config/moadim` (an unset,
+  empty, or relative value still falls back to `~/.config`). This brings the
+  config tree in line with the Linux systemd installer, which already resolved
+  its unit path via `$XDG_CONFIG_HOME`, so users who relocate their config root
+  no longer get a surprise second tree under `~/.config`.
 - Routines no longer generate a per-routine `run.sh` launch script. The crontab
   line now invokes the `moadim` binary directly
   (`<schedule> <moadim> schedule trigger <id>`), and the running daemon is the
@@ -578,6 +1044,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   so `cargo clippy --all-targets` failed to compile. The reducer derefs the box
   once before the existing upsert logic, and the construction sites wrap the
   value.
+
+### Fixed
+
+- Routine **create/update now reject an empty or whitespace-only `prompt`** with
+  `400 Bad Request` (`prompt must not be empty`), across the REST and MCP
+  surfaces. Previously a blank prompt was accepted and synced to the crontab, so
+  the routine fired on every tick and launched an agent with no task — silently
+  burning scheduled runs and agent/API budget.
 
 ## [0.12.0] - 2026-06-18
 
@@ -888,7 +1362,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/moadim-io/daemon/compare/v0.19.1...v0.20.0
+[0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/moadim-io/daemon/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/moadim-io/daemon/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/moadim-io/daemon/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/moadim-io/daemon/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/moadim-io/daemon/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/moadim-io/daemon/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/moadim-io/daemon/compare/v0.12.0...v0.13.0

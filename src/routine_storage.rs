@@ -583,3 +583,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
 #[cfg(test)]
 #[path = "routine_storage_tests.rs"]
 mod routine_storage_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_migration_tests.rs"]
+mod routine_storage_migration_tests;

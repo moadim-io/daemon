@@ -135,16 +135,6 @@ pub fn routine_scheduled_log_path(id: &str) -> PathBuf {
     routine_dir(id).join("scheduled.log")
 }
 
-/// Returns the path to `{routines_dir}/{id}/scheduled.local.toml`, the legacy sidecar superseded
-/// by [`routine_scheduled_log_path`].
-///
-/// Retained only for the startup migration that seeds `scheduled.log` from the stored timestamp
-/// and removes this file. Not written anywhere in the current daemon.
-#[must_use]
-pub fn routine_scheduled_state_path(id: &str) -> PathBuf {
-    routine_dir(id).join("scheduled.local.toml")
-}
-
 /// Returns the path to `{routines_dir}/{id}/manual.log`, the gitignored append-only log that
 /// records every manual trigger as one Unix-timestamp line.
 ///

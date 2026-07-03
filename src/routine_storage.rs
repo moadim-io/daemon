@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::paths::{
     routine_compiled_prompt_path, routine_dir, routine_gitignore_path, routine_manual_log_path,
     routine_prompts_dir, routine_pure_prompt_path, routine_scheduled_log_path,
-    routine_scheduled_state_path, routine_script_path, routine_state_path, routine_toml_path,
+    routine_script_path, routine_state_path, routine_toml_path,
     routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
@@ -332,11 +332,11 @@ pub(crate) fn migrate_trigger_logs_from_dir(dir: &std::path::Path) {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
-        let dir_name = entry.file_name().to_string_lossy().to_string();
+        let routine_dir = entry.path();
 
         // Migrate scheduled.local.toml → scheduled.log
-        let old_sched = routine_scheduled_state_path(&dir_name);
-        let new_sched = routine_scheduled_log_path(&dir_name);
+        let old_sched = routine_dir.join("scheduled.local.toml");
+        let new_sched = routine_dir.join("scheduled.log");
         if old_sched.exists() && !new_sched.exists() {
             if let Some(ts) = std::fs::read_to_string(&old_sched)
                 .ok()
@@ -356,9 +356,9 @@ pub(crate) fn migrate_trigger_logs_from_dir(dir: &std::path::Path) {
         }
 
         // Migrate last_manual_trigger_at from state.local.toml → manual.log
-        let new_manual = routine_manual_log_path(&dir_name);
+        let new_manual = routine_dir.join("manual.log");
         if !new_manual.exists() {
-            if let Some(ts) = std::fs::read_to_string(routine_state_path(&dir_name))
+            if let Some(ts) = std::fs::read_to_string(routine_dir.join("state.local.toml"))
                 .ok()
                 .and_then(|text| toml::from_str::<RuntimeState>(&text).ok())
                 .and_then(|state| state.last_manual_trigger_at)

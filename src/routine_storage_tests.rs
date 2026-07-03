@@ -271,7 +271,10 @@ fn last_manual_trigger_at_persists_to_log_not_routine_toml() {
         assert!(crate::paths::routine_manual_log_path(&slug).exists());
         let log_text =
             std::fs::read_to_string(crate::paths::routine_manual_log_path(&slug)).unwrap();
-        assert!(log_text.trim() == "12345", "manual.log must contain the timestamp: {log_text}");
+        assert!(
+            log_text.trim() == "12345",
+            "manual.log must contain the timestamp: {log_text}"
+        );
         assert_eq!(
             load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
             Some(12345)
@@ -367,7 +370,11 @@ fn load_routine_reads_scheduled_trigger_from_log() {
         let slug = slugify(title);
         write_routine(&make_routine("rs-scheduled-id", title)).unwrap();
         // Simulate two cron fires appended to scheduled.log.
-        std::fs::write(crate::paths::routine_scheduled_log_path(&slug), "1000\n4242\n").unwrap();
+        std::fs::write(
+            crate::paths::routine_scheduled_log_path(&slug),
+            "1000\n4242\n",
+        )
+        .unwrap();
 
         let loaded = load_routine_from_dir(&slug).unwrap();
         // The last line (4242) wins.

@@ -302,7 +302,10 @@ pub fn append_manual_trigger_log(slug: &str, ts: u64) {
         .open(&path)
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
     {
-        log::warn!("append_manual_trigger_log: failed to write {}: {err}", path.display());
+        log::warn!(
+            "append_manual_trigger_log: failed to write {}: {err}",
+            path.display()
+        );
     }
 }
 

@@ -1,6 +1,6 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
-use crate::paths::{routine_compiled_prompt_path, routine_scheduled_state_path};
+use crate::paths::{routine_compiled_prompt_path, routine_scheduled_log_path};
 
 use super::agents::AgentCommand;
 use super::flags::{list_flags, FlagScope};
@@ -355,7 +355,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let prompt_path = routine_compiled_prompt_path(&slug)
         .to_string_lossy()
         .into_owned();
-    let scheduled_state_path = routine_scheduled_state_path(&slug)
+    let scheduled_log_path = routine_scheduled_log_path(&slug)
         .to_string_lossy()
         .into_owned();
     // Resolve through the same seam the reaper (`cleanup/mod.rs`) and the LOGS view
@@ -397,16 +397,14 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
-        // Record this scheduled firing. This command stamps the fire time into the routine's
-        // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
-        // `last_scheduled_trigger_at` on load. (The cron line calls `moadim schedule trigger`, which
-        // spawns this command via the daemon's scheduled-trigger path without recording a *manual*
-        // trigger.) Written before the prompt-copy guard below so an aborted run still records that
-        // the schedule fired, and best-effort (`|| true`) so a sidecar write failure never blocks
-        // launching the agent.
+        // Record this scheduled firing. Appends the Unix timestamp as one line to the routine's
+        // gitignored `scheduled.log`; the daemon reads the last line back as
+        // `last_scheduled_trigger_at` on load. Using `>>` (append) preserves the full run history.
+        // Written before the prompt-copy guard below so an aborted run still records that the
+        // schedule fired, and best-effort (`|| true`) so a log write failure never blocks launching.
         format!(
-            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
-            shell_quote(&scheduled_state_path)
+            r#"printf '%s\n' "$TS" >> {} || true"#,
+            shell_quote(&scheduled_log_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
         format!(r#"WB={}/"$SLUG-$TS""#, shell_quote(&workbenches_base)),

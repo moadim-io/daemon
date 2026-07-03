@@ -136,11 +136,11 @@ pub struct Routine {
     ///
     /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
     /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
-    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns stamps this
-    /// timestamp into the gitignored `scheduled.local.toml` sidecar at fire time (via its `printf`
-    /// step); the daemon reads it back on load. The daemon never writes this field directly (it is
-    /// absent from `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a
-    /// routine can't clobber it.
+    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends
+    /// the Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last
+    /// line back on load. The daemon never writes this field directly (it is absent from
+    /// `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't
+    /// clobber the log.
     #[serde(default)]
     pub last_scheduled_trigger_at: Option<u64>,
     /// Unix timestamp (seconds) until which scheduled (cron) fires are skipped, or `None`.

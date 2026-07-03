@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
-use crate::routine_storage::{remove_routine_dir, write_routine};
+use crate::routine_storage::{append_manual_trigger_log, remove_routine_dir, write_routine};
 use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
@@ -602,10 +602,12 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     }
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.last_manual_trigger_at = Some(now_secs());
+    let ts = now_secs();
+    routine.last_manual_trigger_at = Some(ts);
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
+    append_manual_trigger_log(&crate::routines::slugify(&routine.title), ts);
     spawn_routine_command(&routine);
     Ok(routine)
 }
@@ -615,9 +617,9 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 ///
 /// This is the daemon-side endpoint that the generated crontab line drives
 /// (`moadim schedule trigger <id>`). Unlike [`svc_trigger`] it leaves `last_manual_trigger_at`
-/// untouched — the spawned command records `last_scheduled_trigger_at` in the routine's
-/// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
-/// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
+/// untouched — the spawned command appends the timestamp to the routine's `scheduled.log` itself,
+/// which the daemon reads back on the next load. Keeping the two paths distinct preserves the
+/// manual-vs-scheduled distinction the timestamps exist to capture.
 ///
 /// A routine snoozed via [`svc_snooze`] (`snoozed_until` in the future, or `skip_runs` above zero)
 /// is skipped here instead of spawned: `snoozed_until` clears itself once elapsed (that fire then

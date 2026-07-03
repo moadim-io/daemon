@@ -249,15 +249,17 @@ fn load_routine_from_dir_missing_returns_none() {
 }
 
 #[test]
-fn last_manual_trigger_at_persists_to_sidecar_not_routine_toml() {
-    // Runtime trigger state is written to the gitignored `state.local.toml` sidecar and kept out
-    // of the version-controlled `routine.toml`, then read back from the sidecar on load.
+fn last_manual_trigger_at_persists_to_log_not_routine_toml() {
+    // Manual trigger history is written to the gitignored `manual.log` append-only file and kept
+    // out of the version-controlled `routine.toml`; it round-trips through load.
     with_override_home(|_home| {
         let title = "Rs Sidecar Routine";
         let slug = slugify(title);
         let mut routine = make_routine("rs-sidecar-id", title);
         routine.last_manual_trigger_at = Some(12345);
         write_routine(&routine).unwrap();
+        // Simulate what svc_trigger does: append to manual.log.
+        crate::routine_storage::append_manual_trigger_log(&slug, 12345);
 
         // The tracked config file does not carry the runtime timestamp...
         let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
@@ -265,10 +267,11 @@ fn last_manual_trigger_at_persists_to_sidecar_not_routine_toml() {
             !toml_text.contains("last_manual_trigger_at"),
             "routine.toml must not carry runtime trigger state: {toml_text}"
         );
-        // ...the gitignored sidecar does, and it round-trips through load.
-        assert!(crate::paths::routine_state_path(&slug).exists());
-        let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
-        assert!(state_text.contains("last_manual_trigger_at"));
+        // ...the gitignored log does, and it round-trips through load.
+        assert!(crate::paths::routine_manual_log_path(&slug).exists());
+        let log_text =
+            std::fs::read_to_string(crate::paths::routine_manual_log_path(&slug)).unwrap();
+        assert!(log_text.trim() == "12345", "manual.log must contain the timestamp: {log_text}");
         assert_eq!(
             load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
             Some(12345)
@@ -278,22 +281,31 @@ fn last_manual_trigger_at_persists_to_sidecar_not_routine_toml() {
 
 #[test]
 fn write_routine_clears_stale_sidecar_when_untriggered() {
-    // Re-writing a routine whose trigger state has been cleared removes the now-stale sidecar, so
-    // the on-disk state mirrors the in-memory `None`.
+    // Re-writing a routine with no snooze/skip-runs state removes the state sidecar; an absent
+    // manual.log means last_manual_trigger_at round-trips as None.
     with_override_home(|_home| {
         let title = "Rs Clear Sidecar Routine";
         let slug = slugify(title);
         let mut routine = make_routine("rs-clear-id", title);
-        routine.last_manual_trigger_at = Some(999);
-        write_routine(&routine).unwrap();
-        assert!(crate::paths::routine_state_path(&slug).exists());
-
-        routine.last_manual_trigger_at = None;
+        // Write with no snooze/skip_runs — sidecar should not be created.
         write_routine(&routine).unwrap();
         assert!(
             !crate::paths::routine_state_path(&slug).exists(),
-            "sidecar should be removed when there is no trigger state"
+            "state.local.toml must not be written when there is no snooze/skip-runs state"
         );
+
+        // Snooze it so the sidecar is created, then clear the snooze.
+        routine.snoozed_until = Some(9999);
+        write_routine(&routine).unwrap();
+        assert!(crate::paths::routine_state_path(&slug).exists());
+
+        routine.snoozed_until = None;
+        write_routine(&routine).unwrap();
+        assert!(
+            !crate::paths::routine_state_path(&slug).exists(),
+            "sidecar should be removed when there is no snooze/skip-runs state"
+        );
+        // No manual.log was ever written, so last_manual_trigger_at is None.
         assert_eq!(
             load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
             None
@@ -347,21 +359,18 @@ fn load_routine_ignores_unparsable_sidecar() {
 }
 
 #[test]
-fn load_routine_reads_scheduled_trigger_from_sidecar() {
-    // `last_scheduled_trigger_at` lives in its own gitignored `scheduled.local.toml` sidecar,
-    // written by the routine's `run.sh` at cron fire time, and is read back on load — independently
-    // of the manual-trigger sidecar.
+fn load_routine_reads_scheduled_trigger_from_log() {
+    // `last_scheduled_trigger_at` is read from the last line of `scheduled.log`, written by the
+    // cron shell command at each fire, independently of the manual-trigger log.
     with_override_home(|_home| {
         let title = "Rs Scheduled Sidecar Routine";
         let slug = slugify(title);
         write_routine(&make_routine("rs-scheduled-id", title)).unwrap();
-        std::fs::write(
-            crate::paths::routine_scheduled_state_path(&slug),
-            "last_scheduled_trigger_at = 4242\n",
-        )
-        .unwrap();
+        // Simulate two cron fires appended to scheduled.log.
+        std::fs::write(crate::paths::routine_scheduled_log_path(&slug), "1000\n4242\n").unwrap();
 
         let loaded = load_routine_from_dir(&slug).unwrap();
+        // The last line (4242) wins.
         assert_eq!(loaded.last_scheduled_trigger_at, Some(4242));
         // The scheduled timestamp is distinct from the (unset) manual one.
         assert_eq!(loaded.last_manual_trigger_at, None);
@@ -369,8 +378,8 @@ fn load_routine_reads_scheduled_trigger_from_sidecar() {
 }
 
 #[test]
-fn load_routine_ignores_unparsable_scheduled_sidecar() {
-    // A malformed `scheduled.local.toml` parses to `None` rather than crashing the load.
+fn load_routine_ignores_unparsable_scheduled_log() {
+    // A `scheduled.log` with no parsable timestamp lines yields `None` rather than crashing.
     with_override_home(|_home| {
         let slug = "rs-bad-scheduled-sidecar-routine";
         let dir = crate::paths::routine_dir(slug);
@@ -381,8 +390,8 @@ fn load_routine_ignores_unparsable_scheduled_sidecar() {
         )
         .unwrap();
         std::fs::write(
-            crate::paths::routine_scheduled_state_path(slug),
-            "= not valid toml =",
+            crate::paths::routine_scheduled_log_path(slug),
+            "not a timestamp\n",
         )
         .unwrap();
 
@@ -396,30 +405,26 @@ fn load_routine_ignores_unparsable_scheduled_sidecar() {
 }
 
 #[test]
-fn write_routine_preserves_scheduler_written_scheduled_sidecar() {
-    // The daemon never writes the scheduled sidecar, so re-persisting a routine (e.g. on startup or
-    // an update) must leave the scheduler-stamped `scheduled.local.toml` untouched — the bug this
-    // separate-file design exists to prevent.
+fn write_routine_preserves_scheduler_written_scheduled_log() {
+    // The daemon never writes `scheduled.log`, so re-persisting a routine must leave the
+    // cron-appended log untouched — the same invariant that motivated the separate-file design.
     with_override_home(|_home| {
         let title = "Rs Preserve Scheduled Routine";
         let slug = slugify(title);
         let mut routine = make_routine("rs-preserve-scheduled-id", title);
         write_routine(&routine).unwrap();
 
-        // Simulate a scheduled cron firing stamping the sidecar.
-        std::fs::write(
-            crate::paths::routine_scheduled_state_path(&slug),
-            "last_scheduled_trigger_at = 55\n",
-        )
-        .unwrap();
+        // Simulate a scheduled cron firing appending to scheduled.log.
+        std::fs::write(crate::paths::routine_scheduled_log_path(&slug), "55\n").unwrap();
 
         // A subsequent daemon-side write (manual trigger recorded, routine updated, repersist, …).
         routine.last_manual_trigger_at = Some(7);
         write_routine(&routine).unwrap();
+        crate::routine_storage::append_manual_trigger_log(&slug, 7);
 
         assert!(
-            crate::paths::routine_scheduled_state_path(&slug).exists(),
-            "daemon write must not remove the scheduler-owned sidecar"
+            crate::paths::routine_scheduled_log_path(&slug).exists(),
+            "daemon write must not remove the scheduler-owned log"
         );
         let loaded = load_routine_from_dir(&slug).unwrap();
         assert_eq!(loaded.last_scheduled_trigger_at, Some(55));

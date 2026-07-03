@@ -909,3 +909,7 @@ fn detach(_cmd: &mut std::process::Command) {}
 #[cfg(test)]
 #[path = "cli_tests.rs"]
 mod cli_tests;
+
+#[cfg(test)]
+#[path = "cli_json_tests.rs"]
+mod cli_json_tests;

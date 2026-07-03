@@ -1404,8 +1404,29 @@ fn migrate_trigger_logs_from_dir_skips_non_dirs_and_unparsable() {
 }
 
 #[test]
+fn migrate_trigger_logs_from_dir_removes_scheduled_toml_when_no_timestamp() {
+    // A `scheduled.local.toml` that has no parsable timestamp (e.g. empty or unparsable) still
+    // gets removed — there is no timestamp to seed, so we skip the log write and just clean up.
+    let dir = scratch_dir("trigger-logs-no-ts");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let routine_dir = dir.join("my-routine");
+    std::fs::create_dir_all(&routine_dir).unwrap();
+    std::fs::write(routine_dir.join("scheduled.local.toml"), "").unwrap();
+
+    migrate_trigger_logs_from_dir(&dir);
+
+    // No log written (no timestamp to seed), but the empty TOML was still removed.
+    assert!(!routine_dir.join("scheduled.log").exists());
+    assert!(!routine_dir.join("scheduled.local.toml").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[cfg(unix)]
 fn migrate_trigger_logs_from_dir_logs_on_scheduled_write_failure() {
     // When writing scheduled.log fails, a warning is logged and the old TOML is left in place.
+    use std::os::unix::fs::PermissionsExt;
     let dir = scratch_dir("trigger-logs-sched-fail");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -1416,36 +1437,43 @@ fn migrate_trigger_logs_from_dir_logs_on_scheduled_write_failure() {
         "last_scheduled_trigger_at = 42\n",
     )
     .unwrap();
-    // Block the log write by placing a directory at scheduled.log.
-    std::fs::create_dir_all(routine_dir.join("scheduled.log")).unwrap();
+    // Block the log write by making the routine dir read-only so fs::write fails.
+    std::fs::set_permissions(&routine_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
     migrate_trigger_logs_from_dir(&dir);
 
-    // The blocker directory is still there; the old TOML is NOT removed (continue branch).
+    // Restore permissions so cleanup can delete the dir.
+    std::fs::set_permissions(&routine_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // The old TOML is NOT removed because the write failed (continue branch).
     assert!(routine_dir.join("scheduled.local.toml").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
+#[cfg(unix)]
 fn migrate_trigger_logs_from_dir_logs_on_manual_write_failure() {
     // When writing manual.log fails, a warning is logged but the function does not crash.
+    use std::os::unix::fs::PermissionsExt;
     let dir = scratch_dir("trigger-logs-manual-fail");
     std::fs::create_dir_all(&dir).unwrap();
 
     let routine_dir = dir.join("my-routine");
     std::fs::create_dir_all(&routine_dir).unwrap();
+    // Write state.local.toml with last_manual_trigger_at — note: skip_serializing means the
+    // field won't appear in daemon-written state files, but legacy files can have it.
     std::fs::write(
         routine_dir.join("state.local.toml"),
         "last_manual_trigger_at = 77\n",
     )
     .unwrap();
-    // Block manual.log with a directory.
-    std::fs::create_dir_all(routine_dir.join("manual.log")).unwrap();
+    // Make the routine dir read-only so writing manual.log fails.
+    std::fs::set_permissions(&routine_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
     migrate_trigger_logs_from_dir(&dir);
 
-    // Function completed without panic; the blocker is still there.
-    assert!(routine_dir.join("manual.log").is_dir());
+    std::fs::set_permissions(&routine_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Function completed without panic.
+    assert!(!routine_dir.join("manual.log").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -84,7 +84,7 @@ if ! command -v linecheck >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Checking .rs files do not exceed 3000 lines..."
+echo "Checking .rs files do not exceed 2500 lines..."
 # shellcheck disable=SC2046
 linecheck --max-lines 2500 $(find src -name '*.rs')
 echo "Line-count check passed."

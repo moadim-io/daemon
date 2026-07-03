@@ -609,8 +609,9 @@ Each subdirectory here is one routine (a prompt + schedule + agent, run on a cro
   prompt) copied into each run's workbench.
 - `<id>/flags/` — open questions an agent raised mid-run: a gap, bug, edge case, or question
   it couldn't resolve.
-- `<id>/state.local.toml`, `<id>/scheduled.local.toml` — gitignored sidecars recording
-  daemon-written runtime state (last manual/scheduled trigger times).
+- `<id>/state.local.toml` — gitignored sidecar holding snooze/skip-runs state.
+- `<id>/manual.log`, `<id>/scheduled.log` — gitignored append-only logs recording every
+  manual / scheduled trigger (one Unix timestamp per line).
 
 Full docs: https://github.com/moadim-io/daemon
 ";

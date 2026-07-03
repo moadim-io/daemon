@@ -115,26 +115,35 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
 }
 
 /// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
-/// daemon-written runtime state (e.g. `last_manual_trigger_at`) kept out of the tracked `routine.toml`.
+/// daemon-written runtime state (`snoozed_until`, `skip_runs`) kept out of the tracked `routine.toml`.
 ///
 /// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
-/// trigger churn never produces version-control diffs.
+/// snooze churn never produces version-control diffs.
 #[must_use]
 pub fn routine_state_path(id: &str) -> PathBuf {
     routine_dir(id).join("state.local.toml")
 }
 
-/// Returns the path to `{routines_dir}/{id}/scheduled.local.toml`, the gitignored sidecar that
-/// records `last_scheduled_trigger_at`.
+/// Returns the path to `{routines_dir}/{id}/scheduled.log`, the gitignored append-only log that
+/// records every scheduled (cron) firing as one Unix-timestamp line.
 ///
-/// Unlike [`routine_state_path`] this sidecar is written by the routine's launch command (the
-/// `printf` step of [`crate::routines::build_routine_command`]) at each scheduled cron firing, and is
-/// only ever *read* by the daemon — kept in its own file so a daemon-side re-persist of
-/// `state.local.toml` can't clobber the scheduler-written timestamp. The `.local.` infix matches the
-/// `*.local.*` `.gitignore` pattern, so scheduled-fire churn never produces version-control diffs.
+/// The cron shell command appends a line (`printf '%s\n' "$TS" >> scheduled.log`) at each firing;
+/// the daemon reads only the last line to derive `last_scheduled_trigger_at`. The `.log` suffix
+/// matches the `*.log` pattern seeded into each routine's `.gitignore`.
 #[must_use]
-pub fn routine_scheduled_state_path(id: &str) -> PathBuf {
-    routine_dir(id).join("scheduled.local.toml")
+pub fn routine_scheduled_log_path(id: &str) -> PathBuf {
+    routine_dir(id).join("scheduled.log")
+}
+
+/// Returns the path to `{routines_dir}/{id}/manual.log`, the gitignored append-only log that
+/// records every manual trigger as one Unix-timestamp line.
+///
+/// The daemon appends a line at each manual trigger; reading the last line gives
+/// `last_manual_trigger_at`. The `.log` suffix matches the `*.log` pattern in the routine's
+/// `.gitignore`.
+#[must_use]
+pub fn routine_manual_log_path(id: &str) -> PathBuf {
+    routine_dir(id).join("manual.log")
 }
 
 /// Returns the path to `{routines_dir}/{id}/run.sh`, a legacy per-routine launch script.

@@ -86,10 +86,10 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
 }
 
 #[test]
-fn build_routine_command_stamps_scheduled_trigger_sidecar() {
-    // The generated launch script records each scheduled firing by writing `$TS` into the
-    // routine's `scheduled.local.toml` sidecar (best-effort, before the prompt-copy guard), since
-    // the OS crontab runs this script directly without the daemon observing the fire.
+fn build_routine_command_appends_scheduled_trigger_log() {
+    // The generated launch script records each scheduled firing by appending `$TS` to the
+    // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab
+    // runs this script directly without the daemon observing the fire.
     let routine = make_routine("Cmd Scheduled Stamp Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -98,20 +98,20 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
-    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
+    let log = crate::paths::routine_scheduled_log_path(&slugify(&routine.title))
         .to_string_lossy()
         .into_owned();
     assert!(
         cmd.contains(&format!(
-            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
-            shell_quote(&sidecar)
+            r#"printf '%s\n' "$TS" >> {} || true"#,
+            shell_quote(&log)
         )),
-        "expected scheduled-trigger sidecar stamp in: {cmd}"
+        "expected scheduled-trigger log append in: {cmd}"
     );
     // It must run before the prompt-copy guard so an aborted run still records the firing.
-    let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
+    let stamp = cmd.find("scheduled.log").unwrap();
     let copy = cmd.find("/prompt.md\"").unwrap();
-    assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
+    assert!(stamp < copy, "log append must precede the prompt copy");
 }
 
 #[test]

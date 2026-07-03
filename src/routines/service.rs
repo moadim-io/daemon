@@ -912,3 +912,7 @@ mod service_tests;
 #[cfg(test)]
 #[path = "service_flag_tests.rs"]
 mod service_flag_tests;
+
+#[cfg(test)]
+#[path = "service_model_tests.rs"]
+mod service_model_tests;

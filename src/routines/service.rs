@@ -926,3 +926,7 @@ mod service_logs_tests;
 #[cfg(test)]
 #[path = "service_trigger_tests.rs"]
 mod service_trigger_tests;
+
+#[cfg(test)]
+#[path = "service_coverage_tests.rs"]
+mod service_coverage_tests;

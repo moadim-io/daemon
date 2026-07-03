@@ -587,3 +587,7 @@ mod routine_storage_tests;
 #[cfg(test)]
 #[path = "routine_storage_migration_tests.rs"]
 mod routine_storage_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_snooze_tests.rs"]
+mod routine_storage_snooze_tests;

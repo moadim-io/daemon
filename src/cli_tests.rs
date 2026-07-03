@@ -1,5 +1,7 @@
 //! Tests for CLI argument parsing and HTTP status parsing.
 
+use std::io::{Read as _, Write as _};
+
 use super::*;
 
 /// Build a `Vec<String>` from string literals for [`parse`].

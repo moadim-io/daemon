@@ -530,5 +530,9 @@ pub async fn run_with_listener_until(
 mod http_tests;
 
 #[cfg(test)]
+#[path = "http_routing_tests.rs"]
+mod http_routing_tests;
+
+#[cfg(test)]
 #[path = "http_listener_tests.rs"]
 mod http_listener_tests;

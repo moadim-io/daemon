@@ -186,7 +186,7 @@ pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
 /// Rename every existing workbench directory from `old_slug` to `new_slug`, preserving each run's
 /// trigger timestamp (`{old_slug}-{ts}` -> `{new_slug}-{ts}`).
 ///
-/// Called from [`svc_update`] when a routine's title (and thus slug) changes. Workbenches are keyed
+/// Called from `svc_update` when a routine's title (and thus slug) changes. Workbenches are keyed
 /// by slug, not the routine's stable UUID, so without this migration a rename would strand every
 /// prior run under the old slug: [`svc_logs`] (which looks up by *current* slug) would find nothing,
 /// and an in-flight run would fall through to the cleanup watchdog's orphan defaults instead of the

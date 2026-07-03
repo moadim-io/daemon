@@ -170,7 +170,7 @@ pub(super) fn paths_daemon_log() -> String {
     crate::paths::daemon_log_file().display().to_string()
 }
 
-/// Returns `true` if a server answers `GET /health` on [`BIND_ADDR`].
+/// Returns `true` if a server answers `GET /health` on [`super::BIND_ADDR`].
 pub(crate) fn is_running() -> bool {
     matches!(http_request("GET", "/api/v1/health"), Ok(200))
 }
@@ -178,7 +178,7 @@ pub(crate) fn is_running() -> bool {
 /// Interval between liveness probes while [`wait_until`] polls for a server to come up.
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Call `check` repeatedly (sleeping [`WAIT_POLL_INTERVAL`] between attempts) until it returns
+/// Call `check` repeatedly (sleeping `WAIT_POLL_INTERVAL` between attempts) until it returns
 /// `true` or `timeout` elapses. Returns whether it ever returned `true`. Always calls `check` at
 /// least once, even when `timeout` is zero.
 pub(super) fn wait_until(mut check: impl FnMut() -> bool, timeout: Duration) -> bool {
@@ -297,7 +297,7 @@ pub(super) fn spawn_detached() -> anyhow::Result<u32> {
 /// own port, so it delegates the stop-old-then-start-new dance to this separate process.
 ///
 /// The helper is launched with the `--background` flag rather than the `restart` subcommand on
-/// purpose: `moadim --background` ([`run_background`]) already stops a running instance before
+/// purpose: `moadim --background` ([`super::run_background`]) already stops a running instance before
 /// starting a fresh one, and passing a flag (not a bare positional) means that under the test
 /// harness — where `current_exe` is the test binary — the child is rejected immediately instead of
 /// being interpreted as a test-name filter that would re-enter these very tests.

@@ -468,7 +468,7 @@ pub fn trigger(id: String) -> anyhow::Result<i32> {
 /// machine-readable object instead of the human-readable line.
 ///
 /// When `wait_secs` is `Some`, and no server answers on the first check, polls `GET /health`
-/// every [`WAIT_POLL_INTERVAL`] until one does or the timeout elapses, so a caller can block on
+/// every `WAIT_POLL_INTERVAL` until one does or the timeout elapses, so a caller can block on
 /// startup (`moadim & moadim status --wait`) instead of sleeping blindly before probing.
 ///
 /// Returns the process exit code to surface: `0` when a server is reachable, and

@@ -11,6 +11,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-03
+
+### Changed
+
+- **Pre-push linecheck gate lowered from 3000 → 2500 lines per `.rs` file.** `service_tests.rs` was split again to comply — tags, machines, and model tests now live in `service_model_tests.rs`.
+
+### Changed
+
+- **Pre-push hook linecheck gate lowered from 3000 → 2500 lines per `.rs` file.** `service_tests.rs` (2677 lines) was split into `service_tests.rs` and `service_model_tests.rs` to satisfy the new ceiling.
+
+### Changed
+
+- **Pre-push hook now rejects `.rs` files exceeding 3000 lines.** Step 6 of `.githooks/pre-push` runs `linecheck --max-lines 3000` over all `src/**/*.rs` files. `cargo install linecheck` is required. `service_tests.rs` (3068 lines) was split into `service_tests.rs` and `service_flag_tests.rs` to satisfy the new gate.
+
+### Changed
+
+- **Scheduled and manual trigger history is now recorded in append-only `.log` files.** `scheduled.local.toml` (overwritten on each cron fire) is replaced by `scheduled.log`; the manual-trigger timestamp previously stored in `state.local.toml` moves to `manual.log`. Each file records one Unix timestamp per execution, giving a full run history instead of only the most recent timestamp. A startup migration seeds the log files from any legacy TOML sidecars found on disk and removes the old files, so existing installs upgrade transparently. The `.log` suffix matches the existing `*.log` gitignore pattern seeded into each routine directory.
+
 ## [0.21.0] - 2026-07-03
 
 ### Added
@@ -1733,7 +1751,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/moadim-io/daemon/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/moadim-io/daemon/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/moadim-io/daemon/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1

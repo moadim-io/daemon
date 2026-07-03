@@ -918,3 +918,11 @@ mod service_flag_tests;
 #[cfg(test)]
 #[path = "service_model_tests.rs"]
 mod service_model_tests;
+
+#[cfg(test)]
+#[path = "service_logs_tests.rs"]
+mod service_logs_tests;
+
+#[cfg(test)]
+#[path = "service_trigger_tests.rs"]
+mod service_trigger_tests;

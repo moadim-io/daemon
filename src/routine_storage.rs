@@ -108,6 +108,7 @@ struct RuntimeState {
 /// not, the stored timestamp is seeded as the first log entry and the TOML file is removed.
 #[derive(Debug, Deserialize, Serialize)]
 struct LegacyScheduledState {
+    /// Unix timestamp of the last scheduled (cron) firing stored in the superseded TOML format.
     #[serde(default)]
     last_scheduled_trigger_at: Option<u64>,
 }
@@ -300,7 +301,7 @@ pub fn append_manual_trigger_log(slug: &str, ts: u64) {
         .create(true)
         .append(true)
         .open(&path)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
+        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()))
     {
         log::warn!(
             "append_manual_trigger_log: failed to write {}: {err}",
@@ -340,7 +341,7 @@ pub(crate) fn migrate_trigger_logs_from_dir(dir: &std::path::Path) {
             if let Some(ts) = std::fs::read_to_string(&old_sched)
                 .ok()
                 .and_then(|text| toml::from_str::<LegacyScheduledState>(&text).ok())
-                .and_then(|s| s.last_scheduled_trigger_at)
+                .and_then(|state| state.last_scheduled_trigger_at)
             {
                 let line = format!("{ts}\n");
                 if let Err(err) = std::fs::write(&new_sched, line.as_bytes()) {
@@ -360,7 +361,7 @@ pub(crate) fn migrate_trigger_logs_from_dir(dir: &std::path::Path) {
             if let Some(ts) = std::fs::read_to_string(routine_state_path(&dir_name))
                 .ok()
                 .and_then(|text| toml::from_str::<RuntimeState>(&text).ok())
-                .and_then(|s| s.last_manual_trigger_at)
+                .and_then(|state| state.last_manual_trigger_at)
             {
                 let line = format!("{ts}\n");
                 if let Err(err) = std::fs::write(&new_manual, line.as_bytes()) {

@@ -908,3 +908,7 @@ pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Resul
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
+
+#[cfg(test)]
+#[path = "service_flag_tests.rs"]
+mod service_flag_tests;

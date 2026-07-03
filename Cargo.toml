@@ -118,3 +118,9 @@ use_self = "deny"
 # other path already printed via `.display()` in this codebase. `Path::display`
 # is the correct, consistent way to show a filesystem path to a human.
 unnecessary_debug_formatting = "deny"
+# Reject `&mut T` parameters where the function never actually mutates through
+# the reference. A needlessly mutable borrow widens the API contract without
+# benefit: it prevents callers from passing shared references and obscures that
+# the function is read-only. Cleaning these up tightens every signature to the
+# minimum required access.
+needless_pass_by_ref_mut = "deny"

@@ -247,6 +247,35 @@ fn attention_reason_no_agent_fault_when_registered() {
 }
 
 #[test]
+fn attention_reason_open_flags_surfaces_when_healthy_otherwise() {
+    let mut s = src(Kind::Routine, "r", "*/5 * * * *", true);
+    s.flag_count = 2;
+    assert_eq!(
+        attention_reason(&s, at_ten()),
+        Some(AttentionReason::HasOpenFlags)
+    );
+}
+
+#[test]
+fn attention_reason_config_faults_outrank_flags() {
+    let mut s = src(Kind::Routine, "r", "*/5 * * * *", true);
+    s.machines_empty = true;
+    s.flag_count = 3;
+    // Dormant outranks HasOpenFlags.
+    assert_eq!(
+        attention_reason(&s, at_ten()),
+        Some(AttentionReason::Dormant)
+    );
+}
+
+#[test]
+fn attention_reason_disabled_with_flags_is_none() {
+    let mut s = src(Kind::Routine, "r", "*/5 * * * *", false);
+    s.flag_count = 5;
+    assert_eq!(attention_reason(&s, at_ten()), None);
+}
+
+#[test]
 fn attention_items_sorted_by_rank_then_label() {
     let mut dead = src(Kind::Routine, "zeta-dead", "not a cron", true);
     dead.machines_empty = false;

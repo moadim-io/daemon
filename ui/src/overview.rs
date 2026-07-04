@@ -19,6 +19,7 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::routines::{LockStatus, Routine};
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{Route, ToastKind};
@@ -29,10 +30,6 @@ pub(crate) const DUE_SOON_WINDOW_SECS: i64 = 3_600;
 
 /// How many of the soonest upcoming runs the merged timeline shows.
 pub(crate) const UPCOMING_LIMIT: usize = 8;
-
-/// How often the page re-fetches the underlying records (counts can change as
-/// jobs are toggled elsewhere).
-const REFETCH_MS: u32 = 30_000;
 
 /// How often the live "now" advances so countdowns re-render between fetches.
 const TICK_MS: u32 = 10_000;
@@ -359,16 +356,21 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
         ..Data::default()
     });
     let now = use_state(Local::now);
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
 
-    // Fetch the routine record list.
+    // Fetch the routine record list and lock status together.
     let load = {
         let data = data.clone();
+        let updated_at = updated_at.clone();
         move || {
             let data = data.clone();
+            let updated_at = updated_at.clone();
             spawn_local(async move {
                 let routines = fetch_routines().await;
                 let error = routines.as_ref().err().cloned();
                 let lock_status = fetch_lock_status().await;
+                updated_at.set(js_sys::Date::now());
                 data.set(Data {
                     routines: routines.unwrap_or_default(),
                     loading: false,
@@ -379,19 +381,42 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
         }
     };
 
-    // Load on mount, then re-fetch on a slow cadence.
+    // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| {
-            load();
-            spawn_local(async move {
-                loop {
-                    TimeoutFuture::new(REFETCH_MS).await;
-                    load();
-                }
-            });
+        use_effect_with((), move |_| load());
+    }
+
+    // Auto-refresh loop, re-armed when the interval changes.
+    {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let load = load.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        load();
+                    }
+                });
+            }
+            move || cancelled.set(true)
         });
     }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     // Advance "now" so countdowns re-render between fetches.
     {
@@ -466,6 +491,13 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
             }
             <div class="section-hd">
                 <span class="section-label">{"UPCOMING RUNS"}</span>
+                <div class="section-acts">
+                    <RefreshControl
+                        interval={*interval}
+                        updated_at_ms={*updated_at}
+                        on_change={on_set_interval}
+                    />
+                </div>
             </div>
             <UpcomingTable
                 runs={runs}

@@ -171,7 +171,7 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let due_soon = sources
         .iter()
-        .filter(|s| s.enabled && fires_within(&s.schedule, now, window))
+        .filter(|s| s.enabled && !s.snoozed && fires_within(&s.schedule, now, window))
         .count();
     let flags = sources.iter().map(|s| s.flag_count).sum();
     let snoozed = sources.iter().filter(|s| s.enabled && s.snoozed).count();
@@ -231,13 +231,14 @@ pub(crate) fn attention_items(sources: &[SchedSource], now: DateTime<Local>) -> 
 }
 
 /// The merged, soonest-first list of the next [`UPCOMING_LIMIT`] fires across
-/// every enabled source. Disabled entities and ones with no valid future fire
-/// are dropped; ties on fire time break by label for a stable order.
+/// every enabled, non-snoozed source. Disabled, snoozed, and ones with no
+/// valid future fire are dropped; ties on fire time break by label for a
+/// stable order.
 pub(crate) fn upcoming_runs(sources: &[SchedSource], now: DateTime<Local>) -> Vec<UpcomingRun> {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let mut runs: Vec<UpcomingRun> = sources
         .iter()
-        .filter(|s| s.enabled)
+        .filter(|s| s.enabled && !s.snoozed)
         .filter_map(|s| {
             next_fire_after(&s.schedule, now).map(|at| UpcomingRun {
                 kind: s.kind,

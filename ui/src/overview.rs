@@ -269,9 +269,7 @@ fn targets_no_machine(machines: &[String]) -> bool {
 /// Map a routine onto the shared schedule abstraction.
 fn is_snoozed(routine: &Routine) -> bool {
     let now_secs = (js_sys::Date::now() / 1000.0) as u64;
-    routine
-        .snoozed_until
-        .is_some_and(|until| until > now_secs)
+    routine.snoozed_until.is_some_and(|until| until > now_secs)
         || routine.skip_runs.is_some_and(|n| n > 0)
 }
 

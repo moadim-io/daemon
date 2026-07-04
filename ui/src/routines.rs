@@ -803,6 +803,8 @@ pub enum RGroupBy {
     Machine,
     /// Group by enabled/disabled status.
     Status,
+    /// Group by the derived health badge (Healthy, Snoozed, Dormant, …).
+    Health,
 }
 
 impl RGroupBy {
@@ -814,6 +816,7 @@ impl RGroupBy {
             RGroupBy::Agent => "agent",
             RGroupBy::Machine => "machine",
             RGroupBy::Status => "status",
+            RGroupBy::Health => "health",
         }
     }
 
@@ -824,6 +827,7 @@ impl RGroupBy {
             "agent" => RGroupBy::Agent,
             "machine" => RGroupBy::Machine,
             "status" => RGroupBy::Status,
+            "health" => RGroupBy::Health,
             _ => RGroupBy::None,
         }
     }
@@ -836,6 +840,7 @@ impl RGroupBy {
             RGroupBy::Agent => "Agent",
             RGroupBy::Machine => "Machine",
             RGroupBy::Status => "Status",
+            RGroupBy::Health => "Health",
         }
     }
 }
@@ -858,6 +863,7 @@ pub fn routine_group_key(r: &Routine, by: RGroupBy) -> String {
                 "Disabled".to_string()
             }
         }
+        RGroupBy::Health => routine_health(r, Local::now()).badge().to_string(),
     }
 }
 
@@ -2011,7 +2017,7 @@ pub fn routine_group_by_selector(props: &GroupBySelectorProps) -> Html {
                 aria-label="Group routines by"
                 onchange={on_select}
             >
-                { for [RGroupBy::None, RGroupBy::Agent, RGroupBy::Machine, RGroupBy::Status].iter()
+                { for [RGroupBy::None, RGroupBy::Agent, RGroupBy::Machine, RGroupBy::Status, RGroupBy::Health].iter()
                     .map(|&by| html! {
                         <option value={by.as_str()} selected={cur == by.as_str()}>
                             { by.label() }

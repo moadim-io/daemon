@@ -1432,6 +1432,13 @@
     }
     .day-chip.clickable { cursor: pointer; }
     .day-chip.clickable:hover { filter: brightness(1.12); }
+    .day-chip.snoozed { opacity: 0.45; border-left-color: var(--amber); }
+    .day-chip-flag {
+      font-size: 9px;
+      color: var(--red);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
 
     @media (max-width: 640px) {
       .day-hour { grid-template-columns: 52px 1fr; }

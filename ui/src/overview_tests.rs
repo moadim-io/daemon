@@ -299,6 +299,16 @@ fn attention_items_sorted_by_rank_then_label() {
 }
 
 #[test]
+fn attention_items_carries_flag_count_for_open_flags_reason() {
+    let mut s = src(Kind::Routine, "flagged", "*/5 * * * *", true);
+    s.flag_count = 7;
+    let items = attention_items(&[s], at_ten());
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].reason, AttentionReason::HasOpenFlags);
+    assert_eq!(items[0].flag_count, 7);
+}
+
+#[test]
 fn attention_items_empty_for_healthy_fleet() {
     let items = attention_items(
         &[

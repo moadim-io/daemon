@@ -84,6 +84,7 @@ fn status_facet_roundtrips_and_defaults_to_all() {
         RoutineStatusFacet::Disabled,
         RoutineStatusFacet::Dormant,
         RoutineStatusFacet::DueSoon,
+        RoutineStatusFacet::Snoozed,
     ] {
         assert_eq!(RoutineStatusFacet::from_str(f.as_str()), f);
     }
@@ -280,6 +281,27 @@ fn status_due_soon_matches_enabled_routines_firing_within_window() {
     // Invalid / empty schedule → never fires → not due soon.
     let never = routine("d", "t", "claude", "", &["m1"], &[], true);
     assert!(!f.matches(&never, now(), window()));
+}
+
+#[test]
+fn status_snoozed_matches_only_snoozed_routines() {
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::Snoozed,
+        ..Default::default()
+    };
+    let snoozed = Routine {
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true)
+    };
+    let active = routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    let disabled_snoozed = Routine {
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("c", "t", "claude", "0 * * * *", &["m1"], &[], false)
+    };
+    assert!(f.matches(&snoozed, now(), window()));
+    assert!(!f.matches(&active, now(), window()));
+    // Disabled+snoozed: snoozed filter does not check enabled state.
+    assert!(f.matches(&disabled_snoozed, now(), window()));
 }
 
 // ── Agent facet matching ──────────────────────────────────────────────────────

@@ -99,6 +99,17 @@ fn kpis_snoozed_counts_only_enabled_snoozed_sources() {
 }
 
 #[test]
+fn kpis_dormant_counts_enabled_sources_with_no_machines() {
+    let mut dormant = src(Kind::Routine, "d", "*/5 * * * *", true);
+    dormant.machines_empty = true;
+    let active = src(Kind::Routine, "a", "*/5 * * * *", true); // has machines
+    let mut disabled_no_machine = src(Kind::Routine, "c", "*/5 * * * *", false);
+    disabled_no_machine.machines_empty = true; // disabled → not counted
+    let kpis = compute_kpis(&[dormant, active, disabled_no_machine], at_ten());
+    assert_eq!(kpis.dormant, 1);
+}
+
+#[test]
 fn kpis_snoozed_zero_when_none_snoozed() {
     let sources = vec![
         src(Kind::Routine, "a", "*/5 * * * *", true),

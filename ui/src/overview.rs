@@ -88,6 +88,8 @@ pub(crate) struct Kpis {
     pub flags: usize,
     /// Enabled entities whose scheduled fires are currently suppressed.
     pub snoozed: usize,
+    /// Enabled entities assigned to no machine (fires nowhere).
+    pub dormant: usize,
 }
 
 /// Why an enabled entity needs attention. Listed in triage priority order: a
@@ -184,6 +186,7 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         .count();
     let flags = sources.iter().map(|s| s.flag_count).sum();
     let snoozed = sources.iter().filter(|s| s.enabled && s.snoozed).count();
+    let dormant = sources.iter().filter(|s| s.enabled && s.machines_empty).count();
     Kpis {
         total,
         enabled,
@@ -192,6 +195,7 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         attention: attention_items(sources, now).len(),
         flags,
         snoozed,
+        dormant,
     }
 }
 
@@ -549,6 +553,12 @@ fn overview_stats(props: &OverviewStatsProps) -> Html {
             <div class="stat-card disabled">
                 <div class="stat-label">{"DISABLED"}</div>
                 <div class="stat-val c-amber">{k.disabled}</div>
+            </div>
+            <div class={classes!("stat-card", if k.dormant > 0 { "has-dormant" } else { "dormant" })}>
+                <div class="stat-label">{"DORMANT"}</div>
+                <div class={classes!("stat-val", if k.dormant > 0 { "c-amber" } else { "" })}>
+                    {k.dormant}
+                </div>
             </div>
             <div class="stat-card flags">
                 <div class="stat-label">{"FLAGS"}</div>

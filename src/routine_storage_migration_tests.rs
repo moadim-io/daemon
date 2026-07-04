@@ -210,13 +210,18 @@ fn migrate_prompts_to_subfolder_from_dir_skips_already_migrated() {
 
 #[test]
 fn migrate_prompts_to_subfolder_from_dir_defaults_missing_legacy_prompt_to_empty() {
-    // A routine dir with no prompts/ subfolder and no legacy `prompt` field in routine.toml (nor
-    // any routine.toml at all) still gets an (empty) prompt.pure.md written.
+    // A routine dir with a routine.toml but no `prompt` field (and no prompts/ subfolder yet)
+    // still gets an (empty) prompt.pure.md written.
     let dir = scratch_dir("prompts-subfolder-no-legacy");
     std::fs::create_dir_all(&dir).unwrap();
 
     let routine = dir.join("no-legacy-prompt");
     std::fs::create_dir_all(&routine).unwrap();
+    std::fs::write(
+        routine.join("routine.toml"),
+        "title = \"No Legacy\"\nschedule = \"@daily\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
 
     migrate_prompts_to_subfolder_from_dir(&dir);
 
@@ -224,6 +229,23 @@ fn migrate_prompts_to_subfolder_from_dir_defaults_missing_legacy_prompt_to_empty
         std::fs::read_to_string(routine.join("prompts").join("prompt.pure.md")).unwrap(),
         ""
     );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn migrate_prompts_to_subfolder_from_dir_skips_dir_without_routine_toml() {
+    // An orphaned dir with no routine.toml at all (e.g. a leftover from a failed write) is not a
+    // routine, so it is left untouched rather than getting an empty prompts/ sidecar resurrected.
+    let dir = scratch_dir("prompts-subfolder-no-toml");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let orphan = dir.join("orphan-dir");
+    std::fs::create_dir_all(&orphan).unwrap();
+
+    migrate_prompts_to_subfolder_from_dir(&dir);
+
+    assert!(!orphan.join("prompts").exists());
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -238,6 +260,11 @@ fn migrate_prompts_to_subfolder_from_dir_logs_on_create_dir_failure() {
 
     let routine = dir.join("blocked-routine");
     std::fs::create_dir_all(&routine).unwrap();
+    std::fs::write(
+        routine.join("routine.toml"),
+        "title = \"Blocked\"\nschedule = \"@daily\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
     std::fs::write(routine.join("prompts"), "i block the prompts dir").unwrap();
 
     migrate_prompts_to_subfolder_from_dir(&dir);
@@ -262,6 +289,11 @@ fn migrate_prompts_to_subfolder_from_dir_logs_on_rename_failure() {
 
     let routine = dir.join("rename-fail-routine");
     std::fs::create_dir_all(routine.join("prompts")).unwrap();
+    std::fs::write(
+        routine.join("routine.toml"),
+        "title = \"Rename Fail\"\nschedule = \"@daily\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
     std::fs::write(routine.join("prompt.md"), "old composed body").unwrap();
     std::fs::write(routine.join("prompts").join("prompt.pure.md"), "pure").unwrap();
     std::fs::set_permissions(&routine, std::fs::Permissions::from_mode(0o555)).unwrap();

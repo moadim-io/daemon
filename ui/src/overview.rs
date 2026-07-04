@@ -167,6 +167,8 @@ pub(crate) struct UpcomingRun {
     pub at: DateTime<Local>,
     /// Whether `at` lands within the due-soon window.
     pub soon: bool,
+    /// Total open flags on this routine (0 when none).
+    pub flag_count: usize,
 }
 
 /// Count the KPI tiles from `sources` as of `now`.
@@ -256,6 +258,7 @@ pub(crate) fn upcoming_runs(sources: &[SchedSource], now: DateTime<Local>) -> Ve
                 human: s.human.clone(),
                 at,
                 soon: at - now <= window,
+                flag_count: s.flag_count,
             })
         })
         .collect();
@@ -688,6 +691,11 @@ fn upcoming_table(props: &UpcomingTableProps) -> Html {
                                     <Link<Route> classes={classes!("ov-name-link")} to={to}>
                                         {run.label.clone()}
                                     </Link<Route>>
+                                    if run.flag_count > 0 {
+                                        <span class="ov-flag-badge" title={format!("{} open flag{}", run.flag_count, if run.flag_count == 1 { "" } else { "s" })}>
+                                            {format!("⚑ {}", run.flag_count)}
+                                        </span>
+                                    }
                                 </td>
                                 <td>
                                     <div class="cell-schedule-human">

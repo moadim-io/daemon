@@ -392,6 +392,21 @@ fn upcoming_run_routine_id_differs_from_label() {
 }
 
 #[test]
+fn upcoming_run_carries_flag_count_from_source() {
+    let mut source = src(Kind::Routine, "flagged", "*/5 * * * *", true);
+    source.flag_count = 4;
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].flag_count, 4);
+}
+
+#[test]
+fn upcoming_run_flag_count_zero_when_none() {
+    let source = src(Kind::Routine, "clean", "*/5 * * * *", true);
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].flag_count, 0);
+}
+
+#[test]
 fn sources_of_maps_routines() {
     let routine: Routine = serde_json::from_value(serde_json::json!({
         "id": "r1", "schedule": "0 0 * * *", "title": "T", "agent": "a",

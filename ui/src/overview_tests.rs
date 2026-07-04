@@ -392,6 +392,13 @@ fn upcoming_run_routine_id_differs_from_label() {
 }
 
 #[test]
+fn upcoming_run_carries_schedule_string() {
+    let source = src(Kind::Routine, "r", "*/15 * * * *", true);
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].schedule, "*/15 * * * *");
+}
+
+#[test]
 fn upcoming_run_carries_flag_count_from_source() {
     let mut source = src(Kind::Routine, "flagged", "*/5 * * * *", true);
     source.flag_count = 4;

@@ -163,6 +163,8 @@ pub(crate) struct UpcomingRun {
     pub label: String,
     /// Human schedule description, when present.
     pub human: Option<String>,
+    /// Raw cron expression, used as fallback when `human` is absent.
+    pub schedule: String,
     /// The next fire instant.
     pub at: DateTime<Local>,
     /// Whether `at` lands within the due-soon window.
@@ -256,6 +258,7 @@ pub(crate) fn upcoming_runs(sources: &[SchedSource], now: DateTime<Local>) -> Ve
                 id: s.id.clone(),
                 label: s.label.clone(),
                 human: s.human.clone(),
+                schedule: s.schedule.clone(),
                 at,
                 soon: at - now <= window,
                 flag_count: s.flag_count,
@@ -699,7 +702,7 @@ fn upcoming_table(props: &UpcomingTableProps) -> Html {
                                 </td>
                                 <td>
                                     <div class="cell-schedule-human">
-                                        {run.human.clone().unwrap_or_else(|| "—".into())}
+                                        {run.human.clone().unwrap_or_else(|| run.schedule.clone())}
                                     </div>
                                 </td>
                                 <td class="cell-next">

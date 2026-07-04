@@ -193,7 +193,7 @@ fn from_routine_uses_title_as_label() {
         "enabled": false
     }))
     .expect("valid routine json");
-    let source = from_routine(&routine);
+    let source = from_routine(&routine, at_ten());
     assert_eq!(source.kind, Kind::Routine);
     assert_eq!(source.id, "r1");
     assert_eq!(source.label, "Nightly sweep");
@@ -370,9 +370,25 @@ fn from_routine_carries_agent_registration_and_machines() {
         "machines": ["box-1"], "enabled": true, "agent_registered": false
     }))
     .expect("valid routine json");
-    let s = from_routine(&routine);
+    let s = from_routine(&routine, at_ten());
     assert_eq!(s.agent_registered, Some(false));
     assert!(!s.machines_empty);
+}
+
+/// `snoozed` is derived from the caller-supplied `now`, not the real wall
+/// clock — this is what makes `from_routine` host-testable/deterministic at
+/// all (it previously sampled `js_sys::Date::now()` internally, which panics
+/// outside a wasm target).
+#[test]
+fn from_routine_snoozed_until_respects_passed_in_now() {
+    let routine: Routine = serde_json::from_value(serde_json::json!({
+        "id": "r1", "schedule": "0 0 * * *", "title": "T", "agent": "a", "prompt": "p",
+        "enabled": true, "snoozed_until": at_ten().timestamp() as u64 + 60
+    }))
+    .expect("valid routine json");
+    assert!(from_routine(&routine, at_ten()).snoozed);
+    let later = at_ten() + Duration::hours(1);
+    assert!(!from_routine(&routine, later).snoozed);
 }
 
 #[test]
@@ -394,7 +410,7 @@ fn upcoming_run_routine_id_differs_from_label() {
         "enabled": true
     }))
     .expect("valid routine json");
-    let source = from_routine(&routine);
+    let source = from_routine(&routine, at_ten());
     assert_eq!(source.id, "abc-uuid-123");
     assert_eq!(source.label, "My Routine");
     let runs = upcoming_runs(&[source], at_ten());
@@ -431,7 +447,7 @@ fn sources_of_maps_routines() {
         "prompt": "p", "enabled": true
     }))
     .expect("valid routine json");
-    let sources = sources_of(&[routine]);
+    let sources = sources_of(&[routine], at_ten());
     assert_eq!(sources.len(), 1);
     assert_eq!(sources[0].kind, Kind::Routine);
     assert_eq!(sources[0].label, "T");

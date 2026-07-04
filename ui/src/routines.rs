@@ -3396,11 +3396,13 @@ pub fn routine_flags(props: &FlagsProps) -> Html {
                         FlagScope::General => "general",
                         FlagScope::Local => "local",
                     };
+                    let age = crate::reltime(flag.created_at);
                     html! {
                         <div class="flag-item" key={flag.filename.clone()}>
                             <div class="flag-item-hd">
                                 <span class="flag-type">{&flag.flag_type}</span>
                                 <span class="flag-scope">{scope_label}</span>
+                                <span class="flag-age" title={flag.filename.clone()}>{age}</span>
                                 <button class="btn btn-ghost btn-sm" onclick={on_resolve}>{"RESOLVE"}</button>
                             </div>
                             <div class="flag-desc">{&flag.description}</div>

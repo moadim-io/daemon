@@ -252,7 +252,7 @@ async fn api_lock_status() -> Result<LockStatus, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn api_unlock(scope: &str) -> Result<LockStatus, String> {
+pub(crate) async fn api_unlock(scope: &str) -> Result<LockStatus, String> {
     let resp = Request::delete(&format!("/api/v1/routines/lock?scope={scope}"))
         .send()
         .await

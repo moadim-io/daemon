@@ -20,7 +20,7 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::routines::{LockStatus, Routine};
+use crate::routines::{api_unlock, GlobalLockBanner, LockStatus, Routine};
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{Route, ToastKind};
 
@@ -459,25 +459,25 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     let attention = attention_items(&sources, now_val);
     let runs = upcoming_runs(&sources, now_val);
     let next_run = next_run_summary(&runs, now_val);
-    let locked = data.lock_status.as_ref().is_some_and(|l| l.locked);
-    let lock_shared = data.lock_status.as_ref().is_some_and(|l| l.shared);
-    let lock_local = data.lock_status.as_ref().is_some_and(|l| l.local);
+
+    let lock_status_for_banner = data.lock_status.clone();
+    let on_unlock = {
+        let data = data.clone();
+        Callback::from(move |_: MouseEvent| {
+            let data = data.clone();
+            spawn_local(async move {
+                if let Ok(status) = api_unlock("all").await {
+                    let mut next = (*data).clone();
+                    next.lock_status = Some(status);
+                    data.set(next);
+                }
+            });
+        })
+    };
 
     html! {
         <main>
-            if locked {
-                <div class="lock-banner">
-                    <div class="lock-banner-msg">
-                        {"⚠ ROUTINES GLOBALLY LOCKED — scheduling and manual triggers paused"}
-                        if lock_shared {
-                            <span class="lock-scope-tag">{"SHARED .lock"}</span>
-                        }
-                        if lock_local {
-                            <span class="lock-scope-tag">{"LOCAL .local.lock"}</span>
-                        }
-                    </div>
-                </div>
-            }
+            <GlobalLockBanner status={lock_status_for_banner} on_unlock={on_unlock} />
             <OverviewStats kpis={kpis} next_run={next_run} />
             {
                 // Only render the triage panel when something is actually broken,

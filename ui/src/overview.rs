@@ -19,7 +19,7 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::routines::Routine;
+use crate::routines::{LockStatus, Routine};
 use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
 use crate::{Route, ToastKind};
 
@@ -316,12 +316,23 @@ pub(crate) async fn fetch_routines() -> Result<Vec<Routine>, String> {
         .map_err(|e| e.to_string())
 }
 
+async fn fetch_lock_status() -> Option<LockStatus> {
+    Request::get("/api/v1/routines/lock")
+        .send()
+        .await
+        .ok()?
+        .json::<LockStatus>()
+        .await
+        .ok()
+}
+
 /// Loaded state for the overview shell.
 #[derive(Clone, PartialEq, Default)]
 struct Data {
     routines: Vec<Routine>,
     loading: bool,
     error: Option<String>,
+    lock_status: Option<LockStatus>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -345,10 +356,12 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
             spawn_local(async move {
                 let routines = fetch_routines().await;
                 let error = routines.as_ref().err().cloned();
+                let lock_status = fetch_lock_status().await;
                 data.set(Data {
                     routines: routines.unwrap_or_default(),
                     loading: false,
                     error,
+                    lock_status,
                 });
             });
         }
@@ -403,9 +416,25 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     let attention = attention_items(&sources, now_val);
     let runs = upcoming_runs(&sources, now_val);
     let next_run = next_run_summary(&runs, now_val);
+    let locked = data.lock_status.as_ref().is_some_and(|l| l.locked);
+    let lock_shared = data.lock_status.as_ref().is_some_and(|l| l.shared);
+    let lock_local = data.lock_status.as_ref().is_some_and(|l| l.local);
 
     html! {
         <main>
+            if locked {
+                <div class="lock-banner">
+                    <div class="lock-banner-msg">
+                        {"⚠ ROUTINES GLOBALLY LOCKED — scheduling and manual triggers paused"}
+                        if lock_shared {
+                            <span class="lock-scope-tag">{"SHARED .lock"}</span>
+                        }
+                        if lock_local {
+                            <span class="lock-scope-tag">{"LOCAL .local.lock"}</span>
+                        }
+                    </div>
+                </div>
+            }
             <OverviewStats kpis={kpis} next_run={next_run} />
             {
                 // Only render the triage panel when something is actually broken,

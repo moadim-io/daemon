@@ -86,6 +86,7 @@ fn status_facet_roundtrips_and_defaults_to_all() {
         RoutineStatusFacet::DueSoon,
         RoutineStatusFacet::Snoozed,
         RoutineStatusFacet::HasFlags,
+        RoutineStatusFacet::AgentUnregistered,
     ] {
         assert_eq!(RoutineStatusFacet::from_str(f.as_str()), f);
     }

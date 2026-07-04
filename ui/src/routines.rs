@@ -339,6 +339,7 @@ pub enum RoutineStatusFacet {
     DueSoon,
     Snoozed,
     HasFlags,
+    AgentUnregistered,
 }
 
 impl RoutineStatusFacet {
@@ -352,6 +353,7 @@ impl RoutineStatusFacet {
             RoutineStatusFacet::DueSoon => "due",
             RoutineStatusFacet::Snoozed => "snoozed",
             RoutineStatusFacet::HasFlags => "flagged",
+            RoutineStatusFacet::AgentUnregistered => "agent-unreg",
         }
     }
 
@@ -364,6 +366,7 @@ impl RoutineStatusFacet {
             "due" => RoutineStatusFacet::DueSoon,
             "snoozed" => RoutineStatusFacet::Snoozed,
             "flagged" => RoutineStatusFacet::HasFlags,
+            "agent-unreg" => RoutineStatusFacet::AgentUnregistered,
             _ => RoutineStatusFacet::All,
         }
     }
@@ -500,6 +503,7 @@ impl RoutineFilter {
             }
             RoutineStatusFacet::Snoozed if !is_routine_snoozed(r, now) => return false,
             RoutineStatusFacet::HasFlags if r.flag_count == 0 => return false,
+            RoutineStatusFacet::AgentUnregistered if r.agent_registered => return false,
             _ => {}
         }
         match &self.agent {
@@ -1950,10 +1954,7 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
             { mk(RoutineStatusFacet::DueSoon, "DUE SOON", due_soon, "due") }
             { mk(RoutineStatusFacet::Snoozed, "SNOOZED", snoozed, "snoozed") }
             { mk(RoutineStatusFacet::HasFlags, "FLAGS", flags, if flags > 0 { "flags has-flags" } else { "flags" }) }
-            <div class="stat-card unreg">
-                <div class="stat-label">{"UNREGISTERED AGENT"}</div>
-                <div class="stat-val">{unreg}</div>
-            </div>
+            { mk(RoutineStatusFacet::AgentUnregistered, "UNREGISTERED AGENT", unreg, if unreg > 0 { "unreg has-unreg" } else { "unreg" }) }
         </div>
     }
 }

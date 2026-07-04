@@ -70,6 +70,8 @@ pub(crate) struct SchedSource {
     pub agent_registered: Option<bool>,
     /// Number of open flags raised against this entity.
     pub flag_count: usize,
+    /// Whether scheduled fires are currently suppressed (snoozed or skip-runs active).
+    pub snoozed: bool,
 }
 
 /// Aggregate counts shown as the KPI tile row.
@@ -87,6 +89,8 @@ pub(crate) struct Kpis {
     pub attention: usize,
     /// Total open flags across all entities.
     pub flags: usize,
+    /// Enabled entities whose scheduled fires are currently suppressed.
+    pub snoozed: usize,
 }
 
 /// Why an enabled entity needs attention. Listed in triage priority order: a
@@ -170,6 +174,7 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         .filter(|s| s.enabled && fires_within(&s.schedule, now, window))
         .count();
     let flags = sources.iter().map(|s| s.flag_count).sum();
+    let snoozed = sources.iter().filter(|s| s.enabled && s.snoozed).count();
     Kpis {
         total,
         enabled,
@@ -177,6 +182,7 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         due_soon,
         attention: attention_items(sources, now).len(),
         flags,
+        snoozed,
     }
 }
 
@@ -261,6 +267,12 @@ fn targets_no_machine(machines: &[String]) -> bool {
 }
 
 /// Map a routine onto the shared schedule abstraction.
+fn is_snoozed(routine: &Routine) -> bool {
+    let now_secs = (js_sys::Date::now() / 1000.0) as u64;
+    routine.snoozed_until.is_some_and(|until| until > now_secs)
+        || routine.skip_runs.is_some_and(|n| n > 0)
+}
+
 fn from_routine(routine: &Routine) -> SchedSource {
     SchedSource {
         kind: Kind::Routine,
@@ -272,6 +284,7 @@ fn from_routine(routine: &Routine) -> SchedSource {
         machines_empty: targets_no_machine(&routine.machines),
         agent_registered: Some(routine.agent_registered),
         flag_count: routine.flag_count,
+        snoozed: is_snoozed(routine),
     }
 }
 
@@ -461,6 +474,12 @@ fn overview_stats(props: &OverviewStatsProps) -> Html {
                 <div class="stat-label">{"FLAGS"}</div>
                 <div class={classes!("stat-val", if k.flags > 0 { "c-red" } else { "c-accent" })}>
                     {k.flags}
+                </div>
+            </div>
+            <div class="stat-card snoozed">
+                <div class="stat-label">{"SNOOZED"}</div>
+                <div class={classes!("stat-val", if k.snoozed > 0 { "c-amber" } else { "c-accent" })}>
+                    {k.snoozed}
                 </div>
             </div>
             <div class="stat-card system">

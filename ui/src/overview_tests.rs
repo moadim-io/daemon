@@ -28,6 +28,7 @@ fn src(kind: Kind, label: &str, schedule: &str, enabled: bool) -> SchedSource {
             Kind::Routine => Some(true),
         },
         flag_count: 0,
+        snoozed: false,
     }
 }
 
@@ -53,6 +54,7 @@ fn kpis_default_is_zeroed() {
     assert_eq!(kpis.disabled, 0);
     assert_eq!(kpis.due_soon, 0);
     assert_eq!(kpis.flags, 0);
+    assert_eq!(kpis.snoozed, 0);
 }
 
 #[test]
@@ -74,6 +76,27 @@ fn kpis_flags_zero_when_no_flags() {
     ];
     let kpis = compute_kpis(&sources, at_ten());
     assert_eq!(kpis.flags, 0);
+}
+
+#[test]
+fn kpis_snoozed_counts_only_enabled_snoozed_sources() {
+    let mut a = src(Kind::Routine, "a", "*/5 * * * *", true);
+    a.snoozed = true;
+    let mut b = src(Kind::Routine, "b", "0 0 * * *", false); // disabled — not counted
+    b.snoozed = true;
+    let c = src(Kind::Routine, "c", "*/5 * * * *", true);
+    let kpis = compute_kpis(&[a, b, c], at_ten());
+    assert_eq!(kpis.snoozed, 1);
+}
+
+#[test]
+fn kpis_snoozed_zero_when_none_snoozed() {
+    let sources = vec![
+        src(Kind::Routine, "a", "*/5 * * * *", true),
+        src(Kind::Routine, "b", "0 0 * * *", true),
+    ];
+    let kpis = compute_kpis(&sources, at_ten());
+    assert_eq!(kpis.snoozed, 0);
 }
 
 #[test]

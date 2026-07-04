@@ -151,6 +151,8 @@ pub(crate) struct AttentionItem {
     pub label: String,
     /// The single most fundamental fault to fix.
     pub reason: AttentionReason,
+    /// Open flag count; non-zero only when `reason == HasOpenFlags`.
+    pub flag_count: usize,
 }
 
 /// One entry in the merged upcoming-runs timeline.
@@ -226,6 +228,7 @@ pub(crate) fn attention_items(sources: &[SchedSource], now: DateTime<Local>) -> 
             attention_reason(s, now).map(|reason| AttentionItem {
                 kind: s.kind,
                 label: s.label.clone(),
+                flag_count: s.flag_count,
                 reason,
             })
         })
@@ -564,7 +567,13 @@ fn attention_table(props: &AttentionTableProps) -> Html {
                                     </Link<Route>>
                                 </td>
                                 <td><span class="attn-badge">{item.reason.badge()}</span></td>
-                                <td class="attn-detail">{item.reason.detail()}</td>
+                                <td class="attn-detail">{
+                                    if item.reason == AttentionReason::HasOpenFlags && item.flag_count > 0 {
+                                        format!("{} open flag{} — needs review", item.flag_count, if item.flag_count == 1 { "" } else { "s" })
+                                    } else {
+                                        item.reason.detail().to_string()
+                                    }
+                                }</td>
                             </tr>
                         }
                     }) }

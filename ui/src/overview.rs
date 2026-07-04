@@ -186,7 +186,10 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         .count();
     let flags = sources.iter().map(|s| s.flag_count).sum();
     let snoozed = sources.iter().filter(|s| s.enabled && s.snoozed).count();
-    let dormant = sources.iter().filter(|s| s.enabled && s.machines_empty).count();
+    let dormant = sources
+        .iter()
+        .filter(|s| s.enabled && s.machines_empty)
+        .count();
     Kpis {
         total,
         enabled,

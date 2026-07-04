@@ -215,8 +215,9 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
             title: routine.title.clone(),
             subtitle: routine_subtitle(routine),
             keywords: format!(
-                "{} {} {} routine",
-                routine.id, routine.agent, routine.schedule
+                "{} {} {} {} routine",
+                routine.id, routine.agent, routine.schedule,
+                routine.tags.join(" ")
             ),
         });
     }

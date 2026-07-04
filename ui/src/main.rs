@@ -60,11 +60,21 @@ pub(crate) fn apply_theme(light: bool) {
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+pub struct HealthDeps {
+    pub tmux: bool,
+    pub python3: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
 pub struct Health {
     pub status: String,
     pub uptime_secs: Option<u64>,
     pub running: bool,
     pub version: Option<String>,
+    #[serde(default)]
+    pub git_sha: Option<String>,
+    #[serde(default)]
+    pub dependencies: Option<HealthDeps>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -586,11 +596,18 @@ pub fn header(props: &HeaderProps) -> Html {
         "health-dot error"
     };
     let status = props.health.status.to_uppercase();
-    let version = props
+    let version_text = props
         .health
         .version
         .as_ref()
         .map(|v| format!("/ v{v}"))
+        .unwrap_or_default();
+    let version_title = props
+        .health
+        .git_sha
+        .as_deref()
+        .filter(|s| *s != "unknown" && !s.is_empty())
+        .map(|sha| format!("build: {sha}"))
         .unwrap_or_default();
     let uptime = props
         .health
@@ -603,15 +620,39 @@ pub fn header(props: &HeaderProps) -> Html {
     } else {
         "Switch to light mode"
     };
+    let missing_tmux = props
+        .health
+        .dependencies
+        .as_ref()
+        .is_some_and(|d| !d.tmux);
+    let missing_python3 = props
+        .health
+        .dependencies
+        .as_ref()
+        .is_some_and(|d| !d.python3);
 
     html! {
         <header>
             <h1 class="logo">
                 {"MOADIM"}
                 <span class="logo-sub">{"/ CONTROL"}</span>
-                <span class="logo-version">{version}</span>
+                if !version_title.is_empty() {
+                    <span class="logo-version" title={version_title}>{version_text}</span>
+                } else {
+                    <span class="logo-version">{version_text}</span>
+                }
             </h1>
             <div class="header-right">
+                if missing_tmux {
+                    <span class="dep-warn" title="tmux is not on the daemon's PATH — all routine runs will silently fail">
+                        {"⚠ NO TMUX"}
+                    </span>
+                }
+                if missing_python3 {
+                    <span class="dep-warn dep-warn-soft" title="python3 is not on the daemon's PATH — the claude agent setup step will fail silently">
+                        {"⚠ NO PYTHON3"}
+                    </span>
+                }
                 <div class="health">
                     <div class={dot_class}></div>
                     <span class="health-status">{status}</span>

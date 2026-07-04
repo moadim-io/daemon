@@ -441,6 +441,12 @@ pub(crate) fn migrate_prompts_to_subfolder_from_dir(dir: &std::path::Path) {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }
+        // Skip dirs with no `routine.toml` at all: not a routine (e.g. an orphaned/leftover dir),
+        // so there is nothing to migrate. Without this guard the migration resurrects an empty
+        // `prompts/prompt.pure.md` sidecar in such dirs on every startup.
+        if !entry.path().join("routine.toml").exists() {
+            continue;
+        }
         let prompts_dir = entry.path().join("prompts");
         if let Err(err) = std::fs::create_dir_all(&prompts_dir) {
             log::warn!(

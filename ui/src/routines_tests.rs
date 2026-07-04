@@ -859,6 +859,42 @@ fn health_fully_configured_is_healthy() {
 }
 
 #[test]
+fn is_routine_snoozed_true_when_deadline_in_future() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn is_routine_snoozed_false_when_deadline_past() {
+    let r = Routine {
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(!is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn is_routine_snoozed_true_when_skip_runs_nonzero() {
+    let r = Routine {
+        skip_runs: Some(3),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn is_routine_snoozed_false_when_skip_runs_zero() {
+    let r = Routine {
+        skip_runs: Some(0),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(!is_routine_snoozed(&r, now()));
+}
+
+#[test]
 fn health_snoozed_until_future_is_snoozed() {
     let r = Routine {
         agent_registered: true,

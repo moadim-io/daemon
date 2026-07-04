@@ -617,6 +617,14 @@ impl RoutineHealth {
 ///
 /// Faults are checked in priority order — `Dormant` outranks `DeadSchedule`
 /// which outranks `AgentMissing` — matching the Overview triage ordering.
+/// `true` when the routine's scheduled fires are currently suppressed by a
+/// snooze deadline or a non-zero skip-runs counter.
+pub(crate) fn is_routine_snoozed(r: &Routine, now: DateTime<Local>) -> bool {
+    r.snoozed_until
+        .is_some_and(|until| (until as i64) > now.timestamp())
+        || r.skip_runs.is_some_and(|runs| runs > 0)
+}
+
 #[must_use]
 pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
     if !r.enabled {
@@ -631,11 +639,7 @@ pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
     if !r.agent_registered {
         return RoutineHealth::AgentMissing;
     }
-    let snoozed = r
-        .snoozed_until
-        .is_some_and(|until| (until as i64) > now.timestamp())
-        || r.skip_runs.is_some_and(|runs| runs > 0);
-    if snoozed {
+    if is_routine_snoozed(r, now) {
         return RoutineHealth::Snoozed;
     }
     RoutineHealth::Healthy
@@ -2444,6 +2448,9 @@ pub fn routine_table(props: &TableProps) -> Html {
 pub(crate) fn next_routine_run_cell(routine: &Routine, now: chrono::DateTime<Local>) -> Html {
     if !routine.enabled {
         return html! { <span class="cell-next muted">{"paused"}</span> };
+    }
+    if is_routine_snoozed(routine, now) {
+        return html! { <span class="cell-next muted">{"snoozed"}</span> };
     }
     match next_fire_after(&routine.schedule, now) {
         Some(then) => {

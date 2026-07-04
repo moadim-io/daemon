@@ -2458,6 +2458,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
+                        <th>{"MACHINES"}</th>
                         <th>{"TAGS"}</th>
                         <th>{"TTL"}</th>
                         { sort_th("HEALTH", RCol::Health, props.sort_col, props.sort_dir, &props.on_sort) }
@@ -2569,6 +2570,12 @@ pub fn routine_row(props: &RowProps) -> Html {
     let cron_text = r.schedule_description.as_deref().unwrap_or("—").to_string();
     let updated = reltime(r.updated_at);
     let repos = r.repositories.len();
+    let machines: Vec<&str> = r
+        .machines
+        .iter()
+        .map(|m| m.as_str())
+        .filter(|m| !m.trim().is_empty())
+        .collect();
 
     let on_edit = {
         let cb = props.on_edit.clone();
@@ -2717,6 +2724,14 @@ pub fn routine_row(props: &RowProps) -> Html {
                 } else {
                     let repo_names = r.repositories.iter().map(|rr| rr.repository.as_str()).collect::<Vec<_>>().join("\n");
                     html! { <span class="cell-meta" title={repo_names}>{format!("{repos}")}</span> }
+                }
+            }</td>
+            <td>{
+                if machines.is_empty() {
+                    html! { <span class="cell-meta cell-no-machines">{"—"}</span> }
+                } else {
+                    let machine_names = machines.join("\n");
+                    html! { <span class="cell-meta" title={machine_names}>{format!("{}", machines.len())}</span> }
                 }
             }</td>
             <td>

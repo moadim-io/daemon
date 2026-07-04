@@ -2704,7 +2704,14 @@ pub fn routine_row(props: &RowProps) -> Html {
                     {&r.agent}
                 </span>
             </td>
-            <td><span class="cell-meta">{ if repos == 0 { "—".to_string() } else { format!("{repos}") } }</span></td>
+            <td>{
+                if repos == 0 {
+                    html! { <span class="cell-meta">{"—"}</span> }
+                } else {
+                    let repo_names = r.repositories.iter().map(|rr| rr.repository.as_str()).collect::<Vec<_>>().join("\n");
+                    html! { <span class="cell-meta" title={repo_names}>{format!("{repos}")}</span> }
+                }
+            }</td>
             <td>
                 {
                     if r.tags.is_empty() {

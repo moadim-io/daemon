@@ -290,14 +290,18 @@ fn targets_no_machine(machines: &[String]) -> bool {
     machines.iter().all(|m| m.trim().is_empty())
 }
 
-/// Map a routine onto the shared schedule abstraction.
-fn is_snoozed(routine: &Routine) -> bool {
-    let now_secs = (js_sys::Date::now() / 1000.0) as u64;
-    routine.snoozed_until.is_some_and(|until| until > now_secs)
+/// Map a routine onto the shared schedule abstraction. Takes `now` explicitly
+/// (rather than sampling the wall clock here) so this stays a pure, host-
+/// testable function and stays in lockstep with the same `now` the rest of
+/// the page's KPI/attention/upcoming-run math uses.
+fn is_snoozed(routine: &Routine, now: DateTime<Local>) -> bool {
+    routine
+        .snoozed_until
+        .is_some_and(|until| (until as i64) > now.timestamp())
         || routine.skip_runs.is_some_and(|n| n > 0)
 }
 
-fn from_routine(routine: &Routine) -> SchedSource {
+fn from_routine(routine: &Routine, now: DateTime<Local>) -> SchedSource {
     SchedSource {
         kind: Kind::Routine,
         id: routine.id.clone(),
@@ -308,13 +312,13 @@ fn from_routine(routine: &Routine) -> SchedSource {
         machines_empty: targets_no_machine(&routine.machines),
         agent_registered: Some(routine.agent_registered),
         flag_count: routine.flag_count,
-        snoozed: is_snoozed(routine),
+        snoozed: is_snoozed(routine, now),
     }
 }
 
 /// Map the routine record list into one `SchedSource` vector.
-fn sources_of(routines: &[Routine]) -> Vec<SchedSource> {
-    routines.iter().map(from_routine).collect()
+fn sources_of(routines: &[Routine], now: DateTime<Local>) -> Vec<SchedSource> {
+    routines.iter().map(|r| from_routine(r, now)).collect()
 }
 
 async fn api_trigger_routine(id: &str) -> Result<(), String> {
@@ -462,7 +466,7 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     };
 
     let now_val = *now;
-    let sources = sources_of(&data.routines);
+    let sources = sources_of(&data.routines, now_val);
     let kpis = compute_kpis(&sources, now_val);
     let attention = attention_items(&sources, now_val);
     let runs = upcoming_runs(&sources, now_val);

@@ -621,7 +621,11 @@ pub fn header(props: &HeaderProps) -> Html {
         "Switch to light mode"
     };
     let missing_tmux = props.health.dependencies.as_ref().is_some_and(|d| !d.tmux);
-    let missing_python3 = props.health.dependencies.as_ref().is_some_and(|d| !d.python3);
+    let missing_python3 = props
+        .health
+        .dependencies
+        .as_ref()
+        .is_some_and(|d| !d.python3);
 
     html! {
         <header>

@@ -147,6 +147,20 @@ fn non_matching_commands_are_dropped() {
 // ─── build_commands ──────────────────────────────────────────────────────────
 
 #[test]
+fn routine_tags_appear_in_keywords() {
+    let mut r = routine("r1", "Report", "claude", "0 0 * * *", None);
+    r.tags = vec!["security".into(), "weekly".into()];
+    r.agent_registered = true;
+    let commands = build_commands(&[r]);
+    let kw = &commands.last().unwrap().keywords;
+    assert!(
+        kw.contains("security"),
+        "tag 'security' not in keywords: {kw}"
+    );
+    assert!(kw.contains("weekly"), "tag 'weekly' not in keywords: {kw}");
+}
+
+#[test]
 fn build_lists_pages_then_routines() {
     let routines = vec![routine("r1", "Nightly Audit", "claude", "0 0 * * *", None)];
     let commands = build_commands(&routines);

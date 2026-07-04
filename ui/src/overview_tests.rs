@@ -27,6 +27,7 @@ fn src(kind: Kind, label: &str, schedule: &str, enabled: bool) -> SchedSource {
         agent_registered: match kind {
             Kind::Routine => Some(true),
         },
+        flag_count: 0,
     }
 }
 
@@ -51,6 +52,28 @@ fn kpis_default_is_zeroed() {
     assert_eq!(kpis.enabled, 0);
     assert_eq!(kpis.disabled, 0);
     assert_eq!(kpis.due_soon, 0);
+    assert_eq!(kpis.flags, 0);
+}
+
+#[test]
+fn kpis_flags_sums_across_all_sources() {
+    let mut a = src(Kind::Routine, "a", "*/5 * * * *", true);
+    a.flag_count = 3;
+    let mut b = src(Kind::Routine, "b", "0 0 * * *", false);
+    b.flag_count = 1;
+    let c = src(Kind::Routine, "c", "*/5 * * * *", true);
+    let kpis = compute_kpis(&[a, b, c], at_ten());
+    assert_eq!(kpis.flags, 4);
+}
+
+#[test]
+fn kpis_flags_zero_when_no_flags() {
+    let sources = vec![
+        src(Kind::Routine, "a", "*/5 * * * *", true),
+        src(Kind::Routine, "b", "0 0 * * *", true),
+    ];
+    let kpis = compute_kpis(&sources, at_ten());
+    assert_eq!(kpis.flags, 0);
 }
 
 #[test]

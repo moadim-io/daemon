@@ -1898,6 +1898,11 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
         .iter()
         .filter(|r| r.enabled && is_routine_snoozed(r, props.now))
         .count();
+    let dormant = props
+        .routines
+        .iter()
+        .filter(|r| r.enabled && r.machines.is_empty())
+        .count();
     let flags: usize = props.routines.iter().map(|r| r.flag_count).sum();
     let unreg = props
         .routines
@@ -1935,6 +1940,7 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
             { mk(RoutineStatusFacet::All, "TOTAL", total, "all") }
             { mk(RoutineStatusFacet::Enabled, "ENABLED", enabled, "enabled") }
             { mk(RoutineStatusFacet::Disabled, "DISABLED", disabled, "disabled") }
+            { mk(RoutineStatusFacet::Dormant, "DORMANT", dormant, if dormant > 0 { "dormant has-dormant" } else { "dormant" }) }
             { mk(RoutineStatusFacet::DueSoon, "DUE SOON", due_soon, "due") }
             { mk(RoutineStatusFacet::Snoozed, "SNOOZED", snoozed, "snoozed") }
             { mk(RoutineStatusFacet::HasFlags, "FLAGS", flags, if flags > 0 { "flags has-flags" } else { "flags" }) }

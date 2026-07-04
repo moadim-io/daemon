@@ -880,6 +880,68 @@ fn health_fully_configured_is_healthy() {
     assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
 }
 
+// ─── snooze_detail ────────────────────────────────────────────────────────────
+
+#[test]
+fn snooze_detail_empty_when_not_snoozed() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["m"], &[], true);
+    assert_eq!(snooze_detail(&r, now()), "");
+}
+
+#[test]
+fn snooze_detail_shows_minutes_left_for_short_snooze() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::minutes(45)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "45m left");
+}
+
+#[test]
+fn snooze_detail_shows_hours_left() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::hours(3)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "3h left");
+}
+
+#[test]
+fn snooze_detail_shows_days_left() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::days(2)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "2d left");
+}
+
+#[test]
+fn snooze_detail_shows_skip_runs() {
+    let r = Routine {
+        skip_runs: Some(5),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "5 runs skipped");
+}
+
+#[test]
+fn snooze_detail_skip_runs_singular() {
+    let r = Routine {
+        skip_runs: Some(1),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "1 run skipped");
+}
+
+#[test]
+fn snooze_detail_empty_when_deadline_past() {
+    let r = Routine {
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "");
+}
+
 #[test]
 fn is_routine_snoozed_true_when_deadline_in_future() {
     let r = Routine {

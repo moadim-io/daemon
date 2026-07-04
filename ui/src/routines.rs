@@ -629,6 +629,31 @@ pub(crate) fn is_routine_snoozed(r: &Routine, now: DateTime<Local>) -> bool {
         || r.skip_runs.is_some_and(|runs| runs > 0)
 }
 
+/// Short human-readable detail for a snoozed routine's NEXT RUN cell:
+/// "until HH:MM" for a timestamp snooze, or "N run(s) skipped" for a
+/// counter snooze. Returns an empty string when neither applies.
+pub(crate) fn snooze_detail(r: &Routine, now: DateTime<Local>) -> String {
+    if let Some(until) = r.snoozed_until {
+        let until_secs = until as i64;
+        if until_secs > now.timestamp() {
+            let remaining = (until_secs - now.timestamp()) as u64;
+            return if remaining < 3_600 {
+                format!("{}m left", remaining / 60)
+            } else if remaining < 86_400 {
+                format!("{}h left", remaining / 3_600)
+            } else {
+                format!("{}d left", remaining / 86_400)
+            };
+        }
+    }
+    if let Some(runs) = r.skip_runs {
+        if runs > 0 {
+            return format!("{runs} run{} skipped", if runs == 1 { "" } else { "s" });
+        }
+    }
+    String::new()
+}
+
 #[must_use]
 pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
     if !r.enabled {
@@ -2471,7 +2496,15 @@ pub(crate) fn next_routine_run_cell(routine: &Routine, now: chrono::DateTime<Loc
         return html! { <span class="cell-next muted">{"paused"}</span> };
     }
     if is_routine_snoozed(routine, now) {
-        return html! { <span class="cell-next muted">{"snoozed"}</span> };
+        let detail = snooze_detail(routine, now);
+        return html! {
+            <div class="cell-next">
+                <span class="cell-next muted">{"snoozed"}</span>
+                if !detail.is_empty() {
+                    <div class="cell-next-until muted">{detail}</div>
+                }
+            </div>
+        };
     }
     match next_fire_after(&routine.schedule, now) {
         Some(then) => {

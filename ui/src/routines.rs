@@ -468,12 +468,14 @@ impl RepositoryFacet {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RoutineFilter {
     /// Free-text needle matched across title, agent, prompt, repositories,
-    /// schedule, and schedule_description.
+    /// schedule, schedule_description, and tags.
     pub query: String,
     pub status: RoutineStatusFacet,
     pub agent: AgentFacet,
     pub machine: RoutineMachineFacet,
     pub repository: RepositoryFacet,
+    /// When `Some(tag)`, only routines carrying that tag pass.
+    pub tag: Option<String>,
 }
 
 impl RoutineFilter {
@@ -485,6 +487,7 @@ impl RoutineFilter {
             || self.agent != AgentFacet::All
             || self.machine != RoutineMachineFacet::Any
             || self.repository != RepositoryFacet::All
+            || self.tag.is_some()
     }
 
     /// Does this routine survive the filter? Facets AND together.
@@ -524,6 +527,11 @@ impl RoutineFilter {
             }
             _ => {}
         }
+        if let Some(tag) = &self.tag {
+            if !r.tags.iter().any(|t| t == tag) {
+                return false;
+            }
+        }
         let q = self.query.trim().to_lowercase();
         if !q.is_empty() {
             let repos = r
@@ -537,13 +545,15 @@ impl RoutineFilter {
                 .as_deref()
                 .unwrap_or_default()
                 .to_lowercase();
+            let tags = r.tags.join(" ").to_lowercase();
             let hay = format!(
-                "{} {} {} {} {}",
+                "{} {} {} {} {} {}",
                 r.title.to_lowercase(),
                 r.agent.to_lowercase(),
                 r.schedule.to_lowercase(),
                 repos,
                 desc,
+                tags,
             );
             if !hay.contains(&q) {
                 return false;
@@ -727,6 +737,20 @@ pub fn distinct_repositories(routines: &[Routine]) -> Vec<String> {
     for r in routines {
         for repo in &r.repositories {
             set.insert(repo.repository.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Distinct tags across all routines, sorted.
+#[must_use]
+pub fn distinct_tags(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        for tag in &r.tags {
+            if !tag.trim().is_empty() {
+                set.insert(tag.clone());
+            }
         }
     }
     set.into_iter().collect()
@@ -1001,6 +1025,7 @@ pub enum RAction {
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
     SetRepositoryFacet(RepositoryFacet),
+    SetTagFacet(Option<String>),
     ClearFilters,
     /// Change the group-by dimension for the table view.
     SetGroupBy(RGroupBy),
@@ -1059,6 +1084,7 @@ impl Reducible for RState {
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
             RAction::SetRepositoryFacet(rp) => s.filter.repository = rp,
+            RAction::SetTagFacet(t) => s.filter.tag = t,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
             RAction::SetGroupBy(by) => s.group_by = by,
             RAction::SortByCol(col) => {
@@ -1319,6 +1345,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_repository = {
         let state = state.clone();
         Callback::from(move |rp: RepositoryFacet| state.dispatch(RAction::SetRepositoryFacet(rp)))
+    };
+    let on_set_tag = {
+        let state = state.clone();
+        Callback::from(move |t: Option<String>| state.dispatch(RAction::SetTagFacet(t)))
     };
     let on_clear_filters = {
         let state = state.clone();
@@ -1658,6 +1688,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
     let repository_options = distinct_repositories(&routines);
+    let tag_options = distinct_tags(&routines);
     let mut machine_options = distinct_machines_r(&routines);
     // Always include the current machine so the default filter option is visible in the dropdown
     // even before any routine targets it.
@@ -1741,6 +1772,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 agents={agent_options}
                                 machines={machine_options}
                                 repositories={repository_options}
+                                tags={tag_options}
                                 shown={shown}
                                 total={total_routines}
                                 search_ref={search_ref.clone()}
@@ -1749,6 +1781,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_agent={on_set_agent}
                                 on_machine={on_set_machine}
                                 on_repository={on_set_repository}
+                                on_tag={on_set_tag}
                                 on_clear={on_clear_filters.clone()}
                             />
                             <RoutineBulkBar
@@ -2041,6 +2074,8 @@ pub struct FilterSortBarProps {
     pub machines: Vec<String>,
     /// Distinct repository URLs across all routines, for the repository-facet options.
     pub repositories: Vec<String>,
+    /// Distinct tags across all routines, for the tag-facet options.
+    pub tags: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -2051,6 +2086,7 @@ pub struct FilterSortBarProps {
     pub on_agent: Callback<AgentFacet>,
     pub on_machine: Callback<RoutineMachineFacet>,
     pub on_repository: Callback<RepositoryFacet>,
+    pub on_tag: Callback<Option<String>>,
     pub on_clear: Callback<()>,
 }
 
@@ -2092,6 +2128,14 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
             cb.emit(RepositoryFacet::from_value(&select.value()));
         })
     };
+    let on_tag_change = {
+        let cb = props.on_tag.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            let v = select.value();
+            cb.emit(if v.is_empty() { None } else { Some(v) });
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -2100,6 +2144,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
     let repository_val = props.filter.repository.as_value();
+    let tag_val = props.filter.tag.clone().unwrap_or_default();
     let active = props.filter.is_active();
 
     html! {
@@ -2146,6 +2191,15 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                         <option value={r.clone()} selected={repository_val == *r}>{r.clone()}</option>
                     }) }
                 </select>
+                if !props.tags.is_empty() {
+                    <span class="filter-label">{"TAG"}</span>
+                    <select class="filter-select" aria-label="Tag filter" onchange={on_tag_change}>
+                        <option value="" selected={tag_val.is_empty()}>{"Any"}</option>
+                        { for props.tags.iter().map(|t| html! {
+                            <option value={t.clone()} selected={tag_val == *t}>{t.clone()}</option>
+                        }) }
+                    </select>
+                }
             </div>
             <div class="filter-field">
                 <span class="filter-count">

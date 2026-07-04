@@ -414,6 +414,58 @@ fn repository_named_matches_only_routines_listing_that_repository() {
     assert!(!f.matches(&none, now(), window()));
 }
 
+// ── Tag filter ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn tag_none_matches_all_routines() {
+    let f = RoutineFilter {
+        tag: None,
+        ..Default::default()
+    };
+    let mut r = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    r.tags = vec!["foo".into()];
+    assert!(f.matches(&r, now(), window()));
+}
+
+#[test]
+fn tag_some_matches_only_routines_with_that_tag() {
+    let f = RoutineFilter {
+        tag: Some("prod".into()),
+        ..Default::default()
+    };
+    let mut hit = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    hit.tags = vec!["prod".into(), "daily".into()];
+    let mut miss = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    miss.tags = vec!["daily".into()];
+    let untagged = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&miss, now(), window()));
+    assert!(!f.matches(&untagged, now(), window()));
+}
+
+#[test]
+fn distinct_tags_returns_sorted_unique_tags() {
+    let mut a = routine("a", "t", "claude", "0 * * * *", &[], &[], true);
+    a.tags = vec!["beta".into(), "prod".into()];
+    let mut b = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    b.tags = vec!["prod".into(), "alpha".into()];
+    let tags = distinct_tags(&[a, b]);
+    assert_eq!(tags, vec!["alpha", "beta", "prod"]);
+}
+
+#[test]
+fn query_also_matches_tags() {
+    let f = RoutineFilter {
+        query: "billing".into(),
+        ..Default::default()
+    };
+    let mut tagged = routine("a", "routine-a", "claude", "0 * * * *", &[], &[], true);
+    tagged.tags = vec!["billing".into()];
+    let untagged = routine("b", "routine-b", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&tagged, now(), window()));
+    assert!(!f.matches(&untagged, now(), window()));
+}
+
 // ── Free-text search ──────────────────────────────────────────────────────────
 
 #[test]

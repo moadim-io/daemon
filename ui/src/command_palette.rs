@@ -213,7 +213,7 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
         commands.push(Command {
             kind: CmdKind::Routine,
             title: routine.title.clone(),
-            subtitle: schedule_label(&routine.schedule_description, &routine.schedule),
+            subtitle: routine_subtitle(routine),
             keywords: format!(
                 "{} {} {} routine",
                 routine.id, routine.agent, routine.schedule
@@ -221,6 +221,28 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
         });
     }
     commands
+}
+
+/// Subtitle for a routine command: schedule label optionally suffixed with
+/// comma-separated status tags so health issues are visible in search results.
+pub(crate) fn routine_subtitle(routine: &Routine) -> String {
+    let sched = schedule_label(&routine.schedule_description, &routine.schedule);
+    let mut tags: Vec<&str> = Vec::new();
+    if !routine.enabled {
+        tags.push("DISABLED");
+    } else if routine.skip_runs.is_some_and(|n| n > 0) {
+        tags.push("SNOOZED");
+    } else if !routine.agent_registered {
+        tags.push("AGENT MISSING");
+    }
+    if routine.flag_count > 0 {
+        tags.push("FLAGS");
+    }
+    if tags.is_empty() {
+        sched
+    } else {
+        format!("{sched} — {}", tags.join(", "))
+    }
 }
 
 /// The human schedule description when present, else the raw expression, else a

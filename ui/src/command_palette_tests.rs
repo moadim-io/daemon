@@ -153,7 +153,10 @@ fn routine_tags_appear_in_keywords() {
     r.agent_registered = true;
     let commands = build_commands(&[r]);
     let kw = &commands.last().unwrap().keywords;
-    assert!(kw.contains("security"), "tag 'security' not in keywords: {kw}");
+    assert!(
+        kw.contains("security"),
+        "tag 'security' not in keywords: {kw}"
+    );
     assert!(kw.contains("weekly"), "tag 'weekly' not in keywords: {kw}");
 }
 

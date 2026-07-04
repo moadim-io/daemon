@@ -85,6 +85,7 @@ fn status_facet_roundtrips_and_defaults_to_all() {
         RoutineStatusFacet::Dormant,
         RoutineStatusFacet::DueSoon,
         RoutineStatusFacet::Snoozed,
+        RoutineStatusFacet::HasFlags,
     ] {
         assert_eq!(RoutineStatusFacet::from_str(f.as_str()), f);
     }
@@ -302,6 +303,21 @@ fn status_snoozed_matches_only_snoozed_routines() {
     assert!(!f.matches(&active, now(), window()));
     // Disabled+snoozed: snoozed filter does not check enabled state.
     assert!(f.matches(&disabled_snoozed, now(), window()));
+}
+
+#[test]
+fn status_has_flags_matches_only_flagged_routines() {
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::HasFlags,
+        ..Default::default()
+    };
+    let flagged = Routine {
+        flag_count: 2,
+        ..routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true)
+    };
+    let clean = routine("b", "t", "claude", "0 * * * *", &["m1"], &[], true);
+    assert!(f.matches(&flagged, now(), window()));
+    assert!(!f.matches(&clean, now(), window()));
 }
 
 // ── Agent facet matching ──────────────────────────────────────────────────────

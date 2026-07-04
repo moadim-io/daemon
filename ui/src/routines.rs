@@ -328,6 +328,7 @@ const NEXT_RUN_TICK_MS: u32 = 30_000;
 /// Enabled / disabled / dormant / due-soon status facet for routines.
 /// `Dormant` means enabled but with an empty machines list — it will never fire.
 /// `DueSoon` means enabled with a next fire within [`DUE_SOON_WINDOW_SECS`].
+/// `HasFlags` means the routine has one or more open flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoutineStatusFacet {
     #[default]
@@ -337,6 +338,7 @@ pub enum RoutineStatusFacet {
     Dormant,
     DueSoon,
     Snoozed,
+    HasFlags,
 }
 
 impl RoutineStatusFacet {
@@ -349,6 +351,7 @@ impl RoutineStatusFacet {
             RoutineStatusFacet::Dormant => "dormant",
             RoutineStatusFacet::DueSoon => "due",
             RoutineStatusFacet::Snoozed => "snoozed",
+            RoutineStatusFacet::HasFlags => "flagged",
         }
     }
 
@@ -360,6 +363,7 @@ impl RoutineStatusFacet {
             "dormant" => RoutineStatusFacet::Dormant,
             "due" => RoutineStatusFacet::DueSoon,
             "snoozed" => RoutineStatusFacet::Snoozed,
+            "flagged" => RoutineStatusFacet::HasFlags,
             _ => RoutineStatusFacet::All,
         }
     }
@@ -495,6 +499,7 @@ impl RoutineFilter {
                 return false
             }
             RoutineStatusFacet::Snoozed if !is_routine_snoozed(r, now) => return false,
+            RoutineStatusFacet::HasFlags if r.flag_count == 0 => return false,
             _ => {}
         }
         match &self.agent {
@@ -1932,10 +1937,7 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
             { mk(RoutineStatusFacet::Disabled, "DISABLED", disabled, "disabled") }
             { mk(RoutineStatusFacet::DueSoon, "DUE SOON", due_soon, "due") }
             { mk(RoutineStatusFacet::Snoozed, "SNOOZED", snoozed, "snoozed") }
-            <div class={classes!("stat-card", "flags", if flags > 0 { Some("has-flags") } else { None })}>
-                <div class="stat-label">{"FLAGS"}</div>
-                <div class={classes!("stat-val", if flags > 0 { "c-red" } else { "c-accent" })}>{flags}</div>
-            </div>
+            { mk(RoutineStatusFacet::HasFlags, "FLAGS", flags, if flags > 0 { "flags has-flags" } else { "flags" }) }
             <div class="stat-card unreg">
                 <div class="stat-label">{"UNREGISTERED AGENT"}</div>
                 <div class="stat-val">{unreg}</div>

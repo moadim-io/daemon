@@ -3303,23 +3303,27 @@ pub fn routine_logs(props: &LogsProps) -> Html {
     let content: UseStateHandle<Option<String>> = use_state(|| None);
     let loading = use_state(|| true);
     let err: UseStateHandle<Option<String>> = use_state(|| None);
+    let updated_at: UseStateHandle<f64> = use_state(|| 0.0);
 
     let load = {
         let id = props.id.clone();
         let content = content.clone();
         let loading = loading.clone();
         let err = err.clone();
+        let updated_at = updated_at.clone();
         move || {
             let id = id.clone();
             let content = content.clone();
             let loading = loading.clone();
             let err = err.clone();
+            let updated_at = updated_at.clone();
             loading.set(true);
             spawn_local(async move {
                 match api_logs(&id).await {
                     Ok(text) => {
                         content.set(Some(text));
                         err.set(None);
+                        updated_at.set(js_sys::Date::now());
                     }
                     Err(e) => err.set(Some(e)),
                 }
@@ -3344,11 +3348,19 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         Callback::from(move |_: MouseEvent| load())
     };
 
+    let freshness = if *updated_at > 0.0 {
+        let secs = ((js_sys::Date::now() - *updated_at).max(0.0) / 1000.0) as u64;
+        crate::refresh::fmt_freshness(secs)
+    } else {
+        String::new()
+    };
+
     html! {
         <main class="logs-page">
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.title)}</div>
+                <span class="page-freshness">{freshness}</span>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             <LogViewer
@@ -3374,23 +3386,27 @@ pub fn routine_flags(props: &FlagsProps) -> Html {
     let flags: UseStateHandle<Vec<Flag>> = use_state(Vec::new);
     let loading = use_state(|| true);
     let err: UseStateHandle<Option<String>> = use_state(|| None);
+    let updated_at: UseStateHandle<f64> = use_state(|| 0.0);
 
     let load = {
         let id = props.id.clone();
         let flags = flags.clone();
         let loading = loading.clone();
         let err = err.clone();
+        let updated_at = updated_at.clone();
         move || {
             let id = id.clone();
             let flags = flags.clone();
             let loading = loading.clone();
             let err = err.clone();
+            let updated_at = updated_at.clone();
             loading.set(true);
             spawn_local(async move {
                 match api_flags(&id).await {
                     Ok(list) => {
                         flags.set(list);
                         err.set(None);
+                        updated_at.set(js_sys::Date::now());
                     }
                     Err(e) => err.set(Some(e)),
                 }
@@ -3469,11 +3485,19 @@ pub fn routine_flags(props: &FlagsProps) -> Html {
         }
     };
 
+    let flags_freshness = if *updated_at > 0.0 {
+        let secs = ((js_sys::Date::now() - *updated_at).max(0.0) / 1000.0) as u64;
+        crate::refresh::fmt_freshness(secs)
+    } else {
+        String::new()
+    };
+
     html! {
         <main class="logs-page">
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("FLAGS / {}", props.title)}</div>
+                <span class="page-freshness">{flags_freshness}</span>
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             {body}

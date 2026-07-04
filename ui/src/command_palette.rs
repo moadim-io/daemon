@@ -216,7 +216,9 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
             subtitle: routine_subtitle(routine),
             keywords: format!(
                 "{} {} {} {} routine",
-                routine.id, routine.agent, routine.schedule,
+                routine.id,
+                routine.agent,
+                routine.schedule,
                 routine.tags.join(" ")
             ),
         });

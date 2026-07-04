@@ -3432,8 +3432,10 @@ pub fn routine_flags(props: &FlagsProps) -> Html {
         }
     } else {
         let id = props.id.clone();
+        let count = flags.len();
         html! {
             <div class="flags-list">
+                <div class="flags-count">{format!("{count} open flag{}", if count == 1 { "" } else { "s" })}</div>
                 { for flags.iter().map(|flag| {
                     let on_resolve = {
                         let id = id.clone();

@@ -47,6 +47,15 @@ fn kpis_count_total_enabled_disabled_due_soon() {
 }
 
 #[test]
+fn kpis_due_soon_excludes_snoozed() {
+    let mut a = src(Kind::Routine, "a", "*/5 * * * *", true);
+    a.snoozed = true; // would fire in 5m but snoozed → not due
+    let b = src(Kind::Routine, "b", "*/5 * * * *", true); // enabled + not snoozed → due
+    let kpis = compute_kpis(&[a, b], at_ten());
+    assert_eq!(kpis.due_soon, 1);
+}
+
+#[test]
 fn kpis_default_is_zeroed() {
     let kpis = Kpis::default();
     assert_eq!(kpis.total, 0);
@@ -114,6 +123,16 @@ fn upcoming_sorted_soonest_first_excludes_disabled_and_invalid() {
     assert_eq!(runs[1].label, "midnight");
     assert!(runs[0].soon);
     assert!(!runs[1].soon);
+}
+
+#[test]
+fn upcoming_excludes_snoozed_sources() {
+    let mut a = src(Kind::Routine, "snoozed", "*/5 * * * *", true);
+    a.snoozed = true; // enabled but snoozed → fires suppressed → not upcoming
+    let b = src(Kind::Routine, "active", "*/5 * * * *", true);
+    let runs = upcoming_runs(&[a, b], at_ten());
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].label, "active");
 }
 
 #[test]

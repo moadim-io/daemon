@@ -1751,6 +1751,8 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             id: Some(r.id.clone()),
                                             label: r.title.clone(),
                                             schedule: r.schedule.clone(),
+                                            snoozed: is_routine_snoozed(r, now_val),
+                                            flag_count: r.flag_count,
                                         }).collect::<Vec<_>>();
                                         html! { <DayTimeline items={items} loading={loading} on_click={Some(on_edit)} /> }
                                     },

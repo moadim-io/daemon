@@ -2229,15 +2229,17 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
 
     // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
-    // Each entry is (id, title, count) so chips can dispatch the edit modal on click.
-    let mut cells: Vec<Vec<(String, String, u32)>> = vec![Vec::new(); GRID_CELLS];
+    // Each entry is (id, title, count, snoozed) so chips can dispatch the edit modal on click.
+    let cal_now = Local::now();
+    let mut cells: Vec<Vec<(String, String, u32, bool)>> = vec![Vec::new(); GRID_CELLS];
     let mut scheduled = 0usize;
     for r in props.routines.iter().filter(|r| r.enabled) {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;
+            let snoozed = is_routine_snoozed(r, cal_now);
             for (i, &c) in counts.iter().enumerate() {
                 if c > 0 {
-                    cells[i].push((r.id.clone(), r.title.clone(), c));
+                    cells[i].push((r.id.clone(), r.title.clone(), c, snoozed));
                 }
             }
         }
@@ -2273,7 +2275,7 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                             <div class={cls}>
                                 <div class="cal-daynum">{date.day()}</div>
                                 <div class="cal-hits">
-                                    { for hits.iter().take(4).map(|(id, title, count)| {
+                                    { for hits.iter().take(4).map(|(id, title, count, snoozed)| {
                                         let label = if *count > 1 {
                                             format!("{title} ×{count}")
                                         } else {
@@ -2284,7 +2286,9 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                                             let id = id.clone();
                                             Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
                                         });
-                                        let chip_cls = if on_chip.is_some() { "cal-chip clickable" } else { "cal-chip" };
+                                        let mut chip_cls = String::from("cal-chip");
+                                        if on_chip.is_some() { chip_cls.push_str(" clickable"); }
+                                        if *snoozed { chip_cls.push_str(" snoozed"); }
                                         html! { <div class={chip_cls} title={label.clone()} onclick={on_chip}>{label}</div> }
                                     }) }
                                     if hits.len() > 4 {

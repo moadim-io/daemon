@@ -92,6 +92,8 @@ pub(crate) struct Heatmap {
     pub max_cell: u32,
     /// `(day, hour)` of the busiest cell, or `None` when nothing fires.
     pub peak: Option<(usize, usize)>,
+    /// Number of enabled, filter-matching sources that contributed at least one fire.
+    pub sources: u32,
 }
 
 /// Aggregate the next-7-day fire density of every enabled source matching
@@ -105,6 +107,7 @@ pub(crate) fn compute_heatmap(
     let today = now.date_naive();
     let end_date = today + Duration::days(HEAT_DAYS as i64);
     let mut grid = vec![vec![0u32; HEAT_HOURS]; HEAT_DAYS];
+    let mut sources_counted = 0u32;
 
     for source in sources
         .iter()
@@ -113,6 +116,7 @@ pub(crate) fn compute_heatmap(
         let Some(cron) = parse_cron(&source.schedule) else {
             continue;
         };
+        let mut contributed = false;
         // `iter_after(now)` yields fires strictly after `now` in chronological
         // order, so each `date` is on or after `today`; stop at the first fire
         // that lands on or past the window's end. The take() caps cost on
@@ -124,6 +128,10 @@ pub(crate) fn compute_heatmap(
             }
             let day = (date - today).num_days() as usize;
             grid[day][dt.hour() as usize] += 1;
+            contributed = true;
+        }
+        if contributed {
+            sources_counted += 1;
         }
     }
 
@@ -145,6 +153,7 @@ pub(crate) fn compute_heatmap(
         total,
         max_cell,
         peak,
+        sources: sources_counted,
     }
 }
 
@@ -391,6 +400,10 @@ fn heat_stats(props: &HeatStatsProps) -> Html {
             <div class="stat-card enabled">
                 <div class="stat-label">{"PEAK / HOUR"}</div>
                 <div class="stat-val c-accent">{map.max_cell}</div>
+            </div>
+            <div class="stat-card disabled">
+                <div class="stat-label">{"SOURCES"}</div>
+                <div class="stat-val">{map.sources}</div>
             </div>
             <div class="stat-card system">
                 <div class="stat-label">{"OPEN SLOTS"}</div>

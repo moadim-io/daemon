@@ -68,6 +68,8 @@ pub(crate) struct SchedSource {
     /// Whether the routine's agent is registered. `Some(false)` when the
     /// routine's agent is missing.
     pub agent_registered: Option<bool>,
+    /// Number of open flags raised against this entity.
+    pub flag_count: usize,
 }
 
 /// Aggregate counts shown as the KPI tile row.
@@ -83,6 +85,8 @@ pub(crate) struct Kpis {
     pub due_soon: usize,
     /// Enabled-but-misconfigured entities (see [`attention_items`]).
     pub attention: usize,
+    /// Total open flags across all entities.
+    pub flags: usize,
 }
 
 /// Why an enabled entity needs attention. Listed in triage priority order: a
@@ -165,12 +169,14 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         .iter()
         .filter(|s| s.enabled && fires_within(&s.schedule, now, window))
         .count();
+    let flags = sources.iter().map(|s| s.flag_count).sum();
     Kpis {
         total,
         enabled,
         disabled: total - enabled,
         due_soon,
         attention: attention_items(sources, now).len(),
+        flags,
     }
 }
 
@@ -265,6 +271,7 @@ fn from_routine(routine: &Routine) -> SchedSource {
         enabled: routine.enabled,
         machines_empty: targets_no_machine(&routine.machines),
         agent_registered: Some(routine.agent_registered),
+        flag_count: routine.flag_count,
     }
 }
 
@@ -449,6 +456,12 @@ fn overview_stats(props: &OverviewStatsProps) -> Html {
             <div class="stat-card disabled">
                 <div class="stat-label">{"DISABLED"}</div>
                 <div class="stat-val c-amber">{k.disabled}</div>
+            </div>
+            <div class="stat-card flags">
+                <div class="stat-label">{"FLAGS"}</div>
+                <div class={classes!("stat-val", if k.flags > 0 { "c-red" } else { "c-accent" })}>
+                    {k.flags}
+                </div>
             </div>
             <div class="stat-card system">
                 <div class="stat-label">{"NEXT RUN"}</div>

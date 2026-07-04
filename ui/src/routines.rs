@@ -2683,6 +2683,9 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>
                 <div class="cell-schedule" title={r.id.clone()}>{&r.title}</div>
+                if let Some(goal) = r.goal.as_ref().filter(|g| !g.is_empty()) {
+                    <div class="cell-goal" title={goal.clone()}>{goal.lines().next().unwrap_or("")}</div>
+                }
             </td>
             <td>
                 <div class="cell-schedule">{&r.schedule}</div>

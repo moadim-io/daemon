@@ -131,6 +131,15 @@ fn empty_sources_produce_a_zeroed_grid() {
     assert_eq!(map.total, 0);
     assert_eq!(map.max_cell, 0);
     assert!(map.peak.is_none());
+    assert_eq!(map.sources, 0);
+}
+
+#[test]
+fn heatmap_counts_sources_that_fire_within_window() {
+    let active = source(Kind::Routine, "0 12 * * *", true);
+    let disabled = source(Kind::Routine, "0 12 * * *", false);
+    let map = compute_heatmap(&[active, disabled], now(), HeatFilter::All);
+    assert_eq!(map.sources, 1, "disabled sources should not be counted");
 }
 
 // ─── intensity_level ───────────────────────────────────────────────────────

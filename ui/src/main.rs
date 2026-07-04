@@ -253,6 +253,8 @@ async fn poll_health(state: UseReducerHandle<ShellState>) {
                 running: false,
                 uptime_secs: None,
                 version: None,
+                git_sha: None,
+                dependencies: None,
             },
             ok: false,
         }),
@@ -419,6 +421,8 @@ pub fn shell() -> Html {
                                 running: false,
                                 uptime_secs: None,
                                 version: None,
+                                git_sha: None,
+                                dependencies: None,
                             },
                             ok: false,
                         });

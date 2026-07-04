@@ -94,8 +94,9 @@ pub(crate) struct Kpis {
 }
 
 /// Why an enabled entity needs attention. Listed in triage priority order: a
-/// dormant entity outranks a dead schedule, which outranks a missing agent, so
-/// each entity surfaces its single most fundamental fault (see [`attention_reason`]).
+/// dormant entity outranks a dead schedule, which outranks a missing agent,
+/// which outranks open flags, so each entity surfaces its single most
+/// fundamental fault (see [`attention_reason`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum AttentionReason {
     /// Enabled but assigned to no machine — it fires nowhere.
@@ -105,6 +106,8 @@ pub(crate) enum AttentionReason {
     DeadSchedule,
     /// A routine whose agent is not registered — every run errors out.
     AgentUnregistered,
+    /// Agent raised one or more flags during a run — needs human review.
+    HasOpenFlags,
 }
 
 impl AttentionReason {
@@ -114,6 +117,7 @@ impl AttentionReason {
             AttentionReason::Dormant => 0,
             AttentionReason::DeadSchedule => 1,
             AttentionReason::AgentUnregistered => 2,
+            AttentionReason::HasOpenFlags => 3,
         }
     }
 
@@ -123,6 +127,7 @@ impl AttentionReason {
             AttentionReason::Dormant => "DORMANT",
             AttentionReason::DeadSchedule => "DEAD SCHEDULE",
             AttentionReason::AgentUnregistered => "AGENT MISSING",
+            AttentionReason::HasOpenFlags => "OPEN FLAGS",
         }
     }
 
@@ -132,6 +137,7 @@ impl AttentionReason {
             AttentionReason::Dormant => "assigned to no machine — fires nowhere",
             AttentionReason::DeadSchedule => "schedule has no future fire — never runs again",
             AttentionReason::AgentUnregistered => "agent not registered — every run errors",
+            AttentionReason::HasOpenFlags => "agent raised flags during a run — needs review",
         }
     }
 }
@@ -204,6 +210,9 @@ pub(crate) fn attention_reason(
     }
     if source.agent_registered == Some(false) {
         return Some(AttentionReason::AgentUnregistered);
+    }
+    if source.flag_count > 0 {
+        return Some(AttentionReason::HasOpenFlags);
     }
     None
 }

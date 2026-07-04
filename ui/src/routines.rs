@@ -336,6 +336,7 @@ pub enum RoutineStatusFacet {
     Disabled,
     Dormant,
     DueSoon,
+    Snoozed,
 }
 
 impl RoutineStatusFacet {
@@ -347,6 +348,7 @@ impl RoutineStatusFacet {
             RoutineStatusFacet::Disabled => "disabled",
             RoutineStatusFacet::Dormant => "dormant",
             RoutineStatusFacet::DueSoon => "due",
+            RoutineStatusFacet::Snoozed => "snoozed",
         }
     }
 
@@ -357,6 +359,7 @@ impl RoutineStatusFacet {
             "disabled" => RoutineStatusFacet::Disabled,
             "dormant" => RoutineStatusFacet::Dormant,
             "due" => RoutineStatusFacet::DueSoon,
+            "snoozed" => RoutineStatusFacet::Snoozed,
             _ => RoutineStatusFacet::All,
         }
     }
@@ -491,6 +494,7 @@ impl RoutineFilter {
             {
                 return false
             }
+            RoutineStatusFacet::Snoozed if !is_routine_snoozed(r, now) => return false,
             _ => {}
         }
         match &self.agent {
@@ -1851,8 +1855,18 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
     let due_soon = props
         .routines
         .iter()
-        .filter(|r| r.enabled && fires_within(&r.schedule, props.now, window))
+        .filter(|r| {
+            r.enabled
+                && !is_routine_snoozed(r, props.now)
+                && fires_within(&r.schedule, props.now, window)
+        })
         .count();
+    let snoozed = props
+        .routines
+        .iter()
+        .filter(|r| r.enabled && is_routine_snoozed(r, props.now))
+        .count();
+    let flags: usize = props.routines.iter().map(|r| r.flag_count).sum();
     let unreg = props
         .routines
         .iter()
@@ -1890,6 +1904,11 @@ pub fn routine_stats_bar(props: &StatsBarProps) -> Html {
             { mk(RoutineStatusFacet::Enabled, "ENABLED", enabled, "enabled") }
             { mk(RoutineStatusFacet::Disabled, "DISABLED", disabled, "disabled") }
             { mk(RoutineStatusFacet::DueSoon, "DUE SOON", due_soon, "due") }
+            { mk(RoutineStatusFacet::Snoozed, "SNOOZED", snoozed, "snoozed") }
+            <div class={classes!("stat-card", "flags", if flags > 0 { Some("has-flags") } else { None })}>
+                <div class="stat-label">{"FLAGS"}</div>
+                <div class={classes!("stat-val", if flags > 0 { "c-red" } else { "c-accent" })}>{flags}</div>
+            </div>
             <div class="stat-card unreg">
                 <div class="stat-label">{"UNREGISTERED AGENT"}</div>
                 <div class="stat-val">{unreg}</div>

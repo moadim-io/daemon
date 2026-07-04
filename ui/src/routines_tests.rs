@@ -1093,6 +1093,7 @@ fn r_group_by_as_str_roundtrips() {
         RGroupBy::Agent,
         RGroupBy::Machine,
         RGroupBy::Status,
+        RGroupBy::Health,
     ] {
         assert_eq!(RGroupBy::from_str(by.as_str()), by);
     }

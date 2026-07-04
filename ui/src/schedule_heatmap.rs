@@ -23,6 +23,7 @@ use yew::prelude::*;
 
 use crate::overview::{fetch_routines, Kind};
 use crate::parse_cron;
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::routines::Routine;
 
 /// Rows in the grid: the next 7 calendar days, row 0 = today.
@@ -33,9 +34,6 @@ pub(crate) const HEAT_HOURS: usize = 24;
 /// every-minute schedule fires 7×1440 = 10 080 times/week; this leaves headroom
 /// while bounding cost on pathological (e.g. per-second) inputs.
 const MAX_FIRES_PER_SOURCE: usize = 20_000;
-/// How often the page re-fetches the underlying records (counts can change as
-/// jobs are toggled elsewhere).
-const REFETCH_MS: u32 = 30_000;
 /// How often the live "now" advances so the grid (and its today/current-hour
 /// highlight) rolls forward between fetches.
 const TICK_MS: u32 = 60_000;
@@ -229,15 +227,20 @@ pub fn heatmap_page() -> Html {
     });
     let now = use_state(Local::now);
     let filter = use_state(|| HeatFilter::All);
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
 
     // Fetch the routine record list.
     let load = {
         let data = data.clone();
+        let updated_at = updated_at.clone();
         move || {
             let data = data.clone();
+            let updated_at = updated_at.clone();
             spawn_local(async move {
                 let routines = fetch_routines().await;
                 let error = routines.as_ref().err().cloned();
+                updated_at.set(js_sys::Date::now());
                 data.set(Data {
                     routines: routines.unwrap_or_default(),
                     loading: false,
@@ -247,19 +250,42 @@ pub fn heatmap_page() -> Html {
         }
     };
 
-    // Load on mount, then re-fetch on a slow cadence.
+    // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| {
-            load();
-            spawn_local(async move {
-                loop {
-                    TimeoutFuture::new(REFETCH_MS).await;
-                    load();
-                }
-            });
+        use_effect_with((), move |_| load());
+    }
+
+    // Auto-refresh loop, re-armed when the interval changes.
+    {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let load = load.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        load();
+                    }
+                });
+            }
+            move || cancelled.set(true)
         });
     }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     // Advance "now" so the grid rolls forward between fetches.
     {
@@ -290,6 +316,11 @@ pub fn heatmap_page() -> Html {
             <div class="section-hd">
                 <span class="section-label">{"SCHEDULE HEATMAP"}</span>
                 <FilterTabs active={*filter} on_pick={set_filter} />
+                <RefreshControl
+                    interval={*interval}
+                    updated_at_ms={*updated_at}
+                    on_change={on_set_interval}
+                />
             </div>
             <HeatStats map={map.clone()} today={today} />
             <HeatGrid

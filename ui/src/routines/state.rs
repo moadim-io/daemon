@@ -406,3 +406,7 @@ impl Reducible for RState {
 #[cfg(test)]
 #[path = "state_tests.rs"]
 mod state_tests;
+
+#[cfg(test)]
+#[path = "state_group_by_tests.rs"]
+mod state_group_by_tests;

@@ -28,8 +28,8 @@ use super::hooks::{
 };
 use super::logs::RoutineLogs;
 use super::model::{
-    api_cleanup, api_create, api_delete, api_trigger, api_unlock, api_update, CreateRoutineRequest,
-    UpdateRoutineRequest,
+    api_cleanup, api_create, api_delete, api_trigger, api_unlock, api_update, humanize_bytes,
+    CreateRoutineRequest, UpdateRoutineRequest,
 };
 use super::state::{
     sort_routines, RAction, RCol, RGroupBy, RModal, RPage, RState, RView, RoutineHistoryQuery,
@@ -235,9 +235,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             let ok = ok.clone();
             spawn_local(async move {
                 match api_cleanup().await {
-                    Ok(n) => ok(&format!(
-                        "Cleanup removed {n} workbench{}",
-                        if n == 1 { "" } else { "es" }
+                    Ok((n, freed_bytes)) => ok(&format!(
+                        "Cleanup removed {n} workbench{} (freed {})",
+                        if n == 1 { "" } else { "es" },
+                        humanize_bytes(freed_bytes)
                     )),
                     Err(e) => toast.emit((format!("Cleanup failed: {e}"), ToastKind::Err)),
                 }

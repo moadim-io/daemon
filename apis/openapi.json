@@ -347,7 +347,7 @@
         "operationId": "cleanup",
         "responses": {
           "200": {
-            "description": "Number of workbenches removed",
+            "description": "Workbenches removed and bytes freed",
             "content": {
               "application/json": {
                 "schema": {
@@ -976,9 +976,16 @@
         "type": "object",
         "description": "Result of an on-demand workbench cleanup sweep.",
         "required": [
-          "removed"
+          "removed",
+          "freed_bytes"
         ],
         "properties": {
+          "freed_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total disk space reclaimed, in bytes, summed across the removed workbench trees. Additive\nfield: existing `{\"removed\": N}` consumers are unaffected.",
+            "minimum": 0
+          },
           "removed": {
             "type": "integer",
             "description": "Number of finished, expired run workbenches removed by this sweep.",

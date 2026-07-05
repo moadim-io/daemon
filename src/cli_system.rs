@@ -283,6 +283,13 @@ pub(super) fn parse_removed_count(body: &str) -> Option<usize> {
     value.get("removed")?.as_u64().map(|n| n as usize)
 }
 
+/// Extract the `freed_bytes` total from a [`CleanupResponse`](crate::routines::CleanupResponse) JSON
+/// body. Returns `None` for a body lacking the (additive) field, so older servers degrade to `0`.
+pub(super) fn parse_freed_bytes(body: &str) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value.get("freed_bytes")?.as_u64()
+}
+
 /// Spawn a detached copy of this binary running the server in the foreground, returning its PID.
 ///
 /// The child runs with `--interactive` (so it actually serves), in its own process group so a

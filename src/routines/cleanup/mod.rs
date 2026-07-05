@@ -75,6 +75,39 @@ fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
     now.saturating_sub(ts) > ttl
 }
 
+/// Outcome of a cleanup sweep: how many workbenches were reaped and the disk space reclaimed.
+///
+/// `freed_bytes` is summed across each removed workbench's tree, measured just before deletion, so
+/// operators (and `--json` consumers) learn the payoff of a sweep rather than a bare directory count
+/// — a removed workbench can hold cloned repos worth tens or hundreds of MB.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReapStats {
+    /// Number of finished, expired run workbenches removed by this sweep.
+    pub removed: usize,
+    /// Total bytes freed, summed across the trees of the workbenches actually removed.
+    pub freed_bytes: u64,
+}
+
+/// Total size in bytes of every file under `path`, walked recursively. Best-effort: unreadable
+/// entries are skipped (yielding a lower bound rather than failing), and directory symlinks are not
+/// traversed, so a workbench tree cannot send the walk into a cycle.
+fn dir_size(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        // `file_type()` does not follow symlinks, so a symlinked directory reads as a non-dir and is
+        // counted by its own (small) metadata length instead of being descended into.
+        if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            total += dir_size(&entry.path());
+        } else {
+            total += entry.metadata().map_or(0, |meta| meta.len());
+        }
+    }
+    total
+}
+
 /// Best-effort *finish* time of a finished run, as unix seconds: the mtime of its `agent.log` (the
 /// last time the agent wrote output). Falls back to `trigger_ts` when the log is missing or its
 /// mtime is unreadable, and is clamped to at least `trigger_ts` so retention is never measured from
@@ -190,12 +223,12 @@ fn prune_claude_json(path: &Path, name: &str) {
 /// kept for the full window after it completes (#174); the watchdog still measures elapsed runtime
 /// from the trigger. `finished_at` is evaluated *before* the watchdog can force-kill the session, so
 /// a hung run's forced-kill note (which touches `agent.log`) never masquerades as a fresh finish.
-/// Returns the number of directories removed. `ttl_for`, `max_runtime_for`, `is_alive`, `kill`,
-/// `finished_at`, and `persist` are injected so the decision logic is unit-testable without a
-/// filesystem clock or a live tmux server. `persist` is called with `(slug, workbench name,
-/// workbench path, trigger ts, finish ts)` right before removal, so a durable history record can be
-/// captured while the workbench (and its `exit_code` file) still exists — see
-/// [`super::run_history`].
+/// Returns the count of directories removed and the total bytes freed (summed only over trees
+/// actually removed). `ttl_for`, `max_runtime_for`, `is_alive`, `kill`, `finished_at`, and `persist`
+/// are injected so the decision logic is unit-testable without a filesystem clock or a live tmux
+/// server. `persist` is called with `(slug, workbench name, workbench path, trigger ts, finish ts)`
+/// right before removal, so a durable history record can be captured while the workbench (and its
+/// `exit_code` file) still exists — see [`super::run_history`].
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is an independently injected test seam with no natural grouping"
@@ -209,11 +242,11 @@ fn reap_dir(
     kill: &dyn Fn(&str),
     finished_at: &dyn Fn(&Path, u64) -> u64,
     persist: &dyn Fn(&str, &str, &Path, u64, u64),
-) -> usize {
+) -> ReapStats {
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
+        return ReapStats::default();
     };
-    let mut removed = 0;
+    let mut stats = ReapStats::default();
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
@@ -248,23 +281,26 @@ fn reap_dir(
         // Record the run's outcome durably before the workbench (and its `exit_code` file) is
         // removed, so `svc_list_runs`/`svc_list_all_runs` still know about it afterwards.
         persist(slug, &name, &entry.path(), ts, finish_ts);
+        // Measure the tree before deletion so a successful removal can report the space it reclaimed.
+        let size = dir_size(&entry.path());
         match std::fs::remove_dir_all(entry.path()) {
             Ok(()) => {
-                removed += 1;
-                log::info!("cleanup: removed expired workbench {name:?}");
+                stats.removed += 1;
+                stats.freed_bytes += size;
+                log::info!("cleanup: removed expired workbench {name:?} (freed {size} bytes)");
                 prune_claude_json(&entry.path(), &name);
             }
             Err(err) => log::warn!("cleanup: failed to remove workbench {name:?}: {err}"),
         }
     }
-    removed
+    stats
 }
 
 /// Remove finished, expired workbenches under `~/.moadim/workbenches/`, using each routine's TTL.
 ///
-/// Returns the number of workbenches removed. Safe to call repeatedly; it only ever touches
-/// directories whose run has ended.
-pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
+/// Returns the count of workbenches removed and the total bytes freed. Safe to call repeatedly; it
+/// only ever touches directories whose run has ended.
+pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
     let ttls = snapshot::snapshot_ttls(store);
     let max_runtimes = snapshot::snapshot_max_runtimes(store);
     let routine_ids = snapshot::snapshot_routine_ids(store);
@@ -385,3 +421,7 @@ mod cleanup_watchdog_tests;
 #[cfg(test)]
 #[path = "cleanup_claude_json_tests.rs"]
 mod cleanup_claude_json_tests;
+
+#[cfg(test)]
+#[path = "cleanup_freed_bytes_tests.rs"]
+mod cleanup_freed_bytes_tests;

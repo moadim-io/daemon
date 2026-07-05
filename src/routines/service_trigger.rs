@@ -238,13 +238,16 @@ fn spawn_routine_command(routine: &Routine) {
     }
 }
 
-/// Reap finished, expired run workbenches immediately, returning how many were removed.
+/// Reap finished, expired run workbenches immediately, returning how many were removed and the
+/// bytes freed.
 ///
 /// Runs the same sweep as the hourly background task ([`cleanup_expired_workbenches`]) but on
 /// demand, so callers need not wait for the next tick. Still-running sessions are never touched.
 pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
+    let stats = cleanup_expired_workbenches(store);
     CleanupResponse {
-        removed: cleanup_expired_workbenches(store),
+        removed: stats.removed,
+        freed_bytes: stats.freed_bytes,
     }
 }
 

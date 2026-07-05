@@ -403,10 +403,13 @@ pub(crate) use service_trigger::sh_bin;
 #[cfg(test)]
 pub(crate) use service_trigger::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_BYTES};
 pub use service_trigger::{
-    svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_set_power_saving, svc_snooze, svc_trigger,
-    svc_trigger_scheduled,
+    svc_cleanup, svc_list_all_runs, svc_list_runs, svc_logs, svc_run_log, svc_set_power_saving,
+    svc_snooze, svc_trigger, svc_trigger_scheduled,
 };
+
+#[path = "service_trigger_flags.rs"]
+mod service_trigger_flags;
+pub use service_trigger_flags::{svc_create_flag, svc_list_flags, svc_resolve_flag};
 
 #[cfg(test)]
 #[path = "service_tests.rs"]
@@ -455,3 +458,15 @@ mod service_overlap_guard_tests;
 #[cfg(test)]
 #[path = "service_update_not_found_tests.rs"]
 mod service_update_not_found_tests;
+
+#[cfg(test)]
+#[path = "service_ceiling_tests.rs"]
+mod service_ceiling_tests;
+
+#[cfg(test)]
+#[path = "service_snooze_tests.rs"]
+mod service_snooze_tests;
+
+#[cfg(test)]
+#[path = "service_ansi_tests.rs"]
+mod service_ansi_tests;

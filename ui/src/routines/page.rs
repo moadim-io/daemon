@@ -12,6 +12,7 @@ use crate::ToastKind;
 
 use super::banner::{GlobalLockBanner, RoutineGroupBySelector, RoutineStatsBar, ViewToggle};
 use super::bulk::{ConfirmDelete, RoutineBulkBar, RoutineBulkDeleteDialog};
+use super::bulk_actions::{install_bulk_handlers, BulkHandlers};
 use super::calendar::RoutineCalendar;
 use super::filter::{
     distinct_agents, distinct_machines_r, distinct_repositories, distinct_tags, filter_routines,
@@ -356,116 +357,15 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
 
     // ── Bulk selection ────────────────────────────────────────────────────────
-    let on_select = {
-        let state = state.clone();
-        Callback::from(move |id: String| state.dispatch(RAction::SelectRoutine(id)))
-    };
-
-    // Header checkbox: toggle "all visible selected ↔ none" (filter-scoped).
-    let on_select_all = {
-        let state = state.clone();
-        let now = now.clone();
-        Callback::from(move |_: ()| {
-            let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
-            let visible = filter_routines(&state.routines, &state.filter, *now, window);
-            let all_visible_selected =
-                !visible.is_empty() && visible.iter().all(|r| state.selected.contains(&r.id));
-            if all_visible_selected {
-                state.dispatch(RAction::ClearSelection);
-            } else {
-                state.dispatch(RAction::SelectAll(
-                    visible.into_iter().map(|r| r.id).collect(),
-                ));
-            }
-        })
-    };
-
-    let on_clear_selection = {
-        let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::ClearSelection))
-    };
-
-    // Bulk enable/disable: PATCH each selected routine, surface one summary toast.
-    let bulk_set_enabled = {
-        let state = state.clone();
-        let toast = toast.clone();
-        move |enabled: bool| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ids: Vec<String> = state.selected.iter().cloned().collect();
-            if ids.is_empty() {
-                return;
-            }
-            spawn_local(async move {
-                let mut ok = 0usize;
-                let mut failed = 0usize;
-                for id in ids {
-                    let req = UpdateRoutineRequest {
-                        enabled: Some(enabled),
-                        ..Default::default()
-                    };
-                    match api_update(&id, &req).await {
-                        Ok(r) => {
-                            state.dispatch(RAction::Upsert(Box::new(r)));
-                            ok += 1;
-                        }
-                        Err(_) => failed += 1,
-                    }
-                }
-                let verb = if enabled { "enabled" } else { "disabled" };
-                if failed == 0 {
-                    toast.emit((format!("{ok} routine(s) {verb}"), ToastKind::Ok));
-                } else {
-                    toast.emit((format!("{ok} {verb}, {failed} failed"), ToastKind::Err));
-                }
-            });
-        }
-    };
-
-    let on_bulk_enable = {
-        let f = bulk_set_enabled.clone();
-        Callback::from(move |_: ()| f(true))
-    };
-    let on_bulk_disable = {
-        let f = bulk_set_enabled.clone();
-        Callback::from(move |_: ()| f(false))
-    };
-
-    let on_bulk_delete = {
-        let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::OpenConfirmBulkDelete))
-    };
-
-    let on_confirm_bulk_delete = {
-        let state = state.clone();
-        let toast = toast.clone();
-        Callback::from(move |_: ()| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ids: Vec<String> = state.selected.iter().cloned().collect();
-            spawn_local(async move {
-                let mut ok = 0usize;
-                let mut failed = 0usize;
-                let mut deleted: Vec<String> = Vec::new();
-                for id in ids {
-                    match api_delete(&id).await {
-                        Ok(()) => {
-                            deleted.push(id);
-                            ok += 1;
-                        }
-                        Err(_) => failed += 1,
-                    }
-                }
-                state.dispatch(RAction::RemoveMany(deleted));
-                state.dispatch(RAction::CloseModal);
-                if failed == 0 {
-                    toast.emit((format!("{ok} routine(s) deleted"), ToastKind::Ok));
-                } else {
-                    toast.emit((format!("{ok} deleted, {failed} failed"), ToastKind::Err));
-                }
-            });
-        })
-    };
+    let BulkHandlers {
+        on_select,
+        on_select_all,
+        on_clear_selection,
+        on_bulk_enable,
+        on_bulk_disable,
+        on_bulk_delete,
+        on_confirm_bulk_delete,
+    } = install_bulk_handlers(state.clone(), toast.clone(), now.clone());
 
     let routines = state.routines.clone();
     let loading = state.loading;

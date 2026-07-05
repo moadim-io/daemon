@@ -506,5 +506,9 @@ pub fn distinct_tags(routines: &[Routine]) -> Vec<String> {
 mod filter_tests;
 
 #[cfg(test)]
+#[path = "filter_facet_codec_tests.rs"]
+mod filter_facet_codec_tests;
+
+#[cfg(test)]
 #[path = "filter_health_tests.rs"]
 mod filter_health_tests;

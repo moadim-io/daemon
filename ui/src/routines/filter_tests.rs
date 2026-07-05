@@ -16,6 +16,7 @@ fn routine(
         id: id.into(),
         title: title.into(),
         agent: agent.into(),
+        model: None,
         schedule: schedule.into(),
         prompt: String::new(),
         repositories: repos

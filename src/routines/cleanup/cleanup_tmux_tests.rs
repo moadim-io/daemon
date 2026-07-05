@@ -81,9 +81,12 @@ fn tmux_session_prefix_alive_matches_any_session_starting_with_prefix() {
     let dir = std::env::temp_dir().join(format!("moadim-tmux-prefix-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let stub = dir.join("tmux");
+    // Real `$RID` shape (`SESS="moadim-$SLUG-$RID"`, `RID="${TS}_$$"`): digits, `_`, digits.
+    // `moadim-baz-qux-300_3` is a *different* routine (slug `baz-qux`) whose session name is a
+    // literal string-prefix superset of slug `baz`'s own prefix — no genuine `baz` fire is listed.
     std::fs::write(
         &stub,
-        "#!/bin/sh\nprintf 'moadim-other-100\\nmoadim-foo-200\\n'\nexit 0\n",
+        "#!/bin/sh\nprintf 'moadim-other-100_1\\nmoadim-foo-200_2\\nmoadim-baz-qux-300_3\\n'\nexit 0\n",
     )
     .unwrap();
     #[cfg(unix)]
@@ -100,6 +103,11 @@ fn tmux_session_prefix_alive_matches_any_session_starting_with_prefix() {
     assert!(
         !super::session::tmux_session_prefix_alive("moadim-bar-"),
         "no listed session starts with this prefix"
+    );
+    assert!(
+        !super::session::tmux_session_prefix_alive("moadim-baz-"),
+        "a different routine's session name being a string-superset of the prefix (baz-qux vs. \
+         baz) must not read as baz's own fire still being alive"
     );
 
     // SAFETY: single-threaded harness; restore the saved override.

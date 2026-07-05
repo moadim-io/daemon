@@ -1,0 +1,5 @@
+exclude:
+  - "target/**"
+  - "node_modules/**"
+  - "Cargo.lock"
+  - "pnpm-lock.yaml"

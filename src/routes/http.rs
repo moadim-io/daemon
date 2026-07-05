@@ -20,9 +20,19 @@ use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
+use tower::limit::GlobalConcurrencyLimitLayer;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use utoipa_swagger_ui::SwaggerUi;
+
+/// Maximum number of requests the server services at once, across every route.
+///
+/// Handlers perform blocking `crontab`/`tmux`/filesystem I/O directly on Tokio worker threads (no
+/// `spawn_blocking`, #360), and the server has no per-request concurrency cap otherwise — a burst
+/// of concurrent requests (or a few hung crontab calls) could exhaust the runtime's worker/blocking
+/// pool and leave even `GET /health` unreachable. This bounds that blast radius: requests beyond
+/// the cap simply queue for a free slot instead of piling onto more threads (#410).
+const MAX_CONCURRENT_REQUESTS: usize = 64;
 
 /// Shared signal that asks the running server to shut down gracefully.
 ///
@@ -449,6 +459,10 @@ pub(crate) fn build_app_with_shutdown(
         // resetting the connection with no response and no logged error (issue #337). Catch it
         // here and answer with a plain 500 instead.
         .layer(CatchPanicLayer::new())
+        // Global cap on in-flight requests, shared across every clone of the router (see
+        // MAX_CONCURRENT_REQUESTS). Placed outermost (alongside CatchPanicLayer) so it bounds
+        // *all* traffic, not just the REST API under /api/v1.
+        .layer(GlobalConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
         .with_state(app_state)
 }
 

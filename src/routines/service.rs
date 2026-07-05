@@ -693,3 +693,7 @@ mod service_slug_tests;
 #[cfg(test)]
 #[path = "service_overlap_guard_tests.rs"]
 mod service_overlap_guard_tests;
+
+#[cfg(test)]
+#[path = "service_update_not_found_tests.rs"]
+mod service_update_not_found_tests;

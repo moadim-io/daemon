@@ -543,7 +543,8 @@
     /* ── Table ── */
     .table-wrap {
       border: 1px solid var(--border);
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
     }
 
     table { width: 100%; border-collapse: collapse; }
@@ -811,6 +812,28 @@
     .form-input::placeholder  { color: var(--text-ghost); }
     textarea.form-input       { resize: vertical; min-height: 90px; }
 
+    /* ── Settings page ── */
+    .settings-page { padding: 0 18px 24px; }
+    .settings-card {
+      max-width: 640px;
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      padding: 16px;
+      margin-top: 12px;
+    }
+    .settings-card-hd {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--text-hi);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .settings-card-sub { font-size: 12px; color: var(--text-dim); margin: 0 0 12px; line-height: 1.5; }
+    .settings-textarea { font-size: 12px; min-height: 220px; }
+    .settings-card-acts { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .settings-dirty-hint { font-size: 11px; color: var(--amber); }
+
     /* cron presets */
     .cron-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 
@@ -1037,6 +1060,25 @@
 
     .act-btn.flags { color: var(--text-ghost); display: inline-flex; align-items: center; gap: 4px; }
     .act-btn.flags:hover { color: var(--text-mid); border-color: var(--border-hi); }
+
+    .act-btn.history { color: var(--text-ghost); }
+    .act-btn.history:hover { color: var(--text-mid); border-color: var(--border-hi); }
+
+    /* ── Run history status badge (HISTORY page per-run status) ── */
+    .run-status {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      padding: 2px 5px;
+      border: 1px solid var(--border-hi);
+      color: var(--text-mid);
+      white-space: nowrap;
+    }
+    .run-status.running { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+    .run-status.success { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .run-status.failed  { border-color: var(--red);   color: var(--red);   background: var(--red-dim); }
+    .run-status.unknown { border-color: var(--border-hi); color: var(--text-dim); }
     .flag-badge {
       display: inline-block;
       min-width: 14px;

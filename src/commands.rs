@@ -26,7 +26,7 @@ struct DataCli {
     command: DataCommand,
 }
 
-/// The data subcommand groups: routines, agents, and echo.
+/// The data subcommand groups: routines and agents.
 #[derive(Subcommand)]
 enum DataCommand {
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
@@ -41,11 +41,6 @@ enum DataCommand {
     Schedule(ScheduleCmd),
     /// List the available agent registry keys.
     Agents,
-    /// Echo a message back via the server, with a server timestamp.
-    Echo {
-        /// The message to echo.
-        message: String,
-    },
 }
 
 /// Schedule operations driven by the OS crontab, keyed only by ID.
@@ -245,10 +240,6 @@ fn dispatch(command: DataCommand) -> i32 {
             None,
         ),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
-        DataCommand::Echo { message } => {
-            let body = object([("message", Value::String(message))]);
-            request("POST", "/api/v1/echo", Some(&body))
-        }
     }
 }
 
@@ -446,15 +437,6 @@ fn insert_json_opt(
             Err(2)
         }
     }
-}
-
-/// Build a small JSON object body from key/value pairs.
-fn object<const N: usize>(pairs: [(&str, Value); N]) -> String {
-    let mut map = Map::new();
-    for (key, value) in pairs {
-        map.insert(key.to_string(), value);
-    }
-    to_body(map)
 }
 
 /// Serialize a JSON object map into a compact request body string.

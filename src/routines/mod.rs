@@ -23,6 +23,7 @@ pub mod flags;
 mod handlers;
 mod ical;
 mod model;
+mod run_history;
 mod service;
 
 pub use agents::*;

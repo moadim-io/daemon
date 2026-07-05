@@ -31,7 +31,7 @@ pub(super) fn tmux_bin() -> String {
 /// Uses an exact (`=`) target match so `moadim-foo-1` never matches `moadim-foo-10`. A missing
 /// `tmux` binary (exit status unavailable) is treated as "not alive": with no tmux there is no
 /// running session to protect, so an expired workbench is safe to reap.
-pub(super) fn tmux_session_alive(session: &str) -> bool {
+pub(crate) fn tmux_session_alive(session: &str) -> bool {
     std::process::Command::new(tmux_bin())
         .arg("has-session")
         .arg("-t")

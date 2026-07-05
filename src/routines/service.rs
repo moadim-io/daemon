@@ -609,8 +609,8 @@ use service_trigger::migrate_workbenches;
 #[cfg(test)]
 pub(crate) use service_trigger::sh_bin;
 pub use service_trigger::{
-    svc_cleanup, svc_create_flag, svc_list_flags, svc_logs, svc_resolve_flag, svc_snooze,
-    svc_trigger, svc_trigger_scheduled,
+    svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
+    svc_resolve_flag, svc_run_log, svc_snooze, svc_trigger, svc_trigger_scheduled,
 };
 
 #[cfg(test)]
@@ -632,6 +632,10 @@ mod service_model_tests;
 #[cfg(test)]
 #[path = "service_logs_tests.rs"]
 mod service_logs_tests;
+
+#[cfg(test)]
+#[path = "service_runs_tests.rs"]
+mod service_runs_tests;
 
 #[cfg(test)]
 #[path = "service_trigger_tests.rs"]

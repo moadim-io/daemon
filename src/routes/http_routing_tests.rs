@@ -3,12 +3,10 @@
 use axum::{
     body::Body,
     http::{header::CONTENT_TYPE, Request, StatusCode},
-    routing::post,
-    Router,
 };
 use tower::ServiceExt;
 
-use super::{build_app, echo};
+use super::build_app;
 
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
 /// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
@@ -56,65 +54,6 @@ async fn router_routines_cleanup_returns_removed_count() {
         .unwrap();
     let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(val["removed"].is_u64());
-}
-
-// ── echo handler ──────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn echo_returns_message_and_timestamp() {
-    let app = Router::new().route("/echo", post(echo));
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/echo")
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"message":"hello"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["message"], "hello");
-    assert!(json["timestamp"].as_u64().is_some());
-}
-
-#[tokio::test]
-async fn echo_rejects_invalid_json() {
-    let app = Router::new().route("/echo", post(echo));
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/echo")
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from("not-json"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn echo_rejects_missing_message_field() {
-    let app = Router::new().route("/echo", post(echo));
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/echo")
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"other":"field"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 // ── routines CRUD lifecycle (covers all routine HTTP handlers) ────────────────
@@ -232,6 +171,67 @@ async fn router_routine_full_lifecycle() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+
+    // runs (empty list — no workbench created by this test)
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/routines/{id}/runs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let runs: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(runs, serde_json::json!([]));
+
+    // fleet-wide /routines/runs — a static route that must not be shadowed by the dynamic
+    // /routines/{id} route registered above.
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/routines/runs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let runs: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(runs, serde_json::json!([]));
+
+    // fleet-wide runs honors a `?limit=` query param.
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/routines/runs?limit=5")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // runs/{workbench}/log for a workbench that doesn't exist -> 404
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/routines/{id}/runs/not-a-real-workbench-1/log"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
     // POST flag
     let resp = build_app(routines.clone())
@@ -392,6 +392,8 @@ async fn router_routine_not_found_paths() {
         ("POST", "/trigger"),
         ("POST", "/scheduled-trigger"),
         ("GET", "/logs"),
+        ("GET", "/runs"),
+        ("GET", "/runs/some-workbench-1/log"),
     ] {
         let resp = build_app(crate::routines::new_store())
             .oneshot(

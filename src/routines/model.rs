@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use super::agents::load_agent_command;
 use super::command::{agent_command_available, slugify};
 use super::flags::list_flags;
-use crate::paths::{agent_toml_path, routine_toml_path};
+use crate::paths::routine_toml_path;
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -181,7 +181,9 @@ pub struct RoutineResponse {
     /// The underlying routine.
     #[serde(flatten)]
     pub routine: Routine,
-    /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`.
+    /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses
+    /// successfully. A present-but-malformed config is silently dropped at crontab-sync time, so
+    /// it reports `false` here too — file existence alone is not "registered".
     pub agent_registered: bool,
     /// `true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable
     /// on the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a
@@ -231,9 +233,13 @@ impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
         let slug = slugify(&routine.title);
-        let agent_registered = agent_toml_path(&routine.agent).exists();
-        let agent_command_available = load_agent_command(&routine.agent)
-            .is_ok_and(|agent| agent_command_available(&agent.command));
+        // An agent counts as registered only if its config both exists *and* parses: a
+        // present-but-malformed config is silently dropped at crontab-sync time, so reporting it as
+        // registered would paint a never-firing routine as healthy. See issue #301.
+        let agent_command = load_agent_command(&routine.agent);
+        let agent_registered = agent_command.is_ok();
+        let agent_command_available =
+            agent_command.is_ok_and(|agent| agent_command_available(&agent.command));
         let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
@@ -255,6 +261,58 @@ impl RoutineResponse {
 pub struct CleanupResponse {
     /// Number of finished, expired run workbenches removed by this sweep.
     pub removed: usize,
+}
+
+/// Outcome of a single past run, derived from its workbench on disk.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// The tmux session is still alive.
+    Running,
+    /// The agent process exited `0`.
+    Success,
+    /// The agent process exited non-zero.
+    Failed,
+    /// The session is gone but no exit code was recorded (killed, crashed before
+    /// writing it, or from a build predating exit-code capture).
+    Unknown,
+}
+
+/// One past (or in-progress) run of a routine, listed newest-first.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+pub struct RunSummary {
+    /// Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`.
+    pub workbench: String,
+    /// Unix seconds the run was triggered.
+    pub started_at: u64,
+    /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
+    pub finished_at: Option<u64>,
+    /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
+    pub status: RunStatus,
+    /// Process exit code, when recorded.
+    pub exit_code: Option<i32>,
+}
+
+/// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide
+/// counterpart to [`RunSummary`] backing an overview "recent runs" view.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+pub struct FleetRunSummary {
+    /// The routine this run belongs to.
+    pub routine_id: String,
+    /// The routine's title, at the time of this call (not snapshotted per-run).
+    pub routine_title: String,
+    /// Workbench directory name (`{slug}-{unix_secs}`).
+    pub workbench: String,
+    /// Unix seconds the run was triggered.
+    pub started_at: u64,
+    /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
+    pub finished_at: Option<u64>,
+    /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
+    pub status: RunStatus,
+    /// Process exit code, when recorded.
+    pub exit_code: Option<i32>,
 }
 
 /// Thread-safe shared store of routines keyed by ID.

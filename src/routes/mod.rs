@@ -1,6 +1,6 @@
 //! Network-facing layer. Each submodule owns one protocol transport.
 //!
-//! Business logic lives in [`crate::cron_jobs`]. Modules here translate
+//! Business logic lives in [`crate::routines`]. Modules here translate
 //! between protocol representations and the service-layer functions.
 
 pub mod http;

@@ -1372,7 +1372,7 @@
               },
               "agent_registered": {
                 "type": "boolean",
-                "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`."
+                "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses\nsuccessfully. A present-but-malformed config is silently dropped at crontab-sync time, so\nit reports `false` here too — file existence alone is not \"registered\"."
               },
               "file_path": {
                 "type": "string",

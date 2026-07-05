@@ -7,6 +7,25 @@ use std::time::Duration;
 /// How long to wait when probing or signalling a running server over HTTP.
 const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 
+/// Size at which `daemon.log` is rotated to `daemon.log.1` on the next detached spawn. The daemon
+/// is long-lived and appends to this file on every start/restart with no other trim point, so
+/// without a cap it grows unbounded until it fills the disk (#316).
+pub(crate) const DAEMON_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Rotate `log_path` to a sibling `.1` file (overwriting any previous one) if it has grown past
+/// [`DAEMON_LOG_MAX_BYTES`]. Best-effort: a failed rotation (permissions, race) falls through to
+/// the caller's own `append(true)` open rather than blocking the spawn.
+fn rotate_daemon_log_if_oversized(log_path: &std::path::Path) {
+    let Ok(metadata) = std::fs::metadata(log_path) else {
+        return;
+    };
+    if metadata.len() <= DAEMON_LOG_MAX_BYTES {
+        return;
+    }
+    let rotated_path = log_path.with_extension("log.1");
+    let _ = std::fs::rename(log_path, rotated_path);
+}
+
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
@@ -326,6 +345,7 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     crate::utils::fs_perms::create_private_dir_all(
         log_path.parent().expect("daemon log path has a parent dir"),
     )?;
+    rotate_daemon_log_if_oversized(&log_path);
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

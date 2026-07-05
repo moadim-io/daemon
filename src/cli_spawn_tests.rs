@@ -440,6 +440,36 @@ fn spawn_detached_errors_when_log_file_path_is_directory() {
 }
 
 #[test]
+fn spawn_detached_rotates_oversized_daemon_log() {
+    // An existing daemon.log past the size cap is rotated to daemon.log.1 before the
+    // detached child is spawned, instead of being appended to forever (#316).
+    let base = temp_home("spawn-log-rotate");
+    let config_dir = base.join(".config/moadim");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let log_path = config_dir.join("daemon.log");
+    std::fs::write(&log_path, vec![b'x'; (DAEMON_LOG_MAX_BYTES + 1) as usize]).unwrap();
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
+    let pid = spawn_detached().expect("spawn detached child");
+    let rotated = config_dir.join("daemon.log.1");
+    assert!(
+        rotated.exists(),
+        "oversized daemon.log should be rotated to daemon.log.1"
+    );
+    assert!(
+        std::fs::metadata(&log_path).unwrap().len() < DAEMON_LOG_MAX_BYTES,
+        "fresh daemon.log should not still hold the oversized contents"
+    );
+    // The detached child is a real process; kill it so the test doesn't leak one.
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn run_background_errors_when_stop_running_times_out() {
     // A server that never stops causes stop_running_and_wait() to time out and
     // return Err, which run_background() propagates (the `?` error branch at L208).

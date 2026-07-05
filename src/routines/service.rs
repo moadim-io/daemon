@@ -258,13 +258,17 @@ fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppErr
 }
 
 /// Reject blank (empty/whitespace-only) `tags` entries and return a normalized copy with each tag
-/// trimmed.
+/// trimmed and duplicates collapsed (first occurrence kept).
 ///
 /// Tags are free-form labels for grouping routines; an empty list is valid. This only guards the
 /// contents of non-empty entries, mirroring [`validate_repositories`]: a blank label carries no
 /// meaning and would render as an empty chip, so it is refused at edit time rather than stored.
+/// The dedup step mirrors [`validate_machines`]: left unchecked, `["nightly", "nightly"]` (or a
+/// padded repeat like `" nightly "`) persists and renders as a doubled chip in the routine row and
+/// an inflated (if harmless) entry in the tag facet's per-tag matching, for a label that names one
+/// concept once.
 fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
-    let mut normalized = Vec::with_capacity(tags.len());
+    let mut normalized: Vec<String> = Vec::with_capacity(tags.len());
     for (index, tag) in tags.iter().enumerate() {
         let trimmed = tag.trim();
         if trimmed.is_empty() {
@@ -272,7 +276,9 @@ fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
                 "tags[{index}] must not be empty or whitespace-only"
             )));
         }
-        normalized.push(trimmed.to_string());
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
     }
     Ok(normalized)
 }

@@ -3,6 +3,7 @@
     reason = "test helpers and fixtures do not need doc comments"
 )]
 
+#[cfg(target_os = "macos")]
 use super::*;
 
 #[cfg(target_os = "macos")]

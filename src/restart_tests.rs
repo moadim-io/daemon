@@ -4,7 +4,10 @@
 //! server and a real short-lived child process, using the `MOADIM_BIND_ADDR`/`MOADIM_HOME_OVERRIDE`
 //! and restart-timeout seams. The single-threaded test harness (`.cargo/config.toml`) makes the
 //! env overrides race-free.
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use std::io::{Read as _, Write as _};

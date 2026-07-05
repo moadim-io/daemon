@@ -31,7 +31,7 @@ pub(super) fn tmux_bin() -> String {
 /// Uses an exact (`=`) target match so `moadim-foo-1` never matches `moadim-foo-10`. A missing
 /// `tmux` binary (exit status unavailable) is treated as "not alive": with no tmux there is no
 /// running session to protect, so an expired workbench is safe to reap.
-pub(super) fn tmux_session_alive(session: &str) -> bool {
+pub(crate) fn tmux_session_alive(session: &str) -> bool {
     std::process::Command::new(tmux_bin())
         .arg("has-session")
         .arg("-t")
@@ -40,6 +40,47 @@ pub(super) fn tmux_session_alive(session: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Return `true` if any tmux session whose name starts with `prefix` currently exists.
+///
+/// Unlike [`tmux_session_alive`]'s exact match, this is for the per-routine overlap guard (#514):
+/// a routine's fires all share `{routine::command::tmux_session_prefix}` but differ by `$TS`, so
+/// detecting "is a previous fire of this routine still running" means matching the prefix, not one
+/// exact session name. A missing `tmux` binary, an empty session list, or a non-zero exit (no
+/// server running) all read as "not alive" — mirroring `tmux_session_alive`'s "no tmux, nothing to
+/// guard against" stance.
+pub(crate) fn tmux_session_prefix_alive(prefix: &str) -> bool {
+    std::process::Command::new(tmux_bin())
+        .arg("list-sessions")
+        .arg("-F")
+        .arg("#{session_name}")
+        .output()
+        .is_ok_and(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .any(|name| is_fire_of_prefix(name, prefix))
+        })
+}
+
+/// Return `true` if `name` is a tmux session name for *this* routine's `prefix`
+/// (`moadim-{slug}-`), not merely a different routine whose slug happens to be a string-prefix of
+/// this one's (e.g. slug `deploy` vs slug `deploy-staging`: `"moadim-deploy-"` is a literal prefix
+/// of `"moadim-deploy-staging-<rid>"`). A plain [`str::starts_with`] treated that as a match,
+/// falsely suppressing `deploy`'s own fire while an unrelated `deploy-staging` run was alive.
+///
+/// Requires the remainder after `prefix` to have the exact `$RID` shape `build_routine_command`
+/// emits (`${TS}_$$`, i.e. `<digits>_<digits>`) rather than any suffix at all.
+fn is_fire_of_prefix(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix).is_some_and(|rid| {
+        rid.split_once('_').is_some_and(|(ts, pid)| {
+            !ts.is_empty()
+                && !pid.is_empty()
+                && ts.bytes().all(|byte| byte.is_ascii_digit())
+                && pid.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    })
 }
 
 /// Force-kill the tmux session named `session` (best-effort).
@@ -70,3 +111,7 @@ pub(super) fn note_forced_kill(workbench: &Path) {
         let _ = file.write_all(b"moadim: routine exceeded max runtime; killing session\n");
     }
 }
+
+#[cfg(test)]
+#[path = "session_tests.rs"]
+mod session_tests;

@@ -1,4 +1,4 @@
-//! OpenAPI 3.0 spec for the Moadim Server REST API, generated from utoipa path decorators.
+//! `OpenAPI` 3.0 spec for the Moadim Server REST API, generated from utoipa path decorators.
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -13,10 +13,11 @@
         crate::routes::http::health,
         crate::routes::http::shutdown,
         crate::routes::http::restart,
-        crate::routes::http::echo,
         crate::routes::http::get_current_machine,
         crate::routes::http::put_machine,
         crate::routes::http::list_machines,
+        crate::routes::http::get_user_prompt,
+        crate::routes::http::put_user_prompt,
         crate::routines::list,
         crate::routines::list_agents,
         crate::routines::create,
@@ -31,6 +32,9 @@
         crate::routines::lock,
         crate::routines::unlock,
         crate::routines::get_logs,
+        crate::routines::get_runs,
+        crate::routines::get_run_log,
+        crate::routines::get_all_runs,
         crate::routines::ical_feed,
         crate::routines::create_flag,
         crate::routines::list_flags,
@@ -43,6 +47,9 @@
         crate::routines::CreateRoutineRequest,
         crate::routines::UpdateRoutineRequest,
         crate::routines::CleanupResponse,
+        crate::routines::RunSummary,
+        crate::routines::RunStatus,
+        crate::routines::FleetRunSummary,
         crate::routines::RoutineSort,
         crate::routines::SortOrder,
         crate::routines::Flag,
@@ -52,19 +59,18 @@
         crate::routes::http::DependencyHealth,
         crate::routes::http::ShutdownResponse,
         crate::routes::http::RestartResponse,
-        crate::routes::http::EchoRequest,
-        crate::routes::http::EchoResponse,
         crate::routes::http::MachineResponse,
         crate::routes::http::SetMachineRequest,
+        crate::routes::http::SetUserPromptRequest,
         crate::global_lock::LockStatus,
         crate::routines::LockRequest,
     ))
 )]
-/// OpenAPI document aggregating all REST paths and component schemas.
+/// `OpenAPI` document aggregating all REST paths and component schemas.
 pub struct ApiDoc;
 
 impl ApiDoc {
-    /// Serialize the OpenAPI spec to a pretty-printed JSON string.
+    /// Serialize the `OpenAPI` spec to a pretty-printed JSON string.
     pub fn to_json() -> String {
         use utoipa::OpenApi as _;
         serde_json::to_string_pretty(&Self::openapi()).unwrap_or_default()

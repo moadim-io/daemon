@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::model::{new_store, Routine};
@@ -23,6 +26,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -44,6 +48,8 @@ fn empty_feed_has_only_calendar_wrapper() {
     assert!(ics.contains("VERSION:2.0\r\n"));
     assert!(ics.contains("PRODID:-//moadim//routines//EN\r\n"));
     assert!(ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
+    assert!(ics.contains("REFRESH-INTERVAL;VALUE=DURATION:PT1H\r\n"));
+    assert!(ics.contains("X-PUBLISHED-TTL:PT1H\r\n"));
     assert!(ics.ends_with("END:VCALENDAR\r\n"));
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
 }
@@ -64,6 +70,33 @@ fn enabled_daily_routine_yields_events_within_horizon() {
     // TRANSPARENT so subscribers aren't marked BUSY (one per VEVENT).
     assert!(ics.contains("TRANSP:TRANSPARENT\r\n"));
     assert_eq!(count(&ics, "TRANSP:TRANSPARENT"), events);
+}
+
+#[test]
+fn every_event_carries_a_duration() {
+    // RFC 5545 requires each VEVENT to specify either DTEND or DURATION, otherwise
+    // calendar clients render it as a zero-length instant. Every fire must emit one —
+    // including the trailing truncation-marker VEVENT, so use a capped ("* * * * *")
+    // schedule that emits both.
+    let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
+    assert_eq!(
+        count(&ics, "BEGIN:VEVENT"),
+        count(&ics, "DURATION:PT15M"),
+        "each VEVENT, including the truncation marker, should carry exactly one DURATION line"
+    );
+}
+
+#[test]
+fn events_are_transparent_to_free_busy() {
+    // The feed is informational: a fire must not consume the subscriber's
+    // free/busy time (RFC 5545 §3.8.2.7 defaults TRANSP to OPAQUE = busy). Use a
+    // capped schedule so the truncation-marker VEVENT is covered too.
+    let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
+    let events = count(&ics, "BEGIN:VEVENT");
+    assert!(events > 0, "expected at least one event");
+    // Exactly one TRANSP:TRANSPARENT (and Outlook free-busy hint) per VEVENT.
+    assert_eq!(count(&ics, "TRANSP:TRANSPARENT\r\n"), events);
+    assert_eq!(count(&ics, "X-MICROSOFT-CDO-BUSYSTATUS:FREE\r\n"), events);
 }
 
 #[test]

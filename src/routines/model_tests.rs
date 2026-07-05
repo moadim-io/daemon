@@ -1,6 +1,10 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
+use crate::paths::agent_toml_path;
 
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing
 /// the env var and the temp dir on drop. Keeps agent-registry reads (`agents_dir`/`agent_toml_path`)
@@ -68,6 +72,7 @@ fn make_routine(agent: &str) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -162,6 +167,22 @@ fn describe_schedule_returns_none_for_unparseable() {
 }
 
 #[test]
+fn next_run_at_some_for_enabled_parseable_schedule() {
+    assert!(next_run_at("@daily", true).is_some());
+}
+
+#[test]
+fn next_run_at_none_when_disabled() {
+    assert!(next_run_at("@daily", false).is_none());
+}
+
+#[test]
+fn next_run_at_none_for_unparseable_schedule() {
+    assert!(next_run_at("@reboot", true).is_none());
+    assert!(next_run_at("not a cron", true).is_none());
+}
+
+#[test]
 fn from_routine_populates_derived_fields() {
     let routine = Routine {
         id: "rid".into(),
@@ -181,6 +202,7 @@ fn from_routine_populates_derived_fields() {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -189,6 +211,7 @@ fn from_routine_populates_derived_fields() {
     assert!(resp.schedule_description.is_some());
     assert!(resp.file_path.contains("routine.toml"));
     assert_eq!(resp.flag_count, 0);
+    assert!(resp.next_run_at.is_some());
 }
 
 #[test]
@@ -211,6 +234,7 @@ fn from_routine_counts_open_flags() {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -235,4 +259,19 @@ fn from_routine_counts_open_flags() {
     assert_eq!(resp.flag_count, 2);
 
     crate::routine_storage::remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn from_routine_agent_registered_false_for_malformed_config() {
+    // Regression for #301: a present-but-malformed config is dropped at crontab-sync time, so it
+    // must not report as registered — file existence alone is not enough. (The parseable and
+    // absent cases are already covered by `from_routine_agent_command_available_true_when_command_resolves`
+    // and `from_routine_agent_command_available_false_when_agent_not_registered` above.)
+    let _home = TempHome::set();
+    std::fs::create_dir_all(agent_toml_path("model-test-malformed").parent().unwrap()).unwrap();
+    std::fs::write(agent_toml_path("model-test-malformed"), "command = [\n").unwrap();
+
+    let resp = RoutineResponse::from_routine(make_routine("model-test-malformed"));
+    assert!(!resp.agent_registered);
+    assert!(!resp.agent_command_available);
 }

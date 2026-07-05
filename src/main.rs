@@ -52,16 +52,28 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
+        cli::Command::Usage(arg) => {
+            cli::print_usage_error(&arg);
+            std::process::exit(cli::EXIT_USAGE);
+        }
         cli::Command::Status { json, wait_secs } => {
             std::process::exit(cli::status(json, wait_secs)?)
         }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
-        cli::Command::Enable { id, json } => std::process::exit(cli::enable(id, json)?),
-        cli::Command::Disable { id, json } => std::process::exit(cli::disable(id, json)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart { json } => cli::restart(json),
+        cli::Command::Restart {
+            json,
+            quiet,
+            interactive: false,
+        } => cli::restart(json, quiet),
+        cli::Command::Restart {
+            interactive: true, ..
+        } => {
+            cli::stop_existing_for_restart(false)?;
+            run_server().await
+        }
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
@@ -134,6 +146,11 @@ async fn run_server() -> anyhow::Result<()> {
     // store reflects the canonical dirs the crontab sync and the launch command's
     // `cp prompt.compiled.md` both target.
     routine_storage::migrate_routine_dirs();
+    // Migrate per-routine trigger timestamps from legacy TOML sidecars (scheduled.local.toml,
+    // last_manual_trigger_at in state.local.toml) into the new append-only log files
+    // (scheduled.log, manual.log). Must run before load_store so the first load already reads from
+    // the log files.
+    routine_storage::migrate_trigger_logs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing

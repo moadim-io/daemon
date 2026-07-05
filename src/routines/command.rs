@@ -226,9 +226,10 @@ fn bin_dir_in(path: &str, bin: &str) -> Option<String> {
 
 /// Whether `tmux` resolves to a file on the given `:`-separated `path` list.
 ///
-/// `tmux` is a hard runtime dependency: routine launches run `tmux new-session …; tmux pipe-pane …`
-/// and a missing `tmux` would be silently ignored (the statements are `;`-joined), making the run a
-/// no-op. This helper surfaces its presence so startup can warn and `GET /health` can report it.
+/// `tmux` is a hard runtime dependency: routine launches run `tmux new-session … \; pipe-pane …`
+/// and a missing `tmux` would be silently ignored (the statement is one of several `;`-joined
+/// steps), making the run a no-op. This helper surfaces its presence so startup can warn and
+/// `GET /health` can report it.
 /// Injectable for tests via the `path` argument; see [`tmux_available`] for the live-`PATH` variant.
 pub(crate) fn tmux_available_in(path: &str) -> bool {
     bin_dir_in(path, "tmux").is_some()
@@ -553,15 +554,23 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     // `$WB/exit_code`): `$WB` is a plain (non-exported) shell variable in the launcher script and
     // is not inherited by the new shell tmux spawns, but the pane's cwd is already `$WB` (`-c`).
     let invocation_with_exit_code = format!(r#"{invocation}; printf '%s' "$?" > exit_code"#);
+    // `pipe-pane` is chained onto the *same* tmux invocation as `new-session` via `\;` (tmux's own
+    // multi-command separator, escaped so the outer shell passes it through literally) rather than
+    // being a separate `;`-joined statement. `new-session -d` starts the agent immediately, so a
+    // pipe attached by a later, separate `tmux pipe-pane` call misses everything the agent writes
+    // in the gap between session creation and that second command running — the agent's opening
+    // banner, initial plan, and any immediate startup crash, silently dropped from `agent.log`
+    // (#289). Chaining within one invocation attaches the pipe to the pane tmux itself just
+    // created, before the calling shell moves on, so there is no such window.
+    //
     // Fail loudly if the session can't start — most likely a residual `$SESS` collision. Without
     // this guard a `duplicate session` error from tmux is swallowed by the `;`-join and the trigger
     // returns success while launching nothing (the silent no-op #411 hardens against). Mirror the
     // prompt-copy guard: record the reason in agent.log and on stderr, then exit non-zero.
     inner_stmts.push(format!(
-        r#"tmux new-session -d -s "$SESS" -c "$WB" {} || {{ echo "moadim: failed to start tmux session $SESS (already exists?); aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
+        r#"tmux new-session -d -s "$SESS" -c "$WB" {} \; pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log" || {{ echo "moadim: failed to start tmux session $SESS (already exists?); aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
         shell_quote(&invocation_with_exit_code)
     ));
-    inner_stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.push(format!(
         r#"{{ {} ; }} >> "$WB/launch.log" 2>&1"#,
         inner_stmts.join("; ")

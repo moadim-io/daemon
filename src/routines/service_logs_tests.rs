@@ -153,6 +153,17 @@ fn svc_logs_missing_routine_not_found() {
 }
 
 #[test]
+fn read_log_tail_errors_when_file_is_missing() {
+    // The very first thing `read_log_tail` does is `std::fs::metadata(path)?`; a workbench
+    // whose `agent.log` was removed out from under it (e.g. a racing cleanup sweep) must
+    // surface an `io::Error` here instead of panicking.
+    let dir = std::env::temp_dir().join(format!("moadim-logtail-missing-{}", uuid::Uuid::new_v4()));
+    let path = dir.join("agent.log");
+
+    assert!(read_log_tail(&path).is_err());
+}
+
+#[test]
 fn read_log_tail_returns_whole_file_under_the_cap() {
     let dir = std::env::temp_dir().join(format!("moadim-logtail-small-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();

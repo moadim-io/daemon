@@ -114,6 +114,7 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `securit
 | `cleanup_workbenches` | `routines::svc_cleanup` |
 | `list_agents` | `routines::available_agents` |
 | `routine_logs` | `routines::svc_logs` |
+| `list_routine_runs` | `routines::svc_list_runs` |
 | `get_lock_status` | `global_lock::lock_status` |
 | `lock_routines` | `global_lock::set_lock` + crontab resync |
 | `unlock_routines` | `global_lock::set_lock` + crontab resync |

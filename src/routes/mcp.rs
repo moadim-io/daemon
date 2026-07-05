@@ -398,6 +398,20 @@ impl MoadimMcp {
         })
     }
 
+    /// List a routine's runs (live workbenches plus durable history), newest first.
+    #[tool(
+        description = "List a routine's runs, newest first — each run's workbench id (pass to the REST endpoint GET /routines/{id}/runs/{workbench}/log to fetch its log), start/finish time, status, and exit code"
+    )]
+    fn list_routine_runs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match routines::svc_list_runs(&self.routines, &id) {
+            Ok(runs) => ok(runs),
+            Err(error) => err(error),
+        })
+    }
+
     /// Return whether the global routine lock is active and which sentinels are present.
     #[tool(
         description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."

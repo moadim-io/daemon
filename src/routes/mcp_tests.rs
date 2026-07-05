@@ -435,3 +435,44 @@ fn set_power_saving_tool_blocks_trigger_without_touching_enabled() {
     let result = handler.trigger_routine(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
 }
+
+#[test]
+fn list_routine_runs_tool_returns_empty_list_for_existing_routine() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let _home = TempHome::set();
+    let routines = crate::routines::new_store();
+    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+    let created = handler
+        .create_routine(Parameters(make_create_routine_req()))
+        .unwrap();
+    let text = match &created.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let result = handler
+        .list_routine_runs(Parameters(IdInput { id }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val, serde_json::json!([]));
+}
+
+#[test]
+fn list_routine_runs_tool_not_found_is_error() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+    let result = handler
+        .list_routine_runs(Parameters(IdInput {
+            id: "no-such".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}

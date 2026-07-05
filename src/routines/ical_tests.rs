@@ -75,20 +75,23 @@ fn enabled_daily_routine_yields_events_within_horizon() {
 #[test]
 fn every_event_carries_a_duration() {
     // RFC 5545 requires each VEVENT to specify either DTEND or DURATION, otherwise
-    // calendar clients render it as a zero-length instant. Every fire must emit one.
-    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    // calendar clients render it as a zero-length instant. Every fire must emit one —
+    // including the trailing truncation-marker VEVENT, so use a capped ("* * * * *")
+    // schedule that emits both.
+    let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
     assert_eq!(
         count(&ics, "BEGIN:VEVENT"),
         count(&ics, "DURATION:PT15M"),
-        "each VEVENT should carry exactly one DURATION line"
+        "each VEVENT, including the truncation marker, should carry exactly one DURATION line"
     );
 }
 
 #[test]
 fn events_are_transparent_to_free_busy() {
     // The feed is informational: a fire must not consume the subscriber's
-    // free/busy time (RFC 5545 §3.8.2.7 defaults TRANSP to OPAQUE = busy).
-    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    // free/busy time (RFC 5545 §3.8.2.7 defaults TRANSP to OPAQUE = busy). Use a
+    // capped schedule so the truncation-marker VEVENT is covered too.
+    let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
     let events = count(&ics, "BEGIN:VEVENT");
     assert!(events > 0, "expected at least one event");
     // Exactly one TRANSP:TRANSPARENT (and Outlook free-busy hint) per VEVENT.

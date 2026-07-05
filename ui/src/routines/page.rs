@@ -4,6 +4,7 @@
 use chrono::{Duration, Local};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
+use yew_router::prelude::*;
 
 use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::refresh::{RefreshControl, RefreshInterval};
@@ -20,6 +21,7 @@ use super::filter::{
 use super::filter_bar::FilterSortBar;
 use super::flags_panel::RoutineFlags;
 use super::form::{clone_title, RoutineForm};
+use super::history::RoutineHistory;
 use super::hooks::{
     install_auto_refresh, install_current_machine_loader, install_lock_status_loader,
     install_now_ticker, install_routines_loader, install_search_hotkey,
@@ -29,7 +31,9 @@ use super::model::{
     api_cleanup, api_create, api_delete, api_trigger, api_unlock, api_update, CreateRoutineRequest,
     UpdateRoutineRequest,
 };
-use super::state::{sort_routines, RAction, RCol, RGroupBy, RModal, RPage, RState, RView};
+use super::state::{
+    sort_routines, RAction, RCol, RGroupBy, RModal, RPage, RState, RView, RoutineHistoryQuery,
+};
 use super::table::RoutineTable;
 
 // ─── Page component ───────────────────────────────────────────────────────────
@@ -66,6 +70,22 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
 
     // Fetch lock status on mount and whenever routines reload.
     install_lock_status_loader(state.clone());
+
+    // Deep-link straight to a routine's HISTORY page when the URL carries a `?history=<id>`
+    // query (e.g. `/routines?history=<id>`, as followed from the overview page's RECENT RUNS
+    // panel), instead of always landing on the plain routine list.
+    {
+        let state = state.clone();
+        let location = use_location();
+        use_effect_with((), move |_| {
+            if let Some(id) = location
+                .and_then(|loc| loc.query::<RoutineHistoryQuery>().ok())
+                .map(|q| q.history)
+            {
+                state.dispatch(RAction::GoToHistory(id));
+            }
+        });
+    }
 
     // Auto-refresh loop, re-armed whenever the chosen interval changes.
     install_auto_refresh(*interval, state.clone(), toast.clone(), updated_at.clone());
@@ -114,6 +134,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_logs = {
         let state = state.clone();
         Callback::from(move |id: String| state.dispatch(RAction::GoToLogs(id)))
+    };
+    let on_history = {
+        let state = state.clone();
+        Callback::from(move |id: String| state.dispatch(RAction::GoToHistory(id)))
     };
     let on_flags = {
         let state = state.clone();
@@ -496,6 +520,13 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                             .unwrap_or_default();
                         html! { <RoutineLogs id={id} title={title} on_back={on_back} /> }
                     },
+                    RPage::History(id) => {
+                        let title = routines.iter()
+                            .find(|r| r.id == id)
+                            .map(|r| r.title.clone())
+                            .unwrap_or_default();
+                        html! { <RoutineHistory id={id} title={title} on_back={on_back} /> }
+                    },
                     RPage::Flags(id) => {
                         let title = routines.iter()
                             .find(|r| r.id == id)
@@ -575,6 +606,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             on_toggle={on_toggle}
                                             on_trigger={on_trigger}
                                             on_logs={on_logs}
+                                            on_history={on_history}
                                             on_flags={on_flags}
                                             on_clear_filters={on_clear_filters}
                                         />

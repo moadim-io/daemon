@@ -19,11 +19,17 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+use crate::overview_recent_runs::RecentRunsTable;
 use crate::overview_upcoming::UpcomingTable;
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::routines::{api_unlock, GlobalLockBanner, LockStatus, Routine};
+use crate::routines::{
+    api_all_runs, api_unlock, FleetRunSummary, GlobalLockBanner, LockStatus, Routine,
+};
 use crate::schedule::{fires_within, fmt_until, next_fire_after};
 use crate::{Route, ToastKind};
+
+/// How many of the most recent runs across the fleet the overview panel shows.
+pub(crate) const RECENT_RUNS_LIMIT: usize = 8;
 
 /// "Due soon" / "soon" window: an enabled entity whose next fire lands within
 /// this many seconds is operationally urgent. Mirrors the per-page cron stats.
@@ -353,6 +359,10 @@ async fn fetch_lock_status() -> Option<LockStatus> {
         .ok()
 }
 
+async fn fetch_recent_runs() -> Vec<FleetRunSummary> {
+    api_all_runs(RECENT_RUNS_LIMIT).await.unwrap_or_default()
+}
+
 /// Loaded state for the overview shell.
 #[derive(Clone, PartialEq, Default)]
 struct Data {
@@ -360,6 +370,7 @@ struct Data {
     loading: bool,
     error: Option<String>,
     lock_status: Option<LockStatus>,
+    recent_runs: Vec<FleetRunSummary>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -388,12 +399,14 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
                 let routines = fetch_routines().await;
                 let error = routines.as_ref().err().cloned();
                 let lock_status = fetch_lock_status().await;
+                let recent_runs = fetch_recent_runs().await;
                 updated_at.set(js_sys::Date::now());
                 data.set(Data {
                     routines: routines.unwrap_or_default(),
                     loading: false,
                     error,
                     lock_status,
+                    recent_runs,
                 });
             });
         }
@@ -524,6 +537,10 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
                 error={data.error.clone()}
                 on_trigger={on_trigger}
             />
+            <div class="section-hd">
+                <span class="section-label">{"RECENT RUNS"}</span>
+            </div>
+            <RecentRunsTable runs={data.recent_runs.clone()} loading={data.loading} />
         </main>
     }
 }

@@ -438,9 +438,16 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
         inner_stmts.push(setup.clone());
     }
+    // Record the agent's exit code once it finishes, so the run-history view (`svc_list_runs`)
+    // can tell success from failure instead of only "session ended". `tmux new-session` runs a
+    // single quoted string through the pane's default shell, so `;`-appending here shares that
+    // same shell and its `$?`. Written to a workbench-*relative* path (`exit_code`, not
+    // `$WB/exit_code`): `$WB` is a plain (non-exported) shell variable in the launcher script and
+    // is not inherited by the new shell tmux spawns, but the pane's cwd is already `$WB` (`-c`).
+    let invocation_with_exit_code = format!(r#"{invocation}; printf '%s' "$?" > exit_code"#);
     inner_stmts.push(format!(
         r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
-        shell_quote(&invocation)
+        shell_quote(&invocation_with_exit_code)
     ));
     inner_stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.push(format!(

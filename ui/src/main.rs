@@ -12,16 +12,19 @@ mod day_timeline;
 mod log_viewer;
 mod machines;
 mod overview;
+mod overview_recent_runs;
 mod overview_upcoming;
 mod refresh;
 mod routines;
 mod schedule;
 mod schedule_heatmap;
+mod settings;
 mod shell_dialogs;
 use command_palette::CommandPalette;
 use overview::OverviewPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
+use settings::SettingsPage;
 use shell_dialogs::{
     api_get_machine, api_put_machine, api_shutdown, fmt_uptime, poll_health, RenameMachineDialog,
     ShutdownDialog, ToastStack,
@@ -109,6 +112,8 @@ pub enum Route {
     Routines,
     #[at("/heatmap")]
     Heatmap,
+    #[at("/settings")]
+    Settings,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -366,6 +371,7 @@ pub fn shell() -> Html {
             Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
             Route::Heatmap => html! { <HeatmapPage /> },
+            Route::Settings => html! { <SettingsPage on_toast={on_toast.clone()} /> },
             Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
     };
@@ -489,6 +495,9 @@ pub fn nav() -> Html {
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Heatmap))} to={Route::Heatmap}>
                 { "HEATMAP" }
+            </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Settings))} to={Route::Settings}>
+                { "SETTINGS" }
             </Link<Route>>
         </nav>
     }

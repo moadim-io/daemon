@@ -16,6 +16,16 @@ fn finish_at_trigger(_dir: &std::path::Path, trigger_ts: u64) -> u64 {
     trigger_ts
 }
 
+/// A `persist` that does nothing — most reap tests aren't exercising durable history.
+fn noop_persist(
+    _slug: &str,
+    _name: &str,
+    _path: &std::path::Path,
+    _started_at: u64,
+    _finished_at: u64,
+) {
+}
+
 #[test]
 fn tmux_kill_session_is_best_effort_on_missing_session() {
     // The real tmux side-effect helper. Killing a session that does not exist (or running with no
@@ -210,6 +220,7 @@ fn reap_dir_removes_only_finished_and_expired() {
         &alive,
         &noop_kill,
         &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1);
@@ -243,6 +254,7 @@ fn reap_dir_uses_per_slug_ttl() {
         &dead,
         &noop_kill,
         &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1);
@@ -286,6 +298,7 @@ fn reap_dir_measures_ttl_from_finish_not_trigger() {
         &dead,
         &noop_kill,
         &finished_at,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1, "only the long-finished run is reaped");
@@ -351,6 +364,7 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
         &alive,
         &kill,
         &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1, "hung-then-killed workbench is reaped");
@@ -382,6 +396,7 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
         &alive,
         &kill,
         &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(
@@ -420,6 +435,7 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
         &dead,
         &kill,
         &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1);
@@ -429,4 +445,85 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
     );
 
     std::fs::remove_dir_all(&base).unwrap();
+}
+
+fn make_routine(id: &str, title: &str) -> super::super::model::Routine {
+    super::super::model::Routine {
+        model: None,
+        id: id.to_string(),
+        schedule: "@daily".to_string(),
+        title: title.to_string(),
+        agent: "claude".to_string(),
+        prompt: "do the thing".to_string(),
+        goal: None,
+        repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
+        enabled: true,
+        source: "managed".to_string(),
+        created_at: 1,
+        updated_at: 1,
+        last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        tags: vec![],
+        ttl_secs: None,
+        max_runtime_secs: None,
+    }
+}
+
+#[test]
+fn cleanup_expired_workbenches_persists_run_history_before_removal() {
+    // A reaped workbench whose slug matches a *current* routine gets a durable `runs.log` record
+    // (via the real `persist` closure in `cleanup_expired_workbenches`), so `svc_list_runs` still
+    // knows about it after the workbench itself is gone.
+    let home =
+        std::env::temp_dir().join(format!("moadim-cleanup-persist-{}", uuid::Uuid::new_v4()));
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    let title = "Cleanup Persist ZZQ";
+    let slug = super::super::command::slugify(title);
+    let store = super::super::model::new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("persist-id".into(), make_routine("persist-id", title));
+
+    let workbenches = crate::paths::workbenches_dir();
+    let failed = workbenches.join(format!("{slug}-1"));
+    let succeeded = workbenches.join(format!("{slug}-2"));
+    let unknown = workbenches.join(format!("{slug}-3"));
+    std::fs::create_dir_all(&failed).unwrap();
+    std::fs::write(failed.join("exit_code"), "1").unwrap();
+    std::fs::create_dir_all(&succeeded).unwrap();
+    std::fs::write(succeeded.join("exit_code"), "0").unwrap();
+    std::fs::create_dir_all(&unknown).unwrap();
+    // No `exit_code` file at all: e.g. the launch aborted before the agent ran.
+
+    let removed = cleanup_expired_workbenches(&store);
+
+    assert_eq!(removed, 3);
+    assert!(!failed.exists() && !succeeded.exists() && !unknown.exists());
+    let mut history = super::super::run_history::read_persisted_runs("persist-id");
+    history.sort_by_key(|run| run.workbench.clone());
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0].exit_code, Some(1));
+    assert_eq!(history[0].status, super::super::model::RunStatus::Failed);
+    assert_eq!(history[1].exit_code, Some(0));
+    assert_eq!(history[1].status, super::super::model::RunStatus::Success);
+    assert_eq!(history[2].exit_code, None);
+    assert_eq!(history[2].status, super::super::model::RunStatus::Unknown);
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
 }

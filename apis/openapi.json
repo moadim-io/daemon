@@ -40,6 +40,46 @@
         }
       }
     },
+    "/config/user-prompt": {
+      "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /config/user-prompt` — the persistent system prompt appended to every routine's agent\ninstructions file (see [`crate::paths::user_prompt_path`]), as plain text. Empty (not an\nerror) when nothing has been saved yet.",
+        "operationId": "get_user_prompt",
+        "responses": {
+          "200": {
+            "description": "User prompt contents as plain text"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`PUT /config/user-prompt` — replace the persistent system prompt.",
+        "description": "Creates the config directory if absent. Every routine's next run picks up the change (the\nlaunch command re-reads this file each time — see `command::system_prompt_stmts`); already\nrunning agents are unaffected.",
+        "operationId": "put_user_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserPromptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Saved"
+          },
+          "500": {
+            "description": "Write failed"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -411,6 +451,45 @@
         }
       }
     },
+    "/routines/runs": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/runs` — the most recent runs across every routine, newest first. Backs the\noverview \"recent runs\" panel with a single workbench scan instead of one request per routine.",
+        "operationId": "get_all_runs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Cap on the number of runs returned (default: `DEFAULT_FLEET_RUNS_LIMIT`).",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FleetRunSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/routines/{id}": {
       "get": {
         "tags": [
@@ -721,6 +800,81 @@
         }
       }
     },
+    "/routines/{id}/runs": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs` — list every run workbench for the routine, newest first.",
+        "operationId": "get_runs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummary"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/runs/{workbench}/log": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs/{workbench}/log` — return one specific run's `agent.log` as plain text.",
+        "operationId": "get_run_log",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workbench",
+            "in": "path",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`), from `GET /routines/{id}/runs`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/scheduled-trigger": {
       "post": {
         "tags": [
@@ -999,6 +1153,58 @@
           "general",
           "local"
         ]
+      },
+      "FleetRunSummary": {
+        "type": "object",
+        "description": "One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide\ncounterpart to [`RunSummary`] backing an overview \"recent runs\" view.",
+        "required": [
+          "routine_id",
+          "routine_title",
+          "workbench",
+          "started_at",
+          "status"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Process exit code, when recorded."
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
+            "minimum": 0
+          },
+          "routine_id": {
+            "type": "string",
+            "description": "The routine this run belongs to."
+          },
+          "routine_title": {
+            "type": "string",
+            "description": "The routine's title, at the time of this call (not snapshotted per-run)."
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds the run was triggered.",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus",
+            "description": "Success/failure/running/unknown, derived from the exit-code file and tmux session liveness."
+          },
+          "workbench": {
+            "type": "string",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`)."
+          }
+        }
       },
       "HealthResponse": {
         "type": "object",
@@ -1345,6 +1551,58 @@
           "repository"
         ]
       },
+      "RunStatus": {
+        "type": "string",
+        "description": "Outcome of a single past run, derived from its workbench on disk.",
+        "enum": [
+          "running",
+          "success",
+          "failed",
+          "unknown"
+        ]
+      },
+      "RunSummary": {
+        "type": "object",
+        "description": "One past (or in-progress) run of a routine, listed newest-first.",
+        "required": [
+          "workbench",
+          "started_at",
+          "status"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Process exit code, when recorded."
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds the run was triggered.",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus",
+            "description": "Success/failure/running/unknown, derived from the exit-code file and tmux session liveness."
+          },
+          "workbench": {
+            "type": "string",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`."
+          }
+        }
+      },
       "SetMachineRequest": {
         "type": "object",
         "description": "Request body for `PUT /machine`.",
@@ -1355,6 +1613,19 @@
           "name": {
             "type": "string",
             "description": "New machine name. Trimmed; must be non-empty."
+          }
+        }
+      },
+      "SetUserPromptRequest": {
+        "type": "object",
+        "description": "Request body for `PUT /config/user-prompt`.",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "New persistent prompt contents. An empty string clears it."
           }
         }
       },

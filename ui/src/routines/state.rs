@@ -12,7 +12,16 @@ use super::filter::{
     last_fire_at, routine_health, AgentFacet, RepositoryFacet, RoutineFilter, RoutineMachineFacet,
     RoutineStatusFacet,
 };
+use serde::{Deserialize, Serialize};
+
 use super::model::{LockStatus, Routine};
+
+/// Route query used to deep-link straight to a routine's HISTORY page (e.g. from the overview
+/// page's RECENT RUNS panel), instead of landing on the plain routine list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoutineHistoryQuery {
+    pub history: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum RPage {
@@ -20,6 +29,7 @@ pub enum RPage {
     List,
     New,
     Logs(String),
+    History(String),
     Flags(String),
     /// Pre-filled create form cloned from an existing routine.
     Clone(Box<Routine>),
@@ -265,6 +275,7 @@ pub enum RAction {
     GoToNew,
     GoToList,
     GoToLogs(String),
+    GoToHistory(String),
     GoToFlags(String),
     /// Open the create form pre-filled with a copy of the named routine.
     GoToClone(String),
@@ -317,6 +328,7 @@ impl Reducible for RState {
             RAction::GoToNew => s.page = RPage::New,
             RAction::GoToList => s.page = RPage::List,
             RAction::GoToLogs(id) => s.page = RPage::Logs(id),
+            RAction::GoToHistory(id) => s.page = RPage::History(id),
             RAction::GoToFlags(id) => s.page = RPage::Flags(id),
             RAction::GoToClone(id) => {
                 if let Some(source) = s.routines.iter().find(|x| x.id == id) {

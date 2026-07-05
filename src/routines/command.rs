@@ -574,5 +574,9 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
 mod command_tests;
 
 #[cfg(test)]
+#[path = "command_bin_resolution_tests.rs"]
+mod command_bin_resolution_tests;
+
+#[cfg(test)]
 #[path = "command_placeholder_tests.rs"]
 mod command_placeholder_tests;

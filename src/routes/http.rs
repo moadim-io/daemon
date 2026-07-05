@@ -479,8 +479,7 @@ fn shutdown_grace() -> Duration {
     std::env::var(SHUTDOWN_GRACE_MS_ENV)
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
-        .map(Duration::from_millis)
-        .unwrap_or(SHUTDOWN_GRACE)
+        .map_or(SHUTDOWN_GRACE, Duration::from_millis)
 }
 
 /// Await `serve`, but once `shutdown_started` fires, allow open connections at most `grace` to

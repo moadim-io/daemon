@@ -26,18 +26,35 @@ fn write_openapi_spec_writes_json_to_path() {
 
 #[test]
 fn write_openapi_spec_logs_on_write_failure() {
-    // The target's parent is a regular file, so writing the spec underneath it fails,
-    // exercising the best-effort `log::warn!` branch. The call must not panic.
+    // The parent directory exists (so the missing-parent skip doesn't fire), but the target path
+    // is itself a directory, so the write fails — exercising the best-effort `log::warn!` branch.
+    // The call must not panic.
     let dir = std::env::temp_dir().join(format!("moadim-openapi-fail-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let blocker = dir.join("blocker");
-    std::fs::write(&blocker, "i am a file").unwrap();
-    let unwritable = blocker.join("openapi.json");
+    let unwritable = dir.join("openapi.json");
+    std::fs::create_dir_all(&unwritable).unwrap();
 
     write_openapi_spec(&unwritable);
 
-    assert!(!unwritable.exists(), "the write should have failed");
+    assert!(
+        unwritable.is_dir(),
+        "the write should have failed, leaving the directory untouched"
+    );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn write_openapi_spec_skips_when_parent_dir_is_missing() {
+    // Mirrors an installed binary: CARGO_MANIFEST_DIR was baked in at compile time on the build
+    // machine and doesn't exist here, so the write must be skipped, not attempted-and-warned.
+    let dir = std::env::temp_dir().join(format!("moadim-openapi-missing-{}", uuid::Uuid::new_v4()));
+    let path = dir.join("openapi.json");
+
+    write_openapi_spec(&path);
+
+    assert!(
+        !path.exists(),
+        "should not create the parent dir or the file"
+    );
 }
 
 // ── build_app / router smoke tests ───────────────────────────────────────────

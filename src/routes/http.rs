@@ -471,7 +471,15 @@ pub(crate) fn build_app_with_shutdown(
 /// Best-effort: the spec is a development convenience (committed under `apis/`), so a write
 /// failure must not abort server startup. Extracted from [`run_with_listener_until`] so the
 /// failure branch can be exercised against an unwritable path.
+///
+/// `path` is `CARGO_MANIFEST_DIR/apis/openapi.json`, baked in at compile time. For an installed
+/// binary (`cargo install`), that directory is wherever the crate happened to build, which
+/// generally doesn't exist on the end user's machine — skip silently rather than warning on
+/// every startup for a path nobody expects to be writable (#319).
 pub(crate) fn write_openapi_spec(path: &std::path::Path) {
+    if !path.parent().is_some_and(std::path::Path::is_dir) {
+        return;
+    }
     if let Err(err) = std::fs::write(path, crate::openapi::ApiDoc::to_json()) {
         log::warn!("could not write openapi spec: {err}");
     }

@@ -126,6 +126,113 @@ async fn build_app_serves_machine() {
 }
 
 #[tokio::test]
+async fn user_prompt_empty_when_unset() {
+    let dir =
+        std::env::temp_dir().join(format!("moadim-user-prompt-empty-{}", uuid::Uuid::new_v4()));
+    std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/config/user-prompt")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(bytes, "".as_bytes());
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::remove_var("MOADIM_HOME_OVERRIDE");
+}
+
+#[tokio::test]
+async fn user_prompt_get_returns_500_on_non_not_found_read_error() {
+    // A directory in place of the file makes `read_to_string` fail with something other than
+    // `NotFound` (e.g. `IsADirectory`), exercising the `Err(_)` arm distinct from the "unset"
+    // (`NotFound` -> empty string) case.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-user-prompt-isdir-{}", uuid::Uuid::new_v4()));
+    std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    std::fs::create_dir_all(crate::paths::user_prompt_path()).unwrap();
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/config/user-prompt")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::remove_var("MOADIM_HOME_OVERRIDE");
+}
+
+#[tokio::test]
+async fn user_prompt_put_then_get_round_trips() {
+    let dir = std::env::temp_dir().join(format!("moadim-user-prompt-put-{}", uuid::Uuid::new_v4()));
+    std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    let resp = build_app(crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/config/user-prompt")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"content":"always be terse"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    let resp = build_app(crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/config/user-prompt")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(bytes, "always be terse".as_bytes());
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::remove_var("MOADIM_HOME_OVERRIDE");
+}
+
+#[tokio::test]
+async fn user_prompt_put_returns_500_on_write_failure() {
+    // Place a regular file where the config dir should be so `create_dir_all` fails.
+    let dir =
+        std::env::temp_dir().join(format!("moadim-user-prompt-fail-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&dir, b"").unwrap();
+    std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/config/user-prompt")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"content":"x"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let _ = std::fs::remove_file(&dir);
+    std::env::remove_var("MOADIM_HOME_OVERRIDE");
+}
+
+#[tokio::test]
 async fn build_app_serves_root() {
     let app = build_app(crate::routines::new_store());
     let resp = app
@@ -335,6 +442,7 @@ async fn build_app_serves_machines() {
             last_scheduled_trigger_at: None,
             snoozed_until: None,
             skip_runs: None,
+            power_saving: false,
             ttl_secs: None,
             max_runtime_secs: None,
         },

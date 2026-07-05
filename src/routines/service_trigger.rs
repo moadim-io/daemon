@@ -7,18 +7,34 @@ use crate::utils::lock::LockRecover;
 use crate::utils::time::now_secs;
 
 use crate::routines::agents::load_agent_command;
-use crate::routines::cleanup::{cleanup_expired_workbenches, parse_workbench_name};
+use crate::routines::cleanup::{
+    cleanup_expired_workbenches, parse_workbench_name, run_session_alive,
+};
 use crate::routines::command::{build_routine_command, inline_prompt_overflow, slugify};
 use crate::routines::flags::{self, Flag, FlagScope};
-use crate::routines::model::{CleanupResponse, Routine, RoutineStore};
+use crate::routines::model::{
+    CleanupResponse, FleetRunSummary, Routine, RoutineStore, RunStatus, RunSummary,
+};
+use crate::routines::run_history::{read_exit_code, read_persisted_runs};
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
+///
+/// Refuses to launch (with a distinct [`AppError::Locked`] message) when the routine is
+/// user-disabled (`enabled: false`) or in power-saving mode — `enabled` and `power_saving` are
+/// independent signals, checked in that order so the response names whichever one is actually
+/// responsible.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    if !routine.enabled {
+        return Err(AppError::Locked("routine is disabled".into()));
+    }
+    if routine.power_saving {
+        return Err(AppError::Locked("routine is in power-saving mode".into()));
+    }
     let ts = now_secs();
     routine.last_manual_trigger_at = Some(ts);
     let routine = routine.clone();
@@ -42,12 +58,24 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// is skipped here instead of spawned: `snoozed_until` clears itself once elapsed (that fire then
 /// runs), `skip_runs` decrements once per skipped fire and clears at zero. [`svc_trigger`] (manual)
 /// ignores both fields entirely, by design.
+///
+/// Also refuses to launch when the routine is user-disabled or in power-saving mode, same as
+/// [`svc_trigger`] — checked first, ahead of snooze, since a disabled/power-saving routine should
+/// never spawn regardless of its snooze state. In practice a disabled routine has no crontab line
+/// (see `sync::routines::build_block`), so this branch is a defense-in-depth guard for direct calls
+/// to this endpoint rather than the primary way disabled routines stay quiet.
 pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    if !routine.enabled {
+        return Err(AppError::Locked("routine is disabled".into()));
+    }
+    if routine.power_saving {
+        return Err(AppError::Locked("routine is in power-saving mode".into()));
+    }
 
     if let Some(until) = routine.snoozed_until {
         if now_secs() < until {
@@ -123,6 +151,26 @@ pub fn svc_snooze(
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     routine.snoozed_until = snoozed_until;
     routine.skip_runs = skip_runs;
+    let routine = routine.clone();
+    drop(lock);
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    Ok(routine)
+}
+
+/// Set or clear a routine's power-saving state, without touching `enabled` or the crontab.
+///
+/// System/policy-owned, orthogonal to the user-owned `enabled` toggle (see
+/// [`Routine::power_saving`]): both [`svc_trigger`] and [`svc_trigger_scheduled`] refuse to launch
+/// while it is active, but the routine keeps its crontab line and its `enabled` value is untouched,
+/// so it resumes firing on its own once power saving is cleared.
+pub fn svc_set_power_saving(
+    store: &RoutineStore,
+    id: &str,
+    active: bool,
+) -> Result<Routine, AppError> {
+    let mut lock = store.lock_recover();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    routine.power_saving = active;
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
@@ -243,6 +291,158 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         return Ok(String::new());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+}
+
+/// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status
+/// derives from the tmux session's liveness and the `exit_code` file the launch command writes on
+/// completion (see [`crate::routines::command::build_routine_command`]), merged with durable
+/// records from `runs.log` for runs whose workbench has since been TTL-reaped (see
+/// [`crate::routines::run_history`]) — so this list is the routine's *full* history, not just what
+/// current retention happens to keep.
+pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let slug = slugify(&routine.title);
+    let mut runs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
+                continue;
+            };
+            if dir_slug != slug {
+                continue;
+            }
+            runs.push(run_summary(&name, ts));
+        }
+    }
+    for persisted in read_persisted_runs(id) {
+        runs.push(RunSummary {
+            workbench: persisted.workbench,
+            started_at: persisted.started_at,
+            finished_at: Some(persisted.finished_at),
+            status: persisted.status,
+            exit_code: persisted.exit_code,
+        });
+    }
+    runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
+    Ok(runs)
+}
+
+/// Default cap on [`svc_list_all_runs`] results when the caller doesn't specify one.
+pub const DEFAULT_FLEET_RUNS_LIMIT: usize = 20;
+
+/// List the most recent runs across *every* routine, newest first, capped at `limit` (or
+/// [`DEFAULT_FLEET_RUNS_LIMIT`] when `None`). Backs the overview "recent runs" panel with a single
+/// workbench-directory scan, rather than one [`svc_list_runs`] call per routine. Merges in durable
+/// `runs.log` records for TTL-reaped runs (see [`crate::routines::run_history`]) alongside live
+/// workbenches.
+///
+/// A workbench whose slug matches no current routine (the routine was since deleted, or renamed
+/// without a workbench migration failure — see [`migrate_workbenches`]) is skipped: there is no
+/// routine to attribute it to.
+pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<FleetRunSummary> {
+    let limit = limit.unwrap_or(DEFAULT_FLEET_RUNS_LIMIT);
+    let routines: Vec<(String, String)> = store
+        .lock_recover()
+        .values()
+        .map(|routine| (routine.id.clone(), routine.title.clone()))
+        .collect();
+    let by_slug: std::collections::HashMap<String, (String, String)> = routines
+        .iter()
+        .map(|(id, title)| (slugify(title), (id.clone(), title.clone())))
+        .collect();
+    let mut runs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
+                continue;
+            };
+            let Some((routine_id, routine_title)) = by_slug.get(dir_slug).cloned() else {
+                continue;
+            };
+            let run = run_summary(&name, ts);
+            runs.push(FleetRunSummary {
+                routine_id,
+                routine_title,
+                workbench: run.workbench,
+                started_at: run.started_at,
+                finished_at: run.finished_at,
+                status: run.status,
+                exit_code: run.exit_code,
+            });
+        }
+    }
+    for (routine_id, routine_title) in &routines {
+        for persisted in read_persisted_runs(routine_id) {
+            runs.push(FleetRunSummary {
+                routine_id: routine_id.clone(),
+                routine_title: routine_title.clone(),
+                workbench: persisted.workbench,
+                started_at: persisted.started_at,
+                finished_at: Some(persisted.finished_at),
+                status: persisted.status,
+                exit_code: persisted.exit_code,
+            });
+        }
+    }
+    runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
+    runs.truncate(limit);
+    runs
+}
+
+/// Derive a single [`RunSummary`] for workbench `dir` (named `{slug}-{started_at}`).
+fn run_summary(dir: &str, started_at: u64) -> RunSummary {
+    let path = workbenches_dir().join(dir);
+    let exit_code = read_exit_code(&path);
+    let finished_at = std::fs::metadata(path.join("exit_code"))
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs());
+    let session = format!("moadim-{dir}");
+    let status = match exit_code {
+        Some(0) => RunStatus::Success,
+        Some(_) => RunStatus::Failed,
+        None if run_session_alive(&session) => RunStatus::Running,
+        None => RunStatus::Unknown,
+    };
+    RunSummary {
+        workbench: dir.to_string(),
+        started_at,
+        finished_at,
+        status,
+        exit_code,
+    }
+}
+
+/// Return the contents of a specific run's `agent.log`, by workbench directory name.
+///
+/// `workbench` must be an existing, exact `{slug}-{ts}` directory belonging to routine `id` — this
+/// guards both path traversal (a bare directory name, not an arbitrary path, is joined onto
+/// `workbenches_dir()`) and cross-routine leakage, mirroring the exact-slug check in [`svc_logs`].
+pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<String, AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let slug = slugify(&routine.title);
+    let Some((dir_slug, _)) = parse_workbench_name(workbench) else {
+        return Err(AppError::NotFound);
+    };
+    if dir_slug != slug {
+        return Err(AppError::NotFound);
+    }
+    let log_path = workbenches_dir().join(workbench).join("agent.log");
     if !log_path.exists() {
         return Ok(String::new());
     }

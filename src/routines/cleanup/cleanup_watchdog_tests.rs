@@ -18,6 +18,16 @@ fn finish_at_trigger(_dir: &std::path::Path, trigger_ts: u64) -> u64 {
     trigger_ts
 }
 
+/// A `persist` that does nothing — these reap tests aren't exercising durable history.
+fn noop_persist(
+    _slug: &str,
+    _name: &str,
+    _path: &std::path::Path,
+    _started_at: u64,
+    _finished_at: u64,
+) {
+}
+
 fn touch_dir(parent: &std::path::Path, name: &str) {
     std::fs::create_dir_all(parent.join(name)).unwrap();
 }
@@ -118,7 +128,8 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
             &never_expires_runtime,
             &dead,
             &noop_kill,
-            &finish_at_trigger
+            &finish_at_trigger,
+            &noop_persist
         ),
         0
     );
@@ -156,6 +167,7 @@ fn reap_dir_counts_zero_when_remove_fails() {
         &dead,
         &noop_kill,
         &finish_at_trigger,
+        &noop_persist,
     );
     // A read-only parent makes `remove_dir_all` fail for an unprivileged user, so
     // the directory survives and the Err arm runs (0 removed). Root bypasses the
@@ -287,6 +299,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,

@@ -24,6 +24,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -103,6 +104,30 @@ fn svc_create_trims_and_stores_tags() {
     assert_eq!(
         created.routine.tags,
         vec!["triage".to_string(), "nightly".to_string()]
+    );
+
+    svc_delete(&store, &created.routine.id).unwrap();
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+}
+
+#[test]
+fn svc_create_dedupes_tags() {
+    // Covers the dedup step of `validate_tags`: a duplicate (post-trim) tag entry is
+    // collapsed to one, mirroring `validate_machines`'s dedup behavior.
+    crate::routines::ensure_default_agents();
+    let title = "Svc Create Tags Dedup ZZZ";
+    let store = new_store();
+    let created = svc_create(
+        &store,
+        CreateRoutineRequest {
+            tags: vec!["  nightly  ".into(), "nightly".into(), "triage".into()],
+            ..create_req_with_title(title)
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        created.routine.tags,
+        vec!["nightly".to_string(), "triage".to_string()]
     );
 
     svc_delete(&store, &created.routine.id).unwrap();

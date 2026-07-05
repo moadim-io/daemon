@@ -99,6 +99,10 @@ struct RuntimeState {
     /// [`crate::routines::Routine::skip_runs`].
     #[serde(default)]
     skip_runs: Option<u32>,
+    /// Whether firing is paused for power saving. See
+    /// [`crate::routines::Routine::power_saving`].
+    #[serde(default)]
+    power_saving: bool,
 }
 
 /// Legacy scheduled-state TOML, superseded by the `scheduled.log` append-only file.
@@ -195,6 +199,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         last_scheduled_trigger_at,
         snoozed_until: runtime_state.snoozed_until,
         skip_runs: runtime_state.skip_runs,
+        power_saving: runtime_state.power_saving,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         tags: toml.tags,
@@ -269,7 +274,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 /// when all are `None`, so the on-disk state always mirrors the in-memory routine.
 fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    if routine.snoozed_until.is_none() && routine.skip_runs.is_none() {
+    if routine.snoozed_until.is_none() && routine.skip_runs.is_none() && !routine.power_saving {
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
@@ -281,6 +286,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         last_manual_trigger_at: None,
         snoozed_until: routine.snoozed_until,
         skip_runs: routine.skip_runs,
+        power_saving: routine.power_saving,
     };
     let text = toml::to_string_pretty(&state)
         .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
@@ -439,6 +445,12 @@ pub(crate) fn migrate_prompts_to_subfolder_from_dir(dir: &std::path::Path) {
     };
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            continue;
+        }
+        // Skip dirs with no `routine.toml` at all: not a routine (e.g. an orphaned/leftover dir),
+        // so there is nothing to migrate. Without this guard the migration resurrects an empty
+        // `prompts/prompt.pure.md` sidecar in such dirs on every startup.
+        if !entry.path().join("routine.toml").exists() {
             continue;
         }
         let prompts_dir = entry.path().join("prompts");

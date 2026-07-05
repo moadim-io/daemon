@@ -23,6 +23,7 @@ fn make_routine(title: &str) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -223,6 +224,54 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
             None => std::env::remove_var("HOME"),
         }
     }
+}
+
+#[test]
+fn build_routine_command_guards_agent_setup_step() {
+    // When an agent has a `setup` step, it must be fail-fast: a non-zero exit aborts the launch
+    // before `tmux new-session` runs, mirroring the `cp prompt.md` guard. Otherwise a failed setup
+    // (e.g. trust/onboarding pre-seed) is silently ignored and the agent hangs on the interactive
+    // prompt until the watchdog reaps it.
+    let routine = make_routine("Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: Some("python3 seed.py".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // The setup is inserted verbatim, wrapped in a `{ ...; } || { ...; exit 1; }` guard...
+    assert!(
+        cmd.contains(
+            r#"{ python3 seed.py; } || { echo "moadim: agent setup failed; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+        ),
+        "expected guarded setup step in: {cmd}"
+    );
+    // ...and the guard precedes the tmux launch, so a failed setup never reaches it.
+    let setup_pos = cmd.find("agent setup failed").unwrap();
+    let tmux_pos = cmd.find("tmux new-session").unwrap();
+    assert!(
+        setup_pos < tmux_pos,
+        "setup guard must precede tmux new-session in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_omits_setup_guard_when_no_setup() {
+    // With no `setup` step the guard is absent entirely (the `if let Some(setup)` arm is skipped).
+    let routine = make_routine("No Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        !cmd.contains("agent setup failed"),
+        "did not expect a setup guard with no setup step in: {cmd}"
+    );
 }
 
 #[test]
@@ -518,6 +567,42 @@ fn build_routine_command_omits_model_flag_when_unset() {
     assert!(
         !cmd.contains("--model"),
         "expected no --model flag in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_records_exit_code_after_invocation() {
+    // The tmux pane's shell-command must record `$?` to a *workbench-relative* `exit_code` file
+    // (not `$WB/exit_code`: `$WB` is never exported, so the new shell tmux spawns wouldn't see it)
+    // once the agent invocation finishes, so run-history can distinguish success from failure.
+    let routine = make_routine("Cmd Exit Code Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--permission-mode".to_string(), "auto".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The whole tmux shell-command (invocation + exit-code capture) is itself shell-quoted as one
+    // `tmux new-session` argument, which re-escapes the inner single quotes around `printf`'s
+    // `'%s'` into `'\''` — assert on ordering/content of the unescaped pieces rather than the
+    // exact (implementation-detail) escaped byte sequence.
+    let new_session_pos = cmd.find("tmux new-session").unwrap();
+    let invocation_pos = cmd.find("--permission-mode auto").unwrap();
+    // Multiple `printf`s appear earlier in the script (the disclosure write, the scheduled-fire
+    // stamp); only the one after the invocation is the exit-code capture.
+    let printf_pos = invocation_pos + cmd[invocation_pos..].find("printf").unwrap();
+    let exit_code_pos = cmd.rfind("> exit_code").unwrap();
+    assert!(
+        new_session_pos < invocation_pos
+            && invocation_pos < printf_pos
+            && printf_pos < exit_code_pos,
+        "expected exit-code capture after the invocation inside tmux new-session in: {cmd}"
+    );
+    assert!(cmd.contains(r#""$?""#), "expected $? capture in: {cmd}");
+    assert!(
+        !cmd.contains("$WB/exit_code"),
+        "exit_code must be workbench-relative, not $WB-prefixed, since $WB isn't exported: {cmd}"
     );
 }
 

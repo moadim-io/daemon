@@ -81,22 +81,6 @@ pub struct HealthResponse {
     pub build_date: String,
 }
 
-/// Request body for `POST /echo`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct EchoRequest {
-    /// Message to echo back.
-    pub message: String,
-}
-
-/// Response body for `POST /echo`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct EchoResponse {
-    /// The echoed message.
-    pub message: String,
-    /// Server timestamp (Unix seconds) when the echo was produced.
-    pub timestamp: u64,
-}
-
 /// The embedded SPA HTML, baked into the binary at compile time.
 const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 
@@ -218,19 +202,6 @@ pub async fn restart() -> Result<Json<RestartResponse>, AppError> {
     }))
 }
 
-/// `POST /echo` — parse a JSON body and return the message with a server timestamp.
-#[utoipa::path(post, path = "/echo",
-    request_body = EchoRequest,
-    responses((status = 200, body = EchoResponse), (status = 400, description = "Invalid body")))]
-pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::http::StatusCode> {
-    let parsed: EchoRequest =
-        serde_json::from_slice(&body).map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
-    Ok(Json(EchoResponse {
-        message: parsed.message,
-        timestamp: now_secs(),
-    }))
-}
-
 /// Response body for `GET /machine`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct MachineResponse {
@@ -288,6 +259,44 @@ pub async fn put_machine(
         }
         Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
     }
+}
+
+/// `GET /config/user-prompt` — the persistent system prompt appended to every routine's agent
+/// instructions file (see [`crate::paths::user_prompt_path`]), as plain text. Empty (not an
+/// error) when nothing has been saved yet.
+#[utoipa::path(get, path = "/config/user-prompt",
+    responses((status = 200, description = "User prompt contents as plain text")))]
+pub async fn get_user_prompt() -> Result<String, AppError> {
+    match std::fs::read_to_string(crate::paths::user_prompt_path()) {
+        Ok(text) => Ok(text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(_) => Err(AppError::Internal),
+    }
+}
+
+/// Request body for `PUT /config/user-prompt`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct SetUserPromptRequest {
+    /// New persistent prompt contents. An empty string clears it.
+    pub content: String,
+}
+
+/// `PUT /config/user-prompt` — replace the persistent system prompt.
+///
+/// Creates the config directory if absent. Every routine's next run picks up the change (the
+/// launch command re-reads this file each time — see `command::system_prompt_stmts`); already
+/// running agents are unaffected.
+#[utoipa::path(put, path = "/config/user-prompt",
+    request_body = SetUserPromptRequest,
+    responses((status = 204, description = "Saved"), (status = 500, description = "Write failed")))]
+pub async fn put_user_prompt(
+    Json(body): Json<SetUserPromptRequest>,
+) -> Result<StatusCode, AppError> {
+    let path = crate::paths::user_prompt_path();
+    let parent = path.parent().expect("user prompt path has a parent dir");
+    std::fs::create_dir_all(parent).map_err(|_| AppError::Internal)?;
+    std::fs::write(&path, &body.content).map_err(|_| AppError::Internal)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// `GET /machines` — distinct machine names this daemon knows about.
@@ -359,13 +368,17 @@ pub(crate) fn build_app_with_shutdown(
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
         .route("/restart", post(restart))
-        .route("/echo", post(echo))
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
+        .route(
+            "/config/user-prompt",
+            get(get_user_prompt).put(put_user_prompt),
+        )
         .route("/agents", get(routines::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
         .route("/routines/cleanup", post(routines::cleanup))
+        .route("/routines/runs", get(routines::get_all_runs))
         .route(
             "/routines/lock",
             get(routines::get_lock_status)
@@ -393,6 +406,11 @@ pub(crate) fn build_app_with_shutdown(
             delete(routines::resolve_flag),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
+        .route("/routines/{id}/runs", get(routines::get_runs))
+        .route(
+            "/routines/{id}/runs/{workbench}/log",
+            get(routines::get_run_log),
+        )
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
         .fallback(api_not_found)

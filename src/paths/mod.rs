@@ -146,6 +146,19 @@ pub fn routine_manual_log_path(id: &str) -> PathBuf {
     routine_dir(id).join("manual.log")
 }
 
+/// Returns the path to `{routines_dir}/{id}/runs.log`, the gitignored append-only NDJSON log of
+/// every finished run's outcome, keyed by the routine's stable UUID (unlike its workbenches, which
+/// are keyed by slug and reaped after their TTL).
+///
+/// One compact JSON object is appended per run, right before its workbench is reaped (see
+/// `routines::cleanup::reap_dir`), so run history survives past workbench retention instead of
+/// disappearing the moment its workbench directory is removed. The `.log` suffix matches the
+/// `*.log` pattern seeded into each routine's `.gitignore`.
+#[must_use]
+pub fn routine_run_history_path(id: &str) -> PathBuf {
+    routine_dir(id).join("runs.log")
+}
+
 /// Returns the path to `{routines_dir}/{id}/run.sh`, a legacy per-routine launch script.
 ///
 /// No longer generated — the crontab line now invokes `moadim schedule trigger <id>` directly. The

@@ -76,6 +76,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
         tags: Vec::new(),
@@ -137,6 +138,8 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         // prompt tweak upstream) doesn't silently wake a routine the agent chose to snooze.
         snoozed_until: cur.snoozed_until,
         skip_runs: cur.skip_runs,
+        // Power saving is daemon/policy-owned, not spec-derived: carry it over like snooze state.
+        power_saving: cur.power_saving,
         ttl_secs: cur.ttl_secs,
         max_runtime_secs: cur.max_runtime_secs,
         // Tags are user-owned, like `enabled`: never overridden by the spec.

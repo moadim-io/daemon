@@ -435,12 +435,26 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         ),
     ]);
     if let Some(setup) = &agent.setup {
-        // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
-        inner_stmts.push(setup.clone());
+        // Fail-fast if the agent's setup step fails, mirroring the `cp prompt.md` guard above. The
+        // statements are `;`-joined (no `set -e`), so a bare `setup` failure would be ignored and
+        // the agent would launch anyway — typically into the interactive trust/onboarding prompt
+        // with no stdin, where it hangs until the watchdog reaps it ~1h later with no diagnostic.
+        // Abort instead, recording the reason in agent.log and on stderr. The setup string is
+        // inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
+        inner_stmts.push(format!(
+            r#"{{ {setup}; }} || {{ echo "moadim: agent setup failed; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#
+        ));
     }
+    // Record the agent's exit code once it finishes, so the run-history view (`svc_list_runs`)
+    // can tell success from failure instead of only "session ended". `tmux new-session` runs a
+    // single quoted string through the pane's default shell, so `;`-appending here shares that
+    // same shell and its `$?`. Written to a workbench-*relative* path (`exit_code`, not
+    // `$WB/exit_code`): `$WB` is a plain (non-exported) shell variable in the launcher script and
+    // is not inherited by the new shell tmux spawns, but the pane's cwd is already `$WB` (`-c`).
+    let invocation_with_exit_code = format!(r#"{invocation}; printf '%s' "$?" > exit_code"#);
     inner_stmts.push(format!(
         r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
-        shell_quote(&invocation)
+        shell_quote(&invocation_with_exit_code)
     ));
     inner_stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
     stmts.push(format!(

@@ -103,6 +103,21 @@ fn reconcile_preserves_disabled_toggle() {
 }
 
 #[test]
+fn reconcile_preserves_power_saving() {
+    let spec = &DEFAULT_ROUTINES[0];
+    // Power saving is daemon/policy-owned, not spec-derived — a content drift refresh must not
+    // clear it, the same way it must not touch `enabled`.
+    let mut cur = materialize(spec, 100);
+    cur.power_saving = true;
+    cur.prompt = "stale prompt".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("drifted routine should be rewritten");
+    assert!(
+        updated.power_saving,
+        "must not clear power-saving state on a content refresh"
+    );
+}
+
+#[test]
 fn reconcile_refreshes_content_but_keeps_identity() {
     let spec = &DEFAULT_ROUTINES[0];
     let mut cur = materialize(spec, 100);

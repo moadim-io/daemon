@@ -24,6 +24,7 @@ fn make_routine(id: &str) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -207,7 +208,11 @@ fn build_routine_command_substitutes_arg_placeholders() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
-    assert!(cmd.contains("'codex exec prompt.md'"));
+    // The invocation is quoted as one `tmux new-session` shell-command argument together with
+    // the exit-code capture appended to it (see `build_routine_command_records_exit_code_after_invocation`
+    // in `command_tests.rs`), so the substituted invocation no longer stands alone as its own
+    // quoted string.
+    assert!(cmd.contains("codex exec prompt.md;"));
 }
 
 #[test]

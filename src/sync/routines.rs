@@ -21,14 +21,30 @@
 //! API keys, …): the daemon's trigger path spawns the agent under `sh -lc`, which sources
 //! `~/.profile`. Reverse sync is not implemented — routines are managed only through the API.
 
+use std::sync::{Mutex, OnceLock};
+
 use crate::routines::{load_agent_command, shell_quote, Routine, RoutineStore};
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 use crate::utils::lock::LockRecover;
 
+/// Process-wide lock serializing the crontab read-modify-write sequence.
+///
+/// `sync_routines_to_crontab` is invoked from many concurrent request handlers (REST, MCP) on a
+/// multi-threaded runtime. Each call does an unsynchronized `crontab -l` -> edit -> `crontab -`
+/// round trip; two calls whose round trips overlap can interleave, and the later `crontab -` wins
+/// outright — no merge, no error (issue #365). Taken as the very first thing in
+/// `sync_routines_to_crontab`, before the (separate) `RoutineStore` lock, so lock order is always
+/// crontab-lock -> store-lock and this can never deadlock against a caller that only takes the
+/// store lock.
+fn crontab_sync_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Delimiter marking the start of the moadim routines crontab block.
-const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
+pub(crate) const BLOCK_BEGIN: &str = "# BEGIN MOADIM-ROUTINES";
 /// Delimiter marking the end of the moadim routines crontab block.
-const BLOCK_END: &str = "# END MOADIM-ROUTINES";
+pub(crate) const BLOCK_END: &str = "# END MOADIM-ROUTINES";
 /// Human-readable header comment written inside the block.
 const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux sessions)";
 
@@ -75,7 +91,16 @@ fn build_block(store: &RoutineStore) -> String {
     };
     warn_dormant_routines(&routines);
     routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
-    routines.sort_by_key(|routine| routine.created_at);
+    // The routines come off a `HashMap`, whose iteration order is unspecified, so routines that
+    // share a `created_at` (e.g. several seeded or batch-created in the same second) would otherwise
+    // emit in an arbitrary, run-to-run order. That churns the generated crontab block across syncs
+    // and defeats the `new_crontab == current` idempotency guard below, forcing a needless
+    // `crontab -` rewrite. Break ties on the stable routine id so the block is fully deterministic.
+    routines.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     let lines: Vec<String> = routines
         .iter()
@@ -127,7 +152,7 @@ fn warn_dormant_routines(routines: &[Routine]) {
 }
 
 /// Substring identifying a routine line inside the crontab block (`# moadim-routine:<id>`).
-const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
+pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 
 /// Write all enabled managed routines from `store` into the OS routines crontab block.
 ///
@@ -141,6 +166,7 @@ const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 /// loaded fine but holds only disabled/unmanaged routines is *not* empty, so legitimately clearing
 /// the last routine still works.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
+    let _crontab_guard = crontab_sync_lock().lock_recover();
     let current = read_crontab()?;
     if store.lock_recover().is_empty() && current.contains(ROUTINE_LINE_MARKER) {
         log::warn!(

@@ -18,7 +18,8 @@ use std::time::Duration;
 use crate::paths::workbenches_dir;
 use crate::utils::time::now_secs;
 
-use super::model::RoutineStore;
+use super::model::{RoutineStore, RunStatus};
+use super::run_history::{append_persisted_run, read_exit_code, PersistedRun};
 
 mod runtime;
 mod session;
@@ -28,6 +29,8 @@ mod ttl;
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
 pub(crate) use runtime::max_runtime_ceiling_secs;
+pub(crate) use session::tmux_session_alive as run_session_alive;
+pub(crate) use session::tmux_session_prefix_alive;
 pub(crate) use ttl::ttl_ceiling_secs;
 
 /// How often the background task scans for expired workbenches.
@@ -59,6 +62,23 @@ pub(super) fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
 /// that puts `ts` in the future reads as age 0, never expired).
 fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
     now.saturating_sub(ts) > ttl
+}
+
+/// Best-effort *finish* time of a finished run, as unix seconds: the mtime of its `agent.log` (the
+/// last time the agent wrote output). Falls back to `trigger_ts` when the log is missing or its
+/// mtime is unreadable, and is clamped to at least `trigger_ts` so retention is never measured from
+/// a moment earlier than the run's own start.
+///
+/// Retention (TTL) is measured from finish, not from trigger (#174): a run consumes none of its
+/// keep-window while still executing, so a long run — or any run on a short-interval schedule — is
+/// still retained for the full `effective_ttl_secs` after it completes. The max-runtime watchdog
+/// continues to measure from `trigger_ts` (elapsed wall-clock since launch), which is correct.
+fn agent_log_finish_time(dir: &Path, trigger_ts: u64) -> u64 {
+    std::fs::metadata(dir.join("agent.log"))
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(trigger_ts, |elapsed| elapsed.as_secs().max(trigger_ts))
 }
 
 /// Watchdog decision for a single workbench: if its session is alive but the run has exceeded
@@ -139,9 +159,18 @@ fn watchdog_dir(
 /// 2. **Reap** — a finished run (session not alive, originally or after the kill) whose
 ///    `ttl_for(slug)` has elapsed is removed.
 ///
-/// A live session within its max runtime is left untouched. Returns the number of directories
-/// removed. `ttl_for`, `max_runtime_for`, `is_alive`, and `kill` are injected so the decision logic
-/// is unit-testable without a filesystem clock or a live tmux server.
+/// A live session within its max runtime is left untouched. The TTL reap decision is measured from
+/// each run's *finish* time (`finished_at(path, trigger_ts)`), not its trigger time, so a run is
+/// kept for the full window after it completes (#174); the watchdog still measures elapsed runtime
+/// from the trigger. `finished_at` is evaluated *before* the watchdog can force-kill the session, so
+/// a hung run's forced-kill note (which touches `agent.log`) never masquerades as a fresh finish.
+/// Returns the number of directories removed. `ttl_for`, `max_runtime_for`, `is_alive`, `kill`,
+/// `finished_at`, and `persist` are injected so the decision logic is unit-testable without a
+/// filesystem clock or a live tmux server. `persist` is called with `(slug, workbench name,
+/// workbench path, trigger ts, finish ts)` right before removal, so a durable history record can be
+/// captured while the workbench (and its `exit_code` file) still exists — see
+/// [`super::run_history`].
+#[allow(clippy::too_many_arguments)]
 fn reap_dir(
     dir: &Path,
     now: u64,
@@ -149,6 +178,8 @@ fn reap_dir(
     max_runtime_for: &dyn Fn(&str) -> u64,
     is_alive: &dyn Fn(&str) -> bool,
     kill: &dyn Fn(&str),
+    finished_at: &dyn Fn(&Path, u64) -> u64,
+    persist: &dyn Fn(&str, &str, &Path, u64, u64),
 ) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -162,6 +193,10 @@ fn reap_dir(
         let Some((slug, ts)) = parse_workbench_name(&name) else {
             continue;
         };
+        // Captured before `kill_if_hung` below: a forced kill appends a note to `agent.log`,
+        // which would otherwise bump its mtime to "now" and make a just-killed hung run look
+        // like it *just* finished, resetting its retention window instead of reaping it.
+        let finish_ts = finished_at(&entry.path(), ts);
         let session = format!("moadim-{name}");
         let alive = kill_if_hung(
             &entry.path(),
@@ -176,10 +211,14 @@ fn reap_dir(
             // Still running within its max runtime — never touched.
             continue;
         }
-        if !is_expired(now, ts, ttl_for(slug)) {
-            // Finished (or just killed) but its retention window has not elapsed yet.
+        if !is_expired(now, finish_ts, ttl_for(slug)) {
+            // Finished (or just killed) but its retention window has not elapsed yet — measured
+            // from when the run finished, so its own duration does not eat into retention.
             continue;
         }
+        // Record the run's outcome durably before the workbench (and its `exit_code` file) is
+        // removed, so `svc_list_runs`/`svc_list_all_runs` still know about it afterwards.
+        persist(slug, &name, &entry.path(), ts, finish_ts);
         match std::fs::remove_dir_all(entry.path()) {
             Ok(()) => {
                 removed += 1;
@@ -198,8 +237,33 @@ fn reap_dir(
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
     let ttls = snapshot::snapshot_ttls(store);
     let max_runtimes = snapshot::snapshot_max_runtimes(store);
+    let routine_ids = snapshot::snapshot_routine_ids(store);
     let ttl_for = |slug: &str| snapshot::ttl_for(&ttls, slug);
     let max_runtime_for = |slug: &str| snapshot::max_runtime_for(&max_runtimes, slug);
+    // A workbench whose slug matches no current routine (deleted since) is skipped: there is no
+    // routine's `runs.log` to attribute it to, and it's about to be removed anyway.
+    let persist =
+        |slug: &str, name: &str, workbench_path: &Path, started_at: u64, finished_at: u64| {
+            let Some(routine_id) = routine_ids.get(slug) else {
+                return;
+            };
+            let exit_code = read_exit_code(workbench_path);
+            let status = match exit_code {
+                Some(0) => RunStatus::Success,
+                Some(_) => RunStatus::Failed,
+                None => RunStatus::Unknown,
+            };
+            append_persisted_run(
+                routine_id,
+                &PersistedRun {
+                    workbench: name.to_string(),
+                    started_at,
+                    finished_at,
+                    status,
+                    exit_code,
+                },
+            );
+        };
     reap_dir(
         &workbenches_dir(),
         now_secs(),
@@ -207,6 +271,8 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
         &max_runtime_for,
         &tmux_session_alive,
         &tmux_kill_session,
+        &agent_log_finish_time,
+        &persist,
     )
 }
 
@@ -229,6 +295,59 @@ pub fn kill_hung_sessions(store: &RoutineStore) -> usize {
     )
 }
 
+/// Force-kill every still-running session under `dir` whose workbench name parses to `slug`,
+/// regardless of runtime. Returns the number of sessions killed. `is_alive`/`kill` are injected so
+/// the decision logic is unit-testable without a live tmux, mirroring [`watchdog_dir`].
+fn kill_sessions_for_slug(
+    dir: &Path,
+    slug: &str,
+    is_alive: &dyn Fn(&str) -> bool,
+    kill: &dyn Fn(&str),
+) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut killed = 0;
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((dir_slug, _ts)) = parse_workbench_name(&name) else {
+            continue;
+        };
+        if dir_slug != slug {
+            continue;
+        }
+        let session = format!("moadim-{name}");
+        if is_alive(&session) {
+            kill(&session);
+            killed += 1;
+        }
+    }
+    killed
+}
+
+/// Kill any still-running workbench session(s) belonging to a just-deleted routine's `slug`.
+///
+/// Without this, deleting a routine while its agent is mid-run left that run executing
+/// unsupervised: the workbench and its tmux session survived until the next TTL sweep reaped the
+/// now-orphaned workbench, up to `effective_ttl_secs` later (issue #333). The workbench directory
+/// itself is left untouched here — it is removed by the caller (or reaped normally otherwise).
+/// Returns the number of sessions killed.
+pub fn kill_sessions_for_deleted_routine(slug: &str) -> usize {
+    kill_sessions_for_slug(
+        &workbenches_dir(),
+        slug,
+        &tmux_session_alive,
+        &tmux_kill_session,
+    )
+}
+
 #[cfg(test)]
 #[path = "cleanup_tests.rs"]
 mod cleanup_tests;
+
+#[cfg(test)]
+#[path = "cleanup_watchdog_tests.rs"]
+mod cleanup_watchdog_tests;

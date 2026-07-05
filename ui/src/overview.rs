@@ -1,16 +1,16 @@
 //! The OVERVIEW landing page: a single-pane operations summary that aggregates
-//! both cron jobs and routines into at-a-glance KPI tiles and one merged
-//! "upcoming runs" schedule, so an operator sees the whole system's near-future
-//! activity without opening each tab.
+//! routines into at-a-glance KPI tiles and one merged "upcoming runs" schedule,
+//! so an operator sees the whole system's near-future activity without opening
+//! the routines tab.
 //!
 //! Best practice (operational dashboards / cron monitors like Cronitor, Temporal
 //! and Cloud Scheduler): lead with a small set of color-coded KPI tiles, then a
 //! single merged timeline of what fires next across every scheduled entity.
 //!
-//! The page reads the existing `/api/v1/cron-jobs` and `/api/v1/routines`
-//! endpoints — no backend change. All KPI/merge math lives in pure, host-tested
-//! functions below (see `overview_tests.rs`); the component is a thin shell that
-//! maps the fetched records into `SchedSource`s and renders the result.
+//! The page reads the existing `/api/v1/routines` endpoint — no backend change.
+//! All KPI/merge math lives in pure, host-tested functions below (see
+//! `overview_tests.rs`); the component is a thin shell that maps the fetched
+//! records into `SchedSource`s and renders the result.
 
 use chrono::{DateTime, Duration, Local};
 use gloo_net::http::Request;
@@ -19,10 +19,17 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::cron_jobs::CronJob;
-use crate::routines::Routine;
-use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
-use crate::Route;
+use crate::overview_recent_runs::RecentRunsTable;
+use crate::overview_upcoming::UpcomingTable;
+use crate::refresh::{RefreshControl, RefreshInterval};
+use crate::routines::{
+    api_all_runs, api_unlock, FleetRunSummary, GlobalLockBanner, LockStatus, Routine,
+};
+use crate::schedule::{fires_within, fmt_until, next_fire_after};
+use crate::{Route, ToastKind};
+
+/// How many of the most recent runs across the fleet the overview panel shows.
+pub(crate) const RECENT_RUNS_LIMIT: usize = 8;
 
 /// "Due soon" / "soon" window: an enabled entity whose next fire lands within
 /// this many seconds is operationally urgent. Mirrors the per-page cron stats.
@@ -31,30 +38,27 @@ pub(crate) const DUE_SOON_WINDOW_SECS: i64 = 3_600;
 /// How many of the soonest upcoming runs the merged timeline shows.
 pub(crate) const UPCOMING_LIMIT: usize = 8;
 
-/// How often the page re-fetches the underlying records (counts can change as
-/// jobs are toggled elsewhere).
-const REFETCH_MS: u32 = 30_000;
-
 /// How often the live "now" advances so countdowns re-render between fetches.
 const TICK_MS: u32 = 10_000;
 
 /// Which kind of scheduled entity a row/tile refers to.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Kind {
-    /// A cron job (`/cron-jobs`).
-    Cron,
     /// A routine (`/routines`).
     Routine,
 }
 
 /// A schedule-bearing entity reduced to just what the overview math needs.
-/// Both `CronJob` and `Routine` map onto this so the aggregation logic stays
-/// agnostic of their full shapes (and host-testable without wasm types).
+/// `Routine` maps onto this so the aggregation logic stays agnostic of its
+/// full shape (and host-testable without wasm types).
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct SchedSource {
-    /// Cron job or routine.
+    /// Always `Kind::Routine` for now; kept so the table/badge rendering and
+    /// the shared `schedule_heatmap` aggregation stay kind-aware.
     pub kind: Kind,
-    /// Display name: the cron-job id or the routine title.
+    /// API id used to trigger the entity (routine UUID).
+    pub id: String,
+    /// Display name: the routine title.
     pub label: String,
     /// Raw cron expression used to compute the next fire.
     pub schedule: String,
@@ -65,15 +69,19 @@ pub(crate) struct SchedSource {
     /// `true` when the entity targets no machine (empty or all-blank list), so
     /// it is scheduled but fires nowhere. Drives the "dormant" triage rule.
     pub machines_empty: bool,
-    /// Whether the routine's agent is registered. `None` for cron jobs (which
-    /// have no agent), `Some(false)` for a routine whose agent is missing.
+    /// Whether the routine's agent is registered. `Some(false)` when the
+    /// routine's agent is missing.
     pub agent_registered: Option<bool>,
+    /// Number of open flags raised against this entity.
+    pub flag_count: usize,
+    /// Whether scheduled fires are currently suppressed (snoozed or skip-runs active).
+    pub snoozed: bool,
 }
 
 /// Aggregate counts shown as the KPI tile row.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub(crate) struct Kpis {
-    /// All scheduled entities (cron jobs + routines).
+    /// All scheduled routines.
     pub total: usize,
     /// Enabled entities.
     pub enabled: usize,
@@ -83,11 +91,18 @@ pub(crate) struct Kpis {
     pub due_soon: usize,
     /// Enabled-but-misconfigured entities (see [`attention_items`]).
     pub attention: usize,
+    /// Total open flags across all entities.
+    pub flags: usize,
+    /// Enabled entities whose scheduled fires are currently suppressed.
+    pub snoozed: usize,
+    /// Enabled entities assigned to no machine (fires nowhere).
+    pub dormant: usize,
 }
 
 /// Why an enabled entity needs attention. Listed in triage priority order: a
-/// dormant entity outranks a dead schedule, which outranks a missing agent, so
-/// each entity surfaces its single most fundamental fault (see [`attention_reason`]).
+/// dormant entity outranks a dead schedule, which outranks a missing agent,
+/// which outranks open flags, so each entity surfaces its single most
+/// fundamental fault (see [`attention_reason`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum AttentionReason {
     /// Enabled but assigned to no machine — it fires nowhere.
@@ -97,6 +112,8 @@ pub(crate) enum AttentionReason {
     DeadSchedule,
     /// A routine whose agent is not registered — every run errors out.
     AgentUnregistered,
+    /// Agent raised one or more flags during a run — needs human review.
+    HasOpenFlags,
 }
 
 impl AttentionReason {
@@ -106,6 +123,7 @@ impl AttentionReason {
             AttentionReason::Dormant => 0,
             AttentionReason::DeadSchedule => 1,
             AttentionReason::AgentUnregistered => 2,
+            AttentionReason::HasOpenFlags => 3,
         }
     }
 
@@ -115,6 +133,7 @@ impl AttentionReason {
             AttentionReason::Dormant => "DORMANT",
             AttentionReason::DeadSchedule => "DEAD SCHEDULE",
             AttentionReason::AgentUnregistered => "AGENT MISSING",
+            AttentionReason::HasOpenFlags => "OPEN FLAGS",
         }
     }
 
@@ -124,6 +143,7 @@ impl AttentionReason {
             AttentionReason::Dormant => "assigned to no machine — fires nowhere",
             AttentionReason::DeadSchedule => "schedule has no future fire — never runs again",
             AttentionReason::AgentUnregistered => "agent not registered — every run errors",
+            AttentionReason::HasOpenFlags => "agent raised flags during a run — needs review",
         }
     }
 }
@@ -131,27 +151,35 @@ impl AttentionReason {
 /// One enabled-but-misconfigured entity surfaced in the NEEDS ATTENTION panel.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct AttentionItem {
-    /// Cron job or routine.
+    /// Always `Kind::Routine` for now.
     pub kind: Kind,
     /// Display name.
     pub label: String,
     /// The single most fundamental fault to fix.
     pub reason: AttentionReason,
+    /// Open flag count; non-zero only when `reason == HasOpenFlags`.
+    pub flag_count: usize,
 }
 
 /// One entry in the merged upcoming-runs timeline.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct UpcomingRun {
-    /// Cron job or routine.
+    /// Always `Kind::Routine` for now.
     pub kind: Kind,
+    /// API id passed to the trigger endpoint.
+    pub id: String,
     /// Display name.
     pub label: String,
     /// Human schedule description, when present.
     pub human: Option<String>,
+    /// Raw cron expression, used as fallback when `human` is absent.
+    pub schedule: String,
     /// The next fire instant.
     pub at: DateTime<Local>,
     /// Whether `at` lands within the due-soon window.
     pub soon: bool,
+    /// Total open flags on this routine (0 when none).
+    pub flag_count: usize,
 }
 
 /// Count the KPI tiles from `sources` as of `now`.
@@ -161,7 +189,13 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let due_soon = sources
         .iter()
-        .filter(|s| s.enabled && fires_within(&s.schedule, now, window))
+        .filter(|s| s.enabled && !s.snoozed && fires_within(&s.schedule, now, window))
+        .count();
+    let flags = sources.iter().map(|s| s.flag_count).sum();
+    let snoozed = sources.iter().filter(|s| s.enabled && s.snoozed).count();
+    let dormant = sources
+        .iter()
+        .filter(|s| s.enabled && s.machines_empty)
         .count();
     Kpis {
         total,
@@ -169,6 +203,9 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         disabled: total - enabled,
         due_soon,
         attention: attention_items(sources, now).len(),
+        flags,
+        snoozed,
+        dormant,
     }
 }
 
@@ -191,6 +228,9 @@ pub(crate) fn attention_reason(
     if source.agent_registered == Some(false) {
         return Some(AttentionReason::AgentUnregistered);
     }
+    if source.flag_count > 0 {
+        return Some(AttentionReason::HasOpenFlags);
+    }
     None
 }
 
@@ -203,6 +243,7 @@ pub(crate) fn attention_items(sources: &[SchedSource], now: DateTime<Local>) -> 
             attention_reason(s, now).map(|reason| AttentionItem {
                 kind: s.kind,
                 label: s.label.clone(),
+                flag_count: s.flag_count,
                 reason,
             })
         })
@@ -217,20 +258,24 @@ pub(crate) fn attention_items(sources: &[SchedSource], now: DateTime<Local>) -> 
 }
 
 /// The merged, soonest-first list of the next [`UPCOMING_LIMIT`] fires across
-/// every enabled source. Disabled entities and ones with no valid future fire
-/// are dropped; ties on fire time break by label for a stable order.
+/// every enabled, non-snoozed source. Disabled, snoozed, and ones with no
+/// valid future fire are dropped; ties on fire time break by label for a
+/// stable order.
 pub(crate) fn upcoming_runs(sources: &[SchedSource], now: DateTime<Local>) -> Vec<UpcomingRun> {
     let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
     let mut runs: Vec<UpcomingRun> = sources
         .iter()
-        .filter(|s| s.enabled)
+        .filter(|s| s.enabled && !s.snoozed)
         .filter_map(|s| {
             next_fire_after(&s.schedule, now).map(|at| UpcomingRun {
                 kind: s.kind,
+                id: s.id.clone(),
                 label: s.label.clone(),
                 human: s.human.clone(),
+                schedule: s.schedule.clone(),
                 at,
                 soon: at - now <= window,
+                flag_count: s.flag_count,
             })
         })
         .collect();
@@ -251,49 +296,47 @@ fn targets_no_machine(machines: &[String]) -> bool {
     machines.iter().all(|m| m.trim().is_empty())
 }
 
-/// Map a cron job onto the shared schedule abstraction.
-fn from_cron(job: &CronJob) -> SchedSource {
-    SchedSource {
-        kind: Kind::Cron,
-        label: job.id.clone(),
-        schedule: job.schedule.clone(),
-        human: job.schedule_description.clone(),
-        enabled: job.enabled,
-        machines_empty: targets_no_machine(&job.machines),
-        agent_registered: None,
-    }
+/// Map a routine onto the shared schedule abstraction. Takes `now` explicitly
+/// (rather than sampling the wall clock here) so this stays a pure, host-
+/// testable function and stays in lockstep with the same `now` the rest of
+/// the page's KPI/attention/upcoming-run math uses.
+fn is_snoozed(routine: &Routine, now: DateTime<Local>) -> bool {
+    routine
+        .snoozed_until
+        .is_some_and(|until| (until as i64) > now.timestamp())
+        || routine.skip_runs.is_some_and(|n| n > 0)
 }
 
-/// Map a routine onto the shared schedule abstraction.
-fn from_routine(routine: &Routine) -> SchedSource {
+fn from_routine(routine: &Routine, now: DateTime<Local>) -> SchedSource {
     SchedSource {
         kind: Kind::Routine,
+        id: routine.id.clone(),
         label: routine.title.clone(),
         schedule: routine.schedule.clone(),
         human: routine.schedule_description.clone(),
         enabled: routine.enabled,
         machines_empty: targets_no_machine(&routine.machines),
         agent_registered: Some(routine.agent_registered),
+        flag_count: routine.flag_count,
+        snoozed: is_snoozed(routine, now),
     }
 }
 
-/// Flatten both record lists into one `SchedSource` vector.
-fn sources_of(crons: &[CronJob], routines: &[Routine]) -> Vec<SchedSource> {
-    crons
-        .iter()
-        .map(from_cron)
-        .chain(routines.iter().map(from_routine))
-        .collect()
+/// Map the routine record list into one `SchedSource` vector.
+fn sources_of(routines: &[Routine], now: DateTime<Local>) -> Vec<SchedSource> {
+    routines.iter().map(|r| from_routine(r, now)).collect()
 }
 
-pub(crate) async fn fetch_crons() -> Result<Vec<CronJob>, String> {
-    Request::get("/api/v1/cron-jobs")
+async fn api_trigger_routine(id: &str) -> Result<(), String> {
+    let resp = Request::post(&format!("/api/v1/routines/{id}/trigger"))
         .send()
         .await
-        .map_err(|e| e.to_string())?
-        .json::<Vec<CronJob>>()
-        .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if resp.ok() {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
 }
 
 pub(crate) async fn fetch_routines() -> Result<Vec<Routine>, String> {
@@ -306,58 +349,105 @@ pub(crate) async fn fetch_routines() -> Result<Vec<Routine>, String> {
         .map_err(|e| e.to_string())
 }
 
+async fn fetch_lock_status() -> Option<LockStatus> {
+    Request::get("/api/v1/routines/lock")
+        .send()
+        .await
+        .ok()?
+        .json::<LockStatus>()
+        .await
+        .ok()
+}
+
+async fn fetch_recent_runs() -> Vec<FleetRunSummary> {
+    api_all_runs(RECENT_RUNS_LIMIT).await.unwrap_or_default()
+}
+
 /// Loaded state for the overview shell.
 #[derive(Clone, PartialEq, Default)]
 struct Data {
-    crons: Vec<CronJob>,
     routines: Vec<Routine>,
     loading: bool,
-    /// Set only when BOTH fetches fail, so a partial load still renders.
     error: Option<String>,
+    lock_status: Option<LockStatus>,
+    recent_runs: Vec<FleetRunSummary>,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct OverviewPageProps {
+    pub on_toast: Callback<(String, ToastKind)>,
 }
 
 #[function_component(OverviewPage)]
-pub fn overview_page() -> Html {
+pub fn overview_page(props: &OverviewPageProps) -> Html {
     let data = use_state(|| Data {
         loading: true,
         ..Data::default()
     });
     let now = use_state(Local::now);
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
 
-    // Fetch both record lists; surface an error only when both fail.
+    // Fetch the routine record list and lock status together.
     let load = {
         let data = data.clone();
+        let updated_at = updated_at.clone();
         move || {
             let data = data.clone();
+            let updated_at = updated_at.clone();
             spawn_local(async move {
-                let (crons, routines) = futures_join(fetch_crons(), fetch_routines()).await;
-                let error = match (&crons, &routines) {
-                    (Err(ce), Err(re)) => Some(format!("{ce}; {re}")),
-                    _ => None,
-                };
+                let routines = fetch_routines().await;
+                let error = routines.as_ref().err().cloned();
+                let lock_status = fetch_lock_status().await;
+                let recent_runs = fetch_recent_runs().await;
+                updated_at.set(js_sys::Date::now());
                 data.set(Data {
-                    crons: crons.unwrap_or_default(),
                     routines: routines.unwrap_or_default(),
                     loading: false,
                     error,
+                    lock_status,
+                    recent_runs,
                 });
             });
         }
     };
 
-    // Load on mount, then re-fetch on a slow cadence.
+    // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| {
-            load();
-            spawn_local(async move {
-                loop {
-                    TimeoutFuture::new(REFETCH_MS).await;
-                    load();
-                }
-            });
+        use_effect_with((), move |_| load());
+    }
+
+    // Auto-refresh loop, re-armed when the interval changes.
+    {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let load = load.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        load();
+                    }
+                });
+            }
+            move || cancelled.set(true)
         });
     }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     // Advance "now" so countdowns re-render between fetches.
     {
@@ -372,15 +462,47 @@ pub fn overview_page() -> Html {
         });
     }
 
+    let on_trigger = {
+        let on_toast = props.on_toast.clone();
+        Callback::from(move |(kind, id): (Kind, String)| {
+            let on_toast = on_toast.clone();
+            spawn_local(async move {
+                let result = match kind {
+                    Kind::Routine => api_trigger_routine(&id).await,
+                };
+                match result {
+                    Ok(()) => on_toast.emit(("Triggered".into(), ToastKind::Ok)),
+                    Err(e) => on_toast.emit((format!("Trigger failed: {e}"), ToastKind::Err)),
+                }
+            });
+        })
+    };
+
     let now_val = *now;
-    let sources = sources_of(&data.crons, &data.routines);
+    let sources = sources_of(&data.routines, now_val);
     let kpis = compute_kpis(&sources, now_val);
     let attention = attention_items(&sources, now_val);
     let runs = upcoming_runs(&sources, now_val);
     let next_run = next_run_summary(&runs, now_val);
 
+    let lock_status_for_banner = data.lock_status.clone();
+    let on_unlock = {
+        let data = data.clone();
+        Callback::from(move |_: MouseEvent| {
+            let data = data.clone();
+            spawn_local(async move {
+                if let Ok(status) = api_unlock("all").await {
+                    let mut next = (*data).clone();
+                    next.lock_status = Some(status);
+                    data.set(next);
+                }
+            });
+        })
+    };
+
     html! {
         <main>
+            <GlobalLockBanner status={lock_status_for_banner} on_unlock={on_unlock} />
             <OverviewStats kpis={kpis} next_run={next_run} />
             {
                 // Only render the triage panel when something is actually broken,
@@ -400,24 +522,27 @@ pub fn overview_page() -> Html {
             }
             <div class="section-hd">
                 <span class="section-label">{"UPCOMING RUNS"}</span>
+                <div class="section-acts">
+                    <RefreshControl
+                        interval={*interval}
+                        updated_at_ms={*updated_at}
+                        on_change={on_set_interval}
+                    />
+                </div>
             </div>
             <UpcomingTable
                 runs={runs}
                 now={now_val}
                 loading={data.loading}
                 error={data.error.clone()}
+                on_trigger={on_trigger}
             />
+            <div class="section-hd">
+                <span class="section-label">{"RECENT RUNS"}</span>
+            </div>
+            <RecentRunsTable runs={data.recent_runs.clone()} loading={data.loading} />
         </main>
     }
-}
-
-/// Await two futures and return both results. A tiny local join so the page
-/// needs no extra dependency; the two fetches are issued before the first await.
-async fn futures_join<A, B>(
-    a: impl std::future::Future<Output = A>,
-    b: impl std::future::Future<Output = B>,
-) -> (A, B) {
-    (a.await, b.await)
 }
 
 #[derive(Properties, PartialEq)]
@@ -454,6 +579,24 @@ fn overview_stats(props: &OverviewStatsProps) -> Html {
                 <div class="stat-label">{"DISABLED"}</div>
                 <div class="stat-val c-amber">{k.disabled}</div>
             </div>
+            <div class={classes!("stat-card", if k.dormant > 0 { "has-dormant" } else { "dormant" })}>
+                <div class="stat-label">{"DORMANT"}</div>
+                <div class={classes!("stat-val", if k.dormant > 0 { "c-amber" } else { "" })}>
+                    {k.dormant}
+                </div>
+            </div>
+            <div class="stat-card flags">
+                <div class="stat-label">{"FLAGS"}</div>
+                <div class={classes!("stat-val", if k.flags > 0 { "c-red" } else { "c-accent" })}>
+                    {k.flags}
+                </div>
+            </div>
+            <div class="stat-card snoozed">
+                <div class="stat-label">{"SNOOZED"}</div>
+                <div class={classes!("stat-val", if k.snoozed > 0 { "c-amber" } else { "c-accent" })}>
+                    {k.snoozed}
+                </div>
+            </div>
             <div class="stat-card system">
                 <div class="stat-label">{"NEXT RUN"}</div>
                 <div class="stat-val stat-val-sm">{next}</div>
@@ -486,7 +629,6 @@ fn attention_table(props: &AttentionTableProps) -> Html {
                 <tbody>
                     { for props.items.iter().enumerate().map(|(i, item)| {
                         let (badge, badge_cls, to) = match item.kind {
-                            Kind::Cron => ("CRON", "kind-badge cron", Route::CronJobs),
                             Kind::Routine => ("ROUTINE", "kind-badge routine", Route::Routines),
                         };
                         html! {
@@ -498,92 +640,13 @@ fn attention_table(props: &AttentionTableProps) -> Html {
                                     </Link<Route>>
                                 </td>
                                 <td><span class="attn-badge">{item.reason.badge()}</span></td>
-                                <td class="attn-detail">{item.reason.detail()}</td>
-                            </tr>
-                        }
-                    }) }
-                </tbody>
-            </table>
-        </div>
-    }
-}
-
-#[derive(Properties, PartialEq)]
-struct UpcomingTableProps {
-    runs: Vec<UpcomingRun>,
-    now: DateTime<Local>,
-    loading: bool,
-    error: Option<String>,
-}
-
-#[function_component(UpcomingTable)]
-fn upcoming_table(props: &UpcomingTableProps) -> Html {
-    if let Some(err) = &props.error {
-        return html! {
-            <div class="table-wrap">
-                <div class="empty">
-                    <div class="empty-icon">{"⚠"}</div>
-                    <div class="empty-msg">{"FAILED TO LOAD"}</div>
-                    <div class="empty-sub">{err.clone()}</div>
-                </div>
-            </div>
-        };
-    }
-    if props.loading {
-        return html! {
-            <div class="table-wrap">
-                <div class="empty"><div class="spinner"></div></div>
-            </div>
-        };
-    }
-    if props.runs.is_empty() {
-        return html! {
-            <div class="table-wrap">
-                <div class="empty">
-                    <div class="empty-icon">{"◷"}</div>
-                    <div class="empty-msg">{"NO UPCOMING RUNS"}</div>
-                    <div class="empty-sub">{"no enabled job or routine is scheduled to fire"}</div>
-                </div>
-            </div>
-        };
-    }
-
-    let now = props.now;
-    html! {
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{"TYPE"}</th>
-                        <th>{"NAME"}</th>
-                        <th>{"SCHEDULE"}</th>
-                        <th>{"NEXT RUN"}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    { for props.runs.iter().enumerate().map(|(i, run)| {
-                        let (badge, badge_cls, to) = match run.kind {
-                            Kind::Cron => ("CRON", "kind-badge cron", Route::CronJobs),
-                            Kind::Routine => ("ROUTINE", "kind-badge routine", Route::Routines),
-                        };
-                        let until_cls = if run.soon { "cell-next-until soon" } else { "cell-next-until" };
-                        html! {
-                            <tr key={i.to_string()}>
-                                <td><span class={badge_cls}>{badge}</span></td>
-                                <td>
-                                    <Link<Route> classes={classes!("ov-name-link")} to={to}>
-                                        {run.label.clone()}
-                                    </Link<Route>>
-                                </td>
-                                <td>
-                                    <div class="cell-schedule-human">
-                                        {run.human.clone().unwrap_or_else(|| "—".into())}
-                                    </div>
-                                </td>
-                                <td class="cell-next">
-                                    <div class="cell-next-when">{fmt_when(now, run.at)}</div>
-                                    <div class={until_cls}>{fmt_until(now, run.at)}</div>
-                                </td>
+                                <td class="attn-detail">{
+                                    if item.reason == AttentionReason::HasOpenFlags && item.flag_count > 0 {
+                                        format!("{} open flag{} — needs review", item.flag_count, if item.flag_count == 1 { "" } else { "s" })
+                                    } else {
+                                        item.reason.detail().to_string()
+                                    }
+                                }</td>
                             </tr>
                         }
                     }) }

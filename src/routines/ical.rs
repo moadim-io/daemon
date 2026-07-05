@@ -13,6 +13,17 @@ const HORIZON_DAYS: i64 = 30;
 const MAX_EVENTS_PER_ROUTINE: usize = 100;
 /// Product identifier advertised in the `PRODID` property.
 const PRODID: &str = "-//moadim//routines//EN";
+/// Suggested polling interval advertised to subscribers, as an iCalendar DURATION.
+///
+/// Routine schedules can change at any time, but the feed itself is regenerated on
+/// every request, so the only freshness limit is how often a subscriber re-fetches.
+/// Without a hint, clients fall back to their own default (often 12–24h), making
+/// routine edits lag for hours. One hour balances freshness against feed load.
+const REFRESH_DURATION: &str = "PT1H";
+/// Duration assigned to each fire so it renders as a visible block rather than a
+/// zero-length instant. RFC 5545 requires a `VEVENT` to carry either `DTEND` or
+/// `DURATION`; a routine fire has no intrinsic end, so a short fixed window is used.
+const EVENT_DURATION: &str = "PT15M";
 /// Calendar display name (`X-WR-CALNAME`) for the unfiltered, all-routines feed.
 const DEFAULT_CAL_NAME: &str = "Moadim Routines";
 
@@ -139,6 +150,11 @@ fn build_ical_core(
         format!("PRODID:{PRODID}"),
         "CALSCALE:GREGORIAN".to_string(),
         format!("X-WR-CALNAME:{}", escape_text(cal_name)),
+        // RFC 7986 §5.7 standard hint plus the widely-honored Microsoft/Google
+        // X-PUBLISHED-TTL fallback, so subscribers poll often enough to pick up
+        // routine changes promptly instead of using their slow built-in default.
+        format!("REFRESH-INTERVAL;VALUE=DURATION:{REFRESH_DURATION}"),
+        format!("X-PUBLISHED-TTL:{REFRESH_DURATION}"),
     ];
     let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {
@@ -165,12 +181,17 @@ fn build_ical_core(
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
             lines.push(format!("DTSTAMP:{dtstamp}"));
             lines.push(format!("DTSTART:{stamp}"));
+            lines.push(format!("DURATION:{EVENT_DURATION}"));
+            // The feed is purely informational ("when will my loops fire?"), so a
+            // fire must not consume the subscriber's free/busy time. RFC 5545
+            // §3.8.2.7 defaults `TRANSP` to `OPAQUE` (counts as busy); mark each
+            // event `TRANSPARENT` so it never blocks availability. The legacy
+            // `X-MICROSOFT-CDO-BUSYSTATUS:FREE` carries the same intent to Outlook
+            // clients that honor the Microsoft property instead of `TRANSP`.
+            lines.push("TRANSP:TRANSPARENT".to_string());
+            lines.push("X-MICROSOFT-CDO-BUSYSTATUS:FREE".to_string());
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
-            // A fire time is a momentary trigger, not a block of busy time. Mark
-            // the event TRANSPARENT (RFC 5545 §3.8.2.7) so subscribing to the feed
-            // does not show the operator as BUSY at every scheduled run.
-            lines.push("TRANSP:TRANSPARENT".to_string());
             lines.push("END:VEVENT".to_string());
             emitted += 1;
         }
@@ -233,11 +254,7 @@ pub fn svc_ical(store: &RoutineStore) -> String {
 /// calendar (named [`DEFAULT_CAL_NAME`]) rather than an error, mirroring how a disabled
 /// routine already contributes no events.
 pub fn svc_ical_routine(store: &RoutineStore, id: &str) -> String {
-    let routine = store
-        .lock()
-        .expect("routine store lock poisoned")
-        .get(id)
-        .cloned();
+    let routine = store.lock_recover().get(id).cloned();
     match routine {
         Some(routine) => {
             let cal_name = routine.title.clone();

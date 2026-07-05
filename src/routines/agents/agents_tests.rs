@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 
@@ -25,6 +28,24 @@ fn available_agents_in_falls_back_when_dir_has_no_toml() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn codex_default_config_enables_sandbox_network_access() {
+    // `codex exec`'s default workspace-write sandbox disables outbound network, which would block
+    // an unattended routine from cloning the repo or pushing / opening a PR. The shipped default
+    // must re-enable it; parse the actual config string and assert the override is present so the
+    // flag can't silently regress to the network-disabled default.
+    let cmd: AgentCommand =
+        toml::from_str(super::codex::CONFIG).expect("codex default config must be valid TOML");
+    assert_eq!(cmd.command, "codex");
+    assert!(
+        cmd.args
+            .iter()
+            .any(|arg| arg == "sandbox_workspace_write.network_access=true"),
+        "codex default args must enable sandbox network access, got {:?}",
+        cmd.args
+    );
 }
 
 #[test]

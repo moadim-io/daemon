@@ -1,6 +1,6 @@
 //! The HEATMAP page: a forward-looking 7-day × 24-hour fire-density grid that
-//! aggregates the next week's schedule of every enabled cron job AND routine
-//! into one color-coded matrix, so an operator can see fleet-wide busy windows,
+//! aggregates the next week's schedule of every enabled routine into one
+//! color-coded matrix, so an operator can see fleet-wide busy windows,
 //! scheduling collisions, and open slots at a glance.
 //!
 //! Best practice (cron/job-scheduler operations — cronheatmap.com, Cronitor,
@@ -13,17 +13,17 @@
 //! The aggregation is pure and host-tested (see `schedule_heatmap_tests.rs`):
 //! the grid math takes a list of schedule sources plus a fixed `now` and is free
 //! of any DOM/wasm dependency. The component is a thin shell that fetches the
-//! existing `/api/v1/cron-jobs` and `/api/v1/routines` records, maps them to
-//! sources, and renders the computed grid — no backend or API change.
+//! existing `/api/v1/routines` records, maps them to sources, and renders the
+//! computed grid — no backend or API change.
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Timelike};
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
-use crate::cron_jobs::CronJob;
-use crate::overview::{fetch_crons, fetch_routines, Kind};
+use crate::overview::{fetch_routines, Kind};
 use crate::parse_cron;
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::routines::Routine;
 
 /// Rows in the grid: the next 7 calendar days, row 0 = today.
@@ -34,9 +34,6 @@ pub(crate) const HEAT_HOURS: usize = 24;
 /// every-minute schedule fires 7×1440 = 10 080 times/week; this leaves headroom
 /// while bounding cost on pathological (e.g. per-second) inputs.
 const MAX_FIRES_PER_SOURCE: usize = 20_000;
-/// How often the page re-fetches the underlying records (counts can change as
-/// jobs are toggled elsewhere).
-const REFETCH_MS: u32 = 30_000;
 /// How often the live "now" advances so the grid (and its today/current-hour
 /// highlight) rolls forward between fetches.
 const TICK_MS: u32 = 60_000;
@@ -47,10 +44,8 @@ const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 /// Source-kind filter for the grid.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum HeatFilter {
-    /// Count both cron jobs and routines.
+    /// Count all sources (currently just routines).
     All,
-    /// Count cron jobs only.
-    Cron,
     /// Count routines only.
     Routine,
 }
@@ -60,7 +55,6 @@ impl HeatFilter {
     pub(crate) fn accepts(self, kind: Kind) -> bool {
         match self {
             HeatFilter::All => true,
-            HeatFilter::Cron => kind == Kind::Cron,
             HeatFilter::Routine => kind == Kind::Routine,
         }
     }
@@ -69,18 +63,17 @@ impl HeatFilter {
     pub(crate) fn label(self) -> &'static str {
         match self {
             HeatFilter::All => "ALL",
-            HeatFilter::Cron => "CRON",
             HeatFilter::Routine => "ROUTINES",
         }
     }
 }
 
-/// A schedule-bearing entity reduced to just what the heatmap needs. Both
-/// `CronJob` and `Routine` map onto this so the aggregation stays agnostic of
-/// their full shapes (and host-testable without wasm types).
+/// A schedule-bearing entity reduced to just what the heatmap needs. `Routine`
+/// maps onto this so the aggregation stays agnostic of its full shape (and
+/// host-testable without wasm types).
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct HeatSource {
-    /// Cron job or routine.
+    /// Always `Kind::Routine` for now.
     pub kind: Kind,
     /// Raw cron expression used to compute fire times.
     pub schedule: String,
@@ -99,6 +92,8 @@ pub(crate) struct Heatmap {
     pub max_cell: u32,
     /// `(day, hour)` of the busiest cell, or `None` when nothing fires.
     pub peak: Option<(usize, usize)>,
+    /// Number of enabled, filter-matching sources that contributed at least one fire.
+    pub sources: u32,
 }
 
 /// Aggregate the next-7-day fire density of every enabled source matching
@@ -112,6 +107,7 @@ pub(crate) fn compute_heatmap(
     let today = now.date_naive();
     let end_date = today + Duration::days(HEAT_DAYS as i64);
     let mut grid = vec![vec![0u32; HEAT_HOURS]; HEAT_DAYS];
+    let mut sources_counted = 0u32;
 
     for source in sources
         .iter()
@@ -120,6 +116,7 @@ pub(crate) fn compute_heatmap(
         let Some(cron) = parse_cron(&source.schedule) else {
             continue;
         };
+        let mut contributed = false;
         // `iter_after(now)` yields fires strictly after `now` in chronological
         // order, so each `date` is on or after `today`; stop at the first fire
         // that lands on or past the window's end. The take() caps cost on
@@ -131,6 +128,10 @@ pub(crate) fn compute_heatmap(
             }
             let day = (date - today).num_days() as usize;
             grid[day][dt.hour() as usize] += 1;
+            contributed = true;
+        }
+        if contributed {
+            sources_counted += 1;
         }
     }
 
@@ -152,6 +153,7 @@ pub(crate) fn compute_heatmap(
         total,
         max_cell,
         peak,
+        sources: sources_counted,
     }
 }
 
@@ -204,15 +206,6 @@ fn weekday_index(date: NaiveDate) -> usize {
     date.weekday().num_days_from_sunday() as usize
 }
 
-/// Map a cron job onto the shared heatmap source.
-fn from_cron(job: &CronJob) -> HeatSource {
-    HeatSource {
-        kind: Kind::Cron,
-        schedule: job.schedule.clone(),
-        enabled: job.enabled,
-    }
-}
-
 /// Map a routine onto the shared heatmap source.
 fn from_routine(routine: &Routine) -> HeatSource {
     HeatSource {
@@ -222,31 +215,16 @@ fn from_routine(routine: &Routine) -> HeatSource {
     }
 }
 
-/// Flatten both record lists into one `HeatSource` vector.
-fn sources_of(crons: &[CronJob], routines: &[Routine]) -> Vec<HeatSource> {
-    crons
-        .iter()
-        .map(from_cron)
-        .chain(routines.iter().map(from_routine))
-        .collect()
-}
-
-/// Await two futures and return both results; a tiny local join so the page
-/// needs no extra dependency. Both fetches are issued before the first await.
-async fn join2<A, B>(
-    fut_a: impl std::future::Future<Output = A>,
-    fut_b: impl std::future::Future<Output = B>,
-) -> (A, B) {
-    (fut_a.await, fut_b.await)
+/// Map the routine record list into one `HeatSource` vector.
+fn sources_of(routines: &[Routine]) -> Vec<HeatSource> {
+    routines.iter().map(from_routine).collect()
 }
 
 /// Loaded state for the heatmap shell.
 #[derive(Clone, PartialEq, Default)]
 struct Data {
-    crons: Vec<CronJob>,
     routines: Vec<Routine>,
     loading: bool,
-    /// Set only when BOTH fetches fail, so a partial load still renders.
     error: Option<String>,
 }
 
@@ -258,20 +236,21 @@ pub fn heatmap_page() -> Html {
     });
     let now = use_state(Local::now);
     let filter = use_state(|| HeatFilter::All);
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
 
-    // Fetch both record lists; surface an error only when both fail.
+    // Fetch the routine record list.
     let load = {
         let data = data.clone();
+        let updated_at = updated_at.clone();
         move || {
             let data = data.clone();
+            let updated_at = updated_at.clone();
             spawn_local(async move {
-                let (crons, routines) = join2(fetch_crons(), fetch_routines()).await;
-                let error = match (&crons, &routines) {
-                    (Err(ce), Err(re)) => Some(format!("{ce}; {re}")),
-                    _ => None,
-                };
+                let routines = fetch_routines().await;
+                let error = routines.as_ref().err().cloned();
+                updated_at.set(js_sys::Date::now());
                 data.set(Data {
-                    crons: crons.unwrap_or_default(),
                     routines: routines.unwrap_or_default(),
                     loading: false,
                     error,
@@ -280,19 +259,42 @@ pub fn heatmap_page() -> Html {
         }
     };
 
-    // Load on mount, then re-fetch on a slow cadence.
+    // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| {
-            load();
-            spawn_local(async move {
-                loop {
-                    TimeoutFuture::new(REFETCH_MS).await;
-                    load();
-                }
-            });
+        use_effect_with((), move |_| load());
+    }
+
+    // Auto-refresh loop, re-armed when the interval changes.
+    {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let load = load.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        load();
+                    }
+                });
+            }
+            move || cancelled.set(true)
         });
     }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     // Advance "now" so the grid rolls forward between fetches.
     {
@@ -315,7 +317,7 @@ pub fn heatmap_page() -> Html {
     let now_val = *now;
     let today = now_val.date_naive();
     let current_hour = now_val.hour() as usize;
-    let sources = sources_of(&data.crons, &data.routines);
+    let sources = sources_of(&data.routines);
     let map = compute_heatmap(&sources, now_val, *filter);
 
     html! {
@@ -323,6 +325,11 @@ pub fn heatmap_page() -> Html {
             <div class="section-hd">
                 <span class="section-label">{"SCHEDULE HEATMAP"}</span>
                 <FilterTabs active={*filter} on_pick={set_filter} />
+                <RefreshControl
+                    interval={*interval}
+                    updated_at_ms={*updated_at}
+                    on_change={on_set_interval}
+                />
             </div>
             <HeatStats map={map.clone()} today={today} />
             <HeatGrid
@@ -342,7 +349,7 @@ struct FilterTabsProps {
     on_pick: Callback<HeatFilter>,
 }
 
-/// The All / Cron / Routines source filter, mirroring the dashboard's tab look.
+/// The All / Routines source filter, mirroring the dashboard's tab look.
 #[function_component(FilterTabs)]
 fn filter_tabs(props: &FilterTabsProps) -> Html {
     let render = |kind: HeatFilter| {
@@ -362,7 +369,6 @@ fn filter_tabs(props: &FilterTabsProps) -> Html {
     html! {
         <div class="hm-filter" role="group" aria-label="Source filter">
             { render(HeatFilter::All) }
-            { render(HeatFilter::Cron) }
             { render(HeatFilter::Routine) }
         </div>
     }
@@ -394,6 +400,10 @@ fn heat_stats(props: &HeatStatsProps) -> Html {
             <div class="stat-card enabled">
                 <div class="stat-label">{"PEAK / HOUR"}</div>
                 <div class="stat-val c-accent">{map.max_cell}</div>
+            </div>
+            <div class="stat-card disabled">
+                <div class="stat-label">{"SOURCES"}</div>
+                <div class="stat-val">{map.sources}</div>
             </div>
             <div class="stat-card system">
                 <div class="stat-label">{"OPEN SLOTS"}</div>
@@ -447,7 +457,7 @@ fn heat_grid(props: &HeatGridProps) -> Html {
                 <div class="empty">
                     <div class="empty-icon">{"▦"}</div>
                     <div class="empty-msg">{"NOTHING SCHEDULED"}</div>
-                    <div class="empty-sub">{"no enabled job or routine fires in the next 7 days"}</div>
+                    <div class="empty-sub">{"no enabled routine fires in the next 7 days"}</div>
                 </div>
             </div>
         };

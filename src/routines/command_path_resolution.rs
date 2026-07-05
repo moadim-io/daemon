@@ -41,7 +41,7 @@ pub(crate) fn tmux_available() -> bool {
 /// Generalizes [`tmux_available_in`] to an arbitrary executable name: a routine's agent `command`
 /// (e.g. `claude`, `codex`) is launched the same way `tmux` is — unresolved, it makes the cron
 /// firing a silent no-op. Used to distinguish "agent config present" from "agent binary actually
-/// runnable" in [`super::model::RoutineResponse`]. Injectable for tests via the `path` argument;
+/// runnable" in [`crate::routines::model::RoutineResponse`]. Injectable for tests via the `path` argument;
 /// see [`agent_command_available`] for the live-`PATH` variant.
 pub(crate) fn agent_command_available_in(path: &str, command: &str) -> bool {
     bin_dir_in(path, command).is_some()

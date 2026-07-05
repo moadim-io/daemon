@@ -522,6 +522,42 @@ fn build_routine_command_omits_model_flag_when_unset() {
 }
 
 #[test]
+fn build_routine_command_records_exit_code_after_invocation() {
+    // The tmux pane's shell-command must record `$?` to a *workbench-relative* `exit_code` file
+    // (not `$WB/exit_code`: `$WB` is never exported, so the new shell tmux spawns wouldn't see it)
+    // once the agent invocation finishes, so run-history can distinguish success from failure.
+    let routine = make_routine("Cmd Exit Code Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--permission-mode".to_string(), "auto".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The whole tmux shell-command (invocation + exit-code capture) is itself shell-quoted as one
+    // `tmux new-session` argument, which re-escapes the inner single quotes around `printf`'s
+    // `'%s'` into `'\''` — assert on ordering/content of the unescaped pieces rather than the
+    // exact (implementation-detail) escaped byte sequence.
+    let new_session_pos = cmd.find("tmux new-session").unwrap();
+    let invocation_pos = cmd.find("--permission-mode auto").unwrap();
+    // Multiple `printf`s appear earlier in the script (the disclosure write, the scheduled-fire
+    // stamp); only the one after the invocation is the exit-code capture.
+    let printf_pos = invocation_pos + cmd[invocation_pos..].find("printf").unwrap();
+    let exit_code_pos = cmd.rfind("> exit_code").unwrap();
+    assert!(
+        new_session_pos < invocation_pos
+            && invocation_pos < printf_pos
+            && printf_pos < exit_code_pos,
+        "expected exit-code capture after the invocation inside tmux new-session in: {cmd}"
+    );
+    assert!(cmd.contains(r#""$?""#), "expected $? capture in: {cmd}");
+    assert!(
+        !cmd.contains("$WB/exit_code"),
+        "exit_code must be workbench-relative, not $WB-prefixed, since $WB isn't exported: {cmd}"
+    );
+}
+
+#[test]
 fn inline_prompt_overflow_none_for_prompt_file_agent_regardless_of_size() {
     // `{prompt_file}` (codex/hermes) passes the prompt as a path, never as an inlined argument, so
     // it is never subject to the inline-argument cap no matter how large the composed prompt is.

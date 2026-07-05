@@ -347,7 +347,6 @@ moadim routines delete <id>
 
 # Misc
 moadim agents                 # list available agent keys
-moadim echo "hello"           # echo via the server (with a server timestamp)
 ```
 
 Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.

@@ -164,18 +164,19 @@ fn routine_tags_appear_in_keywords() {
 fn build_lists_pages_then_routines() {
     let routines = vec![routine("r1", "Nightly Audit", "claude", "0 0 * * *", None)];
     let commands = build_commands(&routines);
-    assert_eq!(commands.len(), 7); // 3 nav + 3 action + 1 routine
+    assert_eq!(commands.len(), 8); // 4 nav + 3 action + 1 routine
     assert_eq!(commands[0].kind, CmdKind::NavOverview);
     assert_eq!(commands[1].kind, CmdKind::NavRoutines);
     assert_eq!(commands[2].kind, CmdKind::NavHeatmap);
-    assert_eq!(commands[3].kind, CmdKind::ActionRefresh);
-    assert_eq!(commands[4].kind, CmdKind::ActionStop);
-    assert_eq!(commands[5].kind, CmdKind::ActionToggleTheme);
-    assert!(commands[5].keywords.contains("theme"));
-    assert_eq!(commands[6].kind, CmdKind::Routine);
-    assert_eq!(commands[6].title, "Nightly Audit");
-    assert_eq!(commands[6].subtitle, "0 0 * * * — AGENT MISSING"); // agent_registered=false → tag appended
-    assert!(commands[6].keywords.contains("claude"));
+    assert_eq!(commands[3].kind, CmdKind::NavSettings);
+    assert_eq!(commands[4].kind, CmdKind::ActionRefresh);
+    assert_eq!(commands[5].kind, CmdKind::ActionStop);
+    assert_eq!(commands[6].kind, CmdKind::ActionToggleTheme);
+    assert!(commands[6].keywords.contains("theme"));
+    assert_eq!(commands[7].kind, CmdKind::Routine);
+    assert_eq!(commands[7].title, "Nightly Audit");
+    assert_eq!(commands[7].subtitle, "0 0 * * * — AGENT MISSING"); // agent_registered=false → tag appended
+    assert!(commands[7].keywords.contains("claude"));
 }
 
 #[test]
@@ -273,6 +274,7 @@ fn route_for_maps_every_kind() {
     assert_eq!(route_for(CmdKind::NavOverview), Some(RouteKind::Home));
     assert_eq!(route_for(CmdKind::NavRoutines), Some(RouteKind::Routines));
     assert_eq!(route_for(CmdKind::NavHeatmap), Some(RouteKind::Heatmap));
+    assert_eq!(route_for(CmdKind::NavSettings), Some(RouteKind::Settings));
     assert_eq!(route_for(CmdKind::Routine), Some(RouteKind::Routines));
     // Action commands run a callback, not a navigation.
     assert_eq!(route_for(CmdKind::ActionRefresh), None);
@@ -285,6 +287,7 @@ fn badge_for_maps_every_kind() {
     assert_eq!(badge_for(CmdKind::NavOverview), "GO");
     assert_eq!(badge_for(CmdKind::NavRoutines), "GO");
     assert_eq!(badge_for(CmdKind::NavHeatmap), "GO");
+    assert_eq!(badge_for(CmdKind::NavSettings), "GO");
     assert_eq!(badge_for(CmdKind::Routine), "ROUTINE");
     assert_eq!(badge_for(CmdKind::ActionRefresh), "ACTION");
     assert_eq!(badge_for(CmdKind::ActionStop), "ACTION");

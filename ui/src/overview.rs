@@ -19,10 +19,17 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+use crate::overview_recent_runs::RecentRunsTable;
+use crate::overview_upcoming::UpcomingTable;
 use crate::refresh::{RefreshControl, RefreshInterval};
-use crate::routines::{api_unlock, GlobalLockBanner, LockStatus, Routine};
-use crate::schedule::{fires_within, fmt_until, fmt_when, next_fire_after};
+use crate::routines::{
+    api_all_runs, api_unlock, FleetRunSummary, GlobalLockBanner, LockStatus, Routine,
+};
+use crate::schedule::{fires_within, fmt_until, next_fire_after};
 use crate::{Route, ToastKind};
+
+/// How many of the most recent runs across the fleet the overview panel shows.
+pub(crate) const RECENT_RUNS_LIMIT: usize = 8;
 
 /// "Due soon" / "soon" window: an enabled entity whose next fire lands within
 /// this many seconds is operationally urgent. Mirrors the per-page cron stats.
@@ -289,14 +296,18 @@ fn targets_no_machine(machines: &[String]) -> bool {
     machines.iter().all(|m| m.trim().is_empty())
 }
 
-/// Map a routine onto the shared schedule abstraction.
-fn is_snoozed(routine: &Routine) -> bool {
-    let now_secs = (js_sys::Date::now() / 1000.0) as u64;
-    routine.snoozed_until.is_some_and(|until| until > now_secs)
+/// Map a routine onto the shared schedule abstraction. Takes `now` explicitly
+/// (rather than sampling the wall clock here) so this stays a pure, host-
+/// testable function and stays in lockstep with the same `now` the rest of
+/// the page's KPI/attention/upcoming-run math uses.
+fn is_snoozed(routine: &Routine, now: DateTime<Local>) -> bool {
+    routine
+        .snoozed_until
+        .is_some_and(|until| (until as i64) > now.timestamp())
         || routine.skip_runs.is_some_and(|n| n > 0)
 }
 
-fn from_routine(routine: &Routine) -> SchedSource {
+fn from_routine(routine: &Routine, now: DateTime<Local>) -> SchedSource {
     SchedSource {
         kind: Kind::Routine,
         id: routine.id.clone(),
@@ -307,13 +318,13 @@ fn from_routine(routine: &Routine) -> SchedSource {
         machines_empty: targets_no_machine(&routine.machines),
         agent_registered: Some(routine.agent_registered),
         flag_count: routine.flag_count,
-        snoozed: is_snoozed(routine),
+        snoozed: is_snoozed(routine, now),
     }
 }
 
 /// Map the routine record list into one `SchedSource` vector.
-fn sources_of(routines: &[Routine]) -> Vec<SchedSource> {
-    routines.iter().map(from_routine).collect()
+fn sources_of(routines: &[Routine], now: DateTime<Local>) -> Vec<SchedSource> {
+    routines.iter().map(|r| from_routine(r, now)).collect()
 }
 
 async fn api_trigger_routine(id: &str) -> Result<(), String> {
@@ -348,6 +359,10 @@ async fn fetch_lock_status() -> Option<LockStatus> {
         .ok()
 }
 
+async fn fetch_recent_runs() -> Vec<FleetRunSummary> {
+    api_all_runs(RECENT_RUNS_LIMIT).await.unwrap_or_default()
+}
+
 /// Loaded state for the overview shell.
 #[derive(Clone, PartialEq, Default)]
 struct Data {
@@ -355,6 +370,7 @@ struct Data {
     loading: bool,
     error: Option<String>,
     lock_status: Option<LockStatus>,
+    recent_runs: Vec<FleetRunSummary>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -383,12 +399,14 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
                 let routines = fetch_routines().await;
                 let error = routines.as_ref().err().cloned();
                 let lock_status = fetch_lock_status().await;
+                let recent_runs = fetch_recent_runs().await;
                 updated_at.set(js_sys::Date::now());
                 data.set(Data {
                     routines: routines.unwrap_or_default(),
                     loading: false,
                     error,
                     lock_status,
+                    recent_runs,
                 });
             });
         }
@@ -461,7 +479,7 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     };
 
     let now_val = *now;
-    let sources = sources_of(&data.routines);
+    let sources = sources_of(&data.routines, now_val);
     let kpis = compute_kpis(&sources, now_val);
     let attention = attention_items(&sources, now_val);
     let runs = upcoming_runs(&sources, now_val);
@@ -519,6 +537,10 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
                 error={data.error.clone()}
                 on_trigger={on_trigger}
             />
+            <div class="section-hd">
+                <span class="section-label">{"RECENT RUNS"}</span>
+            </div>
+            <RecentRunsTable runs={data.recent_runs.clone()} loading={data.loading} />
         </main>
     }
 }
@@ -625,112 +647,6 @@ fn attention_table(props: &AttentionTableProps) -> Html {
                                         item.reason.detail().to_string()
                                     }
                                 }</td>
-                            </tr>
-                        }
-                    }) }
-                </tbody>
-            </table>
-        </div>
-    }
-}
-
-#[derive(Properties, PartialEq)]
-struct UpcomingTableProps {
-    runs: Vec<UpcomingRun>,
-    now: DateTime<Local>,
-    loading: bool,
-    error: Option<String>,
-    on_trigger: Callback<(Kind, String)>,
-}
-
-#[function_component(UpcomingTable)]
-fn upcoming_table(props: &UpcomingTableProps) -> Html {
-    if let Some(err) = &props.error {
-        return html! {
-            <div class="table-wrap">
-                <div class="empty">
-                    <div class="empty-icon">{"⚠"}</div>
-                    <div class="empty-msg">{"FAILED TO LOAD"}</div>
-                    <div class="empty-sub">{err.clone()}</div>
-                </div>
-            </div>
-        };
-    }
-    if props.loading {
-        return html! {
-            <div class="table-wrap">
-                <div class="empty"><div class="spinner"></div></div>
-            </div>
-        };
-    }
-    if props.runs.is_empty() {
-        return html! {
-            <div class="table-wrap">
-                <div class="empty">
-                    <div class="empty-icon">{"◷"}</div>
-                    <div class="empty-msg">{"NO UPCOMING RUNS"}</div>
-                    <div class="empty-sub">{"no enabled routine is scheduled to fire"}</div>
-                </div>
-            </div>
-        };
-    }
-
-    let now = props.now;
-    html! {
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{"TYPE"}</th>
-                        <th>{"NAME"}</th>
-                        <th>{"SCHEDULE"}</th>
-                        <th>{"NEXT RUN"}</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    { for props.runs.iter().enumerate().map(|(i, run)| {
-                        let (badge, badge_cls, to) = match run.kind {
-                            Kind::Routine => ("ROUTINE", "kind-badge routine", Route::Routines),
-                        };
-                        let until_cls = if run.soon { "cell-next-until soon" } else { "cell-next-until" };
-                        let kind = run.kind;
-                        let id = run.id.clone();
-                        let on_trigger = props.on_trigger.clone();
-                        let onclick = Callback::from(move |_: MouseEvent| {
-                            on_trigger.emit((kind, id.clone()));
-                        });
-                        html! {
-                            <tr key={i.to_string()}>
-                                <td><span class={badge_cls}>{badge}</span></td>
-                                <td>
-                                    <Link<Route> classes={classes!("ov-name-link")} to={to}>
-                                        {run.label.clone()}
-                                    </Link<Route>>
-                                    if run.flag_count > 0 {
-                                        <span class="ov-flag-badge" title={format!("{} open flag{}", run.flag_count, if run.flag_count == 1 { "" } else { "s" })}>
-                                            {format!("⚑ {}", run.flag_count)}
-                                        </span>
-                                    }
-                                </td>
-                                <td>
-                                    <div class="cell-schedule-human">
-                                        {run.human.clone().unwrap_or_else(|| run.schedule.clone())}
-                                    </div>
-                                </td>
-                                <td class="cell-next">
-                                    <div class="cell-next-when">{fmt_when(now, run.at)}</div>
-                                    <div class={until_cls}>{fmt_until(now, run.at)}</div>
-                                </td>
-                                <td class="cell-act">
-                                    <button
-                                        class="btn btn-sm btn-ghost run-now-btn"
-                                        title="Trigger now"
-                                        {onclick}
-                                    >
-                                        {"▶ RUN"}
-                                    </button>
-                                </td>
                             </tr>
                         }
                     }) }

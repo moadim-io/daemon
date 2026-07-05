@@ -11,6 +11,293 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-07-05
+
+Enable `clippy::needless_pass_by_ref_mut` in `[lints.clippy]`. The codebase was already clean against it (no violations), so this is a lint-only change that locks in the invariant that every `&mut` parameter is actually mutated through.
+
+fix: skip dirs with no routine.toml in the prompt-subfolder migration, so an orphaned routines/ dir no longer gets an empty prompts/prompt.pure.md resurrected on every startup
+
+chore: lower linecheck gate from 1500 to 1000 lines
+
+chore: lower linecheck gate from 2000 to 1500 lines
+
+chore: lower linecheck gate from 2500 to 2000 lines
+
+chore: lower linecheck gate from 1000 to 700 lines
+
+### Fixed
+
+- **The routine LOGS view search/highlight could panic the UI on ordinary Unicode log content.** `highlight()` found matches by lowercasing the whole line and then reapplying *those* byte offsets to the original (un-lowercased) string. Case folding isn't always byte-length-preserving (`ẞ`, U+1E9E, 3 bytes, lowercases to `ß`, U+00DF, 2 bytes) or even char-count-preserving (Turkish `İ` expands to two chars), so a matching search query after such a character could compute an offset that lands mid-character and panics on the slice (crashing the Yew render for that log line). The matching logic now projects each original char to exactly one lowercase char and tracks byte spans via `char_indices()`, so every slice boundary is guaranteed valid regardless of the log content's script.
+
+fix(ui): derive the Overview page's per-source `snoozed` flag from the same `now` already threaded through its KPI/attention/upcoming-run math instead of sampling `js_sys::Date::now()` inline, so `is_snoozed`/`from_routine`/`sources_of` stay deterministic and host-testable (this was silently broken: `cargo test --workspace` panicked with "cannot call wasm-bindgen imported functions on non-wasm targets" in 4 `overview_tests`, invisible in CI because `test.yml` only runs bare `cargo test`, which skips the `ui` workspace member).
+
+feat(ui): show open flag count in NEEDS ATTENTION detail column
+
+The NEEDS ATTENTION panel now shows "N open flag(s) — needs review"
+instead of a generic detail string for HasOpenFlags rows, so operators
+can see the severity at a glance without navigating into the routine.
+AttentionItem now carries flag_count; a new test verifies it is
+correctly propagated from SchedSource.
+
+feat(ui): surface routines with open flags in the NEEDS ATTENTION panel
+
+The overview's NEEDS ATTENTION panel caught config problems (DORMANT,
+DEAD SCHEDULE, AGENT MISSING) but was blind to runtime issues: routines
+whose agents raised flags during a run never appeared there. Operators
+had to discover flagged routines by scanning the routines table.
+
+Adds HasOpenFlags as an attention reason (rank 3, lowest priority so
+config faults still surface first). An enabled routine with flag_count > 0
+now appears in the panel with an "OPEN FLAGS — agent raised flags during
+a run — needs review" badge.
+
+Three new tests: open flags surfaces when otherwise healthy, config
+faults outrank flags, disabled routines with flags remain hidden.
+
+feat(ui): mute snoozed routines in the month calendar view
+
+Calendar chips for currently-snoozed routines now render at 45% opacity
+with an amber left border, matching the treatment added to the day
+timeline, so operators can see at a glance which future fire times belong
+to suppressed routines.
+
+feat(ui): show snoozed and flag indicators on day-timeline chips
+
+Day-view timeline chips now carry two additional signals:
+
+- **Snoozed routines** render at 45% opacity with an amber left-border
+  instead of the standard accent border, so operators can distinguish
+  suppressed fire times from active ones at a glance.
+- **Flagged routines** show a red `⚑N` badge on the chip so pending
+  flags are visible without leaving the timeline view.
+
+feat(ui): surface dependency health warnings and build info in the header
+
+Show "⚠ NO TMUX" (red, pulsing) and "⚠ NO PYTHON3" (amber) warning badges in
+the header when the daemon reports a missing runtime dependency. Extends the
+`Health` struct to include `dependencies` and `git_sha` from the existing
+`/api/v1/health` response, and displays the git SHA as a tooltip on the version
+label.
+
+feat(ui): add DORMANT tile to routines stats bar
+
+The routines stats bar now shows a DORMANT tile — the count of enabled
+routines assigned to no machine (they are enabled but will never fire).
+The tile turns amber when any dormant routines exist and acts as a
+clickable filter, narrowing the table to dormant routines.
+
+refactor(ui): extract inline styles from index.html to styles.css
+
+Moves the app's CSS out of a 1600+ line inline `<style>` block in
+`ui/index.html` into `ui/styles.css`, linked via trunk's
+`data-trunk rel="css"` asset pipeline. The self-hosted font-face
+data-URI stays inline.
+
+feat(ui): show flag age in the flags panel
+
+Each flag row now shows a relative timestamp ("3h ago", "2d ago") next
+to the scope badge, so operators can see at a glance how long a flag
+has been open without cross-referencing the file metadata.
+
+feat(ui): show open flag count header in flags panel
+
+The flags panel now shows "N open flag(s)" above the flag list so
+operators immediately see the total count without scrolling to the end.
+
+feat(ui): make FLAGS tile in stats bar a clickable filter
+
+The FLAGS tile in the routines stats bar was informational-only. It is
+now a clickable filter button (like SNOOZED, DUE SOON, etc.) that narrows
+the table to routines with one or more open flags. Clicking it again
+clears the filter. The tile border and value turn red when any flags are
+present.
+
+Adds `RoutineStatusFacet::HasFlags` with codec roundtrip and one new host
+test.
+
+feat(ui): add FLAGS KPI tile to overview dashboard
+
+Surface the total count of open flags across all routines as a FLAGS
+tile in the overview stat row. Red when non-zero, green when clear —
+gives operators an at-a-glance signal without navigating into individual
+routines. Adds `flag_count` to `SchedSource` and `flags` to `Kpis`.
+
+feat(ui): add Health option to routines group-by selector
+
+The routines GROUP BY selector now includes "Health" as an option.
+Choosing it partitions the routine list by the derived health badge
+(HEALTHY, SNOOZED, DORMANT, DEAD SCHEDULE, AGENT MISSING, DISABLED),
+making it easy to scan which routines share the same health state.
+
+feat(ui): add RefreshControl to heatmap page
+
+The heatmap page previously used a hard-coded 30 s background refresh
+with no user-visible indicator of when data was last loaded. It now
+shows the same RefreshControl as the Overview and Routines pages
+(Off / 5s / 15s / 30s / 60s dropdown + "updated N ago" freshness cue),
+sharing the same localStorage key so the chosen cadence is consistent
+across all pages.
+
+feat(ui): add SOURCES KPI tile to the schedule heatmap
+
+The heatmap stats bar now shows a SOURCES tile — the number of enabled
+routines that contributed at least one fire to the 7-day grid. This lets
+operators quickly distinguish a high-density grid (many routines, many
+fires) from a high-frequency grid (few routines, very frequent fires).
+
+chore(ui): extend the 700-line linecheck gate to the `ui` crate
+
+feat(ui): show freshness cue in logs and flags page headers
+
+The LOGS and FLAGS sub-pages now show "updated just now" / "updated Nm ago"
+in the page header after each load or manual refresh, matching the pattern
+already used on the Overview, Routines, and Heatmap pages.
+
+fix(ui): show "snoozed" in NEXT RUN cell instead of suppressed fire time
+
+When a routine is snoozed its scheduled fires are suppressed, but the
+NEXT RUN column still showed the upcoming time as if the run would happen.
+Now shows "snoozed" (muted, consistent with "paused" for disabled
+routines) so the table accurately reflects what will execute.
+
+Extracts `is_routine_snoozed` as a shared helper used by both
+`routine_health` and `next_routine_run_cell`, with four dedicated tests.
+
+feat(ui): add DORMANT KPI tile to the overview page
+
+The overview KPI row now includes a DORMANT tile — the count of enabled
+routines assigned to no machine (they are enabled but will never fire).
+The tile turns amber when any dormant routines exist, matching the DORMANT
+tile already present on the Routines page stats bar.
+
+feat(ui): show global lock banner on the overview page
+
+When routines are globally locked the OVERVIEW page now shows the same
+warning banner as the Routines tab. Previously users on the overview had
+no indication that scheduling and manual triggers were paused — they had
+to navigate to another tab to discover the lock. The banner shows which
+sentinels are active (SHARED .lock / LOCAL .local.lock) and is fetched
+alongside the routine list on every refresh cycle.
+
+feat(ui): add RefreshControl to overview page
+
+The overview page previously used a fixed 30 s background refresh with
+no user-visible indicator of when data was last loaded. It now shows the
+same RefreshControl as the Routines page (Off / 5s / 15s / 30s / 60s
+dropdown + "updated N ago" freshness cue), sharing the same
+localStorage key so the chosen cadence is consistent across pages.
+
+feat(ui): add UNLOCK ALL button to the overview page lock banner
+
+The overview page's lock banner previously showed "ROUTINES GLOBALLY
+LOCKED" as a read-only notice. It now renders the same `GlobalLockBanner`
+component used on the Routines page, which includes an UNLOCK ALL button.
+Operators no longer need to navigate to the Routines tab to clear a lock.
+
+feat(ui): show routine health status tags in command palette subtitles
+
+Routine entries in the ⌘K command palette previously showed only the
+schedule description. They now suffix status tags so operators can see
+health issues without leaving the palette:
+
+- "DISABLED" — routine is turned off
+- "SNOOZED" — skip_runs counter is active
+- "AGENT MISSING" — agent not registered
+- "FLAGS" — one or more open flags (appended alongside any other tag)
+
+Six new host tests cover the combinations.
+
+feat(ui): include routine tags in command palette search keywords
+
+Routine tags are now indexed as search keywords in the command palette
+(⌘K), so typing a tag name (e.g. "security", "weekly") surfaces all
+matching routines without needing to know their exact titles.
+
+feat(ui): show repository names on hover in routines REPOS column
+
+The REPOS count cell previously showed only a number with no way to see
+which repositories were linked without opening the edit form. Hovering
+now shows a newline-separated list of repository names as a native
+browser tooltip.
+
+feat(ui): show routine goal as subtitle in routines table TITLE column
+
+Routines with a goal set now show the first line of the goal text as a
+muted subtitle beneath the routine name in the TITLE column. Hovering
+reveals the full goal text. This surfaces the "why" behind the routine
+directly in the table without requiring the operator to open the edit form.
+
+feat(ui): make UNREGISTERED AGENT stat tile a clickable filter
+
+The "UNREGISTERED AGENT" tile on the routines stats bar was a read-only
+display div. It is now a clickable filter button (like DORMANT, FLAGS,
+SNOOZED) that filters the table to show only routines whose agent is not
+registered. The tile turns amber when any unregistered-agent routines exist.
+A new `AgentUnregistered` variant is added to `RoutineStatusFacet` so
+the filter state persists in the URL via the existing `status=` query param.
+
+feat(ui): add MACHINES column to the routines table
+
+The routines table now has a MACHINES column showing how many machines
+each routine is assigned to. When a routine has no machines assigned
+(dormant) the cell shows an amber "—" instead of a number, so operators
+can spot un-targeted routines without filtering. Hovering the count
+shows the full list of machine names.
+
+feat(ui): add SNOOZED and FLAGS tiles to routines page stats bar
+
+The Routines page stats bar previously only showed TOTAL, ENABLED,
+DISABLED, DUE SOON, and UNREGISTERED AGENT. It now also shows:
+
+- **SNOOZED** — count of routines with suppressed fires (clickable
+  filter like DUE SOON; amber when non-zero)
+- **FLAGS** — total open flags across all routines (red when non-zero)
+- **DUE SOON** — now correctly excludes snoozed routines (same fix as
+  the overview page in #945)
+
+Adds `Snoozed` to `RoutineStatusFacet` with roundtrip codec support and
+a filter-matching test.
+
+feat(ui): show snooze-until detail in the NEXT RUN cell
+
+Snoozed routines previously showed only "snoozed" in the NEXT RUN
+column. The cell now includes a secondary line with context:
+
+- "Nm left" / "Nh left" / "Nd left" — when a `snoozed_until` deadline
+  is set, showing how long until the routine resumes automatically.
+- "N run(s) skipped" — when a `skip_runs` counter is active.
+
+Seven new host tests cover all the formatting branches.
+
+fix(ui): exclude snoozed routines from DUE SOON count and UPCOMING RUNS table
+
+Snoozed routines appeared in the overview's DUE SOON KPI and UPCOMING
+RUNS table as if they would fire, even though their scheduled fires are
+suppressed. Fixes both to only include enabled, non-snoozed sources so
+the dashboard reflects what will actually run.
+
+feat(ui): add SNOOZED KPI tile to overview dashboard
+
+Surface the count of enabled routines whose scheduled fires are
+currently suppressed (snoozed or skip-runs active) as a SNOOZED tile
+in the overview stat row. Amber when non-zero, green when clear —
+makes it immediately visible when routines are intentionally silenced.
+
+feat(ui): show open-flag badge on upcoming-runs rows
+
+The UPCOMING RUNS table now shows a small "⚑ N" badge next to the name
+of any routine that has open flags, so operators can see at a glance
+which about-to-fire routines still need flag review without navigating
+to the NEEDS ATTENTION panel. Two new tests verify the flag count is
+correctly propagated from SchedSource to UpcomingRun.
+
+feat(ui): show raw cron in upcoming runs when no human description exists
+
+The SCHEDULE column in the upcoming runs table previously showed "—" for
+routines whose daemon had not yet computed a human-readable description.
+It now falls back to the raw cron expression (e.g. `*/15 * * * *`) so
+operators always see something actionable.
+
 ## [0.22.0] - 2026-07-03
 
 ### Changed
@@ -1751,7 +2038,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/moadim-io/daemon/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/moadim-io/daemon/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/moadim-io/daemon/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/moadim-io/daemon/compare/v0.19.1...v0.20.0

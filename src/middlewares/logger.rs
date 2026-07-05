@@ -1,6 +1,15 @@
-use axum::{extract::Request, middleware::Next, response::Response};
+use axum::{
+    extract::Request,
+    http::{header::HeaderName, HeaderValue},
+    middleware::Next,
+    response::Response,
+};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
+
+/// Response header a request's correlation id is echoed under, reusing an inbound value of the
+/// same name when the caller supplies one instead of always minting a fresh id.
+const REQUEST_ID_HEADER: &str = "x-request-id";
 
 /// The health-check endpoint the web UI polls continuously. Logged at `debug`
 /// (see [`logger`]). This is the fully-qualified request path the middleware
@@ -22,9 +31,19 @@ static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 ///
 /// Each request is tagged with a short correlation id that prefixes both its
 /// inbound (`<-`) and outbound (`->`) line, so the two can be paired in the log
-/// even when many requests interleave under concurrency.
+/// even when many requests interleave under concurrency. The same id is echoed
+/// back as an `x-request-id` response header; an inbound `x-request-id` (when
+/// present and a valid header value) is reused rather than regenerated, so a
+/// caller-supplied id survives into the daemon's own logs.
 pub async fn logger(req: Request, next: Next) -> Response {
-    let id = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let inbound_id = req
+        .headers()
+        .get(REQUEST_ID_HEADER)
+        .and_then(|header| header.to_str().ok())
+        .filter(|header| !header.is_empty())
+        .map(str::to_string);
+    let id = inbound_id
+        .unwrap_or_else(|| format!("{:08x}", REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed)));
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     // Health-check polls are noise at info level; keep them at debug.
@@ -33,12 +52,16 @@ pub async fn logger(req: Request, next: Next) -> Response {
     } else {
         log::Level::Info
     };
-    log::log!(level, "[{id:08x}] <- {method} {path}");
+    log::log!(level, "[{id}] <- {method} {path}");
     let start = Instant::now();
-    let res = next.run(req).await;
+    let mut res = next.run(req).await;
     let status = res.status();
     let elapsed = start.elapsed().as_millis();
-    log::log!(level, "[{id:08x}] -> {status} {path} in {elapsed}ms");
+    log::log!(level, "[{id}] -> {status} {path} in {elapsed}ms");
+    if let Ok(value) = HeaderValue::from_str(&id) {
+        res.headers_mut()
+            .insert(HeaderName::from_static(REQUEST_ID_HEADER), value);
+    }
     res
 }
 

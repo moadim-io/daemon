@@ -1,7 +1,8 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
-use super::runtime::MAX_RUNTIME_SECS;
-use super::ttl::MAX_TTL_SECS;
 use super::*;
 
 /// A `max_runtime_for` that never trips the watchdog (so reap tests exercise TTL only).
@@ -11,6 +12,22 @@ fn never_expires_runtime(_slug: &str) -> u64 {
 
 /// A `kill` that does nothing (the watchdog is not expected to fire).
 fn noop_kill(_session: &str) {}
+
+/// A `finished_at` that reports each run's trigger timestamp as its finish time, isolating the TTL
+/// math from `agent.log` mtime so a test asserts reap decisions purely on the injected `ts`.
+fn finish_at_trigger(_dir: &std::path::Path, trigger_ts: u64) -> u64 {
+    trigger_ts
+}
+
+/// A `persist` that does nothing — most reap tests aren't exercising durable history.
+fn noop_persist(
+    _slug: &str,
+    _name: &str,
+    _path: &std::path::Path,
+    _started_at: u64,
+    _finished_at: u64,
+) {
+}
 
 #[test]
 fn tmux_kill_session_is_best_effort_on_missing_session() {
@@ -67,6 +84,66 @@ fn tmux_session_alive_reflects_the_bin_exit_status() {
         !super::session::tmux_session_alive("moadim-anything"),
         "a non-zero-exit tmux stub reads as not alive"
     );
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+}
+
+#[test]
+fn tmux_session_prefix_alive_matches_any_session_starting_with_prefix() {
+    // The overlap guard (#514) needs *any* live session for the routine, not one exact name, so
+    // this stubs `tmux list-sessions -F ...` (unlike `tmux_session_alive`'s `has-session`, which
+    // only a single hard-coded exit status can stand in for) to actually exercise the prefix match.
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = std::env::temp_dir().join(format!("moadim-tmux-prefix-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = dir.join("tmux");
+    std::fs::write(
+        &stub,
+        "#!/bin/sh\nprintf 'moadim-other-100\\nmoadim-foo-200\\n'\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let previous = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1).
+    unsafe { std::env::set_var("MOADIM_TMUX_BIN", &stub) };
+
+    assert!(
+        super::session::tmux_session_prefix_alive("moadim-foo-"),
+        "a listed session starting with the prefix must read as alive"
+    );
+    assert!(
+        !super::session::tmux_session_prefix_alive("moadim-bar-"),
+        "no listed session starts with this prefix"
+    );
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn tmux_session_prefix_alive_false_when_tmux_bin_missing_or_fails() {
+    // No live server / no tmux at all must never be mistaken for an overlapping run — mirrors
+    // `tmux_session_alive`'s stance that "no tmux" means "nothing to guard against".
+    let previous = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: single-threaded harness.
+    unsafe { std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/false") };
+    assert!(!super::session::tmux_session_prefix_alive("moadim-foo-"));
 
     // SAFETY: single-threaded harness; restore the saved override.
     unsafe {
@@ -205,6 +282,8 @@ fn reap_dir_removes_only_finished_and_expired() {
         &never_expires_runtime,
         &alive,
         &noop_kill,
+        &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1);
@@ -237,12 +316,92 @@ fn reap_dir_uses_per_slug_ttl() {
         &never_expires_runtime,
         &dead,
         &noop_kill,
+        &finish_at_trigger,
+        &noop_persist,
     );
 
     assert_eq!(removed, 1);
     assert!(!base.join("short-500").exists());
     assert!(base.join("long-500").exists());
 
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn reap_dir_measures_ttl_from_finish_not_trigger() {
+    // #174: retention is measured from when the run *finished*, not when it was triggered. A run
+    // whose duration exceeds its TTL must still be kept for the full window after it completes,
+    // while a long-finished run is reaped. Both dirs share trigger ts 100 (trigger-based age 900),
+    // so a trigger-based reaper would delete both; finish-based keeps the just-finished one.
+    let base = std::env::temp_dir().join("moadim-cleanup-finish-ttl-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+
+    touch_dir(&base, "longrun-100"); // triggered at 100, finished recently (at 900)
+    touch_dir(&base, "donelong-100"); // triggered at 100, finished long ago (at 100)
+
+    let now = 1000;
+    let ttl_for = |_slug: &str| 500u64; // retention window: 500s from finish
+    let dead = |_session: &str| false;
+    // Finish time is per-workbench: the long-running one finished at 900 (age 100 <= 500 -> kept);
+    // the other finished at 100 (age 900 > 500 -> reaped). Run duration never eats the window.
+    let finished_at = |dir: &std::path::Path, _ts: u64| {
+        if dir.file_name().unwrap() == "longrun-100" {
+            900
+        } else {
+            100
+        }
+    };
+
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &never_expires_runtime,
+        &dead,
+        &noop_kill,
+        &finished_at,
+        &noop_persist,
+    );
+
+    assert_eq!(removed, 1, "only the long-finished run is reaped");
+    assert!(
+        base.join("longrun-100").exists(),
+        "a run that finished within its TTL is retained even though its trigger age exceeds the TTL"
+    );
+    assert!(!base.join("donelong-100").exists());
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn agent_log_finish_time_falls_back_to_trigger_without_log() {
+    // No agent.log present -> the trigger timestamp is used as the finish time.
+    let base =
+        std::env::temp_dir().join(format!("moadim-cleanup-finishfn-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    assert_eq!(agent_log_finish_time(&base, 4242), 4242);
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn agent_log_finish_time_uses_log_mtime_clamped_to_trigger() {
+    // With an agent.log present, its mtime (a recent, large unix time) is used and is never less
+    // than the trigger timestamp.
+    let base = std::env::temp_dir().join(format!(
+        "moadim-cleanup-finishfn-mtime-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(base.join("agent.log"), b"done\n").unwrap();
+    // Trigger far in the past: the just-written log's mtime dominates, so finish > trigger.
+    let finish = agent_log_finish_time(&base, 1);
+    assert!(
+        finish > 1,
+        "fresh agent.log mtime should yield a finish time later than an ancient trigger"
+    );
+    // Trigger far in the future (clock skew): clamped up to the trigger, never below it.
+    assert_eq!(agent_log_finish_time(&base, u64::MAX), u64::MAX);
     std::fs::remove_dir_all(&base).unwrap();
 }
 
@@ -260,7 +419,16 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &max_runtime_for,
+        &alive,
+        &kill,
+        &finish_at_trigger,
+        &noop_persist,
+    );
 
     assert_eq!(removed, 1, "hung-then-killed workbench is reaped");
     assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
@@ -283,7 +451,16 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &alive, &kill);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &max_runtime_for,
+        &alive,
+        &kill,
+        &finish_at_trigger,
+        &noop_persist,
+    );
 
     assert_eq!(
         removed, 0,
@@ -313,7 +490,16 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(&base, now, &ttl_for, &max_runtime_for, &dead, &kill);
+    let removed = reap_dir(
+        &base,
+        now,
+        &ttl_for,
+        &max_runtime_for,
+        &dead,
+        &kill,
+        &finish_at_trigger,
+        &noop_persist,
+    );
 
     assert_eq!(removed, 1);
     assert!(
@@ -325,115 +511,46 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
 }
 
 #[test]
-fn watchdog_dir_kills_hung_session_without_reaping() {
-    let base = std::env::temp_dir().join("moadim-watchdog-kill-test");
+fn kill_sessions_for_slug_kills_only_live_matching_sessions() {
+    // #333: deleting a routine must not leave its in-flight workbench session running.
+    let base = std::env::temp_dir().join("moadim-cleanup-kill-slug-test");
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
-    touch_dir(&base, "hung-100"); // live + over max runtime -> killed
-    touch_dir(&base, "fresh-900"); // live + within bound      -> untouched
-    touch_dir(&base, "gone-100"); // already dead              -> untouched
-    touch_dir(&base, "notawb"); // not a workbench            -> skipped
-    std::fs::write(base.join("stray-50"), b"x").unwrap(); // a file, not a dir -> ignored
 
-    let now = 1000;
-    let max_runtime_for = |_slug: &str| 300u64; // age 900 (hung/gone) > 300, age 100 (fresh) <= 300
-    let alive = |session: &str| session != "moadim-gone-100";
+    touch_dir(&base, "deleted-100"); // matching slug, live      -> killed
+    touch_dir(&base, "deleted-200"); // matching slug, dead      -> left alone (already gone)
+    touch_dir(&base, "other-100"); // different slug, live       -> untouched
+    touch_dir(&base, "notawb"); // no timestamp, ignored
+    std::fs::write(base.join("deleted-stray"), b"x").unwrap(); // a file, not a dir -> ignored
+
+    let alive = |session: &str| session == "moadim-deleted-100" || session == "moadim-other-100";
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let count = watchdog_dir(&base, now, &max_runtime_for, &alive, &kill);
+    let count = kill_sessions_for_slug(&base, "deleted", &alive, &kill);
 
-    assert_eq!(count, 1, "only the hung session is killed");
-    assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
-    // The watchdog only kills; it never reaps, so every directory still exists.
-    assert!(base.join("hung-100").exists());
-    assert!(base.join("fresh-900").exists());
-    assert!(base.join("gone-100").exists());
-    // The kill is recorded in the run's agent.log.
-    let log = std::fs::read_to_string(base.join("hung-100").join("agent.log")).unwrap();
-    assert!(log.contains("exceeded max runtime"));
+    assert_eq!(count, 1);
+    assert_eq!(killed.into_inner(), vec!["moadim-deleted-100".to_string()]);
 
     std::fs::remove_dir_all(&base).unwrap();
 }
 
 #[test]
-fn watchdog_dir_returns_zero_when_dir_unreadable() {
+fn kill_sessions_for_slug_returns_zero_for_a_missing_dir() {
     let missing =
-        std::env::temp_dir().join(format!("moadim-watchdog-missing-{}", uuid::Uuid::new_v4()));
-    assert!(!missing.exists());
-    let max_runtime_for = |_slug: &str| 0u64;
-    let alive = |_session: &str| true;
-    assert_eq!(
-        watchdog_dir(&missing, 1000, &max_runtime_for, &alive, &noop_kill),
-        0
-    );
-}
-
-#[test]
-fn kill_hung_sessions_scans_real_workbenches_dir() {
-    // Drives the public watchdog entry point so it resolves the real `workbenches_dir()` and runs
-    // `tmux_session_alive` as the injected liveness check. With an empty store every slug falls back
-    // to MAX_RUNTIME_SECS, so the temp workbench (no live tmux session) is never killed — but the
-    // snapshot + scan path executes.
-    let home = std::env::temp_dir().join(format!("moadim-watchdog-{}", uuid::Uuid::new_v4()));
-    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
-    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
-    unsafe {
-        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
-    }
-
-    let workbenches = crate::paths::workbenches_dir();
-    std::fs::create_dir_all(&workbenches).unwrap();
-    // An old workbench whose tmux session is absent -> not killed (already dead).
-    std::fs::create_dir_all(workbenches.join("orphan-1")).unwrap();
-
-    let store = super::super::model::new_store();
-    let killed = kill_hung_sessions(&store);
-
-    assert_eq!(killed, 0);
-    assert!(workbenches.join("orphan-1").exists());
-
-    // SAFETY: single-threaded harness; restore the saved override.
-    unsafe {
-        match previous {
-            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
-            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
-        }
-    }
-    let _ = std::fs::remove_dir_all(&home);
-}
-
-#[test]
-fn reap_dir_returns_zero_when_dir_unreadable() {
-    // A directory that does not exist makes `read_dir` fail; the early `return 0`
-    // branch is taken and nothing is reaped.
-    let missing =
-        std::env::temp_dir().join(format!("moadim-cleanup-missing-{}", uuid::Uuid::new_v4()));
-    assert!(!missing.exists());
-    let ttl_for = |_slug: &str| 0u64;
+        std::env::temp_dir().join(format!("moadim-kill-slug-missing-{}", uuid::Uuid::new_v4()));
+    let _ = std::fs::remove_dir_all(&missing);
     let dead = |_session: &str| false;
     assert_eq!(
-        reap_dir(
-            &missing,
-            1000,
-            &ttl_for,
-            &never_expires_runtime,
-            &dead,
-            &noop_kill
-        ),
+        kill_sessions_for_slug(&missing, "anything", &dead, &|_| {}),
         0
     );
 }
 
-#[cfg(unix)]
 #[test]
-fn reap_dir_counts_zero_when_remove_fails() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    // An expired + dead workbench whose removal fails (parent dir is read-only) is
-    // not counted, exercising the `Err` arm of the remove match.
-    let base = std::env::temp_dir().join(format!(
-        "moadim-cleanup-removefail-{}",
+fn kill_sessions_for_deleted_routine_kills_the_live_workbench_session() {
+    let home = std::env::temp_dir().join(format!(
+        "moadim-cleanup-kill-deleted-{}",
         uuid::Uuid::new_v4()
     ));
     let _ = std::fs::remove_dir_all(&base);
@@ -596,22 +713,22 @@ fn cleanup_expired_workbenches_kills_a_live_hung_session() {
     // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
     unsafe {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
-        std::env::set_var("MOADIM_TMUX_BIN", &stub_tmux);
+        std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/true");
     }
 
     let workbenches = crate::paths::workbenches_dir();
     std::fs::create_dir_all(&workbenches).unwrap();
-    // Timestamp 1 → far past any max-runtime / TTL bound, and its session reports alive via the stub.
-    std::fs::create_dir_all(workbenches.join("hung-1")).unwrap();
+    std::fs::create_dir_all(workbenches.join("deleted-routine-1")).unwrap();
+    std::fs::create_dir_all(workbenches.join("other-routine-1")).unwrap();
 
-    let store = super::super::model::new_store();
-    let removed = cleanup_expired_workbenches(&store);
-
+    let killed = kill_sessions_for_deleted_routine("deleted-routine");
     assert_eq!(
-        removed, 1,
-        "the live-but-overrun workbench is killed then reaped"
+        killed, 1,
+        "only the deleted routine's live session is killed"
     );
-    assert!(!workbenches.join("hung-1").exists());
+    // The workbench directory itself is left in place; only the session is force-killed.
+    assert!(workbenches.join("deleted-routine-1").exists());
+    assert!(workbenches.join("other-routine-1").exists());
 
     // SAFETY: single-threaded harness; restore the saved overrides.
     unsafe {
@@ -627,129 +744,84 @@ fn cleanup_expired_workbenches_kills_a_live_hung_session() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
-fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::Routine {
+fn make_routine(id: &str, title: &str) -> super::super::model::Routine {
     super::super::model::Routine {
-        id: "x".into(),
-        schedule: schedule.into(),
-        title: "t".into(),
-        agent: "claude".into(),
-        prompt: "p".into(),
+        model: None,
+        id: id.to_string(),
+        schedule: "@daily".to_string(),
+        title: title.to_string(),
+        agent: "claude".to_string(),
+        prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
-        source: "managed".into(),
-        created_at: 0,
-        updated_at: 0,
+        source: "managed".to_string(),
+        created_at: 1,
+        updated_at: 1,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
         tags: vec![],
-        ttl_secs,
+        ttl_secs: None,
         max_runtime_secs: None,
     }
 }
 
 #[test]
-fn effective_ttl_caps_at_max_for_long_intervals() {
-    // Daily interval (24h) is well above the 1h cap, so retention is the cap.
-    assert_eq!(
-        routine_with("@daily", None).effective_ttl_secs(),
-        MAX_TTL_SECS
-    );
-}
+fn cleanup_expired_workbenches_persists_run_history_before_removal() {
+    // A reaped workbench whose slug matches a *current* routine gets a durable `runs.log` record
+    // (via the real `persist` closure in `cleanup_expired_workbenches`), so `svc_list_runs` still
+    // knows about it after the workbench itself is gone.
+    let home =
+        std::env::temp_dir().join(format!("moadim-cleanup-persist-{}", uuid::Uuid::new_v4()));
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
 
-#[test]
-fn effective_ttl_follows_sub_hour_cron_interval() {
-    // Every 10 minutes -> retention is the 600s interval, below the cap.
-    assert_eq!(
-        routine_with("*/10 * * * *", None).effective_ttl_secs(),
-        10 * 60
-    );
-}
+    let title = "Cleanup Persist ZZQ";
+    let slug = super::super::command::slugify(title);
+    let store = super::super::model::new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("persist-id".into(), make_routine("persist-id", title));
 
-#[test]
-fn effective_ttl_explicit_only_lowers() {
-    // An explicit ttl_secs below the cap wins.
-    assert_eq!(routine_with("@daily", Some(42)).effective_ttl_secs(), 42);
-    // An explicit ttl_secs above the cap is clamped down to it.
-    assert_eq!(
-        routine_with("@daily", Some(u64::MAX)).effective_ttl_secs(),
-        MAX_TTL_SECS
-    );
-    // It cannot raise retention above the smaller cron interval either.
-    assert_eq!(
-        routine_with("*/10 * * * *", Some(u64::MAX)).effective_ttl_secs(),
-        10 * 60
-    );
-}
+    let workbenches = crate::paths::workbenches_dir();
+    let failed = workbenches.join(format!("{slug}-1"));
+    let succeeded = workbenches.join(format!("{slug}-2"));
+    let unknown = workbenches.join(format!("{slug}-3"));
+    std::fs::create_dir_all(&failed).unwrap();
+    std::fs::write(failed.join("exit_code"), "1").unwrap();
+    std::fs::create_dir_all(&succeeded).unwrap();
+    std::fs::write(succeeded.join("exit_code"), "0").unwrap();
+    std::fs::create_dir_all(&unknown).unwrap();
+    // No `exit_code` file at all: e.g. the launch aborted before the agent ran.
 
-#[test]
-fn effective_ttl_falls_back_to_cap_for_unparseable_schedule() {
-    assert_eq!(
-        routine_with("@reboot", None).effective_ttl_secs(),
-        MAX_TTL_SECS
-    );
-}
+    let removed = cleanup_expired_workbenches(&store);
 
-#[test]
-fn effective_max_runtime_defaults_to_cap_when_unset() {
-    // Daily interval (24h) is above the 1h cap, so the bound is the cap.
-    assert_eq!(
-        routine_with("@daily", None).effective_max_runtime_secs(),
-        MAX_RUNTIME_SECS
-    );
-}
+    assert_eq!(removed, 3);
+    assert!(!failed.exists() && !succeeded.exists() && !unknown.exists());
+    let mut history = super::super::run_history::read_persisted_runs("persist-id");
+    history.sort_by_key(|run| run.workbench.clone());
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0].exit_code, Some(1));
+    assert_eq!(history[0].status, super::super::model::RunStatus::Failed);
+    assert_eq!(history[1].exit_code, Some(0));
+    assert_eq!(history[1].status, super::super::model::RunStatus::Success);
+    assert_eq!(history[2].exit_code, None);
+    assert_eq!(history[2].status, super::super::model::RunStatus::Unknown);
 
-#[test]
-fn effective_max_runtime_follows_sub_hour_cron_interval() {
-    // Every 10 minutes -> the bound is the 600s interval, below the cap.
-    let mut routine = routine_with("*/10 * * * *", None);
-    assert_eq!(routine.effective_max_runtime_secs(), 10 * 60);
-    // An explicit value can only lower it further, never raise it above the cron-derived cap.
-    routine.max_runtime_secs = Some(u64::MAX);
-    assert_eq!(routine.effective_max_runtime_secs(), 10 * 60);
-}
-
-#[test]
-fn effective_max_runtime_uses_explicit_value() {
-    let mut routine = routine_with("@daily", None);
-    routine.max_runtime_secs = Some(1234);
-    assert_eq!(routine.effective_max_runtime_secs(), 1234);
-    // An explicit value above the cap is clamped down to it.
-    routine.max_runtime_secs = Some(u64::MAX);
-    assert_eq!(routine.effective_max_runtime_secs(), MAX_RUNTIME_SECS);
-}
-
-#[test]
-fn effective_ttl_falls_back_to_cap_when_schedule_never_fires() {
-    // "Feb 30" parses as a valid cron expression but matches no real date, so the
-    // schedule yields no future fire times. `cron_interval_secs` returns None at the
-    // first `fires.next()?`, and `effective_ttl_secs` falls back to the cap.
-    assert_eq!(
-        routine_with("0 0 30 2 *", None).effective_ttl_secs(),
-        MAX_TTL_SECS
-    );
-    // An explicit ttl below the cap still wins even when the interval can't be computed.
-    assert_eq!(
-        routine_with("0 0 30 2 *", Some(15)).effective_ttl_secs(),
-        15
-    );
-}
-
-// ─── parse_workbench_name overflow (L55) ─────────────────────────────────────
-
-#[test]
-fn parse_workbench_name_overflowing_timestamp_returns_none() {
-    // All-digit suffix that is too large to fit in u64 (20 nines > u64::MAX):
-    // the digit-only guard passes but `ts.parse::<u64>().ok()` returns None → function returns None.
-    assert!(parse_workbench_name("slug-99999999999999999999").is_none());
-}
-
-// ─── cron_interval_secs second-fire None (L36) ───────────────────────────────
-
-#[test]
-fn cron_interval_secs_returns_none_when_second_fire_not_found() {
-    // A 7-field cron restricted to year 4999 fires exactly once: Jan 1 4999 00:00:00.
-    // The first `fires.next()` → Some (L35 taken as Some); the second `fires.next()` advances
-    // into year 5000 which exceeds croner's YEAR_UPPER_LIMIT → iterator returns None (L36).
-    assert!(super::ttl::cron_interval_secs("0 0 0 1 1 * 4999").is_none());
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
 }

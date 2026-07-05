@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use axum::{
     body::Body,
@@ -65,4 +68,78 @@ async fn logger_passes_404_response_through() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn logger_stamps_a_generated_request_id_header() {
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(logger));
+
+    let resp = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    let id = resp
+        .headers()
+        .get("x-request-id")
+        .expect("x-request-id header set")
+        .to_str()
+        .unwrap();
+    assert_eq!(id.len(), 8, "generated id is an 8-hex-digit counter value");
+}
+
+#[tokio::test]
+async fn logger_reuses_an_inbound_request_id() {
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(logger));
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header("x-request-id", "caller-supplied-id")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.headers().get("x-request-id").unwrap(),
+        "caller-supplied-id"
+    );
+}
+
+#[tokio::test]
+async fn logger_gives_concurrent_requests_distinct_generated_ids() {
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(logger));
+
+    let resp_a = app
+        .clone()
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let resp_b = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    let id_a = resp_a
+        .headers()
+        .get("x-request-id")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let id_b = resp_b
+        .headers()
+        .get("x-request-id")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_ne!(id_a, id_b);
 }

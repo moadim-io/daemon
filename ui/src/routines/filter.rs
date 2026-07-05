@@ -157,6 +157,35 @@ impl RepositoryFacet {
     }
 }
 
+/// Tag facet: all tags, or one specific tag.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum TagFacet {
+    #[default]
+    All,
+    Named(String),
+}
+
+impl TagFacet {
+    pub(crate) const TAG_ALL: &'static str = "\u{0}all";
+
+    #[must_use]
+    pub fn as_value(&self) -> String {
+        match self {
+            TagFacet::All => Self::TAG_ALL.to_string(),
+            TagFacet::Named(t) => t.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(v: &str) -> Self {
+        if v == Self::TAG_ALL {
+            TagFacet::All
+        } else {
+            TagFacet::Named(v.to_string())
+        }
+    }
+}
+
 /// Combined free-text + faceted filter applied client-side to the loaded routines.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RoutineFilter {
@@ -167,6 +196,7 @@ pub struct RoutineFilter {
     pub agent: AgentFacet,
     pub machine: RoutineMachineFacet,
     pub repository: RepositoryFacet,
+    pub tag: TagFacet,
 }
 
 impl RoutineFilter {
@@ -178,6 +208,7 @@ impl RoutineFilter {
             || self.agent != AgentFacet::All
             || self.machine != RoutineMachineFacet::Any
             || self.repository != RepositoryFacet::All
+            || self.tag != TagFacet::All
     }
 
     /// Does this routine survive the filter? Facets AND together.
@@ -217,6 +248,11 @@ impl RoutineFilter {
             }
             _ => {}
         }
+        match &self.tag {
+            TagFacet::All => {}
+            TagFacet::Named(t) if !r.tags.iter().any(|x| x == t) => return false,
+            _ => {}
+        }
         let q = self.query.trim().to_lowercase();
         if !q.is_empty() {
             let repos = r
@@ -230,13 +266,20 @@ impl RoutineFilter {
                 .as_deref()
                 .unwrap_or_default()
                 .to_lowercase();
+            let tags = r
+                .tags
+                .iter()
+                .map(|t| t.to_lowercase())
+                .collect::<Vec<_>>()
+                .join(" ");
             let hay = format!(
-                "{} {} {} {} {}",
+                "{} {} {} {} {} {}",
                 r.title.to_lowercase(),
                 r.agent.to_lowercase(),
                 r.schedule.to_lowercase(),
                 repos,
                 desc,
+                tags,
             );
             if !hay.contains(&q) {
                 return false;
@@ -420,6 +463,18 @@ pub fn distinct_repositories(routines: &[Routine]) -> Vec<String> {
     for r in routines {
         for repo in &r.repositories {
             set.insert(repo.repository.clone());
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Distinct tags across all routines, sorted.
+#[must_use]
+pub fn distinct_tags(routines: &[Routine]) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for r in routines {
+        for tag in &r.tags {
+            set.insert(tag.clone());
         }
     }
     set.into_iter().collect()

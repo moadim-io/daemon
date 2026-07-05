@@ -10,7 +10,7 @@ use crate::schedule::next_fire_after;
 
 use super::filter::{
     last_fire_at, routine_health, AgentFacet, RepositoryFacet, RoutineFilter, RoutineMachineFacet,
-    RoutineStatusFacet,
+    RoutineStatusFacet, TagFacet,
 };
 use serde::{Deserialize, Serialize};
 
@@ -292,6 +292,7 @@ pub enum RAction {
     SetAgentFacet(AgentFacet),
     SetMachineFacet(RoutineMachineFacet),
     SetRepositoryFacet(RepositoryFacet),
+    SetTagFacet(TagFacet),
     ClearFilters,
     /// Change the group-by dimension for the table view.
     SetGroupBy(RGroupBy),
@@ -351,6 +352,7 @@ impl Reducible for RState {
             RAction::SetAgentFacet(ag) => s.filter.agent = ag,
             RAction::SetMachineFacet(m) => s.filter.machine = m,
             RAction::SetRepositoryFacet(rp) => s.filter.repository = rp,
+            RAction::SetTagFacet(t) => s.filter.tag = t,
             RAction::ClearFilters => s.filter = RoutineFilter::default(),
             RAction::SetGroupBy(by) => s.group_by = by,
             RAction::SortByCol(col) => {

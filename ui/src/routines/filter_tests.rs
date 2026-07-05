@@ -115,6 +115,25 @@ fn repository_facet_decodes_a_plain_url_as_named() {
     );
 }
 
+// ── TagFacet codecs ────────────────────────────────────────────────────────────
+
+#[test]
+fn tag_facet_roundtrips_and_defaults_to_all() {
+    let all = TagFacet::All;
+    let named = TagFacet::Named("nightly".into());
+    assert_eq!(TagFacet::from_value(&all.as_value()), all);
+    assert_eq!(TagFacet::from_value(&named.as_value()), named);
+    assert_eq!(TagFacet::default(), TagFacet::All);
+}
+
+#[test]
+fn tag_facet_decodes_a_plain_value_as_named() {
+    assert_eq!(
+        TagFacet::from_value("nightly"),
+        TagFacet::Named("nightly".into())
+    );
+}
+
 // ── RoutineMachineFacet codecs ────────────────────────────────────────────────
 
 #[test]
@@ -192,6 +211,12 @@ fn is_active_detects_each_facet() {
         ..Default::default()
     };
     assert!(r.is_active());
+
+    let t = RoutineFilter {
+        tag: TagFacet::Named("nightly".into()),
+        ..Default::default()
+    };
+    assert!(t.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -394,6 +419,40 @@ fn repository_named_matches_only_routines_listing_that_repository() {
     assert!(!f.matches(&none, now(), window()));
 }
 
+// ── Tag facet matching ────────────────────────────────────────────────────────
+
+#[test]
+fn tag_all_matches_regardless_of_tags() {
+    let f = RoutineFilter::default();
+    let with = Routine {
+        tags: vec!["nightly".into()],
+        ..routine("a", "t", "claude", "0 * * * *", &[], &[], true)
+    };
+    let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&with, now(), window()));
+    assert!(f.matches(&without, now(), window()));
+}
+
+#[test]
+fn tag_named_matches_only_routines_carrying_that_tag() {
+    let f = RoutineFilter {
+        tag: TagFacet::Named("nightly".into()),
+        ..Default::default()
+    };
+    let hit = Routine {
+        tags: vec!["nightly".into(), "prod".into()],
+        ..routine("a", "t", "claude", "0 * * * *", &[], &[], true)
+    };
+    let other = Routine {
+        tags: vec!["prod".into()],
+        ..routine("b", "t", "claude", "0 * * * *", &[], &[], true)
+    };
+    let none = routine("c", "t", "claude", "0 * * * *", &[], &[], true);
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&other, now(), window()));
+    assert!(!f.matches(&none, now(), window()));
+}
+
 // ── Free-text search ──────────────────────────────────────────────────────────
 
 #[test]
@@ -444,6 +503,24 @@ fn query_matches_repository_url() {
         &["https://github.com/other/foo"],
         true,
     );
+    assert!(f.matches(&hit, now(), window()));
+    assert!(!f.matches(&miss, now(), window()));
+}
+
+#[test]
+fn query_matches_tag() {
+    let f = RoutineFilter {
+        query: "nightly".into(),
+        ..Default::default()
+    };
+    let hit = Routine {
+        tags: vec!["nightly".into()],
+        ..routine("a", "t", "claude", "0 * * * *", &[], &[], true)
+    };
+    let miss = Routine {
+        tags: vec!["prod".into()],
+        ..routine("b", "t", "claude", "0 * * * *", &[], &[], true)
+    };
     assert!(f.matches(&hit, now(), window()));
     assert!(!f.matches(&miss, now(), window()));
 }
@@ -552,4 +629,20 @@ fn distinct_repositories_returns_sorted_unique_repositories() {
     ];
     let repos = distinct_repositories(&routines);
     assert_eq!(repos, vec!["repo-a", "repo-b", "repo-c"]);
+}
+
+#[test]
+fn distinct_tags_returns_sorted_unique_tags() {
+    let routines = vec![
+        Routine {
+            tags: vec!["nightly".into(), "beta".into()],
+            ..routine("a", "t", "claude", "0 * * * *", &[], &[], true)
+        },
+        Routine {
+            tags: vec!["beta".into(), "prod".into()],
+            ..routine("b", "t", "claude", "0 * * * *", &[], &[], true)
+        },
+    ];
+    let tags = distinct_tags(&routines);
+    assert_eq!(tags, vec!["beta", "nightly", "prod"]);
 }

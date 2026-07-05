@@ -815,6 +815,16 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- **The committed `prebuilt.html` fallback UI was stale and silently missing
+  features.** `build.rs` inlines the compiled Yew UI into `prebuilt.html` and
+  falls back to that committed copy whenever `trunk` isn't installed at build
+  time (e.g. `cargo install moadim` from a git checkout, or a Docker build
+  without trunk) — but nothing verified it stayed in sync with `ui/src`. It had
+  drifted: the copy on `main` was missing the machine-name badge, machine
+  filter, and rename-machine dialog entirely, even though that code had long
+  since landed. Regenerated `prebuilt.html` and added a `prebuilt-ui` CI job
+  that rebuilds it with trunk on every PR touching `ui/` and fails if the
+  committed copy doesn't match, so this can't silently regress again.
 - **Reaped workbenches no longer leak a `~/.claude.json` `projects` entry.** The built-in `claude`
   agent's `setup` step seeds a per-workbench entry into `~/.claude.json`, keyed by the workbench's
   absolute (always-unique) path, on every run. Nothing ever pruned it once the workbench was reaped,

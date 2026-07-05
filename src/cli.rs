@@ -369,19 +369,15 @@ pub fn restart(json: bool, quiet: bool) -> anyhow::Result<()> {
 }
 
 /// Format the one-line PID rotation summary `restart` prints, e.g. `restarted: pid 123 -> 456`.
-///
-/// `old` is the PID of the server that was stopped; when nothing was running (or its PID could not
-/// be read) the old side reads `none`, e.g. `restarted: pid none -> 456`.
+/// `old` reads `none` when nothing was running (or its PID could not be read).
 fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
     let old = old.map_or_else(|| "none".to_string(), |pid| pid.to_string());
     format!("restarted: pid {old} -> {new}")
 }
 
-/// Render the `restart` result as a one-line JSON object:
-/// `{"old":N|null,"new":N,"address":…}`. `old` is the PID of the server that was stopped (or `null`
-/// when nothing was running, mirroring the `none` rendering in [`restart_rotation_line`]), `new` is
-/// the freshly spawned PID, and `address` is the bound [`BIND_ADDR`] — matching the `address` field
-/// every other `--json` lifecycle command surfaces.
+/// Render the `restart` result as a one-line JSON object: `{"old":N|null,"new":N,"address":…}`.
+/// `old` is `null` when nothing was running (mirroring [`restart_rotation_line`]'s `none`); `new`
+/// is the freshly spawned PID; `address` is the bound [`BIND_ADDR`].
 fn restart_json(old: Option<u32>, new: u32) -> String {
     serde_json::json!({
         "old": old,
@@ -446,15 +442,9 @@ pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// Render the `stop` result as a one-line JSON object:
-/// `{"running":bool,"pid":N|null,"address":…}` — a subset of `status --json`'s shape (which
-/// additionally folds in server-sourced `uptime_secs`/`version`; see
-/// `status_and_stop_json_share_a_common_key_set`), so both can still be parsed uniformly on their
-/// shared fields. `running` is `true` when a running server was asked to shut down, and `false`
-/// when none was reachable. `pid` is the process that was stopped (read from the pid file before
-/// the shutdown request), or `null` when no pid file was present. `address` is the bound address
-/// the request was sent to ([`bind_addr`], honoring the `MOADIM_BIND_ADDR` override) so it stays
-/// identical to `status --json` under a non-default bind.
+/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`
+/// — a subset of `status --json`'s shape (see `status_and_stop_json_share_a_common_key_set`).
+/// `pid` is read from the pid file before the shutdown request; `address` is [`bind_addr`].
 fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
@@ -502,3 +492,7 @@ mod cli_json_tests;
 #[cfg(test)]
 #[path = "cli_spawn_tests.rs"]
 mod cli_spawn_tests;
+
+#[cfg(test)]
+#[path = "cli_spawn_error_tests.rs"]
+mod cli_spawn_error_tests;

@@ -1,4 +1,4 @@
-//! macOS launchd LaunchAgent: render the plist, write it, and (un)load it with `launchctl`.
+//! macOS launchd `LaunchAgent`: render the plist, write it, and (un)load it with `launchctl`.
 
 use std::path::{Path, PathBuf};
 
@@ -33,7 +33,7 @@ pub(super) fn xml_escape(text: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Absolute path to the per-user LaunchAgents plist for the moadim service.
+/// Absolute path to the per-user `LaunchAgents` plist for the moadim service.
 ///
 /// Resolves home through [`crate::paths::home`] so the `MOADIM_HOME_OVERRIDE` test seam redirects
 /// the plist under a tempdir instead of the developer's real `~/Library/LaunchAgents`.
@@ -41,7 +41,7 @@ pub(super) fn plist_path() -> anyhow::Result<PathBuf> {
     plist_path_from_home(crate::paths::home())
 }
 
-/// Resolve the LaunchAgents plist path under `home`, erroring when the home directory is unknown.
+/// Resolve the `LaunchAgents` plist path under `home`, erroring when the home directory is unknown.
 pub(super) fn plist_path_from_home(home: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     let home = home.ok_or_else(|| anyhow::anyhow!("could not determine the home directory"))?;
     Ok(home
@@ -49,16 +49,34 @@ pub(super) fn plist_path_from_home(home: Option<PathBuf>) -> anyhow::Result<Path
         .join(format!("{LAUNCHD_LABEL}.plist")))
 }
 
+/// `PATH` to give the launchd agent, in place of launchd's own minimal default
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`).
+///
+/// That default hides Homebrew/cargo-installed tools — notably `tmux`, which the daemon's own
+/// background sweep shells out to directly (`routines::cleanup::session`) to probe/kill hung
+/// routine sessions. With no `tmux` on `PATH`, every probe silently failed ("session not found"),
+/// so a hung run's workbench got TTL-reaped while its tmux session and agent process kept running,
+/// untracked, forever. `resolve_tmux_bin` now also searches these locations directly as a second
+/// line of defense, but giving the process a real `PATH` fixes this for every other subprocess the
+/// daemon shells out to as well.
+fn agent_path(home: &Path) -> String {
+    format!(
+        "/opt/homebrew/bin:/usr/local/bin:{home}/.cargo/bin:{home}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        home = home.display(),
+    )
+}
+
 /// Render the launchd property list for the moadim user agent.
 ///
 /// `exe` is the absolute path to the `moadim` binary; `log` is where launchd writes its stdout and
-/// stderr. The agent runs `moadim --interactive` so launchd supervises it directly.
+/// stderr; `home` derives the `PATH` (see [`agent_path`]). The agent runs `moadim --interactive` so
+/// launchd supervises it directly.
 ///
 /// `KeepAlive` is a `{ SuccessfulExit = false }` dict (not unconditional `true`): launchd relaunches
 /// the agent only when it exits abnormally, so a crash is still auto-restarted but a clean shutdown
 /// — `moadim stop`, the UI STOP button, `POST /shutdown`, all of which exit `0` — stays stopped
 /// instead of being immediately resurrected by launchd.
-pub(super) fn render_plist(exe: &Path, log: &Path) -> String {
+pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -82,24 +100,30 @@ pub(super) fn render_plist(exe: &Path, log: &Path) -> String {
   <string>{log}</string>
   <key>StandardErrorPath</key>
   <string>{log}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{path}</string>
+  </dict>
 </dict>
 </plist>
 "#,
         label = LAUNCHD_LABEL,
         exe = xml_escape(&exe.display().to_string()),
         log = xml_escape(&log.display().to_string()),
+        path = xml_escape(&agent_path(home)),
     )
 }
 
-/// Render the plist for `exe`/`log` and write it (creating parent dirs) to `plist`.
-pub(super) fn write_plist(plist: &Path, exe: &Path, log: &Path) -> anyhow::Result<()> {
+/// Render the plist for `exe`/`log`/`home` and write it (creating parent dirs) to `plist`.
+pub(super) fn write_plist(plist: &Path, exe: &Path, log: &Path, home: &Path) -> anyhow::Result<()> {
     if let Some(dir) = plist.parent() {
         std::fs::create_dir_all(dir)?;
     }
     if let Some(dir) = log.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(plist, render_plist(exe, log))?;
+    std::fs::write(plist, render_plist(exe, log, home))?;
     Ok(())
 }
 
@@ -120,20 +144,41 @@ fn report_installed(plist: &Path, log: &Path) {
     println!("  status  launchctl list | grep {LAUNCHD_LABEL}");
 }
 
-/// Write the LaunchAgent plist for the running binary and load it with launchd.
+/// Write the `LaunchAgent` plist for the running binary and load it with launchd.
 pub fn install() -> anyhow::Result<()> {
-    let exe = moadim_exe()?;
+    let exe = moadim_exe().expect("current executable path is always available");
     let log = daemon_log();
-    let plist = plist_path()?;
-    write_plist(&plist, &exe, &log)?;
+    let home =
+        crate::paths::home().expect("home directory must be known to install the launchd agent");
+    let plist = plist_path().expect("home directory must be known to install the launchd agent");
+    write_plist(&plist, &exe, &log, &home)?;
     reload_agent(&plist)?;
     report_installed(&plist, &log);
+    request_automation_permission();
     Ok(())
 }
 
-/// Unload the LaunchAgent (if loaded) and delete its plist.
+/// Trigger the macOS TCC "administer your computer" prompt now, while the user is present at the
+/// terminal, so the background daemon never has to ask for it mid-run.
+///
+/// Sends a harmless Apple Event to System Events (list running process names). If permission is
+/// already granted this is a no-op; if not, the dialog appears once here and is remembered forever.
+fn request_automation_permission() {
+    println!(
+        "  hint    if macOS asks \"moadim would like to administer your computer\", click OK — \
+granting it here prevents background interruptions"
+    );
+    let _ = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to get name of every process",
+        ])
+        .output();
+}
+
+/// Unload the `LaunchAgent` (if loaded) and delete its plist.
 pub fn uninstall() -> anyhow::Result<()> {
-    let plist = plist_path()?;
+    let plist = plist_path().expect("home directory must be known to uninstall the launchd agent");
     if plist.exists() {
         let plist_arg = plist.display().to_string();
         let _ = run(&launchctl_bin(), &["unload", "-w", &plist_arg]);

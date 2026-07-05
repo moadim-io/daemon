@@ -1,7 +1,8 @@
 //! Data-plane CLI subcommands.
 //!
-//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so every action is reachable
-//! from the command line too. Each subcommand is a thin client: it serializes its flags into the
+//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so most actions are
+//! reachable from the command line too — routine flags and the global routine lock are
+//! REST/MCP-only for now. Each subcommand is a thin client: it serializes its flags into the
 //! same JSON the REST API expects, sends it to the running server over the loopback HTTP client in
 //! [`crate::cli`], and prints the server's response. The daemon must already be running
 //! (`moadim` / `moadim -i`); when it is not, these commands report that and exit
@@ -25,96 +26,49 @@ struct DataCli {
     command: DataCommand,
 }
 
-/// The data subcommand groups: cron jobs, routines, agents, and echo.
+/// The data subcommand groups: routines and agents.
 #[derive(Subcommand)]
 enum DataCommand {
-    /// Manage cron jobs (create/list/get/update/replace/delete/trigger/logs).
-    #[command(subcommand, visible_alias = "cron")]
-    CronJobs(CronCmd),
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
+    ///
+    /// Boxed because `RoutineCmd` (the largest variant by far now that the cron-job
+    /// subcommand is gone) would otherwise blow up the size of every `DataCommand`
+    /// value, including the trivial `Agents`/`Schedule` ones (`clippy::large_enum_variant`).
     #[command(subcommand, visible_alias = "routine")]
-    Routines(RoutineCmd),
+    Routines(Box<RoutineCmd>),
+    /// Trigger a routine on its schedule by ID (invoked by the generated crontab line).
+    #[command(subcommand, visible_alias = "sched")]
+    Schedule(ScheduleCmd),
+    /// Enable a routine (set `enabled = true`) by id or slug.
+    Enable {
+        /// Routine id or slug to enable.
+        routine: String,
+        /// Emit a machine-readable `{"routine","enabled"}` object instead of a status line.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Disable a routine (set `enabled = false`) by id or slug.
+    Disable {
+        /// Routine id or slug to disable.
+        routine: String,
+        /// Emit a machine-readable `{"routine","enabled"}` object instead of a status line.
+        #[arg(long)]
+        json: bool,
+    },
     /// List the available agent registry keys.
     Agents,
-    /// Echo a message back via the server, with a server timestamp.
-    Echo {
-        /// The message to echo.
-        message: String,
-    },
 }
 
-/// Cron-job operations, each mapping to a `/api/v1/cron-jobs` REST route.
+/// Schedule operations driven by the OS crontab, keyed only by ID.
 #[derive(Subcommand)]
-enum CronCmd {
-    /// Create a new cron job.
-    Create {
-        /// Cron expression (host local timezone, not UTC).
-        #[arg(long)]
-        schedule: String,
-        /// Handler identifier to invoke when the schedule fires.
-        #[arg(long)]
-        handler: String,
-        /// Optional metadata as a JSON value (object/array/scalar).
-        #[arg(long)]
-        metadata: Option<String>,
-        /// Create the job disabled instead of enabled (the default).
-        #[arg(long)]
-        disabled: bool,
-    },
-    /// List all cron jobs.
-    List,
-    /// Get a single cron job by ID.
-    Get {
-        /// UUID of the cron job.
-        id: String,
-    },
-    /// Update fields of an existing cron job (only the flags you pass change).
-    Update {
-        /// UUID of the cron job to update.
-        id: String,
-        /// New cron expression (host local timezone, not UTC).
-        #[arg(long)]
-        schedule: Option<String>,
-        /// New handler identifier.
-        #[arg(long)]
-        handler: Option<String>,
-        /// New metadata as a JSON value.
-        #[arg(long)]
-        metadata: Option<String>,
-        /// New enabled state (`true`/`false`).
-        #[arg(long)]
-        enabled: Option<bool>,
-    },
-    /// Replace a cron job wholesale (all fields, like create but for an existing ID).
-    Replace {
-        /// UUID of the cron job to replace.
-        id: String,
-        /// Cron expression (host local timezone, not UTC).
-        #[arg(long)]
-        schedule: String,
-        /// Handler identifier to invoke when the schedule fires.
-        #[arg(long)]
-        handler: String,
-        /// Optional metadata as a JSON value.
-        #[arg(long)]
-        metadata: Option<String>,
-        /// Replace into a disabled state instead of enabled (the default).
-        #[arg(long)]
-        disabled: bool,
-    },
-    /// Delete a cron job by ID.
-    Delete {
-        /// UUID of the cron job to delete.
-        id: String,
-    },
-    /// Manually trigger a cron job outside its schedule.
+enum ScheduleCmd {
+    /// Run a routine on its schedule by ID.
+    ///
+    /// This is what the generated crontab line invokes at each fire time. It records a *scheduled*
+    /// trigger (not a manual one), so it maps to the routine's `scheduled-trigger` route rather than
+    /// the manual `trigger` route.
     Trigger {
-        /// UUID of the cron job to trigger.
-        id: String,
-    },
-    /// Print a cron job's log file.
-    Logs {
-        /// UUID of the cron job whose logs to print.
+        /// UUID of the routine to trigger.
         id: String,
     },
 }
@@ -133,18 +87,32 @@ enum RoutineCmd {
         /// Agent registry key to launch.
         #[arg(long)]
         agent: String,
+        /// Model ID to run the agent with (e.g. `claude-sonnet-4-6`); omit to use the agent's own
+        /// default.
+        #[arg(long)]
+        model: Option<String>,
         /// Task prompt.
         #[arg(long)]
         prompt: String,
+        /// Short (≤5 line) statement of the routine's goal — the "why" behind the prompt.
+        #[arg(long)]
+        goal: Option<String>,
         /// Repositories as a JSON array (e.g. `[{"repository":"url","branch":"main"}]`).
         #[arg(long)]
         repositories: Option<String>,
+        /// Machines to run this routine on, as a JSON array (e.g. `["work","server"]`). Empty/omitted
+        /// means the routine runs on no machine until assigned.
+        #[arg(long)]
+        machines: Option<String>,
         /// Workbench TTL in seconds for finished runs.
         #[arg(long)]
         ttl_secs: Option<u64>,
         /// Max runtime in seconds before the watchdog kills a run.
         #[arg(long)]
         max_runtime_secs: Option<u64>,
+        /// Tag for the routine; repeat the flag to add several.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Create the routine disabled instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -169,12 +137,21 @@ enum RoutineCmd {
         /// New agent registry key.
         #[arg(long)]
         agent: Option<String>,
+        /// New model ID, or an empty string to clear the override back to the agent's own default.
+        #[arg(long)]
+        model: Option<String>,
         /// New prompt.
         #[arg(long)]
         prompt: Option<String>,
+        /// New goal (≤5 lines), or an empty string to clear it. Omit to keep the existing value.
+        #[arg(long)]
+        goal: Option<String>,
         /// New repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
+        /// New machines targeting list as a JSON array (e.g. `["work","server"]`).
+        #[arg(long)]
+        machines: Option<String>,
         /// New enabled state (`true`/`false`).
         #[arg(long)]
         enabled: Option<bool>,
@@ -184,6 +161,10 @@ enum RoutineCmd {
         /// New max runtime in seconds.
         #[arg(long)]
         max_runtime_secs: Option<u64>,
+        /// Replacement tag; repeat the flag to set several. Passing any `--tag` replaces the whole
+        /// tag list; omit it to keep the existing tags.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
     },
     /// Replace a routine wholesale (all fields, like create but for an existing ID).
     Replace {
@@ -198,18 +179,31 @@ enum RoutineCmd {
         /// Agent registry key to launch.
         #[arg(long)]
         agent: String,
+        /// Model ID to run the agent with (e.g. `claude-sonnet-4-6`); omit to use the agent's own
+        /// default.
+        #[arg(long)]
+        model: Option<String>,
         /// Task prompt.
         #[arg(long)]
         prompt: String,
+        /// Short (≤5 line) statement of the routine's goal — the "why" behind the prompt.
+        #[arg(long)]
+        goal: Option<String>,
         /// Repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
+        /// Machines to run this routine on, as a JSON array (e.g. `["work","server"]`).
+        #[arg(long)]
+        machines: Option<String>,
         /// Workbench TTL in seconds for finished runs.
         #[arg(long)]
         ttl_secs: Option<u64>,
         /// Max runtime in seconds before the watchdog kills a run.
         #[arg(long)]
         max_runtime_secs: Option<u64>,
+        /// Tag for the routine; repeat the flag to add several.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Replace into a disabled state instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
@@ -255,60 +249,15 @@ pub fn run(args: Vec<String>) -> i32 {
 /// Route a parsed [`DataCommand`] to the matching REST call.
 fn dispatch(command: DataCommand) -> i32 {
     match command {
-        DataCommand::CronJobs(cmd) => dispatch_cron(cmd),
-        DataCommand::Routines(cmd) => dispatch_routine(cmd),
+        DataCommand::Routines(cmd) => dispatch_routine(*cmd),
+        DataCommand::Schedule(ScheduleCmd::Trigger { id }) => request(
+            "POST",
+            &format!("{}/scheduled-trigger", routine_path(&id)),
+            None,
+        ),
+        DataCommand::Enable { routine, json } => set_routine_enabled(&routine, true, json),
+        DataCommand::Disable { routine, json } => set_routine_enabled(&routine, false, json),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
-        DataCommand::Echo { message } => {
-            let body = object([("message", Value::String(message))]);
-            request("POST", "/api/v1/echo", Some(&body))
-        }
-    }
-}
-
-/// Route a parsed [`CronCmd`] to the matching `/cron-jobs` REST call.
-fn dispatch_cron(cmd: CronCmd) -> i32 {
-    match cmd {
-        CronCmd::Create {
-            schedule,
-            handler,
-            metadata,
-            disabled,
-        } => match cron_body(schedule, handler, metadata, disabled) {
-            Ok(body) => request("POST", "/api/v1/cron-jobs", Some(&body)),
-            Err(code) => code,
-        },
-        CronCmd::List => request("GET", "/api/v1/cron-jobs", None),
-        CronCmd::Get { id } => request("GET", &cron_path(&id), None),
-        CronCmd::Update {
-            id,
-            schedule,
-            handler,
-            metadata,
-            enabled,
-        } => {
-            let mut map = Map::new();
-            insert_opt(&mut map, "schedule", schedule.map(Value::String));
-            insert_opt(&mut map, "handler", handler.map(Value::String));
-            match insert_json_opt(&mut map, "metadata", metadata) {
-                Ok(()) => {}
-                Err(code) => return code,
-            }
-            insert_opt(&mut map, "enabled", enabled.map(Value::Bool));
-            request("PATCH", &cron_path(&id), Some(&to_body(map)))
-        }
-        CronCmd::Replace {
-            id,
-            schedule,
-            handler,
-            metadata,
-            disabled,
-        } => match cron_body(schedule, handler, metadata, disabled) {
-            Ok(body) => request("PUT", &cron_path(&id), Some(&body)),
-            Err(code) => code,
-        },
-        CronCmd::Delete { id } => request("DELETE", &cron_path(&id), None),
-        CronCmd::Trigger { id } => request("POST", &format!("{}/trigger", cron_path(&id)), None),
-        CronCmd::Logs { id } => request("GET", &format!("{}/logs", cron_path(&id)), None),
     }
 }
 
@@ -319,19 +268,27 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
+            goal,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         } => match routine_body(
             schedule,
             title,
             agent,
+            model,
             prompt,
+            goal,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         ) {
             Ok(body) => request("POST", "/api/v1/routines", Some(&body)),
@@ -344,18 +301,29 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
+            goal,
             repositories,
+            machines,
             enabled,
             ttl_secs,
             max_runtime_secs,
+            tags,
         } => {
             let mut map = Map::new();
             insert_opt(&mut map, "schedule", schedule.map(Value::String));
             insert_opt(&mut map, "title", title.map(Value::String));
             insert_opt(&mut map, "agent", agent.map(Value::String));
+            insert_opt(&mut map, "model", model.map(Value::String));
             insert_opt(&mut map, "prompt", prompt.map(Value::String));
+            // Omitting `--goal` keeps the existing value (key absent); `--goal ""` clears it.
+            insert_opt(&mut map, "goal", goal.map(Value::String));
             match insert_json_opt(&mut map, "repositories", repositories) {
+                Ok(()) => {}
+                Err(code) => return code,
+            }
+            match insert_json_opt(&mut map, "machines", machines) {
                 Ok(()) => {}
                 Err(code) => return code,
             }
@@ -366,6 +334,12 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
                 "max_runtime_secs",
                 max_runtime_secs.map(Value::from),
             );
+            // Any `--tag` replaces the whole list; no `--tag` leaves tags untouched (key absent).
+            insert_opt(
+                &mut map,
+                "tags",
+                (!tags.is_empty()).then(|| tags_value(tags)),
+            );
             request("PATCH", &routine_path(&id), Some(&to_body(map)))
         }
         RoutineCmd::Replace {
@@ -373,19 +347,27 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             schedule,
             title,
             agent,
+            model,
             prompt,
+            goal,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         } => match routine_body(
             schedule,
             title,
             agent,
+            model,
             prompt,
+            goal,
             repositories,
+            machines,
             ttl_secs,
             max_runtime_secs,
+            tags,
             disabled,
         ) {
             Ok(body) => request("PUT", &routine_path(&id), Some(&body)),
@@ -400,9 +382,55 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
     }
 }
 
-/// Build the `/api/v1/cron-jobs/{id}` path for a job ID.
-fn cron_path(id: &str) -> String {
-    format!("/api/v1/cron-jobs/{id}")
+/// Flip a single routine's `enabled` flag via `PATCH /routines/{routine}`, the same partial-update
+/// path the web UI's toggle uses. `routine` is forwarded as an id or slug and resolved server-side,
+/// consistent with the other routine subcommands. Prints the resulting state — a human status line,
+/// or a `{"routine","enabled"}` object under `--json` — and maps the HTTP result to an exit code
+/// exactly like [`request`]: `0` on a 2xx (so re-enabling an already-enabled routine is an
+/// idempotent no-op rather than an error), `1` on any other status (e.g. an unknown routine's 404),
+/// and [`crate::cli::EXIT_NOT_RUNNING`] when no server is reachable.
+fn set_routine_enabled(routine: &str, enabled: bool, json: bool) -> i32 {
+    let body = serde_json::json!({ "enabled": enabled }).to_string();
+    match crate::cli::http_request_json("PATCH", &routine_path(routine), Some(&body)) {
+        Ok((status, resp)) if (200..300).contains(&status) => {
+            report_enabled(routine, enabled, &resp, json);
+            0
+        }
+        Ok((status, resp)) => {
+            eprintln!("error: server returned HTTP {status}");
+            if !resp.is_empty() {
+                eprintln!("{resp}");
+            }
+            1
+        }
+        Err(_) => {
+            eprintln!("moadim is not running");
+            crate::cli::EXIT_NOT_RUNNING
+        }
+    }
+}
+
+/// Report the outcome of an enable/disable. Prefers the server's echoed `id`/`enabled` so the
+/// printed state reflects what actually persisted (covering the idempotent no-op), falling back to
+/// the addressed `routine` and the `requested` flag when the response is not the expected object.
+fn report_enabled(routine: &str, requested: bool, resp: &str, json: bool) {
+    let parsed = serde_json::from_str::<Value>(resp).ok();
+    let id = parsed
+        .as_ref()
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or(routine);
+    let state = parsed
+        .as_ref()
+        .and_then(|value| value.get("enabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(requested);
+    if json {
+        println!("{}", serde_json::json!({ "routine": id, "enabled": state }));
+    } else {
+        let word = if state { "enabled" } else { "disabled" };
+        println!("routine {id} is now {word}");
+    }
 }
 
 /// Build the `/api/v1/routines/{id}` path for a routine ID.
@@ -410,49 +438,49 @@ fn routine_path(id: &str) -> String {
     format!("/api/v1/routines/{id}")
 }
 
-/// Build the full create/replace JSON body for a cron job, validating optional `metadata` as JSON.
-/// Returns the serialized body, or an exit code (`2`) when `metadata` is not valid JSON.
-fn cron_body(
-    schedule: String,
-    handler: String,
-    metadata: Option<String>,
-    disabled: bool,
-) -> Result<String, i32> {
-    let mut map = Map::new();
-    map.insert("schedule".to_string(), Value::String(schedule));
-    map.insert("handler".to_string(), Value::String(handler));
-    insert_json_opt(&mut map, "metadata", metadata)?;
-    map.insert("enabled".to_string(), Value::Bool(!disabled));
-    Ok(to_body(map))
-}
-
 /// Build the full create/replace JSON body for a routine, validating optional `repositories` as a
 /// JSON array. Returns the serialized body, or an exit code (`2`) when `repositories` is invalid.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "all parameters map to distinct CLI flags with no natural grouping"
+)]
 fn routine_body(
     schedule: String,
     title: String,
     agent: String,
+    model: Option<String>,
     prompt: String,
+    goal: Option<String>,
     repositories: Option<String>,
+    machines: Option<String>,
     ttl_secs: Option<u64>,
     max_runtime_secs: Option<u64>,
+    tags: Vec<String>,
     disabled: bool,
 ) -> Result<String, i32> {
     let mut map = Map::new();
     map.insert("schedule".to_string(), Value::String(schedule));
     map.insert("title".to_string(), Value::String(title));
     map.insert("agent".to_string(), Value::String(agent));
+    insert_opt(&mut map, "model", model.map(Value::String));
     map.insert("prompt".to_string(), Value::String(prompt));
+    insert_opt(&mut map, "goal", goal.map(Value::String));
     insert_json_opt(&mut map, "repositories", repositories)?;
+    insert_json_opt(&mut map, "machines", machines)?;
     insert_opt(&mut map, "ttl_secs", ttl_secs.map(Value::from));
     insert_opt(
         &mut map,
         "max_runtime_secs",
         max_runtime_secs.map(Value::from),
     );
+    map.insert("tags".to_string(), tags_value(tags));
     map.insert("enabled".to_string(), Value::Bool(!disabled));
     Ok(to_body(map))
+}
+
+/// Convert a list of CLI `--tag` values into a JSON array of strings.
+fn tags_value(tags: Vec<String>) -> Value {
+    Value::Array(tags.into_iter().map(Value::String).collect())
 }
 
 /// Insert `key => value` into `map` only when `value` is `Some`, leaving the key absent otherwise so
@@ -481,15 +509,6 @@ fn insert_json_opt(
             Err(2)
         }
     }
-}
-
-/// Build a small JSON object body from key/value pairs.
-fn object<const N: usize>(pairs: [(&str, Value); N]) -> String {
-    let mut map = Map::new();
-    for (key, value) in pairs {
-        map.insert(key.to_string(), value);
-    }
-    to_body(map)
 }
 
 /// Serialize a JSON object map into a compact request body string.

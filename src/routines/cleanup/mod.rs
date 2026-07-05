@@ -11,11 +11,17 @@
 //! a hung run, so a watchdog force-kills its tmux session (recording the reason in the run's
 //! `agent.log`), after which the workbench is reaped under the normal TTL rules. Orphaned
 //! workbenches (routine since deleted) fall back to `MAX_TTL_SECS` / `MAX_RUNTIME_SECS`.
+//!
+//! Reaping a workbench also prunes its matching `projects[<workbench>]` entry from the shared
+//! `~/.claude.json` (see `crate::utils::claude_json`), which the built-in `claude` agent's `setup`
+//! step seeds on every run — otherwise that file would accumulate one dead entry per reaped run,
+//! forever.
 
 use std::path::Path;
 use std::time::Duration;
 
 use crate::paths::workbenches_dir;
+use crate::utils::claude_json::prune_project;
 use crate::utils::time::now_secs;
 
 use super::model::{RoutineStore, RunStatus};
@@ -152,6 +158,21 @@ fn watchdog_dir(
     killed.get()
 }
 
+/// Best-effort prune of the `projects[<path>]` entry from `~/.claude.json` after the workbench
+/// directory at `path` (named `name`) was reaped, so the shared Claude Code config the built-in
+/// `claude` agent seeds on every run (see `crate::routines::agents::claude_code`) does not
+/// accumulate one dead entry per run, forever. Failures are logged, not propagated — a stale
+/// `~/.claude.json` entry never blocks the wider cleanup sweep.
+fn prune_claude_json(path: &Path, name: &str) {
+    match prune_project(path) {
+        Ok(true) => log::info!("cleanup: pruned stale ~/.claude.json entry for {name:?}"),
+        Ok(false) => {}
+        Err(err) => {
+            log::warn!("cleanup: failed to prune ~/.claude.json entry for {name:?}: {err}");
+        }
+    }
+}
+
 /// Scan `dir` and, for each `{slug}-{ts}` workbench:
 ///
 /// 1. **Watchdog** — if its session is still alive but the run has exceeded `max_runtime_for(slug)`,
@@ -226,6 +247,7 @@ fn reap_dir(
             Ok(()) => {
                 removed += 1;
                 log::info!("cleanup: removed expired workbench {name:?}");
+                prune_claude_json(&entry.path(), &name);
             }
             Err(err) => log::warn!("cleanup: failed to remove workbench {name:?}: {err}"),
         }
@@ -354,3 +376,7 @@ mod cleanup_tests;
 #[cfg(test)]
 #[path = "cleanup_watchdog_tests.rs"]
 mod cleanup_watchdog_tests;
+
+#[cfg(test)]
+#[path = "cleanup_claude_json_tests.rs"]
+mod cleanup_claude_json_tests;

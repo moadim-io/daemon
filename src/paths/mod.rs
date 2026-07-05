@@ -287,5 +287,19 @@ pub fn workbenches_dir() -> PathBuf {
     moadim_home().join("workbenches")
 }
 
+// ─── Claude Code shared config ───────────────────────────────────────────────
+
+/// Returns the path to `~/.claude.json`, the Claude Code config file shared with the live `claude`
+/// process. The built-in `claude` agent's `setup` step seeds a per-workbench `projects` entry here
+/// on every run (see `crate::routines::agents`); `crate::utils::claude_json` prunes that entry
+/// once the cleanup sweep (`crate::routines::cleanup`) reaps the workbench, so the file does not
+/// grow unbounded.
+///
+/// `None` when the home directory cannot be resolved.
+#[must_use]
+pub fn claude_json_path() -> Option<PathBuf> {
+    home().map(|dir| dir.join(".claude.json"))
+}
+
 #[cfg(test)]
 mod mod_tests;

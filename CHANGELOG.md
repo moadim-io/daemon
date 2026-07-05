@@ -815,6 +815,12 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- **Reaped workbenches no longer leak a `~/.claude.json` `projects` entry.** The built-in `claude`
+  agent's `setup` step seeds a per-workbench entry into `~/.claude.json`, keyed by the workbench's
+  absolute (always-unique) path, on every run. Nothing ever pruned it once the workbench was reaped,
+  so the file grew by one dead entry per `claude` run, forever. Cleanup now removes the matching
+  `projects[<workbench>]` entry when it reaps a workbench directory, using the same flock-guarded
+  read -> modify -> atomic-replace pattern the setup step already uses. (#430)
 - **Workbench launch path now derived from `paths::workbenches_dir()`.** The
   generated cron launch command hardcoded `WB="$HOME/.moadim/workbenches/$SLUG-$TS"`
   instead of going through the same seam the reaper (`routines/cleanup/mod.rs`)

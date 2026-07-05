@@ -37,6 +37,8 @@ pub(crate) enum CmdKind {
     NavRoutines,
     /// Jump to the HEATMAP page.
     NavHeatmap,
+    /// Jump to the SETTINGS page.
+    NavSettings,
     /// A specific routine (lands on the ROUTINES page).
     Routine,
     /// Re-poll server health (the header's ↻ action).
@@ -57,6 +59,8 @@ pub(crate) enum RouteKind {
     Routines,
     /// The HEATMAP page (`/heatmap`).
     Heatmap,
+    /// The SETTINGS page (`/settings`).
+    Settings,
 }
 
 /// One searchable destination in the palette.
@@ -80,6 +84,7 @@ pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
         CmdKind::NavOverview => Some(RouteKind::Home),
         CmdKind::NavRoutines | CmdKind::Routine => Some(RouteKind::Routines),
         CmdKind::NavHeatmap => Some(RouteKind::Heatmap),
+        CmdKind::NavSettings => Some(RouteKind::Settings),
         CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => None,
     }
 }
@@ -88,7 +93,10 @@ pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
 /// group separator label).
 pub(crate) fn badge_for(kind: CmdKind) -> &'static str {
     match kind {
-        CmdKind::NavOverview | CmdKind::NavRoutines | CmdKind::NavHeatmap => "GO",
+        CmdKind::NavOverview
+        | CmdKind::NavRoutines
+        | CmdKind::NavHeatmap
+        | CmdKind::NavSettings => "GO",
         CmdKind::Routine => "ROUTINE",
         CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => "ACTION",
     }
@@ -191,6 +199,12 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
             keywords: "schedule density grid busy collisions calendar".into(),
         },
         Command {
+            kind: CmdKind::NavSettings,
+            title: "Settings".into(),
+            subtitle: "Persistent agent prompt".into(),
+            keywords: "config preferences user prompt".into(),
+        },
+        Command {
             kind: CmdKind::ActionRefresh,
             title: "Refresh".into(),
             subtitle: "Re-poll server health".into(),
@@ -213,14 +227,39 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
         commands.push(Command {
             kind: CmdKind::Routine,
             title: routine.title.clone(),
-            subtitle: schedule_label(&routine.schedule_description, &routine.schedule),
+            subtitle: routine_subtitle(routine),
             keywords: format!(
-                "{} {} {} routine",
-                routine.id, routine.agent, routine.schedule
+                "{} {} {} {} routine",
+                routine.id,
+                routine.agent,
+                routine.schedule,
+                routine.tags.join(" ")
             ),
         });
     }
     commands
+}
+
+/// Subtitle for a routine command: schedule label optionally suffixed with
+/// comma-separated status tags so health issues are visible in search results.
+pub(crate) fn routine_subtitle(routine: &Routine) -> String {
+    let sched = schedule_label(&routine.schedule_description, &routine.schedule);
+    let mut tags: Vec<&str> = Vec::new();
+    if !routine.enabled {
+        tags.push("DISABLED");
+    } else if routine.skip_runs.is_some_and(|n| n > 0) {
+        tags.push("SNOOZED");
+    } else if !routine.agent_registered {
+        tags.push("AGENT MISSING");
+    }
+    if routine.flag_count > 0 {
+        tags.push("FLAGS");
+    }
+    if tags.is_empty() {
+        sched
+    } else {
+        format!("{sched} — {}", tags.join(", "))
+    }
 }
 
 /// The human schedule description when present, else the raw expression, else a
@@ -347,6 +386,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                                 RouteKind::Home => Route::Home,
                                 RouteKind::Routines => Route::Routines,
                                 RouteKind::Heatmap => Route::Heatmap,
+                                RouteKind::Settings => Route::Settings,
                             };
                             nav.push(&route);
                         }

@@ -252,6 +252,7 @@ fn referenced_machines_unions_routines() {
         agent: "claude".to_string(),
         model: None,
         prompt: "do".to_string(),
+        goal: None,
         repositories: Vec::new(),
         machines: vec!["laptop".to_string(), "server".to_string()],
         tags: vec![],
@@ -263,6 +264,7 @@ fn referenced_machines_unions_routines() {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
     };
@@ -322,6 +324,7 @@ fn run_list_with_referenced_machine() {
         agent: "claude".to_string(),
         model: None,
         prompt: "do".to_string(),
+        goal: None,
         repositories: Vec::new(),
         machines: vec!["alpha".to_string()],
         tags: vec![],
@@ -333,6 +336,7 @@ fn run_list_with_referenced_machine() {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
     };

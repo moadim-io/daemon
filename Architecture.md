@@ -94,7 +94,6 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `securit
 | MCP tool | Delegates to |
 |---|---|
 | `health` | `FsLocation::current()` + uptime calc |
-| `echo` | inline |
 | `list_routines` | `routines::svc_list` |
 | `get_routine` | `routines::svc_get` |
 | `create_routine` | `routines::svc_create` |
@@ -134,9 +133,10 @@ single self-contained shell command into a dedicated crontab block:
 ```
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
-<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompts/prompt.compiled.md $WB/prompt.md; \
-  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
-  tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
+<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; \
+  { cp …/prompts/prompt.compiled.md $WB/prompt.md; \
+    tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
+    tmux pipe-pane -o -t … "cat >> $WB/agent.log"; } >> $WB/launch.log 2>&1   # moadim-routine:<id>
 # END MOADIM-ROUTINES
 ```
 
@@ -147,11 +147,19 @@ placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
 
+Everything after the `mkdir` runs inside a `{ … } >> $WB/launch.log 2>&1` group, so a failure in the
+prompt copy, the agent's `setup` step, or the `tmux` launch itself is captured next to the run's other
+artifacts instead of going to cron's mail spool (silently discarded on the headless hosts this daemon
+targets). `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's
+diagnostics for the steps that get the session running in the first place. Only the `PATH` export and
+the `mkdir` itself precede the redirect — a failure that early means `$WB` may not exist yet, so
+there's nowhere to write a launch log to.
+
 Before either path launches, the daemon checks for a live tmux session under the routine's
 `moadim-<slug>-` prefix (any `$TS` suffix) and skips the fire — logging a warning instead of
 spawning — if one is still running. This overlap guard prevents a run that outlives its schedule
 interval from piling up concurrent agent sessions against the same target (duplicate PRs/issues,
-racing pushes); see `routines::service::spawn_routine_command`.
+racing pushes); see `routines::service_trigger::spawn_routine_command`.
 
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC

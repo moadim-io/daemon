@@ -7,6 +7,7 @@ pub(super) const SPEC: DefaultRoutine = DefaultRoutine {
     schedule: "0 8 * * *",
     agent: "claude",
     prompt: PROMPT,
+    goal: "Make the user's moadim routines 1% better every day through small, safe, compounding improvements.",
 };
 
 /// Task prompt handed to the agent.
@@ -62,17 +63,23 @@ Good improvement examples:
 
 ## Step 4: Open the PR
 
+**Never edit, checkout, or commit inside `~/.config/moadim` directly** — it is the live \
+checkout the daemon reads routines from. Do all work in a disposable temp clone instead:
+
 ```bash
-git -C ~/.config/moadim checkout -b 1pct/$(date +%Y%m%d-%H%M)
-# Edit/add/delete files under ~/.config/moadim/routines/ as needed.
-# Only touch routine.toml / prompts/prompt.pure.md files. Do NOT modify moadim daemon config.
-git -C ~/.config/moadim add -A
-git -C ~/.config/moadim commit -m \"routines: <concise description>\"
-git -C ~/.config/moadim push -u origin HEAD
 origin=$(git -C ~/.config/moadim remote get-url origin)
+tmp=$(mktemp -d)
+git clone \"$origin\" \"$tmp\"
+git -C \"$tmp\" checkout -b 1pct/$(date +%Y%m%d-%H%M)
+# Edit/add/delete files under $tmp/routines/ as needed.
+# Only touch routine.toml / prompts/prompt.pure.md files. Do NOT modify moadim daemon config.
+git -C \"$tmp\" add -A
+git -C \"$tmp\" commit -m \"routines: <concise description>\"
+git -C \"$tmp\" push -u origin HEAD
 gh pr create --repo \"$origin\" \
   --title \"1%: <short description>\" \
   --body \"$(printf '## What changed\\n<one paragraph>\\n\\n## Why this improves the portfolio\\n<one paragraph>\\n\\n## Expected impact\\n<one line>')\"
+rm -rf \"$tmp\"
 ```
 
 ## Report

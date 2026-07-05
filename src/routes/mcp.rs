@@ -24,13 +24,6 @@ pub struct MoadimMcp {
     shutdown: ShutdownSignal,
 }
 
-/// Input for the `echo` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct EchoInput {
-    /// Message to echo back.
-    message: String,
-}
-
 /// Input for tools that operate on a single routine by ID.
 #[derive(Deserialize, JsonSchema)]
 struct IdInput {
@@ -99,6 +92,15 @@ struct SnoozeRoutineInput {
     skip_runs: Option<u32>,
 }
 
+/// Input for the `set_power_saving` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SetPowerSavingInput {
+    /// UUID of the routine to update.
+    id: String,
+    /// `true` to pause scheduled and manual firing for power saving, `false` to resume.
+    active: bool,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -116,6 +118,9 @@ struct UpdateRoutineInput {
     model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
+    /// New goal (a very short, ≤5-line statement of the routine's purpose), or `None` to keep the
+    /// existing value. Send an empty string to clear it.
+    goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     repositories: Option<Vec<crate::routines::Repository>>,
     /// New machines targeting list, or `None` to keep the existing value.
@@ -176,18 +181,6 @@ impl MoadimMcp {
             "server_exe_dir": loc.server_exe_dir,
         });
         Ok(ok(val))
-    }
-
-    /// Echo `message` back together with the current server timestamp.
-    #[tool(description = "Echo a message back with a server timestamp")]
-    fn echo(
-        &self,
-        Parameters(EchoInput { message }): Parameters<EchoInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(serde_json::json!({
-            "message": message,
-            "timestamp": now_secs(),
-        })))
     }
 
     /// Return managed routines as a JSON array sorted by creation time.
@@ -252,6 +245,7 @@ impl MoadimMcp {
             agent: input.agent,
             model: input.model,
             prompt: input.prompt,
+            goal: input.goal,
             repositories: input.repositories,
             machines: input.machines,
             enabled: input.enabled,
@@ -305,6 +299,23 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(
             match routines::svc_snooze(&self.routines, &id, snoozed_until, skip_runs) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// Pause or resume a routine's scheduled and manual firing for power saving, without touching
+    /// its `enabled` state or crontab line.
+    #[tool(
+        description = "Set or clear a routine's power-saving state. While active, both trigger_routine and the routine's cron schedule refuse to launch it (distinctly from a disabled routine) — its enabled toggle and crontab line are untouched, so it resumes firing on its own once cleared."
+    )]
+    fn set_power_saving(
+        &self,
+        Parameters(SetPowerSavingInput { id, active }): Parameters<SetPowerSavingInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_set_power_saving(&self.routines, &id, active) {
                 Ok(routine) => ok(routine),
                 Err(error) => err(error),
             },
@@ -482,3 +493,7 @@ impl MoadimMcp {
 #[cfg(test)]
 #[path = "mcp_tests.rs"]
 mod mcp_tests;
+
+#[cfg(test)]
+#[path = "mcp_lock_tests.rs"]
+mod mcp_lock_tests;

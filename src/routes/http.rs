@@ -54,6 +54,10 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
 pub struct DependencyHealth {
     /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
     pub tmux: bool,
+    /// Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`
+    /// step runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that
+    /// step fails silently and the routine still shows a healthy status (issue #404).
+    pub python3: bool,
 }
 
 /// Response body for `GET /health`.
@@ -75,22 +79,6 @@ pub struct HealthResponse {
     pub git_sha: String,
     /// Committer date (`YYYY-MM-DD`) of the build commit, or `"unknown"` outside a git checkout.
     pub build_date: String,
-}
-
-/// Request body for `POST /echo`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct EchoRequest {
-    /// Message to echo back.
-    pub message: String,
-}
-
-/// Response body for `POST /echo`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct EchoResponse {
-    /// The echoed message.
-    pub message: String,
-    /// Server timestamp (Unix seconds) when the echo was produced.
-    pub timestamp: u64,
 }
 
 /// The embedded SPA HTML, baked into the binary at compile time.
@@ -161,6 +149,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         machine: crate::machine::current_machine(),
         dependencies: DependencyHealth {
             tmux: routines::tmux_available(),
+            python3: routines::agent_command_available("python3"),
         },
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),
@@ -213,19 +202,6 @@ pub async fn restart() -> Result<Json<RestartResponse>, AppError> {
     }))
 }
 
-/// `POST /echo` — parse a JSON body and return the message with a server timestamp.
-#[utoipa::path(post, path = "/echo",
-    request_body = EchoRequest,
-    responses((status = 200, body = EchoResponse), (status = 400, description = "Invalid body")))]
-pub async fn echo(body: axum::body::Bytes) -> Result<Json<EchoResponse>, axum::http::StatusCode> {
-    let parsed: EchoRequest =
-        serde_json::from_slice(&body).map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
-    Ok(Json(EchoResponse {
-        message: parsed.message,
-        timestamp: now_secs(),
-    }))
-}
-
 /// Response body for `GET /machine`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct MachineResponse {
@@ -257,6 +233,9 @@ pub struct SetMachineRequest {
 /// Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name
 /// is empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;
 /// setting the name here persists it for when the env var is absent.
+///
+/// As a side-effect, every routine whose `machines` list contained the old name is updated in
+/// memory, on disk, and in the crontab so that the rename propagates atomically.
 #[utoipa::path(put, path = "/machine",
     request_body = SetMachineRequest,
     responses(
@@ -265,17 +244,59 @@ pub struct SetMachineRequest {
         (status = 500, description = "Write failed"),
     ))]
 pub async fn put_machine(
+    State(state): State<AppState>,
     Json(body): Json<SetMachineRequest>,
 ) -> Result<Json<MachineResponse>, (StatusCode, String)> {
-    match crate::machine::set_machine(&body.name) {
-        Ok(()) => Ok(Json(MachineResponse {
-            name: body.name.trim().to_string(),
-        })),
+    let old_name = crate::machine::current_machine();
+    let new_name = body.name.trim().to_string();
+    match crate::machine::set_machine(&new_name) {
+        Ok(()) => {
+            routines::svc_rename_machine(&state.routines, &old_name, &new_name);
+            Ok(Json(MachineResponse { name: new_name }))
+        }
         Err(err) if err.kind() == std::io::ErrorKind::InvalidInput => {
             Err((StatusCode::BAD_REQUEST, err.to_string()))
         }
         Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
     }
+}
+
+/// `GET /config/user-prompt` — the persistent system prompt appended to every routine's agent
+/// instructions file (see [`crate::paths::user_prompt_path`]), as plain text. Empty (not an
+/// error) when nothing has been saved yet.
+#[utoipa::path(get, path = "/config/user-prompt",
+    responses((status = 200, description = "User prompt contents as plain text")))]
+pub async fn get_user_prompt() -> Result<String, AppError> {
+    match std::fs::read_to_string(crate::paths::user_prompt_path()) {
+        Ok(text) => Ok(text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(_) => Err(AppError::Internal),
+    }
+}
+
+/// Request body for `PUT /config/user-prompt`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct SetUserPromptRequest {
+    /// New persistent prompt contents. An empty string clears it.
+    pub content: String,
+}
+
+/// `PUT /config/user-prompt` — replace the persistent system prompt.
+///
+/// Creates the config directory if absent. Every routine's next run picks up the change (the
+/// launch command re-reads this file each time — see `command::system_prompt_stmts`); already
+/// running agents are unaffected.
+#[utoipa::path(put, path = "/config/user-prompt",
+    request_body = SetUserPromptRequest,
+    responses((status = 204, description = "Saved"), (status = 500, description = "Write failed")))]
+pub async fn put_user_prompt(
+    Json(body): Json<SetUserPromptRequest>,
+) -> Result<StatusCode, AppError> {
+    let path = crate::paths::user_prompt_path();
+    let parent = path.parent().expect("user prompt path has a parent dir");
+    std::fs::create_dir_all(parent).map_err(|_| AppError::Internal)?;
+    std::fs::write(&path, &body.content).map_err(|_| AppError::Internal)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// `GET /machines` — distinct machine names this daemon knows about.
@@ -347,13 +368,17 @@ pub(crate) fn build_app_with_shutdown(
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
         .route("/restart", post(restart))
-        .route("/echo", post(echo))
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
+        .route(
+            "/config/user-prompt",
+            get(get_user_prompt).put(put_user_prompt),
+        )
         .route("/agents", get(routines::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
         .route("/routines/cleanup", post(routines::cleanup))
+        .route("/routines/runs", get(routines::get_all_runs))
         .route(
             "/routines/lock",
             get(routines::get_lock_status)
@@ -381,9 +406,19 @@ pub(crate) fn build_app_with_shutdown(
             delete(routines::resolve_flag),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
+        .route("/routines/{id}/runs", get(routines::get_runs))
+        .route(
+            "/routines/{id}/runs/{workbench}/log",
+            get(routines::get_run_log),
+        )
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
-        .fallback(api_not_found);
+        .fallback(api_not_found)
+        // Per-request deadline (issue #402): scoped to the REST API only, so the long-lived
+        // `/mcp` SSE stream (nested separately below) is never subject to it.
+        .layer(middleware::from_fn(middlewares::timeout::request_timeout(
+            middlewares::timeout::API_REQUEST_TIMEOUT,
+        )));
 
     Router::new()
         .route("/", get(index))
@@ -472,6 +507,22 @@ pub async fn run_with_listener_until(
                     .await;
         }
     });
+    // Periodically warn when the binary on disk has moved on from the one this process is running
+    // (#167): an in-place upgrade with no daemon restart otherwise regenerates every routine's
+    // agent instructions — disclosure included — from stale, silently outdated logic.
+    let version_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::build_info::VERSION_DRIFT_CHECK_INTERVAL);
+        loop {
+            tick.tick().await;
+            let _ = tokio::task::spawn_blocking(|| {
+                if let Ok(exe) = std::env::current_exe() {
+                    let running = format!("moadim {}", crate::build_info::long_version());
+                    crate::build_info::warn_on_drift(&exe, &running);
+                }
+            })
+            .await;
+        }
+    });
     let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
@@ -488,9 +539,18 @@ pub async fn run_with_listener_until(
         .expect("axum serve failed");
     cleanup_task.abort();
     watchdog_task.abort();
+    version_task.abort();
     Ok(())
 }
 
 #[cfg(test)]
 #[path = "http_tests.rs"]
 mod http_tests;
+
+#[cfg(test)]
+#[path = "http_routing_tests.rs"]
+mod http_routing_tests;
+
+#[cfg(test)]
+#[path = "http_listener_tests.rs"]
+mod http_listener_tests;

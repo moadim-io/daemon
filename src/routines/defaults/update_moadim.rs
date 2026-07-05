@@ -7,6 +7,7 @@ pub(super) const SPEC: DefaultRoutine = DefaultRoutine {
     schedule: "0 9 * * *",
     agent: "claude",
     prompt: PROMPT,
+    goal: "Keep the locally installed moadim cargo package up to date with the latest published release.",
 };
 
 /// Task prompt handed to the agent.

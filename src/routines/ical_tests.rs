@@ -12,6 +12,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![],
         enabled,
@@ -22,6 +23,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -63,6 +65,30 @@ fn enabled_daily_routine_yields_events_within_horizon() {
     // TRANSPARENT so subscribers aren't marked BUSY (one per VEVENT).
     assert!(ics.contains("TRANSP:TRANSPARENT\r\n"));
     assert_eq!(count(&ics, "TRANSP:TRANSPARENT"), events);
+}
+
+#[test]
+fn every_event_carries_a_duration() {
+    // RFC 5545 requires each VEVENT to specify either DTEND or DURATION, otherwise
+    // calendar clients render it as a zero-length instant. Every fire must emit one.
+    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    assert_eq!(
+        count(&ics, "BEGIN:VEVENT"),
+        count(&ics, "DURATION:PT15M"),
+        "each VEVENT should carry exactly one DURATION line"
+    );
+}
+
+#[test]
+fn events_are_transparent_to_free_busy() {
+    // The feed is informational: a fire must not consume the subscriber's
+    // free/busy time (RFC 5545 §3.8.2.7 defaults TRANSP to OPAQUE = busy).
+    let ics = build_ical(&[routine_with("r1", "@daily", true)], fixed_now());
+    let events = count(&ics, "BEGIN:VEVENT");
+    assert!(events > 0, "expected at least one event");
+    // Exactly one TRANSP:TRANSPARENT (and Outlook free-busy hint) per VEVENT.
+    assert_eq!(count(&ics, "TRANSP:TRANSPARENT\r\n"), events);
+    assert_eq!(count(&ics, "X-MICROSOFT-CDO-BUSYSTATUS:FREE\r\n"), events);
 }
 
 #[test]
@@ -300,6 +326,33 @@ fn svc_ical_routine_unknown_id_is_well_formed_empty_calendar() {
     assert!(ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
     assert!(ics.ends_with("END:VCALENDAR\r\n"));
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
+}
+
+#[test]
+fn svc_ical_routine_survives_a_poisoned_store_lock() {
+    // A `std::sync::Mutex` poisons permanently the instant any thread panics while
+    // holding the guard. `svc_ical_routine` must recover the guard (like every other
+    // store accessor) instead of propagating that poisoning as its own panic — see
+    // `utils::lock::LockRecover`.
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("r1".to_string(), routine_with("r1", "@daily", true));
+
+    let poisoner = std::sync::Arc::clone(&store);
+    let handle = std::thread::spawn(move || {
+        let _guard = poisoner.lock().expect("first lock is not yet poisoned");
+        panic!("poison the routine store");
+    });
+    assert!(
+        handle.join().is_err(),
+        "the spawned thread should have panicked"
+    );
+
+    let ics = svc_ical_routine(&store, "r1");
+    assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
+    assert!(ics.contains("BEGIN:VEVENT"));
 }
 
 #[test]

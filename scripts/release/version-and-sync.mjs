@@ -148,7 +148,22 @@ function main() {
 
   execSync("cargo check -q", { cwd: ROOT, stdio: "inherit" });
 
-  console.log(`Synced Cargo.toml, Cargo.lock, CHANGELOG.md, and docs/moadim.1 to ${version}.`);
+  // The committed OpenAPI spec embeds the crate version. Run the self-healing
+  // test once (it regenerates apis/openapi.json and exits non-zero on drift),
+  // then again to confirm the regenerated file is stable.
+  try {
+    execSync(
+      "cargo test --quiet -- openapi::openapi_tests::committed_spec_is_current",
+      { cwd: ROOT, stdio: "inherit" },
+    );
+  } catch {
+    execSync(
+      "cargo test --quiet -- openapi::openapi_tests::committed_spec_is_current",
+      { cwd: ROOT, stdio: "inherit" },
+    );
+  }
+
+  console.log(`Synced Cargo.toml, Cargo.lock, CHANGELOG.md, docs/moadim.1, and apis/openapi.json to ${version}.`);
 }
 
 main();

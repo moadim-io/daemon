@@ -10,6 +10,7 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         schedule: schedule.into(),
         title: title.into(),
         agent: agent.into(),
+        model: None,
         prompt: String::new(),
         repositories: vec![],
         machines: vec![],

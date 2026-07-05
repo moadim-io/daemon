@@ -195,7 +195,9 @@ fn build_routine_command_contains_expected_pieces() {
     assert!(cmd.contains(r#""$(cat prompt.md)""#));
     assert!(!cmd.contains("send-keys"));
     assert!(!cmd.contains("capture-pane"));
-    assert!(cmd.contains("tmux pipe-pane"));
+    // pipe-pane is chained onto the same tmux invocation as new-session (#289), not a
+    // standalone `tmux pipe-pane` statement.
+    assert!(cmd.contains(r#"\; pipe-pane -o -t "$SESS""#));
     assert!(cmd.contains("SLUG='my-routine'"));
     // single line — no newlines
     assert!(!cmd.contains('\n'));
@@ -343,8 +345,9 @@ fn build_routine_command_inserts_setup_before_launch() {
 #[test]
 fn build_routine_command_redirects_launch_wrapper_to_launch_log() {
     // Setup/tmux failures must not be silently mailed by cron on a headless host (#375): everything
-    // from the prompt copy through `tmux pipe-pane` runs inside a `{ … } >> "$WB/launch.log" 2>&1`
-    // group, so a failure anywhere in that wrapper leaves a readable trace in the workbench.
+    // from the prompt copy through the chained `pipe-pane` (#289) runs inside a
+    // `{ … } >> "$WB/launch.log" 2>&1` group, so a failure anywhere in that wrapper leaves a
+    // readable trace in the workbench.
     let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -359,11 +362,13 @@ fn build_routine_command_redirects_launch_wrapper_to_launch_log() {
     );
 
     // The redirect group opens after `mkdir -p "$WB"` (so $WB exists before anything tries to
-    // write into it) and closes after the final `tmux pipe-pane` statement.
+    // write into it) and closes after the final (chained) `pipe-pane` statement.
     let mkdir_at = cmd.find(r#"mkdir -p "$WB""#).expect("mkdir present");
     let group_open_at = cmd[mkdir_at..].find('{').map(|off| mkdir_at + off).unwrap();
     let setup_at = cmd.find("seed-trust").expect("setup present");
-    let pipe_pane_at = cmd.find("tmux pipe-pane").expect("pipe-pane present");
+    let pipe_pane_at = cmd
+        .find(r#"\; pipe-pane -o -t "$SESS""#)
+        .expect("pipe-pane present");
     let redirect_at = cmd.find(r#"} >> "$WB/launch.log""#).unwrap();
     assert!(
         mkdir_at < group_open_at,

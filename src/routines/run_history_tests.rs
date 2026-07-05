@@ -131,6 +131,22 @@ fn append_persisted_run_is_best_effort_when_path_unwritable() {
     assert_eq!(read_persisted_runs("blocked-id"), vec![]);
 }
 
+#[test]
+fn has_persisted_run_false_when_file_absent() {
+    let _home = TempHome::set();
+    assert!(!has_persisted_run("no-such-id", "my-routine-1000"));
+}
+
+#[test]
+fn has_persisted_run_true_only_for_matching_workbench() {
+    let _home = TempHome::set();
+    append_persisted_run("some-id", &sample_run("my-routine-1000", 1000));
+
+    assert!(has_persisted_run("some-id", "my-routine-1000"));
+    assert!(!has_persisted_run("some-id", "my-routine-2000"));
+    assert!(!has_persisted_run("other-id", "my-routine-1000"));
+}
+
 #[cfg(unix)]
 #[test]
 fn append_persisted_run_creates_owner_only_log_and_dir() {

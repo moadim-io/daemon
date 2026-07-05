@@ -25,7 +25,7 @@ use crate::utils::claude_json::prune_project;
 use crate::utils::time::now_secs;
 
 use super::model::{RoutineStore, RunStatus};
-use super::run_history::{append_persisted_run, read_exit_code, PersistedRun};
+use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
 mod runtime;
 mod session;
@@ -313,6 +313,12 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
             let Some(routine_id) = routine_ids.get(slug) else {
                 return;
             };
+            if has_persisted_run(routine_id, name) {
+                // Already recorded on a prior sweep whose `remove_dir_all` then failed, leaving
+                // this workbench to be re-expired and re-persisted on the next sweep. Skip it so
+                // one real run doesn't accumulate duplicate `runs.log` entries.
+                return;
+            }
             let exit_code = read_exit_code(workbench_path);
             let status = match exit_code {
                 Some(0) => RunStatus::Success,
@@ -415,6 +421,10 @@ pub fn kill_sessions_for_deleted_routine(slug: &str) -> usize {
 mod cleanup_tests;
 
 #[cfg(test)]
+#[path = "cleanup_tmux_tests.rs"]
+mod cleanup_tmux_tests;
+
+#[cfg(test)]
 #[path = "cleanup_watchdog_tests.rs"]
 mod cleanup_watchdog_tests;
 
@@ -425,3 +435,7 @@ mod cleanup_claude_json_tests;
 #[cfg(test)]
 #[path = "cleanup_freed_bytes_tests.rs"]
 mod cleanup_freed_bytes_tests;
+
+#[cfg(test)]
+#[path = "cleanup_run_history_tests.rs"]
+mod cleanup_run_history_tests;

@@ -111,6 +111,9 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                     <option value="disabled" selected={status_val == "disabled"}>{"Disabled"}</option>
                     <option value="dormant" selected={status_val == "dormant"}>{"Dormant"}</option>
                     <option value="due" selected={status_val == "due"}>{"Due soon"}</option>
+                    <option value="snoozed" selected={status_val == "snoozed"}>{"Snoozed"}</option>
+                    <option value="flagged" selected={status_val == "flagged"}>{"Flagged"}</option>
+                    <option value="agent-unreg" selected={status_val == "agent-unreg"}>{"Agent unregistered"}</option>
                 </select>
                 <span class="filter-label">{"AGENT"}</span>
                 <select class="filter-select" aria-label="Agent filter" onchange={on_agent_change}>

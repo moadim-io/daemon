@@ -1444,7 +1444,7 @@ dependencies = [
 
 [[package]]
 name = "moadim"
-version = "0.22.1"
+version = "0.23.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2351,6 +2351,7 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

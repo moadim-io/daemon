@@ -33,7 +33,7 @@ pub(crate) fn run_status_label(status: RunStatus) -> &'static str {
 }
 
 /// Format the wall-clock duration between a run's start and finish as `"<n>s"`/`"<n>m"`/`"<n>h <n>m"`.
-fn fmt_run_duration(started_at: u64, finished_at: u64) -> String {
+pub(crate) fn fmt_run_duration(started_at: u64, finished_at: u64) -> String {
     let secs = finished_at.saturating_sub(started_at);
     if secs < 60 {
         format!("{secs}s")

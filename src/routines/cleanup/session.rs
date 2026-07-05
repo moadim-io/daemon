@@ -60,8 +60,27 @@ pub(crate) fn tmux_session_prefix_alive(prefix: &str) -> bool {
             out.status.success()
                 && String::from_utf8_lossy(&out.stdout)
                     .lines()
-                    .any(|name| name.starts_with(prefix))
+                    .any(|name| is_fire_of_prefix(name, prefix))
         })
+}
+
+/// Return `true` if `name` is a tmux session name for *this* routine's `prefix`
+/// (`moadim-{slug}-`), not merely a different routine whose slug happens to be a string-prefix of
+/// this one's (e.g. slug `deploy` vs slug `deploy-staging`: `"moadim-deploy-"` is a literal prefix
+/// of `"moadim-deploy-staging-<rid>"`). A plain [`str::starts_with`] treated that as a match,
+/// falsely suppressing `deploy`'s own fire while an unrelated `deploy-staging` run was alive.
+///
+/// Requires the remainder after `prefix` to have the exact `$RID` shape `build_routine_command`
+/// emits (`${TS}_$$`, i.e. `<digits>_<digits>`) rather than any suffix at all.
+fn is_fire_of_prefix(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix).is_some_and(|rid| {
+        rid.split_once('_').is_some_and(|(ts, pid)| {
+            !ts.is_empty()
+                && !pid.is_empty()
+                && ts.bytes().all(|byte| byte.is_ascii_digit())
+                && pid.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    })
 }
 
 /// Force-kill the tmux session named `session` (best-effort).
@@ -92,3 +111,7 @@ pub(super) fn note_forced_kill(workbench: &Path) {
         let _ = file.write_all(b"moadim: routine exceeded max runtime; killing session\n");
     }
 }
+
+#[cfg(test)]
+#[path = "session_tests.rs"]
+mod session_tests;

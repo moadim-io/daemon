@@ -236,6 +236,13 @@ fn parse_workbench_name_splits_slug_and_timestamp() {
         parse_workbench_name("my-routine-1700000000"),
         Some(("my-routine", 1_700_000_000))
     );
+    // The #411 collision-resistant run id appends `_{pid}`; the slug and timestamp must still parse
+    // (the trailing PID is dropped, so the workbench ages off its trigger second, not its PID).
+    assert_eq!(
+        parse_workbench_name("my-routine-1700000000_12345"),
+        Some(("my-routine", 1_700_000_000))
+    );
+    assert_eq!(parse_workbench_name("foo-123_9"), Some(("foo", 123)));
 }
 
 #[test]

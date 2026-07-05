@@ -35,6 +35,17 @@ fn strip_ansi_noise_removes_osc_sequence_terminated_by_escape_backslash() {
 }
 
 #[test]
+fn strip_ansi_noise_removes_osc_sequence_terminated_by_bare_escape() {
+    // A lone ESC not followed by `\` (a malformed/unusual string terminator) must still end
+    // the OSC sequence, and — unlike the ESC-backslash case above — the character right after
+    // that ESC is not part of the terminator, so it must survive in the output untouched.
+    assert_eq!(
+        strip_ansi_noise("\u{1B}]0;window title\u{1B}Xafter\n"),
+        "Xafter\n"
+    );
+}
+
+#[test]
 fn strip_ansi_noise_drops_bare_two_byte_escape() {
     // `ESC c` is a full terminal reset with no CSI/OSC bracket.
     assert_eq!(strip_ansi_noise("before\u{1B}cafter\n"), "beforeafter\n");

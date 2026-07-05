@@ -281,6 +281,42 @@ pub(super) fn migrate_workbenches(old_slug: &str, new_slug: &str) {
     }
 }
 
+/// Max bytes of `agent.log` returned by [`svc_logs`] / [`svc_run_log`]. A long-running or noisy
+/// agent can grow this file without bound; without a cap, serving the whole thing risks an
+/// out-of-memory daemon and a multi-hundred-MB HTTP response for one request. Keeps only the
+/// most recent bytes, since the tail is what matters for "what is this run doing right now".
+pub(crate) const MAX_LOG_TAIL_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Read `path`, returning only the last [`MAX_LOG_TAIL_BYTES`] when it's larger than that.
+///
+/// The seek point is snapped forward to the next UTF-8 character boundary so a multi-byte
+/// character split by the byte-offset seek isn't silently mangled, and a truncated read is
+/// prefixed with a marker noting how many bytes were omitted rather than starting mid-line with
+/// no indication anything is missing.
+pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
+    let len = std::fs::metadata(path)?.len();
+    if len <= MAX_LOG_TAIL_BYTES {
+        return std::fs::read_to_string(path);
+    }
+    use std::io::{Read, Seek, SeekFrom};
+    let omitted = len - MAX_LOG_TAIL_BYTES;
+    let mut file = std::fs::File::open(path)?;
+    file.seek(SeekFrom::Start(omitted))?;
+    let mut buf = Vec::with_capacity(MAX_LOG_TAIL_BYTES as usize);
+    file.read_to_end(&mut buf)?;
+    // A UTF-8 continuation byte is 10xxxxxx; skip up to 3 of them (the longest possible
+    // multi-byte sequence) to land on the next real character's leading byte.
+    let start = buf
+        .iter()
+        .take(4)
+        .position(|&byte| !(0x80..0xC0).contains(&byte))
+        .unwrap_or(0);
+    let tail = String::from_utf8_lossy(&buf[start..]);
+    Ok(format!(
+        "... [{omitted} bytes omitted; showing the last {MAX_LOG_TAIL_BYTES} bytes] ...\n{tail}"
+    ))
+}
+
 /// Return the contents of the newest workbench `agent.log` for routine `id`.
 pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     let routine = store
@@ -314,7 +350,7 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     if !log_path.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status
@@ -466,7 +502,7 @@ pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<St
     if !log_path.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// Reject a blank (empty/whitespace-only) flag `type` or `description`.

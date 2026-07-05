@@ -14,7 +14,7 @@ const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 /// Resolve the base home directory, honoring the [`HOME_OVERRIDE_ENV`] test seam when set.
 ///
 /// Exposed to the crate so platform service installers resolve their home-relative paths (e.g. the
-/// macOS LaunchAgents plist) through the same override seam, keeping tests off the real home.
+/// macOS `LaunchAgents` plist) through the same override seam, keeping tests off the real home.
 pub(crate) fn home() -> Option<PathBuf> {
     match std::env::var_os(HOME_OVERRIDE_ENV) {
         Some(dir) => Some(PathBuf::from(dir)),

@@ -656,7 +656,7 @@ use cli_system::{
     spawn_detached, wait_until,
 };
 #[cfg(test)]
-pub(crate) use cli_system::{parse_body, parse_status_code};
+pub(crate) use cli_system::{parse_body, parse_status_code, DAEMON_LOG_MAX_BYTES};
 
 #[cfg(test)]
 #[path = "cli_tests.rs"]

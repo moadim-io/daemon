@@ -30,13 +30,15 @@ Run the checks the pre-push hook enforces before any push:
 
 ```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 ```
 
-Use `--all-targets -- -D warnings` for clippy, exactly as the pre-push hook and
-the CI lint gate do — bare `cargo clippy` skips test/example/bench code and only
-warns, so it can pass locally yet fail the hook and CI. The `cargo llvm-cov`
+Use `--workspace --all-targets -- -D warnings` for clippy, exactly as the
+pre-push hook and the CI lint gate do — bare `cargo clippy` skips the `ui`
+member crate (this is a non-virtual workspace) as well as test/example/bench
+code, and only warns, so it can pass locally yet fail the hook and CI. The
+`cargo llvm-cov`
 command runs the test suite with instrumentation and enforces 100% line coverage
 (excluding `main.rs`); it subsumes a bare `cargo test`, so running it is enough
 to satisfy both the test and coverage gates in one pass.
@@ -168,6 +170,9 @@ detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
 ([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag
 must not already exist, and `Cargo.toml`'s version must match the topmost
 changelog heading. Pushing a `v*` tag by hand still works as a fallback.
+
+`publish.yml` authenticates to crates.io via [Trusted Publishing](https://crates.io/docs/trusted-publishing)
+(OIDC) — no `CARGO_REGISTRY_TOKEN` secret involved.
 
 ## Code conventions
 

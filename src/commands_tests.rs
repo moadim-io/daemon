@@ -265,7 +265,6 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
-        &["echo", "hello"],
     ];
     for call in calls {
         assert_eq!(run(argv(call)), 0, "call {call:?}");
@@ -328,12 +327,6 @@ fn insert_opt_only_inserts_present_values() {
 }
 
 #[test]
-fn object_and_to_body_build_compact_json() {
-    let body = object([("message", Value::String("hi".to_string()))]);
-    assert_eq!(body, "{\"message\":\"hi\"}");
-}
-
-#[test]
 fn routine_body_serializes_all_fields() {
     let value: Value = serde_json::from_str(
         &routine_body(
@@ -342,6 +335,7 @@ fn routine_body_serializes_all_fields() {
             "agent".into(),
             Some("claude-sonnet-4-6".into()),
             "prompt".into(),
+            Some("keep it small".into()),
             Some("[]".into()),
             Some("[\"work\"]".into()),
             Some(30),
@@ -353,6 +347,7 @@ fn routine_body_serializes_all_fields() {
     )
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
+    assert_eq!(value["goal"], Value::String("keep it small".to_string()));
     assert_eq!(
         value["model"],
         Value::String("claude-sonnet-4-6".to_string())
@@ -382,6 +377,7 @@ fn routine_body_rejects_bad_repositories() {
             "a".into(),
             None,
             "p".into(),
+            None,
             Some("{bad".into()),
             None,
             None,
@@ -403,6 +399,7 @@ fn routine_body_rejects_bad_machines() {
             "a".into(),
             None,
             "p".into(),
+            None,
             None,
             Some("{bad".into()),
             None,

@@ -1,6 +1,6 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
-use crate::paths::{routine_compiled_prompt_path, routine_scheduled_state_path};
+use crate::paths::{routine_compiled_prompt_path, routine_scheduled_log_path};
 
 use super::agents::AgentCommand;
 use super::flags::{list_flags, FlagScope};
@@ -36,9 +36,10 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
-/// Compose the `prompt.compiled.md` body: a repositories-as-context preamble, the prompt, and — when
-/// the routine has any — an "Open flags" section listing gaps/bugs/edge cases the agent raised on a
-/// previous run (see [`super::flags`]) that no one has resolved yet.
+/// Compose the `prompt.compiled.md` body: a repositories-as-context preamble, an optional `## Goal`
+/// section, the prompt, and — when the routine has any — an "Open flags" section listing
+/// gaps/bugs/edge cases the agent raised on a previous run (see [`super::flags`]) that no one has
+/// resolved yet.
 ///
 /// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
 /// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
@@ -59,6 +60,17 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
                 None => body.push_str(&format!("- {}\n", repo.repository)),
             }
         }
+    }
+    // A short "why" preamble, when set, so the agent has the routine's intent before the task.
+    if let Some(goal) = routine
+        .goal
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        body.push_str("\n## Goal\n");
+        body.push_str(goal);
+        body.push('\n');
     }
     body.push_str("\n---\n");
     body.push_str(&routine.prompt);
@@ -90,6 +102,32 @@ pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> 
         .replace("{workbench}", workbench)
         .replace("{prompt_file}", prompt_file)
         .replace("{prompt}", r#""$(cat prompt.md)""#)
+}
+
+/// Conservative cap on a single inlined `{prompt}` argument, matching Linux's
+/// `MAX_ARG_STRLEN` (`32 * PAGE_SIZE` = 128 KiB on the common 4 KiB page size) — the
+/// tighter of the two platform limits an inlined prompt is exposed to (macOS's
+/// combined arg+env budget, `kern.argmax`, is roughly double). An agent using
+/// `{prompt_file}` instead is never subject to this: the prompt reaches the process
+/// as a file path, not a single oversized argv entry.
+pub(crate) const MAX_INLINE_PROMPT_BYTES: usize = 128 * 1024;
+
+/// Byte length of `routine`'s composed prompt when `agent` would inline it into a
+/// single process argument that exceeds [`MAX_INLINE_PROMPT_BYTES`]; `None` when the
+/// agent doesn't use `{prompt}` at all, or the composed prompt fits.
+///
+/// Only agents whose `args` template contains the literal `{prompt}` placeholder are
+/// at risk (see [`substitute`]) — `claude`, the shipped default, is one of them
+/// (#443). A large composed prompt (routine `prompt` + the repositories preamble +
+/// accumulated open flags, see [`compose_prompt`]) then makes the `execve` inside the
+/// launch's detached tmux session fail with `E2BIG`, silently no-oping the run
+/// instead of erroring anywhere visible.
+pub(crate) fn inline_prompt_overflow(routine: &Routine, agent: &AgentCommand) -> Option<usize> {
+    if !agent.args.iter().any(|arg| arg.contains("{prompt}")) {
+        return None;
+    }
+    let len = compose_prompt(routine).len();
+    (len > MAX_INLINE_PROMPT_BYTES).then_some(len)
 }
 
 /// Return the first directory on the daemon's `PATH` that contains an executable named `bin`.
@@ -317,7 +355,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let prompt_path = routine_compiled_prompt_path(&slug)
         .to_string_lossy()
         .into_owned();
-    let scheduled_state_path = routine_scheduled_state_path(&slug)
+    let scheduled_log_path = routine_scheduled_log_path(&slug)
         .to_string_lossy()
         .into_owned();
     // Resolve through the same seam the reaper (`cleanup/mod.rs`) and the LOGS view
@@ -359,28 +397,34 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         // unchanged.
         format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
         r#"TS="$(date +%s)""#.to_string(),
-        // Record this scheduled firing. This command stamps the fire time into the routine's
-        // gitignored `scheduled.local.toml` sidecar; the daemon reads it back into
-        // `last_scheduled_trigger_at` on load. (The cron line calls `moadim schedule trigger`, which
-        // spawns this command via the daemon's scheduled-trigger path without recording a *manual*
-        // trigger.) Written before the prompt-copy guard below so an aborted run still records that
-        // the schedule fired, and best-effort (`|| true`) so a sidecar write failure never blocks
-        // launching the agent.
+        // Record this scheduled firing. Appends the Unix timestamp as one line to the routine's
+        // gitignored `scheduled.log`; the daemon reads the last line back as
+        // `last_scheduled_trigger_at` on load. Using `>>` (append) preserves the full run history.
+        // Written before the prompt-copy guard below so an aborted run still records that the
+        // schedule fired, and best-effort (`|| true`) so a log write failure never blocks launching.
         format!(
-            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
-            shell_quote(&scheduled_state_path)
+            r#"printf '%s\n' "$TS" >> {} || true"#,
+            shell_quote(&scheduled_log_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
         format!(r#"WB={}/"$SLUG-$TS""#, shell_quote(&workbenches_base)),
         r#"SESS="moadim-$SLUG-$TS""#.to_string(),
         r#"mkdir -p "$WB""#.to_string(),
     ];
-    stmts.extend(system_prompt_stmts(
+
+    // Everything from here on runs with stdout/stderr redirected into the workbench itself, so a
+    // failure in the setup step or the tmux launch leaves a readable trace instead of being handed
+    // to cron's mail spool (silently discarded on the headless hosts this daemon targets — see
+    // #375). `$WB` already exists (created by the `mkdir` above), so the redirect target is valid.
+    // The `cp`/disclosure guards below still `tee` their own abort reason into `agent.log`
+    // explicitly; under this wrapper that message also lands in `launch.log`, which is harmless.
+    let mut inner_stmts = Vec::new();
+    inner_stmts.extend(system_prompt_stmts(
         &crate::paths::user_prompt_path().to_string_lossy(),
         &routine.title,
         &agent.instructions_file,
     ));
-    stmts.extend([
+    inner_stmts.extend([
         // Fail-fast if the routine's source prompt is missing. The statements are `;`-joined, so a
         // bare `cp` failure would be ignored and the agent would launch with an empty
         // `"$(cat prompt.md)"` argument — a blank, task-less session. Abort instead, recording the
@@ -392,13 +436,24 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     ]);
     if let Some(setup) = &agent.setup {
         // Inserted verbatim so the agent author controls quoting; `$WB`/`$SESS` are in scope.
-        stmts.push(setup.clone());
+        inner_stmts.push(setup.clone());
     }
-    stmts.push(format!(
+    // Record the agent's exit code once it finishes, so the run-history view (`svc_list_runs`)
+    // can tell success from failure instead of only "session ended". `tmux new-session` runs a
+    // single quoted string through the pane's default shell, so `;`-appending here shares that
+    // same shell and its `$?`. Written to a workbench-*relative* path (`exit_code`, not
+    // `$WB/exit_code`): `$WB` is a plain (non-exported) shell variable in the launcher script and
+    // is not inherited by the new shell tmux spawns, but the pane's cwd is already `$WB` (`-c`).
+    let invocation_with_exit_code = format!(r#"{invocation}; printf '%s' "$?" > exit_code"#);
+    inner_stmts.push(format!(
         r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
-        shell_quote(&invocation)
+        shell_quote(&invocation_with_exit_code)
     ));
-    stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
+    inner_stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
+    stmts.push(format!(
+        r#"{{ {} ; }} >> "$WB/launch.log" 2>&1"#,
+        inner_stmts.join("; ")
+    ));
     stmts.join("; ")
 }
 

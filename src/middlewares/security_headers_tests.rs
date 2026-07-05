@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
     middleware,
     routing::get,
     Router,
@@ -47,6 +47,11 @@ async fn frame_ancestors_blocks_framing() {
     // / `base-uri` / `form-action` denials so an injected `<script>`, `<base>`, or off-origin
     // `<form>` cannot act on behalf of the unauthenticated destructive API.
     assert_eq!(
+        resp.headers().get("cache-control").unwrap(),
+        "no-store",
+        "no-store fallback absent on a plain response (issue #921)"
+    );
+    assert_eq!(
         resp.headers().get("content-security-policy").unwrap(),
         "default-src 'self'; \
          script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; \
@@ -59,4 +64,28 @@ async fn frame_ancestors_blocks_framing() {
          object-src 'none'; \
          frame-ancestors 'none'"
     );
+}
+
+#[tokio::test]
+async fn cache_control_fallback_does_not_override_handler_directive() {
+    // A handler that already sets Cache-Control: no-cache (like the SPA index.html, issue #401)
+    // must not have its value replaced by the no-store fallback.
+    let app = Router::new()
+        .route(
+            "/",
+            get(|| async {
+                let mut resp = axum::response::Response::new(Body::empty());
+                resp.headers_mut()
+                    .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+                resp
+            }),
+        )
+        .layer(middleware::from_fn(security_headers));
+
+    let resp = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp.headers().get("cache-control").unwrap(), "no-cache");
 }

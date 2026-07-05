@@ -41,9 +41,10 @@ building and installing:
 | `tmux`     | launching routine agents — every scheduled routine starts its agent inside a tmux session. **Without `tmux`, routine runs silently fail to launch.** | `brew install tmux` (macOS) · `apt install tmux` (Debian/Ubuntu) |
 | `crontab`  | scheduling — moadim writes managed routines into the OS crontab so they fire on schedule | preinstalled on macOS; `apt install cron` (Debian/Ubuntu) |
 
-The daemon reports whether `tmux` resolves on its `PATH` in `GET /api/v1/health`
-(under `dependencies`) and logs a warning at startup when it is missing, so a
-misconfigured host is easy to spot.
+The daemon reports whether `tmux` and `python3` resolve on its `PATH` in
+`GET /api/v1/health` (under `dependencies`) and logs a warning at startup when
+either is missing, so a misconfigured host is easy to spot. See the built-in
+`claude` agent's prerequisites below for why `python3` matters.
 
 ## Installation
 
@@ -163,11 +164,13 @@ git-trackable:
 | `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
-| `prompt`       | string | yes      | The task prompt handed to the agent.                                                          |
+| `goal`         | string | no       | A very short (≤5 lines) statement of the routine's goal — the "why" behind the prompt. Rendered into `prompt.md` as a `## Goal` preamble. |
 | `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
+| `machines`     | list   | no       | Machine identities this routine runs on (matched against `machine.local.toml`). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
+| `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
 
 **Workbenches and cleanup:** each run executes in a workbench under
 `~/.moadim/workbenches/`. Finished, expired workbenches are reaped on an
@@ -204,9 +207,11 @@ things on the host beyond the `claude` CLI itself:
 
 - **`python3`** — the agent's `setup` step runs a short `python3` snippet to
   pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
-  approvals) so the unattended session never blocks on a prompt. If `python3` is
-  not on `PATH`, the setup step fails and the run no-ops — the routine still
-  shows a healthy (green) status, but the agent never actually launches.
+  approvals) so the unattended session never blocks on a prompt. If `python3`
+  is not on `PATH`, the setup step fails and the run no-ops. This is now
+  surfaced (not just silent): the daemon logs a startup warning and
+  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, though
+  the affected routine's own health dot still shows green.
 - **`tmux`** — every routine run is launched inside a tmux session (named after
   the run's workbench), so a tmux binary must be installed.
 
@@ -318,10 +323,14 @@ with a message on stderr.
 
 ### Data commands
 
-Beyond lifecycle, the CLI exposes **every** routine action the REST API and MCP tools
+Beyond lifecycle, the CLI exposes the same routine actions the REST API and MCP tools
 do — they are thin clients that send the same JSON to the running server and print its response
 (pretty-printed JSON, or raw text for logs / the iCalendar feed). Like `status`/`stop`/`cleanup`,
 they exit `3` when no server is reachable and `1` on a non-2xx response.
+
+Routine flags (`create_flag`/`list_flags`/`resolve_flag`) and the global routine lock
+(`get_lock_status`/`lock_routines`/`unlock_routines`) are REST/MCP-only for now — there is no
+`moadim` subcommand for them yet.
 
 ```sh
 # Routines (alias: `routine`)
@@ -338,7 +347,6 @@ moadim routines delete <id>
 
 # Misc
 moadim agents                 # list available agent keys
-moadim echo "hello"           # echo via the server (with a server timestamp)
 ```
 
 Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.

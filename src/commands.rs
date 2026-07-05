@@ -1,7 +1,8 @@
 //! Data-plane CLI subcommands.
 //!
-//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so every action is reachable
-//! from the command line too. Each subcommand is a thin client: it serializes its flags into the
+//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so most actions are
+//! reachable from the command line too — routine flags and the global routine lock are
+//! REST/MCP-only for now. Each subcommand is a thin client: it serializes its flags into the
 //! same JSON the REST API expects, sends it to the running server over the loopback HTTP client in
 //! [`crate::cli`], and prints the server's response. The daemon must already be running
 //! (`moadim` / `moadim -i`); when it is not, these commands report that and exit
@@ -25,7 +26,7 @@ struct DataCli {
     command: DataCommand,
 }
 
-/// The data subcommand groups: routines, agents, and echo.
+/// The data subcommand groups: routines and agents.
 #[derive(Subcommand)]
 enum DataCommand {
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
@@ -40,11 +41,6 @@ enum DataCommand {
     Schedule(ScheduleCmd),
     /// List the available agent registry keys.
     Agents,
-    /// Echo a message back via the server, with a server timestamp.
-    Echo {
-        /// The message to echo.
-        message: String,
-    },
 }
 
 /// Schedule operations driven by the OS crontab, keyed only by ID.
@@ -82,6 +78,9 @@ enum RoutineCmd {
         /// Task prompt.
         #[arg(long)]
         prompt: String,
+        /// Short (≤5 line) statement of the routine's goal — the "why" behind the prompt.
+        #[arg(long)]
+        goal: Option<String>,
         /// Repositories as a JSON array (e.g. `[{"repository":"url","branch":"main"}]`).
         #[arg(long)]
         repositories: Option<String>,
@@ -128,6 +127,9 @@ enum RoutineCmd {
         /// New prompt.
         #[arg(long)]
         prompt: Option<String>,
+        /// New goal (≤5 lines), or an empty string to clear it. Omit to keep the existing value.
+        #[arg(long)]
+        goal: Option<String>,
         /// New repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
@@ -168,6 +170,9 @@ enum RoutineCmd {
         /// Task prompt.
         #[arg(long)]
         prompt: String,
+        /// Short (≤5 line) statement of the routine's goal — the "why" behind the prompt.
+        #[arg(long)]
+        goal: Option<String>,
         /// Repositories as a JSON array.
         #[arg(long)]
         repositories: Option<String>,
@@ -235,10 +240,6 @@ fn dispatch(command: DataCommand) -> i32 {
             None,
         ),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
-        DataCommand::Echo { message } => {
-            let body = object([("message", Value::String(message))]);
-            request("POST", "/api/v1/echo", Some(&body))
-        }
     }
 }
 
@@ -251,6 +252,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             model,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -263,6 +265,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             model,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -282,6 +285,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             model,
             prompt,
+            goal,
             repositories,
             machines,
             enabled,
@@ -295,6 +299,8 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             insert_opt(&mut map, "agent", agent.map(Value::String));
             insert_opt(&mut map, "model", model.map(Value::String));
             insert_opt(&mut map, "prompt", prompt.map(Value::String));
+            // Omitting `--goal` keeps the existing value (key absent); `--goal ""` clears it.
+            insert_opt(&mut map, "goal", goal.map(Value::String));
             match insert_json_opt(&mut map, "repositories", repositories) {
                 Ok(()) => {}
                 Err(code) => return code,
@@ -325,6 +331,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             model,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -337,6 +344,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             agent,
             model,
             prompt,
+            goal,
             repositories,
             machines,
             ttl_secs,
@@ -370,6 +378,7 @@ fn routine_body(
     agent: String,
     model: Option<String>,
     prompt: String,
+    goal: Option<String>,
     repositories: Option<String>,
     machines: Option<String>,
     ttl_secs: Option<u64>,
@@ -383,6 +392,7 @@ fn routine_body(
     map.insert("agent".to_string(), Value::String(agent));
     insert_opt(&mut map, "model", model.map(Value::String));
     map.insert("prompt".to_string(), Value::String(prompt));
+    insert_opt(&mut map, "goal", goal.map(Value::String));
     insert_json_opt(&mut map, "repositories", repositories)?;
     insert_json_opt(&mut map, "machines", machines)?;
     insert_opt(&mut map, "ttl_secs", ttl_secs.map(Value::from));
@@ -427,15 +437,6 @@ fn insert_json_opt(
             Err(2)
         }
     }
-}
-
-/// Build a small JSON object body from key/value pairs.
-fn object<const N: usize>(pairs: [(&str, Value); N]) -> String {
-    let mut map = Map::new();
-    for (key, value) in pairs {
-        map.insert(key.to_string(), value);
-    }
-    to_body(map)
 }
 
 /// Serialize a JSON object map into a compact request body string.

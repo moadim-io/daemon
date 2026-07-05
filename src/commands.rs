@@ -371,7 +371,10 @@ fn routine_path(id: &str) -> String {
 
 /// Build the full create/replace JSON body for a routine, validating optional `repositories` as a
 /// JSON array. Returns the serialized body, or an exit code (`2`) when `repositories` is invalid.
-#[allow(clippy::too_many_arguments, reason = "all parameters map to distinct CLI flags with no natural grouping")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "all parameters map to distinct CLI flags with no natural grouping"
+)]
 fn routine_body(
     schedule: String,
     title: String,

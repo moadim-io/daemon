@@ -65,6 +65,7 @@ src/
 │   ├── time.rs           now_secs() — Unix timestamp helper
 │   ├── atomic.rs         atomic_write() — torn-write-safe file writes
 │   ├── cron.rs           cron expression normalization/validation
+│   ├── fs_perms.rs       create_private_dir_all() — owner-only (0700) directory creation
 │   ├── lock.rs           Mutex-poisoning recovery helper
 │   ├── process.rs        process-liveness helpers
 │   └── startup_print.rs  startup banner (REST/MCP/UI URLs)
@@ -76,6 +77,16 @@ src/
 
 ui/                      Yew workspace member (separate Cargo.toml)
 ```
+
+### Filesystem permissions
+
+The daemon's on-disk tree is a secret/transcript store (agent.log transcripts, prompt.md instructions, token-referencing routine state), so on unix it is created **owner-only**:
+
+- Directories under `~/.config/moadim/` are made `0700` via `utils::fs_perms::create_private_dir_all`.
+- Files published by `utils::atomic::atomic_write` (routine state, the `prompt.md` sidecar, `machine.local.toml`) are created `0600` before the rename, so they are never briefly world-readable.
+- Each routine's launch script sets `umask 077` before its first `mkdir`, so the workbench dir it creates (`0700`) and everything written inside it — the copied `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` — stays unreadable by other local accounts.
+
+Pre-existing files from older installs are tightened on their next write (the modes are not retroactively migrated). Non-unix builds fall back to default permissions.
 
 ---
 

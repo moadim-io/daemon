@@ -688,3 +688,6 @@ fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
 
 #[path = "command_run_id_tests.rs"]
 mod command_run_id_tests;
+
+#[path = "command_umask_tests.rs"]
+mod command_umask_tests;

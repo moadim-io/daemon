@@ -1641,6 +1641,11 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Changed
 
+- `moadim --help` now documents every flag the parser accepts, including the
+  `-f`/`--foreground` and `-d`/`--detach`/`--daemon` aliases and the `--version`
+  long form, so the help text can no longer silently drift from what `moadim`
+  actually parses; a new test asserts every accepted flag appears in the help
+  text (#340).
 - HTTP request logs now carry a short per-request correlation id. Each request
   emits an inbound line (`[0000001a] <- GET /api/v1/health`) and an outbound
   line (`[0000001a] -> 200 /api/v1/health in 2ms`) sharing the same id, so the

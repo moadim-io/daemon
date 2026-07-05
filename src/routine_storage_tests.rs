@@ -47,6 +47,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -335,6 +336,70 @@ fn write_routine_clears_stale_sidecar_when_untriggered() {
             load_routine_from_dir(&slug).unwrap().last_manual_trigger_at,
             None
         );
+    });
+}
+
+#[test]
+fn power_saving_persists_to_sidecar_not_routine_toml() {
+    // Power saving is daemon/policy-owned runtime state, like `last_manual_trigger_at`: it lives in
+    // the gitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`.
+    with_override_home(|_home| {
+        let title = "Rs Power Saving Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-power-saving-id", title);
+        routine.power_saving = true;
+        write_routine(&routine).unwrap();
+
+        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+        assert!(
+            !toml_text.contains("power_saving"),
+            "routine.toml must not carry power-saving state: {toml_text}"
+        );
+        assert!(crate::paths::routine_state_path(&slug).exists());
+        let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();
+        assert!(state_text.contains("power_saving"));
+        assert!(load_routine_from_dir(&slug).unwrap().power_saving);
+    });
+}
+
+#[test]
+fn load_routine_defaults_power_saving_false_for_legacy_sidecar() {
+    // A `state.local.toml` written before `power_saving` existed (e.g. only carrying a manual
+    // trigger timestamp) must still load, defaulting the new field to `false` rather than failing
+    // to parse — the same upgrade-safety guarantee the other sidecar fields already have.
+    with_override_home(|_home| {
+        let title = "Rs Legacy Sidecar Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine("rs-legacy-sidecar-id", title)).unwrap();
+        std::fs::write(
+            crate::paths::routine_state_path(&slug),
+            "last_manual_trigger_at = 111\n",
+        )
+        .unwrap();
+
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.last_manual_trigger_at, Some(111));
+        assert!(!loaded.power_saving);
+    });
+}
+
+#[test]
+fn write_routine_clears_stale_sidecar_when_power_saving_cleared() {
+    with_override_home(|_home| {
+        let title = "Rs Clear Power Saving Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-clear-power-saving-id", title);
+        routine.power_saving = true;
+        write_routine(&routine).unwrap();
+        assert!(crate::paths::routine_state_path(&slug).exists());
+
+        routine.power_saving = false;
+        write_routine(&routine).unwrap();
+        assert!(
+            !crate::paths::routine_state_path(&slug).exists(),
+            "sidecar should be removed once power saving clears and no other runtime state remains"
+        );
+        assert!(!load_routine_from_dir(&slug).unwrap().power_saving);
     });
 }
 

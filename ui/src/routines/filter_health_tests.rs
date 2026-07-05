@@ -34,6 +34,7 @@ fn routine(
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         tags: vec![],
         agent_registered: false,
@@ -101,6 +102,44 @@ fn last_fire_at_equal_timestamps_returns_that_value() {
 fn health_disabled_routine_is_disabled() {
     let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
     assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn health_power_saving_routine_is_power_saving() {
+    let r = Routine {
+        power_saving: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::PowerSaving);
+}
+
+#[test]
+fn health_disabled_outranks_power_saving() {
+    // `enabled: false` is checked first: a disabled routine is still `Disabled`, not
+    // `PowerSaving`, even if power_saving is also set.
+    let r = Routine {
+        power_saving: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn trigger_button_title_names_the_pause_reason() {
+    let disabled = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
+    assert_eq!(trigger_button_title(&disabled), "Routine is disabled");
+
+    let power_saving = Routine {
+        power_saving: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(
+        trigger_button_title(&power_saving),
+        "Routine is in power-saving mode"
+    );
+
+    let healthy = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true);
+    assert_eq!(trigger_button_title(&healthy), "Run now");
 }
 
 #[test]
@@ -300,6 +339,7 @@ fn health_priority_order_dormant_most_urgent() {
     );
     assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
     assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
-    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::Snoozed.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::PowerSaving.priority());
+    assert!(RoutineHealth::PowerSaving.priority() < RoutineHealth::Snoozed.priority());
     assert!(RoutineHealth::Snoozed.priority() < RoutineHealth::Healthy.priority());
 }

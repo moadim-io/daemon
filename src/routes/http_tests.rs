@@ -442,6 +442,7 @@ async fn build_app_serves_machines() {
             last_scheduled_trigger_at: None,
             snoozed_until: None,
             skip_runs: None,
+            power_saving: false,
             ttl_secs: None,
             max_runtime_secs: None,
         },

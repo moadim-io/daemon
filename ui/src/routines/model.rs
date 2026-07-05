@@ -53,6 +53,10 @@ pub struct Routine {
     /// `snoozed_until`.
     #[serde(default)]
     pub skip_runs: Option<u32>,
+    /// Whether firing is paused for power saving, independent of `enabled`. System/policy-owned;
+    /// not settable via create/update.
+    #[serde(default)]
+    pub power_saving: bool,
     /// Workbench retention (seconds) for finished runs; `None` falls back to the server default.
     #[serde(default)]
     pub ttl_secs: Option<u64>,

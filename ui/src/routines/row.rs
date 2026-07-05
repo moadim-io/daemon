@@ -7,7 +7,7 @@ use yew::prelude::*;
 use crate::reltime;
 use crate::schedule::{fmt_until, fmt_when, next_fires};
 
-use super::filter::{last_fire_at, routine_health};
+use super::filter::{last_fire_at, routine_health, trigger_button_title};
 use super::form::format_ttl;
 use super::model::Routine;
 use super::table::next_routine_run_cell;
@@ -235,7 +235,7 @@ pub fn routine_row(props: &RowProps) -> Html {
             <td><div class="cell-time">{updated}</div></td>
             <td>
                 <div class="row-actions">
-                    <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
+                    <button class="act-btn run" title={trigger_button_title(r)} aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
                     <button class="act-btn history" title="Run history" onclick={on_history}>{"HISTORY"}</button>
                     <button class="act-btn flags" title="Open flags" onclick={on_flags}>

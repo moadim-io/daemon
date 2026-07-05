@@ -406,6 +406,9 @@ pub fn svc_create(
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        // Power saving is system-driven, never settable via create/update — see
+        // `svc_set_power_saving`.
+        power_saving: false,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
         tags,
@@ -616,7 +619,8 @@ use service_trigger::migrate_workbenches;
 pub(crate) use service_trigger::sh_bin;
 pub use service_trigger::{
     svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_snooze, svc_trigger, svc_trigger_scheduled,
+    svc_resolve_flag, svc_run_log, svc_set_power_saving, svc_snooze, svc_trigger,
+    svc_trigger_scheduled,
 };
 
 #[cfg(test)]
@@ -646,6 +650,10 @@ mod service_runs_tests;
 #[cfg(test)]
 #[path = "service_trigger_tests.rs"]
 mod service_trigger_tests;
+
+#[cfg(test)]
+#[path = "service_power_saving_tests.rs"]
+mod service_power_saving_tests;
 
 #[cfg(test)]
 #[path = "service_coverage_tests.rs"]

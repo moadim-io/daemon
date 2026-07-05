@@ -24,6 +24,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,

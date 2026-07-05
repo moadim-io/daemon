@@ -18,12 +18,23 @@ use crate::routines::model::{
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
+///
+/// Refuses to launch (with a distinct [`AppError::Locked`] message) when the routine is
+/// user-disabled (`enabled: false`) or in power-saving mode — `enabled` and `power_saving` are
+/// independent signals, checked in that order so the response names whichever one is actually
+/// responsible.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    if !routine.enabled {
+        return Err(AppError::Locked("routine is disabled".into()));
+    }
+    if routine.power_saving {
+        return Err(AppError::Locked("routine is in power-saving mode".into()));
+    }
     let ts = now_secs();
     routine.last_manual_trigger_at = Some(ts);
     let routine = routine.clone();
@@ -47,12 +58,24 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
 /// is skipped here instead of spawned: `snoozed_until` clears itself once elapsed (that fire then
 /// runs), `skip_runs` decrements once per skipped fire and clears at zero. [`svc_trigger`] (manual)
 /// ignores both fields entirely, by design.
+///
+/// Also refuses to launch when the routine is user-disabled or in power-saving mode, same as
+/// [`svc_trigger`] — checked first, ahead of snooze, since a disabled/power-saving routine should
+/// never spawn regardless of its snooze state. In practice a disabled routine has no crontab line
+/// (see `sync::routines::build_block`), so this branch is a defense-in-depth guard for direct calls
+/// to this endpoint rather than the primary way disabled routines stay quiet.
 pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
     let mut lock = store.lock_recover();
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    if !routine.enabled {
+        return Err(AppError::Locked("routine is disabled".into()));
+    }
+    if routine.power_saving {
+        return Err(AppError::Locked("routine is in power-saving mode".into()));
+    }
 
     if let Some(until) = routine.snoozed_until {
         if now_secs() < until {
@@ -128,6 +151,26 @@ pub fn svc_snooze(
     let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
     routine.snoozed_until = snoozed_until;
     routine.skip_runs = skip_runs;
+    let routine = routine.clone();
+    drop(lock);
+    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    Ok(routine)
+}
+
+/// Set or clear a routine's power-saving state, without touching `enabled` or the crontab.
+///
+/// System/policy-owned, orthogonal to the user-owned `enabled` toggle (see
+/// [`Routine::power_saving`]): both [`svc_trigger`] and [`svc_trigger_scheduled`] refuse to launch
+/// while it is active, but the routine keeps its crontab line and its `enabled` value is untouched,
+/// so it resumes firing on its own once power saving is cleared.
+pub fn svc_set_power_saving(
+    store: &RoutineStore,
+    id: &str,
+    active: bool,
+) -> Result<Routine, AppError> {
+    let mut lock = store.lock_recover();
+    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
+    routine.power_saving = active;
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;

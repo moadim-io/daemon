@@ -188,6 +188,9 @@ pub async fn delete(
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
+///
+/// Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See
+/// [`svc_trigger`].
 #[utoipa::path(post, path = "/routines/{id}/trigger",
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, body = Routine), (status = 404, description = "Not found")))]

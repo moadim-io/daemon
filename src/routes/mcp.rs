@@ -92,6 +92,15 @@ struct SnoozeRoutineInput {
     skip_runs: Option<u32>,
 }
 
+/// Input for the `set_power_saving` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SetPowerSavingInput {
+    /// UUID of the routine to update.
+    id: String,
+    /// `true` to pause scheduled and manual firing for power saving, `false` to resume.
+    active: bool,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -290,6 +299,23 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(
             match routines::svc_snooze(&self.routines, &id, snoozed_until, skip_runs) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// Pause or resume a routine's scheduled and manual firing for power saving, without touching
+    /// its `enabled` state or crontab line.
+    #[tool(
+        description = "Set or clear a routine's power-saving state. While active, both trigger_routine and the routine's cron schedule refuse to launch it (distinctly from a disabled routine) — its enabled toggle and crontab line are untouched, so it resumes firing on its own once cleared."
+    )]
+    fn set_power_saving(
+        &self,
+        Parameters(SetPowerSavingInput { id, active }): Parameters<SetPowerSavingInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_set_power_saving(&self.routines, &id, active) {
                 Ok(routine) => ok(routine),
                 Err(error) => err(error),
             },

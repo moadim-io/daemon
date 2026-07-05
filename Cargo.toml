@@ -114,6 +114,12 @@ unwrap_used = "deny"
 # reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
 # would move). It states "borrow and iterate" at a glance.
 explicit_iter_loop = "deny"
+# Companion to `explicit_iter_loop` above: reject `for x in collection.into_iter()`
+# in favour of the equivalent `for x in collection`. `.into_iter()` here is
+# redundant — a plain `for` loop already calls it implicitly — so spelling it
+# out adds noise without adding meaning. The codebase is already clean, so
+# `deny` locks that in.
+explicit_into_iter_loop = "deny"
 # Reject `use some::module::*;` glob imports. Explicit imports make it clear
 # at the call site which module a name comes from, avoid silent breakage or
 # ambiguity when the globbed module adds a new item, and keep `rust-analyzer`

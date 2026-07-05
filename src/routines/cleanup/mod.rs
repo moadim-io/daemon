@@ -421,6 +421,10 @@ pub fn kill_sessions_for_deleted_routine(slug: &str) -> usize {
 mod cleanup_tests;
 
 #[cfg(test)]
+#[path = "cleanup_tmux_tests.rs"]
+mod cleanup_tmux_tests;
+
+#[cfg(test)]
 #[path = "cleanup_watchdog_tests.rs"]
 mod cleanup_watchdog_tests;
 

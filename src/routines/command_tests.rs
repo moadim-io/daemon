@@ -236,6 +236,7 @@ fn build_routine_command_guards_agent_setup_step() {
         command: "claude".to_string(),
         args: vec![],
         setup: Some("python3 seed.py".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
 
@@ -263,6 +264,7 @@ fn build_routine_command_omits_setup_guard_when_no_setup() {
         command: "claude".to_string(),
         args: vec![],
         setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
     };
     let cmd = build_routine_command(&routine, &agent);
     assert!(

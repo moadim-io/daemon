@@ -28,8 +28,8 @@ pub use linux::{install, uninstall};
 // `service_tests` submodule can reach them via `super::*` regardless of which OS compiles.
 #[cfg(all(test, target_os = "linux"))]
 use linux::{
-    linger_marker_path, loginctl_bin, render_unit, systemctl_bin, unit_path,
-    unit_path_from_config_dir, write_unit,
+    disable_linger_if_owned, linger_marker_path, loginctl_bin, render_unit, systemctl_bin,
+    unit_path, unit_path_from_config_dir, write_unit,
 };
 #[cfg(all(test, target_os = "macos"))]
 use macos::{

@@ -516,6 +516,16 @@ fn uninstall_disables_linger_only_when_moadim_owns_it() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn disable_linger_if_owned_returns_when_unit_has_no_parent() {
+    // Covers the `None` arm of `linger_marker_path()` reached from inside
+    // `disable_linger_if_owned()`: a unit path with no parent directory (e.g. the filesystem
+    // root) has nowhere to look for the ownership marker, so the function must return without
+    // touching `loginctl` or panicking, instead of unwrapping `None`.
+    disable_linger_if_owned(std::path::Path::new("/"));
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn run_succeeds_for_a_zero_exit_command() {

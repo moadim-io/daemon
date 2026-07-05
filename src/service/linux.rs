@@ -141,7 +141,7 @@ fn enable_linger(unit: &Path) {
 /// Disable lingering previously enabled by `install()` (#294), but only when the marker shows
 /// moadim was the one that turned it on — never touch lingering the operator enabled themselves
 /// for an unrelated reason.
-fn disable_linger_if_owned(unit: &Path) {
+pub(super) fn disable_linger_if_owned(unit: &Path) {
     let Some(marker) = linger_marker_path(unit) else {
         return;
     };

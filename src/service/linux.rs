@@ -25,6 +25,33 @@ pub(super) fn systemctl_bin() -> String {
     fallback
 }
 
+/// The `loginctl` executable, overridable via `MOADIM_LOGINCTL_BIN` so tests can substitute a
+/// no-op shim instead of toggling the developer's live systemd-logind lingering state. Mirrors
+/// `systemctl_bin()`.
+pub(super) fn loginctl_bin() -> String {
+    if let Ok(bin) = std::env::var("MOADIM_LOGINCTL_BIN") {
+        return bin;
+    }
+    // Same test-build guard as `systemctl_bin()`: never fall back to the real `loginctl` so a test
+    // that forgets to wire up `MOADIM_LOGINCTL_BIN` cannot toggle the developer's live lingering
+    // state. The guard path does not exist, so the eventual spawn fails harmlessly.
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-loginctl-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "loginctl".to_string();
+    fallback
+}
+
+/// Marker file (sibling to the systemd unit) recording that `install()` enabled lingering, so
+/// `uninstall()` disables it symmetrically and never clobbers lingering the operator enabled
+/// themselves for an unrelated reason.
+const LINGER_MARKER_NAME: &str = ".moadim-linger-enabled";
+
+/// Path to the lingering-ownership marker, sibling to the systemd unit file.
+pub(super) fn linger_marker_path(unit: &Path) -> Option<PathBuf> {
+    unit.parent().map(|dir| dir.join(LINGER_MARKER_NAME))
+}
+
 /// Absolute path to the systemd *user* unit file for the moadim service.
 pub(super) fn unit_path() -> anyhow::Result<PathBuf> {
     unit_path_from_config_dir(dirs::config_dir())
@@ -89,6 +116,42 @@ fn report_installed(unit: &Path) {
     println!("  status  systemctl --user status {SYSTEMD_UNIT_NAME}");
 }
 
+/// Enable lingering for the current user so the systemd user manager — and `moadim.service` with
+/// it — starts at boot and survives logout, instead of only running during an active login
+/// session (#294). Never fails `install()`: if `loginctl` is unavailable or the call errors (e.g.
+/// no systemd-logind, insufficient privilege), print a warning with the manual command instead of
+/// aborting the install.
+fn enable_linger(unit: &Path) {
+    match run(&loginctl_bin(), &["enable-linger"]) {
+        Ok(()) => {
+            if let Some(marker) = linger_marker_path(unit) {
+                // Best-effort: if the marker can't be written, uninstall just won't disable
+                // linger later, which is the safe direction to fail in.
+                let _ = std::fs::write(&marker, "");
+            }
+            println!("  linger  enabled (survives logout and starts at boot)");
+        }
+        Err(_) => {
+            println!("  linger  NOT enabled — service stops at logout, won't start at boot");
+            println!("          run `loginctl enable-linger` as this user for persistence");
+        }
+    }
+}
+
+/// Disable lingering previously enabled by `install()` (#294), but only when the marker shows
+/// moadim was the one that turned it on — never touch lingering the operator enabled themselves
+/// for an unrelated reason.
+fn disable_linger_if_owned(unit: &Path) {
+    let Some(marker) = linger_marker_path(unit) else {
+        return;
+    };
+    if !marker.exists() {
+        return;
+    }
+    let _ = run(&loginctl_bin(), &["disable-linger"]);
+    let _ = std::fs::remove_file(&marker);
+}
+
 /// Write the systemd user unit for the running binary and enable + start it.
 pub fn install() -> anyhow::Result<()> {
     let exe = moadim_exe()?;
@@ -96,6 +159,7 @@ pub fn install() -> anyhow::Result<()> {
     write_unit(&unit, &exe)?;
     enable_unit()?;
     report_installed(&unit);
+    enable_linger(&unit);
     Ok(())
 }
 
@@ -108,6 +172,7 @@ pub fn uninstall() -> anyhow::Result<()> {
             &systemctl,
             &["--user", "disable", "--now", SYSTEMD_UNIT_NAME],
         );
+        disable_linger_if_owned(&unit);
         std::fs::remove_file(&unit)?;
         let _ = run(&systemctl, &["--user", "daemon-reload"]);
         println!("moadim systemd user service removed ({})", unit.display());

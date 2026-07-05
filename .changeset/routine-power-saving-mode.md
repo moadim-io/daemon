@@ -1,17 +1,13 @@
 ---
-"moadim": patch
+"moadim": minor
 ---
 
-### Added
+feat(routines): per-routine power-saving mode, orthogonal to enabled
 
-- **Per-routine power-saving mode.** A routine can now be paused for power
-  saving independently of its `enabled` toggle — `enabled` stays user-owned
-  intent, `power_saving` is a separate, system/policy-owned throttle that both
-  must clear for a firing to launch (`enabled && !power_saving`). Set/cleared
-  via the new `set_power_saving` MCP tool (`svc_set_power_saving`); persisted
-  in the gitignored `state.local.toml` sidecar like `snoozed_until`/`skip_runs`,
-  never in the tracked `routine.toml`, and never touched by create/update. Both
-  `trigger_routine` and the routine's cron schedule now refuse to launch while
-  it (or `enabled: false`) is active, with a distinct message naming which one.
-  The web UI's health badge and "Run now" tooltip distinguish `POWER SAVING`
-  from `DISABLED`.
+Adds `power_saving: bool` alongside the existing user-owned `enabled` toggle:
+both must hold (`enabled && !power_saving`) for a manual or scheduled trigger
+to launch. `power_saving` is system/policy-owned, never touched by
+create/update, and persisted in the gitignored `state.local.toml` sidecar like
+`snoozed_until`/`skip_runs` rather than the tracked `routine.toml`. Set/cleared
+via the new `set_power_saving` MCP tool. The web UI's health badge and
+"Run now" tooltip distinguish `POWER SAVING` from `DISABLED`.

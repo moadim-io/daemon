@@ -11,6 +11,313 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-07-05
+
+Enable `clippy::needless_pass_by_ref_mut` in `[lints.clippy]`. The codebase was already clean against it (no violations), so this is a lint-only change that locks in the invariant that every `&mut` parameter is actually mutated through.
+
+fix: skip dirs with no routine.toml in the prompt-subfolder migration, so an orphaned routines/ dir no longer gets an empty prompts/prompt.pure.md resurrected on every startup
+
+chore: lower linecheck gate from 1500 to 1000 lines
+
+chore: lower linecheck gate from 2000 to 1500 lines
+
+chore: lower linecheck gate from 2500 to 2000 lines
+
+chore: lower linecheck gate from 1000 to 700 lines
+
+### Fixed
+
+- **The routine LOGS view search/highlight could panic the UI on ordinary Unicode log content.** `highlight()` found matches by lowercasing the whole line and then reapplying *those* byte offsets to the original (un-lowercased) string. Case folding isn't always byte-length-preserving (`ẞ`, U+1E9E, 3 bytes, lowercases to `ß`, U+00DF, 2 bytes) or even char-count-preserving (Turkish `İ` expands to two chars), so a matching search query after such a character could compute an offset that lands mid-character and panics on the slice (crashing the Yew render for that log line). The matching logic now projects each original char to exactly one lowercase char and tracks byte spans via `char_indices()`, so every slice boundary is guaranteed valid regardless of the log content's script.
+
+fix(ui): derive the Overview page's per-source `snoozed` flag from the same `now` already threaded through its KPI/attention/upcoming-run math instead of sampling `js_sys::Date::now()` inline, so `is_snoozed`/`from_routine`/`sources_of` stay deterministic and host-testable (this was silently broken: `cargo test --workspace` panicked with "cannot call wasm-bindgen imported functions on non-wasm targets" in 4 `overview_tests`, invisible in CI because `test.yml` only runs bare `cargo test`, which skips the `ui` workspace member).
+
+feat(ui): show open flag count in NEEDS ATTENTION detail column
+
+The NEEDS ATTENTION panel now shows "N open flag(s) — needs review"
+instead of a generic detail string for HasOpenFlags rows, so operators
+can see the severity at a glance without navigating into the routine.
+AttentionItem now carries flag_count; a new test verifies it is
+correctly propagated from SchedSource.
+
+feat(ui): surface routines with open flags in the NEEDS ATTENTION panel
+
+The overview's NEEDS ATTENTION panel caught config problems (DORMANT,
+DEAD SCHEDULE, AGENT MISSING) but was blind to runtime issues: routines
+whose agents raised flags during a run never appeared there. Operators
+had to discover flagged routines by scanning the routines table.
+
+Adds HasOpenFlags as an attention reason (rank 3, lowest priority so
+config faults still surface first). An enabled routine with flag_count > 0
+now appears in the panel with an "OPEN FLAGS — agent raised flags during
+a run — needs review" badge.
+
+Three new tests: open flags surfaces when otherwise healthy, config
+faults outrank flags, disabled routines with flags remain hidden.
+
+feat(ui): mute snoozed routines in the month calendar view
+
+Calendar chips for currently-snoozed routines now render at 45% opacity
+with an amber left border, matching the treatment added to the day
+timeline, so operators can see at a glance which future fire times belong
+to suppressed routines.
+
+feat(ui): show snoozed and flag indicators on day-timeline chips
+
+Day-view timeline chips now carry two additional signals:
+
+- **Snoozed routines** render at 45% opacity with an amber left-border
+  instead of the standard accent border, so operators can distinguish
+  suppressed fire times from active ones at a glance.
+- **Flagged routines** show a red `⚑N` badge on the chip so pending
+  flags are visible without leaving the timeline view.
+
+feat(ui): surface dependency health warnings and build info in the header
+
+Show "⚠ NO TMUX" (red, pulsing) and "⚠ NO PYTHON3" (amber) warning badges in
+the header when the daemon reports a missing runtime dependency. Extends the
+`Health` struct to include `dependencies` and `git_sha` from the existing
+`/api/v1/health` response, and displays the git SHA as a tooltip on the version
+label.
+
+feat(ui): add DORMANT tile to routines stats bar
+
+The routines stats bar now shows a DORMANT tile — the count of enabled
+routines assigned to no machine (they are enabled but will never fire).
+The tile turns amber when any dormant routines exist and acts as a
+clickable filter, narrowing the table to dormant routines.
+
+refactor(ui): extract inline styles from index.html to styles.css
+
+Moves the app's CSS out of a 1600+ line inline `<style>` block in
+`ui/index.html` into `ui/styles.css`, linked via trunk's
+`data-trunk rel="css"` asset pipeline. The self-hosted font-face
+data-URI stays inline.
+
+feat(ui): show flag age in the flags panel
+
+Each flag row now shows a relative timestamp ("3h ago", "2d ago") next
+to the scope badge, so operators can see at a glance how long a flag
+has been open without cross-referencing the file metadata.
+
+feat(ui): show open flag count header in flags panel
+
+The flags panel now shows "N open flag(s)" above the flag list so
+operators immediately see the total count without scrolling to the end.
+
+feat(ui): make FLAGS tile in stats bar a clickable filter
+
+The FLAGS tile in the routines stats bar was informational-only. It is
+now a clickable filter button (like SNOOZED, DUE SOON, etc.) that narrows
+the table to routines with one or more open flags. Clicking it again
+clears the filter. The tile border and value turn red when any flags are
+present.
+
+Adds `RoutineStatusFacet::HasFlags` with codec roundtrip and one new host
+test.
+
+feat(ui): add FLAGS KPI tile to overview dashboard
+
+Surface the total count of open flags across all routines as a FLAGS
+tile in the overview stat row. Red when non-zero, green when clear —
+gives operators an at-a-glance signal without navigating into individual
+routines. Adds `flag_count` to `SchedSource` and `flags` to `Kpis`.
+
+feat(ui): add Health option to routines group-by selector
+
+The routines GROUP BY selector now includes "Health" as an option.
+Choosing it partitions the routine list by the derived health badge
+(HEALTHY, SNOOZED, DORMANT, DEAD SCHEDULE, AGENT MISSING, DISABLED),
+making it easy to scan which routines share the same health state.
+
+feat(ui): add RefreshControl to heatmap page
+
+The heatmap page previously used a hard-coded 30 s background refresh
+with no user-visible indicator of when data was last loaded. It now
+shows the same RefreshControl as the Overview and Routines pages
+(Off / 5s / 15s / 30s / 60s dropdown + "updated N ago" freshness cue),
+sharing the same localStorage key so the chosen cadence is consistent
+across all pages.
+
+feat(ui): add SOURCES KPI tile to the schedule heatmap
+
+The heatmap stats bar now shows a SOURCES tile — the number of enabled
+routines that contributed at least one fire to the 7-day grid. This lets
+operators quickly distinguish a high-density grid (many routines, many
+fires) from a high-frequency grid (few routines, very frequent fires).
+
+chore(ui): extend the 700-line linecheck gate to the `ui` crate
+
+feat(ui): show freshness cue in logs and flags page headers
+
+The LOGS and FLAGS sub-pages now show "updated just now" / "updated Nm ago"
+in the page header after each load or manual refresh, matching the pattern
+already used on the Overview, Routines, and Heatmap pages.
+
+fix(ui): show "snoozed" in NEXT RUN cell instead of suppressed fire time
+
+When a routine is snoozed its scheduled fires are suppressed, but the
+NEXT RUN column still showed the upcoming time as if the run would happen.
+Now shows "snoozed" (muted, consistent with "paused" for disabled
+routines) so the table accurately reflects what will execute.
+
+Extracts `is_routine_snoozed` as a shared helper used by both
+`routine_health` and `next_routine_run_cell`, with four dedicated tests.
+
+feat(ui): add DORMANT KPI tile to the overview page
+
+The overview KPI row now includes a DORMANT tile — the count of enabled
+routines assigned to no machine (they are enabled but will never fire).
+The tile turns amber when any dormant routines exist, matching the DORMANT
+tile already present on the Routines page stats bar.
+
+feat(ui): show global lock banner on the overview page
+
+When routines are globally locked the OVERVIEW page now shows the same
+warning banner as the Routines tab. Previously users on the overview had
+no indication that scheduling and manual triggers were paused — they had
+to navigate to another tab to discover the lock. The banner shows which
+sentinels are active (SHARED .lock / LOCAL .local.lock) and is fetched
+alongside the routine list on every refresh cycle.
+
+feat(ui): add RefreshControl to overview page
+
+The overview page previously used a fixed 30 s background refresh with
+no user-visible indicator of when data was last loaded. It now shows the
+same RefreshControl as the Routines page (Off / 5s / 15s / 30s / 60s
+dropdown + "updated N ago" freshness cue), sharing the same
+localStorage key so the chosen cadence is consistent across pages.
+
+feat(ui): add UNLOCK ALL button to the overview page lock banner
+
+The overview page's lock banner previously showed "ROUTINES GLOBALLY
+LOCKED" as a read-only notice. It now renders the same `GlobalLockBanner`
+component used on the Routines page, which includes an UNLOCK ALL button.
+Operators no longer need to navigate to the Routines tab to clear a lock.
+
+feat(ui): show routine health status tags in command palette subtitles
+
+Routine entries in the ⌘K command palette previously showed only the
+schedule description. They now suffix status tags so operators can see
+health issues without leaving the palette:
+
+- "DISABLED" — routine is turned off
+- "SNOOZED" — skip_runs counter is active
+- "AGENT MISSING" — agent not registered
+- "FLAGS" — one or more open flags (appended alongside any other tag)
+
+Six new host tests cover the combinations.
+
+feat(ui): include routine tags in command palette search keywords
+
+Routine tags are now indexed as search keywords in the command palette
+(⌘K), so typing a tag name (e.g. "security", "weekly") surfaces all
+matching routines without needing to know their exact titles.
+
+feat(ui): show repository names on hover in routines REPOS column
+
+The REPOS count cell previously showed only a number with no way to see
+which repositories were linked without opening the edit form. Hovering
+now shows a newline-separated list of repository names as a native
+browser tooltip.
+
+feat(ui): show routine goal as subtitle in routines table TITLE column
+
+Routines with a goal set now show the first line of the goal text as a
+muted subtitle beneath the routine name in the TITLE column. Hovering
+reveals the full goal text. This surfaces the "why" behind the routine
+directly in the table without requiring the operator to open the edit form.
+
+feat(ui): make UNREGISTERED AGENT stat tile a clickable filter
+
+The "UNREGISTERED AGENT" tile on the routines stats bar was a read-only
+display div. It is now a clickable filter button (like DORMANT, FLAGS,
+SNOOZED) that filters the table to show only routines whose agent is not
+registered. The tile turns amber when any unregistered-agent routines exist.
+A new `AgentUnregistered` variant is added to `RoutineStatusFacet` so
+the filter state persists in the URL via the existing `status=` query param.
+
+feat(ui): add MACHINES column to the routines table
+
+The routines table now has a MACHINES column showing how many machines
+each routine is assigned to. When a routine has no machines assigned
+(dormant) the cell shows an amber "—" instead of a number, so operators
+can spot un-targeted routines without filtering. Hovering the count
+shows the full list of machine names.
+
+feat(ui): add SNOOZED and FLAGS tiles to routines page stats bar
+
+The Routines page stats bar previously only showed TOTAL, ENABLED,
+DISABLED, DUE SOON, and UNREGISTERED AGENT. It now also shows:
+
+- **SNOOZED** — count of routines with suppressed fires (clickable
+  filter like DUE SOON; amber when non-zero)
+- **FLAGS** — total open flags across all routines (red when non-zero)
+- **DUE SOON** — now correctly excludes snoozed routines (same fix as
+  the overview page in #945)
+
+Adds `Snoozed` to `RoutineStatusFacet` with roundtrip codec support and
+a filter-matching test.
+
+feat(ui): show snooze-until detail in the NEXT RUN cell
+
+Snoozed routines previously showed only "snoozed" in the NEXT RUN
+column. The cell now includes a secondary line with context:
+
+- "Nm left" / "Nh left" / "Nd left" — when a `snoozed_until` deadline
+  is set, showing how long until the routine resumes automatically.
+- "N run(s) skipped" — when a `skip_runs` counter is active.
+
+Seven new host tests cover all the formatting branches.
+
+fix(ui): exclude snoozed routines from DUE SOON count and UPCOMING RUNS table
+
+Snoozed routines appeared in the overview's DUE SOON KPI and UPCOMING
+RUNS table as if they would fire, even though their scheduled fires are
+suppressed. Fixes both to only include enabled, non-snoozed sources so
+the dashboard reflects what will actually run.
+
+feat(ui): add SNOOZED KPI tile to overview dashboard
+
+Surface the count of enabled routines whose scheduled fires are
+currently suppressed (snoozed or skip-runs active) as a SNOOZED tile
+in the overview stat row. Amber when non-zero, green when clear —
+makes it immediately visible when routines are intentionally silenced.
+
+feat(ui): show open-flag badge on upcoming-runs rows
+
+The UPCOMING RUNS table now shows a small "⚑ N" badge next to the name
+of any routine that has open flags, so operators can see at a glance
+which about-to-fire routines still need flag review without navigating
+to the NEEDS ATTENTION panel. Two new tests verify the flag count is
+correctly propagated from SchedSource to UpcomingRun.
+
+feat(ui): show raw cron in upcoming runs when no human description exists
+
+The SCHEDULE column in the upcoming runs table previously showed "—" for
+routines whose daemon had not yet computed a human-readable description.
+It now falls back to the raw cron expression (e.g. `*/15 * * * *`) so
+operators always see something actionable.
+
+## [0.22.0] - 2026-07-03
+
+### Changed
+
+- **Pre-push linecheck gate lowered from 3000 → 2500 lines per `.rs` file.** `service_tests.rs` was split again to comply — tags, machines, and model tests now live in `service_model_tests.rs`.
+
+### Changed
+
+- **Pre-push hook linecheck gate lowered from 3000 → 2500 lines per `.rs` file.** `service_tests.rs` (2677 lines) was split into `service_tests.rs` and `service_model_tests.rs` to satisfy the new ceiling.
+
+### Changed
+
+- **Pre-push hook now rejects `.rs` files exceeding 3000 lines.** Step 6 of `.githooks/pre-push` runs `linecheck --max-lines 3000` over all `src/**/*.rs` files. `cargo install linecheck` is required. `service_tests.rs` (3068 lines) was split into `service_tests.rs` and `service_flag_tests.rs` to satisfy the new gate.
+
+### Changed
+
+- **Scheduled and manual trigger history is now recorded in append-only `.log` files.** `scheduled.local.toml` (overwritten on each cron fire) is replaced by `scheduled.log`; the manual-trigger timestamp previously stored in `state.local.toml` moves to `manual.log`. Each file records one Unix timestamp per execution, giving a full run history instead of only the most recent timestamp. A startup migration seeds the log files from any legacy TOML sidecars found on disk and removes the old files, so existing installs upgrade transparently. The `.log` suffix matches the existing `*.log` gitignore pattern seeded into each routine directory.
+
+## [0.21.0] - 2026-07-03
+
 ### Added
 
 - **Per-routine power-saving mode.** A routine can now be paused for power
@@ -36,12 +343,359 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   `400 Bad Request`, and sending an empty string on update clears it. The three
   built-in default routines now ship with a goal. (#827)
 
+### Fixed
+
+- **"The 1 Percent" routine no longer mutates the live `~/.config/moadim` checkout.** Its PR step now clones the routines repo to a disposable temp directory and does all branch/commit/push work there, instead of running `checkout -b` / `commit` / `push` directly against the daemon's own routines checkout. This avoids leaving that checkout parked on a stale branch after merge and avoids racing the daemon's own reads of the routines folder.
+
+### Added
+
+- **`agent_command_available` on routine responses.** `RoutineResponse` now
+  reports whether the routine's agent `command` (e.g. `claude`, `codex`)
+  actually resolves on the daemon's `PATH`, distinct from the existing
+  `agent_registered` (which only checks that `<agent>.toml` exists). A
+  routine with a present, well-formed agent config but an uninstalled binary
+  previously looked identically healthy to one that could actually run.
+
+### Added
+
+- **A 30s per-request deadline on the REST API (`/api/v1/**`).** Previously the router had no request timeout at all: a wedged handler (e.g. blocking `crontab`/`tmux`/filesystem I/O with no `spawn_blocking`, #360) could hold its connection and a Tokio worker open forever with no upper bound and no error response. `POST`/`GET`/etc. requests to `/api/v1/**` that exceed the deadline now abort with `408 Request Timeout` instead of hanging indefinitely. The long-lived `/mcp` SSE stream is deliberately left outside this layer so legitimate streaming connections are unaffected (#402).
+
+### Changed
+
+- **Bumped `rmcp` from 1.7.0 to 2.0.0.** The MCP SDK's `Content`/`RawContent`
+  wrapper was replaced by the flat `ContentBlock` enum
+  (`Text`/`Image`/`Audio`/`Resource`/`ResourceLink`); the tool-result
+  constructors and test assertions were updated to match the new API. No
+  behavioral change for MCP clients.
+
+### Changed
+
+- Bumped `yew-router` from `0.18` to `0.20` and `yew` from `0.21` to `0.23`
+  (a required companion bump — `yew-router` 0.20 depends on `yew` 0.23) in
+  the `ui` crate. No source changes needed beyond the version bump; the
+  bundled Yew/WASM SPA builds and behaves the same.
+
+### Fixed
+
+- **Routine list no longer shows stale data after a page reload.** The server now sends `Cache-Control: no-store` on all API responses that don't already carry a cache directive, preventing browsers from heuristically caching `GET /routines` responses and serving stale JSON on reload.
+
+### Added
+
+- Group-by dimension selector for the Routines table (agent, machine, or status), mirroring the existing CronJobs page feature.
+
+### Added
+
+- **`--model` on the `moadim routines` CLI.** `create`, `update`, and
+  `replace` gain a `--model <id>` flag, threaded into the same JSON body the
+  REST route already accepts. The `model` field itself landed data/API-only
+  in #742 with a note that other surfaces were a follow-up; this closes the
+  gap for the terminal (the web UI form field remains a separate follow-up).
+  On `update`, `--model ""` clears the override back to the agent's own
+  default, matching the existing REST/MCP semantics.
+
+Enable `clippy::unnecessary_debug_formatting` and fix the three flagged `log::warn!` call sites (`routine_storage::migrate_prompt_files_from_dir`, `routines::agents::ensure_default_agents_in`) that Debug-formatted (`{path:?}`) a `Path`/`PathBuf` in a user-facing log line instead of using `.display()`, matching every other path already printed this way in the codebase.
+
+Enable `clippy::use_self` (issue #724) and replace the flagged `Type::Variant` spellings with `Self::Variant` inside their own `impl`/`match` blocks across `src/error.rs`, `src/machine/mod.rs`, `src/routines/agents/mod.rs`, `src/routines/flags.rs`, `src/sync/mod.rs`, and their test modules — purely mechanical, no behavior change.
+
+### Added
+
+- **`README.md` seeded into the config directory and its generated
+  subdirectories.** On every start, the daemon now writes a `README.md` into
+  `{config_dir}` (default `~/.config/moadim/`), `{config_dir}/routines/`, and
+  `{config_dir}/agents/` if one doesn't already exist there, explaining each
+  folder's layout — the top-level file covers the daemon-managed files
+  (`.gitignore`, `machine.local.toml`, `moadim.pid`, `daemon.log`), the
+  `routines/` one covers the per-routine directory structure
+  (`routine.toml`, `prompts/`, `flags/`, the `.local.` sidecars), and the
+  `agents/` one covers the agent registry format. So anyone who opens or
+  git-tracks the config folder directly has an orientation doc without
+  needing to consult the project README. Never overwrites an existing
+  `README.md`, so user edits are preserved.
+
+Serialize the crontab read-modify-write across concurrent syncs so overlapping `crontab -l` → edit → `crontab -` round trips can no longer interleave and clobber each other's writes.
+
+### Fixed
+
+- **A crontab-sync write failure panicked the daemon instead of degrading gracefully.** `write_crontab` piped the routine schedule into `crontab -` and `.expect()`'d both the stdin write and the child's exit status. If the external `crontab` process ever closed its end of the pipe early (e.g. it rejects malformed input mid-stream), the write failed with a broken-pipe error that panicked the request thread — even though every caller of crontab sync already treats a `SyncError` as warn-and-continue, not fatal. Both failure paths now propagate a `SyncError::Io` instead of panicking, and the child is always reaped via `wait()` even when the write fails.
+
+Correct the README and `commands.rs` module doc, which claimed the CLI exposes "every" routine action the REST API and MCP tools do — routine flags (`create_flag`/`list_flags`/`resolve_flag`) and the global routine lock (`get_lock_status`/`lock_routines`/`unlock_routines`) have no `moadim` subcommand and are REST/MCP-only.
+
+Clarify in doc comments and the OpenAPI spec that `PUT /routines/{id}` is a partial-merge alias for `PATCH`, not a full RFC 7231 replace (#872).
+
+### Added
+
+- **Escape dismisses open UI modals/dialogs.** The shutdown-confirm and
+  rename-machine dialogs and the routine edit/delete-confirm modals now all
+  close on `Esc`, matching the command palette's existing behavior.
+
+### Fixed
+
+- **`cargo doc` no longer fails on `main`.** The doc comment on `sh_bin()` in
+  `src/routines/service.rs` used an intra-doc link
+  (`` [`crate::sync::crontab_bin`] ``) to a private, unexported function,
+  which rustdoc can never resolve even with `--document-private-items`. This
+  tripped `#![deny(warnings)]` and broke the `cargo doc` CI check (and any
+  local `cargo doc` / `cargo install moadim` doc build) on every PR
+  regardless of what it touched. Replaced the broken link with plain text.
+
+Fix `write_routine_fails_on_gitignore_write_error` to actually exercise the `.gitignore` write-failure branch it claims to cover, instead of accidentally failing one line earlier on the `prompts/` subdir creation.
+
+### Fixed
+
+- **Corrected the `stop_json` doc comment's stale claim.** It said `stop --json`'s shape matches
+  `status --json` "exactly", but `status --json` later gained `uptime_secs`/`version` fields that
+  `stop --json` never got — the two shapes are a subset relationship (already enforced by
+  `status_and_stop_json_share_a_common_key_set`), not an exact match. Doc-only; no behavior change.
+
+Fix the routines UI failing to load with `missing field \`prompt\`` (#849) by adding `#[serde(default)]` to `Routine::prompt`, matching the server's `GET /routines` response which omits `prompt` by default since #825.
+
+### Fixed
+
+- **`moadim start` (foreground) could clobber an already-running daemon.** Running `moadim start` in the foreground while a background daemon was already up used to proceed anyway instead of failing fast. It now preflights with `ensure_not_running_for_foreground()` and exits with a clear error before binding, matching the existing background-start behavior.
+
+### Fixed
+
+- **Structurally guarded the routine-launch `sh` spawn against test builds.**
+  `spawn_routine_command` invoked `Command::new("sh")` directly, isolated in
+  tests only by convention (clearing `PATH`), unlike the `crontab_bin()` seam
+  (#175). A future test that triggers a routine without clearing `PATH` could
+  execute a real login shell — and thus a real agent launch — on the
+  developer's machine. Added `sh_bin()`, mirroring `crontab_bin()`: honors a
+  `MOADIM_SH_BIN` override, and in test builds defaults to a nonexistent path
+  when no override is set so the spawn fails harmlessly regardless of `PATH`
+  state. (#217)
+
+### Added
+
+`GET /health`'s `dependencies` now also reports `python3` (alongside the existing `tmux` flag), and the daemon logs a startup warning when it is missing. The built-in `claude` agent's `setup` step depends on `python3` to pre-seed workspace-trust state; previously a missing `python3` failed that step silently, with the routine still showing a healthy status.
+
+### Fixed
+
+- **A panicking HTTP handler no longer resets the connection with no response.**
+  Added `tower_http::catch_panic::CatchPanicLayer` as the outermost layer of
+  the Axum router, so an unexpected panic inside a handler now yields a plain
+  `500 Internal Server Error` response instead of the client seeing a dropped
+  connection and the server logging nothing (issue #337).
+
+### Fixed
+
+- **Routine VEVENTs in the `.ics` feed now carry a `DURATION`.** RFC 5545 requires a `VEVENT` to specify either `DTEND` or `DURATION`; without one, calendar clients rendered each fire as a zero-length instant. Every fire now emits `DURATION:PT15M`.
+
+### Fixed
+
+- **`GET /routines/{id}.ics` no longer panics on a poisoned routine store
+  lock.** `svc_ical_routine` locked the shared `RoutineStore` with
+  `.lock().expect("routine store lock poisoned")`, unlike its sibling
+  `svc_ical` (and every other store accessor) which already recovers via
+  `LockRecover::lock_recover()`. Since the store is a process-wide singleton,
+  any earlier panic while the lock was held anywhere in the daemon would
+  permanently poison it, and this one remaining call site would then panic
+  on every subsequent request to the per-routine iCal feed instead of
+  degrading gracefully like the rest of the API surface. Switched it to
+  `lock_recover()` to close that gap.
+
+Add test coverage for the `X-MICROSOFT-CDO-BUSYSTATUS:FREE` hint emitted alongside `TRANSP:TRANSPARENT` on routine iCal `VEVENT`s (#461).
+
+Move logging setup (`MOADIM_LOG_FORMAT`) into `src/logging/` module folder (`mod.rs` + `tests.rs`), matching the existing `src/utils/`/`src/paths/` convention. Pure file move, no behavior change (#852).
+
+### Fixed
+
+- **Workbench retention was measured from run trigger time, not finish time.** `effective_ttl_secs` is meant to keep a finished run around "only until the next run is due", but measuring age from the trigger timestamp subtracted the run's own duration from its retention window — a run whose duration exceeded its TTL was reaped on the very next sweep, sometimes seconds after completion. Retention is now based on when the run actually finished (`agent.log` mtime, clamped to at least the trigger time). (#174)
+
+### Fixed
+
+- **Renaming a routine no longer strands its prior run history under the old slug.** Workbenches (`~/.moadim/workbenches/{slug}-{ts}`) are keyed by a routine's title slug, not its stable id. `PATCH`/`PUT /routines/{id}` now migrates every existing `{old_slug}-{ts}` workbench to `{new_slug}-{ts}` when the title changes, so `GET /routines/{id}/logs` keeps finding prior runs and the cleanup watchdog keeps resolving an in-flight run to the renamed routine's own `ttl_secs`/`max_runtime_secs` instead of falling back to orphan defaults (#267).
+
+### Fixed
+
+- **OpenAPI spec version now tracks the crate version.** The generated OpenAPI
+  document previously reported a frozen `0.1.0`, regardless of the actual
+  `moadim` release. It now derives its `info.version` from `CARGO_PKG_VERSION`
+  at build time. (#309)
+
+### Fixed
+
+- **Pinned README `--json` shapes to actual CLI keys.** Added tests that parse
+  the documented `status`/`cleanup`/`stop` `--json` shape literals straight out
+  of `README.md` and assert they name exactly the keys the CLI emits, so a
+  field rename, addition, or removal in `cli.rs` can no longer drift silently
+  from the script-facing contract. (#345)
+
+### Fixed
+
+- **A failed routine launch left no trace anywhere.** The generated crontab line ran the prompt copy, the agent's `setup` step, and the `tmux` launch with no output redirection, so a failure in any of them (a `setup` error, `tmux new-session` failing, `PATH` not resolving `tmux`) went to cron's mail spool — silently discarded on the headless hosts this daemon targets, leaving no log to read next to the run's other artifacts. Everything after the workbench is created now runs inside a `{ … } >> "$WB/launch.log" 2>&1` group, so these failures are captured in the run's own workbench alongside `agent.log`. (#375)
+
+Remove the `fs_location` middleware (issue #356) that injected `x-server-root` / `x-server-exe-dir` headers, containing the daemon's absolute working-directory and executable paths, into **every** HTTP response. Nothing consumed these headers — the CLI reads JSON response bodies, and the shipped UI has zero references to them — so they were pure information-disclosure surface (OS username + filesystem layout) with no functional dependent. The same `FsLocation` data remains available to intentional callers via `GET /api/v1/health` and the MCP `health` tool.
+
+When renaming this machine via `PUT /api/v1/machine`, automatically update all routines that targeted the old name: replace the old machine name with the new one in each routine's `machines` list, persist the changes to disk, and re-sync the crontab. Previously only the machine identity file was updated, leaving routines orphaned on the renamed machine until each was manually edited.
+
+Echo each request's log correlation id back as an `x-request-id` response header (`src/middlewares/logger.rs`), reusing an inbound `x-request-id` when the caller supplies one instead of always minting a fresh counter-based id. Completes the remaining acceptance criterion of issue #354; the shared inbound/outbound log correlation itself already shipped.
+
+### Added
+
+- **`moadim restart --json`.** Emits the PID-rotation summary as a
+  machine-readable `{"old":N|null,"new":M}` object instead of the
+  human-readable `restarted: pid <old> -> <new>` line, mirroring the
+  `status`/`cleanup`/`stop` `--json` contract.
+
+### Added
+
+- **Optional `goal` for routines.** A routine can now carry a very short (at most
+  5 lines) statement of its goal — the "why" behind the prompt. It is optional
+  (default unset), persisted in the tracked `routine.toml`, and rendered into the
+  agent's `prompt.md` as a `## Goal` preamble ahead of the task. Settable across
+  every surface: REST (`goal` on the create/update bodies), MCP
+  (`create_routine`/`update_routine`), the CLI (`--goal` on
+  `routines create|replace|update`), and the web UI (a field in the routine
+  form). The value is trimmed; a goal longer than 5 lines is rejected with
+  `400 Bad Request`, and sending an empty string on update clears it. The three
+  built-in default routines now ship with a goal. (#827)
+
+### Added
+
+- **Optional per-routine model override.** `Routine`, `CreateRoutineRequest`,
+  `UpdateRoutineRequest`, persisted `RoutineToml`, and the MCP
+  `UpdateRoutineInput` all gain a `model: Option<String>` field, blank/whitespace
+  normalized to `None` (agent's own default). `build_routine_command` appends
+  `--model <id>` (shell-quoted) to the agent invocation when set, after the
+  agent's own args so it wins over any default. Defaults reconciliation treats
+  `model` as user-owned, like `tags`: never overridden by a built-in routine's
+  spec. Scoped to the data/API layer for now; the web UI form field is a
+  follow-up. (#742)
+
+### Changed
+
+- **A routine's prompt no longer lives inside `routine.toml`.** The raw prompt
+  is now stored in its own file, `prompts/prompt.pure.md`, and the composed
+  prompt (repositories preamble + raw prompt) moved from the top-level
+  `prompt.md` to `prompts/prompt.compiled.md` — both inside the routine's
+  directory. Embedding a long, often multi-line prompt as an escaped TOML
+  string made `routine.toml` awkward to diff and edit; giving the raw prompt
+  its own markdown file finishes the split the daemon already started for the
+  composed prompt. Existing installs are migrated automatically on the next
+  startup.
+
+### Added
+
+- **Routine snooze.** A new `snooze_routine` MCP tool lets an agent skip its own
+  upcoming *scheduled* (cron) fires — either until an absolute unix timestamp
+  (`snoozed_until`) or for a fixed count of upcoming fires (`skip_runs`) —
+  without touching `enabled`, the crontab, or manual triggers. A snoozed fire
+  is skipped before any workbench is spawned; `snoozed_until` clears itself
+  once elapsed and `skip_runs` decrements to zero, at which point the routine
+  fires normally again. Manual triggers (`trigger_routine`, the UI button)
+  always bypass snooze. The Routines table shows a `SNOOZED` badge for
+  affected routines.
+
+### Added
+
+- **SUBSCRIBE button on the routines calendar.** The calendar view's nav bar
+  now has a SUBSCRIBE button that copies the `/api/v1/routines.ics` feed URL
+  to the clipboard, so wiring the feed into an external calendar app no
+  longer requires reading the API docs to find the endpoint.
+
+Trim a routine's title before persisting it, so padded input no longer leaks surrounding whitespace into `routine.toml`, workbench `CLAUDE.md` disclosures, and the UI.
+
+Self-host the `Share Tech Mono` webfont (base64-embedded `@font-face` in `ui/index.html` / `prebuilt.html`) instead of fetching it from `fonts.googleapis.com`/`fonts.gstatic.com` at runtime. The served UI now renders offline, with no third-party requests on load, and no FOUT while the CDN round-trip completes (#467). Font is SIL OFL 1.1 licensed; see `ui/assets/share-tech-mono.OFL.txt`.
+
+Add tests for the 8 previously-uncovered `AppError::Internal` error branches in `src/routines/service.rs` (`svc_update`'s goal validation, `svc_trigger_scheduled`'s snooze/skip-runs write paths, `svc_snooze`, `svc_create_flag`, and `svc_resolve_flag`), closing `service.rs` to 100% region coverage. Test-only, no behavior change.
+
+### Fixed
+
+A routine whose composed prompt (prompt + repositories preamble + accumulated open flags) exceeded the OS per-argument limit (Linux `MAX_ARG_STRLEN`, 128 KiB) previously failed to launch with a silent, unreported `execve` error inside the detached tmux session — the run's health dot stayed green with no indication anything went wrong. This only affected agents (like the shipped `claude` default) whose config inlines the prompt via the `{prompt}` placeholder; `{prompt_file}`-based agents (`codex`, `hermes`) were never affected. The daemon now detects an oversized composed prompt before launching and skips the spawn with a visible warning instead.
+
+### Added
+
+- **`ETag` + `304 Not Modified` for the web UI.** `GET /` (and the SPA fallback
+  for client-routed paths) now sends a strong `ETag` for the embedded ~1.1 MB
+  `index.html`, and honors a matching `If-None-Match` with a bodyless `304`
+  instead of re-sending the full body on every load/refresh. `Cache-Control:
+  no-cache` keeps the browser revalidating on each request rather than trusting
+  a local TTL, since the content can change on any daemon upgrade. (#401)
+
+### Tests
+
+- Added a `cli_tests` regression guard (`status_and_stop_json_share_a_common_key_set`)
+  asserting that every object key `stop --json` emits also appears in
+  `status --json`, so the shared `{running,pid,address}` base contract between
+  the two `--json` shapes can't silently drift apart as fields are added to
+  one side but not the other.
+
+### Added
+
+- **`moadim status --wait[=SECS]`.** Polls `GET /health` every 200ms until a
+  server answers or `SECS` elapse (default 30) instead of checking once, so a
+  launch script can block on startup (`moadim && moadim status --wait`) rather
+  than sleeping a fixed guess before probing. Exits `0` once reachable and the
+  existing `3` on timeout, matching the `status`/`cleanup`/`stop` exit-code
+  contract.
+
+### Changed
+
+- **Closed the Linux systemd-service test gap that was failing `cargo llvm-cov (100% line floor)` on every PR.** `service::linux` (systemd user-unit install/uninstall) had no test seam for `systemctl` and almost no tests, so on the Linux CI runner it sat at ~17% line coverage while `service::macos` (fully seamed and tested) sat at 100% — tripping the repo-wide 100%-line floor and blocking merges regardless of what a PR actually touched. Added a `MOADIM_SYSTEMCTL_BIN` seam mirroring macOS's `MOADIM_LAUNCHCTL_BIN`, split `unit_path()` into a directly-testable `unit_path_from_config_dir()`, and added install/uninstall/write-unit tests mirroring the existing macOS coverage. No behavior change on either platform.
+
+### Tests
+
+- **Covered `routines::flags`'s I/O error paths.** `create_flag`,
+  `list_flags`, and `resolve_flag` each have a filesystem-error branch
+  (a failed `create_dir_all`, `read_to_string`, or `remove_file`) that
+  `cargo llvm-cov` region coverage showed had zero executions. Added three
+  tests exercising each: `create_flag_propagates_create_dir_failure`,
+  `list_flags_skips_entries_it_cant_read_as_text`, and
+  `resolve_flag_propagates_remove_failure`. No behavior change — this locks
+  the existing error handling in against a future regression.
+
+### Changed
+
+- Made the web UI's fixed-pixel dimensions fluid: command palette, modals,
+  confirm dialog, filter input, and calendar/day nav widths now use
+  `clamp()` instead of a single fixed width, and the schedule heatmap
+  shrinks its cell/label sizing under 640px instead of relying only on
+  horizontal scroll.
+
+### Fixed
+
+- **`slugify` dropped every non-ASCII character.** Routine titles written in
+  Hebrew, CJK, or Cyrillic (or Latin letters with diacritics like `é`/`ü`)
+  slugified to an empty string and fell back to the generic `"routine"` name,
+  so a second such routine collided on create (`409`) and the on-disk
+  workbench dir / tmux session name gave no hint which routine it belonged
+  to. `slugify` now uses `char::is_alphanumeric`/`char::to_lowercase` (Unicode
+  scalar values, not ASCII-only), so non-Latin titles keep their content and
+  two distinct non-Latin titles produce distinct slugs. (#262)
+
+Reject empty/whitespace-only entries in a routine's `machines` targeting list on create and update, and trim + dedupe the accepted entries. Previously an unvalidated entry (e.g. `""` or `" host "`) could never match `machine::targets`' exact-string comparison, silently excluding the routine from every machine — and a list of only empty strings slipped past the dormant-routine warning entirely, since that check only fires on an empty list (#600).
+
+Warn when the running daemon binary drifts from the one on disk after an in-place upgrade (#167).
+
+Widen restart-test timing margins to stop flaking under `cargo llvm-cov`.
+
+### Fixed
+
+- **Workbench launch path now derived from `paths::workbenches_dir()`.** The
+  generated cron launch command hardcoded `WB="$HOME/.moadim/workbenches/$SLUG-$TS"`
+  instead of going through the same seam the reaper (`routines/cleanup/mod.rs`)
+  and the LOGS view (`routines/service.rs`) already use. With
+  `MOADIM_HOME_OVERRIDE` set, this meant a run was *launched* under one path but
+  *reaped and listed* under another — leaking workbenches the reaper never sees
+  and leaving the LOGS view empty for real runs. The launch command now resolves
+  its base through `paths::workbenches_dir()`, with a regression test asserting
+  the two stay in sync under the override. No behavior change for the default
+  install. (#601)
+
 ## [0.20.0] - 2026-07-02
 
 Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagged in `cli::parse` (issue #719): the bare `None` arm into the `Background` arm, and the redundant explicit `-h`/`--help`/`help` arm that the trailing wildcard already covered.
 
 ### Added
 
+- **CI now enforces `cargo test` and the 100% line-coverage gate.** Previously
+  CI only ran fmt + clippy (`lint.yml`); `cargo test` and
+  `cargo llvm-cov --fail-under-lines 100` lived solely in the local pre-push
+  hook, so a PR from a fork (or from a contributor who skipped hook setup)
+  could break tests or drop coverage and still go green. A new `coverage` job
+  in `test.yml` mirrors the pre-push hook's `cargo-llvm-cov` invocation
+  exactly, keeping the local gate and CI in lockstep. (#150)
 - **Routine flags.** A routine's agent runs unattended inside tmux with no
   channel back to a human — until now. It (or a human, via MCP/HTTP) can
   raise a flag against a routine: a free-text `type` (e.g. `"bug"`, `"gap"`,
@@ -329,6 +983,15 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   this was caught because `ui` was outside the pre-push clippy gate and CI's
   equivalent gate had the same blind spot (now closed, see `--workspace`
   fix above).
+
+### Fixed
+
+- **Flaky `restart` test under `cargo llvm-cov`.** `stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops`
+  used a 60ms timeout against an 80ms fake-server stop delay, leaving margins too
+  tight to survive the scheduling jitter and slowdown that coverage
+  instrumentation adds, so it intermittently failed the pre-push 100%-coverage
+  gate. Widened to a 300ms timeout against a 450ms stop delay so the same
+  code path is still exercised with headroom to spare.
 
 ## [0.18.0] — 2026-06-30
 
@@ -972,6 +1635,16 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
   error messages read more directly. No behavior change.
 
+### Removed
+
+- Removed the vestigial `echo` demo endpoint/tool — the scaffold `POST
+  /api/v1/echo` REST route, the `echo` MCP tool, and their `EchoRequest` /
+  `EchoResponse` / `EchoInput` types and OpenAPI entries. It echoed a message
+  back with a server timestamp, served no product purpose, and only widened the
+  REST + MCP + OpenAPI surface; `GET /health` already covers liveness probing.
+  The committed `apis/openapi.json` is regenerated without the `/echo` path and
+  schemas (#359).
+
 ### Fixed
 
 - Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
@@ -1387,7 +2060,10 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/moadim-io/daemon/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/moadim-io/daemon/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/moadim-io/daemon/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/moadim-io/daemon/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/moadim-io/daemon/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/moadim-io/daemon/compare/v0.18.0...v0.19.0

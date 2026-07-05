@@ -1,6 +1,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 use super::*;
+use crate::paths::agent_toml_path;
 
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing
 /// the env var and the temp dir on drop. Keeps agent-registry reads (`agents_dir`/`agent_toml_path`)
@@ -238,4 +239,19 @@ fn from_routine_counts_open_flags() {
     assert_eq!(resp.flag_count, 2);
 
     crate::routine_storage::remove_routine_dir(&slug).unwrap();
+}
+
+#[test]
+fn from_routine_agent_registered_false_for_malformed_config() {
+    // Regression for #301: a present-but-malformed config is dropped at crontab-sync time, so it
+    // must not report as registered — file existence alone is not enough. (The parseable and
+    // absent cases are already covered by `from_routine_agent_command_available_true_when_command_resolves`
+    // and `from_routine_agent_command_available_false_when_agent_not_registered` above.)
+    let _home = TempHome::set();
+    std::fs::create_dir_all(agent_toml_path("model-test-malformed").parent().unwrap()).unwrap();
+    std::fs::write(agent_toml_path("model-test-malformed"), "command = [\n").unwrap();
+
+    let resp = RoutineResponse::from_routine(make_routine("model-test-malformed"));
+    assert!(!resp.agent_registered);
+    assert!(!resp.agent_command_available);
 }

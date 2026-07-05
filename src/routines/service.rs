@@ -4,20 +4,18 @@ use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{
-    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, ttl_ceiling_secs,
+    kill_sessions_for_deleted_routine, max_runtime_ceiling_secs, ttl_ceiling_secs,
 };
-use super::command::{build_routine_command, slugify};
-use super::flags::{self, Flag, FlagScope};
+use super::command::slugify;
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
-    RoutineSort, RoutineStore, SortOrder, UpdateRoutineRequest,
+    CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
+    RoutineStore, SortOrder, UpdateRoutineRequest,
 };
 
 /// Reject a blank (empty or whitespace-only) required text field.
@@ -262,13 +260,17 @@ fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppErr
 }
 
 /// Reject blank (empty/whitespace-only) `tags` entries and return a normalized copy with each tag
-/// trimmed.
+/// trimmed and duplicates collapsed (first occurrence kept).
 ///
 /// Tags are free-form labels for grouping routines; an empty list is valid. This only guards the
 /// contents of non-empty entries, mirroring [`validate_repositories`]: a blank label carries no
 /// meaning and would render as an empty chip, so it is refused at edit time rather than stored.
+/// The dedup step mirrors [`validate_machines`]: left unchecked, `["nightly", "nightly"]` (or a
+/// padded repeat like `" nightly "`) persists and renders as a doubled chip in the routine row and
+/// an inflated (if harmless) entry in the tag facet's per-tag matching, for a label that names one
+/// concept once.
 fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
-    let mut normalized = Vec::with_capacity(tags.len());
+    let mut normalized: Vec<String> = Vec::with_capacity(tags.len());
     for (index, tag) in tags.iter().enumerate() {
         let trimmed = tag.trim();
         if trimmed.is_empty() {
@@ -276,7 +278,9 @@ fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
                 "tags[{index}] must not be empty or whitespace-only"
             )));
         }
-        normalized.push(trimmed.to_string());
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
     }
     Ok(normalized)
 }
@@ -383,7 +387,11 @@ pub fn svc_create(
     let routine = Routine {
         id: Uuid::new_v4().to_string(),
         schedule: normalize_schedule(&req.schedule),
-        title: req.title,
+        // Trim before persisting so a padded title (`"  Deploy  "`) is not rendered
+        // verbatim into the workbench `CLAUDE.md` disclosure, the iCal `SUMMARY`, and
+        // the UI rows. Mirrors `validate_repositories`, which already normalizes the
+        // repository fields, and `validate_title`, which length-checks the trimmed value.
+        title: req.title.trim().to_string(),
         agent: req.agent,
         model: normalize_model(req.model),
         prompt: req.prompt,
@@ -496,7 +504,8 @@ pub fn svc_update(
         routine.schedule = normalize_schedule(&schedule);
     }
     if let Some(title) = req.title {
-        routine.title = title;
+        // Trim on rename for the same reason as `svc_create` above.
+        routine.title = title.trim().to_string();
     }
     if let Some(agent) = req.agent {
         routine.agent = agent;
@@ -534,6 +543,7 @@ pub fn svc_update(
     let new_slug = slugify(&routine.title);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     if new_slug != old_slug {
+        migrate_workbenches(&old_slug, &new_slug);
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
     }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
@@ -542,323 +552,109 @@ pub fn svc_update(
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Rename `old_name` to `new_name` in every routine's `machines` list, persist each changed
+/// routine to disk, and sync the crontab so the new machine identity takes effect immediately.
+///
+/// Called automatically by `put_machine` so that renaming this daemon's machine identity also
+/// updates all the routines that targeted it by the old name.
+pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) {
+    if old_name == new_name {
+        return;
+    }
+    let now = now_secs();
+    let updated: Vec<_> = {
+        let mut lock = store.lock_recover();
+        lock.values_mut()
+            .filter(|routine| routine.machines.iter().any(|machine| machine == old_name))
+            .map(|routine| {
+                for machine in &mut routine.machines {
+                    if machine == old_name {
+                        *machine = new_name.to_string();
+                    }
+                }
+                routine.updated_at = now;
+                routine.clone()
+            })
+            .collect()
+    };
+    for routine in &updated {
+        if let Err(err) = write_routine(routine) {
+            log::warn!(
+                "failed to persist machine rename for routine {}: {err}",
+                routine.id
+            );
+        }
+    }
+    if !updated.is_empty() {
+        if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+            log::warn!("crontab sync after machine rename failed: {err}");
+        }
+    }
+}
+
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
+///
+/// Also force-kills any in-flight workbench session(s) for this routine's slug, so a deleted
+/// routine's agent doesn't keep running unsupervised until the next TTL sweep (#333).
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
-    remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
+    let slug = slugify(&routine.title);
+    let killed = kill_sessions_for_deleted_routine(&slug);
+    if killed > 0 {
+        log::warn!(
+            "routine delete: killed {killed} in-flight session(s) for deleted routine {slug:?}"
+        );
+    }
+    remove_routine_dir(&slug).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
 
-/// Record a manual trigger for `id` and spawn the same command the crontab would run.
-///
-/// Refuses to launch (with a distinct [`AppError::Locked`] message) when the routine is
-/// user-disabled (`enabled: false`) or in power-saving mode — `enabled` and `power_saving` are
-/// independent signals, checked in that order so the response names whichever one is actually
-/// responsible.
-pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    if crate::global_lock::is_globally_locked() {
-        return Err(AppError::Locked("routines are globally locked".into()));
-    }
-    let mut lock = store.lock_recover();
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    if !routine.enabled {
-        return Err(AppError::Locked("routine is disabled".into()));
-    }
-    if routine.power_saving {
-        return Err(AppError::Locked("routine is in power-saving mode".into()));
-    }
-    routine.last_manual_trigger_at = Some(now_secs());
-    let routine = routine.clone();
-    drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    spawn_routine_command(&routine);
-    Ok(routine)
-}
-
-/// Run a routine on its schedule: spawn the command the crontab line invokes, without recording a
-/// *manual* trigger.
-///
-/// This is the daemon-side endpoint that the generated crontab line drives
-/// (`moadim schedule trigger <id>`). Unlike [`svc_trigger`] it leaves `last_manual_trigger_at`
-/// untouched — the spawned command records `last_scheduled_trigger_at` in the routine's
-/// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
-/// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
-///
-/// A routine snoozed via [`svc_snooze`] (`snoozed_until` in the future, or `skip_runs` above zero)
-/// is skipped here instead of spawned: `snoozed_until` clears itself once elapsed (that fire then
-/// runs), `skip_runs` decrements once per skipped fire and clears at zero. [`svc_trigger`] (manual)
-/// ignores both fields entirely, by design.
-///
-/// Also refuses to launch when the routine is user-disabled or in power-saving mode, same as
-/// [`svc_trigger`] — checked first, ahead of snooze, since a disabled/power-saving routine should
-/// never spawn regardless of its snooze state. In practice a disabled routine has no crontab line
-/// (see `sync::routines::build_block`), so this branch is a defense-in-depth guard for direct calls
-/// to this endpoint rather than the primary way disabled routines stay quiet.
-pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    if crate::global_lock::is_globally_locked() {
-        return Err(AppError::Locked("routines are globally locked".into()));
-    }
-    let mut lock = store.lock_recover();
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    if !routine.enabled {
-        return Err(AppError::Locked("routine is disabled".into()));
-    }
-    if routine.power_saving {
-        return Err(AppError::Locked("routine is in power-saving mode".into()));
-    }
-
-    if let Some(until) = routine.snoozed_until {
-        if now_secs() < until {
-            return Err(AppError::Locked(format!("routine snoozed until {until}")));
-        }
-        routine.snoozed_until = None;
-        let routine = routine.clone();
-        drop(lock);
-        write_routine(&routine).map_err(|_| AppError::Internal)?;
-        spawn_routine_command(&routine);
-        return Ok(routine);
-    }
-    if let Some(runs) = routine.skip_runs {
-        if runs > 0 {
-            routine.skip_runs = (runs > 1).then_some(runs - 1);
-            let routine = routine.clone();
-            drop(lock);
-            write_routine(&routine).map_err(|_| AppError::Internal)?;
-            return Err(AppError::Locked(format!(
-                "routine snoozed, skipping this scheduled run ({} more to skip)",
-                routine.skip_runs.unwrap_or(0)
-            )));
-        }
-    }
-
-    let routine = routine.clone();
-    drop(lock);
-    spawn_routine_command(&routine);
-    Ok(routine)
-}
-
-/// Resolve the `sh` executable to invoke for a routine launch.
-///
-/// Honours the `MOADIM_SH_BIN` environment variable when set, falling back to the platform shell
-/// (`sh`) otherwise. The override exists so tests can point the spawn at a shim instead of running
-/// a real login shell.
-///
-/// In **test builds**, when no `MOADIM_SH_BIN` shim is configured this never falls back to the
-/// real `sh`: it returns a path that cannot exist, so the spawn fails harmlessly instead of
-/// launching a real agent process. This closes the same structural gap `crontab_bin()` in
-/// `crate::sync` closes for crontab I/O (issue #175) — a test that forgets to
-/// clear `PATH` or shim this binary still cannot execute a real command on the developer's
-/// machine (issue #217). Tests that need a working spawn set `MOADIM_SH_BIN` to a shim.
-fn sh_bin() -> String {
-    if let Ok(bin) = std::env::var("MOADIM_SH_BIN") {
-        return bin;
-    }
-    #[cfg(test)]
-    let fallback = "/nonexistent/moadim-test-sh-guard".to_string();
-    #[cfg(not(test))]
-    let fallback = "sh".to_string();
-    fallback
-}
-
-/// Set or clear a routine's snooze state, skipping its upcoming *scheduled* fires (see
-/// [`svc_trigger_scheduled`]) without touching `enabled` or the crontab. Manual triggers
-/// ([`svc_trigger`]) always ignore snooze.
-///
-/// `snoozed_until` and `skip_runs` are mutually exclusive: passing both `Some` is a
-/// [`AppError::BadRequest`]. Passing both `None` clears an active snooze.
-pub fn svc_snooze(
-    store: &RoutineStore,
-    id: &str,
-    snoozed_until: Option<u64>,
-    skip_runs: Option<u32>,
-) -> Result<Routine, AppError> {
-    if snoozed_until.is_some() && skip_runs.is_some() {
-        return Err(AppError::BadRequest(
-            "snoozed_until and skip_runs are mutually exclusive; set only one".into(),
-        ));
-    }
-    let mut lock = store.lock_recover();
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.snoozed_until = snoozed_until;
-    routine.skip_runs = skip_runs;
-    let routine = routine.clone();
-    drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    Ok(routine)
-}
-
-/// Set or clear a routine's power-saving state, without touching `enabled` or the crontab.
-///
-/// System/policy-owned, orthogonal to the user-owned `enabled` toggle (see
-/// [`Routine::power_saving`]): both [`svc_trigger`] and [`svc_trigger_scheduled`] refuse to launch
-/// while it is active, but the routine keeps its crontab line and its `enabled` value is untouched,
-/// so it resumes firing on its own once power saving is cleared.
-pub fn svc_set_power_saving(
-    store: &RoutineStore,
-    id: &str,
-    active: bool,
-) -> Result<Routine, AppError> {
-    let mut lock = store.lock_recover();
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.power_saving = active;
-    let routine = routine.clone();
-    drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    Ok(routine)
-}
-
-/// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
-/// the agent config cannot be loaded or the process cannot be spawned.
-///
-/// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
-/// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
-/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths.
-fn spawn_routine_command(routine: &Routine) {
-    match load_agent_command(&routine.agent) {
-        Ok(agent) => {
-            let cmd = build_routine_command(routine, &agent);
-            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
-            // manual trigger sources the user's `~/.profile` and the agent gets the same
-            // environment whether fired by cron or on demand.
-            let mut command = std::process::Command::new(sh_bin());
-            command.arg("-lc").arg(&cmd);
-            // Reap the child in the background so the short-lived launcher shell does not
-            // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
-            crate::utils::process::spawn_and_reap(command, "routine command");
-        }
-        Err(err) => log::warn!(
-            "trigger: cannot load agent {:?} ({}) for routine {:?}",
-            routine.agent,
-            err,
-            routine.id
-        ),
-    }
-}
-
-/// Reap finished, expired run workbenches immediately, returning how many were removed.
-///
-/// Runs the same sweep as the hourly background task ([`cleanup_expired_workbenches`]) but on
-/// demand, so callers need not wait for the next tick. Still-running sessions are never touched.
-pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
-    CleanupResponse {
-        removed: cleanup_expired_workbenches(store),
-    }
-}
-
-/// Return the contents of the newest workbench `agent.log` for routine `id`.
-pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    let mut newest: Option<(u64, String)> = None;
-    if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // Select only this routine's own workbenches by an *exact* slug match.
-            // A bare `{slug}-` prefix would also match another routine whose slug
-            // begins with this one (e.g. `logs` vs `logs-extra`), leaking that
-            // routine's log. Reusing the canonical `{slug}-{ts}` parser also makes
-            // "newest" a numeric timestamp comparison rather than a lexicographic
-            // one over the whole directory name.
-            if let Some((dir_slug, ts)) = parse_workbench_name(&name) {
-                if dir_slug == slug && newest.as_ref().is_none_or(|(newest_ts, _)| ts > *newest_ts)
-                {
-                    newest = Some((ts, name));
-                }
-            }
-        }
-    }
-    let Some((_, dir)) = newest else {
-        return Ok(String::new());
-    };
-    let log_path = workbenches_dir().join(dir).join("agent.log");
-    if !log_path.exists() {
-        return Ok(String::new());
-    }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
-}
-
-/// Reject a blank (empty/whitespace-only) flag `type` or `description`.
-fn validate_flag_field(field: &str, value: &str) -> Result<(), AppError> {
-    if value.trim().is_empty() {
-        return Err(AppError::BadRequest(format!(
-            "flag {field} must not be empty"
-        )));
-    }
-    Ok(())
-}
-
-/// Parse a `scope` string into a [`FlagScope`], returning `400 BadRequest` on unknown values.
-/// Mirrors `parse_lock_scope` in `handlers.rs`.
-fn parse_flag_scope(scope: &str) -> Result<FlagScope, AppError> {
-    match scope {
-        "general" => Ok(FlagScope::General),
-        "local" => Ok(FlagScope::Local),
-        other => Err(AppError::BadRequest(format!(
-            "unknown flag scope {other:?}; use \"general\" or \"local\""
-        ))),
-    }
-}
-
-/// Look up a routine by `id` and derive its slug, `NotFound` if it does not exist.
-fn routine_and_slug(store: &RoutineStore, id: &str) -> Result<(Routine, String), AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    Ok((routine, slug))
-}
-
-/// Raise a new flag against routine `id`. `flag_type` and `description` must be non-blank;
-/// `scope` is `"general"` (committed) or `"local"` (gitignored). Refreshes the routine's
-/// `prompts/prompt.compiled.md` afterward so the next run's "Open flags" section (see
-/// `compose_prompt`) includes it.
-pub fn svc_create_flag(
-    store: &RoutineStore,
-    id: &str,
-    flag_type: &str,
-    description: &str,
-    scope: &str,
-) -> Result<Flag, AppError> {
-    validate_flag_field("type", flag_type)?;
-    validate_flag_field("description", description)?;
-    let scope = parse_flag_scope(scope)?;
-    let (routine, slug) = routine_and_slug(store, id)?;
-    let flag =
-        flags::create_flag(&slug, flag_type, description, scope).map_err(|_| AppError::Internal)?;
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    Ok(flag)
-}
-
-/// List every open flag raised against routine `id`, oldest first.
-pub fn svc_list_flags(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppError> {
-    let (_, slug) = routine_and_slug(store, id)?;
-    Ok(flags::list_flags(&slug))
-}
-
-/// Resolve (delete) the flag named `filename` under routine `id`.
-///
-/// `NotFound` when the routine does not exist, `filename` is unsafe, or names no existing flag.
-/// Refreshes `prompts/prompt.compiled.md` afterward so a resolved flag stops appearing in the next
-/// run's prompt.
-pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Result<(), AppError> {
-    let (routine, slug) = routine_and_slug(store, id)?;
-    let resolved = flags::resolve_flag(&slug, filename).map_err(|_| AppError::Internal)?;
-    if !resolved {
-        return Err(AppError::NotFound);
-    }
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    Ok(())
-}
+#[path = "service_trigger.rs"]
+mod service_trigger;
+use service_trigger::migrate_workbenches;
+#[cfg(test)]
+pub(crate) use service_trigger::sh_bin;
+pub use service_trigger::{
+    svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
+    svc_resolve_flag, svc_run_log, svc_set_power_saving, svc_snooze, svc_trigger,
+    svc_trigger_scheduled,
+};
 
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
+
+#[cfg(test)]
+#[path = "service_sync_tests.rs"]
+mod service_sync_tests;
+
+#[cfg(test)]
+#[path = "service_flag_tests.rs"]
+mod service_flag_tests;
+
+#[cfg(test)]
+#[path = "service_model_tests.rs"]
+mod service_model_tests;
+
+#[cfg(test)]
+#[path = "service_logs_tests.rs"]
+mod service_logs_tests;
+
+#[cfg(test)]
+#[path = "service_runs_tests.rs"]
+mod service_runs_tests;
+
+#[cfg(test)]
+#[path = "service_trigger_tests.rs"]
+mod service_trigger_tests;
+
+#[cfg(test)]
+#[path = "service_coverage_tests.rs"]
+mod service_coverage_tests;
+
+#[cfg(test)]
+#[path = "service_slug_tests.rs"]
+mod service_slug_tests;

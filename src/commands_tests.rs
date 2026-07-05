@@ -265,7 +265,6 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
-        &["echo", "hello"],
     ];
     for call in calls {
         assert_eq!(run(argv(call)), 0, "call {call:?}");
@@ -325,12 +324,6 @@ fn insert_opt_only_inserts_present_values() {
     insert_opt(&mut map, "b", None);
     assert_eq!(map.get("a"), Some(&Value::Bool(true)));
     assert!(!map.contains_key("b"));
-}
-
-#[test]
-fn object_and_to_body_build_compact_json() {
-    let body = object([("message", Value::String("hi".to_string()))]);
-    assert_eq!(body, "{\"message\":\"hi\"}");
 }
 
 #[test]

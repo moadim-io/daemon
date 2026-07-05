@@ -74,6 +74,21 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 # file must be present in the same range. Set SKIP_CHANGELOG=1 to bypass (the
 # local equivalent of the `skip-changelog` PR label) for deliberately
 # undocumented src/ui changes.
+
+# ── 6. Line-count gate ────────────────────────────────────────────────────────
+# Requires: cargo install linecheck
+if ! command -v linecheck >/dev/null 2>&1; then
+  echo ""
+  echo "linecheck is not installed. Run:"
+  echo "  cargo install linecheck"
+  exit 1
+fi
+
+echo "Checking .rs files do not exceed 700 lines..."
+# shellcheck disable=SC2046
+linecheck --max-lines 700 $(find src ui/src -name '*.rs')
+echo "Line-count check passed."
+
 if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
   echo "Checking for a changeset covering src/ or ui/ changes..."
   # Range being pushed: everything on HEAD not yet on the upstream main branch,

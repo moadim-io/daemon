@@ -23,6 +23,7 @@ pub mod flags;
 mod handlers;
 mod ical;
 mod model;
+mod run_history;
 mod service;
 
 pub use agents::*;
@@ -38,3 +39,7 @@ pub(crate) use command::*;
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod routines_tests;
+
+#[cfg(test)]
+#[path = "mod_agents_tests.rs"]
+mod mod_agents_tests;

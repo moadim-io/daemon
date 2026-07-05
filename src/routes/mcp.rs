@@ -24,13 +24,6 @@ pub struct MoadimMcp {
     shutdown: ShutdownSignal,
 }
 
-/// Input for the `echo` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct EchoInput {
-    /// Message to echo back.
-    message: String,
-}
-
 /// Input for tools that operate on a single routine by ID.
 #[derive(Deserialize, JsonSchema)]
 struct IdInput {
@@ -188,18 +181,6 @@ impl MoadimMcp {
             "server_exe_dir": loc.server_exe_dir,
         });
         Ok(ok(val))
-    }
-
-    /// Echo `message` back together with the current server timestamp.
-    #[tool(description = "Echo a message back with a server timestamp")]
-    fn echo(
-        &self,
-        Parameters(EchoInput { message }): Parameters<EchoInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(serde_json::json!({
-            "message": message,
-            "timestamp": now_secs(),
-        })))
     }
 
     /// Return managed routines as a JSON array sorted by creation time.
@@ -512,3 +493,7 @@ impl MoadimMcp {
 #[cfg(test)]
 #[path = "mcp_tests.rs"]
 mod mcp_tests;
+
+#[cfg(test)]
+#[path = "mcp_lock_tests.rs"]
+mod mcp_lock_tests;

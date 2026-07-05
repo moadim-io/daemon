@@ -1,7 +1,8 @@
 //! Data-plane CLI subcommands.
 //!
-//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so every action is reachable
-//! from the command line too. Each subcommand is a thin client: it serializes its flags into the
+//! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so most actions are
+//! reachable from the command line too — routine flags and the global routine lock are
+//! REST/MCP-only for now. Each subcommand is a thin client: it serializes its flags into the
 //! same JSON the REST API expects, sends it to the running server over the loopback HTTP client in
 //! [`crate::cli`], and prints the server's response. The daemon must already be running
 //! (`moadim` / `moadim -i`); when it is not, these commands report that and exit
@@ -25,7 +26,7 @@ struct DataCli {
     command: DataCommand,
 }
 
-/// The data subcommand groups: routines, agents, and echo.
+/// The data subcommand groups: routines and agents.
 #[derive(Subcommand)]
 enum DataCommand {
     /// Manage routines (create/list/get/update/replace/delete/trigger/logs/ical).
@@ -40,11 +41,6 @@ enum DataCommand {
     Schedule(ScheduleCmd),
     /// List the available agent registry keys.
     Agents,
-    /// Echo a message back via the server, with a server timestamp.
-    Echo {
-        /// The message to echo.
-        message: String,
-    },
 }
 
 /// Schedule operations driven by the OS crontab, keyed only by ID.
@@ -244,10 +240,6 @@ fn dispatch(command: DataCommand) -> i32 {
             None,
         ),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
-        DataCommand::Echo { message } => {
-            let body = object([("message", Value::String(message))]);
-            request("POST", "/api/v1/echo", Some(&body))
-        }
     }
 }
 
@@ -445,15 +437,6 @@ fn insert_json_opt(
             Err(2)
         }
     }
-}
-
-/// Build a small JSON object body from key/value pairs.
-fn object<const N: usize>(pairs: [(&str, Value); N]) -> String {
-    let mut map = Map::new();
-    for (key, value) in pairs {
-        map.insert(key.to_string(), value);
-    }
-    to_body(map)
 }
 
 /// Serialize a JSON object map into a compact request body string.

@@ -87,10 +87,10 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
 }
 
 #[test]
-fn build_routine_command_stamps_scheduled_trigger_sidecar() {
-    // The generated launch script records each scheduled firing by writing `$TS` into the
-    // routine's `scheduled.local.toml` sidecar (best-effort, before the prompt-copy guard), since
-    // the OS crontab runs this script directly without the daemon observing the fire.
+fn build_routine_command_appends_scheduled_trigger_log() {
+    // The generated launch script records each scheduled firing by appending `$TS` to the
+    // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab
+    // runs this script directly without the daemon observing the fire.
     let routine = make_routine("Cmd Scheduled Stamp Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -99,20 +99,20 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
-    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
+    let log = crate::paths::routine_scheduled_log_path(&slugify(&routine.title))
         .to_string_lossy()
         .into_owned();
     assert!(
         cmd.contains(&format!(
-            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
-            shell_quote(&sidecar)
+            r#"printf '%s\n' "$TS" >> {} || true"#,
+            shell_quote(&log)
         )),
-        "expected scheduled-trigger sidecar stamp in: {cmd}"
+        "expected scheduled-trigger log append in: {cmd}"
     );
     // It must run before the prompt-copy guard so an aborted run still records the firing.
-    let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
+    let stamp = cmd.find("scheduled.log").unwrap();
     let copy = cmd.find("/prompt.md\"").unwrap();
-    assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
+    assert!(stamp < copy, "log append must precede the prompt copy");
 }
 
 #[test]
@@ -224,6 +224,54 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
             None => std::env::remove_var("HOME"),
         }
     }
+}
+
+#[test]
+fn build_routine_command_guards_agent_setup_step() {
+    // When an agent has a `setup` step, it must be fail-fast: a non-zero exit aborts the launch
+    // before `tmux new-session` runs, mirroring the `cp prompt.md` guard. Otherwise a failed setup
+    // (e.g. trust/onboarding pre-seed) is silently ignored and the agent hangs on the interactive
+    // prompt until the watchdog reaps it.
+    let routine = make_routine("Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: Some("python3 seed.py".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // The setup is inserted verbatim, wrapped in a `{ ...; } || { ...; exit 1; }` guard...
+    assert!(
+        cmd.contains(
+            r#"{ python3 seed.py; } || { echo "moadim: agent setup failed; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+        ),
+        "expected guarded setup step in: {cmd}"
+    );
+    // ...and the guard precedes the tmux launch, so a failed setup never reaches it.
+    let setup_pos = cmd.find("agent setup failed").unwrap();
+    let tmux_pos = cmd.find("tmux new-session").unwrap();
+    assert!(
+        setup_pos < tmux_pos,
+        "setup guard must precede tmux new-session in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_omits_setup_guard_when_no_setup() {
+    // With no `setup` step the guard is absent entirely (the `if let Some(setup)` arm is skipped).
+    let routine = make_routine("No Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        !cmd.contains("agent setup failed"),
+        "did not expect a setup guard with no setup step in: {cmd}"
+    );
 }
 
 #[test]
@@ -520,4 +568,92 @@ fn build_routine_command_omits_model_flag_when_unset() {
         !cmd.contains("--model"),
         "expected no --model flag in: {cmd}"
     );
+}
+
+#[test]
+fn build_routine_command_records_exit_code_after_invocation() {
+    // The tmux pane's shell-command must record `$?` to a *workbench-relative* `exit_code` file
+    // (not `$WB/exit_code`: `$WB` is never exported, so the new shell tmux spawns wouldn't see it)
+    // once the agent invocation finishes, so run-history can distinguish success from failure.
+    let routine = make_routine("Cmd Exit Code Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--permission-mode".to_string(), "auto".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The whole tmux shell-command (invocation + exit-code capture) is itself shell-quoted as one
+    // `tmux new-session` argument, which re-escapes the inner single quotes around `printf`'s
+    // `'%s'` into `'\''` — assert on ordering/content of the unescaped pieces rather than the
+    // exact (implementation-detail) escaped byte sequence.
+    let new_session_pos = cmd.find("tmux new-session").unwrap();
+    let invocation_pos = cmd.find("--permission-mode auto").unwrap();
+    // Multiple `printf`s appear earlier in the script (the disclosure write, the scheduled-fire
+    // stamp); only the one after the invocation is the exit-code capture.
+    let printf_pos = invocation_pos + cmd[invocation_pos..].find("printf").unwrap();
+    let exit_code_pos = cmd.rfind("> exit_code").unwrap();
+    assert!(
+        new_session_pos < invocation_pos
+            && invocation_pos < printf_pos
+            && printf_pos < exit_code_pos,
+        "expected exit-code capture after the invocation inside tmux new-session in: {cmd}"
+    );
+    assert!(cmd.contains(r#""$?""#), "expected $? capture in: {cmd}");
+    assert!(
+        !cmd.contains("$WB/exit_code"),
+        "exit_code must be workbench-relative, not $WB-prefixed, since $WB isn't exported: {cmd}"
+    );
+}
+
+#[test]
+fn inline_prompt_overflow_none_for_prompt_file_agent_regardless_of_size() {
+    // `{prompt_file}` (codex/hermes) passes the prompt as a path, never as an inlined argument, so
+    // it is never subject to the inline-argument cap no matter how large the composed prompt is.
+    let mut routine = make_routine("Cmd Overflow Prompt File Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_none_when_composed_prompt_fits() {
+    let routine = make_routine("Cmd Overflow Small Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
+    // A `{prompt}` agent (the shipped `claude` default) with a composed prompt over the inline
+    // cap must be flagged, so the caller can skip a launch doomed to fail silently (#443).
+    let mut routine = make_routine("Cmd Overflow Large Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let overflow = inline_prompt_overflow(&routine, &agent);
+    assert_eq!(overflow, Some(compose_prompt(&routine).len()));
+    assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
 }

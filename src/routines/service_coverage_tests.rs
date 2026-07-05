@@ -129,7 +129,7 @@ fn svc_create_rejects_empty_prompt() {
             schedule: "@daily".into(),
             title: "Svc Create Empty Prompt ZZZ".into(),
             agent: "claude".into(),
-            prompt: "".into(),
+            prompt: String::new(),
             goal: None,
             repositories: vec![],
             machines: vec![],

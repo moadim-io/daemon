@@ -92,6 +92,15 @@ pub(crate) fn format_ttl(ttl_secs: Option<u64>) -> String {
     }
 }
 
+/// (seconds, label) pairs for the WORKBENCH TTL preset buttons, mirroring the cron
+/// SCHEDULE presets: 1 hour, 1 day, 7 days, 30 days.
+const TTL_PRESETS: [(&str, &str); 4] = [
+    ("3600", "1h"),
+    ("86400", "1d"),
+    ("604800", "7d"),
+    ("2592000", "30d"),
+];
+
 #[function_component(RoutineForm)]
 pub fn routine_form(props: &FormProps) -> Html {
     let editing = props.editing.clone();
@@ -254,6 +263,11 @@ pub fn routine_form(props: &FormProps) -> Html {
         Callback::from(move |_: MouseEvent| schedule.set(val.to_string()))
     };
 
+    let set_ttl_preset = |val: &'static str| {
+        let ttl_raw = ttl_raw.clone();
+        Callback::from(move |_: MouseEvent| ttl_raw.set(val.to_string()))
+    };
+
     let on_cancel_click = {
         let cb = props.on_cancel.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -381,6 +395,11 @@ pub fn routine_form(props: &FormProps) -> Html {
                 </label>
                 <input class="form-input" type="number" min="0" placeholder="604800"
                     value={(*ttl_raw).clone()} oninput={on_ttl} autocomplete="off" spellcheck="false" />
+                <div class="ttl-presets">
+                    { for TTL_PRESETS.iter().map(|(val, label)| html! {
+                        <button class="preset-btn" onclick={set_ttl_preset(val)}>{*label}</button>
+                    }) }
+                </div>
             </div>
             <div class="form-group" style="margin-bottom:0">
                 <div class="toggle-row">

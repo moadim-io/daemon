@@ -39,6 +39,7 @@ toml = "1.1"
 rmcp = { version = "2.0.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 schemars = "1"
 tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["limit", "util"] }
 tower-http = { version = "0.7", features = ["catch-panic", "compression-gzip"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
@@ -53,9 +54,6 @@ libc = "0.2"
 [[bin]]
 name = "moadim"
 path = "src/main.rs"
-
-[dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 
 [build-dependencies]
 serde_json = "1"

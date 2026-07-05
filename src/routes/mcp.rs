@@ -1,5 +1,8 @@
 //! MCP server handler exposing routine tools over the Model Context Protocol.
 
+use crate::routes::http::ShutdownSignal;
+use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
+use crate::utils::time::now_secs;
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
@@ -7,10 +10,6 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-
-use crate::routes::http::ShutdownSignal;
-use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
-use crate::utils::time::now_secs;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -37,8 +36,7 @@ pub(super) struct ListRoutinesParam {
     /// When `true` (the default), only return routines targeting the current machine.
     /// Pass `false` to see routines from all machines.
     local_only: Option<bool>,
-    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`
-    /// so listings stay compact; use `get_routine` to see a single routine's prompt.
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false` so listings stay compact; use `get_routine` to see a single routine's prompt.
     include_prompts: Option<bool>,
 }
 
@@ -492,9 +490,11 @@ impl MoadimMcp {
 }
 
 #[cfg(test)]
-#[path = "mcp_tests.rs"]
-mod mcp_tests;
-
-#[cfg(test)]
 #[path = "mcp_lock_tests.rs"]
 mod mcp_lock_tests;
+#[cfg(test)]
+#[path = "mcp_parity_tests.rs"]
+mod mcp_parity_tests;
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod mcp_tests;

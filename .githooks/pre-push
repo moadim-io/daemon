@@ -97,9 +97,9 @@ if ! command -v linecheck >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Checking .rs files do not exceed 700 lines..."
+echo "Checking .rs files do not exceed 500 lines..."
 # shellcheck disable=SC2046
-linecheck --max-lines 700 $(find src ui/src -name '*.rs')
+linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 echo "Line-count check passed."
 
 if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then

@@ -90,6 +90,26 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
 }
 
 #[test]
+fn build_routine_command_extends_path_rather_than_replacing_it() {
+    // The exported PATH must keep the login shell's `$PATH` (where version managers such as
+    // nvm/pyenv/asdf/volta prepend their shim dirs when the profile is sourced) and only *append*
+    // the curated fallback dirs. A bare `export PATH=<curated>` would drop those shims and silently
+    // break agents that depend on a version-manager-selected node/python.
+    let routine = make_routine("Path Extend Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains("export PATH=$PATH:"),
+        "expected PATH to extend the profile's $PATH, not replace it, in: {cmd}"
+    );
+}
+
+#[test]
 fn build_routine_command_appends_scheduled_trigger_log() {
     // The generated launch script records each scheduled firing by appending `$TS` to the
     // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab

@@ -71,6 +71,11 @@ fn agent_path(home: &Path) -> String {
 /// `exe` is the absolute path to the `moadim` binary; `log` is where launchd writes its stdout and
 /// stderr; `home` derives the `PATH` (see [`agent_path`]). The agent runs `moadim --interactive` so
 /// launchd supervises it directly.
+///
+/// `KeepAlive` is a `{ SuccessfulExit = false }` dict (not unconditional `true`): launchd relaunches
+/// the agent only when it exits abnormally, so a crash is still auto-restarted but a clean shutdown
+/// — `moadim stop`, the UI STOP button, `POST /shutdown`, all of which exit `0` — stays stopped
+/// instead of being immediately resurrected by launchd.
 pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -87,7 +92,10 @@ pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path) -> String {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>StandardOutPath</key>
   <string>{log}</string>
   <key>StandardErrorPath</key>

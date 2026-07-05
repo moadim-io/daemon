@@ -41,6 +41,10 @@ pub(super) fn unit_path_from_config_dir(config_dir: Option<PathBuf>) -> anyhow::
 ///
 /// `exe` is the absolute path to the `moadim` binary. The service runs `moadim --interactive` in the
 /// foreground (`Type=simple`) so systemd supervises it and restarts it on failure.
+///
+/// `Restart=on-failure` (not `always`): a crash or abnormal exit is still auto-restarted, but a
+/// clean shutdown — `moadim stop`, the UI STOP button, `POST /shutdown`, all of which exit `0` —
+/// stays stopped instead of being resurrected ~5s later by the supervisor.
 pub(super) fn render_unit(exe: &Path) -> String {
     format!(
         "[Unit]\n\
@@ -50,7 +54,7 @@ pub(super) fn render_unit(exe: &Path) -> String {
          [Service]\n\
          Type=simple\n\
          ExecStart={exe} --interactive\n\
-         Restart=always\n\
+         Restart=on-failure\n\
          RestartSec=5\n\
          \n\
          [Install]\n\

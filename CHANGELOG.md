@@ -35,6 +35,12 @@ chore: lower linecheck gate from 1000 to 700 lines
 
 ### Fixed
 
+- `moadim stop` now sticks under a service install. The systemd unit and launchd
+  agent restarted on *any* exit (`Restart=always` / unconditional `KeepAlive`),
+  so a clean shutdown was resurrected by the supervisor ~5s later and `stop`
+  reported a false success. Restart is now failure-only (`Restart=on-failure` /
+  `KeepAlive = { SuccessfulExit = false }`): a crash is still auto-restarted, but
+  a clean stop stays stopped. (#444)
 - Routine listings (`GET /routines`) are now deterministic when several routines
   share the same sort key. The list is built from a `HashMap`, whose iteration
   order is unspecified, so equal-key routines previously came back in an

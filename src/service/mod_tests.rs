@@ -17,7 +17,14 @@ fn plist_carries_label_program_args_and_supervision_keys() {
     assert!(plist.contains("<string>/opt/moadim/bin/moadim</string>"));
     assert!(plist.contains("<string>--interactive</string>"));
     assert!(plist.contains("<key>RunAtLoad</key>"));
+    // KeepAlive is failure-only (a `{ SuccessfulExit = false }` dict, not unconditional `true`), so
+    // a clean `moadim stop` is not resurrected by launchd while a crash still restarts (#444).
     assert!(plist.contains("<key>KeepAlive</key>"));
+    assert!(plist.contains("<key>SuccessfulExit</key>"));
+    assert!(
+        !plist.contains("<key>KeepAlive</key>\n  <true/>"),
+        "KeepAlive must not be unconditional true"
+    );
     assert!(plist.contains("/Users/u/.config/moadim/daemon.log"));
     assert!(plist.contains("<key>EnvironmentVariables</key>"));
     assert!(plist.contains("/opt/homebrew/bin:/usr/local/bin:/Users/u/.cargo/bin"));
@@ -90,7 +97,10 @@ fn unit_carries_exec_start_and_install_section() {
     assert!(unit.contains("ExecStart=/opt/moadim/bin/moadim --interactive"));
     assert!(unit.contains("[Install]"));
     assert!(unit.contains("WantedBy=default.target"));
-    assert!(unit.contains("Restart=always"));
+    // Restart is failure-only, so a clean `moadim stop` (exit 0) is not resurrected by systemd
+    // while a crash still auto-restarts (#444).
+    assert!(unit.contains("Restart=on-failure"));
+    assert!(!unit.contains("Restart=always"));
 }
 
 #[cfg(target_os = "linux")]

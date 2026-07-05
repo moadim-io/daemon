@@ -7,10 +7,33 @@ use super::common::{moadim_exe, run};
 /// systemd user unit file name for the moadim service.
 const SYSTEMD_UNIT_NAME: &str = "moadim.service";
 
+/// The `systemctl` executable, overridable via `MOADIM_SYSTEMCTL_BIN` so tests can substitute a
+/// no-op shim instead of mutating the developer's live systemd user session. Mirrors the
+/// `MOADIM_LAUNCHCTL_BIN` seam on macOS.
+pub(super) fn systemctl_bin() -> String {
+    if let Ok(bin) = std::env::var("MOADIM_SYSTEMCTL_BIN") {
+        return bin;
+    }
+    // In test builds, never fall back to the real `systemctl`: a test that forgets to wire up the
+    // `MOADIM_SYSTEMCTL_BIN` shim must not mutate the developer's live systemd session. The guard
+    // path does not exist, so the eventual spawn fails harmlessly. Mirrors the `launchctl_bin()`
+    // guard on macOS.
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-systemctl-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "systemctl".to_string();
+    fallback
+}
+
 /// Absolute path to the systemd *user* unit file for the moadim service.
 pub(super) fn unit_path() -> anyhow::Result<PathBuf> {
-    let base = dirs::config_dir()
-        .ok_or_else(|| anyhow::anyhow!("could not determine the config directory"))?;
+    unit_path_from_config_dir(dirs::config_dir())
+}
+
+/// Resolve the systemd user unit path under `config_dir`, erroring when it's unknown.
+pub(super) fn unit_path_from_config_dir(config_dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    let base =
+        config_dir.ok_or_else(|| anyhow::anyhow!("could not determine the config directory"))?;
     Ok(base.join("systemd/user").join(SYSTEMD_UNIT_NAME))
 }
 
@@ -18,16 +41,20 @@ pub(super) fn unit_path() -> anyhow::Result<PathBuf> {
 ///
 /// `exe` is the absolute path to the `moadim` binary. The service runs `moadim --interactive` in the
 /// foreground (`Type=simple`) so systemd supervises it and restarts it on failure.
+///
+/// `Restart=on-failure` (not `always`): a crash or abnormal exit is still auto-restarted, but a
+/// clean shutdown — `moadim stop`, the UI STOP button, `POST /shutdown`, all of which exit `0` —
+/// stays stopped instead of being resurrected ~5s later by the supervisor.
 pub(super) fn render_unit(exe: &Path) -> String {
     format!(
         "[Unit]\n\
-         Description=moadim cron/MCP/REST daemon\n\
+         Description=moadim routine scheduler / MCP/REST daemon\n\
          After=network.target\n\
          \n\
          [Service]\n\
          Type=simple\n\
          ExecStart={exe} --interactive\n\
-         Restart=always\n\
+         Restart=on-failure\n\
          RestartSec=5\n\
          \n\
          [Install]\n\
@@ -37,7 +64,7 @@ pub(super) fn render_unit(exe: &Path) -> String {
 }
 
 /// Render the unit for `exe` and write it (creating parent dirs) to `unit`.
-fn write_unit(unit: &Path, exe: &Path) -> anyhow::Result<()> {
+pub(super) fn write_unit(unit: &Path, exe: &Path) -> anyhow::Result<()> {
     if let Some(dir) = unit.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -47,9 +74,10 @@ fn write_unit(unit: &Path, exe: &Path) -> anyhow::Result<()> {
 
 /// Reload systemd's user manager, then enable and start the unit immediately.
 fn enable_unit() -> anyhow::Result<()> {
-    run("systemctl", &["--user", "daemon-reload"])?;
+    let systemctl = systemctl_bin();
+    run(&systemctl, &["--user", "daemon-reload"])?;
     run(
-        "systemctl",
+        &systemctl,
         &["--user", "enable", "--now", SYSTEMD_UNIT_NAME],
     )
 }
@@ -75,12 +103,13 @@ pub fn install() -> anyhow::Result<()> {
 pub fn uninstall() -> anyhow::Result<()> {
     let unit = unit_path()?;
     if unit.exists() {
+        let systemctl = systemctl_bin();
         let _ = run(
-            "systemctl",
+            &systemctl,
             &["--user", "disable", "--now", SYSTEMD_UNIT_NAME],
         );
         std::fs::remove_file(&unit)?;
-        let _ = run("systemctl", &["--user", "daemon-reload"]);
+        let _ = run(&systemctl, &["--user", "daemon-reload"]);
         println!("moadim systemd user service removed ({})", unit.display());
     } else {
         println!(

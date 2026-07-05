@@ -22,6 +22,7 @@ use crate::overview_attention::{attention_items, AttentionTable};
 #[cfg(test)]
 use crate::overview_attention::{attention_reason, AttentionReason};
 use crate::overview_recent_runs::RecentRunsTable;
+use crate::overview_stats::OverviewStats;
 use crate::overview_upcoming::UpcomingTable;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::routines::{
@@ -434,66 +435,6 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
             </div>
             <RecentRunsTable runs={data.recent_runs.clone()} loading={data.loading} />
         </main>
-    }
-}
-
-#[derive(Properties, PartialEq)]
-struct OverviewStatsProps {
-    kpis: Kpis,
-    next_run: Option<String>,
-}
-
-#[function_component(OverviewStats)]
-fn overview_stats(props: &OverviewStatsProps) -> Html {
-    let k = &props.kpis;
-    let next = props.next_run.clone().unwrap_or_else(|| "—".into());
-    html! {
-        <div class="stats">
-            <div class="stat-card all">
-                <div class="stat-label">{"SCHEDULED"}</div>
-                <div class="stat-val">{k.total}</div>
-            </div>
-            <div class="stat-card enabled">
-                <div class="stat-label">{"ENABLED"}</div>
-                <div class="stat-val c-accent">{k.enabled}</div>
-            </div>
-            <div class="stat-card due">
-                <div class="stat-label">{"DUE SOON"}</div>
-                <div class="stat-val c-red">{k.due_soon}</div>
-            </div>
-            <div class="stat-card attention">
-                <div class="stat-label">{"ATTENTION"}</div>
-                <div class={classes!("stat-val", if k.attention > 0 { "c-red" } else { "c-accent" })}>
-                    {k.attention}
-                </div>
-            </div>
-            <div class="stat-card disabled">
-                <div class="stat-label">{"DISABLED"}</div>
-                <div class="stat-val c-amber">{k.disabled}</div>
-            </div>
-            <div class={classes!("stat-card", if k.dormant > 0 { "has-dormant" } else { "dormant" })}>
-                <div class="stat-label">{"DORMANT"}</div>
-                <div class={classes!("stat-val", if k.dormant > 0 { "c-amber" } else { "" })}>
-                    {k.dormant}
-                </div>
-            </div>
-            <div class="stat-card flags">
-                <div class="stat-label">{"FLAGS"}</div>
-                <div class={classes!("stat-val", if k.flags > 0 { "c-red" } else { "c-accent" })}>
-                    {k.flags}
-                </div>
-            </div>
-            <div class="stat-card snoozed">
-                <div class="stat-label">{"SNOOZED"}</div>
-                <div class={classes!("stat-val", if k.snoozed > 0 { "c-amber" } else { "c-accent" })}>
-                    {k.snoozed}
-                </div>
-            </div>
-            <div class="stat-card system">
-                <div class="stat-label">{"NEXT RUN"}</div>
-                <div class="stat-val stat-val-sm">{next}</div>
-            </div>
-        </div>
     }
 }
 

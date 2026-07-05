@@ -1,0 +1,11 @@
+# Require a structured form for every issue: a blank free-text issue tends to
+# omit the OS / version / log context triage needs, which is exactly the
+# silent-failure gap this template set closes.
+blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/moadim-io/daemon/discussions
+    about: For questions, setup help, and open-ended discussion — please use Discussions rather than an issue.
+  - name: Security vulnerability
+    url: https://github.com/moadim-io/daemon/security/advisories/new
+    about: Report a security vulnerability privately. Do NOT open a public issue for security reports.

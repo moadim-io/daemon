@@ -170,7 +170,10 @@ fn watchdog_dir(
 /// workbench path, trigger ts, finish ts)` right before removal, so a durable history record can be
 /// captured while the workbench (and its `exit_code` file) still exists — see
 /// [`super::run_history`].
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each parameter is an independently injected test seam with no natural grouping"
+)]
 fn reap_dir(
     dir: &Path,
     now: u64,

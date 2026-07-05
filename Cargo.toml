@@ -83,6 +83,10 @@ manual_let_else = "deny"
 # wrapping it in a closure that only forwards the receiver
 # (`|e| e.ok()`, `|s| s.to_string()`).
 redundant_closure_for_method_calls = "deny"
+# Require every `#[allow(...)]` suppression to carry a `reason = "..."` so
+# reviewers can tell at a glance why the lint was silenced, and silenced lints
+# stay documented as the code evolves.
+allow_attributes_without_reason = "deny"
 # Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }`
 # to eliminate double-negation and reduce cognitive load when reading branches.
 if_not_else = "deny"

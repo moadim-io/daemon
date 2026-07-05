@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 
@@ -12,7 +15,7 @@ impl TempHome {
         unsafe {
             std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
         }
-        TempHome(dir)
+        Self(dir)
     }
 }
 

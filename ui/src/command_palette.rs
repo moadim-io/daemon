@@ -1,29 +1,28 @@
 //! The command palette (⌘K / Ctrl-K): a global, keyboard-first launcher that
-//! fuzzy-searches every navigable destination — the three pages plus every
-//! cron job and routine — and jumps to it on Enter. It is the power-user
-//! complement to the nav tabs: no mouse, no remembering which tab a job lives
-//! under, just type a few characters and go.
+//! fuzzy-searches every navigable destination — the pages plus every routine —
+//! and jumps to it on Enter. It is the power-user complement to the nav tabs:
+//! no mouse, no remembering which tab a routine lives under, just type a few
+//! characters and go.
 //!
 //! Best practice (Superhuman / Linear / VS Code command palettes, and the
 //! WAI-ARIA combobox+listbox pattern): bind to the de-facto ⌘K shortcut, show
 //! all destinations before the user types, fuzzy-match against a title *and*
-//! aliases (agent, handler, schedule, id), group results by category, and drive
-//! the whole interaction from the keyboard (↑/↓ to move, Home/End to jump,
-//! Enter to launch, Esc to dismiss) while exposing it to assistive tech via
+//! aliases (agent, schedule, id), group results by category, and drive the
+//! whole interaction from the keyboard (↑/↓ to move, Home/End to jump, Enter to
+//! launch, Esc to dismiss) while exposing it to assistive tech via
 //! `role="combobox"`/`role="listbox"` and `aria-activedescendant`.
 //!
-//! It reads the existing `/api/v1/cron-jobs` and `/api/v1/routines` endpoints —
-//! no backend change. All match/rank/build logic lives in pure, host-tested
-//! functions below (see `command_palette_tests.rs`); the component is a thin
-//! shell that fetches the records, ranks them against the query, and renders.
+//! It reads the existing `/api/v1/routines` endpoint — no backend change. All
+//! match/rank/build logic lives in pure, host-tested functions below (see
+//! `command_palette_tests.rs`); the component is a thin shell that fetches the
+//! records, ranks them against the query, and renders.
 
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::cron_jobs::CronJob;
-use crate::overview::{fetch_crons, fetch_routines};
+use crate::overview::fetch_routines;
 use crate::routines::Routine;
 use crate::Route;
 
@@ -34,14 +33,12 @@ use crate::Route;
 pub(crate) enum CmdKind {
     /// Jump to the OVERVIEW page.
     NavOverview,
-    /// Jump to the CRON JOBS page.
-    NavCronJobs,
     /// Jump to the ROUTINES page.
     NavRoutines,
     /// Jump to the HEATMAP page.
     NavHeatmap,
-    /// A specific cron job (lands on the CRON JOBS page).
-    Cron,
+    /// Jump to the SETTINGS page.
+    NavSettings,
     /// A specific routine (lands on the ROUTINES page).
     Routine,
     /// Re-poll server health (the header's ↻ action).
@@ -58,12 +55,12 @@ pub(crate) enum CmdKind {
 pub(crate) enum RouteKind {
     /// The OVERVIEW page (`/`).
     Home,
-    /// The CRON JOBS page (`/cron-jobs`).
-    CronJobs,
     /// The ROUTINES page (`/routines`).
     Routines,
     /// The HEATMAP page (`/heatmap`).
     Heatmap,
+    /// The SETTINGS page (`/settings`).
+    Settings,
 }
 
 /// One searchable destination in the palette.
@@ -85,9 +82,9 @@ pub(crate) struct Command {
 pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
     match kind {
         CmdKind::NavOverview => Some(RouteKind::Home),
-        CmdKind::NavCronJobs | CmdKind::Cron => Some(RouteKind::CronJobs),
         CmdKind::NavRoutines | CmdKind::Routine => Some(RouteKind::Routines),
         CmdKind::NavHeatmap => Some(RouteKind::Heatmap),
+        CmdKind::NavSettings => Some(RouteKind::Settings),
         CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => None,
     }
 }
@@ -97,10 +94,9 @@ pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
 pub(crate) fn badge_for(kind: CmdKind) -> &'static str {
     match kind {
         CmdKind::NavOverview
-        | CmdKind::NavCronJobs
         | CmdKind::NavRoutines
-        | CmdKind::NavHeatmap => "GO",
-        CmdKind::Cron => "CRON",
+        | CmdKind::NavHeatmap
+        | CmdKind::NavSettings => "GO",
         CmdKind::Routine => "ROUTINE",
         CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => "ACTION",
     }
@@ -167,8 +163,8 @@ fn command_score(command: &Command, query: &str) -> Option<i32> {
 }
 
 /// Indices of `commands` that match `query`, best-first. Ties keep the input
-/// order (which is already grouped: pages, then cron jobs, then routines), so
-/// an empty query returns every command in its natural grouping.
+/// order (which is already grouped: pages, then routines), so an empty query
+/// returns every command in its natural grouping.
 pub(crate) fn rank(commands: &[Command], query: &str) -> Vec<usize> {
     let mut scored: Vec<(usize, i32)> = commands
         .iter()
@@ -179,22 +175,16 @@ pub(crate) fn rank(commands: &[Command], query: &str) -> Vec<usize> {
     scored.into_iter().map(|(idx, _)| idx).collect()
 }
 
-/// Build the full command list: the three pages first, then one entry per cron
-/// job, then one per routine. Subtitles prefer the server's human schedule
-/// description and fall back to the raw expression.
-pub(crate) fn build_commands(crons: &[CronJob], routines: &[Routine]) -> Vec<Command> {
+/// Build the full command list: the pages first, then one entry per routine.
+/// Subtitles prefer the server's human schedule description and fall back to
+/// the raw expression.
+pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
     let mut commands = vec![
         Command {
             kind: CmdKind::NavOverview,
             title: "Overview".into(),
             subtitle: "Fleet summary & upcoming runs".into(),
             keywords: "home dashboard kpi summary landing".into(),
-        },
-        Command {
-            kind: CmdKind::NavCronJobs,
-            title: "Cron Jobs".into(),
-            subtitle: "Manage scheduled handler jobs".into(),
-            keywords: "schedule handler tasks".into(),
         },
         Command {
             kind: CmdKind::NavRoutines,
@@ -207,6 +197,12 @@ pub(crate) fn build_commands(crons: &[CronJob], routines: &[Routine]) -> Vec<Com
             title: "Heatmap".into(),
             subtitle: "7-day × 24-hour fire-density grid".into(),
             keywords: "schedule density grid busy collisions calendar".into(),
+        },
+        Command {
+            kind: CmdKind::NavSettings,
+            title: "Settings".into(),
+            subtitle: "Persistent agent prompt".into(),
+            keywords: "config preferences user prompt".into(),
         },
         Command {
             kind: CmdKind::ActionRefresh,
@@ -227,26 +223,43 @@ pub(crate) fn build_commands(crons: &[CronJob], routines: &[Routine]) -> Vec<Com
             keywords: "theme light dark mode toggle appearance action".into(),
         },
     ];
-    for job in crons {
-        commands.push(Command {
-            kind: CmdKind::Cron,
-            title: job.id.clone(),
-            subtitle: schedule_label(&job.schedule_description, &job.schedule),
-            keywords: format!("{} {} cron job", job.handler, job.schedule),
-        });
-    }
     for routine in routines {
         commands.push(Command {
             kind: CmdKind::Routine,
             title: routine.title.clone(),
-            subtitle: schedule_label(&routine.schedule_description, &routine.schedule),
+            subtitle: routine_subtitle(routine),
             keywords: format!(
-                "{} {} {} routine",
-                routine.id, routine.agent, routine.schedule
+                "{} {} {} {} routine",
+                routine.id,
+                routine.agent,
+                routine.schedule,
+                routine.tags.join(" ")
             ),
         });
     }
     commands
+}
+
+/// Subtitle for a routine command: schedule label optionally suffixed with
+/// comma-separated status tags so health issues are visible in search results.
+pub(crate) fn routine_subtitle(routine: &Routine) -> String {
+    let sched = schedule_label(&routine.schedule_description, &routine.schedule);
+    let mut tags: Vec<&str> = Vec::new();
+    if !routine.enabled {
+        tags.push("DISABLED");
+    } else if routine.skip_runs.is_some_and(|n| n > 0) {
+        tags.push("SNOOZED");
+    } else if !routine.agent_registered {
+        tags.push("AGENT MISSING");
+    }
+    if routine.flag_count > 0 {
+        tags.push("FLAGS");
+    }
+    if tags.is_empty() {
+        sched
+    } else {
+        format!("{sched} — {}", tags.join(", "))
+    }
 }
 
 /// The human schedule description when present, else the raw expression, else a
@@ -295,7 +308,6 @@ pub(crate) fn last_index(len: usize) -> usize {
 /// Loaded records the palette ranks over.
 #[derive(Clone, PartialEq, Default)]
 struct Records {
-    crons: Vec<CronJob>,
     routines: Vec<Routine>,
 }
 
@@ -341,16 +353,15 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                     let _ = input.focus();
                 }
                 spawn_local(async move {
-                    let crons = fetch_crons().await.unwrap_or_default();
                     let routines = fetch_routines().await.unwrap_or_default();
-                    records.set(Records { crons, routines });
+                    records.set(Records { routines });
                 });
             }
             || ()
         });
     }
 
-    let commands = build_commands(&records.crons, &records.routines);
+    let commands = build_commands(&records.routines);
     let order = rank(&commands, &query);
     let sel = clamp_selection(*selected, order.len());
 
@@ -373,9 +384,9 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                         {
                             let route = match route_kind {
                                 RouteKind::Home => Route::Home,
-                                RouteKind::CronJobs => Route::CronJobs,
                                 RouteKind::Routines => Route::Routines,
                                 RouteKind::Heatmap => Route::Heatmap,
+                                RouteKind::Settings => Route::Settings,
                             };
                             nav.push(&route);
                         }
@@ -448,7 +459,6 @@ pub fn command_palette(props: &PaletteProps) -> Html {
             let row_cls = if active { "cmdk-row active" } else { "cmdk-row" };
             let badge = badge_for(command.kind);
             let badge_cls = match command.kind {
-                CmdKind::Cron => "kind-badge cron",
                 CmdKind::Routine => "kind-badge routine",
                 CmdKind::ActionRefresh
                 | CmdKind::ActionStop
@@ -495,7 +505,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                         ref={input_ref}
                         class="cmdk-input"
                         type="text"
-                        placeholder="Search pages, cron jobs, routines…"
+                        placeholder="Search pages, routines…"
                         autocomplete="off"
                         spellcheck="false"
                         role="combobox"
@@ -514,7 +524,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                         html! {
                             <div class="cmdk-empty">
                                 <div class="empty-msg">{"NO MATCHES"}</div>
-                                <div class="empty-sub">{"no page, cron job, or routine matches"}</div>
+                                <div class="empty-sub">{"no page or routine matches"}</div>
                             </div>
                         }
                     } else {

@@ -7,6 +7,7 @@ pub(super) const SPEC: DefaultRoutine = DefaultRoutine {
     schedule: "0 7 * * 0",
     agent: "claude",
     prompt: PROMPT,
+    goal: "Keep the user's agent workflows token-efficient by auditing recent usage and trimming waste each week.",
 };
 
 /// Task prompt handed to the agent.
@@ -70,7 +71,7 @@ calls, same outputs, same decision logic. When in doubt, keep the instruction.
 
 ```bash
 git -C ~/.config/moadim checkout -b token-trim/$(date +%Y%m%d-%H%M)
-# Edit the relevant routine.toml / prompt.md file(s) under ~/.config/moadim/routines/.
+# Edit the relevant <slug>/prompts/prompt.pure.md file(s) under ~/.config/moadim/routines/.
 # Only touch routine prompt files. Do NOT modify moadim daemon config.
 git -C ~/.config/moadim add -A
 git -C ~/.config/moadim commit -m \"routines: trim token cost in <routine-name>\"

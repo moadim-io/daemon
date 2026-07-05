@@ -18,12 +18,33 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: >
+          Git ref to check out. Empty (the default) means "use the ref that
+          triggered this run" — set only by changeset-release.yml, which
+          calls this workflow directly to lint a branch (changeset-release/main)
+          other than the one that triggered it.
+        required: false
+        type: string
+
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
+# check out the repo to run cargo fmt/clippy.
+permissions:
+  contents: read
 
 # Cancel a stale run when a PR gets a new push, so superseded lint runs don't
 # pile up and burn CI minutes. Scoped per-workflow-per-ref so unrelated PRs
-# (and the push-to-main trigger) never cancel each other.
+# (and the push-to-main trigger) never cancel each other. Uses a literal
+# "lint" prefix rather than ${{ github.workflow }}: when called via
+# workflow_call (see cut-release.yml), github.workflow resolves to the
+# CALLER's name, so lint and test would otherwise share one group with each
+# other (and with the caller) and race-cancel one another. inputs.ref falls
+# back to github.ref for the normal pull_request/push triggers, where
+# inputs.ref is unset.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: lint-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +53,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Rust (with rustfmt)
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -47,6 +70,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Rust (with clippy)
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1

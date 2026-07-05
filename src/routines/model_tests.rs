@@ -163,6 +163,22 @@ fn describe_schedule_returns_none_for_unparseable() {
 }
 
 #[test]
+fn next_run_at_some_for_enabled_parseable_schedule() {
+    assert!(next_run_at("@daily", true).is_some());
+}
+
+#[test]
+fn next_run_at_none_when_disabled() {
+    assert!(next_run_at("@daily", false).is_none());
+}
+
+#[test]
+fn next_run_at_none_for_unparseable_schedule() {
+    assert!(next_run_at("@reboot", true).is_none());
+    assert!(next_run_at("not a cron", true).is_none());
+}
+
+#[test]
 fn from_routine_populates_derived_fields() {
     let routine = Routine {
         id: "rid".into(),
@@ -190,6 +206,7 @@ fn from_routine_populates_derived_fields() {
     assert!(resp.schedule_description.is_some());
     assert!(resp.file_path.contains("routine.toml"));
     assert_eq!(resp.flag_count, 0);
+    assert!(resp.next_run_at.is_some());
 }
 
 #[test]

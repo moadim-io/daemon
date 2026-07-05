@@ -1522,6 +1522,15 @@
                 "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
                 "minimum": 0
               },
+              "next_run_at": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone\n(matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.\n`None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming\nfire (e.g. `@reboot`). See issue #369.",
+                "minimum": 0
+              },
               "schedule_description": {
                 "type": [
                   "string",

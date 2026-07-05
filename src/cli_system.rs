@@ -379,3 +379,7 @@ fn detach(cmd: &mut std::process::Command) {
 /// No-op on platforms without process groups; the child still detaches via redirected stdio.
 #[cfg(not(unix))]
 fn detach(_cmd: &mut std::process::Command) {}
+
+#[cfg(test)]
+#[path = "cli_system_tests.rs"]
+mod cli_system_tests;

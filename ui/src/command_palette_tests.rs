@@ -26,6 +26,7 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         agent_registered: false,
         file_path: String::new(),
         schedule_description: human.map(Into::into),
+        goal: None,
         flag_count: 0,
     }
 }
@@ -146,6 +147,20 @@ fn non_matching_commands_are_dropped() {
 // ─── build_commands ──────────────────────────────────────────────────────────
 
 #[test]
+fn routine_tags_appear_in_keywords() {
+    let mut r = routine("r1", "Report", "claude", "0 0 * * *", None);
+    r.tags = vec!["security".into(), "weekly".into()];
+    r.agent_registered = true;
+    let commands = build_commands(&[r]);
+    let kw = &commands.last().unwrap().keywords;
+    assert!(
+        kw.contains("security"),
+        "tag 'security' not in keywords: {kw}"
+    );
+    assert!(kw.contains("weekly"), "tag 'weekly' not in keywords: {kw}");
+}
+
+#[test]
 fn build_lists_pages_then_routines() {
     let routines = vec![routine("r1", "Nightly Audit", "claude", "0 0 * * *", None)];
     let commands = build_commands(&routines);
@@ -159,7 +174,7 @@ fn build_lists_pages_then_routines() {
     assert!(commands[5].keywords.contains("theme"));
     assert_eq!(commands[6].kind, CmdKind::Routine);
     assert_eq!(commands[6].title, "Nightly Audit");
-    assert_eq!(commands[6].subtitle, "0 0 * * *"); // falls back to raw expr
+    assert_eq!(commands[6].subtitle, "0 0 * * * — AGENT MISSING"); // agent_registered=false → tag appended
     assert!(commands[6].keywords.contains("claude"));
 }
 
@@ -177,6 +192,78 @@ fn schedule_label_prefers_human_then_raw_then_dash() {
     assert_eq!(schedule_label(&None, "0 12 * * *"), "0 12 * * *");
     // Neither present → a dash, never an empty string.
     assert_eq!(schedule_label(&None, "   "), "—");
+}
+
+// ─── routine_subtitle ────────────────────────────────────────────────────────
+
+#[test]
+fn routine_subtitle_healthy_shows_schedule_only() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: true,
+        flag_count: 0,
+        schedule_description: Some("Every 5 minutes".into()),
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert_eq!(routine_subtitle(&r), "Every 5 minutes");
+}
+
+#[test]
+fn routine_subtitle_disabled_appends_tag() {
+    let r = Routine {
+        enabled: false,
+        agent_registered: true,
+        flag_count: 0,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— DISABLED"));
+}
+
+#[test]
+fn routine_subtitle_snoozed_via_skip_runs() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: true,
+        flag_count: 0,
+        skip_runs: Some(2),
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— SNOOZED"));
+}
+
+#[test]
+fn routine_subtitle_agent_missing_appends_tag() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: false,
+        flag_count: 0,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— AGENT MISSING"));
+}
+
+#[test]
+fn routine_subtitle_flags_appended_even_when_healthy() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: true,
+        flag_count: 3,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— FLAGS"));
+}
+
+#[test]
+fn routine_subtitle_disabled_with_flags_shows_both() {
+    let r = Routine {
+        enabled: false,
+        agent_registered: true,
+        flag_count: 2,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    let s = routine_subtitle(&r);
+    assert!(s.contains("DISABLED"), "expected DISABLED in: {s}");
+    assert!(s.contains("FLAGS"), "expected FLAGS in: {s}");
 }
 
 // ─── route_for / badge_for ────────────────────────────────────────────────────

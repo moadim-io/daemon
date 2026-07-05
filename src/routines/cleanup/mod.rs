@@ -261,3 +261,7 @@ pub fn kill_hung_sessions(store: &RoutineStore) -> usize {
 #[cfg(test)]
 #[path = "cleanup_tests.rs"]
 mod cleanup_tests;
+
+#[cfg(test)]
+#[path = "cleanup_watchdog_tests.rs"]
+mod cleanup_watchdog_tests;

@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.20.0"
+version = "0.22.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -118,3 +118,9 @@ use_self = "deny"
 # other path already printed via `.display()` in this codebase. `Path::display`
 # is the correct, consistent way to show a filesystem path to a human.
 unnecessary_debug_formatting = "deny"
+# Reject a `&mut` parameter that's never actually mutated through. A stale
+# `&mut` overstates what the function does to its caller (and to the borrow
+# checker, needlessly ruling out concurrent shared borrows) — the signature
+# should say `&T` once the mutation it was written for is gone. The codebase
+# is already clean, so `deny` keeps every future `&mut` parameter honest.
+needless_pass_by_ref_mut = "deny"

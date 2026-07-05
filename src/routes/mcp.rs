@@ -116,6 +116,9 @@ struct UpdateRoutineInput {
     model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
+    /// New goal (a very short, ≤5-line statement of the routine's purpose), or `None` to keep the
+    /// existing value. Send an empty string to clear it.
+    goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     repositories: Option<Vec<crate::routines::Repository>>,
     /// New machines targeting list, or `None` to keep the existing value.
@@ -252,6 +255,7 @@ impl MoadimMcp {
             agent: input.agent,
             model: input.model,
             prompt: input.prompt,
+            goal: input.goal,
             repositories: input.repositories,
             machines: input.machines,
             enabled: input.enabled,
@@ -482,3 +486,7 @@ impl MoadimMcp {
 #[cfg(test)]
 #[path = "mcp_tests.rs"]
 mod mcp_tests;
+
+#[cfg(test)]
+#[path = "mcp_lock_tests.rs"]
+mod mcp_lock_tests;

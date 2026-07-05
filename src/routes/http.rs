@@ -54,6 +54,10 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
 pub struct DependencyHealth {
     /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
     pub tmux: bool,
+    /// Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`
+    /// step runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that
+    /// step fails silently and the routine still shows a healthy status (issue #404).
+    pub python3: bool,
 }
 
 /// Response body for `GET /health`.
@@ -161,6 +165,7 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         machine: crate::machine::current_machine(),
         dependencies: DependencyHealth {
             tmux: routines::tmux_available(),
+            python3: routines::agent_command_available("python3"),
         },
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),
@@ -257,6 +262,9 @@ pub struct SetMachineRequest {
 /// Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name
 /// is empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;
 /// setting the name here persists it for when the env var is absent.
+///
+/// As a side-effect, every routine whose `machines` list contained the old name is updated in
+/// memory, on disk, and in the crontab so that the rename propagates atomically.
 #[utoipa::path(put, path = "/machine",
     request_body = SetMachineRequest,
     responses(
@@ -265,12 +273,16 @@ pub struct SetMachineRequest {
         (status = 500, description = "Write failed"),
     ))]
 pub async fn put_machine(
+    State(state): State<AppState>,
     Json(body): Json<SetMachineRequest>,
 ) -> Result<Json<MachineResponse>, (StatusCode, String)> {
-    match crate::machine::set_machine(&body.name) {
-        Ok(()) => Ok(Json(MachineResponse {
-            name: body.name.trim().to_string(),
-        })),
+    let old_name = crate::machine::current_machine();
+    let new_name = body.name.trim().to_string();
+    match crate::machine::set_machine(&new_name) {
+        Ok(()) => {
+            routines::svc_rename_machine(&state.routines, &old_name, &new_name);
+            Ok(Json(MachineResponse { name: new_name }))
+        }
         Err(err) if err.kind() == std::io::ErrorKind::InvalidInput => {
             Err((StatusCode::BAD_REQUEST, err.to_string()))
         }
@@ -383,7 +395,12 @@ pub(crate) fn build_app_with_shutdown(
         .route("/routines/{id}/logs", get(routines::get_logs))
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
-        .fallback(api_not_found);
+        .fallback(api_not_found)
+        // Per-request deadline (issue #402): scoped to the REST API only, so the long-lived
+        // `/mcp` SSE stream (nested separately below) is never subject to it.
+        .layer(middleware::from_fn(middlewares::timeout::request_timeout(
+            middlewares::timeout::API_REQUEST_TIMEOUT,
+        )));
 
     Router::new()
         .route("/", get(index))
@@ -472,6 +489,22 @@ pub async fn run_with_listener_until(
                     .await;
         }
     });
+    // Periodically warn when the binary on disk has moved on from the one this process is running
+    // (#167): an in-place upgrade with no daemon restart otherwise regenerates every routine's
+    // agent instructions — disclosure included — from stale, silently outdated logic.
+    let version_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::build_info::VERSION_DRIFT_CHECK_INTERVAL);
+        loop {
+            tick.tick().await;
+            let _ = tokio::task::spawn_blocking(|| {
+                if let Ok(exe) = std::env::current_exe() {
+                    let running = format!("moadim {}", crate::build_info::long_version());
+                    crate::build_info::warn_on_drift(&exe, &running);
+                }
+            })
+            .await;
+        }
+    });
     let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
@@ -488,9 +521,18 @@ pub async fn run_with_listener_until(
         .expect("axum serve failed");
     cleanup_task.abort();
     watchdog_task.abort();
+    version_task.abort();
     Ok(())
 }
 
 #[cfg(test)]
 #[path = "http_tests.rs"]
 mod http_tests;
+
+#[cfg(test)]
+#[path = "http_routing_tests.rs"]
+mod http_routing_tests;
+
+#[cfg(test)]
+#[path = "http_listener_tests.rs"]
+mod http_listener_tests;

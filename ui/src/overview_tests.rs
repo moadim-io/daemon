@@ -27,6 +27,8 @@ fn src(kind: Kind, label: &str, schedule: &str, enabled: bool) -> SchedSource {
         agent_registered: match kind {
             Kind::Routine => Some(true),
         },
+        flag_count: 0,
+        snoozed: false,
     }
 }
 
@@ -45,12 +47,76 @@ fn kpis_count_total_enabled_disabled_due_soon() {
 }
 
 #[test]
+fn kpis_due_soon_excludes_snoozed() {
+    let mut a = src(Kind::Routine, "a", "*/5 * * * *", true);
+    a.snoozed = true; // would fire in 5m but snoozed → not due
+    let b = src(Kind::Routine, "b", "*/5 * * * *", true); // enabled + not snoozed → due
+    let kpis = compute_kpis(&[a, b], at_ten());
+    assert_eq!(kpis.due_soon, 1);
+}
+
+#[test]
 fn kpis_default_is_zeroed() {
     let kpis = Kpis::default();
     assert_eq!(kpis.total, 0);
     assert_eq!(kpis.enabled, 0);
     assert_eq!(kpis.disabled, 0);
     assert_eq!(kpis.due_soon, 0);
+    assert_eq!(kpis.flags, 0);
+    assert_eq!(kpis.snoozed, 0);
+}
+
+#[test]
+fn kpis_flags_sums_across_all_sources() {
+    let mut a = src(Kind::Routine, "a", "*/5 * * * *", true);
+    a.flag_count = 3;
+    let mut b = src(Kind::Routine, "b", "0 0 * * *", false);
+    b.flag_count = 1;
+    let c = src(Kind::Routine, "c", "*/5 * * * *", true);
+    let kpis = compute_kpis(&[a, b, c], at_ten());
+    assert_eq!(kpis.flags, 4);
+}
+
+#[test]
+fn kpis_flags_zero_when_no_flags() {
+    let sources = vec![
+        src(Kind::Routine, "a", "*/5 * * * *", true),
+        src(Kind::Routine, "b", "0 0 * * *", true),
+    ];
+    let kpis = compute_kpis(&sources, at_ten());
+    assert_eq!(kpis.flags, 0);
+}
+
+#[test]
+fn kpis_snoozed_counts_only_enabled_snoozed_sources() {
+    let mut a = src(Kind::Routine, "a", "*/5 * * * *", true);
+    a.snoozed = true;
+    let mut b = src(Kind::Routine, "b", "0 0 * * *", false); // disabled — not counted
+    b.snoozed = true;
+    let c = src(Kind::Routine, "c", "*/5 * * * *", true);
+    let kpis = compute_kpis(&[a, b, c], at_ten());
+    assert_eq!(kpis.snoozed, 1);
+}
+
+#[test]
+fn kpis_dormant_counts_enabled_sources_with_no_machines() {
+    let mut dormant = src(Kind::Routine, "d", "*/5 * * * *", true);
+    dormant.machines_empty = true;
+    let active = src(Kind::Routine, "a", "*/5 * * * *", true); // has machines
+    let mut disabled_no_machine = src(Kind::Routine, "c", "*/5 * * * *", false);
+    disabled_no_machine.machines_empty = true; // disabled → not counted
+    let kpis = compute_kpis(&[dormant, active, disabled_no_machine], at_ten());
+    assert_eq!(kpis.dormant, 1);
+}
+
+#[test]
+fn kpis_snoozed_zero_when_none_snoozed() {
+    let sources = vec![
+        src(Kind::Routine, "a", "*/5 * * * *", true),
+        src(Kind::Routine, "b", "0 0 * * *", true),
+    ];
+    let kpis = compute_kpis(&sources, at_ten());
+    assert_eq!(kpis.snoozed, 0);
 }
 
 #[test]
@@ -68,6 +134,16 @@ fn upcoming_sorted_soonest_first_excludes_disabled_and_invalid() {
     assert_eq!(runs[1].label, "midnight");
     assert!(runs[0].soon);
     assert!(!runs[1].soon);
+}
+
+#[test]
+fn upcoming_excludes_snoozed_sources() {
+    let mut a = src(Kind::Routine, "snoozed", "*/5 * * * *", true);
+    a.snoozed = true; // enabled but snoozed → fires suppressed → not upcoming
+    let b = src(Kind::Routine, "active", "*/5 * * * *", true);
+    let runs = upcoming_runs(&[a, b], at_ten());
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].label, "active");
 }
 
 #[test]
@@ -117,7 +193,7 @@ fn from_routine_uses_title_as_label() {
         "enabled": false
     }))
     .expect("valid routine json");
-    let source = from_routine(&routine);
+    let source = from_routine(&routine, at_ten());
     assert_eq!(source.kind, Kind::Routine);
     assert_eq!(source.id, "r1");
     assert_eq!(source.label, "Nightly sweep");
@@ -182,6 +258,35 @@ fn attention_reason_no_agent_fault_when_registered() {
 }
 
 #[test]
+fn attention_reason_open_flags_surfaces_when_healthy_otherwise() {
+    let mut s = src(Kind::Routine, "r", "*/5 * * * *", true);
+    s.flag_count = 2;
+    assert_eq!(
+        attention_reason(&s, at_ten()),
+        Some(AttentionReason::HasOpenFlags)
+    );
+}
+
+#[test]
+fn attention_reason_config_faults_outrank_flags() {
+    let mut s = src(Kind::Routine, "r", "*/5 * * * *", true);
+    s.machines_empty = true;
+    s.flag_count = 3;
+    // Dormant outranks HasOpenFlags.
+    assert_eq!(
+        attention_reason(&s, at_ten()),
+        Some(AttentionReason::Dormant)
+    );
+}
+
+#[test]
+fn attention_reason_disabled_with_flags_is_none() {
+    let mut s = src(Kind::Routine, "r", "*/5 * * * *", false);
+    s.flag_count = 5;
+    assert_eq!(attention_reason(&s, at_ten()), None);
+}
+
+#[test]
 fn attention_items_sorted_by_rank_then_label() {
     let mut dead = src(Kind::Routine, "zeta-dead", "not a cron", true);
     dead.machines_empty = false;
@@ -202,6 +307,16 @@ fn attention_items_sorted_by_rank_then_label() {
     assert_eq!(items[1].label, "zeta-dormant");
     assert_eq!(items[2].reason, AttentionReason::DeadSchedule);
     assert_eq!(items[3].reason, AttentionReason::AgentUnregistered);
+}
+
+#[test]
+fn attention_items_carries_flag_count_for_open_flags_reason() {
+    let mut s = src(Kind::Routine, "flagged", "*/5 * * * *", true);
+    s.flag_count = 7;
+    let items = attention_items(&[s], at_ten());
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].reason, AttentionReason::HasOpenFlags);
+    assert_eq!(items[0].flag_count, 7);
 }
 
 #[test]
@@ -255,9 +370,25 @@ fn from_routine_carries_agent_registration_and_machines() {
         "machines": ["box-1"], "enabled": true, "agent_registered": false
     }))
     .expect("valid routine json");
-    let s = from_routine(&routine);
+    let s = from_routine(&routine, at_ten());
     assert_eq!(s.agent_registered, Some(false));
     assert!(!s.machines_empty);
+}
+
+/// `snoozed` is derived from the caller-supplied `now`, not the real wall
+/// clock — this is what makes `from_routine` host-testable/deterministic at
+/// all (it previously sampled `js_sys::Date::now()` internally, which panics
+/// outside a wasm target).
+#[test]
+fn from_routine_snoozed_until_respects_passed_in_now() {
+    let routine: Routine = serde_json::from_value(serde_json::json!({
+        "id": "r1", "schedule": "0 0 * * *", "title": "T", "agent": "a", "prompt": "p",
+        "enabled": true, "snoozed_until": at_ten().timestamp() as u64 + 60
+    }))
+    .expect("valid routine json");
+    assert!(from_routine(&routine, at_ten()).snoozed);
+    let later = at_ten() + Duration::hours(1);
+    assert!(!from_routine(&routine, later).snoozed);
 }
 
 #[test]
@@ -279,12 +410,34 @@ fn upcoming_run_routine_id_differs_from_label() {
         "enabled": true
     }))
     .expect("valid routine json");
-    let source = from_routine(&routine);
+    let source = from_routine(&routine, at_ten());
     assert_eq!(source.id, "abc-uuid-123");
     assert_eq!(source.label, "My Routine");
     let runs = upcoming_runs(&[source], at_ten());
     assert_eq!(runs[0].id, "abc-uuid-123");
     assert_eq!(runs[0].label, "My Routine");
+}
+
+#[test]
+fn upcoming_run_carries_schedule_string() {
+    let source = src(Kind::Routine, "r", "*/15 * * * *", true);
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].schedule, "*/15 * * * *");
+}
+
+#[test]
+fn upcoming_run_carries_flag_count_from_source() {
+    let mut source = src(Kind::Routine, "flagged", "*/5 * * * *", true);
+    source.flag_count = 4;
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].flag_count, 4);
+}
+
+#[test]
+fn upcoming_run_flag_count_zero_when_none() {
+    let source = src(Kind::Routine, "clean", "*/5 * * * *", true);
+    let runs = upcoming_runs(&[source], at_ten());
+    assert_eq!(runs[0].flag_count, 0);
 }
 
 #[test]
@@ -294,7 +447,7 @@ fn sources_of_maps_routines() {
         "prompt": "p", "enabled": true
     }))
     .expect("valid routine json");
-    let sources = sources_of(&[routine]);
+    let sources = sources_of(&[routine], at_ten());
     assert_eq!(sources.len(), 1);
     assert_eq!(sources[0].kind, Kind::Routine);
     assert_eq!(sources[0].label, "T");

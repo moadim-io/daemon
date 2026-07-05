@@ -109,6 +109,17 @@ async fn run_server() -> anyhow::Result<()> {
              agent. Install tmux (e.g. `brew install tmux` or `apt install tmux`)."
         );
     }
+    // python3 is a hard dependency of the built-in `claude` agent's `setup` step (workspace-trust
+    // seeding). When it is missing, that step fails and the routine's agent never actually
+    // launches, yet nothing else surfaces the failure — the routine still shows a healthy status
+    // (issue #404). Warn at startup, same as the tmux check above; also surfaced in `GET /health`.
+    if !routines::agent_command_available("python3") {
+        log::warn!(
+            "python3 not found on PATH; the built-in `claude` agent's setup step requires it to \
+             pre-seed workspace-trust state, so routines using that agent will silently fail to \
+             launch. Install python3, or use a different agent."
+        );
+    }
     routines::ensure_default_agents();
     // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
     // cron trigger after upgrade would fail on the launch command's `cp prompt.compiled.md` step.
@@ -121,6 +132,11 @@ async fn run_server() -> anyhow::Result<()> {
     // store reflects the canonical dirs the crontab sync and the launch command's
     // `cp prompt.compiled.md` both target.
     routine_storage::migrate_routine_dirs();
+    // Migrate per-routine trigger timestamps from legacy TOML sidecars (scheduled.local.toml,
+    // last_manual_trigger_at in state.local.toml) into the new append-only log files
+    // (scheduled.log, manual.log). Must run before load_store so the first load already reads from
+    // the log files.
+    routine_storage::migrate_trigger_logs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing

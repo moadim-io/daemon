@@ -12,6 +12,7 @@ fn make_routine(title: &str) -> Routine {
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do it".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -85,10 +86,10 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
 }
 
 #[test]
-fn build_routine_command_stamps_scheduled_trigger_sidecar() {
-    // The generated launch script records each scheduled firing by writing `$TS` into the
-    // routine's `scheduled.local.toml` sidecar (best-effort, before the prompt-copy guard), since
-    // the OS crontab runs this script directly without the daemon observing the fire.
+fn build_routine_command_appends_scheduled_trigger_log() {
+    // The generated launch script records each scheduled firing by appending `$TS` to the
+    // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab
+    // runs this script directly without the daemon observing the fire.
     let routine = make_routine("Cmd Scheduled Stamp Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -97,20 +98,20 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent);
-    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
+    let log = crate::paths::routine_scheduled_log_path(&slugify(&routine.title))
         .to_string_lossy()
         .into_owned();
     assert!(
         cmd.contains(&format!(
-            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
-            shell_quote(&sidecar)
+            r#"printf '%s\n' "$TS" >> {} || true"#,
+            shell_quote(&log)
         )),
-        "expected scheduled-trigger sidecar stamp in: {cmd}"
+        "expected scheduled-trigger log append in: {cmd}"
     );
     // It must run before the prompt-copy guard so an aborted run still records the firing.
-    let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
+    let stamp = cmd.find("scheduled.log").unwrap();
     let copy = cmd.find("/prompt.md\"").unwrap();
-    assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
+    assert!(stamp < copy, "log append must precede the prompt copy");
 }
 
 #[test]
@@ -518,4 +519,56 @@ fn build_routine_command_omits_model_flag_when_unset() {
         !cmd.contains("--model"),
         "expected no --model flag in: {cmd}"
     );
+}
+
+#[test]
+fn inline_prompt_overflow_none_for_prompt_file_agent_regardless_of_size() {
+    // `{prompt_file}` (codex/hermes) passes the prompt as a path, never as an inlined argument, so
+    // it is never subject to the inline-argument cap no matter how large the composed prompt is.
+    let mut routine = make_routine("Cmd Overflow Prompt File Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_none_when_composed_prompt_fits() {
+    let routine = make_routine("Cmd Overflow Small Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
+    // A `{prompt}` agent (the shipped `claude` default) with a composed prompt over the inline
+    // cap must be flagged, so the caller can skip a launch doomed to fail silently (#443).
+    let mut routine = make_routine("Cmd Overflow Large Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let overflow = inline_prompt_overflow(&routine, &agent);
+    assert_eq!(overflow, Some(compose_prompt(&routine).len()));
+    assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
 }

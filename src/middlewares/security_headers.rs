@@ -1,6 +1,6 @@
 use axum::{
     extract::Request,
-    http::{header::HeaderName, HeaderValue},
+    http::{header, header::HeaderName, HeaderValue},
     middleware::Next,
     response::Response,
 };
@@ -59,6 +59,12 @@ const SECURITY_HEADERS: &[(&str, &str)] = &[
 ];
 
 /// Inject the [`SECURITY_HEADERS`] onto every response.
+///
+/// `Cache-Control: no-store` is also added as a fallback for responses that don't already carry a
+/// `Cache-Control` header. Responses that set their own directive (e.g. the SPA's `index.html`
+/// uses `no-cache` to enable ETag-based 304 revalidation, issue #401) are left untouched.
+/// Without this fallback, browsers apply heuristic caching to API `GET` responses and may serve
+/// stale JSON on page reload (issue #921).
 pub async fn security_headers(req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
     let headers = res.headers_mut();
@@ -69,6 +75,9 @@ pub async fn security_headers(req: Request, next: Next) -> Response {
             HeaderValue::from_static(value),
         );
     }
+    headers
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
     res
 }
 

@@ -401,7 +401,7 @@ use service_trigger::migrate_workbenches;
 #[cfg(test)]
 pub(crate) use service_trigger::sh_bin;
 #[cfg(test)]
-pub(crate) use service_trigger::{read_log_tail, MAX_LOG_TAIL_BYTES};
+pub(crate) use service_trigger::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_BYTES};
 pub use service_trigger::{
     svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
     svc_resolve_flag, svc_run_log, svc_set_power_saving, svc_snooze, svc_trigger,

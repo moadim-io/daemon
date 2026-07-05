@@ -292,11 +292,13 @@ pub(crate) const MAX_LOG_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 /// The seek point is snapped forward to the next UTF-8 character boundary so a multi-byte
 /// character split by the byte-offset seek isn't silently mangled, and a truncated read is
 /// prefixed with a marker noting how many bytes were omitted rather than starting mid-line with
-/// no indication anything is missing.
+/// no indication anything is missing. [`strip_ansi_noise`] runs over the returned content so
+/// terminal escape sequences and `\r`-redraw noise from the raw `tmux pipe-pane` capture (#278)
+/// don't clutter the served log.
 pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
     let len = std::fs::metadata(path)?.len();
     if len <= MAX_LOG_TAIL_BYTES {
-        return std::fs::read_to_string(path);
+        return std::fs::read_to_string(path).map(|contents| strip_ansi_noise(&contents));
     }
     use std::io::{Read, Seek, SeekFrom};
     let omitted = len - MAX_LOG_TAIL_BYTES;
@@ -313,8 +315,75 @@ pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
         .unwrap_or(0);
     let tail = String::from_utf8_lossy(&buf[start..]);
     Ok(format!(
-        "... [{omitted} bytes omitted; showing the last {MAX_LOG_TAIL_BYTES} bytes] ...\n{tail}"
+        "... [{omitted} bytes omitted; showing the last {MAX_LOG_TAIL_BYTES} bytes] ...\n{}",
+        strip_ansi_noise(&tail)
     ))
+}
+
+/// Strip raw `tmux pipe-pane` capture noise from `input`: ANSI/VT escape sequences (color codes,
+/// cursor movement, screen clears) and `\r`-based redraw overwrites from full-screen TUI agents.
+///
+/// `tmux pipe-pane -o` streams the pane's raw output verbatim, so a served log otherwise shows
+/// escape codes as literal garbage and every redraw frame of a spinner/progress bar as a separate
+/// line instead of the final, overwritten state a real terminal would display.
+pub(crate) fn strip_ansi_noise(input: &str) -> String {
+    let without_escapes = strip_escape_sequences(input);
+    collapse_carriage_returns(&without_escapes)
+}
+
+/// Remove ANSI escape sequences: CSI (`ESC [ … final-byte`), OSC (`ESC ] … BEL` or `ESC ] … ESC \`),
+/// and bare two-character escapes (e.g. `ESC c` full reset). A lone trailing `ESC` with no
+/// follow-up byte is dropped as-is.
+fn strip_escape_sequences(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(current) = chars.next() {
+        if current != '\u{1B}' {
+            out.push(current);
+            continue;
+        }
+        match chars.peek() {
+            Some('[') => {
+                chars.next();
+                for pc in chars.by_ref() {
+                    if ('@'..='~').contains(&pc) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                chars.next();
+                loop {
+                    match chars.next() {
+                        Some('\u{7}') | None => break,
+                        Some('\u{1B}') => {
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        Some(_) => {}
+                    }
+                }
+            }
+            Some(_) => {
+                chars.next();
+            }
+            None => {}
+        }
+    }
+    out
+}
+
+/// Collapse `\r`-based redraw overwrites: within each `\n`-delimited line, keep only the text
+/// after the final `\r`, mirroring what a real terminal would leave on screen after a spinner or
+/// progress bar repeatedly returns to the start of the line and overwrites itself.
+fn collapse_carriage_returns(input: &str) -> String {
+    input
+        .split('\n')
+        .map(|line| line.rsplit('\r').next().unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Return the contents of the newest workbench `agent.log` for routine `id`.

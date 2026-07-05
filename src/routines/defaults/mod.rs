@@ -10,11 +10,11 @@
 //!
 //! A default that is absent from the store because it was never seeded is (re)created enabled. One
 //! that is absent because the user explicitly deleted it stays deleted — [`svc_delete`](
-//! super::service::svc_delete) records its slug in the [`removed_default_routines_path`](
-//! crate::paths::removed_default_routines_path) tombstone file, which [`ensure_default_routines`]
-//! consults before re-materializing a missing default. Creating a routine whose title matches a
-//! tombstoned default (via [`svc_create`](super::service::svc_create)) clears the tombstone, since
-//! that is a deliberate "I want this back" signal.
+//! super::service::svc_delete) records its slug in the [`removed_default_routines_path`] tombstone
+//! file, which [`ensure_default_routines`] consults before re-materializing a missing default.
+//! Creating a routine whose title matches a tombstoned default (via [`svc_create`](
+//! super::service::svc_create)) clears the tombstone, since that is a deliberate "I want this back"
+//! signal.
 //!
 //! Each built-in routine lives in its own submodule (e.g. [`update_moadim`], [`the_1_percent`]).
 //! Adding a new default means a new file + one entry in [`DEFAULT_ROUTINES`].
@@ -225,14 +225,14 @@ fn read_removed_defaults() -> BTreeSet<String> {
 /// Persist `slugs` to the tombstone file, creating its parent directory if needed.
 fn write_removed_defaults(slugs: &BTreeSet<String>) -> std::io::Result<()> {
     let path = removed_default_routines_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    let parent = path
+        .parent()
+        .expect("removed-defaults tombstone path has a parent dir");
+    std::fs::create_dir_all(parent)?;
     let body = RemovedDefaults {
         slugs: slugs.clone(),
     };
-    let toml = toml::to_string_pretty(&body)
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    let toml = toml::to_string_pretty(&body).expect("a set of strings always serializes");
     std::fs::write(path, toml)
 }
 

@@ -437,3 +437,49 @@ fn record_removed_default_is_idempotent_and_persists_across_reads() {
         assert!(read_removed_defaults().is_empty());
     });
 }
+
+#[test]
+fn record_removed_default_is_best_effort_on_write_failure() {
+    // Documented as best-effort: a persist failure is logged, not propagated or panicked on.
+    // Force `write_removed_defaults` to fail by putting a *directory* at the tombstone file's
+    // path, so `std::fs::write` errors instead of succeeding.
+    with_redirected_home(|_home| {
+        let path = removed_default_routines_path();
+        std::fs::create_dir_all(&path).unwrap();
+
+        record_removed_default("some-default");
+    });
+}
+
+#[test]
+fn record_removed_default_is_best_effort_when_parent_dir_cannot_be_created() {
+    // Same best-effort contract, but exercising the `create_dir_all(parent)` failure branch: put
+    // a *file* at the tombstone's parent (config) dir path, so creating it as a directory fails.
+    with_redirected_home(|_home| {
+        let config_dir = crate::paths::config_dir();
+        std::fs::create_dir_all(config_dir.parent().unwrap()).unwrap();
+        std::fs::write(&config_dir, "not a dir").unwrap();
+
+        record_removed_default("some-default");
+    });
+}
+
+#[test]
+fn clear_removed_default_is_best_effort_on_write_failure() {
+    // Same best-effort contract on the clear path: the tombstone must already contain the slug
+    // (so the read succeeds and `remove` returns `true`), but the follow-up persist write fails
+    // because the file itself has been made read-only.
+    use std::os::unix::fs::PermissionsExt as _;
+    with_redirected_home(|_home| {
+        let slug = "some-default";
+        record_removed_default(slug);
+        assert_eq!(read_removed_defaults().len(), 1);
+
+        let path = removed_default_routines_path();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).unwrap();
+
+        clear_removed_default(slug);
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    });
+}

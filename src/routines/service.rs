@@ -437,6 +437,10 @@ mod service_runs_tests;
 mod service_trigger_tests;
 
 #[cfg(test)]
+#[path = "service_trigger_snooze_tests.rs"]
+mod service_trigger_snooze_tests;
+
+#[cfg(test)]
 #[path = "service_power_saving_tests.rs"]
 mod service_power_saving_tests;
 

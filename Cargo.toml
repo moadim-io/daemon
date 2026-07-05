@@ -158,3 +158,8 @@ redundant_else = "deny"
 # without a later, easy-to-forget follow-up PR. The codebase is already clean,
 # so `deny` locks that in.
 derive_partial_eq_without_eq = "deny"
+# Reject a by-value function argument that the body never consumes (never moves, mutates through
+# ownership, or otherwise needs to own) — it should take a reference instead. A needless owned
+# parameter forces every caller to clone or otherwise part with a value the callee never actually
+# needed to own. The codebase is already clean, so `deny` locks that in.
+needless_pass_by_value = "deny"

@@ -10,7 +10,7 @@ fn status_json_reports_running_pid_and_address() {
         version: "1.2.3".to_string(),
     };
     let value: serde_json::Value =
-        serde_json::from_str(&status_json(true, Some(42), Some(health))).unwrap();
+        serde_json::from_str(&status_json(true, Some(42), Some(&health))).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["pid"], serde_json::json!(42));
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));

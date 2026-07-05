@@ -71,7 +71,7 @@ pub(super) fn humanize_bytes(bytes: u64) -> String {
 /// (`404`), and a "not running" hint when no server is reachable. Returns the process exit code to
 /// surface, mirroring the `status`/`cleanup` contract: `0` when the routine was triggered, and
 /// [`crate::cli::EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
-pub fn trigger(id: String) -> anyhow::Result<i32> {
+pub fn trigger(id: &str) -> anyhow::Result<i32> {
     match http_request("POST", &format!("/api/v1/routines/{id}/trigger")) {
         Ok(200) => {
             println!("triggered routine {id}");
@@ -113,7 +113,7 @@ pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
         // `status --json` answers liveness *and* age/version without a second call. When the
         // server is down (or answers unparseably) these fields are emitted as null.
         let health = if running { fetch_health() } else { None };
-        println!("{}", status_json(running, pid, health));
+        println!("{}", status_json(running, pid, health.as_ref()));
         return Ok(liveness_exit_code(running));
     }
     if running {
@@ -142,9 +142,9 @@ pub(super) struct HealthInfo {
 /// `pid` is `null` when no pid file is present (or the server is down). `uptime_secs`/`version`
 /// carry the running server's self-reported `/health` details (via `health`), and are `null` when
 /// no server answers or its `/health` body could not be parsed.
-pub(super) fn status_json(running: bool, pid: Option<u32>, health: Option<HealthInfo>) -> String {
-    let uptime_secs = health.as_ref().map(|info| info.uptime_secs);
-    let version = health.as_ref().map(|info| info.version.as_str());
+pub(super) fn status_json(running: bool, pid: Option<u32>, health: Option<&HealthInfo>) -> String {
+    let uptime_secs = health.map(|info| info.uptime_secs);
+    let version = health.map(|info| info.version.as_str());
     serde_json::json!({
         "running": running,
         "pid": pid,

@@ -12,6 +12,11 @@
 use std::io;
 
 /// Which lock sentinel to create or remove.
+///
+/// `Copy` because it is a plain tag with no payload — passing it by value (the natural way to
+/// pass an enum selector) then costs nothing, whereas passing it by reference would just add a
+/// pointless indirection at every call site.
+#[derive(Clone, Copy)]
 pub enum LockScope {
     /// The committed `.lock` file, shareable via version control.
     Shared,

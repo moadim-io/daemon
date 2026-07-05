@@ -74,6 +74,10 @@ doc_markdown = "deny"
 uninlined_format_args = "deny"
 # Reject leftover `dbg!` debugging macros so they never ship to production.
 dbg_macro = "deny"
+# Reject leftover `todo!()`/`unimplemented!()` stubs so they never ship to
+# production — a stray one would panic the daemon on that code path.
+todo = "deny"
+unimplemented = "deny"
 # Reject `async fn`s that never `.await` anything — they don't need to be
 # async, and being async needlessly propagates async-ness to callers.
 unused_async = "deny"

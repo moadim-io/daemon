@@ -52,6 +52,10 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
+        cli::Command::Usage(arg) => {
+            cli::print_usage_error(&arg);
+            std::process::exit(cli::EXIT_USAGE);
+        }
         cli::Command::Status { json, wait_secs } => {
             std::process::exit(cli::status(json, wait_secs)?)
         }

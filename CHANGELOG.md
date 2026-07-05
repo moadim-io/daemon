@@ -1708,6 +1708,13 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- An unknown or mistyped command (e.g. `moadim staus`) is no longer treated as a
+  success. The parser now classifies an unrecognized first argument as a usage
+  error distinct from an explicit `help`/`-h`/`--help` request: it prints
+  `unknown command: <arg>` plus a hint to **stderr** and exits **2**, instead of
+  printing help to stdout and exiting `0`. Explicit `help` is unchanged (stdout,
+  exit `0`). This keeps the script-friendly exit-code contract intact so a
+  wrapper, systemd unit, or CI step can detect a typo. (#303)
 - `moadim stop` / `POST /api/v1/shutdown` no longer hangs forever when a
   long-lived connection stays open. Axum's graceful shutdown waits for every
   in-flight connection to close, so an open `/mcp` SSE stream (or any slow

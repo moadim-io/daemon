@@ -101,14 +101,14 @@ fn quiet_flag_only_applies_to_stop() {
         }
     );
     // A bare `--quiet` (no subcommand) is an unknown arg, not a stop request.
-    assert_eq!(parse(argv(&["--quiet"])), Command::Help);
-    assert_eq!(parse(argv(&["-q"])), Command::Help);
+    assert_eq!(parse(argv(&["--quiet"])), Command::Usage("--quiet".into()));
+    assert_eq!(parse(argv(&["-q"])), Command::Usage("-q".into()));
 }
 
 #[test]
 fn json_flag_only_applies_to_its_command() {
     // A bare `--json` (no subcommand) is an unknown arg, not a status/cleanup request.
-    assert_eq!(parse(argv(&["--json"])), Command::Help);
+    assert_eq!(parse(argv(&["--json"])), Command::Usage("--json".into()));
     // An unrelated trailing flag does not switch on JSON output.
     assert_eq!(
         parse(argv(&["status", "--verbose"])),
@@ -154,7 +154,7 @@ fn wait_flag_only_applies_to_status() {
         }
     );
     // A bare `--wait` (no subcommand) is an unknown arg, not a status request.
-    assert_eq!(parse(argv(&["--wait"])), Command::Help);
+    assert_eq!(parse(argv(&["--wait"])), Command::Usage("--wait".into()));
 }
 
 #[test]
@@ -426,8 +426,29 @@ fn help_and_version_flags() {
 }
 
 #[test]
-fn unknown_arg_falls_back_to_help() {
-    assert_eq!(parse(argv(&["--nonsense"])), Command::Help);
+fn unknown_arg_is_a_usage_error_not_help() {
+    // A typo like `staus` (or any unrecognized token) must be classified as a usage error, distinct
+    // from an explicit `help` request, so the dispatcher can write to stderr and exit non-zero
+    // instead of printing help to stdout and exiting 0.
+    assert_eq!(parse(argv(&["staus"])), Command::Usage("staus".into()));
+    assert_eq!(
+        parse(argv(&["--nonsense"])),
+        Command::Usage("--nonsense".into())
+    );
+    assert_ne!(parse(argv(&["staus"])), Command::Help);
+}
+
+#[test]
+fn print_usage_error_runs() {
+    // Smoke-test the stderr usage-error printer: it must not panic for an arbitrary token.
+    print_usage_error("staus");
+}
+
+#[test]
+fn usage_exit_code_is_two() {
+    // Conventional usage-error exit code, distinct from EXIT_NOT_RUNNING (3) and success (0).
+    assert_eq!(EXIT_USAGE, 2);
+    assert_ne!(EXIT_USAGE, EXIT_NOT_RUNNING);
 }
 
 #[test]

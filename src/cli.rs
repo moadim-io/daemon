@@ -26,6 +26,11 @@ const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 /// on `$?` without parsing stdout. The success case (server reachable) exits `0`.
 pub const EXIT_NOT_RUNNING: i32 = 3;
 
+/// Process exit code for a usage error (an unknown/mistyped command or mode), following the common
+/// CLI convention that a usage error exits `2` while an explicit `--help` exits `0`. Lets a wrapper
+/// script, systemd unit, or CI step detect `moadim <typo>` instead of mistaking it for success.
+pub const EXIT_USAGE: i32 = 2;
+
 /// Map a server-liveness flag to the script-friendly process exit code: `0` when a server is
 /// reachable, [`EXIT_NOT_RUNNING`] when it is not.
 fn liveness_exit_code(running: bool) -> i32 {
@@ -88,8 +93,13 @@ pub enum Command {
     Install,
     /// Remove the OS service registration created by [`Command::Install`].
     Uninstall,
-    /// Print usage help.
+    /// Print usage help. Set by an explicit `help`/`-h`/`--help` request, which is a success:
+    /// help goes to stdout and the process exits `0`.
     Help,
+    /// An unrecognized first argument (a typo or unsupported command/mode). Carries the offending
+    /// token so the dispatcher can print `unknown command: <arg>` to stderr and exit with
+    /// [`EXIT_USAGE`], keeping a usage error distinct from an explicit, successful [`Command::Help`].
+    Usage(String),
     /// Print the binary version.
     Version,
     /// A data-plane subcommand (`routines`, `agents`) handled by the clap-based
@@ -108,8 +118,9 @@ pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "e
 
 /// Parse CLI arguments (excluding the program name) into a [`Command`].
 ///
-/// Unknown arguments fall back to [`Command::Help`] so the user sees usage rather than a silent
-/// no-op. With no arguments the default is [`Command::Background`].
+/// An unrecognized first argument maps to [`Command::Usage`] (a usage error written to stderr,
+/// exiting [`EXIT_USAGE`]) rather than [`Command::Help`], so a typo like `moadim staus` is not
+/// mistaken for a successful invocation. With no arguments the default is [`Command::Background`].
 pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let args: Vec<String> = args.into_iter().collect();
     match args.first().map(String::as_str) {
@@ -140,10 +151,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
+        Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
         None | Some("-b" | "--background" | "-d" | "--detach" | "--daemon") => Command::Background,
-        Some(_) => Command::Help,
+        Some(other) => Command::Usage(other.to_string()),
     }
 }
 
@@ -227,6 +239,15 @@ pub fn help_text() -> String {
          Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
     )
+}
+
+/// Report an unknown/mistyped command to **stderr** (not stdout) with a hint to run `moadim help`.
+///
+/// Kept off stdout so a script capturing a command's normal output never confuses this usage error
+/// for real data; the caller pairs this with [`EXIT_USAGE`] so `$?` is non-zero.
+pub fn print_usage_error(arg: &str) {
+    eprintln!("moadim: unknown command: {arg}");
+    eprintln!("Run `moadim help` for usage.");
 }
 
 /// Print usage help to stdout.

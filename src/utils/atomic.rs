@@ -43,11 +43,11 @@ fn tmp_path(path: &Path) -> PathBuf {
 /// Create `tmp`, write all of `bytes`, and flush to disk so the rename publishes complete contents.
 fn write_tmp(tmp: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut file = create_private(tmp)?;
-    // `write_all` and `sync_all` on a freshly-created local file descriptor cannot
-    // realistically fail once the `File::create` above succeeded; `.expect` avoids
-    // a branch that is impossible to exercise in tests.
-    file.write_all(bytes).expect("write to temp file failed");
-    file.sync_all().expect("sync temp file failed");
+    // `File::create`/`OpenOptions::open` reserve no disk space, so a full or failing
+    // disk can still make these fail (ENOSPC/EIO); propagate instead of panicking
+    // the whole daemon over one write.
+    file.write_all(bytes)?;
+    file.sync_all()?;
     Ok(())
 }
 

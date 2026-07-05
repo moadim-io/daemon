@@ -77,9 +77,11 @@ fn svc_trigger_skips_spawn_when_a_previous_run_is_still_alive() {
     let dir = std::env::temp_dir().join(format!("moadim-svc-overlap-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let stub = dir.join("tmux");
+    // Real `$RID` shape (`SESS="moadim-$SLUG-$RID"`, `RID="${TS}_$$"`): digits, `_`, digits —
+    // anything else no longer counts as a live fire of this routine (see `is_fire_of_prefix`).
     std::fs::write(
         &stub,
-        format!("#!/bin/sh\nprintf 'moadim-{slug}-1\\n'\nexit 0\n"),
+        format!("#!/bin/sh\nprintf 'moadim-{slug}-1730000000_4821\\n'\nexit 0\n"),
     )
     .unwrap();
     #[cfg(unix)]

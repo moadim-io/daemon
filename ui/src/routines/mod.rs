@@ -11,9 +11,12 @@
 //! - `page` — the `RoutinesPage` component that wires the above together.
 //! - `bulk_actions` — the list page's bulk-selection callbacks (select/select-all,
 //!   bulk enable/disable/delete).
+//! - `actions` — the list page's CRUD/API callbacks (unlock-all, create, cleanup,
+//!   trigger, toggle, save, confirm-delete).
 //! - `banner`, `filter_bar`, `calendar`, `table`, `row`, `form`, `bulk`, `logs`,
 //!   `flags_panel` — the list page's sub-components.
 
+mod actions;
 mod banner;
 mod bulk;
 mod bulk_actions;

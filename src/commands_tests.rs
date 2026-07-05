@@ -19,7 +19,7 @@ const UNREACHABLE_ADDR: &str = "127.0.0.1:1";
 
 /// Build a `Vec<String>` argv from string literals.
 fn argv(args: &[&str]) -> Vec<String> {
-    args.iter().map(|arg| arg.to_string()).collect()
+    args.iter().map(ToString::to_string).collect()
 }
 
 /// Save an env var's prior value and restore it on drop so a test's override never leaks.
@@ -32,13 +32,13 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
             std::env::set_var(name, value);
         }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -66,7 +66,7 @@ struct FakeServer {
 
 impl FakeServer {
     /// Start a server on an ephemeral port answering every connection with `status` and `body`.
-    fn start(status: u16, body: &str) -> FakeServer {
+    fn start(status: u16, body: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -91,7 +91,7 @@ impl FakeServer {
                 }
             }
         });
-        FakeServer {
+        Self {
             addr,
             stop,
             handle: Some(handle),
@@ -113,7 +113,7 @@ impl Drop for FakeServer {
 #[test]
 fn help_and_version_return_zero() {
     assert_eq!(run(argv(&["--help"])), 0);
-    assert_eq!(run(argv(&["cron-jobs", "--help"])), 0);
+    assert_eq!(run(argv(&["routines", "--help"])), 0);
     assert_eq!(run(argv(&["--version"])), 0);
 }
 
@@ -122,43 +122,12 @@ fn usage_errors_return_two() {
     // No subcommand, an unknown subcommand, and a missing required group all map to exit 2.
     assert_eq!(run(argv(&[])), 2);
     assert_eq!(run(argv(&["nonsense"])), 2);
-    assert_eq!(run(argv(&["cron-jobs"])), 2);
+    assert_eq!(run(argv(&["routines"])), 2);
 }
 
 #[test]
 fn invalid_json_flags_return_two_without_a_server() {
     // Body builders reject malformed JSON before any request is sent.
-    assert_eq!(
-        run(argv(&[
-            "cron-jobs",
-            "create",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-            "--metadata",
-            "{bad",
-        ])),
-        2
-    );
-    assert_eq!(
-        run(argv(&[
-            "cron-jobs",
-            "replace",
-            "id",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-            "--metadata",
-            "{bad",
-        ])),
-        2
-    );
-    assert_eq!(
-        run(argv(&["cron-jobs", "update", "id", "--metadata", "{bad"])),
-        2
-    );
     assert_eq!(
         run(argv(&[
             "routines",
@@ -204,6 +173,11 @@ fn invalid_json_flags_return_two_without_a_server() {
         ])),
         2
     );
+    // Malformed --machines JSON is rejected on the routine update path too.
+    assert_eq!(
+        run(argv(&["routines", "update", "id", "--machines", "{bad"])),
+        2
+    );
 }
 
 // ─── End-to-end dispatch against a fake server ───────────────────────────────
@@ -214,51 +188,6 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
     let _addr = EnvGuard::set(BIND_ENV, &server.addr);
 
     let calls: &[&[&str]] = &[
-        // cron jobs
-        &[
-            "cron-jobs",
-            "create",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-        ],
-        &[
-            "cron-jobs",
-            "create",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-            "--disabled",
-            "--metadata",
-            "{\"a\":1}",
-        ],
-        &["cron-jobs", "list"],
-        &["cron", "get", "abc"],
-        &[
-            "cron-jobs",
-            "update",
-            "abc",
-            "--schedule",
-            "* * * * *",
-            "--metadata",
-            "{\"a\":1}",
-            "--enabled",
-            "true",
-        ],
-        &[
-            "cron-jobs",
-            "replace",
-            "abc",
-            "--schedule",
-            "* * * * *",
-            "--handler",
-            "h",
-        ],
-        &["cron-jobs", "delete", "abc"],
-        &["cron-jobs", "trigger", "abc"],
-        &["cron-jobs", "logs", "abc"],
         // routines
         &[
             "routines",
@@ -281,11 +210,17 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "t",
             "--agent",
             "a",
+            "--model",
+            "claude-sonnet-4-6",
             "--prompt",
             "p",
             "--disabled",
             "--repositories",
             "[]",
+            "--tag",
+            "triage",
+            "--tag",
+            "nightly",
         ],
         &["routines", "list"],
         &["routines", "get", "rid"],
@@ -295,6 +230,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "rid",
             "--title",
             "t2",
+            "--model",
+            "",
             "--repositories",
             "[]",
             "--enabled",
@@ -303,6 +240,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "10",
             "--max-runtime-secs",
             "20",
+            "--tag",
+            "ops",
         ],
         &[
             "routines",
@@ -321,9 +260,11 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["routines", "trigger", "rid"],
         &["routines", "logs", "rid"],
         &["routines", "ical"],
+        // schedule (posts to the routine scheduled-trigger route)
+        &["schedule", "trigger", "sid"],
+        &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
-        &["echo", "hello"],
     ];
     for call in calls {
         assert_eq!(run(argv(call)), 0, "call {call:?}");
@@ -334,7 +275,7 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
 fn logs_print_raw_when_body_is_not_json() {
     let server = FakeServer::start(200, "plain log line\nsecond line");
     let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-    assert_eq!(run(argv(&["cron-jobs", "logs", "abc"])), 0);
+    assert_eq!(run(argv(&["routines", "logs", "abc"])), 0);
 }
 
 #[test]
@@ -350,13 +291,13 @@ fn non_2xx_status_returns_one() {
     {
         let server = FakeServer::start(404, "{\"error\":\"not found\"}");
         let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-        assert_eq!(run(argv(&["cron-jobs", "get", "missing"])), 1);
+        assert_eq!(run(argv(&["routines", "get", "missing"])), 1);
     }
     // An empty error body exercises the "skip the body" branch.
     {
         let server = FakeServer::start(500, "");
         let _addr = EnvGuard::set(BIND_ENV, &server.addr);
-        assert_eq!(run(argv(&["cron-jobs", "list"])), 1);
+        assert_eq!(run(argv(&["routines", "list"])), 1);
     }
 }
 
@@ -364,7 +305,12 @@ fn non_2xx_status_returns_one() {
 fn no_server_returns_not_running_exit_code() {
     let _addr = EnvGuard::set(BIND_ENV, UNREACHABLE_ADDR);
     assert_eq!(
-        run(argv(&["cron-jobs", "list"])),
+        run(argv(&["routines", "list"])),
+        crate::cli::EXIT_NOT_RUNNING
+    );
+    // `schedule trigger` reaches the same not-running path.
+    assert_eq!(
+        run(argv(&["schedule", "trigger", "sid"])),
         crate::cli::EXIT_NOT_RUNNING
     );
 }
@@ -440,50 +386,44 @@ fn insert_opt_only_inserts_present_values() {
 }
 
 #[test]
-fn object_and_to_body_build_compact_json() {
-    let body = object([("message", Value::String("hi".to_string()))]);
-    assert_eq!(body, "{\"message\":\"hi\"}");
-}
-
-#[test]
-fn cron_body_sets_enabled_from_disabled_flag() {
-    let enabled: Value =
-        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, false).unwrap())
-            .unwrap();
-    assert_eq!(enabled["enabled"], Value::Bool(true));
-    let disabled: Value =
-        serde_json::from_str(&cron_body("* * * * *".into(), "h".into(), None, true).unwrap())
-            .unwrap();
-    assert_eq!(disabled["enabled"], Value::Bool(false));
-}
-
-#[test]
-fn cron_body_rejects_bad_metadata() {
-    assert_eq!(
-        cron_body("* * * * *".into(), "h".into(), Some("{bad".into()), false),
-        Err(2)
-    );
-}
-
-#[test]
 fn routine_body_serializes_all_fields() {
     let value: Value = serde_json::from_str(
         &routine_body(
             "* * * * *".into(),
             "title".into(),
             "agent".into(),
+            Some("claude-sonnet-4-6".into()),
             "prompt".into(),
+            Some("keep it small".into()),
             Some("[]".into()),
+            Some("[\"work\"]".into()),
             Some(30),
             Some(60),
+            vec!["triage".to_string(), "nightly".to_string()],
             false,
         )
         .unwrap(),
     )
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
+    assert_eq!(value["goal"], Value::String("keep it small".to_string()));
+    assert_eq!(
+        value["model"],
+        Value::String("claude-sonnet-4-6".to_string())
+    );
     assert_eq!(value["repositories"], Value::Array(vec![]));
+    assert_eq!(
+        value["machines"],
+        Value::Array(vec![Value::String("work".to_string())])
+    );
     assert_eq!(value["ttl_secs"], Value::from(30));
+    assert_eq!(
+        value["tags"],
+        Value::Array(vec![
+            Value::String("triage".to_string()),
+            Value::String("nightly".to_string()),
+        ])
+    );
     assert_eq!(value["enabled"], Value::Bool(true));
 }
 
@@ -494,10 +434,36 @@ fn routine_body_rejects_bad_repositories() {
             "* * * * *".into(),
             "t".into(),
             "a".into(),
+            None,
             "p".into(),
+            None,
             Some("{bad".into()),
             None,
             None,
+            None,
+            vec![],
+            false,
+        ),
+        Err(2)
+    );
+}
+
+#[test]
+fn routine_body_rejects_bad_machines() {
+    // Covers the `?` error branch on the `machines` insert_json_opt call (L509).
+    assert_eq!(
+        routine_body(
+            "* * * * *".into(),
+            "t".into(),
+            "a".into(),
+            None,
+            "p".into(),
+            None,
+            None,
+            Some("{bad".into()),
+            None,
+            None,
+            vec![],
             false,
         ),
         Err(2)

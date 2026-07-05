@@ -435,3 +435,7 @@ mod cleanup_claude_json_tests;
 #[cfg(test)]
 #[path = "cleanup_freed_bytes_tests.rs"]
 mod cleanup_freed_bytes_tests;
+
+#[cfg(test)]
+#[path = "cleanup_run_history_tests.rs"]
+mod cleanup_run_history_tests;

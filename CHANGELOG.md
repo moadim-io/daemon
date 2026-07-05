@@ -327,6 +327,12 @@ operators always see something actionable.
 
 ### Added
 
+- The routines iCalendar feed (`/routines.ics`) now advertises a one-hour poll
+  hint via the RFC 7986 `REFRESH-INTERVAL;VALUE=DURATION:PT1H` property plus the
+  widely-honored `X-PUBLISHED-TTL:PT1H` fallback. The feed is regenerated per
+  request, so without a hint subscribers fall back to their client's slow default
+  (often 12–24h) and routine changes lag for hours; the hint asks them to poll
+  hourly instead.
 - **Per-routine power-saving mode.** A routine can now be paused for power
   saving independently of its `enabled` toggle — `enabled` stays user-owned
   intent, `power_saving` is a separate, system/policy-owned throttle that both

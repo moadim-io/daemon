@@ -13,6 +13,13 @@ const HORIZON_DAYS: i64 = 30;
 const MAX_EVENTS_PER_ROUTINE: usize = 100;
 /// Product identifier advertised in the `PRODID` property.
 const PRODID: &str = "-//moadim//routines//EN";
+/// Suggested polling interval advertised to subscribers, as an iCalendar DURATION.
+///
+/// Routine schedules can change at any time, but the feed itself is regenerated on
+/// every request, so the only freshness limit is how often a subscriber re-fetches.
+/// Without a hint, clients fall back to their own default (often 12–24h), making
+/// routine edits lag for hours. One hour balances freshness against feed load.
+const REFRESH_DURATION: &str = "PT1H";
 /// Duration assigned to each fire so it renders as a visible block rather than a
 /// zero-length instant. RFC 5545 requires a `VEVENT` to carry either `DTEND` or
 /// `DURATION`; a routine fire has no intrinsic end, so a short fixed window is used.
@@ -143,6 +150,11 @@ fn build_ical_core(
         format!("PRODID:{PRODID}"),
         "CALSCALE:GREGORIAN".to_string(),
         format!("X-WR-CALNAME:{}", escape_text(cal_name)),
+        // RFC 7986 §5.7 standard hint plus the widely-honored Microsoft/Google
+        // X-PUBLISHED-TTL fallback, so subscribers poll often enough to pick up
+        // routine changes promptly instead of using their slow built-in default.
+        format!("REFRESH-INTERVAL;VALUE=DURATION:{REFRESH_DURATION}"),
+        format!("X-PUBLISHED-TTL:{REFRESH_DURATION}"),
     ];
     let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {

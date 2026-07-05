@@ -54,7 +54,16 @@ cargo fmt --check
 # keep the two in lockstep so a green local push stays green in CI.
 cargo clippy --workspace --all-targets -- -D warnings
 
-# ── 4. Coverage ───────────────────────────────────────────────────────────────
+# ── 4. Test (workspace) ────────────────────────────────────────────────────────
+# `--workspace`, same reason as the clippy step above: this is a non-virtual
+# workspace (root Cargo.toml declares both a [package] and a [workspace]), so
+# a bare `cargo test` only runs the root `moadim` package's tests and
+# silently skips the `ui` member crate's ~250 tests. The coverage step below
+# also only instruments the root package (see its comment), so without this
+# step a broken `ui` unit test could pass the hook entirely.
+cargo test --workspace
+
+# ── 5. Coverage ───────────────────────────────────────────────────────────────
 # Requires: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
 if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
   echo ""
@@ -65,9 +74,13 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
 fi
 
 echo "Running coverage (100% line coverage required, excluding main.rs)..."
+# Deliberately scoped to the root package (no --workspace): the `ui` crate is
+# a Yew/WASM UI, and much of it is only meaningfully exercisable through a
+# browser, so it isn't held to this 100% line floor. Its own test suite still
+# runs above, via the workspace-wide `cargo test`.
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
-# ── 5. Changelog ────────────────────────────────────────────────────────────────
+# ── 6. Changelog ────────────────────────────────────────────────────────────────
 # Mirror the CI `Changelog` workflow (.github/workflows/changelog.yml) locally so
 # pushes that would fail the `changeset status` check are caught before they hit
 # CI. If the commits being pushed touch `src/` or `ui/`, a new `.changeset/*.md`
@@ -75,7 +88,7 @@ cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 # local equivalent of the `skip-changelog` PR label) for deliberately
 # undocumented src/ui changes.
 
-# ── 6. Line-count gate ────────────────────────────────────────────────────────
+# ── 7. Line-count gate ────────────────────────────────────────────────────────
 # Requires: cargo install linecheck
 if ! command -v linecheck >/dev/null 2>&1; then
   echo ""

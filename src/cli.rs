@@ -43,11 +43,14 @@ pub enum Command {
     Foreground,
     /// Spawn the server as a detached background process, then exit (the default, non-interactive).
     Background,
-    /// Stop a running background server (if any) and start a fresh detached instance. `json`
-    /// requests machine-readable output.
+    /// Stop a running background server (if any) and start a fresh instance. `json` requests
+    /// machine-readable output (ignored when `interactive` is set).
     Restart {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
+        /// Start the fresh instance in the foreground, attached to the terminal, instead of
+        /// detached in the background (mirrors `moadim -i`).
+        interactive: bool,
     },
     /// Ask a running background server to stop. `json` requests machine-readable output.
     Stop {
@@ -109,6 +112,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         Some("machine") => Command::Machine(args[1..].to_vec()),
         Some("restart") => Command::Restart {
             json: wants_json(&args[1..]),
+            interactive: wants_interactive(&args[1..]),
         },
         Some("stop") => Command::Stop {
             json: wants_json(&args[1..]),
@@ -149,6 +153,12 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
+/// Whether a `--interactive`/`-i` flag appears among a command's trailing arguments, requesting
+/// that `restart` bring the fresh instance up in the foreground instead of detached.
+fn wants_interactive(rest: &[String]) -> bool {
+    rest.iter().any(|arg| arg == "--interactive" || arg == "-i")
+}
+
 /// Default poll timeout for a bare `--wait` (no explicit seconds) on `status`.
 const DEFAULT_WAIT_SECS: u64 = 30;
 
@@ -184,7 +194,7 @@ pub fn help_text() -> String {
          \x20   -b, --background       start the server detached in the background (explicit default); aliases: -d, --detach, --daemon\n\
          \n\
          COMMANDS:\n\
-         \x20   restart [--json]       stop a running server (if any) and start a fresh background one\n\
+         \x20   restart [--json] [-i]  stop a running server (if any) and start a fresh one (-i/--interactive: foreground)\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json] [--wait[=SECS]] show whether a server is running (--wait: poll until\n\
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
@@ -234,6 +244,31 @@ pub fn run_background() -> anyhow::Result<()> {
         crate::restart::stop_running_and_wait()?;
     }
     start_detached_and_report("started")
+}
+
+/// Stop a currently running background server, if any, printing the same status line used by
+/// `restart` unless `json` suppresses it. Returns the PID of the server that was stopped, or
+/// `None` if none was running.
+///
+/// Shared by [`restart`] (which spawns a fresh detached instance afterward) and the interactive
+/// `restart -i` path in `main`, which brings the fresh instance up in the foreground instead.
+pub(crate) fn stop_existing_for_restart(json: bool) -> anyhow::Result<Option<u32>> {
+    if is_running() {
+        let pid = read_pid_file();
+        if !json {
+            let suffix = pid
+                .map(|process_id| format!(" (pid {process_id})"))
+                .unwrap_or_default();
+            println!("moadim is running{suffix}; stopping it");
+        }
+        crate::restart::stop_running_and_wait()?;
+        Ok(pid)
+    } else {
+        if !json {
+            println!("moadim is not running; starting a fresh instance");
+        }
+        Ok(None)
+    }
 }
 
 /// Refuse an interactive foreground start (`moadim -i`) when a server is already reachable on the
@@ -287,22 +322,7 @@ fn foreground_already_running_message(pid: Option<u32>) -> String {
 /// one is already up, this is the explicit "give me a clean process now" command: it stops the
 /// running server when present, otherwise just starts one.
 pub fn restart(json: bool) -> anyhow::Result<()> {
-    let old_pid = if is_running() {
-        let pid = read_pid_file();
-        if !json {
-            let suffix = pid
-                .map(|process_id| format!(" (pid {process_id})"))
-                .unwrap_or_default();
-            println!("moadim is running{suffix}; stopping it");
-        }
-        crate::restart::stop_running_and_wait()?;
-        pid
-    } else {
-        if !json {
-            println!("moadim is not running; starting a fresh instance");
-        }
-        None
-    };
+    let old_pid = stop_existing_for_restart(json)?;
     let new_pid = spawn_detached()?;
     if json {
         println!("{}", restart_json(old_pid, new_pid));

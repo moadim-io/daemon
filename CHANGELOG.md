@@ -921,6 +921,11 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Added
 
+- **`moadim restart -i`/`--interactive`.** `restart` previously always spawned
+  the fresh instance detached in the background, with no way to bring it up
+  attached to the terminal in one step (mirroring `moadim -i`). The new flag
+  stops the running server (if any) and starts the replacement in the
+  foreground instead of backgrounding it.
 - **`ETag` + `304 Not Modified` for the web UI.** `GET /` (and the SPA fallback
   for client-routed paths) now sends a strong `ETag` for the embedded ~1.1 MB
   `index.html`, and honors a matching `If-None-Match` with a bodyless `304`

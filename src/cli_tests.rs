@@ -342,14 +342,23 @@ fn liveness_exit_code_maps_running_to_codes() {
 
 #[test]
 fn restart_command() {
-    assert_eq!(parse(argv(&["restart"])), Command::Restart { json: false });
+    assert_eq!(
+        parse(argv(&["restart"])),
+        Command::Restart {
+            json: false,
+            interactive: false
+        }
+    );
 }
 
 #[test]
 fn restart_command_with_json_flag() {
     assert_eq!(
         parse(argv(&["restart", "--json"])),
-        Command::Restart { json: true }
+        Command::Restart {
+            json: true,
+            interactive: false
+        }
     );
 }
 
@@ -678,3 +687,6 @@ fn status_stop_cleanup_json_share_the_same_address() {
     assert_eq!(stop["address"], expected);
     assert_eq!(cleanup["address"], expected);
 }
+
+#[path = "cli_restart_tests.rs"]
+mod cli_restart_tests;

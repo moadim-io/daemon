@@ -1608,6 +1608,15 @@
             "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
             "minimum": 0
           },
+          "retention_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds this run's workbench is due to be reaped (`finished_at` +\n[`Routine::effective_ttl_secs`]). `None` while the run hasn't finished, or once its\nworkbench is already gone (a run restored from `runs.log` after TTL reaping).",
+            "minimum": 0
+          },
           "started_at": {
             "type": "integer",
             "format": "int64",

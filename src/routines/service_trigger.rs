@@ -445,7 +445,7 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             if dir_slug != slug {
                 continue;
             }
-            runs.push(run_summary(&name, ts));
+            runs.push(run_summary(&name, ts, Some(routine.effective_ttl_secs())));
         }
     }
     for persisted in read_persisted_runs(id) {
@@ -455,6 +455,9 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             finished_at: Some(persisted.finished_at),
             status: persisted.status,
             exit_code: persisted.exit_code,
+            // The workbench is already gone (that's why this run came from `runs.log` instead of
+            // a live directory scan), so there is nothing left to count down to.
+            retention_expires_at: None,
         });
     }
     runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
@@ -494,7 +497,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
             let Some((routine_id, routine_title)) = by_slug.get(dir_slug).cloned() else {
                 continue;
             };
-            let run = run_summary(&name, ts);
+            let run = run_summary(&name, ts, None);
             runs.push(FleetRunSummary {
                 routine_id,
                 routine_title,
@@ -525,7 +528,11 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
 }
 
 /// Derive a single [`RunSummary`] for workbench `dir` (named `{slug}-{started_at}`).
-fn run_summary(dir: &str, started_at: u64) -> RunSummary {
+///
+/// `effective_ttl_secs` is the owning routine's [`Routine::effective_ttl_secs`], used to compute
+/// `retention_expires_at`; pass `None` when the caller (e.g. the fleet-wide
+/// [`svc_list_all_runs`]) doesn't need that field.
+fn run_summary(dir: &str, started_at: u64, effective_ttl_secs: Option<u64>) -> RunSummary {
     let path = workbenches_dir().join(dir);
     let exit_code = read_exit_code(&path);
     let finished_at = std::fs::metadata(path.join("exit_code"))
@@ -540,12 +547,15 @@ fn run_summary(dir: &str, started_at: u64) -> RunSummary {
         None if run_session_alive(&session) => RunStatus::Running,
         None => RunStatus::Unknown,
     };
+    let retention_expires_at =
+        finished_at.and_then(|finish| effective_ttl_secs.map(|ttl| finish + ttl));
     RunSummary {
         workbench: dir.to_string(),
         started_at,
         finished_at,
         status,
         exit_code,
+        retention_expires_at,
     }
 }
 

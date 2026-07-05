@@ -186,9 +186,9 @@ fn cleanup_expired_workbenches_kills_a_live_expired_session() {
     std::fs::create_dir_all(workbenches.join("alive-1")).unwrap();
 
     let store = super::super::model::new_store();
-    let removed = cleanup_expired_workbenches(&store);
+    let stats = cleanup_expired_workbenches(&store);
     assert!(
-        removed >= 1,
+        stats.removed >= 1,
         "the live, expired workbench is killed and reaped"
     );
     assert!(!workbenches.join("alive-1").exists());
@@ -282,7 +282,7 @@ fn reap_dir_removes_only_finished_and_expired() {
     let ttl_for = |_slug: &str| 500u64; // expiry threshold: age > 500
     let alive = |session: &str| session == "moadim-running-100";
 
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -293,7 +293,8 @@ fn reap_dir_removes_only_finished_and_expired() {
         &noop_persist,
     );
 
-    assert_eq!(removed, 1);
+    assert_eq!(stats.removed, 1);
+    assert_eq!(stats.freed_bytes, 0, "an empty reaped dir frees 0 bytes");
     assert!(!base.join("expired-100").exists());
     assert!(base.join("fresh-900").exists());
     assert!(base.join("running-100").exists());
@@ -316,7 +317,7 @@ fn reap_dir_uses_per_slug_ttl() {
     let ttl_for = |slug: &str| if slug == "short" { 100 } else { 100_000 };
     let dead = |_session: &str| false;
 
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -327,7 +328,7 @@ fn reap_dir_uses_per_slug_ttl() {
         &noop_persist,
     );
 
-    assert_eq!(removed, 1);
+    assert_eq!(stats.removed, 1);
     assert!(!base.join("short-500").exists());
     assert!(base.join("long-500").exists());
 
@@ -360,7 +361,7 @@ fn reap_dir_measures_ttl_from_finish_not_trigger() {
         }
     };
 
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -371,7 +372,7 @@ fn reap_dir_measures_ttl_from_finish_not_trigger() {
         &noop_persist,
     );
 
-    assert_eq!(removed, 1, "only the long-finished run is reaped");
+    assert_eq!(stats.removed, 1, "only the long-finished run is reaped");
     assert!(
         base.join("longrun-100").exists(),
         "a run that finished within its TTL is retained even though its trigger age exceeds the TTL"
@@ -426,7 +427,7 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -437,7 +438,7 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
         &noop_persist,
     );
 
-    assert_eq!(removed, 1, "hung-then-killed workbench is reaped");
+    assert_eq!(stats.removed, 1, "hung-then-killed workbench is reaped");
     assert_eq!(killed.into_inner(), vec!["moadim-hung-100".to_string()]);
     assert!(!base.join("hung-100").exists());
 
@@ -458,7 +459,7 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -470,7 +471,7 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
     );
 
     assert_eq!(
-        removed, 0,
+        stats.removed, 0,
         "killed but TTL not elapsed -> left for a later sweep"
     );
     assert_eq!(killed.into_inner(), vec!["moadim-hung-900".to_string()]);
@@ -497,7 +498,7 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
 
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -508,7 +509,7 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
         &noop_persist,
     );
 
-    assert_eq!(removed, 1);
+    assert_eq!(stats.removed, 1);
     assert!(
         killed.into_inner().is_empty(),
         "no kill for an already-dead session"
@@ -654,9 +655,9 @@ fn cleanup_expired_workbenches_persists_run_history_before_removal() {
     std::fs::create_dir_all(&unknown).unwrap();
     // No `exit_code` file at all: e.g. the launch aborted before the agent ran.
 
-    let removed = cleanup_expired_workbenches(&store);
+    let stats = cleanup_expired_workbenches(&store);
 
-    assert_eq!(removed, 3);
+    assert_eq!(stats.removed, 3);
     assert!(!failed.exists() && !succeeded.exists() && !unknown.exists());
     let mut history = super::super::run_history::read_persisted_runs("persist-id");
     history.sort_by_key(|run| run.workbench.clone());
@@ -677,3 +678,5 @@ fn cleanup_expired_workbenches_persists_run_history_before_removal() {
     }
     let _ = std::fs::remove_dir_all(&home);
 }
+
+// `dir_size`/`freed_bytes` coverage lives in `cleanup_freed_bytes_tests.rs`.

@@ -322,9 +322,10 @@ impl MoadimMcp {
         )
     }
 
-    /// Reap finished, expired run workbenches immediately, returning how many were removed.
+    /// Reap finished, expired run workbenches immediately, returning how many were removed and the
+    /// bytes freed.
     #[tool(
-        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed."
+        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed and the total disk space freed in bytes."
     )]
     fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::svc_cleanup(&self.routines)))

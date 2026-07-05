@@ -198,7 +198,7 @@ fn readme_cleanup_json_shape_matches_actual_keys() {
     documented.sort();
     assert_eq!(
         documented,
-        actual_keys(&cleanup_json(3, true)),
+        actual_keys(&cleanup_json(3, 12345, true)),
         "README `moadim cleanup --json` shape has drifted from cleanup_json's actual keys"
     );
 }

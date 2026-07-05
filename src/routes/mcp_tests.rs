@@ -211,6 +211,7 @@ fn cleanup_workbenches_tool_returns_removed_count() {
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     assert!(val["removed"].is_u64());
+    assert!(val["freed_bytes"].is_u64());
 }
 
 #[test]

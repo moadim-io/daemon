@@ -274,14 +274,16 @@ fn wait_until_polls_until_check_flips_true() {
 
 #[test]
 fn cleanup_json_reports_removed_and_running() {
-    let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, true)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(3, 12345, true)).unwrap();
     assert_eq!(value["running"], serde_json::json!(true));
     assert_eq!(value["removed"], serde_json::json!(3));
+    assert_eq!(value["freed_bytes"], serde_json::json!(12345));
     assert_eq!(value["address"], serde_json::json!(BIND_ADDR));
 
-    let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, false)).unwrap();
+    let down: serde_json::Value = serde_json::from_str(&cleanup_json(0, 0, false)).unwrap();
     assert_eq!(down["running"], serde_json::json!(false));
     assert_eq!(down["removed"], serde_json::json!(0));
+    assert_eq!(down["freed_bytes"], serde_json::json!(0));
     assert_eq!(down["address"], serde_json::json!(BIND_ADDR));
 }
 
@@ -645,7 +647,7 @@ fn status_and_stop_json_share_the_same_shape() {
 #[test]
 fn cleanup_json_address_reflects_bind_override() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, "127.0.0.1:6000");
-    let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&cleanup_json(2, 0, true)).unwrap();
     assert_eq!(value["address"], serde_json::json!("127.0.0.1:6000"));
 }
 
@@ -658,7 +660,7 @@ fn status_stop_cleanup_json_share_the_same_address() {
     let status: serde_json::Value =
         serde_json::from_str(&status_json(true, Some(7), None)).unwrap();
     let stop: serde_json::Value = serde_json::from_str(&stop_json(true, Some(7))).unwrap();
-    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, true)).unwrap();
+    let cleanup: serde_json::Value = serde_json::from_str(&cleanup_json(2, 0, true)).unwrap();
 
     let expected = serde_json::json!("127.0.0.1:6000");
     assert!(

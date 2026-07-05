@@ -456,11 +456,15 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
             let removed = parse_removed_count(&body).unwrap_or(0);
+            let freed_bytes = parse_freed_bytes(&body).unwrap_or(0);
             if json {
-                println!("{}", cleanup_json(removed, true));
+                println!("{}", cleanup_json(removed, freed_bytes, true));
             } else {
                 let plural = if removed == 1 { "" } else { "es" };
-                println!("cleanup removed {removed} workbench{plural}");
+                println!(
+                    "cleanup removed {removed} workbench{plural} (freed {})",
+                    humanize_bytes(freed_bytes)
+                );
             }
             Ok(liveness_exit_code(true))
         }
@@ -469,13 +473,30 @@ pub fn cleanup(json: bool) -> anyhow::Result<i32> {
         }
         Err(_) => {
             if json {
-                println!("{}", cleanup_json(0, false));
+                println!("{}", cleanup_json(0, 0, false));
             } else {
                 println!("moadim is not running");
             }
             Ok(liveness_exit_code(false))
         }
     }
+}
+
+/// Render a byte count as a short human-readable size using 1024-based units. Values under 1 KiB
+/// are shown as a bare integer (`512 B`); larger values use one decimal place (`12.4 MB`). Caps at
+/// TB so the unit table can't be indexed out of range.
+fn humanize_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    format!("{size:.1} {}", UNITS[unit])
 }
 
 /// Ask a running server to trigger routine `id` immediately, outside its schedule, via the
@@ -590,14 +611,16 @@ fn parse_health(body: &str) -> Option<HealthInfo> {
 }
 
 /// Render the `cleanup` result as a one-line JSON object:
-/// `{"running":bool,"removed":N,"address":…}`. `removed` is `0` when the server is not running
-/// (`running:false`). `address` is the effective bound [`bind_addr`] the request was sent to,
-/// matching `status --json`/`stop --json`'s object shape so every `--json` command surfaces the
-/// endpoint it talked to.
-fn cleanup_json(removed: usize, running: bool) -> String {
+/// `{"running":bool,"removed":N,"freed_bytes":N,"address":…}`. `removed`/`freed_bytes` are `0` when
+/// the server is not running (`running:false`). `address` is the effective bound [`bind_addr`] the
+/// request was sent to, matching `status --json`/`stop --json`'s object shape so every `--json`
+/// command surfaces the endpoint it talked to. The pre-existing `running`/`removed` keys are
+/// preserved; `freed_bytes` is additive.
+fn cleanup_json(removed: usize, freed_bytes: u64, running: bool) -> String {
     serde_json::json!({
         "running": running,
         "removed": removed,
+        "freed_bytes": freed_bytes,
         "address": bind_addr(),
     })
     .to_string()
@@ -608,7 +631,8 @@ mod cli_system;
 pub use cli_system::{clear_pid_file, spawn_restart, write_pid_file};
 pub(crate) use cli_system::{http_request, http_request_json, is_running, read_pid_file};
 use cli_system::{
-    http_request_with_body, parse_removed_count, paths_daemon_log, spawn_detached, wait_until,
+    http_request_with_body, parse_freed_bytes, parse_removed_count, paths_daemon_log,
+    spawn_detached, wait_until,
 };
 #[cfg(test)]
 pub(crate) use cli_system::{parse_body, parse_status_code};
@@ -616,6 +640,10 @@ pub(crate) use cli_system::{parse_body, parse_status_code};
 #[cfg(test)]
 #[path = "cli_tests.rs"]
 mod cli_tests;
+
+#[cfg(test)]
+#[path = "cli_cleanup_bytes_tests.rs"]
+mod cli_cleanup_bytes_tests;
 
 #[cfg(test)]
 #[path = "cli_help_tests.rs"]

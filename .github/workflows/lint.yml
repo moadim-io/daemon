@@ -67,7 +67,14 @@ jobs:
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    # macOS lints the `#[cfg(target_os = "macos")]` launchd service installer (src/service/macos.rs),
+    # which a Linux-only runner strips from compilation, so a lint regression there could land on
+    # main fully green. fail-fast: false so a failure on one OS still reports the other (#341).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -82,9 +89,9 @@ jobs:
       - name: Cache cargo registry and target/
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          # Scoped so the `clippy` job's --all-targets target/ artifacts
-          # don't clobber the `test` job's cache entry.
-          shared-key: clippy
+          # Scoped so the `clippy` job's --all-targets target/ artifacts don't clobber the `test`
+          # job's cache entry, and so the two OSes in this job's matrix don't clobber each other's.
+          shared-key: clippy-${{ matrix.os }}
 
       - name: Run clippy
         # Match the local pre-push hook exactly: this is a non-virtual

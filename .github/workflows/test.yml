@@ -44,7 +44,14 @@ concurrency:
 jobs:
   test:
     name: cargo test
-    runs-on: ubuntu-latest
+    # macOS runs the `#[cfg(target_os = "macos")]` launchd service installer (src/service/macos.rs)
+    # and its tests, which a Linux-only runner silently strips from compilation and never
+    # exercises. fail-fast: false so a failure on one OS still reports the other (#341).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -58,10 +65,10 @@ jobs:
       - name: Cache cargo registry and target/
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          # Scoped so the `test` and `clippy` jobs' target/ artifacts (built
-          # with different flags: plain build vs --all-targets clippy) don't
-          # clobber each other's cache entry.
-          shared-key: test
+          # Scoped so the `test` and `clippy` jobs' target/ artifacts (built with different flags:
+          # plain build vs --all-targets clippy) don't clobber each other's cache entry, and so the
+          # two OSes in this job's matrix don't clobber each other's either.
+          shared-key: test-${{ matrix.os }}
 
       - name: Run tests
         run: cargo test

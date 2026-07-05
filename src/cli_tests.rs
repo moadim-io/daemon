@@ -363,20 +363,6 @@ fn restart_command_with_json_flag() {
 }
 
 #[test]
-fn restart_command_interactive_flag() {
-    for flag in ["-i", "--interactive"] {
-        assert_eq!(
-            parse(argv(&["restart", flag])),
-            Command::Restart {
-                json: false,
-                interactive: true
-            },
-            "flag {flag} should select interactive restart"
-        );
-    }
-}
-
-#[test]
 fn install_and_uninstall_commands() {
     assert_eq!(parse(argv(&["install"])), Command::Install);
     assert_eq!(parse(argv(&["uninstall"])), Command::Uninstall);
@@ -701,3 +687,6 @@ fn status_stop_cleanup_json_share_the_same_address() {
     assert_eq!(stop["address"], expected);
     assert_eq!(cleanup["address"], expected);
 }
+
+#[path = "cli_restart_tests.rs"]
+mod cli_restart_tests;

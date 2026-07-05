@@ -33,7 +33,7 @@ mod table;
 // RoutinesPage}`); every other cross-submodule reference goes through an
 // explicit `use super::x::Y;` in the submodule that needs it.
 pub use banner::GlobalLockBanner;
-pub(crate) use history::{run_status_class, run_status_label};
+pub(crate) use history::{fmt_run_duration, run_status_class, run_status_label};
 pub use model::*;
 pub use page::RoutinesPage;
 pub(crate) use state::RoutineHistoryQuery;

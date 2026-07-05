@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::available_agents;
@@ -100,6 +103,21 @@ fn reconcile_preserves_disabled_toggle() {
         "must not re-enable a user-disabled default"
     );
     assert_eq!(updated.prompt, spec.prompt, "prompt should be refreshed");
+}
+
+#[test]
+fn reconcile_preserves_power_saving() {
+    let spec = &DEFAULT_ROUTINES[0];
+    // Power saving is daemon/policy-owned, not spec-derived — a content drift refresh must not
+    // clear it, the same way it must not touch `enabled`.
+    let mut cur = materialize(spec, 100);
+    cur.power_saving = true;
+    cur.prompt = "stale prompt".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("drifted routine should be rewritten");
+    assert!(
+        updated.power_saving,
+        "must not clear power-saving state on a content refresh"
+    );
 }
 
 #[test]

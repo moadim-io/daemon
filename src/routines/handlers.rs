@@ -188,6 +188,9 @@ pub async fn delete(
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
+///
+/// Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See
+/// [`svc_trigger`].
 #[utoipa::path(post, path = "/routines/{id}/trigger",
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
@@ -238,7 +241,7 @@ pub async fn ical_feed(
 
 /// `POST /routines/cleanup` — reap finished, expired run workbenches on demand.
 #[utoipa::path(post, path = "/routines/cleanup",
-    responses((status = 200, body = CleanupResponse, description = "Number of workbenches removed")))]
+    responses((status = 200, body = CleanupResponse, description = "Workbenches removed and bytes freed")))]
 pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse> {
     Json(svc_cleanup(&store))
 }

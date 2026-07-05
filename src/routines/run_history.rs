@@ -52,15 +52,32 @@ pub(crate) fn append_persisted_run(id: &str, run: &PersistedRun) {
     let parent = path
         .parent()
         .expect("routine run-history path has a parent dir");
-    let result = std::fs::create_dir_all(parent).and_then(|()| {
+    let result = crate::utils::fs_perms::create_private_dir_all(parent)
+        .and_then(|()| open_history_append(&path).and_then(|mut file| writeln!(file, "{line}")));
+    if let Err(err) = result {
+        log::warn!("run history: failed to append for routine {id:?}: {err}");
+    }
+}
+
+/// Open `path` for append, creating it owner-only (`0600`) on unix if it doesn't already exist —
+/// `runs.log` entries can echo `exit_code`s from an agent run and should stay unreadable by other
+/// local accounts. Falls back to the standard `OpenOptions` on non-unix.
+fn open_history_append(path: &Path) -> std::io::Result<std::fs::File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&path)
-            .and_then(|mut file| writeln!(file, "{line}"))
-    });
-    if let Err(err) = result {
-        log::warn!("run history: failed to append for routine {id:?}: {err}");
+            .mode(0o600)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
     }
 }
 

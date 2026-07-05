@@ -61,7 +61,7 @@ struct UnlockRoutinesInput {
 struct CreateFlagInput {
     /// UUID of the routine to flag.
     id: String,
-    /// Free-text flag category. Common examples: "bug", "gap", "edge_case", "question", "blocker"
+    /// Free-text flag category. Common examples: "bug", "gap", `edge_case`, "question", "blocker"
     /// — any string is accepted.
     r#type: String,
     /// Free-text description of what's unclear.
@@ -90,6 +90,15 @@ struct SnoozeRoutineInput {
     /// Number of upcoming scheduled fires to skip, or omit/null. Mutually exclusive with
     /// `snoozed_until`.
     skip_runs: Option<u32>,
+}
+
+/// Input for the `set_power_saving` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SetPowerSavingInput {
+    /// UUID of the routine to update.
+    id: String,
+    /// `true` to pause scheduled and manual firing for power saving, `false` to resume.
+    active: bool,
 }
 
 /// Input for the `update_routine` MCP tool.
@@ -296,9 +305,27 @@ impl MoadimMcp {
         )
     }
 
-    /// Reap finished, expired run workbenches immediately, returning how many were removed.
+    /// Pause or resume a routine's scheduled and manual firing for power saving, without touching
+    /// its `enabled` state or crontab line.
     #[tool(
-        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed."
+        description = "Set or clear a routine's power-saving state. While active, both trigger_routine and the routine's cron schedule refuse to launch it (distinctly from a disabled routine) — its enabled toggle and crontab line are untouched, so it resumes firing on its own once cleared."
+    )]
+    fn set_power_saving(
+        &self,
+        Parameters(SetPowerSavingInput { id, active }): Parameters<SetPowerSavingInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_set_power_saving(&self.routines, &id, active) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// Reap finished, expired run workbenches immediately, returning how many were removed and the
+    /// bytes freed.
+    #[tool(
+        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed and the total disk space freed in bytes."
     )]
     fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::svc_cleanup(&self.routines)))

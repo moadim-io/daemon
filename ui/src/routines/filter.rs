@@ -318,6 +318,9 @@ pub enum RoutineHealth {
     AgentMissing,
     /// `enabled: false` — intentionally paused.
     Disabled,
+    /// Enabled, but system/policy paused for power saving — distinct from `Disabled` because it's
+    /// not the user's choice and lifts on its own.
+    PowerSaving,
     /// Enabled, scheduled, agent registered, but the agent snoozed its own scheduled fires.
     Snoozed,
     /// Enabled, scheduled, has a machine, agent registered — fully operational.
@@ -332,8 +335,9 @@ impl RoutineHealth {
             RoutineHealth::DeadSchedule => 1,
             RoutineHealth::AgentMissing => 2,
             RoutineHealth::Disabled => 3,
-            RoutineHealth::Snoozed => 4,
-            RoutineHealth::Healthy => 5,
+            RoutineHealth::PowerSaving => 4,
+            RoutineHealth::Snoozed => 5,
+            RoutineHealth::Healthy => 6,
         }
     }
 
@@ -344,6 +348,7 @@ impl RoutineHealth {
             RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
             RoutineHealth::AgentMissing => "AGENT MISSING",
             RoutineHealth::Disabled => "DISABLED",
+            RoutineHealth::PowerSaving => "POWER SAVING",
             RoutineHealth::Snoozed => "SNOOZED",
             RoutineHealth::Healthy => "HEALTHY",
         }
@@ -356,6 +361,7 @@ impl RoutineHealth {
             RoutineHealth::DeadSchedule => "health-badge dead",
             RoutineHealth::AgentMissing => "health-badge agent-missing",
             RoutineHealth::Disabled => "health-badge disabled",
+            RoutineHealth::PowerSaving => "health-badge power-saving",
             RoutineHealth::Snoozed => "health-badge snoozed",
             RoutineHealth::Healthy => "health-badge healthy",
         }
@@ -404,6 +410,9 @@ pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
     if !r.enabled {
         return RoutineHealth::Disabled;
     }
+    if r.power_saving {
+        return RoutineHealth::PowerSaving;
+    }
     if r.machines.iter().all(|m| m.trim().is_empty()) {
         return RoutineHealth::Dormant;
     }
@@ -417,6 +426,18 @@ pub fn routine_health(r: &Routine, now: DateTime<Local>) -> RoutineHealth {
         return RoutineHealth::Snoozed;
     }
     RoutineHealth::Healthy
+}
+
+/// Tooltip for the row's "Run now" button, naming the reason a manual trigger would be refused.
+#[must_use]
+pub fn trigger_button_title(r: &Routine) -> &'static str {
+    if !r.enabled {
+        "Routine is disabled"
+    } else if r.power_saving {
+        "Routine is in power-saving mode"
+    } else {
+        "Run now"
+    }
 }
 
 /// Routines surviving `filter`, preserving the input order.

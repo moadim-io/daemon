@@ -14,7 +14,7 @@ const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 /// Resolve the base home directory, honoring the [`HOME_OVERRIDE_ENV`] test seam when set.
 ///
 /// Exposed to the crate so platform service installers resolve their home-relative paths (e.g. the
-/// macOS LaunchAgents plist) through the same override seam, keeping tests off the real home.
+/// macOS `LaunchAgents` plist) through the same override seam, keeping tests off the real home.
 pub(crate) fn home() -> Option<PathBuf> {
     match std::env::var_os(HOME_OVERRIDE_ENV) {
         Some(dir) => Some(PathBuf::from(dir)),
@@ -285,6 +285,20 @@ pub(crate) fn moadim_home_from_home(home: Option<PathBuf>) -> PathBuf {
 #[must_use]
 pub fn workbenches_dir() -> PathBuf {
     moadim_home().join("workbenches")
+}
+
+// ─── Claude Code shared config ───────────────────────────────────────────────
+
+/// Returns the path to `~/.claude.json`, the Claude Code config file shared with the live `claude`
+/// process. The built-in `claude` agent's `setup` step seeds a per-workbench `projects` entry here
+/// on every run (see `crate::routines::agents`); `crate::utils::claude_json` prunes that entry
+/// once the cleanup sweep (`crate::routines::cleanup`) reaps the workbench, so the file does not
+/// grow unbounded.
+///
+/// `None` when the home directory cannot be resolved.
+#[must_use]
+pub fn claude_json_path() -> Option<PathBuf> {
+    home().map(|dir| dir.join(".claude.json"))
 }
 
 #[cfg(test)]

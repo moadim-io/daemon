@@ -36,6 +36,18 @@ pub(crate) fn slugify(title: &str) -> String {
     }
 }
 
+/// Literal prefix every routine fire's tmux session name begins with; the remainder is
+/// `{slug}-{fire's $TS}` (see the `SESS=` line in [`build_routine_command`]).
+pub(crate) const TMUX_SESSION_PREFIX: &str = "moadim-";
+
+/// The tmux session-name prefix shared by every fire of the routine identified by `slug` —
+/// `{TMUX_SESSION_PREFIX}{slug}-`, matching every session name [`build_routine_command`] can
+/// produce for it regardless of `$TS`. Used by the overlap guard (#514) to detect whether *any*
+/// fire of this routine already has a live session, not just one exact `$TS`.
+pub(crate) fn tmux_session_prefix(slug: &str) -> String {
+    format!("{TMUX_SESSION_PREFIX}{slug}-")
+}
+
 /// Compose the `prompt.compiled.md` body: a repositories-as-context preamble, an optional `## Goal`
 /// section, the prompt, and — when the routine has any — an "Open flags" section listing
 /// gaps/bugs/edge cases the agent raised on a previous run (see [`super::flags`]) that no one has
@@ -102,6 +114,71 @@ pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> 
         .replace("{workbench}", workbench)
         .replace("{prompt_file}", prompt_file)
         .replace("{prompt}", r#""$(cat prompt.md)""#)
+}
+
+/// The placeholder tokens [`substitute`] understands.
+const KNOWN_PLACEHOLDERS: [&str; 3] = ["{workbench}", "{prompt_file}", "{prompt}"];
+
+/// Return the placeholder-style `{name}` tokens in `arg`.
+///
+/// A token is a `{`, *not* immediately preceded by `$`, wrapping a lowercase identifier
+/// (`[a-z][a-z_]*`), closed by the next `}`. This shape deliberately matches the known
+/// placeholders and nothing else: shell constructs like `${HOME}`, `{}`, `{0}`, or `{print $1}`
+/// are ignored, so only genuine placeholder typos (`{prompt_fil}`, `{wokbench}`) surface.
+fn placeholder_tokens(arg: &str) -> Vec<String> {
+    let bytes = arg.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' && (i == 0 || bytes[i - 1] != b'$') {
+            if let Some(rel) = arg[i + 1..].find('}') {
+                let inner = &arg[i + 1..i + 1 + rel];
+                if inner.starts_with(|ch: char| ch.is_ascii_lowercase())
+                    && inner.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')
+                {
+                    out.push(format!("{{{inner}}}"));
+                }
+                i += 1 + rel + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Validate that an agent's `args` can actually deliver a prompt and carry no typo'd placeholder.
+///
+/// Two silent fire-time failures are caught up front (#322):
+///
+/// * **Typo'd placeholder.** A token like `{prompt_fil}` is left untouched by [`substitute`] and
+///   reaches the agent as a literal argument; the task never runs. Any placeholder-style token
+///   outside [`KNOWN_PLACEHOLDERS`] is rejected, naming the offender.
+/// * **Missing prompt.** If no arg contains `{prompt}` or `{prompt_file}`, the composed prompt is
+///   never passed and the agent launches with no task, burning a full run until the watchdog reaps
+///   it. At least one prompt placeholder is therefore required.
+pub(crate) fn validate_placeholders(args: &[String]) -> Result<(), String> {
+    for arg in args {
+        for token in placeholder_tokens(arg) {
+            if !KNOWN_PLACEHOLDERS.contains(&token.as_str()) {
+                return Err(format!(
+                    "unknown placeholder {token} in args; supported placeholders are {}",
+                    KNOWN_PLACEHOLDERS.join(", ")
+                ));
+            }
+        }
+    }
+    let delivers_prompt = args
+        .iter()
+        .any(|arg| arg.contains("{prompt}") || arg.contains("{prompt_file}"));
+    if !delivers_prompt {
+        return Err(
+            "args must include a prompt placeholder ({prompt} or {prompt_file}); \
+             otherwise the agent launches with no task"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// Conservative cap on a single inlined `{prompt}` argument, matching Linux's
@@ -385,17 +462,28 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     let invocation = invocation.join(" ");
 
     let mut stmts = vec![
+        // Owner-only umask for everything this run creates: the workbench dir, the copied
+        // `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` (which captures the
+        // full agent transcript — cloned repo contents, command output, any printed secrets). Set
+        // before the first `mkdir`/`cp`/`tmux` so those artifacts land `0700`/`0600` instead of the
+        // login shell's default world-readable umask, matching the daemon's own on-disk posture.
+        "umask 077".to_string(),
         // The crontab invokes this script under a *login* shell (`/bin/sh -l`; see
         // `sync::routines::format_routine_line`), so the user's `~/.profile` is sourced first and
         // the agent inherits their environment — GH_TOKEN, API keys and the like — which cron's
         // minimal env (and, on macOS, the GUI-Keychain-less session) otherwise withholds.
         //
-        // PATH is still *replaced* with this curated list (not merged with the profile's), keeping
-        // binary resolution identical to before the login-shell change: tmux and the agent always
-        // resolve to the same dirs the daemon itself uses, regardless of how the profile orders
-        // PATH. Only environment *variables* are gained from the profile; PATH behaviour is
-        // unchanged.
-        format!("export PATH={}", shell_quote(&cron_path(&agent.command))),
+        // The curated dirs are *appended* to the profile's PATH (`$PATH:<curated>`), not
+        // substituted for it. The profile-sourced `$PATH` therefore keeps precedence, so the
+        // version-manager shim dirs a profile prepends (nvm/pyenv/asdf/volta) survive and the agent
+        // resolves the node/python the user actually selected. The curated list trails as a
+        // fallback, guaranteeing `tmux` and the agent `command` stay resolvable even when the
+        // profile's PATH omits their dirs (or the profile sets no PATH at all). `$PATH` is left
+        // unquoted so the login shell expands it; only the curated suffix is quoted.
+        format!(
+            "export PATH=$PATH:{}",
+            shell_quote(&cron_path(&agent.command))
+        ),
         r#"TS="$(date +%s)""#.to_string(),
         // Record this scheduled firing. Appends the Unix timestamp as one line to the routine's
         // gitignored `scheduled.log`; the daemon reads the last line back as
@@ -407,8 +495,21 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
             shell_quote(&scheduled_log_path)
         ),
         format!("SLUG={}", shell_quote(&slug)),
-        format!(r#"WB={}/"$SLUG-$TS""#, shell_quote(&workbenches_base)),
-        r#"SESS="moadim-$SLUG-$TS""#.to_string(),
+        // Collision-resistant run id. `$TS` alone has one-second granularity, so two runs of the
+        // *same* routine in the same wall-clock second (a double-clicked "Run now", a `trigger`
+        // retry, or a manual trigger landing on the scheduled cron fire) would derive an identical
+        // `$WB` and `$SESS`: the second `tmux new-session` fails with "duplicate session" and that
+        // run silently no-ops while both clobber the shared workbench files. `$$` is the launching
+        // shell's PID — distinct across concurrently-live processes — so each run gets a unique id
+        // even within the same second. POSIX-portable (works under `/bin/sh`/dash), filesystem- and
+        // shell-safe, and short enough to stay within the single crontab line. `$TS` is kept
+        // unchanged above for the scheduled-fire sidecar. The PID is joined with `_` (not `-`) so
+        // `parse_workbench_name` can still recover the slug and the trailing-timestamp: slugs are
+        // `[a-z0-9-]` only, so `_` is an unambiguous boundary and legacy `{slug}-{secs}` dirs keep
+        // parsing. (#411)
+        r#"RID="${TS}_$$""#.to_string(),
+        format!(r#"WB={}/"$SLUG-$RID""#, shell_quote(&workbenches_base)),
+        format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#),
         r#"mkdir -p "$WB""#.to_string(),
     ];
 
@@ -452,8 +553,12 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
     // `$WB/exit_code`): `$WB` is a plain (non-exported) shell variable in the launcher script and
     // is not inherited by the new shell tmux spawns, but the pane's cwd is already `$WB` (`-c`).
     let invocation_with_exit_code = format!(r#"{invocation}; printf '%s' "$?" > exit_code"#);
+    // Fail loudly if the session can't start — most likely a residual `$SESS` collision. Without
+    // this guard a `duplicate session` error from tmux is swallowed by the `;`-join and the trigger
+    // returns success while launching nothing (the silent no-op #411 hardens against). Mirror the
+    // prompt-copy guard: record the reason in agent.log and on stderr, then exit non-zero.
     inner_stmts.push(format!(
-        r#"tmux new-session -d -s "$SESS" -c "$WB" {}"#,
+        r#"tmux new-session -d -s "$SESS" -c "$WB" {} || {{ echo "moadim: failed to start tmux session $SESS (already exists?); aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
         shell_quote(&invocation_with_exit_code)
     ));
     inner_stmts.push(r#"tmux pipe-pane -o -t "$SESS" "cat >> \"$WB\"/agent.log""#.to_string());
@@ -467,3 +572,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
 #[cfg(test)]
 #[path = "command_tests.rs"]
 mod command_tests;
+
+#[cfg(test)]
+#[path = "command_placeholder_tests.rs"]
+mod command_placeholder_tests;

@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 
@@ -55,6 +58,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -106,6 +110,39 @@ fn svc_list_sorts_by_title_case_insensitively() {
     assert_eq!(list[0].routine.id, "apple");
     assert_eq!(list[1].routine.id, "banana");
     assert_eq!(list[2].routine.id, "cherry");
+}
+
+#[test]
+fn svc_list_breaks_ties_on_id_deterministically() {
+    // Routines come off a `HashMap` (unspecified iteration order), so equal
+    // sort keys must be broken on the stable routine id for the listing to be
+    // deterministic. Three routines share a `created_at`; ascending lists them
+    // by id (A→Z) and descending reverses that, never an arbitrary order.
+    let tied = || {
+        store_with(vec![
+            make_routine("charlie", "C", 50, 0),
+            make_routine("alpha", "A", 50, 0),
+            make_routine("bravo", "B", 50, 0),
+        ])
+    };
+
+    let asc = svc_list(&tied(), &RoutineListQuery::default());
+    assert_eq!(
+        asc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
+        ["alpha", "bravo", "charlie"],
+    );
+
+    let desc = svc_list(
+        &tied(),
+        &RoutineListQuery {
+            order: SortOrder::Desc,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        desc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
+        ["charlie", "bravo", "alpha"],
+    );
 }
 
 #[test]
@@ -378,6 +415,68 @@ fn svc_create_rejects_ttl_above_cron_ceiling() {
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
+}
+
+#[test]
+fn svc_create_rejects_agent_config_without_prompt_placeholder() {
+    // A parseable, registered agent whose `args` carry no `{prompt}`/`{prompt_file}` placeholder
+    // would launch with no task. It is rejected at create time with `BadRequest` (#322), not
+    // silently fired forever.
+    let agent_name = "svc-create-noprompt-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"echo\"\nargs = [\"{workbench}\"]\n").unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            title: "Svc Create NoPrompt ZZZ".into(),
+            agent: agent_name.into(),
+            prompt: "p".into(),
+            ..valid_create_request()
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => {
+            assert!(msg.contains("config:"), "{msg}");
+            assert!(msg.contains("must include a prompt placeholder"), "{msg}");
+        }
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn svc_update_rejects_malformed_agent_config() {
+    // The same rejection applies when an update switches a routine to a malformed agent.
+    let agent_name = "svc-update-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let title = "Svc Update Malformed ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-mal-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-mal-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-mal-id",
+        UpdateRoutineRequest {
+            agent: Some(agent_name.into()),
+            ..empty_update_request()
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    std::fs::remove_file(&cfg).unwrap();
 }
 
 #[test]

@@ -241,7 +241,7 @@ fn restart_starts_fresh_when_none_running() {
     let home = temp_home("restart-fresh");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart(false).unwrap();
+    restart(false, false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -250,7 +250,7 @@ fn restart_json_skips_human_text_when_none_running() {
     let home = temp_home("restart-fresh-json");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    restart(true).unwrap();
+    restart(true, false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -264,7 +264,7 @@ fn restart_replaces_running_server() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart(false).unwrap();
+    restart(false, false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -278,7 +278,7 @@ fn restart_json_reports_old_pid_when_running() {
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     write_pid_file().unwrap();
     server.stop_after(Duration::from_millis(80));
-    restart(true).unwrap();
+    restart(true, false).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -462,7 +462,7 @@ fn restart_errors_when_stop_running_times_out() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
     let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
-    assert!(restart(false).is_err());
+    assert!(restart(false, false).is_err());
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -475,7 +475,7 @@ fn restart_errors_when_spawn_detached_fails() {
     std::fs::write(base.join(".config/moadim"), "block").unwrap();
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert!(restart(false).is_err());
+    assert!(restart(false, false).is_err());
     let _ = std::fs::remove_dir_all(&base);
 }
 

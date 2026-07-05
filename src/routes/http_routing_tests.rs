@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use axum::{
     body::Body,
@@ -54,6 +57,7 @@ async fn router_routines_cleanup_returns_removed_count() {
         .unwrap();
     let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(val["removed"].is_u64());
+    assert!(val["freed_bytes"].is_u64());
 }
 
 // ── routines CRUD lifecycle (covers all routine HTTP handlers) ────────────────

@@ -10,7 +10,9 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
-    std::fs::create_dir_all(path.parent().expect("pid file path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("pid file path has a parent dir"),
+    )?;
     ensure_config_gitignore();
     ensure_readme(&crate::paths::config_readme_path(), CONFIG_README);
     ensure_readme(&crate::paths::routines_readme_path(), ROUTINES_README);
@@ -78,7 +80,7 @@ fn ensure_readme(path: &std::path::Path, content: &str) {
         return;
     }
     let parent = path.parent().expect("readme path has a parent dir");
-    if std::fs::create_dir_all(parent).is_err() {
+    if crate::utils::fs_perms::create_private_dir_all(parent).is_err() {
         return;
     }
     let _ = std::fs::write(path, content);
@@ -281,6 +283,13 @@ pub(super) fn parse_removed_count(body: &str) -> Option<usize> {
     value.get("removed")?.as_u64().map(|n| n as usize)
 }
 
+/// Extract the `freed_bytes` total from a [`CleanupResponse`](crate::routines::CleanupResponse) JSON
+/// body. Returns `None` for a body lacking the (additive) field, so older servers degrade to `0`.
+pub(super) fn parse_freed_bytes(body: &str) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value.get("freed_bytes")?.as_u64()
+}
+
 /// Spawn a detached copy of this binary running the server in the foreground, returning its PID.
 ///
 /// The child runs with `--interactive` (so it actually serves), in its own process group so a
@@ -314,7 +323,9 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
 
     let exe = std::env::current_exe().expect("resolve current executable path");
     let log_path = crate::paths::daemon_log_file();
-    std::fs::create_dir_all(log_path.parent().expect("daemon log path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        log_path.parent().expect("daemon log path has a parent dir"),
+    )?;
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -330,7 +341,10 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     configure(&mut cmd);
     detach(&mut cmd);
 
-    #[allow(clippy::zombie_processes)]
+    #[allow(
+        clippy::zombie_processes,
+        reason = "intentionally detached: the child outlives this process and is reaped by the OS/service manager, not waited on here"
+    )]
     let child = cmd.spawn().expect("spawn detached moadim child process");
     Ok(child.id())
 }

@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **`moadim enable <routine>` / `moadim disable <routine>` CLI commands** to flip a
+  single routine's `enabled` flag from the terminal without opening the web UI or
+  hand-crafting a REST `PATCH`. `<routine>` is an id or slug (resolved server-side,
+  like the other routine subcommands); the action is idempotent (re-enabling an
+  already-enabled routine exits `0`), an unknown routine exits non-zero, and
+  `--json` emits a `{"routine","enabled"}` object (#439).
 ## [0.22.1] - 2026-07-05
 
 Enable `clippy::needless_pass_by_ref_mut` in `[lints.clippy]`. The codebase was already clean against it (no violations), so this is a lint-only change that locks in the invariant that every `&mut` parameter is actually mutated through.
@@ -27,6 +35,20 @@ chore: lower linecheck gate from 1000 to 700 lines
 
 ### Fixed
 
+- Routine listings (`GET /routines`) are now deterministic when several routines
+  share the same sort key. The list is built from a `HashMap`, whose iteration
+  order is unspecified, so equal-key routines previously came back in an
+  arbitrary, run-to-run order. Ties are now broken on the stable routine id, and
+  descending order reverses the comparison rather than the sorted vector so the
+  tiebreak stays consistent.
+- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
+- The built-in `codex` agent default now enables sandbox network access
+  (`codex exec -s workspace-write -c sandbox_workspace_write.network_access=true`).
+  `codex exec`'s default workspace-write sandbox blocks the network, so a
+  codex-backed routine could not clone the remote repo or push / open a PR — it
+  would silently no-op while still showing a healthy routine. This brings codex
+  to parity with the `claude` default's unattended-access baseline; the setting
+  is overridable in `~/.config/moadim/agents/codex.toml`. (#449)
 - **The routine LOGS view search/highlight could panic the UI on ordinary Unicode log content.** `highlight()` found matches by lowercasing the whole line and then reapplying *those* byte offsets to the original (un-lowercased) string. Case folding isn't always byte-length-preserving (`ẞ`, U+1E9E, 3 bytes, lowercases to `ß`, U+00DF, 2 bytes) or even char-count-preserving (Turkish `İ` expands to two chars), so a matching search query after such a character could compute an offset that lands mid-character and panics on the slice (crashing the Yew render for that log line). The matching logic now projects each original char to exactly one lowercase char and tracks byte spans via `char_indices()`, so every slice boundary is guaranteed valid regardless of the log content's script.
 
 fix(ui): derive the Overview page's per-source `snoozed` flag from the same `now` already threaded through its KPI/attention/upcoming-run math instead of sampling `js_sys::Date::now()` inline, so `is_snoozed`/`from_routine`/`sources_of` stay deterministic and host-testable (this was silently broken: `cargo test --workspace` panicked with "cannot call wasm-bindgen imported functions on non-wasm targets" in 4 `overview_tests`, invisible in CI because `test.yml` only runs bare `cargo test`, which skips the `ui` workspace member).
@@ -319,6 +341,31 @@ operators always see something actionable.
 ## [0.21.0] - 2026-07-03
 
 ### Added
+
+- Routine create/update now validates the referenced agent config's `args`
+  placeholders: a typo'd token (e.g. `{prompt_fil}`) or `args` that contain no
+  `{prompt}`/`{prompt_file}` at all are rejected with a `400 Bad Request` at edit
+  time, naming the offending token. Previously such a config passed the
+  agent-registered check and only failed at fire time — launching the agent with
+  a garbage or empty task and burning a full run until the watchdog reaped it
+  (#322).
+- The routines iCalendar feed (`/routines.ics`) now advertises a one-hour poll
+  hint via the RFC 7986 `REFRESH-INTERVAL;VALUE=DURATION:PT1H` property plus the
+  widely-honored `X-PUBLISHED-TTL:PT1H` fallback. The feed is regenerated per
+  request, so without a hint subscribers fall back to their client's slow default
+  (often 12–24h) and routine changes lag for hours; the hint asks them to poll
+  hourly instead.
+- **Per-routine power-saving mode.** A routine can now be paused for power
+  saving independently of its `enabled` toggle — `enabled` stays user-owned
+  intent, `power_saving` is a separate, system/policy-owned throttle that both
+  must clear for a firing to launch (`enabled && !power_saving`). Set/cleared
+  via the new `set_power_saving` MCP tool (`svc_set_power_saving`); persisted
+  in the gitignored `state.local.toml` sidecar like `snoozed_until`/`skip_runs`,
+  never in the tracked `routine.toml`, and never touched by create/update. Both
+  `trigger_routine` and the routine's cron schedule now refuse to launch while
+  it (or `enabled: false`) is active, with a distinct message naming which one.
+  The web UI's health badge and "Run now" tooltip distinguish `POWER SAVING`
+  from `DISABLED`. (#95)
 
 - **Optional `goal` for routines.** A routine can now carry a very short (at most
   5 lines) statement of its goal — the "why" behind the prompt. It is optional
@@ -803,6 +850,22 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- **The committed `prebuilt.html` fallback UI was stale and silently missing
+  features.** `build.rs` inlines the compiled Yew UI into `prebuilt.html` and
+  falls back to that committed copy whenever `trunk` isn't installed at build
+  time (e.g. `cargo install moadim` from a git checkout, or a Docker build
+  without trunk) — but nothing verified it stayed in sync with `ui/src`. It had
+  drifted: the copy on `main` was missing the machine-name badge, machine
+  filter, and rename-machine dialog entirely, even though that code had long
+  since landed. Regenerated `prebuilt.html` and added a `prebuilt-ui` CI job
+  that rebuilds it with trunk on every PR touching `ui/` and fails if the
+  committed copy doesn't match, so this can't silently regress again.
+- **Reaped workbenches no longer leak a `~/.claude.json` `projects` entry.** The built-in `claude`
+  agent's `setup` step seeds a per-workbench entry into `~/.claude.json`, keyed by the workbench's
+  absolute (always-unique) path, on every run. Nothing ever pruned it once the workbench was reaped,
+  so the file grew by one dead entry per `claude` run, forever. Cleanup now removes the matching
+  `projects[<workbench>]` entry when it reaps a workbench directory, using the same flock-guarded
+  read -> modify -> atomic-replace pattern the setup step already uses. (#430)
 - **Workbench launch path now derived from `paths::workbenches_dir()`.** The
   generated cron launch command hardcoded `WB="$HOME/.moadim/workbenches/$SLUG-$TS"`
   instead of going through the same seam the reaper (`routines/cleanup/mod.rs`)
@@ -866,6 +929,11 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Added
 
+- **`moadim restart -i`/`--interactive`.** `restart` previously always spawned
+  the fresh instance detached in the background, with no way to bring it up
+  attached to the terminal in one step (mirroring `moadim -i`). The new flag
+  stops the running server (if any) and starts the replacement in the
+  foreground instead of backgrounding it.
 - **`ETag` + `304 Not Modified` for the web UI.** `GET /` (and the SPA fallback
   for client-routed paths) now sends a strong `ETag` for the embedded ~1.1 MB
   `index.html`, and honors a matching `If-None-Match` with a bodyless `304`
@@ -1586,6 +1654,11 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Changed
 
+- `moadim --help` now documents every flag the parser accepts, including the
+  `-f`/`--foreground` and `-d`/`--detach`/`--daemon` aliases and the `--version`
+  long form, so the help text can no longer silently drift from what `moadim`
+  actually parses; a new test asserts every accepted flag appears in the help
+  text (#340).
 - HTTP request logs now carry a short per-request correlation id. Each request
   emits an inbound line (`[0000001a] <- GET /api/v1/health`) and an outbound
   line (`[0000001a] -> 200 /api/v1/health in 2ms`) sharing the same id, so the
@@ -1635,6 +1708,20 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- An unknown or mistyped command (e.g. `moadim staus`) is no longer treated as a
+  success. The parser now classifies an unrecognized first argument as a usage
+  error distinct from an explicit `help`/`-h`/`--help` request: it prints
+  `unknown command: <arg>` plus a hint to **stderr** and exits **2**, instead of
+  printing help to stdout and exiting `0`. Explicit `help` is unchanged (stdout,
+  exit `0`). This keeps the script-friendly exit-code contract intact so a
+  wrapper, systemd unit, or CI step can detect a typo. (#303)
+- `moadim stop` / `POST /api/v1/shutdown` no longer hangs forever when a
+  long-lived connection stays open. Axum's graceful shutdown waits for every
+  in-flight connection to close, so an open `/mcp` SSE stream (or any slow
+  client) could keep the serving loop pending indefinitely. The server now
+  bounds the post-shutdown drain to a grace window (default 10s, overridable via
+  `MOADIM_SHUTDOWN_GRACE_MS`): connections still draining when it elapses are
+  abandoned and the process exits cleanly, logging a warning. (#342)
 - Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
   again. The crate root's `#![deny(warnings)]` implies
   `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or

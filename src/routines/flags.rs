@@ -101,7 +101,7 @@ pub fn create_flag(
     let flag_type = flag_type.trim();
     let description = description.trim();
     let dir = routine_flags_dir(slug);
-    std::fs::create_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
 
     let type_slug = slugify(flag_type);
     let mut created_at = now_secs();

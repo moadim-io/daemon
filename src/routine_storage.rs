@@ -99,6 +99,10 @@ struct RuntimeState {
     /// [`crate::routines::Routine::skip_runs`].
     #[serde(default)]
     skip_runs: Option<u32>,
+    /// Whether firing is paused for power saving. See
+    /// [`crate::routines::Routine::power_saving`].
+    #[serde(default)]
+    power_saving: bool,
 }
 
 /// Legacy scheduled-state TOML, superseded by the `scheduled.log` append-only file.
@@ -195,6 +199,7 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
         last_scheduled_trigger_at,
         snoozed_until: runtime_state.snoozed_until,
         skip_runs: runtime_state.skip_runs,
+        power_saving: runtime_state.power_saving,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         tags: toml.tags,
@@ -212,8 +217,8 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
-    std::fs::create_dir_all(&dir)?;
-    std::fs::create_dir_all(routine_prompts_dir(&slug))?;
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 
     let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {
@@ -269,7 +274,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 /// when all are `None`, so the on-disk state always mirrors the in-memory routine.
 fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    if routine.snoozed_until.is_none() && routine.skip_runs.is_none() {
+    if routine.snoozed_until.is_none() && routine.skip_runs.is_none() && !routine.power_saving {
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
@@ -281,6 +286,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         last_manual_trigger_at: None,
         snoozed_until: routine.snoozed_until,
         skip_runs: routine.skip_runs,
+        power_saving: routine.power_saving,
     };
     let text = toml::to_string_pretty(&state)
         .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
@@ -448,7 +454,7 @@ pub(crate) fn migrate_prompts_to_subfolder_from_dir(dir: &std::path::Path) {
             continue;
         }
         let prompts_dir = entry.path().join("prompts");
-        if let Err(err) = std::fs::create_dir_all(&prompts_dir) {
+        if let Err(err) = crate::utils::fs_perms::create_private_dir_all(&prompts_dir) {
             log::warn!(
                 "migrate_prompts_to_subfolder: failed to create {}: {err}",
                 prompts_dir.display()

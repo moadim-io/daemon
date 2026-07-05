@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::model::Routine;
@@ -23,6 +26,7 @@ fn make_routine(title: &str) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -83,6 +87,26 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
     });
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_routine_command_extends_path_rather_than_replacing_it() {
+    // The exported PATH must keep the login shell's `$PATH` (where version managers such as
+    // nvm/pyenv/asdf/volta prepend their shim dirs when the profile is sourced) and only *append*
+    // the curated fallback dirs. A bare `export PATH=<curated>` would drop those shims and silently
+    // break agents that depend on a version-manager-selected node/python.
+    let routine = make_routine("Path Extend Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains("export PATH=$PATH:"),
+        "expected PATH to extend the profile's $PATH, not replace it, in: {cmd}"
+    );
 }
 
 #[test]
@@ -190,7 +214,7 @@ fn build_routine_command_workbench_base_tracks_moadim_home_override() {
 
     assert!(
         cmd.contains(&format!(
-            r#"WB={}/"$SLUG-$TS""#,
+            r#"WB={}/"$SLUG-$RID""#,
             shell_quote(&expected_base)
         )),
         "expected WB base derived from paths::workbenches_dir() ({expected_base}) in: {cmd}"
@@ -570,6 +594,31 @@ fn build_routine_command_omits_model_flag_when_unset() {
 }
 
 #[test]
+fn tmux_session_prefix_matches_the_sess_line_build_routine_command_emits() {
+    // The overlap guard (#514) matches on `tmux_session_prefix(slug)` to find *any* live fire of a
+    // routine, so the literal `TMUX_SESSION_PREFIX` it's built from must stay byte-for-byte in sync
+    // with the `SESS=` line the launch script actually emits (`moadim-$SLUG-$RID`).
+    let routine = make_routine("Cmd Session Prefix Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(&format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#)),
+        "expected SESS line built from TMUX_SESSION_PREFIX in: {cmd}"
+    );
+
+    let slug = slugify(&routine.title);
+    assert_eq!(
+        tmux_session_prefix(&slug),
+        format!("{TMUX_SESSION_PREFIX}{slug}-")
+    );
+}
+
+#[test]
 fn build_routine_command_records_exit_code_after_invocation() {
     // The tmux pane's shell-command must record `$?` to a *workbench-relative* `exit_code` file
     // (not `$WB/exit_code`: `$WB` is never exported, so the new shell tmux spawns wouldn't see it)
@@ -656,3 +705,9 @@ fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
     assert_eq!(overflow, Some(compose_prompt(&routine).len()));
     assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
 }
+
+#[path = "command_run_id_tests.rs"]
+mod command_run_id_tests;
+
+#[path = "command_umask_tests.rs"]
+mod command_umask_tests;

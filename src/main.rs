@@ -52,6 +52,10 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
+        cli::Command::Usage(arg) => {
+            cli::print_usage_error(&arg);
+            std::process::exit(cli::EXIT_USAGE);
+        }
         cli::Command::Status { json, wait_secs } => {
             std::process::exit(cli::status(json, wait_secs)?)
         }
@@ -59,7 +63,17 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart { json } => cli::restart(json),
+        cli::Command::Restart {
+            json,
+            quiet,
+            interactive: false,
+        } => cli::restart(json, quiet),
+        cli::Command::Restart {
+            interactive: true, ..
+        } => {
+            cli::stop_existing_for_restart(false)?;
+            run_server().await
+        }
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),

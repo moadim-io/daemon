@@ -12,7 +12,7 @@ use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{
     kill_sessions_for_deleted_routine, max_runtime_ceiling_secs, ttl_ceiling_secs,
 };
-use super::command::slugify;
+use super::command::{slugify, validate_placeholders};
 use super::model::{
     CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
     RoutineStore, SortOrder, UpdateRoutineRequest,
@@ -80,6 +80,8 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
 /// * An agent not present in the registry resolves to no command at fire time (#139). Mirrors the
 ///   `validate_cron` / slug-conflict guards.
 /// * An agent whose config is present on disk but cannot be parsed (#189).
+/// * An agent whose config parses but whose `args` carry a typo'd placeholder or no prompt
+///   placeholder at all, so it would launch with a garbage or empty task (#322).
 ///
 /// A *missing* config for a registered agent is intentionally allowed: the file may be created later,
 /// and the missing-file case is handled (warned + skipped) downstream exactly as before.
@@ -92,7 +94,9 @@ fn validate_agent(agent: &str) -> Result<(), AppError> {
         )));
     }
     match load_agent_command(agent) {
-        Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
+        Ok(command) => validate_placeholders(&command.args)
+            .map_err(|reason| AppError::BadRequest(format!("agent {agent:?} config: {reason}"))),
+        Err(AgentLoadError::Missing) => Ok(()),
         Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
             "agent {agent:?} has a malformed config: {err}"
         ))),
@@ -137,16 +141,26 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
         routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
     }
 
-    // Sort ascending by the requested field, then flip for descending order.
-    match query.sort {
-        RoutineSort::Created => routines.sort_by_key(|routine| routine.created_at),
-        RoutineSort::Updated => routines.sort_by_key(|routine| routine.updated_at),
-        RoutineSort::Title => routines.sort_by_key(|routine| routine.title.to_lowercase()),
-        RoutineSort::Repository => routines.sort_by_key(repo_sort_key),
-    }
-    if query.order == SortOrder::Desc {
-        routines.reverse();
-    }
+    // Sort by the requested field. The routines come off a `HashMap`, whose
+    // iteration order is unspecified, so equal sort keys would otherwise list
+    // in an arbitrary, run-to-run order. Break ties on the stable routine id to
+    // make the listing deterministic, and reverse the whole comparison (not the
+    // sorted vector) for descending order so the id tiebreak stays consistent.
+    let desc = query.order == SortOrder::Desc;
+    routines.sort_by(|left, right| {
+        let primary = match query.sort {
+            RoutineSort::Created => left.created_at.cmp(&right.created_at),
+            RoutineSort::Updated => left.updated_at.cmp(&right.updated_at),
+            RoutineSort::Title => left.title.to_lowercase().cmp(&right.title.to_lowercase()),
+            RoutineSort::Repository => repo_sort_key(left).cmp(&repo_sort_key(right)),
+        };
+        let ord = primary.then_with(|| left.id.cmp(&right.id));
+        if desc {
+            ord.reverse()
+        } else {
+            ord
+        }
+    });
 
     // Omit prompts by default: they are the largest field and rarely needed in a listing.
     // Blanking triggers `skip_serializing_if` on `Routine::prompt`, dropping it from the JSON.
@@ -406,6 +420,9 @@ pub fn svc_create(
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        // Power saving is system-driven, never settable via create/update — see
+        // `svc_set_power_saving`.
+        power_saving: false,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
         tags,
@@ -616,7 +633,8 @@ use service_trigger::migrate_workbenches;
 pub(crate) use service_trigger::sh_bin;
 pub use service_trigger::{
     svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_snooze, svc_trigger, svc_trigger_scheduled,
+    svc_resolve_flag, svc_run_log, svc_set_power_saving, svc_snooze, svc_trigger,
+    svc_trigger_scheduled,
 };
 
 #[cfg(test)]
@@ -648,9 +666,17 @@ mod service_runs_tests;
 mod service_trigger_tests;
 
 #[cfg(test)]
+#[path = "service_power_saving_tests.rs"]
+mod service_power_saving_tests;
+
+#[cfg(test)]
 #[path = "service_coverage_tests.rs"]
 mod service_coverage_tests;
 
 #[cfg(test)]
 #[path = "service_slug_tests.rs"]
 mod service_slug_tests;
+
+#[cfg(test)]
+#[path = "service_overlap_guard_tests.rs"]
+mod service_overlap_guard_tests;

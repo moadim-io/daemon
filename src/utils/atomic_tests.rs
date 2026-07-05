@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 
@@ -82,4 +85,22 @@ fn tmp_path_falls_back_when_no_file_name() {
     // A path ending in `..` has no final component, exercising the `unwrap_or("tmp")` fallback.
     let tmp = tmp_path(Path::new("/some/dir/.."));
     assert!(tmp.to_string_lossy().contains(".tmp"));
+}
+
+#[cfg(unix)]
+#[test]
+fn published_file_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = scratch_dir();
+    let target = dir.join("routine.toml");
+    atomic_write(&target, b"secret").unwrap();
+
+    let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o600,
+        "atomic_write must publish an owner-only file, got {mode:o}"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
 }

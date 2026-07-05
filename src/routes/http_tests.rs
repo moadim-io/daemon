@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use axum::{
     body::Body,
@@ -442,6 +445,7 @@ async fn build_app_serves_machines() {
             last_scheduled_trigger_at: None,
             snoozed_until: None,
             skip_runs: None,
+            power_saving: false,
             ttl_secs: None,
             max_runtime_secs: None,
         },

@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::model::{new_store, Routine};
@@ -23,6 +26,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -44,6 +48,8 @@ fn empty_feed_has_only_calendar_wrapper() {
     assert!(ics.contains("VERSION:2.0\r\n"));
     assert!(ics.contains("PRODID:-//moadim//routines//EN\r\n"));
     assert!(ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
+    assert!(ics.contains("REFRESH-INTERVAL;VALUE=DURATION:PT1H\r\n"));
+    assert!(ics.contains("X-PUBLISHED-TTL:PT1H\r\n"));
     assert!(ics.ends_with("END:VCALENDAR\r\n"));
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
 }

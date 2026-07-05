@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 use super::runtime::MAX_RUNTIME_SECS;
 use super::ttl::MAX_TTL_SECS;
 use super::*;
@@ -131,7 +134,7 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
             &finish_at_trigger,
             &noop_persist
         ),
-        0
+        ReapStats::default()
     );
 }
 
@@ -159,7 +162,7 @@ fn reap_dir_counts_zero_when_remove_fails() {
     let now = 1000;
     let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> expired
     let dead = |_session: &str| false;
-    let removed = reap_dir(
+    let stats = reap_dir(
         &base,
         now,
         &ttl_for,
@@ -173,7 +176,7 @@ fn reap_dir_counts_zero_when_remove_fails() {
     // the directory survives and the Err arm runs (0 removed). Root bypasses the
     // permission check; tolerate that by only asserting consistency.
     if base.join("expired-100").exists() {
-        assert_eq!(removed, 0);
+        assert_eq!(stats.removed, 0);
     }
 
     // Restore permissions so cleanup can proceed.
@@ -207,10 +210,13 @@ fn cleanup_expired_workbenches_scans_real_workbenches_dir() {
     std::fs::create_dir_all(workbenches.join("notawb")).unwrap();
 
     let store = super::super::model::new_store();
-    let removed = cleanup_expired_workbenches(&store);
+    let stats = cleanup_expired_workbenches(&store);
 
     // The orphaned, expired, session-less workbench is removed; the others survive.
-    assert!(removed >= 1, "expected at least the orphan to be reaped");
+    assert!(
+        stats.removed >= 1,
+        "expected at least the orphan to be reaped"
+    );
     assert!(!workbenches.join("orphan-1").exists());
     assert!(workbenches.join(format!("recent-{fresh_ts}")).exists());
     assert!(workbenches.join("notawb").exists());
@@ -258,10 +264,10 @@ fn cleanup_expired_workbenches_kills_a_live_hung_session() {
     std::fs::create_dir_all(workbenches.join("hung-1")).unwrap();
 
     let store = super::super::model::new_store();
-    let removed = cleanup_expired_workbenches(&store);
+    let stats = cleanup_expired_workbenches(&store);
 
     assert_eq!(
-        removed, 1,
+        stats.removed, 1,
         "the live-but-overrun workbench is killed then reaped"
     );
     assert!(!workbenches.join("hung-1").exists());
@@ -299,6 +305,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,

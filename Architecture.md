@@ -94,7 +94,6 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `securit
 | MCP tool | Delegates to |
 |---|---|
 | `health` | `FsLocation::current()` + uptime calc |
-| `echo` | inline |
 | `list_routines` | `routines::svc_list` |
 | `get_routine` | `routines::svc_get` |
 | `create_routine` | `routines::svc_create` |

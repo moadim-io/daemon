@@ -1336,6 +1336,16 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
   existing positional format arguments (`"{}", x` → `"{x}"`) so log lines and
   error messages read more directly. No behavior change.
 
+### Removed
+
+- Removed the vestigial `echo` demo endpoint/tool — the scaffold `POST
+  /api/v1/echo` REST route, the `echo` MCP tool, and their `EchoRequest` /
+  `EchoResponse` / `EchoInput` types and OpenAPI entries. It echoed a message
+  back with a server timestamp, served no product purpose, and only widened the
+  REST + MCP + OpenAPI surface; `GET /health` already covers liveness probing.
+  The committed `apis/openapi.json` is regenerated without the `/echo` path and
+  schemas (#359).
+
 ### Fixed
 
 - Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean

@@ -75,6 +75,7 @@ pub struct TableProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_history: Callback<String>,
     pub on_flags: Callback<String>,
     pub on_clear_filters: Callback<()>,
 }
@@ -187,6 +188,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                                         on_toggle={props.on_toggle.clone()}
                                         on_trigger={props.on_trigger.clone()}
                                         on_logs={props.on_logs.clone()}
+                                        on_history={props.on_history.clone()}
                                         on_flags={props.on_flags.clone()}
                                     />
                                 }) }

@@ -115,6 +115,38 @@ pub struct CleanupResponse {
     pub removed: usize,
 }
 
+/// Outcome of a single past run (mirrors the server `RunStatus`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    Running,
+    Success,
+    Failed,
+    Unknown,
+}
+
+/// One past (or in-progress) run of a routine (mirrors the server `RunSummary`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RunSummary {
+    pub workbench: String,
+    pub started_at: u64,
+    pub finished_at: Option<u64>,
+    pub status: RunStatus,
+    pub exit_code: Option<i32>,
+}
+
+/// One past (or in-progress) run across every routine (mirrors the server `FleetRunSummary`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct FleetRunSummary {
+    pub routine_id: String,
+    pub routine_title: String,
+    pub workbench: String,
+    pub started_at: u64,
+    pub finished_at: Option<u64>,
+    pub status: RunStatus,
+    pub exit_code: Option<i32>,
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct UpdateRoutineRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -262,6 +294,43 @@ pub(crate) async fn api_logs(id: &str) -> Result<String, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.text().await.map_err(|e| e.to_string())
+}
+
+pub(crate) async fn api_runs(id: &str) -> Result<Vec<RunSummary>, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/runs"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<RunSummary>>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub(crate) async fn api_run_log(id: &str, workbench: &str) -> Result<String, String> {
+    let resp = Request::get(&format!("/api/v1/routines/{id}/runs/{workbench}/log"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| e.to_string())
+}
+
+pub(crate) async fn api_all_runs(limit: usize) -> Result<Vec<FleetRunSummary>, String> {
+    let resp = Request::get(&format!("/api/v1/routines/runs?limit={limit}"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<FleetRunSummary>>()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub(crate) async fn api_flags(id: &str) -> Result<Vec<Flag>, String> {

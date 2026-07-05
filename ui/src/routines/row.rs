@@ -27,6 +27,7 @@ pub struct RowProps {
     pub on_toggle: Callback<(String, bool)>,
     pub on_trigger: Callback<String>,
     pub on_logs: Callback<String>,
+    pub on_history: Callback<String>,
     pub on_flags: Callback<String>,
 }
 
@@ -74,6 +75,11 @@ pub fn routine_row(props: &RowProps) -> Html {
     };
     let on_logs = {
         let cb = props.on_logs.clone();
+        let id = r.id.clone();
+        Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
+    };
+    let on_history = {
+        let cb = props.on_history.clone();
         let id = r.id.clone();
         Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
     };
@@ -231,6 +237,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                 <div class="row-actions">
                     <button class="act-btn run" title="Run now" aria-label="Run now" onclick={on_trigger}>{"▶"}</button>
                     <button class="act-btn logs" onclick={on_logs}>{"LOGS"}</button>
+                    <button class="act-btn history" title="Run history" onclick={on_history}>{"HISTORY"}</button>
                     <button class="act-btn flags" title="Open flags" onclick={on_flags}>
                         {"FLAGS"}
                         if r.flag_count > 0 {

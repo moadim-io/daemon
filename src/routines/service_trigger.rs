@@ -8,9 +8,11 @@ use crate::utils::time::now_secs;
 
 use crate::routines::agents::load_agent_command;
 use crate::routines::cleanup::{
-    cleanup_expired_workbenches, parse_workbench_name, run_session_alive,
+    cleanup_expired_workbenches, parse_workbench_name, run_session_alive, tmux_session_prefix_alive,
 };
-use crate::routines::command::{build_routine_command, inline_prompt_overflow, slugify};
+use crate::routines::command::{
+    build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix,
+};
 use crate::routines::flags::{self, Flag, FlagScope};
 use crate::routines::model::{
     CleanupResponse, FleetRunSummary, Routine, RoutineStore, RunStatus, RunSummary,
@@ -179,7 +181,7 @@ pub fn svc_set_power_saving(
 
 /// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
 /// the agent config cannot be loaded, the composed prompt won't fit in an inlined `{prompt}`
-/// argument, or the process cannot be spawned.
+/// argument, a previous fire of this routine is still running, or the process cannot be spawned.
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
@@ -199,6 +201,21 @@ fn spawn_routine_command(routine: &Routine) {
                      shorten the routine's prompt/open flags",
                     routine.id,
                     routine.agent,
+                );
+                return;
+            }
+            // Overlap guard (#514): a routine has no built-in mutual exclusion between fires, so a
+            // run outliving its schedule interval would otherwise pile up concurrent agent sessions
+            // all acting on the same target — duplicate PRs/issues, racing pushes. Every fire's tmux
+            // session name shares the same `moadim-{slug}-` prefix (see `build_routine_command`); if
+            // any of them is still alive, skip this fire instead of launching a second one.
+            let session_prefix = tmux_session_prefix(&slugify(&routine.title));
+            if tmux_session_prefix_alive(&session_prefix) {
+                log::warn!(
+                    "trigger: routine {:?} skipped — a previous run (tmux session prefix {:?}) is \
+                     still active (overlap guard)",
+                    routine.id,
+                    session_prefix,
                 );
                 return;
             }

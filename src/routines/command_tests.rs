@@ -571,6 +571,31 @@ fn build_routine_command_omits_model_flag_when_unset() {
 }
 
 #[test]
+fn tmux_session_prefix_matches_the_sess_line_build_routine_command_emits() {
+    // The overlap guard (#514) matches on `tmux_session_prefix(slug)` to find *any* live fire of a
+    // routine, so the literal `TMUX_SESSION_PREFIX` it's built from must stay byte-for-byte in sync
+    // with the `SESS=` line the launch script actually emits (`moadim-$SLUG-$TS`).
+    let routine = make_routine("Cmd Session Prefix Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(&format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$TS""#)),
+        "expected SESS line built from TMUX_SESSION_PREFIX in: {cmd}"
+    );
+
+    let slug = slugify(&routine.title);
+    assert_eq!(
+        tmux_session_prefix(&slug),
+        format!("{TMUX_SESSION_PREFIX}{slug}-")
+    );
+}
+
+#[test]
 fn build_routine_command_records_exit_code_after_invocation() {
     // The tmux pane's shell-command must record `$?` to a *workbench-relative* `exit_code` file
     // (not `$WB/exit_code`: `$WB` is never exported, so the new shell tmux spawns wouldn't see it)

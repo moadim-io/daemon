@@ -155,6 +155,12 @@ diagnostics for the steps that get the session running in the first place. Only 
 the `mkdir` itself precede the redirect — a failure that early means `$WB` may not exist yet, so
 there's nowhere to write a launch log to.
 
+Before either path launches, the daemon checks for a live tmux session under the routine's
+`moadim-<slug>-` prefix (any `$TS` suffix) and skips the fire — logging a warning instead of
+spawning — if one is still running. This overlap guard prevents a run that outlives its schedule
+interval from piling up concurrent agent sessions against the same target (duplicate PRs/issues,
+racing pushes); see `routines::service_trigger::spawn_routine_command`.
+
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
 instants so external calendars can subscribe without an embedded `VTIMEZONE`. The optional

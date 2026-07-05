@@ -662,3 +662,7 @@ mod service_coverage_tests;
 #[cfg(test)]
 #[path = "service_slug_tests.rs"]
 mod service_slug_tests;
+
+#[cfg(test)]
+#[path = "service_overlap_guard_tests.rs"]
+mod service_overlap_guard_tests;

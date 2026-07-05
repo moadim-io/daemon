@@ -92,6 +92,66 @@ fn tmux_session_alive_reflects_the_bin_exit_status() {
 }
 
 #[test]
+fn tmux_session_prefix_alive_matches_any_session_starting_with_prefix() {
+    // The overlap guard (#514) needs *any* live session for the routine, not one exact name, so
+    // this stubs `tmux list-sessions -F ...` (unlike `tmux_session_alive`'s `has-session`, which
+    // only a single hard-coded exit status can stand in for) to actually exercise the prefix match.
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = std::env::temp_dir().join(format!("moadim-tmux-prefix-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = dir.join("tmux");
+    std::fs::write(
+        &stub,
+        "#!/bin/sh\nprintf 'moadim-other-100\\nmoadim-foo-200\\n'\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let previous = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1).
+    unsafe { std::env::set_var("MOADIM_TMUX_BIN", &stub) };
+
+    assert!(
+        super::session::tmux_session_prefix_alive("moadim-foo-"),
+        "a listed session starting with the prefix must read as alive"
+    );
+    assert!(
+        !super::session::tmux_session_prefix_alive("moadim-bar-"),
+        "no listed session starts with this prefix"
+    );
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn tmux_session_prefix_alive_false_when_tmux_bin_missing_or_fails() {
+    // No live server / no tmux at all must never be mistaken for an overlapping run — mirrors
+    // `tmux_session_alive`'s stance that "no tmux" means "nothing to guard against".
+    let previous = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: single-threaded harness.
+    unsafe { std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/false") };
+    assert!(!super::session::tmux_session_prefix_alive("moadim-foo-"));
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+}
+
+#[test]
 fn note_forced_kill_is_silent_when_log_cannot_be_opened() {
     // The workbench directory does not exist, so opening `agent.log` (append+create) fails because
     // its parent is absent — exercising the `if let Ok` fall-through (the best-effort Err branch).

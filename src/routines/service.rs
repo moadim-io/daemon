@@ -652,6 +652,10 @@ mod service_runs_tests;
 mod service_trigger_tests;
 
 #[cfg(test)]
+#[path = "service_power_saving_tests.rs"]
+mod service_power_saving_tests;
+
+#[cfg(test)]
 #[path = "service_coverage_tests.rs"]
 mod service_coverage_tests;
 

@@ -6,6 +6,8 @@
 //! Split by concern, mirroring `src/routines/`:
 //! - `model` — data types + the `/routines` API client.
 //! - `filter` — faceted filter + derived operational health.
+//! - `filter_distinct` — distinct facet-option helpers (agents/machines/repositories/tags)
+//!   for the filter dropdowns.
 //! - `state` — page/view/modal state, group-by, sorting, and the reducer.
 //! - `hooks` — small custom Yew hooks used by the list page.
 //! - `page` — the `RoutinesPage` component that wires the above together.
@@ -23,6 +25,7 @@ mod bulk_actions;
 mod calendar;
 mod filter;
 mod filter_bar;
+mod filter_distinct;
 mod flags_panel;
 mod form;
 mod history;

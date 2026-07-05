@@ -233,6 +233,67 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // runs (empty list — no workbench created by this test)
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/routines/{id}/runs"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let runs: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(runs, serde_json::json!([]));
+
+    // fleet-wide /routines/runs — a static route that must not be shadowed by the dynamic
+    // /routines/{id} route registered above.
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/routines/runs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let runs: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(runs, serde_json::json!([]));
+
+    // fleet-wide runs honors a `?limit=` query param.
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/routines/runs?limit=5")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // runs/{workbench}/log for a workbench that doesn't exist -> 404
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/routines/{id}/runs/not-a-real-workbench-1/log"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
     // POST flag
     let resp = build_app(routines.clone())
         .oneshot(
@@ -392,6 +453,8 @@ async fn router_routine_not_found_paths() {
         ("POST", "/trigger"),
         ("POST", "/scheduled-trigger"),
         ("GET", "/logs"),
+        ("GET", "/runs"),
+        ("GET", "/runs/some-workbench-1/log"),
     ] {
         let resp = build_app(crate::routines::new_store())
             .oneshot(

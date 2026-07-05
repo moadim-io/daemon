@@ -376,3 +376,7 @@ mod cleanup_tests;
 #[cfg(test)]
 #[path = "cleanup_watchdog_tests.rs"]
 mod cleanup_watchdog_tests;
+
+#[cfg(test)]
+#[path = "cleanup_claude_json_tests.rs"]
+mod cleanup_claude_json_tests;

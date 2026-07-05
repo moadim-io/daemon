@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 
@@ -138,5 +141,28 @@ fn lock_exclusive_and_unlock_round_trip_on_a_real_file() {
     lock_exclusive(&file).unwrap();
     unlock(&file).unwrap();
 
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn lock_exclusive_and_unlock_error_on_a_closed_fd() {
+    use std::os::fd::AsRawFd as _;
+
+    // `flock(2)` on a closed descriptor fails with EBADF, exercising the `Err` arm of both
+    // `lock_exclusive` and `unlock` without depending on any real filesystem lock contention.
+    let dir = temp_dir("flock-closed-fd");
+    let path = dir.join("lockfile");
+    let file = File::create(&path).unwrap();
+    // SAFETY: `file` is not used again except via the (now-invalid) fd captured by `lock_exclusive`
+    // and `unlock` below; this deliberately makes `flock` observe a closed descriptor.
+    unsafe {
+        libc::close(file.as_raw_fd());
+    }
+
+    assert!(lock_exclusive(&file).is_err());
+    assert!(unlock(&file).is_err());
+
+    std::mem::forget(file);
     fs::remove_dir_all(&dir).unwrap();
 }

@@ -66,8 +66,9 @@ fn prune_locked(claude_json: &Path, workbench: &Path) -> io::Result<bool> {
         .is_some_and(|projects| projects.remove(&key).is_some());
 
     if removed {
-        let bytes = serde_json::to_vec(&document)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+        // `document` was just parsed from valid JSON and only had a key removed, so it cannot
+        // contain non-finite floats or anything else `serde_json` refuses to serialize.
+        let bytes = serde_json::to_vec(&document).expect("re-serialize a value parsed from JSON");
         atomic_write(claude_json, &bytes)?;
     }
 

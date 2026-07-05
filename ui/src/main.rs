@@ -1,6 +1,4 @@
-use croner::Cron;
 use gloo_timers::future::TimeoutFuture;
-use serde::Deserialize;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -8,22 +6,29 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 
 mod command_palette;
+mod command_palette_match;
+mod cron_utils;
 mod day_timeline;
 mod header;
+mod health;
 mod log_viewer;
 mod machines;
 mod overview;
 mod overview_attention;
 mod overview_recent_runs;
+mod overview_stats;
 mod overview_upcoming;
 mod refresh;
 mod routines;
 mod schedule;
 mod schedule_heatmap;
+mod schedule_heatmap_grid;
 mod settings;
 mod shell_dialogs;
 use command_palette::CommandPalette;
+pub(crate) use cron_utils::{describe_cron_live, parse_cron, reltime};
 use header::Header;
+pub(crate) use health::{Health, Toast, ToastKind};
 use overview::OverviewPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
@@ -66,39 +71,6 @@ pub(crate) fn apply_theme(light: bool) {
             let _ = list.remove_1("theme-light");
         }
     }
-}
-
-// ─── Shared types ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
-pub struct HealthDeps {
-    pub tmux: bool,
-    pub python3: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
-pub struct Health {
-    pub status: String,
-    pub uptime_secs: Option<u64>,
-    pub running: bool,
-    pub version: Option<String>,
-    #[serde(default)]
-    pub git_sha: Option<String>,
-    #[serde(default)]
-    pub dependencies: Option<HealthDeps>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ToastKind {
-    Ok,
-    Err,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Toast {
-    pub id: u32,
-    pub msg: AttrValue,
-    pub kind: ToastKind,
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -503,57 +475,6 @@ pub fn nav() -> Html {
                 { "SETTINGS" }
             </Link<Route>>
         </nav>
-    }
-}
-
-// ─── Utilities (shared with the routines module) ───────────────────────────────
-
-/// Parse a cron expression into a `Cron`, normalizing the 7-field
-/// (sec min hour dom month dow year) form to 5-field to match server behaviour.
-/// Returns `None` for empty or invalid expressions.
-pub(crate) fn parse_cron(expr: &str) -> Option<Cron> {
-    let s = expr.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let normalized = if s.starts_with('@') {
-        s.to_string()
-    } else {
-        let parts: Vec<&str> = s.split_whitespace().collect();
-        if parts.len() == 7 {
-            parts[1..6].join(" ")
-        } else {
-            s.to_string()
-        }
-    };
-    normalized.parse::<Cron>().ok()
-}
-
-/// Returns (is_valid, human description) for a cron expression.
-pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
-    if expr.trim().is_empty() {
-        return (false, "— enter a cron expression —".into());
-    }
-    match parse_cron(expr) {
-        Some(cron) => (true, cron.describe()),
-        None => (false, "Invalid cron expression".into()),
-    }
-}
-
-pub(crate) fn reltime(ts: u64) -> String {
-    if ts == 0 {
-        return "—".into();
-    }
-    let now = (js_sys::Date::now() / 1000.0) as u64;
-    let diff = now.saturating_sub(ts);
-    if diff < 60 {
-        "just now".into()
-    } else if diff < 3_600 {
-        format!("{}m ago", diff / 60)
-    } else if diff < 86_400 {
-        format!("{}h ago", diff / 3_600)
-    } else {
-        format!("{}d ago", diff / 86_400)
     }
 }
 

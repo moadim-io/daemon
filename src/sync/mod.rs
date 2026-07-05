@@ -233,3 +233,7 @@ pub fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod sync_tests;
+
+#[cfg(test)]
+#[path = "mod_replace_block_tests.rs"]
+mod replace_block_tests;

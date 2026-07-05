@@ -1676,6 +1676,13 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 
 ### Fixed
 
+- `moadim stop` / `POST /api/v1/shutdown` no longer hangs forever when a
+  long-lived connection stays open. Axum's graceful shutdown waits for every
+  in-flight connection to close, so an open `/mcp` SSE stream (or any slow
+  client) could keep the serving loop pending indefinitely. The server now
+  bounds the post-shutdown drain to a grace window (default 10s, overridable via
+  `MOADIM_SHUTDOWN_GRACE_MS`): connections still draining when it elapses are
+  abandoned and the process exits cleanly, logging a warning. (#342)
 - Repaired eleven broken `rustdoc` intra-doc links so `cargo doc` builds clean
   again. The crate root's `#![deny(warnings)]` implies
   `deny(rustdoc::broken_intra_doc_links)`, but nothing ran `cargo doc` in CI or

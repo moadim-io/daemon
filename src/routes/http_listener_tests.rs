@@ -9,10 +9,14 @@ use axum::{
     routing::get,
     Router,
 };
+use std::time::Duration;
 use tower::ServiceExt;
 use tower_http::catch_panic::CatchPanicLayer;
 
-use super::{build_app, health, run_with_listener_until, AppState};
+use super::{
+    build_app, health, run_with_listener_until, serve_with_grace, shutdown_grace, AppState,
+    SHUTDOWN_GRACE, SHUTDOWN_GRACE_MS_ENV,
+};
 use crate::utils::time::now_secs;
 
 struct SucceedingCronShim {
@@ -578,4 +582,77 @@ async fn catch_panic_layer_turns_a_handler_panic_into_a_500() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn serve_with_grace_returns_serve_result_when_serve_finishes_first() {
+    // No shutdown is ever requested (`pending`); the server returns on its own and its result
+    // propagates unchanged.
+    let out = serve_with_grace(
+        async { Ok(()) },
+        std::future::pending::<()>(),
+        Duration::from_secs(60),
+    )
+    .await;
+    assert!(out.is_ok());
+}
+
+#[tokio::test]
+async fn serve_with_grace_propagates_serve_error_before_shutdown() {
+    let out = serve_with_grace(
+        async { Err(std::io::Error::other("serve failed")) },
+        std::future::pending::<()>(),
+        Duration::from_secs(60),
+    )
+    .await;
+    assert!(out.is_err(), "a serve error before shutdown must surface");
+}
+
+#[tokio::test]
+async fn serve_with_grace_drains_within_grace_after_shutdown() {
+    // Shutdown fires immediately, then the server drains well inside the grace window: its own
+    // result is returned (no forced exit).
+    let serve = async {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        Ok(())
+    };
+    let out = serve_with_grace(serve, async {}, Duration::from_secs(60)).await;
+    assert!(out.is_ok());
+}
+
+#[tokio::test]
+async fn serve_with_grace_forces_exit_when_connections_never_close() {
+    // The server never returns (modeling an open `/mcp` SSE stream pinning the connection). After
+    // the grace window the wrapper forces a clean exit instead of hanging forever (#342).
+    let start = std::time::Instant::now();
+    let out = serve_with_grace(
+        std::future::pending::<std::io::Result<()>>(),
+        async {},
+        Duration::from_millis(20),
+    )
+    .await;
+    assert!(out.is_ok(), "a forced exit reports success");
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "must force exit at the grace deadline, not hang"
+    );
+}
+
+#[test]
+fn shutdown_grace_honors_env_override_then_falls_back() {
+    // SAFETY: tests in this crate run single-threaded per binary, so env mutation is race-free.
+    unsafe {
+        std::env::set_var(SHUTDOWN_GRACE_MS_ENV, "42");
+    }
+    assert_eq!(shutdown_grace(), Duration::from_millis(42));
+    // An unparseable value falls back to the compiled default.
+    unsafe {
+        std::env::set_var(SHUTDOWN_GRACE_MS_ENV, "not-a-number");
+    }
+    assert_eq!(shutdown_grace(), SHUTDOWN_GRACE);
+    // An unset value also falls back.
+    unsafe {
+        std::env::remove_var(SHUTDOWN_GRACE_MS_ENV);
+    }
+    assert_eq!(shutdown_grace(), SHUTDOWN_GRACE);
 }

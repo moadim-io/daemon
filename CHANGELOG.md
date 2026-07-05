@@ -27,6 +27,13 @@ chore: lower linecheck gate from 1000 to 700 lines
 
 ### Fixed
 
+- The built-in `codex` agent default now enables sandbox network access
+  (`codex exec -s workspace-write -c sandbox_workspace_write.network_access=true`).
+  `codex exec`'s default workspace-write sandbox blocks the network, so a
+  codex-backed routine could not clone the remote repo or push / open a PR — it
+  would silently no-op while still showing a healthy routine. This brings codex
+  to parity with the `claude` default's unattended-access baseline; the setting
+  is overridable in `~/.config/moadim/agents/codex.toml`. (#449)
 - **The routine LOGS view search/highlight could panic the UI on ordinary Unicode log content.** `highlight()` found matches by lowercasing the whole line and then reapplying *those* byte offsets to the original (un-lowercased) string. Case folding isn't always byte-length-preserving (`ẞ`, U+1E9E, 3 bytes, lowercases to `ß`, U+00DF, 2 bytes) or even char-count-preserving (Turkish `İ` expands to two chars), so a matching search query after such a character could compute an offset that lands mid-character and panics on the slice (crashing the Yew render for that log line). The matching logic now projects each original char to exactly one lowercase char and tracks byte spans via `char_indices()`, so every slice boundary is guaranteed valid regardless of the log content's script.
 
 fix(ui): derive the Overview page's per-source `snoozed` flag from the same `now` already threaded through its KPI/attention/upcoming-run math instead of sampling `js_sys::Date::now()` inline, so `is_snoozed`/`from_routine`/`sources_of` stay deterministic and host-testable (this was silently broken: `cargo test --workspace` panicked with "cannot call wasm-bindgen imported functions on non-wasm targets" in 4 `overview_tests`, invisible in CI because `test.yml` only runs bare `cargo test`, which skips the `ui` workspace member).

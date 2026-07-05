@@ -27,6 +27,13 @@ chore: lower linecheck gate from 1000 to 700 lines
 
 ### Fixed
 
+- Routine listings (`GET /routines`) are now deterministic when several routines
+  share the same sort key. The list is built from a `HashMap`, whose iteration
+  order is unspecified, so equal-key routines previously came back in an
+  arbitrary, run-to-run order. Ties are now broken on the stable routine id, and
+  descending order reverses the comparison rather than the sorted vector so the
+  tiebreak stays consistent.
+- Routine iCal feed events are now `TRANSP:TRANSPARENT` instead of the default
 - The built-in `codex` agent default now enables sandbox network access
   (`codex exec -s workspace-write -c sandbox_workspace_write.network_access=true`).
   `codex exec`'s default workspace-write sandbox blocks the network, so a

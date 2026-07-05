@@ -53,3 +53,7 @@ pub fn uninstall() -> anyhow::Result<()> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod service_tests;
+
+#[cfg(test)]
+#[path = "mod_linux_tests.rs"]
+mod service_linux_tests;

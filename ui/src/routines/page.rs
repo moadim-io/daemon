@@ -14,9 +14,9 @@ use super::banner::{GlobalLockBanner, RoutineGroupBySelector, RoutineStatsBar, V
 use super::bulk::{ConfirmDelete, RoutineBulkBar, RoutineBulkDeleteDialog};
 use super::calendar::RoutineCalendar;
 use super::filter::{
-    distinct_agents, distinct_machines_r, distinct_repositories, filter_routines,
+    distinct_agents, distinct_machines_r, distinct_repositories, distinct_tags, filter_routines,
     is_routine_snoozed, AgentFacet, RepositoryFacet, RoutineMachineFacet, RoutineStatusFacet,
-    DUE_SOON_WINDOW_SECS,
+    TagFacet, DUE_SOON_WINDOW_SECS,
 };
 use super::filter_bar::FilterSortBar;
 use super::flags_panel::RoutineFlags;
@@ -188,6 +188,10 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_set_repository = {
         let state = state.clone();
         Callback::from(move |rp: RepositoryFacet| state.dispatch(RAction::SetRepositoryFacet(rp)))
+    };
+    let on_set_tag = {
+        let state = state.clone();
+        Callback::from(move |t: TagFacet| state.dispatch(RAction::SetTagFacet(t)))
     };
     let on_clear_filters = {
         let state = state.clone();
@@ -478,6 +482,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let total_routines = routines.len();
     let agent_options = distinct_agents(&routines);
     let repository_options = distinct_repositories(&routines);
+    let tag_options = distinct_tags(&routines);
     let mut machine_options = distinct_machines_r(&routines);
     // Always include the current machine so the default filter option is visible in the dropdown
     // even before any routine targets it.
@@ -568,6 +573,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 agents={agent_options}
                                 machines={machine_options}
                                 repositories={repository_options}
+                                tags={tag_options}
                                 shown={shown}
                                 total={total_routines}
                                 search_ref={search_ref.clone()}
@@ -576,6 +582,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_agent={on_set_agent}
                                 on_machine={on_set_machine}
                                 on_repository={on_set_repository}
+                                on_tag={on_set_tag}
                                 on_clear={on_clear_filters.clone()}
                             />
                             <RoutineBulkBar

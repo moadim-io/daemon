@@ -5,7 +5,7 @@ use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
 use super::filter::{
-    AgentFacet, RepositoryFacet, RoutineFilter, RoutineMachineFacet, RoutineStatusFacet,
+    AgentFacet, RepositoryFacet, RoutineFilter, RoutineMachineFacet, RoutineStatusFacet, TagFacet,
     RMACHINE_ANY, RMACHINE_UNASSIGNED,
 };
 
@@ -20,6 +20,8 @@ pub struct FilterSortBarProps {
     pub machines: Vec<String>,
     /// Distinct repository URLs across all routines, for the repository-facet options.
     pub repositories: Vec<String>,
+    /// Distinct tags across all routines, for the tag-facet options. Hidden when empty.
+    pub tags: Vec<String>,
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
@@ -30,6 +32,7 @@ pub struct FilterSortBarProps {
     pub on_agent: Callback<AgentFacet>,
     pub on_machine: Callback<RoutineMachineFacet>,
     pub on_repository: Callback<RepositoryFacet>,
+    pub on_tag: Callback<TagFacet>,
     pub on_clear: Callback<()>,
 }
 
@@ -71,6 +74,13 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
             cb.emit(RepositoryFacet::from_value(&select.value()));
         })
     };
+    let on_tag_change = {
+        let cb = props.on_tag.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target_unchecked_into();
+            cb.emit(TagFacet::from_value(&select.value()));
+        })
+    };
     let on_clear = {
         let cb = props.on_clear.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -79,6 +89,7 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
     let agent_val = props.filter.agent.as_value();
     let machine_val = props.filter.machine.as_value();
     let repository_val = props.filter.repository.as_value();
+    let tag_val = props.filter.tag.as_value();
     let active = props.filter.is_active();
 
     html! {
@@ -125,6 +136,23 @@ pub fn filter_sort_bar(props: &FilterSortBarProps) -> Html {
                         <option value={r.clone()} selected={repository_val == *r}>{r.clone()}</option>
                     }) }
                 </select>
+                {
+                    if props.tags.is_empty() {
+                        html! {}
+                    } else {
+                        html! {
+                            <>
+                                <span class="filter-label">{"TAG"}</span>
+                                <select class="filter-select" aria-label="Tag filter" onchange={on_tag_change}>
+                                    <option value={TagFacet::TAG_ALL} selected={tag_val == TagFacet::TAG_ALL}>{"Any"}</option>
+                                    { for props.tags.iter().map(|t| html! {
+                                        <option value={t.clone()} selected={tag_val == *t}>{t.clone()}</option>
+                                    }) }
+                                </select>
+                            </>
+                        }
+                    }
+                }
             </div>
             <div class="filter-field">
                 <span class="filter-count">

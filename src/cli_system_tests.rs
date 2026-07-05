@@ -34,7 +34,7 @@ fn rotate_daemon_log_if_oversized_rolls_the_file_past_the_cap() {
     let base = std::env::temp_dir().join(format!("moadim-log-big-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&base).unwrap();
     let path = base.join("daemon.log");
-    std::fs::write(&path, vec![b'x'; (MAX_DAEMON_LOG_BYTES + 1) as usize]).unwrap();
+    std::fs::write(&path, vec![b'x'; (DAEMON_LOG_MAX_BYTES + 1) as usize]).unwrap();
 
     rotate_daemon_log_if_oversized(&path);
 
@@ -56,7 +56,7 @@ fn rotate_daemon_log_if_oversized_replaces_a_previous_1_file() {
     let base = std::env::temp_dir().join(format!("moadim-log-replace-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&base).unwrap();
     let path = base.join("daemon.log");
-    std::fs::write(&path, vec![b'y'; (MAX_DAEMON_LOG_BYTES + 1) as usize]).unwrap();
+    std::fs::write(&path, vec![b'y'; (DAEMON_LOG_MAX_BYTES + 1) as usize]).unwrap();
     let mut rotated = path.as_os_str().to_os_string();
     rotated.push(".1");
     let rotated = std::path::PathBuf::from(rotated);
@@ -67,7 +67,7 @@ fn rotate_daemon_log_if_oversized_replaces_a_previous_1_file() {
     assert!(rotated.exists());
     assert_eq!(
         std::fs::metadata(&rotated).unwrap().len(),
-        MAX_DAEMON_LOG_BYTES + 1,
+        DAEMON_LOG_MAX_BYTES + 1,
         "rotation must replace a stale .1 file with the freshly-rolled one"
     );
     let _ = std::fs::remove_dir_all(&base);

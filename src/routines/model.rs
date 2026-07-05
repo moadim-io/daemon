@@ -318,7 +318,7 @@ pub enum RunStatus {
 }
 
 /// One past (or in-progress) run of a routine, listed newest-first.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct RunSummary {
     /// Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`.
     pub workbench: String,
@@ -334,7 +334,7 @@ pub struct RunSummary {
 
 /// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide
 /// counterpart to [`RunSummary`] backing an overview "recent runs" view.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct FleetRunSummary {
     /// The routine this run belongs to.
     pub routine_id: String,

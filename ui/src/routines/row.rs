@@ -191,6 +191,9 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <span class={agent_dot}></span>
                     {&r.agent}
                 </span>
+                if let Some(model) = r.model.as_ref().filter(|m| !m.is_empty()) {
+                    <div class="cell-goal" title={model.clone()}>{model.clone()}</div>
+                }
             </td>
             <td>{
                 if repos == 0 {

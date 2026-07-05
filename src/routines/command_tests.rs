@@ -194,7 +194,7 @@ fn build_routine_command_workbench_base_tracks_moadim_home_override() {
 
     assert!(
         cmd.contains(&format!(
-            r#"WB={}/"$SLUG-$TS""#,
+            r#"WB={}/"$SLUG-$RID""#,
             shell_quote(&expected_base)
         )),
         "expected WB base derived from paths::workbenches_dir() ({expected_base}) in: {cmd}"
@@ -202,58 +202,6 @@ fn build_routine_command_workbench_base_tracks_moadim_home_override() {
     assert!(
         !cmd.contains(r#"WB="$HOME/.moadim/workbenches"#),
         "expected the hardcoded $HOME/.moadim/workbenches literal to be gone, got: {cmd}"
-    );
-}
-
-#[test]
-fn build_routine_command_uses_collision_resistant_run_id() {
-    // Two runs of the same routine within the same wall-clock second must not collide on the
-    // workbench dir or tmux session name. The run id mixes the launching shell's PID (`$$`, distinct
-    // across concurrently-live processes) into `$TS`, and `$WB`/`$SESS` derive from that id. (#411)
-    let routine = make_routine("Cmd Run Id Routine");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let cmd = build_routine_command(&routine, &agent);
-
-    // The run id carries the PID for intra-second uniqueness (joined with `_` so the slug and
-    // timestamp stay recoverable by `parse_workbench_name`).
-    assert!(
-        cmd.contains(r#"RID="${TS}_$$""#),
-        "expected PID-mixed run id in: {cmd}"
-    );
-    // Workbench and session derive from the run id, not the bare second-granularity `$TS`.
-    assert!(
-        cmd.contains(r#"WB="$HOME/.moadim/workbenches/$SLUG-$RID""#),
-        "workbench must use the run id: {cmd}"
-    );
-    assert!(
-        cmd.contains(r#"SESS="moadim-$SLUG-$RID""#),
-        "session name must use the run id: {cmd}"
-    );
-    assert!(
-        !cmd.contains("$SLUG-$TS"),
-        "workbench/session must not fall back to second-granularity `$TS`: {cmd}"
-    );
-}
-
-#[test]
-fn build_routine_command_fails_loudly_on_session_collision() {
-    // If `tmux new-session` still fails (e.g. a residual session collision), the launch must abort
-    // non-zero rather than silently no-op — mirroring the prompt-copy guard. (#411)
-    let routine = make_routine("Cmd Session Guard Routine");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let cmd = build_routine_command(&routine, &agent);
-    assert!(
-        cmd.contains(r#"tmux new-session -d -s "$SESS" -c "$WB""#)
-            && cmd.contains(r#"aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#),
-        "tmux new-session must abort loudly on failure: {cmd}"
     );
 }
 
@@ -629,7 +577,7 @@ fn build_routine_command_omits_model_flag_when_unset() {
 fn tmux_session_prefix_matches_the_sess_line_build_routine_command_emits() {
     // The overlap guard (#514) matches on `tmux_session_prefix(slug)` to find *any* live fire of a
     // routine, so the literal `TMUX_SESSION_PREFIX` it's built from must stay byte-for-byte in sync
-    // with the `SESS=` line the launch script actually emits (`moadim-$SLUG-$TS`).
+    // with the `SESS=` line the launch script actually emits (`moadim-$SLUG-$RID`).
     let routine = make_routine("Cmd Session Prefix Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -639,7 +587,7 @@ fn tmux_session_prefix_matches_the_sess_line_build_routine_command_emits() {
     };
     let cmd = build_routine_command(&routine, &agent);
     assert!(
-        cmd.contains(&format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$TS""#)),
+        cmd.contains(&format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#)),
         "expected SESS line built from TMUX_SESSION_PREFIX in: {cmd}"
     );
 
@@ -737,3 +685,6 @@ fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
     assert_eq!(overflow, Some(compose_prompt(&routine).len()));
     assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
 }
+
+#[path = "command_run_id_tests.rs"]
+mod command_run_id_tests;

@@ -334,6 +334,13 @@ operators always see something actionable.
 
 ### Added
 
+- Routine create/update now validates the referenced agent config's `args`
+  placeholders: a typo'd token (e.g. `{prompt_fil}`) or `args` that contain no
+  `{prompt}`/`{prompt_file}` at all are rejected with a `400 Bad Request` at edit
+  time, naming the offending token. Previously such a config passed the
+  agent-registered check and only failed at fire time — launching the agent with
+  a garbage or empty task and burning a full run until the watchdog reaped it
+  (#322).
 - The routines iCalendar feed (`/routines.ics`) now advertises a one-hour poll
   hint via the RFC 7986 `REFRESH-INTERVAL;VALUE=DURATION:PT1H` property plus the
   widely-honored `X-PUBLISHED-TTL:PT1H` fallback. The feed is regenerated per

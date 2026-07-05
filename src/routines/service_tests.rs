@@ -418,6 +418,68 @@ fn svc_create_rejects_ttl_above_cron_ceiling() {
 }
 
 #[test]
+fn svc_create_rejects_agent_config_without_prompt_placeholder() {
+    // A parseable, registered agent whose `args` carry no `{prompt}`/`{prompt_file}` placeholder
+    // would launch with no task. It is rejected at create time with `BadRequest` (#322), not
+    // silently fired forever.
+    let agent_name = "svc-create-noprompt-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"echo\"\nargs = [\"{workbench}\"]\n").unwrap();
+
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        CreateRoutineRequest {
+            title: "Svc Create NoPrompt ZZZ".into(),
+            agent: agent_name.into(),
+            prompt: "p".into(),
+            ..valid_create_request()
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => {
+            assert!(msg.contains("config:"), "{msg}");
+            assert!(msg.contains("must include a prompt placeholder"), "{msg}");
+        }
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
+fn svc_update_rejects_malformed_agent_config() {
+    // The same rejection applies when an update switches a routine to a malformed agent.
+    let agent_name = "svc-update-malformed-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = [\n").unwrap();
+
+    let title = "Svc Update Malformed ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-mal-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-mal-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-mal-id",
+        UpdateRoutineRequest {
+            agent: Some(agent_name.into()),
+            ..empty_update_request()
+        },
+    );
+    match result {
+        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    std::fs::remove_file(&cfg).unwrap();
+}
+
+#[test]
 fn svc_create_rejects_max_runtime_above_cron_ceiling() {
     let _home = TempHome::set();
     // Mirror of the ttl ceiling for the watchdog bound (#468).

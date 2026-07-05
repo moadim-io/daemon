@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-05
+
 ### Added
 
 - **`moadim enable <routine>` / `moadim disable <routine>` CLI commands** to flip a
@@ -19,6 +21,535 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   like the other routine subcommands); the action is idempotent (re-enabling an
   already-enabled routine exits `0`), an unknown routine exits non-zero, and
   `--json` emits a `{"routine","enabled"}` object (#439).
+
+fix(routines): cap agent.log reads to the last 2 MiB
+
+`GET /routines/{id}/logs`, the run-detail log endpoint, and the `logs` MCP
+tool all read a run's `agent.log` in full via `read_to_string`. A
+long-running or noisy agent can grow that file without bound, so serving it
+whole risks an out-of-memory daemon and a multi-hundred-MB HTTP response for
+one request. Both now go through a shared `read_log_tail` helper that caps
+the read to the most recent 2 MiB, snapped to a UTF-8 character boundary so
+a multi-byte character split by the byte-offset seek isn't mangled, and
+prefixes a marker noting how many bytes were omitted.
+
+Add tests exercising `prune_project_at`/`prune_locked`'s three previously branch-uncovered `?` error paths in `src/utils/claude_json.rs` (lock-file creation denied, `~/.claude.json` unreadable, and `atomic_write`'s temp-file creation denied). No behavior change — test-only.
+
+feat(cleanup): report freed disk bytes alongside removed count
+
+`POST /routines/cleanup` (and `moadim cleanup`, the `cleanup_workbenches`
+MCP tool, and the web UI's CLEANUP NOW button) now report how much disk
+space a sweep reclaimed, not just how many workbenches it removed: each
+reaped workbench's tree is measured just before deletion and summed into
+a new `freed_bytes` field on `CleanupResponse` (additive — existing
+`{"removed": N}` consumers are unaffected). `moadim cleanup` prints
+`cleanup removed N workbench(es) (freed 12.4 MB)`, and the UI's cleanup
+toast mirrors the same humanized size.
+
+feat(cli): add `moadim enable`/`disable <routine>` to flip enabled from the terminal
+
+Toggling a routine's `enabled` state previously required a raw `moadim
+routines update <id> --enabled true/false` call or the web UI. `moadim
+enable <routine>` / `moadim disable <routine>` now flip it directly (by id
+or slug, resolved server-side), printing a human status line or a
+`{"routine","enabled"}` object under `--json`. Both are idempotent: setting
+an already-enabled routine to enabled again is a no-op success, not an
+error.
+
+fix(agents): enable network in the codex default so unattended routines can reach the remote
+
+`codex exec` runs unattended (no approval prompts), but its default
+`workspace-write` sandbox blocks outbound network access, so a routine could
+not clone the repo or push / open a PR. The built-in codex default now pins
+the sandbox to `workspace-write` explicitly and turns network access back on
+— the least-privilege setting that still lets the routine reach the remote,
+mirroring the baseline the `claude` default already gets.
+
+fix(routines): collision-resistant run id so same-second runs don't clobber
+
+Two runs of the same routine landing in the same wall-clock second (a
+double-clicked "Run now", a `trigger` retry, or a manual trigger racing the
+scheduled cron fire) derived an identical `$WB`/`$SESS` from `$TS`'s
+one-second granularity — the second `tmux new-session` failed with
+"duplicate session" and silently no-opped while both clobbered the shared
+workbench files. The launch script now mixes the launching shell's PID
+(`$$`) into the run id (`$TS_$$`), and fails loudly instead of silently
+no-opping if `tmux new-session` still collides. (#411)
+
+fix: don't duplicate a workbench's `runs.log` entry when its removal is retried
+
+The reap sweep persists a finished workbench's outcome to the routine's durable
+`runs.log` *before* removing its directory, so `svc_list_runs` still knows
+about the run once the workbench is gone. If that `remove_dir_all` then fails
+(a permission hiccup, a file still open, a crash), the workbench survives and
+gets expired again on the next sweep — which re-persisted the same run,
+appending a duplicate `runs.log` entry every sweep the removal kept failing.
+The `persist` step now skips workbenches that already have a matching record.
+
+chore(routines): remove duplicate tests left behind in `service_tests.rs`
+
+`service.rs`'s test suite was split into focused sibling files (`service_sync_tests.rs`,
+`service_slug_tests.rs`, `service_trigger_tests.rs`, `service_logs_tests.rs`,
+`service_model_tests.rs`, `service_coverage_tests.rs`, ...) over time, but the original
+`service_tests.rs` was never pruned of the tests that moved — 46 of its 71 tests were
+byte-for-byte duplicates already covered by a sibling file, running twice on every `cargo
+test` for zero extra coverage. This also pushed `service_tests.rs` to 2120 lines, well past
+the repo's 700-line pre-push gate (`.githooks/pre-push`'s `linecheck` step), which currently
+fails on plain `main` for anyone who has the git hooks installed per CONTRIBUTING.md.
+
+Removes the 46 duplicate tests, moves the 2 remaining tests that shared a now-file-local
+helper into a new `service_update_not_found_tests.rs`, and leaves `service_tests.rs` at 661
+lines (once again under the gate). `cargo test` still passes with the same net coverage
+(886 vs the prior 932 — the difference is exactly the 46 duplicates removed), confirmed via
+`cargo llvm-cov --fail-under-lines 100`.
+
+chore(lint): enable `clippy::allow_attributes_without_reason`
+
+Every `#[allow(...)]`/`#![allow(...)]` suppression now carries a `reason = "..."`
+so a reviewer can tell at a glance why the lint was silenced, and the reason
+stays documented as the code evolves. Fixed the handful of bare allows this
+newly-`deny`d lint caught (mostly `#![allow(clippy::missing_docs_in_private_items)]`
+at the top of test files, plus a `too_many_arguments` and a `zombie_processes`
+allow).
+
+chore(lint): enable `clippy::doc_markdown`
+
+Requires backticks around code-like items (type names, paths, identifiers)
+in doc comments, so they render as code in generated docs instead of plain
+prose. Fixed the one violation this newly-`deny`d lint caught.
+
+chore(lint): enable `clippy::manual_string_new`
+
+Requires `String::new()` over `"".into()`/`"".to_string()` for constructing
+an empty `String`. Fixed the two violations this newly-`deny`d lint caught
+(both in test fixtures).
+
+fix(service): enable systemd lingering so the daemon survives logout/reboot (#294)
+
+On Linux, `moadim install` starts the daemon under the systemd *user* manager, but without
+lingering enabled that manager — and `moadim.service` with it — only runs while the user has an
+active login session, so the daemon stopped at logout and never started at boot. `install()` now
+runs `loginctl enable-linger` and records a marker file so `uninstall()` disables it symmetrically,
+without ever touching lingering the operator enabled themselves for an unrelated reason. Never
+fails the install: if `loginctl` is unavailable or errors, a warning with the manual command is
+printed instead of aborting.
+
+chore(lint): enable `clippy::todo` and `clippy::unimplemented`
+
+Denies leftover `todo!()`/`unimplemented!()` stubs so they never ship to
+production — a stray one would panic the daemon on that code path, same
+rationale as the existing `dbg_macro` deny. Zero violations found; no code
+changes needed.
+
+fix(routines): extend PATH in run.sh instead of replacing it
+
+The exported `PATH` in a routine's generated launch script now appends the
+curated fallback dirs to the login shell's `$PATH` (`export PATH=$PATH:...`)
+instead of replacing it outright. Version-manager shim dirs (nvm/pyenv/asdf/volta)
+that the profile prepends now survive, so the agent resolves the node/python
+the user actually selected; the curated dirs still guarantee `tmux` and the
+agent command stay resolvable as a fallback.
+
+chore: fix the three files that had grown past the 700-line pre-push gate
+
+`src/routines/service.rs` (701 lines), `src/routines/cleanup/cleanup_tests.rs` (740 lines),
+and `src/service/mod_tests.rs` (816 lines) had all grown past the repo's 700-line pre-push
+gate (`.githooks/pre-push`'s `linecheck` step), which currently fails on plain `main` for
+anyone who has the git hooks installed per CONTRIBUTING.md.
+
+- Moves `service.rs`'s dozen field-validation helpers (`reject_blank`, `validate_title`,
+  `validate_repositories`, `validate_agent`, and friends) into a new
+  `src/routines/service_validate.rs`, matching the file's existing convention of
+  `#[path = "..."]`-declared sibling modules. No behavior changed; `service.rs` drops to
+  457 lines.
+- Moves `cleanup_tests.rs`'s tmux/session-probe tests (`tmux_kill_session_is_best_effort_*`,
+  `tmux_session_alive_*`, `tmux_session_prefix_alive_*`, and friends) into a new
+  `src/routines/cleanup/cleanup_tmux_tests.rs`, matching the existing one-file-per-concern
+  convention already used by `cleanup_claude_json_tests.rs` and `cleanup_freed_bytes_tests.rs`.
+  `cleanup_tests.rs` drops to 543 lines.
+- Moves `mod_tests.rs`'s Linux-only systemd-unit and loginctl/linger tests into a new
+  `src/service/mod_linux_tests.rs`, mirroring the macOS/Linux backend split already present
+  in `service/macos.rs` and `service/linux.rs`. `mod_tests.rs` drops to 382 lines.
+
+No test bodies changed; `cargo test` and `cargo llvm-cov --fail-under-lines 100` still pass,
+and the full pre-push gate (`SKIP_CHANGELOG=1 sh .githooks/pre-push`) now exits 0 on `main`.
+
+fix(routines): derive `agent_registered` from parseability, not file existence
+
+`RoutineResponse.agent_registered` was `true` whenever `<agent>.toml` merely existed on disk, even
+if it was malformed. Crontab sync drops such routines via `load_agent_command`, so they never fire
+— but the API reported them as healthy. `agent_registered` is now `load_agent_command(...).is_ok()`,
+matching what sync actually requires.
+
+fix(routines): fail-fast on a failed agent `setup` step (#287)
+
+A failing `setup` step (e.g. a trust/onboarding pre-seed script) was silently ignored — the
+statements are `;`-joined with no `set -e` — so the agent launched anyway, typically hanging on an
+interactive prompt with no stdin until the watchdog reaped it roughly an hour later with no
+diagnostic. The setup step is now wrapped in a guard that aborts the launch and records the failure
+in `agent.log` and on stderr, mirroring the existing `cp prompt.md` guard.
+
+fix: attach pipe-pane atomically with tmux new-session
+
+`pipe-pane` was attached as a separate statement after `new-session -d`, so
+any output the agent emitted before the attach (banner, initial plan,
+startup crash) was silently dropped from `agent.log`. Both are now chained
+in a single `tmux` invocation via `\;`, so the pipe is attached before the
+pane can produce output.
+
+fix: rotate daemon.log when it exceeds 10 MiB
+
+`spawn_detached_with()` opened `daemon.log` in pure append mode with no
+size cap, so a long-lived install could grow the file unbounded until it
+filled the disk. Before opening the log, its size is now checked and
+rotated to `daemon.log.1` past 10 MiB (best-effort — a failed rotation
+falls through to the existing append-open rather than blocking the spawn).
+
+fix: add global concurrency limit to the HTTP server
+
+The Axum router had no cap on in-flight requests, so a burst of concurrent
+requests or a few hung `crontab`/`tmux` calls could exhaust the runtime's
+worker/blocking pool and leave even `GET /health` unreachable. A
+`tower::limit::GlobalConcurrencyLimitLayer` (a single shared semaphore, cap
+64) now sits as the outermost layer, queuing excess requests instead of
+piling more work onto the runtime.
+
+### Tests
+
+- Added a `flags_tests` regression guard
+  (`list_flags_skips_md_files_that_dont_match_the_flag_shape`) covering two
+  `parse_filename` edge cases that were previously untested: a `.md` file with
+  no `-` to split a timestamp off of (e.g. `README.md`), and a `.md` file
+  whose `-`-delimited suffix isn't a valid timestamp (e.g.
+  `bug-notatimestamp.md`). `list_flags` is documented to silently skip
+  unparsable filenames rather than error; this locks that contract in against
+  a future regression (e.g. someone swapping the `?` for `.unwrap()` in
+  `parse_filename`).
+
+docs(cli): document every accepted flag in `moadim --help`
+
+The parser already accepted `-f`/`--foreground` as aliases for `-i`/`--interactive`,
+`-d`/`--detach`/`--daemon` as aliases for `-b`/`--background`, and `--version` as a
+long form of `-V`, but the help text never mentioned them — a user could only
+discover these aliases by reading the source. The help text now documents every
+alias the parser accepts, and a new test (`help_text_documents_every_accepted_flag`)
+asserts the two can't silently drift apart again.
+
+feat(ical): advertise REFRESH-INTERVAL & X-PUBLISHED-TTL on /routines.ics
+
+The feed is regenerated on every request, but without a refresh hint
+subscribers fall back to their own default polling interval (often 12-24h),
+making routine schedule edits lag for hours before showing up in a
+subscribed calendar. The feed now advertises both the RFC 7986 §5.7
+`REFRESH-INTERVAL` property and the widely-honored Microsoft/Google
+`X-PUBLISHED-TTL` fallback, both set to one hour.
+
+fix(ical): give the schedule-truncation marker VEVENT a DURATION
+
+The trailing "schedule truncated" marker event appended to the `.ics` feed
+when a high-frequency routine hits the 100-event cap carried no `DURATION`
+(unlike every regular fire event), so RFC 5545 treats it as a zero-length
+instant. Most calendar UIs render a zero-length event as a barely-visible
+sliver, defeating the marker's one job of telling subscribers the feed was
+capped. It now carries the same `DURATION`/`TRANSP`/`X-MICROSOFT-CDO-BUSYSTATUS`
+properties as a regular fire event.
+
+Fixed: deleting a routine while its agent was mid-run left that run executing unsupervised — the workbench's tmux session survived, untracked, until the next TTL sweep reaped the now-orphaned workbench (up to `effective_ttl_secs` later). `svc_delete` now force-kills any still-running session for the deleted routine's slug immediately (issue #333). The workbench directory itself is left in place and reaped normally.
+
+fix(server): stop warning on every startup about the openapi.json write
+
+`write_openapi_spec` targets `CARGO_MANIFEST_DIR/apis/openapi.json`, a path
+baked in at compile time. For an installed binary (`cargo install`), that
+directory is wherever the crate happened to build and generally doesn't
+exist on the end user's machine, so every server startup logged a
+`could not write openapi spec: ...` warning for a file nobody expects to be
+writable there (#319). Skip the write when its parent directory doesn't
+exist instead of attempting and warning.
+
+### Fixed
+
+The overlap guard (#514) matched a live tmux session by a plain string prefix (`moadim-<slug>-`), so a routine whose slug is itself a prefix of another routine's slug (e.g. `deploy` vs. `deploy-staging`) could have its own fire silently skipped by an unrelated routine's session — `"moadim-deploy-staging-<rid>".starts_with("moadim-deploy-")` read as "deploy is still running" even when deploy had no session of its own. The match now requires the text after the prefix to have the exact `$RID` shape the launcher emits (`<unix-ts>_<pid>`), so only a genuine fire of the same routine counts.
+
+fix(security): create the daemon's on-disk tree owner-only (#382)
+
+The daemon's on-disk tree is a secret/transcript store (`agent.log` transcripts, `prompt.md`
+instructions, token-referencing routine state) but was created at the default umask, landing
+directories `0755` and files `0644` — world-readable on a default shared-host umask. Directories
+under `~/.config/moadim/` are now created `0700` via `utils::fs_perms::create_private_dir_all`,
+files published through `utils::atomic::atomic_write` (routine state, the `prompt.md` sidecar,
+`machine.local.toml`) are now created `0600` before the publishing rename, and each routine's
+launch script now sets `umask 077` before its first `mkdir` so the workbench directory and
+everything written inside it — the copied `prompt.md`, appended `CLAUDE.md`, and tmux-piped
+`agent.log` — stay unreadable by other local accounts. Unix-only; non-unix builds are unchanged.
+Pre-existing files from older installs are tightened on their next write, not migrated
+retroactively.
+
+fix(cleanup): prune stale `~/.claude.json` `projects` entry when reaping workbenches
+
+The built-in `claude` agent's `setup` step seeds a per-workbench entry into
+`~/.claude.json`, keyed by the workbench's absolute (always-unique) path, on
+every run. Nothing ever pruned it once the workbench was reaped, so the file
+grew by one dead entry per `claude` run, forever. Cleanup now removes the
+matching `projects[<workbench>]` entry when it reaps a workbench directory,
+using the same flock-guarded read -> modify -> atomic-replace pattern the
+setup step already uses. (#430)
+
+### Removed
+
+- Removed the vestigial `echo` demo endpoint/tool — the scaffold `POST
+  /api/v1/echo` REST route, the `echo` MCP tool, and their `EchoRequest` /
+  `EchoResponse` / `EchoInput` types and OpenAPI entries, plus the `moadim
+  echo <message>` CLI passthrough. It echoed a message back with a server
+  timestamp, served no product purpose, and only widened the REST + MCP +
+  OpenAPI + CLI surface; `GET /health` already covers liveness probing. The
+  committed `apis/openapi.json` is regenerated without the `/echo` path and
+  schemas (#359).
+
+feat(cli): add `moadim restart --interactive/-i` to restart in the foreground
+
+`moadim restart` always backgrounded the fresh instance, so restarting into
+an attached, foreground session (to watch startup logs, or under a process
+supervisor that expects a foreground child) required a separate `stop` +
+`-i`. `restart -i`/`--interactive` now stops any running server, same as
+`restart`, but brings the fresh instance up in the foreground instead of
+detaching it — mirroring `moadim -i`.
+
+feat(cli): add `--json`/`--quiet` to `moadim restart`
+
+`moadim restart` only printed human-readable status lines, so scripts had
+no clean way to consume its result. `--json` now emits a single
+machine-readable object (`{"old":N|null,"new":N,"address":…}`, matching the
+shape every other `--json` lifecycle command surfaces), and `--quiet`
+prints just the `restarted: pid <old> -> <new>` rotation line, suppressing
+the UI/stop/logs hint block, for script-friendly output without the
+overhead of JSON parsing.
+
+feat(routines): expose `next_run_at` on the routine API response
+
+`GET /routines` (and single-routine reads) already surfaced `schedule`,
+`schedule_description`, and `timezone`, but never the computed next fire
+time — you had to mentally evaluate the cron expression, open the
+CALENDAR view, or subscribe to the `.ics` feed to find out when a routine
+runs next. `RoutineResponse` now includes `next_run_at` (Unix epoch
+seconds, host-local-timezone crontab semantics), reusing the same
+`croner` evaluation the `.ics` feed and TTL sweep already perform. It is
+`null` when the routine is disabled, the daemon is globally locked, or
+`schedule` is unparseable or has no upcoming fire (e.g. `@reboot`).
+Closes #369.
+
+### Fixed
+
+A routine had no overlap guard: nothing stopped a new fire from launching while a previous fire of the *same* routine was still running. A routine whose agent run outlived its schedule interval (e.g. `* * * * *` with a slow agent) would pile up concurrent tmux sessions all acting on the same target — duplicate PRs/issues, racing git pushes. Both the manual and scheduled trigger paths now check for a live tmux session under the routine's `moadim-<slug>-` prefix before launching, and skip the fire (with a warning) if one is still active.
+
+feat(routines): per-routine power-saving mode, orthogonal to enabled
+
+Adds `power_saving: bool` alongside the existing user-owned `enabled` toggle:
+both must hold (`enabled && !power_saving`) for a manual or scheduled trigger
+to launch. `power_saving` is system/policy-owned, never touched by
+create/update, and persisted in the gitignored `state.local.toml` sidecar like
+`snoozed_until`/`skip_runs` rather than the tracked `routine.toml`. Set/cleared
+via the new `set_power_saving` MCP tool. The web UI's health badge and
+"Run now" tooltip distinguish `POWER SAVING` from `DISABLED`.
+
+fix(routines): dedupe `tags` on create/update, mirroring `machines`
+
+`validate_tags` trimmed and rejected blank entries but never collapsed
+duplicates, unlike its `validate_machines` sibling. A duplicate (or
+whitespace-padded repeat) tag such as `["nightly", "nightly"]` or
+`["nightly", " nightly "]` persisted verbatim, rendering as a doubled chip
+in the routine row and an inflated tag list for a label that names one
+concept once. `validate_tags` now dedupes on the trimmed value, keeping the
+first occurrence, matching `validate_machines`'s existing behavior.
+
+feat(routines): persist run history past workbench TTL reaping
+
+`svc_list_runs`/`svc_list_all_runs` (and the HISTORY page / RECENT RUNS
+panel that read them) used to show only runs whose workbench directory
+was still on disk — once TTL-reaped, a run's outcome vanished. The reaper
+now appends a compact record (workbench, timestamps, status, exit code)
+to each routine's `runs.log` right before removing its workbench, so a
+routine's run history survives past its configured retention window (the
+`agent.log` body itself is still discarded, since retaining full logs
+forever isn't the retention knob's job).
+
+fix(service): restart only on failure so a clean stop stays stopped
+
+The systemd unit and launchd agent restarted the daemon on *any* exit
+(`Restart=always` / unconditional `KeepAlive`), so a clean shutdown via
+`moadim stop`, the UI STOP button, or `POST /shutdown` was resurrected by
+the supervisor ~5s later. Restart is now failure-only
+(`Restart=on-failure` / `KeepAlive = { SuccessfulExit = false }`): a crash
+still auto-restarts, but a clean stop stays stopped.
+
+fix(server): bound graceful-shutdown drain so `moadim stop` can't hang forever
+
+`axum`'s graceful shutdown waits for every in-flight connection to close
+before returning, so a long-lived stream (an `/mcp` SSE subscription, a slow
+client) could keep that future pending indefinitely, hanging `moadim
+stop`/`POST /shutdown` forever (#342). The server now caps the post-shutdown
+drain to a bounded grace window (10s by default, overridable via
+`MOADIM_SHUTDOWN_GRACE_MS` for tests) and forces a clean exit once it
+elapses, logging a warning if connections were still open.
+
+chore(cli): split the bind-override tests out of `cli_tests.rs`
+
+`src/cli_tests.rs` had grown to 705 lines, past the repo's 700-line pre-push
+gate (`.githooks/pre-push`'s `linecheck` step), which currently fails on
+plain `main` for anyone who has the git hooks installed per CONTRIBUTING.md.
+
+Moves the 7 `BIND_ADDR_ENV`-override tests (`bind_addr_uses_default_when_unset`,
+`bind_addr_honors_override`, `status_json_address_reflects_bind_override`, and
+friends) into a new `src/cli_bind_override_tests.rs`, with its own `EnvGuard`
+copy, matching the existing one-helper-copy-per-test-file convention already
+used by `cli_json_tests.rs` and `cli_spawn_tests.rs`. No test bodies changed;
+`cli_tests.rs` drops to 617 lines. `cargo test` still passes the same 101
+`cli::*` tests.
+
+chore(routines): split `command_tests.rs`'s binary-resolution tests into a sibling file
+
+`src/routines/command_tests.rs` had grown to 713 lines, past the repo's 700-line pre-push
+gate (`.githooks/pre-push`'s `linecheck` step), which currently fails on plain `main` for
+anyone who has the git hooks installed per CONTRIBUTING.md.
+
+Moves the 18 `tmux`/agent-binary-resolution tests (`tmux_available_*`,
+`agent_command_available_*`, `resolve_tmux_bin_*`, `bin_dir_returns_none_when_path_unset`,
+`tmux_fallback_dirs_are_anchored_under_home`) into a new
+`src/routines/command_bin_resolution_tests.rs`, matching the existing one-helper-copy-per-
+test-file convention already used by `command_run_id_tests.rs` and friends. No test bodies
+changed; `command_tests.rs` drops to 462 lines. `cargo test` still passes with the same 886
+tests, and `cargo llvm-cov` shows `routines/command.rs` unchanged at 100% line coverage.
+
+fix(routines): strip ANSI escapes and `\r`-redraw noise from served logs
+
+`tmux pipe-pane -o` captures a routine's pane output verbatim, so `GET
+/routines/{id}/logs`, the run-detail log endpoint, and the `logs` MCP tool
+all served raw terminal escape sequences (color codes, cursor movement,
+screen clears) and every redraw frame of a spinner or progress bar as its
+own line, instead of the final state a real terminal would display (#278).
+`read_log_tail` now strips ANSI/VT escape sequences and collapses
+`\r`-based redraw overwrites down to the last write per line before
+returning content, so served logs read as the logical lines an operator
+would actually see in a terminal.
+
+fix(routines): make svc_list deterministic for tied sort keys
+
+Routines come off a `HashMap`, whose iteration order is unspecified, so a
+listing sorted by a field with duplicate values (e.g. several routines
+created in the same second) previously rendered in an arbitrary, run-to-run
+order. `svc_list` now breaks ties on the stable routine id, and reverses the
+whole comparison (not just the sorted vector) for descending order so the
+tiebreak direction stays consistent.
+
+fix(routines): tombstone a deleted built-in default so it stays deleted
+
+Deleting a built-in default routine now records its slug in a tombstone
+file (`removed_default_routines_path`), so the next startup's
+`ensure_default_routines` no longer resurrects it enabled. Re-creating a
+routine under a tombstoned default's title clears the tombstone, since
+that is a deliberate "bring it back" signal.
+
+Add unit tests for the routine HISTORY page's `fmt_run_duration` formatter
+and its run-status badge class/label helpers — they shipped untested,
+including the `finished_at < started_at` underflow-guard branch.
+
+feat(ui): add a fleet-wide RECENT RUNS panel to the overview page
+
+`GET /routines/runs?limit=N` returns the most recent runs across every
+routine (newest first, one workbench-directory scan) instead of one
+`/routines/{id}/runs` request per routine. The overview page's new RECENT
+RUNS table uses it to show what just ran fleet-wide, complementing the
+existing UPCOMING RUNS panel (future fires) with the equivalent view of
+the past.
+
+fix(ui): deep-link RECENT RUNS entries straight to that routine's HISTORY page
+
+Clicking a routine name in the overview page's RECENT RUNS panel used to
+land on the plain routine list. It now carries a `?history=<id>` query
+that the routines page reads on mount and opens that routine's HISTORY
+page directly — one click from "what just ran, fleet-wide" to the full
+per-run detail.
+
+feat(ui): add DURATION column to the Overview "RECENT RUNS" table
+
+The fleet-wide recent-runs table on the Overview page previously showed
+ROUTINE / STARTED / STATUS / EXIT CODE. It now also shows DURATION (wall-clock
+elapsed between started_at and finished_at), matching the same column that
+already exists on each routine's own HISTORY page.
+
+Add a **Model** field to the routine create/edit form and Routines table row. The backend already persisted an optional `model` override per routine and passed it to the agent invocation as `--model` (`src/routines/model.rs`, `src/routines/command.rs`), but the UI never exposed it — this wires up the missing free-text input, save/clear round-trip, and row display (#742).
+
+feat(ui): make UNREGISTERED AGENT stat tile a clickable filter
+
+The "UNREGISTERED AGENT" tile on the routines stats bar was a read-only
+display div. It is now a clickable filter button (like DORMANT, FLAGS,
+SNOOZED) that filters the table to show only routines whose agent is not
+registered. The tile turns amber when any unregistered-agent routines exist.
+A new `AgentUnregistered` variant is added to `RoutineStatusFacet` so
+the filter state persists in the URL via the existing `status=` query param.
+
+feat(ui): add MACHINES column to the routines table
+
+The routines table now has a MACHINES column showing how many machines
+each routine is assigned to. When a routine has no machines assigned
+(dormant) the cell shows an amber "—" instead of a number, so operators
+can spot un-targeted routines without filtering. Hovering the count
+shows the full list of machine names.
+
+feat(ui): add TAG filter to the routines filter bar and include tags in search
+
+Two improvements to tag-based visibility:
+- Tags are now included in the free-text search haystack, so typing a tag name
+  into the search box narrows the list to routines carrying that tag.
+- When any routines have tags, a TAG drop-down appears in the filter bar,
+  allowing operators to filter the table to a single tag without using the
+  search box. The drop-down is hidden when no routines are tagged.
+
+feat(ui): add a run-history page for routines
+
+Routines now record the exit code of every run (written to the workbench
+by the launch command once the agent process exits) and expose it via
+`GET /routines/{id}/runs` and `GET /routines/{id}/runs/{workbench}/log`.
+A new HISTORY button on each routine row opens a page listing every kept
+run — start time, status (RUNNING/SUCCESS/FAILED/UNKNOWN), duration, and
+exit code — with a per-run log viewer, instead of the LOGS page's
+newest-run-only view.
+
+feat(ui): add a Settings page for the persistent agent prompt
+
+`~/.config/moadim/user_prompt.md` — the prompt text appended to every
+routine's agent instructions file — was previously editable only by hand
+on disk. `GET`/`PUT /config/user-prompt` now expose it over the REST API,
+and a new SETTINGS page (nav tab + command palette entry) lets it be
+viewed and edited from the UI. Machine identity and the global schedule
+lock keep their existing header/banner controls; this page covers the one
+setting that had no UI surface at all.
+
+feat(ui): expose Snoozed, Flagged, and Agent-unregistered options in the STATUS filter dropdown
+
+Three status facets (`Snoozed`, `HasFlags`, `AgentUnregistered`) were fully
+implemented in the filter logic but had no corresponding option in the STATUS
+drop-down, making them invisible to users. Operators can now select:
+
+- **Snoozed** — routines whose scheduled fires are currently suppressed
+- **Flagged** — routines with one or more open flags needing review
+- **Agent unregistered** — routines whose agent config is missing
+
+fix(cli): unknown command exits 2 to stderr, not help to stdout
+
+An unrecognized first argument (e.g. `moadim staus`) is no longer treated
+as a successful `help` invocation. It now prints `unknown command: <arg>`
+plus a hint to stderr and exits `2`, distinct from an explicit
+`help`/`-h`/`--help` request (stdout, exit `0`).
+
+fix(routines): validate agent-config args placeholders
+
+Creating or updating a routine now validates the referenced agent's `args`
+against two silent fire-time failures (#322): a typo'd placeholder token
+(e.g. `{prompt_fil}`) that would reach the agent as a literal, dead argument,
+and a config with no `{prompt}`/`{prompt_file}` placeholder at all, which
+would launch the agent with no task. Both are rejected with `400 Bad
+Request` at edit time instead of silently burning a run at fire time.
+
 ## [0.22.1] - 2026-07-05
 
 Enable `clippy::needless_pass_by_ref_mut` in `[lints.clippy]`. The codebase was already clean against it (no violations), so this is a lint-only change that locks in the invariant that every `&mut` parameter is actually mutated through.
@@ -2141,7 +2672,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/moadim-io/daemon/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/moadim-io/daemon/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/moadim-io/daemon/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/moadim-io/daemon/compare/v0.20.0...v0.21.0

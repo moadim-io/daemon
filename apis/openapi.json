@@ -1514,7 +1514,8 @@
               "agent_registered",
               "agent_command_available",
               "file_path",
-              "flag_count"
+              "flag_count",
+              "is_running"
             ],
             "properties": {
               "agent_command_available": {
@@ -1533,6 +1534,10 @@
                 "type": "integer",
                 "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
                 "minimum": 0
+              },
+              "is_running": {
+                "type": "boolean",
+                "description": "`true` if any fire of this routine currently has a live tmux session — i.e. an agent is\nrunning right now. Derived by probing for a session under the routine's\n`moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not\npersisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing\nbest-effort \"no tmux, nothing running\" stance. See issue #438."
               },
               "next_run_at": {
                 "type": [

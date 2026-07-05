@@ -24,6 +24,10 @@ pub struct Routine {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    /// Model ID the agent runs with (e.g. `"claude-sonnet-4-6"`); `None` uses the agent's own
+    /// default.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub prompt: String,
     /// Short (≤5 line) statement of the routine's goal; `None` when unset.
@@ -100,6 +104,8 @@ pub struct CreateRoutineRequest {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    /// Model ID to run the agent with; `None` uses the agent's own default.
+    pub model: Option<String>,
     pub prompt: String,
     /// Short (≤5 line) goal statement; `None` when unset.
     pub goal: Option<String>,
@@ -163,6 +169,8 @@ pub struct UpdateRoutineRequest {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

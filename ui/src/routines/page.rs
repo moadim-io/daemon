@@ -310,6 +310,8 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                         schedule: Some(req.schedule),
                         title: Some(req.title),
                         agent: Some(req.agent),
+                        // Always send the model so clearing the field (empty string) clears it server-side.
+                        model: Some(req.model.unwrap_or_default()),
                         prompt: Some(req.prompt),
                         // Always send the goal so clearing the field (empty string) clears it server-side.
                         goal: Some(req.goal.unwrap_or_default()),

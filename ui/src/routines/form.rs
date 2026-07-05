@@ -136,6 +136,13 @@ pub fn routine_form(props: &FormProps) -> Html {
             || ()
         });
     }
+    // Free-text model override; blank means "use the agent's own default".
+    let model = use_state(|| {
+        editing
+            .as_ref()
+            .and_then(|r| r.model.clone())
+            .unwrap_or_default()
+    });
     let prompt = use_state(|| {
         editing
             .as_ref()
@@ -200,6 +207,13 @@ pub fn routine_form(props: &FormProps) -> Html {
         Callback::from(move |e: Event| {
             let s: HtmlSelectElement = e.target_unchecked_into();
             agent.set(s.value());
+        })
+    };
+    let on_model = {
+        let model = model.clone();
+        Callback::from(move |e: InputEvent| {
+            let i: HtmlInputElement = e.target_unchecked_into();
+            model.set(i.value());
         })
     };
     let on_prompt = {
@@ -268,6 +282,7 @@ pub fn routine_form(props: &FormProps) -> Html {
         let title = title.clone();
         let schedule = schedule.clone();
         let agent = agent.clone();
+        let model = model.clone();
         let prompt = prompt.clone();
         let goal = goal.clone();
         let repos_raw = repos_raw.clone();
@@ -286,6 +301,7 @@ pub fn routine_form(props: &FormProps) -> Html {
                 schedule: (*schedule).clone(),
                 title: (*title).clone(),
                 agent: (*agent).clone(),
+                model: Some((*model).clone()).filter(|text| !text.trim().is_empty()),
                 prompt: (*prompt).clone(),
                 goal: Some((*goal).clone()).filter(|text| !text.trim().is_empty()),
                 repositories: text_to_repos(&repos_raw),
@@ -343,6 +359,14 @@ pub fn routine_form(props: &FormProps) -> Html {
                         <option value={name.clone()} selected={*agent == *name}>{name.clone()}</option>
                     }) }
                 </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    {"MODEL "}
+                    <span style="color:var(--text-ghost)">{"(optional; blank = agent default)"}</span>
+                </label>
+                <input class="form-input" type="text" placeholder="claude-sonnet-4-6"
+                    value={(*model).clone()} oninput={on_model} autocomplete="off" spellcheck="false" />
             </div>
             <div class="form-group">
                 <label class="form-label">{"PROMPT "}<span class="form-required">{"*"}</span></label>

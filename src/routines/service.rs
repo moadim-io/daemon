@@ -9,7 +9,9 @@ use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
 use super::agents::{available_agents, load_agent_command, AgentLoadError};
-use super::cleanup::{max_runtime_ceiling_secs, ttl_ceiling_secs};
+use super::cleanup::{
+    kill_sessions_for_deleted_routine, max_runtime_ceiling_secs, ttl_ceiling_secs,
+};
 use super::command::slugify;
 use super::model::{
     CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse, RoutineSort,
@@ -582,9 +584,19 @@ pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) 
 }
 
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
+///
+/// Also force-kills any in-flight workbench session(s) for this routine's slug, so a deleted
+/// routine's agent doesn't keep running unsupervised until the next TTL sweep (#333).
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
-    remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
+    let slug = slugify(&routine.title);
+    let killed = kill_sessions_for_deleted_routine(&slug);
+    if killed > 0 {
+        log::warn!(
+            "routine delete: killed {killed} in-flight session(s) for deleted routine {slug:?}"
+        );
+    }
+    remove_routine_dir(&slug).map_err(|_| AppError::Internal)?;
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
     }

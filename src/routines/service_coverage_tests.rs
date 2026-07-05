@@ -446,6 +446,40 @@ fn svc_delete_returns_internal_on_remove_dir_failure() {
 }
 
 #[test]
+fn svc_delete_kills_the_routines_in_flight_workbench_session() {
+    // #333: deleting a routine while its agent is mid-run must not leave that run executing
+    // unsupervised until the next TTL sweep. Covers the `killed > 0` log::warn! branch in
+    // `svc_delete`, backed by a tmux stub that reports every session as alive.
+    let _home = TempHome::set();
+    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: single-threaded test execution; restored below.
+    unsafe {
+        std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/true");
+    }
+
+    let title = "Svc Delete Kills Session ZZZ";
+    let slug = slugify(title);
+    let store = new_store();
+    let routine = make_routine("del-kill-id", title, 1, 1);
+    store.lock().unwrap().insert("del-kill-id".into(), routine);
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(workbenches.join(format!("{slug}-1"))).unwrap();
+
+    let result = svc_delete(&store, "del-kill-id");
+
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        match prev_tmux {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+
+    assert!(result.is_ok());
+}
+
+#[test]
 fn svc_update_not_found_when_id_missing() {
     let _home = TempHome::set();
     // `svc_update` looks the id up once (to compute `old_slug`) while holding the store's

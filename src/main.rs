@@ -61,8 +61,9 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart {
             json,
+            quiet,
             interactive: false,
-        } => cli::restart(json),
+        } => cli::restart(json, quiet),
         cli::Command::Restart {
             interactive: true, ..
         } => {

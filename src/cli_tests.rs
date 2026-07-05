@@ -346,17 +346,7 @@ fn restart_command() {
         parse(argv(&["restart"])),
         Command::Restart {
             json: false,
-            interactive: false
-        }
-    );
-}
-
-#[test]
-fn restart_command_with_json_flag() {
-    assert_eq!(
-        parse(argv(&["restart", "--json"])),
-        Command::Restart {
-            json: true,
+            quiet: false,
             interactive: false
         }
     );

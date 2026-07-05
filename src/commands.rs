@@ -390,7 +390,7 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
 /// idempotent no-op rather than an error), `1` on any other status (e.g. an unknown routine's 404),
 /// and [`crate::cli::EXIT_NOT_RUNNING`] when no server is reachable.
 fn set_routine_enabled(routine: &str, enabled: bool, json: bool) -> i32 {
-    let body = object([("enabled", Value::Bool(enabled))]);
+    let body = serde_json::json!({ "enabled": enabled }).to_string();
     match crate::cli::http_request_json("PATCH", &routine_path(routine), Some(&body)) {
         Ok((status, resp)) if (200..300).contains(&status) => {
             report_enabled(routine, enabled, &resp, json);
@@ -426,13 +426,7 @@ fn report_enabled(routine: &str, requested: bool, resp: &str, json: bool) {
         .and_then(Value::as_bool)
         .unwrap_or(requested);
     if json {
-        println!(
-            "{}",
-            object([
-                ("routine", Value::String(id.to_string())),
-                ("enabled", Value::Bool(state)),
-            ])
-        );
+        println!("{}", serde_json::json!({ "routine": id, "enabled": state }));
     } else {
         let word = if state { "enabled" } else { "disabled" };
         println!("routine {id} is now {word}");

@@ -582,6 +582,10 @@ pub(crate) use cli_system::{parse_body, parse_status_code};
 mod cli_tests;
 
 #[cfg(test)]
+#[path = "cli_help_tests.rs"]
+mod cli_help_tests;
+
+#[cfg(test)]
 #[path = "cli_json_tests.rs"]
 mod cli_json_tests;
 

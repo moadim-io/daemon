@@ -678,33 +678,3 @@ fn status_stop_cleanup_json_share_the_same_address() {
     assert_eq!(stop["address"], expected);
     assert_eq!(cleanup["address"], expected);
 }
-
-#[test]
-fn help_text_documents_every_accepted_flag() {
-    let help = help_text();
-    // Each alias `parse` accepts must be discoverable in `--help`, so the
-    // documentation can't silently drift from the parser.
-    for flag in [
-        "-i",
-        "--interactive",
-        "-f",
-        "--foreground", // foreground mode
-        "-b",
-        "--background",
-        "-d",
-        "--detach",
-        "--daemon", // background mode
-        "-h",
-        "--help",
-        "-V",
-        "--version", // help & version
-        "--json",
-        "-q",
-        "--quiet", // command flags
-    ] {
-        assert!(
-            help.contains(flag),
-            "help text is missing the `{flag}` flag that the parser accepts"
-        );
-    }
-}

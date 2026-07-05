@@ -316,6 +316,26 @@ pub fn spawn_restart() -> anyhow::Result<u32> {
     })
 }
 
+/// Size `daemon.log` may reach before [`spawn_detached_with`] rotates it out of the way rather
+/// than appending to it forever (#316): a daemon meant to run unattended for weeks/months must not
+/// silently grow this file until the disk fills up.
+const MAX_DAEMON_LOG_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Rotate `log_path` to a sibling `.1` file (replacing any previous one) when it has grown past
+/// [`MAX_DAEMON_LOG_BYTES`]. Best-effort: a missing file or a rotation failure (e.g. permissions)
+/// is not fatal — the daemon still starts and simply keeps appending to the existing file.
+fn rotate_daemon_log_if_oversized(log_path: &std::path::Path) {
+    let Ok(metadata) = std::fs::metadata(log_path) else {
+        return;
+    };
+    if metadata.len() <= MAX_DAEMON_LOG_BYTES {
+        return;
+    }
+    let mut rotated = log_path.as_os_str().to_os_string();
+    rotated.push(".1");
+    let _ = std::fs::rename(log_path, rotated);
+}
+
 /// Spawn a detached copy of this binary with stdio redirected to the daemon log and its own process
 /// group, applying `configure` to set the subcommand/flags before launch. Returns the child PID.
 fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
@@ -326,6 +346,7 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     crate::utils::fs_perms::create_private_dir_all(
         log_path.parent().expect("daemon log path has a parent dir"),
     )?;
+    rotate_daemon_log_if_oversized(&log_path);
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -359,3 +380,7 @@ fn detach(cmd: &mut std::process::Command) {
 /// No-op on platforms without process groups; the child still detaches via redirected stdio.
 #[cfg(not(unix))]
 fn detach(_cmd: &mut std::process::Command) {}
+
+#[cfg(test)]
+#[path = "cli_system_tests.rs"]
+mod cli_system_tests;

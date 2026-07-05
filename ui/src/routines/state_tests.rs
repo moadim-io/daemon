@@ -483,3 +483,51 @@ fn sort_by_last_fire_descending_puts_newest_first() {
     assert_eq!(sorted[0].id, "new");
     assert_eq!(sorted[1].id, "old");
 }
+
+// ── CloseModal (Esc dismissal) ────────────────────────────────────────────────
+// `install_search_hotkey` (routines/hooks.rs) dispatches this same action when
+// Escape is pressed and a modal is open. These tests pin the reducer behavior
+// it relies on: every modal variant resets to `None`, and no destructive/data
+// action (delete, bulk-delete) ever fires as a side effect.
+
+#[test]
+fn close_modal_from_edit_resets_to_none() {
+    let s = state_with_routines(&["a"]);
+    let s = s.reduce(RAction::OpenEdit("a".into()));
+    assert_eq!(s.modal, RModal::Edit("a".into()));
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+}
+
+#[test]
+fn close_modal_from_confirm_delete_resets_to_none_without_deleting() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::OpenConfirmDelete {
+        id: "a".into(),
+        title: "a".into(),
+    });
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+    // Esc must not act like a confirmed delete: both routines are still present.
+    assert_eq!(s.routines.len(), 2);
+}
+
+#[test]
+fn close_modal_from_confirm_bulk_delete_resets_to_none_without_deleting() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into()]));
+    let s = s.reduce(RAction::OpenConfirmBulkDelete);
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+    // Esc must not act like a confirmed bulk delete: selection and routines survive.
+    assert_eq!(s.routines.len(), 2);
+    assert_eq!(s.selected.len(), 2);
+}
+
+#[test]
+fn close_modal_is_a_noop_when_no_modal_is_open() {
+    let s = state_with_routines(&["a"]);
+    assert_eq!(s.modal, RModal::None);
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+}

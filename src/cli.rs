@@ -168,7 +168,7 @@ fn wants_wait(rest: &[String]) -> Option<u64> {
 }
 
 /// Build the usage help text. Every flag listed here must stay in sync with the
-/// aliases [`parse`] actually accepts; [`crate::cli_tests`] asserts as much.
+/// aliases [`parse`] actually accepts; `cli_help_tests` asserts as much.
 pub fn help_text() -> String {
     let bind_addr = bind_addr();
     format!(

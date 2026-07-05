@@ -141,7 +141,9 @@ pub fn set_machine(name: &str) -> std::io::Result<()> {
     }
     let path = machine_config_path();
     // The machine-config path is always `<config dir>/machine.local.toml`, so it always has a parent.
-    std::fs::create_dir_all(path.parent().expect("machine config path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("machine config path has a parent dir"),
+    )?;
     let toml = MachineToml {
         name: Some(name.to_string()),
     };

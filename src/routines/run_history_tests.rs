@@ -130,3 +130,29 @@ fn append_persisted_run_is_best_effort_when_path_unwritable() {
     append_persisted_run("blocked-id", &sample_run("my-routine-1000", 1000));
     assert_eq!(read_persisted_runs("blocked-id"), vec![]);
 }
+
+#[cfg(unix)]
+#[test]
+fn append_persisted_run_creates_owner_only_log_and_dir() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _home = TempHome::set();
+    append_persisted_run("perm-id", &sample_run("my-routine-1000", 1000));
+
+    let path = crate::paths::routine_run_history_path("perm-id");
+    let file_mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        file_mode, 0o600,
+        "runs.log should be 0600, got {file_mode:o}"
+    );
+
+    let dir_mode = std::fs::metadata(path.parent().unwrap())
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        dir_mode, 0o700,
+        "routine dir should be 0700, got {dir_mode:o}"
+    );
+}

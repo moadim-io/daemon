@@ -10,7 +10,9 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
-    std::fs::create_dir_all(path.parent().expect("pid file path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("pid file path has a parent dir"),
+    )?;
     ensure_config_gitignore();
     ensure_readme(&crate::paths::config_readme_path(), CONFIG_README);
     ensure_readme(&crate::paths::routines_readme_path(), ROUTINES_README);
@@ -78,7 +80,7 @@ fn ensure_readme(path: &std::path::Path, content: &str) {
         return;
     }
     let parent = path.parent().expect("readme path has a parent dir");
-    if std::fs::create_dir_all(parent).is_err() {
+    if crate::utils::fs_perms::create_private_dir_all(parent).is_err() {
         return;
     }
     let _ = std::fs::write(path, content);
@@ -314,7 +316,9 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
 
     let exe = std::env::current_exe().expect("resolve current executable path");
     let log_path = crate::paths::daemon_log_file();
-    std::fs::create_dir_all(log_path.parent().expect("daemon log path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        log_path.parent().expect("daemon log path has a parent dir"),
+    )?;
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

@@ -217,8 +217,8 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
-    std::fs::create_dir_all(&dir)?;
-    std::fs::create_dir_all(routine_prompts_dir(&slug))?;
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 
     let gitignore = routine_gitignore_path(&slug);
     if !gitignore.exists() {
@@ -454,7 +454,7 @@ pub(crate) fn migrate_prompts_to_subfolder_from_dir(dir: &std::path::Path) {
             continue;
         }
         let prompts_dir = entry.path().join("prompts");
-        if let Err(err) = std::fs::create_dir_all(&prompts_dir) {
+        if let Err(err) = crate::utils::fs_perms::create_private_dir_all(&prompts_dir) {
             log::warn!(
                 "migrate_prompts_to_subfolder: failed to create {}: {err}",
                 prompts_dir.display()

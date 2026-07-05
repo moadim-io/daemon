@@ -206,25 +206,6 @@ fn build_routine_command_workbench_base_tracks_moadim_home_override() {
 }
 
 #[test]
-fn build_routine_command_sets_owner_only_umask_before_creating_files() {
-    // The launch script sets `umask 077` before its first `mkdir`, so the workbench dir, the copied
-    // `prompt.md`, and the tmux-piped `agent.log` are created owner-only rather than world-readable.
-    let routine = make_routine("Cmd Umask Routine");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        setup: None,
-    };
-    let cmd = build_routine_command(&routine, &agent);
-    let umask_at = cmd.find("umask 077").expect("umask 077 statement present");
-    let mkdir_at = cmd.find("mkdir -p").expect("workbench mkdir present");
-    assert!(
-        umask_at < mkdir_at,
-        "umask must precede the first mkdir so the workbench tree is owner-only: {cmd}"
-    );
-}
-
-#[test]
 fn cron_path_falls_back_to_root_home_when_home_unset() {
     // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
     // fallback arm, so the `~/.local/bin` etc. entries are anchored under `/root`.
@@ -707,3 +688,6 @@ fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
 
 #[path = "command_run_id_tests.rs"]
 mod command_run_id_tests;
+
+#[path = "command_umask_tests.rs"]
+mod command_umask_tests;

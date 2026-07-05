@@ -25,7 +25,7 @@ use crate::utils::claude_json::prune_project;
 use crate::utils::time::now_secs;
 
 use super::model::{RoutineStore, RunStatus};
-use super::run_history::{append_persisted_run, read_exit_code, PersistedRun};
+use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
 mod runtime;
 mod session;
@@ -313,6 +313,12 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
             let Some(routine_id) = routine_ids.get(slug) else {
                 return;
             };
+            if has_persisted_run(routine_id, name) {
+                // Already recorded on a prior sweep whose `remove_dir_all` then failed, leaving
+                // this workbench to be re-expired and re-persisted on the next sweep. Skip it so
+                // one real run doesn't accumulate duplicate `runs.log` entries.
+                return;
+            }
             let exit_code = read_exit_code(workbench_path);
             let status = match exit_code {
                 Some(0) => RunStatus::Success,

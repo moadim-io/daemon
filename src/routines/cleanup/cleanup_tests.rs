@@ -679,4 +679,62 @@ fn cleanup_expired_workbenches_persists_run_history_before_removal() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+#[test]
+fn cleanup_expired_workbenches_does_not_duplicate_history_on_retry() {
+    // Simulates a workbench whose `remove_dir_all` failed on a prior sweep: it still exists (as if
+    // recreated identically) and gets expired again on the next sweep. Without the
+    // `has_persisted_run` guard in the `persist` closure, this would append a second `runs.log`
+    // record for the same run every sweep the removal keeps failing.
+    let home = std::env::temp_dir().join(format!("moadim-cleanup-retry-{}", uuid::Uuid::new_v4()));
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+    }
+
+    let title = "Cleanup Retry ZZQ";
+    let slug = super::super::command::slugify(title);
+    let store = super::super::model::new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("retry-id".into(), make_routine("retry-id", title));
+
+    let workbenches = crate::paths::workbenches_dir();
+    let workbench = workbenches.join(format!("{slug}-1"));
+    std::fs::create_dir_all(&workbench).unwrap();
+    std::fs::write(workbench.join("exit_code"), "0").unwrap();
+
+    let first = cleanup_expired_workbenches(&store);
+    assert_eq!(first.removed, 1);
+    assert!(!workbench.exists());
+    assert_eq!(
+        super::super::run_history::read_persisted_runs("retry-id").len(),
+        1
+    );
+
+    // Recreate the identical workbench, standing in for a removal that failed and left it in
+    // place for the next sweep.
+    std::fs::create_dir_all(&workbench).unwrap();
+    std::fs::write(workbench.join("exit_code"), "0").unwrap();
+
+    let second = cleanup_expired_workbenches(&store);
+    assert_eq!(second.removed, 1);
+    let history = super::super::run_history::read_persisted_runs("retry-id");
+    assert_eq!(
+        history.len(),
+        1,
+        "the retry must not append a duplicate history entry for the same workbench"
+    );
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 // `dir_size`/`freed_bytes` coverage lives in `cleanup_freed_bytes_tests.rs`.

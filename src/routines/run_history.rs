@@ -95,6 +95,19 @@ pub(crate) fn read_persisted_runs(id: &str) -> Vec<PersistedRun> {
         .collect()
 }
 
+/// Whether routine `id` already has a persisted record for `workbench`.
+///
+/// A reap sweep persists a workbench's outcome *before* removing its directory (see
+/// `cleanup::reap_dir`); if that removal then fails (permission hiccup, a still-open file, a crash),
+/// the workbench survives and is expired again on the next sweep. Callers use this to skip
+/// re-persisting a workbench that already made it into `runs.log`, so a stuck removal doesn't grow
+/// an unbounded run of duplicate history entries for the same run.
+pub(crate) fn has_persisted_run(id: &str, workbench: &str) -> bool {
+    read_persisted_runs(id)
+        .iter()
+        .any(|run| run.workbench == workbench)
+}
+
 #[cfg(test)]
 #[path = "run_history_tests.rs"]
 mod run_history_tests;

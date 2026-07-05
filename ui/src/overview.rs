@@ -17,16 +17,19 @@ use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
-use yew_router::prelude::*;
 
+use crate::overview_attention::{attention_items, AttentionTable};
+#[cfg(test)]
+use crate::overview_attention::{attention_reason, AttentionReason};
 use crate::overview_recent_runs::RecentRunsTable;
+use crate::overview_stats::OverviewStats;
 use crate::overview_upcoming::UpcomingTable;
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::routines::{
     api_all_runs, api_unlock, FleetRunSummary, GlobalLockBanner, LockStatus, Routine,
 };
 use crate::schedule::{fires_within, fmt_until, next_fire_after};
-use crate::{Route, ToastKind};
+use crate::ToastKind;
 
 /// How many of the most recent runs across the fleet the overview panel shows.
 pub(crate) const RECENT_RUNS_LIMIT: usize = 8;
@@ -99,68 +102,6 @@ pub(crate) struct Kpis {
     pub dormant: usize,
 }
 
-/// Why an enabled entity needs attention. Listed in triage priority order: a
-/// dormant entity outranks a dead schedule, which outranks a missing agent,
-/// which outranks open flags, so each entity surfaces its single most
-/// fundamental fault (see [`attention_reason`]).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum AttentionReason {
-    /// Enabled but assigned to no machine — it fires nowhere.
-    Dormant,
-    /// Targets a machine, but the schedule yields no future fire (empty,
-    /// invalid, or a one-shot already in the past) — it never runs again.
-    DeadSchedule,
-    /// A routine whose agent is not registered — every run errors out.
-    AgentUnregistered,
-    /// Agent raised one or more flags during a run — needs human review.
-    HasOpenFlags,
-}
-
-impl AttentionReason {
-    /// Triage priority; lower sorts first.
-    pub(crate) fn rank(self) -> u8 {
-        match self {
-            AttentionReason::Dormant => 0,
-            AttentionReason::DeadSchedule => 1,
-            AttentionReason::AgentUnregistered => 2,
-            AttentionReason::HasOpenFlags => 3,
-        }
-    }
-
-    /// Short uppercase badge label for the ISSUE column.
-    pub(crate) fn badge(self) -> &'static str {
-        match self {
-            AttentionReason::Dormant => "DORMANT",
-            AttentionReason::DeadSchedule => "DEAD SCHEDULE",
-            AttentionReason::AgentUnregistered => "AGENT MISSING",
-            AttentionReason::HasOpenFlags => "OPEN FLAGS",
-        }
-    }
-
-    /// Human explanation of the operational consequence.
-    pub(crate) fn detail(self) -> &'static str {
-        match self {
-            AttentionReason::Dormant => "assigned to no machine — fires nowhere",
-            AttentionReason::DeadSchedule => "schedule has no future fire — never runs again",
-            AttentionReason::AgentUnregistered => "agent not registered — every run errors",
-            AttentionReason::HasOpenFlags => "agent raised flags during a run — needs review",
-        }
-    }
-}
-
-/// One enabled-but-misconfigured entity surfaced in the NEEDS ATTENTION panel.
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) struct AttentionItem {
-    /// Always `Kind::Routine` for now.
-    pub kind: Kind,
-    /// Display name.
-    pub label: String,
-    /// The single most fundamental fault to fix.
-    pub reason: AttentionReason,
-    /// Open flag count; non-zero only when `reason == HasOpenFlags`.
-    pub flag_count: usize,
-}
-
 /// One entry in the merged upcoming-runs timeline.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct UpcomingRun {
@@ -207,54 +148,6 @@ pub(crate) fn compute_kpis(sources: &[SchedSource], now: DateTime<Local>) -> Kpi
         snoozed,
         dormant,
     }
-}
-
-/// The single most fundamental fault for an enabled `source`, or `None` when it
-/// is healthy. Disabled entities are intentional and never flagged. Faults are
-/// checked in priority order so each entity reports exactly one reason.
-pub(crate) fn attention_reason(
-    source: &SchedSource,
-    now: DateTime<Local>,
-) -> Option<AttentionReason> {
-    if !source.enabled {
-        return None;
-    }
-    if source.machines_empty {
-        return Some(AttentionReason::Dormant);
-    }
-    if next_fire_after(&source.schedule, now).is_none() {
-        return Some(AttentionReason::DeadSchedule);
-    }
-    if source.agent_registered == Some(false) {
-        return Some(AttentionReason::AgentUnregistered);
-    }
-    if source.flag_count > 0 {
-        return Some(AttentionReason::HasOpenFlags);
-    }
-    None
-}
-
-/// All enabled-but-misconfigured entities, worst fault first, ties broken by
-/// label for a stable order.
-pub(crate) fn attention_items(sources: &[SchedSource], now: DateTime<Local>) -> Vec<AttentionItem> {
-    let mut items: Vec<AttentionItem> = sources
-        .iter()
-        .filter_map(|s| {
-            attention_reason(s, now).map(|reason| AttentionItem {
-                kind: s.kind,
-                label: s.label.clone(),
-                flag_count: s.flag_count,
-                reason,
-            })
-        })
-        .collect();
-    items.sort_by(|a, b| {
-        a.reason
-            .rank()
-            .cmp(&b.reason.rank())
-            .then_with(|| a.label.cmp(&b.label))
-    });
-    items
 }
 
 /// The merged, soonest-first list of the next [`UPCOMING_LIMIT`] fires across
@@ -542,117 +435,6 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
             </div>
             <RecentRunsTable runs={data.recent_runs.clone()} loading={data.loading} />
         </main>
-    }
-}
-
-#[derive(Properties, PartialEq)]
-struct OverviewStatsProps {
-    kpis: Kpis,
-    next_run: Option<String>,
-}
-
-#[function_component(OverviewStats)]
-fn overview_stats(props: &OverviewStatsProps) -> Html {
-    let k = &props.kpis;
-    let next = props.next_run.clone().unwrap_or_else(|| "—".into());
-    html! {
-        <div class="stats">
-            <div class="stat-card all">
-                <div class="stat-label">{"SCHEDULED"}</div>
-                <div class="stat-val">{k.total}</div>
-            </div>
-            <div class="stat-card enabled">
-                <div class="stat-label">{"ENABLED"}</div>
-                <div class="stat-val c-accent">{k.enabled}</div>
-            </div>
-            <div class="stat-card due">
-                <div class="stat-label">{"DUE SOON"}</div>
-                <div class="stat-val c-red">{k.due_soon}</div>
-            </div>
-            <div class="stat-card attention">
-                <div class="stat-label">{"ATTENTION"}</div>
-                <div class={classes!("stat-val", if k.attention > 0 { "c-red" } else { "c-accent" })}>
-                    {k.attention}
-                </div>
-            </div>
-            <div class="stat-card disabled">
-                <div class="stat-label">{"DISABLED"}</div>
-                <div class="stat-val c-amber">{k.disabled}</div>
-            </div>
-            <div class={classes!("stat-card", if k.dormant > 0 { "has-dormant" } else { "dormant" })}>
-                <div class="stat-label">{"DORMANT"}</div>
-                <div class={classes!("stat-val", if k.dormant > 0 { "c-amber" } else { "" })}>
-                    {k.dormant}
-                </div>
-            </div>
-            <div class="stat-card flags">
-                <div class="stat-label">{"FLAGS"}</div>
-                <div class={classes!("stat-val", if k.flags > 0 { "c-red" } else { "c-accent" })}>
-                    {k.flags}
-                </div>
-            </div>
-            <div class="stat-card snoozed">
-                <div class="stat-label">{"SNOOZED"}</div>
-                <div class={classes!("stat-val", if k.snoozed > 0 { "c-amber" } else { "c-accent" })}>
-                    {k.snoozed}
-                </div>
-            </div>
-            <div class="stat-card system">
-                <div class="stat-label">{"NEXT RUN"}</div>
-                <div class="stat-val stat-val-sm">{next}</div>
-            </div>
-        </div>
-    }
-}
-
-#[derive(Properties, PartialEq)]
-struct AttentionTableProps {
-    items: Vec<AttentionItem>,
-}
-
-/// The NEEDS ATTENTION triage table: one row per enabled-but-broken entity,
-/// worst fault first. Rendered only when `items` is non-empty (see the page),
-/// so this component never has to handle the loading/empty states.
-#[function_component(AttentionTable)]
-fn attention_table(props: &AttentionTableProps) -> Html {
-    html! {
-        <div class="table-wrap attn-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{"TYPE"}</th>
-                        <th>{"NAME"}</th>
-                        <th>{"ISSUE"}</th>
-                        <th>{"DETAIL"}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    { for props.items.iter().enumerate().map(|(i, item)| {
-                        let (badge, badge_cls, to) = match item.kind {
-                            Kind::Routine => ("ROUTINE", "kind-badge routine", Route::Routines),
-                        };
-                        html! {
-                            <tr key={i.to_string()}>
-                                <td><span class={badge_cls}>{badge}</span></td>
-                                <td>
-                                    <Link<Route> classes={classes!("ov-name-link")} to={to}>
-                                        {item.label.clone()}
-                                    </Link<Route>>
-                                </td>
-                                <td><span class="attn-badge">{item.reason.badge()}</span></td>
-                                <td class="attn-detail">{
-                                    if item.reason == AttentionReason::HasOpenFlags && item.flag_count > 0 {
-                                        format!("{} open flag{} — needs review", item.flag_count, if item.flag_count == 1 { "" } else { "s" })
-                                    } else {
-                                        item.reason.detail().to_string()
-                                    }
-                                }</td>
-                            </tr>
-                        }
-                    }) }
-                </tbody>
-            </table>
-        </div>
     }
 }
 

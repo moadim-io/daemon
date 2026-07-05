@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.22.1"
+version = "0.23.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -151,3 +151,10 @@ manual_string_new = "deny"
 # for flat, early-return control flow (see `manual_let_else`, `if_not_else`
 # above). The codebase is already clean, so `deny` locks that in.
 redundant_else = "deny"
+# A type deriving `PartialEq` whose fields are all themselves `Eq` almost always
+# satisfies `Eq` too (reflexivity holds for everything but float fields, which
+# this codebase avoids in these structs). Deriving it costs nothing and unlocks
+# the type as a `HashSet`/`BTreeMap` key or `HashMap` value in `==`-free contexts
+# without a later, easy-to-forget follow-up PR. The codebase is already clean,
+# so `deny` locks that in.
+derive_partial_eq_without_eq = "deny"

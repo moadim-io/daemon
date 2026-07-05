@@ -39,6 +39,22 @@ enum DataCommand {
     /// Trigger a routine on its schedule by ID (invoked by the generated crontab line).
     #[command(subcommand, visible_alias = "sched")]
     Schedule(ScheduleCmd),
+    /// Enable a routine (set `enabled = true`) by id or slug.
+    Enable {
+        /// Routine id or slug to enable.
+        routine: String,
+        /// Emit a machine-readable `{"routine","enabled"}` object instead of a status line.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Disable a routine (set `enabled = false`) by id or slug.
+    Disable {
+        /// Routine id or slug to disable.
+        routine: String,
+        /// Emit a machine-readable `{"routine","enabled"}` object instead of a status line.
+        #[arg(long)]
+        json: bool,
+    },
     /// List the available agent registry keys.
     Agents,
 }
@@ -239,6 +255,8 @@ fn dispatch(command: DataCommand) -> i32 {
             &format!("{}/scheduled-trigger", routine_path(&id)),
             None,
         ),
+        DataCommand::Enable { routine, json } => set_routine_enabled(&routine, true, json),
+        DataCommand::Disable { routine, json } => set_routine_enabled(&routine, false, json),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
     }
 }
@@ -361,6 +379,57 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
         }
         RoutineCmd::Logs { id } => request("GET", &format!("{}/logs", routine_path(&id)), None),
         RoutineCmd::Ical => request("GET", "/api/v1/routines.ics", None),
+    }
+}
+
+/// Flip a single routine's `enabled` flag via `PATCH /routines/{routine}`, the same partial-update
+/// path the web UI's toggle uses. `routine` is forwarded as an id or slug and resolved server-side,
+/// consistent with the other routine subcommands. Prints the resulting state — a human status line,
+/// or a `{"routine","enabled"}` object under `--json` — and maps the HTTP result to an exit code
+/// exactly like [`request`]: `0` on a 2xx (so re-enabling an already-enabled routine is an
+/// idempotent no-op rather than an error), `1` on any other status (e.g. an unknown routine's 404),
+/// and [`crate::cli::EXIT_NOT_RUNNING`] when no server is reachable.
+fn set_routine_enabled(routine: &str, enabled: bool, json: bool) -> i32 {
+    let body = serde_json::json!({ "enabled": enabled }).to_string();
+    match crate::cli::http_request_json("PATCH", &routine_path(routine), Some(&body)) {
+        Ok((status, resp)) if (200..300).contains(&status) => {
+            report_enabled(routine, enabled, &resp, json);
+            0
+        }
+        Ok((status, resp)) => {
+            eprintln!("error: server returned HTTP {status}");
+            if !resp.is_empty() {
+                eprintln!("{resp}");
+            }
+            1
+        }
+        Err(_) => {
+            eprintln!("moadim is not running");
+            crate::cli::EXIT_NOT_RUNNING
+        }
+    }
+}
+
+/// Report the outcome of an enable/disable. Prefers the server's echoed `id`/`enabled` so the
+/// printed state reflects what actually persisted (covering the idempotent no-op), falling back to
+/// the addressed `routine` and the `requested` flag when the response is not the expected object.
+fn report_enabled(routine: &str, requested: bool, resp: &str, json: bool) {
+    let parsed = serde_json::from_str::<Value>(resp).ok();
+    let id = parsed
+        .as_ref()
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or(routine);
+    let state = parsed
+        .as_ref()
+        .and_then(|value| value.get("enabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(requested);
+    if json {
+        println!("{}", serde_json::json!({ "routine": id, "enabled": state }));
+    } else {
+        let word = if state { "enabled" } else { "disabled" };
+        println!("routine {id} is now {word}");
     }
 }
 

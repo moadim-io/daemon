@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+- **`moadim enable <routine>` / `moadim disable <routine>` CLI commands** to flip a
+  single routine's `enabled` flag from the terminal without opening the web UI or
+  hand-crafting a REST `PATCH`. `<routine>` is an id or slug (resolved server-side,
+  like the other routine subcommands); the action is idempotent (re-enabling an
+  already-enabled routine exits `0`), an unknown routine exits non-zero, and
+  `--json` emits a `{"routine","enabled"}` object (#439).
 ## [0.22.1] - 2026-07-05
 
 Enable `clippy::needless_pass_by_ref_mut` in `[lints.clippy]`. The codebase was already clean against it (no violations), so this is a lint-only change that locks in the invariant that every `&mut` parameter is actually mutated through.

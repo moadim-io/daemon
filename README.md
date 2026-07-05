@@ -347,6 +347,10 @@ moadim routines logs <id>
 moadim routines ical          # iCalendar feed of upcoming fire times
 moadim routines delete <id>
 
+# Pause / resume a single routine (id or slug) without editing its definition
+moadim enable <routine>       # set enabled = true
+moadim disable <routine>      # set enabled = false  (--json for a {routine,enabled} object)
+
 # Misc
 moadim agents                 # list available agent keys
 ```

@@ -1,7 +1,7 @@
 .\" Man page for moadim.
 .\" Mirrors the built-in `moadim --help` output (src/cli.rs::print_help).
 .\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
-.TH MOADIM 1 "2026-07-02" "moadim 0.19.0" "Moadim Manual"
+.TH MOADIM 1 "2026-07-05" "moadim 0.23.0" "Moadim Manual"
 .SH NAME
 moadim \- routine scheduler with an MCP/REST API and a web control panel
 .SH SYNOPSIS
@@ -43,8 +43,15 @@ Stop a running background server.
 .B \-\-quiet
 suppresses the human-readable status line.
 .TP
-.BR "status " [ \-\-json ]
+.BR "status " [ \-\-json "] [" "\-\-wait" [ = SECS ]]
 Show whether a server is running.
+.B \-\-wait
+polls
+.B GET /health
+until the server answers or
+.I SECS
+elapses (default 30) instead of checking once, so scripts can block on
+startup instead of sleeping blindly.
 .TP
 .BR "cleanup " [ \-\-json ]
 Reap finished, expired routine workbenches now.
@@ -79,9 +86,8 @@ Manage routines (alias:
 .BR routine ).
 .TP
 .B schedule trigger <id>
-Trigger a routine by ID (used by the generated
-.B run.sh
-wrappers).
+Trigger a routine by ID (invoked directly from the routine's crontab
+entry).
 .TP
 .B agents
 List available agent keys.
@@ -99,6 +105,11 @@ for a single-line, machine-readable object on stdout.
 Pass to
 .B stop
 to suppress its human-readable status line.
+.TP
+.BR "\-\-wait" [ = SECS ]
+Pass to
+.B status
+to poll for a server to come up (default 30s) instead of checking once.
 .SH EXIT STATUS
 .B status
 ,

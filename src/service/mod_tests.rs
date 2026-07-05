@@ -1,5 +1,9 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
+#[cfg(target_os = "macos")]
 use super::*;
 
 #[cfg(target_os = "macos")]
@@ -14,7 +18,14 @@ fn plist_carries_label_program_args_and_supervision_keys() {
     assert!(plist.contains("<string>/opt/moadim/bin/moadim</string>"));
     assert!(plist.contains("<string>--interactive</string>"));
     assert!(plist.contains("<key>RunAtLoad</key>"));
+    // KeepAlive is failure-only (a `{ SuccessfulExit = false }` dict, not unconditional `true`), so
+    // a clean `moadim stop` is not resurrected by launchd while a crash still restarts (#444).
     assert!(plist.contains("<key>KeepAlive</key>"));
+    assert!(plist.contains("<key>SuccessfulExit</key>"));
+    assert!(
+        !plist.contains("<key>KeepAlive</key>\n  <true/>"),
+        "KeepAlive must not be unconditional true"
+    );
     assert!(plist.contains("/Users/u/.config/moadim/daemon.log"));
     assert!(plist.contains("<key>EnvironmentVariables</key>"));
     assert!(plist.contains("/opt/homebrew/bin:/usr/local/bin:/Users/u/.cargo/bin"));
@@ -80,22 +91,7 @@ fn plist_path_honors_home_override() {
     }
 }
 
-#[cfg(target_os = "linux")]
-#[test]
-fn unit_carries_exec_start_and_install_section() {
-    let unit = render_unit(std::path::Path::new("/opt/moadim/bin/moadim"));
-    assert!(unit.contains("ExecStart=/opt/moadim/bin/moadim --interactive"));
-    assert!(unit.contains("[Install]"));
-    assert!(unit.contains("WantedBy=default.target"));
-    assert!(unit.contains("Restart=always"));
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn unit_path_is_under_systemd_user() {
-    let path = unit_path().unwrap();
-    assert!(path.ends_with("systemd/user/moadim.service"));
-}
+// systemd unit + loginctl/linger coverage (Linux backend) lives in `mod_linux_tests.rs`.
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]

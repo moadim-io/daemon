@@ -43,10 +43,10 @@ impl MachineSource {
     /// Short human label used in CLI output.
     pub fn label(self) -> &'static str {
         match self {
-            MachineSource::Env => "MOADIM_MACHINE env",
-            MachineSource::File => "machine.local.toml",
-            MachineSource::Generated => "auto-generated (first run)",
-            MachineSource::Hostname => "system hostname",
+            Self::Env => "MOADIM_MACHINE env",
+            Self::File => "machine.local.toml",
+            Self::Generated => "auto-generated (first run)",
+            Self::Hostname => "system hostname",
         }
     }
 }
@@ -141,7 +141,9 @@ pub fn set_machine(name: &str) -> std::io::Result<()> {
     }
     let path = machine_config_path();
     // The machine-config path is always `<config dir>/machine.local.toml`, so it always has a parent.
-    std::fs::create_dir_all(path.parent().expect("machine config path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("machine config path has a parent dir"),
+    )?;
     let toml = MachineToml {
         name: Some(name.to_string()),
     };

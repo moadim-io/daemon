@@ -14,7 +14,7 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                 ┌─────────────────────────────────────────┐
                 │           Axum HTTP server :5784         │
                 │                                          │
-  Browser ──────┤  GET /ui          (inlined HTML+WASM)   │
+  Browser ──────┤  GET /            (inlined HTML+WASM)   │
   curl/SDK ─────┤  REST /routines   (JSON)                │
   AI agent ─────┤  /mcp             (MCP streamable-HTTP) │
                 │                                          │
@@ -24,10 +24,10 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                                │ read+write on every mutation
                                ▼
                ~/.config/moadim/routines/
-               ├── <uuid>/routine.toml      (tracked)
-               ├── <uuid>/prompt.md         (tracked)
-               ├── <uuid>/run.sh            (generated)
-               └── <uuid>/.gitignore        (generated)
+               ├── <uuid>/routine.toml                  (tracked)
+               ├── <uuid>/prompts/prompt.pure.md         (tracked)
+               ├── <uuid>/prompts/prompt.compiled.md     (tracked)
+               └── <uuid>/.gitignore                    (generated)
 ```
 
 ---
@@ -37,24 +37,38 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
 ```
 src/
 ├── main.rs              entry point — binds socket, loads store, starts server
-├── lib.rs               library root — re-exports wasm module when target=wasm32
-│
-├── fs_location.rs       captures working dir + exe dir for response headers
-├── paths/mod.rs         path builders for ~/.config/moadim/routines/
+├── cli.rs               CLI parsing + background-process lifecycle (status/stop/cleanup/…)
+├── commands.rs          data-plane CLI subcommands that drive a running server over HTTP
+├── build_info.rs        compile-time build provenance (crate version + git commit/date)
 ├── error.rs             AppError → HTTP status codes
-├── banner.rs            startup banner
-├── wasm.rs              wasm-bindgen exports (browser-side)
+├── global_lock.rs       lock sentinel that halts all routine scheduling/triggers
+├── openapi.rs           utoipa ApiDoc definition served at /docs/openapi.json
+├── restart.rs           replaces an already-running daemon with a fresh process
+├── routine_storage.rs   routine.toml + prompts/ (pure/compiled) persistence
 │
 ├── routes/
 │   ├── http.rs          Axum router assembly + run_with_listener_until
 │   └── mcp.rs           MoadimMcp — rmcp tool_router
 │
 ├── middlewares/
-│   ├── logger.rs        request/response logger
-│   └── fs_location.rs   injects x-server-root / x-server-exe-dir headers
+│   ├── logger.rs             request/response logger
+│   └── security_headers.rs   adds CSP and related response headers
+│
+├── filesystem/mod.rs    FsLocation — server working dir + exe dir (surfaced via GET /health and the MCP `health` tool)
+├── paths/mod.rs         path builders for ~/.config/moadim/routines/
+├── machine/mod.rs       machine identity resolution (env/file/hostname)
+├── service/             `moadim install`/`uninstall` OS-service registration (linux/macos)
+├── sync/                forward sync of managed routines into the OS crontab
+├── routines/            routine data model, service layer, command builder, handlers, iCal feed
 │
 ├── utils/
-│   └── time.rs          now_secs() — Unix timestamp helper
+│   ├── time.rs           now_secs() — Unix timestamp helper
+│   ├── atomic.rs         atomic_write() — torn-write-safe file writes
+│   ├── cron.rs           cron expression normalization/validation
+│   ├── fs_perms.rs       create_private_dir_all() — owner-only (0700) directory creation
+│   ├── lock.rs           Mutex-poisoning recovery helper
+│   ├── process.rs        process-liveness helpers
+│   └── startup_print.rs  startup banner (REST/MCP/UI URLs)
 │
 └── build/               build-script modules (compiled by build.rs, not the binary)
     ├── mod.rs
@@ -62,8 +76,17 @@ src/
     └── ui.rs            runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
 
 ui/                      Yew workspace member (separate Cargo.toml)
-tests/                   integration tests
 ```
+
+### Filesystem permissions
+
+The daemon's on-disk tree is a secret/transcript store (agent.log transcripts, prompt.md instructions, token-referencing routine state), so on unix it is created **owner-only**:
+
+- Directories under `~/.config/moadim/` are made `0700` via `utils::fs_perms::create_private_dir_all`.
+- Files published by `utils::atomic::atomic_write` (routine state, the `prompt.md` sidecar, `machine.local.toml`) are created `0600` before the rename, so they are never briefly world-readable.
+- Each routine's launch script sets `umask 077` before its first `mkdir`, so the workbench dir it creates (`0700`) and everything written inside it — the copied `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` — stays unreadable by other local accounts.
+
+Pre-existing files from older installs are tightened on their next write (the modes are not retroactively migrated). Non-unix builds fall back to default permissions.
 
 ---
 
@@ -71,7 +94,7 @@ tests/                   integration tests
 
 Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
-Middleware stack (outermost first): `logger` → `fs_location`.
+Middleware stack (outermost first): `CompressionLayer` → `logger` → `security_headers`.
 
 ---
 
@@ -82,17 +105,21 @@ Middleware stack (outermost first): `logger` → `fs_location`.
 | MCP tool | Delegates to |
 |---|---|
 | `health` | `FsLocation::current()` + uptime calc |
-| `echo` | inline |
 | `list_routines` | `routines::svc_list` |
 | `get_routine` | `routines::svc_get` |
 | `create_routine` | `routines::svc_create` |
 | `update_routine` | `routines::svc_update` |
 | `delete_routine` | `routines::svc_delete` |
 | `trigger_routine` | `routines::svc_trigger` |
-| `routine_logs` | `routines::svc_logs` |
-| `list_routine_runs` | `routines::svc_runs` |
-| `list_agents` | `routines::available_agents` |
 | `cleanup_workbenches` | `routines::svc_cleanup` |
+| `list_agents` | `routines::available_agents` |
+| `routine_logs` | `routines::svc_logs` |
+| `list_routine_runs` | `routines::svc_list_runs` |
+| `get_lock_status` | `global_lock::lock_status` |
+| `lock_routines` | `global_lock::set_lock` + crontab resync |
+| `unlock_routines` | `global_lock::set_lock` + crontab resync |
+| `shutdown` | notifies the server's `ShutdownSignal` |
+| `restart` | `cli::spawn_restart` |
 
 Transport: `rmcp::transport::streamable_http_server::StreamableHttpService` with `LocalSessionManager`. Each MCP client gets its own session; the `MoadimMcp` handler is cloned per-session with shared `Arc` store and registry.
 
@@ -103,7 +130,7 @@ claude mcp add --transport http moadim http://localhost:5784/mcp
 
 ---
 
-## Routines — agent-driven jobs (`src/routines.rs`)
+## Routines — agent-driven jobs (`src/routines/`)
 
 A **routine** is a scheduled job whose payload is an AI agent (claude code, codex, …).
 It carries `agent`, `prompt`, `repositories` (`{ repository, branch }`),
@@ -111,16 +138,17 @@ and a `title`. Routines have their own store (`RoutineStore`), REST endpoints
 (`/routines`), MCP tools (`create_routine`, …), and crontab block.
 
 When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
-time moadim composes `prompt.md` (a repositories-as-context preamble + the prompt) into
-`~/.config/moadim/routines/<id>/`, then writes a single self-contained shell command into a dedicated
-crontab block:
+time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.md`
+(a repositories-as-context preamble + the prompt) into `~/.config/moadim/routines/<id>/`, then writes a
+single self-contained shell command into a dedicated crontab block:
 
 ```
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
-<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.md $WB/; \
-  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
-  tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
+<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; \
+  { cp …/prompts/prompt.compiled.md $WB/prompt.md; \
+    tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
+    tmux pipe-pane -o -t … "cat >> $WB/agent.log"; } >> $WB/launch.log 2>&1   # moadim-routine:<id>
 # END MOADIM-ROUTINES
 ```
 
@@ -130,6 +158,20 @@ output via `pipe-pane`. The prompt reaches the agent as a process **argument** (
 placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection readiness race. The
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
+
+Everything after the `mkdir` runs inside a `{ … } >> $WB/launch.log 2>&1` group, so a failure in the
+prompt copy, the agent's `setup` step, or the `tmux` launch itself is captured next to the run's other
+artifacts instead of going to cron's mail spool (silently discarded on the headless hosts this daemon
+targets). `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's
+diagnostics for the steps that get the session running in the first place. Only the `PATH` export and
+the `mkdir` itself precede the redirect — a failure that early means `$WB` may not exist yet, so
+there's nowhere to write a launch log to.
+
+Before either path launches, the daemon checks for a live tmux session under the routine's
+`moadim-<slug>-` prefix (any `$TS` suffix) and skips the fire — logging a warning instead of
+spawning — if one is still running. This overlap guard prevents a run that outlives its schedule
+interval from piling up concurrent agent sessions against the same target (duplicate PRs/issues,
+racing pushes); see `routines::service_trigger::spawn_routine_command`.
 
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
@@ -152,17 +194,26 @@ The agent command is resolved from a configurable registry at `~/.config/moadim/
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 
-Modules: `src/routines.rs` (model + service + command builder + handlers), `src/routine_storage.rs`
-(`routine.toml` + `prompt.md` persistence), `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
+The only placeholders `args` may contain are `{workbench}`, `{prompt_file}`, and `{prompt}`, and at
+least one of `{prompt}` / `{prompt_file}` must appear so the agent actually receives the task.
+Creating or updating a routine validates the referenced agent's `args` against both rules: an unknown
+(typo'd) placeholder token or a missing prompt placeholder is rejected with `400 Bad Request` at edit
+time, rather than silently launching the agent with a garbage or empty task at fire time.
+
+Modules: `src/routines/` (model + service + command builder + handlers), `src/routine_storage.rs`
+(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.md` persistence),
+`src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
 Reverse sync (crontab → store) is not implemented for routines.
 
 ## Error handling (`src/error.rs`)
 
 ```rust
 enum AppError {
-    Internal,           // 500 — disk I/O failures
+    Internal,        // 500 — disk I/O failures
     BadRequest(String), // 400 — invalid cron expression
-    NotFound,           // 404 — job ID not in store
+    NotFound,        // 404 — routine ID not in store
+    Conflict(String),   // 409 — e.g. a conflicting update
+    Locked(String),     // 423 — a global lock sentinel is blocking the operation
 }
 ```
 
@@ -194,41 +245,30 @@ The prebuilt is stored at the package root — not under `ui/` — because `ui/`
 
 ---
 
-## WASM module (`src/wasm.rs`)
-
-When compiled for `target_arch = "wasm32"`, the binary becomes a WASM module with `wasm-bindgen` exports:
-
-| Export | Description |
-|---|---|
-| `wasm_init()` | Initialize `console_log` |
-| `wasm_query_health()` | `GET /health` → JSON string |
-| `wasm_echo(message)` | `POST /echo` → JSON string |
-| `wasm_get_info()` | `GET /info` → JSON string |
-| `wasm_mode()` | Returns `"wasm"` |
-| `wasm_checksum(input)` | DJB2 hash → hex string |
-| `wasm_reverse(input)` | Reversed string |
-| `wasm_uppercase(input)` | Uppercased string |
-
-These are the bindings called by the Yew UI to communicate with the native server.
-
----
-
 ## Startup sequence
 
 ```
 main()
-  routine_storage::load_store()  scan ~/.config/moadim/routines/ → RoutineStore
+  routine_storage::migrate_prompt_files() / migrate_prompts_to_subfolder() / migrate_routine_dirs()
+                                          pre-load-time healing
+  routine_storage::load_store()          scan ~/.config/moadim/routines/ → RoutineStore
+  routines::ensure_default_routines()    seed missing built-in default routines
+  routine_storage::repersist_routines()  heal any dirs missing a prompts/ sidecar
+  sync::routines::sync_routines_to_crontab()   re-sync the MOADIM-ROUTINES crontab block
   TcpListener::bind(:5784)
-  routes::http::run_with_listener_until(routines, listener, pending())
-    build_app(routines)
+  cli::write_pid_file()
+  routes::http::run_with_listener_until(routines, listener, termination_signal())
+    build_app_with_shutdown(routines, signal)
       AppState { routines, .. }
       StreamableHttpService::new(|| MoadimMcp::new(...))
       Router::new()  ← wire all routes + middleware
-    banner::print(addr)          stdout: REST / MCP / UI URLs
-    axum::serve(listener, app).with_graceful_shutdown(pending())
+    utils::startup_print::print(addr)   stdout: REST / MCP / UI URLs
+    axum::serve(listener, app).with_graceful_shutdown(combined)
+  cli::clear_pid_file()
 ```
 
-`std::future::pending()` means the server runs until the process is killed.
+The server runs until it receives SIGINT/SIGTERM (`termination_signal()`) or the `/shutdown` route
+fires its `ShutdownSignal`, whichever comes first.
 
 ---
 

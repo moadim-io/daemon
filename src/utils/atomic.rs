@@ -42,13 +42,34 @@ fn tmp_path(path: &Path) -> PathBuf {
 
 /// Create `tmp`, write all of `bytes`, and flush to disk so the rename publishes complete contents.
 fn write_tmp(tmp: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut file = File::create(tmp)?;
-    // `write_all` and `sync_all` on a freshly-created local file descriptor cannot
-    // realistically fail once the `File::create` above succeeded; `.expect` avoids
-    // a branch that is impossible to exercise in tests.
-    file.write_all(bytes).expect("write to temp file failed");
-    file.sync_all().expect("sync temp file failed");
+    let mut file = create_private(tmp)?;
+    // `File::create`/`OpenOptions::open` reserve no disk space, so a full or failing
+    // disk can still make these fail (ENOSPC/EIO); propagate instead of panicking
+    // the whole daemon over one write.
+    file.write_all(bytes)?;
+    file.sync_all()?;
     Ok(())
+}
+
+/// Create a fresh file at `path`, owner-only (`0600`) on unix so the published file is never
+/// briefly world-readable. These files (routine state, the `prompt.md` sidecar, `machine.local.toml`)
+/// can carry sensitive content and must stay owner-only on a shared host. Falls back to a plain
+/// create on non-unix.
+fn create_private(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        File::create(path)
+    }
 }
 
 #[cfg(test)]

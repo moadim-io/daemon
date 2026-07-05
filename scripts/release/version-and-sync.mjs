@@ -20,6 +20,7 @@ const CHANGESET_DIR = path.join(ROOT, ".changeset");
 const CHANGELOG_PATH = path.join(ROOT, "CHANGELOG.md");
 const PACKAGE_JSON_PATH = path.join(ROOT, "package.json");
 const CARGO_TOML_PATH = path.join(ROOT, "Cargo.toml");
+const MAN_PAGE_PATH = path.join(ROOT, "docs", "moadim.1");
 const REPO_URL = "https://github.com/moadim-io/daemon";
 
 function readPendingChangesets() {
@@ -47,6 +48,22 @@ function bumpCargoToml(version) {
     throw new Error(`Could not find a "version" line in ${CARGO_TOML_PATH}`);
   }
   writeFileSync(CARGO_TOML_PATH, next);
+}
+
+// docs/moadim.1 hand-mirrors the CLI and hardcodes its own version in the
+// .TH header (see the `man_page_version_matches_cargo_pkg_version` test in
+// src/cli_tests.rs, which fails the build if this drifts from Cargo.toml).
+function bumpManPage(version) {
+  const manPage = readFileSync(MAN_PAGE_PATH, "utf8");
+  let replaced = false;
+  const next = manPage.replace(/^(\.TH MOADIM 1 "[^"]*" ")moadim [^"]*(")/m, (_, pre, post) => {
+    replaced = true;
+    return `${pre}moadim ${version}${post}`;
+  });
+  if (!replaced) {
+    throw new Error(`Could not find a .TH header line in ${MAN_PAGE_PATH}`);
+  }
+  writeFileSync(MAN_PAGE_PATH, next);
 }
 
 function todayIso() {
@@ -127,10 +144,26 @@ function main() {
 
   updateChangelog(version, combinedBody);
   bumpCargoToml(version);
+  bumpManPage(version);
 
   execSync("cargo check -q", { cwd: ROOT, stdio: "inherit" });
 
-  console.log(`Synced Cargo.toml, Cargo.lock, and CHANGELOG.md to ${version}.`);
+  // The committed OpenAPI spec embeds the crate version. Run the self-healing
+  // test once (it regenerates apis/openapi.json and exits non-zero on drift),
+  // then again to confirm the regenerated file is stable.
+  try {
+    execSync(
+      "cargo test --quiet -- openapi::openapi_tests::committed_spec_is_current",
+      { cwd: ROOT, stdio: "inherit" },
+    );
+  } catch {
+    execSync(
+      "cargo test --quiet -- openapi::openapi_tests::committed_spec_is_current",
+      { cwd: ROOT, stdio: "inherit" },
+    );
+  }
+
+  console.log(`Synced Cargo.toml, Cargo.lock, CHANGELOG.md, docs/moadim.1, and apis/openapi.json to ${version}.`);
 }
 
 main();

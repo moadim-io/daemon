@@ -4,71 +4,31 @@ use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::paths::workbenches_dir;
 use crate::routine_storage::{remove_routine_dir, write_routine};
 use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
-use super::agents::{available_agents, load_agent_command, AgentLoadError};
 use super::cleanup::{
-    cleanup_expired_workbenches, max_runtime_ceiling_secs, parse_workbench_name, run_session_alive,
-    ttl_ceiling_secs,
+    kill_sessions_for_deleted_routine, max_runtime_ceiling_secs, ttl_ceiling_secs,
 };
-use super::command::{build_routine_command, slugify};
+use super::command::slugify;
+use super::defaults::{clear_removed_default, is_default_slug, record_removed_default};
+#[cfg(test)]
+use super::model::Repository;
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, Repository, Routine, RoutineListQuery, RoutineResponse,
-    RoutineSort, RoutineStore, RunSummary, SortOrder, UpdateRoutineRequest,
+    CreateRoutineRequest, Routine, RoutineListQuery, RoutineResponse, RoutineSort, RoutineStore,
+    SortOrder, UpdateRoutineRequest,
 };
 
-/// Most-recent runs [`svc_runs`] returns, newest first; mirrors the 100-run cap the original
-/// observability proposal (#23) specified for a persisted run-record store, kept here even though
-/// runs are derived from workbench directories rather than a separate log.
-const MAX_RUNS: usize = 100;
-
-/// Reject a blank (empty or whitespace-only) required text field.
-///
-/// An empty `prompt` makes a routine fire forever with no task (#224); an empty
-/// `title` yields an empty routine-origin disclosure name and a bare `"routine"`
-/// slug (#226). Both are caught here before anything is persisted.
-fn reject_blank(field: &str, value: &str) -> Result<(), AppError> {
-    if value.trim().is_empty() {
-        return Err(AppError::BadRequest(format!(
-            "routine {field} must not be empty"
-        )));
-    }
-    Ok(())
-}
-
-/// Reject a zero-second duration for an optional cap (`None` keeps the default).
-///
-/// `ttl_secs: 0` reaps a finished run's logs instantly and `max_runtime_secs: 0`
-/// makes the watchdog kill the session the moment it starts (#233), so a supplied
-/// value must be positive.
-fn reject_zero_secs(field: &str, value: Option<u64>) -> Result<(), AppError> {
-    if value == Some(0) {
-        return Err(AppError::BadRequest(format!(
-            "routine {field} must be greater than zero"
-        )));
-    }
-    Ok(())
-}
-
-/// Reject a duration cap that exceeds the cron-derived `ceiling` for the routine's schedule.
-///
-/// `effective_ttl_secs` / `effective_max_runtime_secs` clamp an explicit value to
-/// `min(MAX_*_SECS, cron interval)`, so a larger value is silently inert — accepted, persisted, and
-/// shown in the UI, yet never enforced. Rejecting it up front (naming the ceiling) keeps the stored
-/// config honest, mirroring the other `reject_*` / `validate_*` boundary checks (#468).
-fn reject_over_ceiling(field: &str, value: Option<u64>, ceiling: u64) -> Result<(), AppError> {
-    if let Some(secs) = value {
-        if secs > ceiling {
-            return Err(AppError::BadRequest(format!(
-                "routine {field} {secs} exceeds the ceiling of {ceiling}s derived from this routine's schedule"
-            )));
-        }
-    }
-    Ok(())
-}
+#[path = "service_validate.rs"]
+mod service_validate;
+#[cfg(test)]
+use service_validate::MAX_TITLE_LEN;
+use service_validate::{
+    normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs, validate_agent,
+    validate_goal, validate_machines, validate_prompt, validate_repositories, validate_tags,
+    validate_title,
+};
 
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).
@@ -76,38 +36,6 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
     match routine.repositories.first() {
         Some(repo) => (false, repo.repository.to_lowercase()),
         None => (true, String::new()),
-    }
-}
-
-/// Reject a referenced agent that is unknown or whose `<name>.toml` is present but unparseable.
-///
-/// Two failures are surfaced at edit time (REST 400 / MCP) instead of slipping through to fire time,
-/// where they would only be logged and the routine silently skipped:
-///
-/// * An agent not present in the registry resolves to no command at fire time (#139). Mirrors the
-///   `validate_cron` / slug-conflict guards.
-/// * An agent whose config is present on disk but cannot be parsed (#189).
-///
-/// A *missing* config for a registered agent is intentionally allowed: the file may be created later,
-/// and the missing-file case is handled (warned + skipped) downstream exactly as before.
-fn validate_agent(agent: &str) -> Result<(), AppError> {
-    let agents = available_agents();
-    if !agents.iter().any(|known| known == agent) {
-        return Err(AppError::BadRequest(format!(
-            "unknown agent \"{agent}\"; valid agents: {}",
-            agents.join(", ")
-        )));
-    }
-    match load_agent_command(agent) {
-        Ok(_) | Err(AgentLoadError::Missing) => Ok(()),
-        Err(AgentLoadError::Parse(err)) => Err(AppError::BadRequest(format!(
-            "agent {agent:?} has a malformed config: {err}"
-        ))),
-        // An existing-but-unreadable config (e.g. permissions) would otherwise pass validation and
-        // leave a green-dot routine that never fires; surface it now instead of silently dropping it.
-        Err(AgentLoadError::Unreadable(err)) => Err(AppError::BadRequest(format!(
-            "agent {agent:?} has an unreadable config: {err}"
-        ))),
     }
 }
 
@@ -144,16 +72,26 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
         routines.retain(|routine| crate::machine::targets(&routine.machines, &me));
     }
 
-    // Sort ascending by the requested field, then flip for descending order.
-    match query.sort {
-        RoutineSort::Created => routines.sort_by_key(|routine| routine.created_at),
-        RoutineSort::Updated => routines.sort_by_key(|routine| routine.updated_at),
-        RoutineSort::Title => routines.sort_by_key(|routine| routine.title.to_lowercase()),
-        RoutineSort::Repository => routines.sort_by_key(repo_sort_key),
-    }
-    if query.order == SortOrder::Desc {
-        routines.reverse();
-    }
+    // Sort by the requested field. The routines come off a `HashMap`, whose
+    // iteration order is unspecified, so equal sort keys would otherwise list
+    // in an arbitrary, run-to-run order. Break ties on the stable routine id to
+    // make the listing deterministic, and reverse the whole comparison (not the
+    // sorted vector) for descending order so the id tiebreak stays consistent.
+    let desc = query.order == SortOrder::Desc;
+    routines.sort_by(|left, right| {
+        let primary = match query.sort {
+            RoutineSort::Created => left.created_at.cmp(&right.created_at),
+            RoutineSort::Updated => left.updated_at.cmp(&right.updated_at),
+            RoutineSort::Title => left.title.to_lowercase().cmp(&right.title.to_lowercase()),
+            RoutineSort::Repository => repo_sort_key(left).cmp(&repo_sort_key(right)),
+        };
+        let ord = primary.then_with(|| left.id.cmp(&right.id));
+        if desc {
+            ord.reverse()
+        } else {
+            ord
+        }
+    });
 
     // Omit prompts by default: they are the largest field and rarely needed in a listing.
     // Blanking triggers `skip_serializing_if` on `Routine::prompt`, dropping it from the JSON.
@@ -180,113 +118,7 @@ pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppErr
     Ok(RoutineResponse::from_routine(routine))
 }
 
-/// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
-///
-/// The prompt is the one field that defines what a routine actually does. A blank
-/// prompt still produces a valid `prompt.md` (just the moadim preamble + repo list),
-/// so the routine fires on every cron tick and launches an agent with no task —
-/// silently burning scheduled runs and the user's agent/API budget (issue #224).
-/// Shared by the create and update paths so the REST and MCP surfaces reject it
-/// identically, mirroring [`validate_cron`].
-fn validate_prompt(prompt: &str) -> Result<(), AppError> {
-    if prompt.trim().is_empty() {
-        return Err(AppError::BadRequest("prompt must not be empty".to_string()));
-    }
-    Ok(())
-}
-
-/// Upper bound on a routine title, in characters, to keep `CLAUDE.md`, crontab
-/// comments, iCal `SUMMARY`s, and UI rows from rendering an unbounded string.
-const MAX_TITLE_LEN: usize = 200;
-
-/// Reject a routine `title` that carries no usable name with `400 Bad Request`.
-///
-/// `title` is the only required identifying field on a routine, yet it was never
-/// content-checked. Two concrete failures follow from a blank or punctuation-only
-/// title (issue #226):
-///
-/// 1. The moadim routine-origin disclosure breaks — `system_prompt_stmts` writes
-///    `Routine name: <title>` into every workbench `CLAUDE.md`, so an empty title
-///    yields a nameless disclosure the agent cannot satisfy.
-/// 2. `slugify` maps any title with no ASCII-alphanumerics (`""`, `"   "`, `"!!!"`)
-///    to the constant `"routine"`, so the routine silently takes a slug the user
-///    never chose and collides with the next such routine.
-///
-/// Requiring at least one ASCII-alphanumeric character rejects all three cases at
-/// once (it is exactly the condition under which `slugify` falls back). A max
-/// length bounds downstream rendering. Shared by the create and update paths so
-/// the REST and MCP surfaces reject identically, mirroring [`validate_cron`].
-fn validate_title(title: &str) -> Result<(), AppError> {
-    if !title.chars().any(|ch| ch.is_ascii_alphanumeric()) {
-        return Err(AppError::BadRequest(
-            "title must contain at least one alphanumeric character".to_string(),
-        ));
-    }
-    if title.trim().chars().count() > MAX_TITLE_LEN {
-        return Err(AppError::BadRequest(format!(
-            "title must be at most {MAX_TITLE_LEN} characters"
-        )));
-    }
-    Ok(())
-}
-
-/// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
-/// normalized copy with surrounding whitespace trimmed.
-///
-/// `repository` is a free-form string rendered verbatim into the agent's `prompt.md` preamble by
-/// `compose_prompt` (see #241), so a blank or padded entry yields a broken `- ` clone bullet. An
-/// empty list is valid — this only guards the contents of non-empty entries. Mirrors the
-/// `validate_cron` / `validate_agent` boundary checks for the other routine fields (#224/#226).
-fn validate_repositories(repos: &[Repository]) -> Result<Vec<Repository>, AppError> {
-    let mut normalized = Vec::with_capacity(repos.len());
-    for (index, repo) in repos.iter().enumerate() {
-        let repository = repo.repository.trim();
-        if repository.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "repositories[{index}].repository must not be empty or whitespace-only"
-            )));
-        }
-        let branch = match &repo.branch {
-            Some(branch) => {
-                let trimmed = branch.trim();
-                if trimmed.is_empty() {
-                    return Err(AppError::BadRequest(format!(
-                        "repositories[{index}].branch must not be empty or whitespace-only when set"
-                    )));
-                }
-                Some(trimmed.to_string())
-            }
-            None => None,
-        };
-        normalized.push(Repository {
-            repository: repository.to_string(),
-            branch,
-        });
-    }
-    Ok(normalized)
-}
-
-/// Reject blank (empty/whitespace-only) `tags` entries and return a normalized copy with each tag
-/// trimmed.
-///
-/// Tags are free-form labels for grouping routines; an empty list is valid. This only guards the
-/// contents of non-empty entries, mirroring [`validate_repositories`]: a blank label carries no
-/// meaning and would render as an empty chip, so it is refused at edit time rather than stored.
-fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
-    let mut normalized = Vec::with_capacity(tags.len());
-    for (index, tag) in tags.iter().enumerate() {
-        let trimmed = tag.trim();
-        if trimmed.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "tags[{index}] must not be empty or whitespace-only"
-            )));
-        }
-        normalized.push(trimmed.to_string());
-    }
-    Ok(normalized)
-}
-
-/// Validate `req`, assign a UUID, persist (routine.toml + prompt.md), and sync the crontab.
+/// Validate `req`, assign a UUID, persist (routine.toml + prompts/ sidecars), and sync the crontab.
 pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
@@ -311,6 +143,8 @@ pub fn svc_create(
     validate_agent(&req.agent)?;
     let repositories = validate_repositories(&req.repositories)?;
     let tags = validate_tags(&req.tags)?;
+    let goal = validate_goal(req.goal.as_deref())?;
+    let machines = validate_machines(&req.machines)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -324,17 +158,28 @@ pub fn svc_create(
     let routine = Routine {
         id: Uuid::new_v4().to_string(),
         schedule: normalize_schedule(&req.schedule),
-        title: req.title,
+        // Trim before persisting so a padded title (`"  Deploy  "`) is not rendered
+        // verbatim into the workbench `CLAUDE.md` disclosure, the iCal `SUMMARY`, and
+        // the UI rows. Mirrors `validate_repositories`, which already normalizes the
+        // repository fields, and `validate_title`, which length-checks the trimmed value.
+        title: req.title.trim().to_string(),
         agent: req.agent,
+        model: normalize_model(req.model),
         prompt: req.prompt,
+        goal,
         repositories,
-        machines: req.machines,
+        machines,
         enabled: req.enabled,
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        // Power saving is system-driven, never settable via create/update — see
+        // `svc_set_power_saving`.
+        power_saving: false,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
         tags,
@@ -343,6 +188,11 @@ pub fn svc_create(
     store
         .lock_recover()
         .insert(routine.id.clone(), routine.clone());
+    // A user re-creating a routine under a tombstoned default's title is a deliberate "bring it
+    // back" signal (#265) — clear the tombstone so a future startup can seed the default again.
+    if is_default_slug(&slug) {
+        clear_removed_default(&slug);
+    }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine create failed: {err}");
     }
@@ -376,6 +226,15 @@ pub fn svc_update(
     };
     let tags = match req.tags {
         Some(ref tags) => Some(validate_tags(tags)?),
+        None => None,
+    };
+    // `Some(None)` clears the goal (empty string sent), `Some(Some(_))` sets it, `None` keeps it.
+    let goal = match req.goal {
+        Some(ref goal) => Some(validate_goal(Some(goal))?),
+        None => None,
+    };
+    let machines = match req.machines {
+        Some(ref machines) => Some(validate_machines(machines)?),
         None => None,
     };
     let mut lock = store.lock_recover();
@@ -421,18 +280,25 @@ pub fn svc_update(
         routine.schedule = normalize_schedule(&schedule);
     }
     if let Some(title) = req.title {
-        routine.title = title;
+        // Trim on rename for the same reason as `svc_create` above.
+        routine.title = title.trim().to_string();
     }
     if let Some(agent) = req.agent {
         routine.agent = agent;
     }
+    if let Some(model) = req.model {
+        routine.model = normalize_model(Some(model));
+    }
     if let Some(prompt) = req.prompt {
         routine.prompt = prompt;
+    }
+    if let Some(goal) = goal {
+        routine.goal = goal;
     }
     if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
-    if let Some(machines) = req.machines {
+    if let Some(machines) = machines {
         routine.machines = machines;
     }
     if let Some(enabled) = req.enabled {
@@ -453,6 +319,7 @@ pub fn svc_update(
     let new_slug = slugify(&routine.title);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     if new_slug != old_slug {
+        migrate_workbenches(&old_slug, &new_slug);
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
     }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
@@ -461,205 +328,168 @@ pub fn svc_update(
     Ok(RoutineResponse::from_routine(routine))
 }
 
+/// Rename `old_name` to `new_name` in every routine's `machines` list, persist each changed
+/// routine to disk, and sync the crontab so the new machine identity takes effect immediately.
+///
+/// Called automatically by `put_machine` so that renaming this daemon's machine identity also
+/// updates all the routines that targeted it by the old name.
+pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) {
+    if old_name == new_name {
+        return;
+    }
+    let now = now_secs();
+    let updated: Vec<_> = {
+        let mut lock = store.lock_recover();
+        lock.values_mut()
+            .filter(|routine| routine.machines.iter().any(|machine| machine == old_name))
+            .map(|routine| {
+                for machine in &mut routine.machines {
+                    if machine == old_name {
+                        *machine = new_name.to_string();
+                    }
+                }
+                routine.updated_at = now;
+                routine.clone()
+            })
+            .collect()
+    };
+    for routine in &updated {
+        if let Err(err) = write_routine(routine) {
+            log::warn!(
+                "failed to persist machine rename for routine {}: {err}",
+                routine.id
+            );
+        }
+    }
+    if !updated.is_empty() {
+        if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
+            log::warn!("crontab sync after machine rename failed: {err}");
+        }
+    }
+}
+
 /// Remove the routine with `id` from the store and disk, then sync the crontab.
+///
+/// Also force-kills any in-flight workbench session(s) for this routine's slug, so a deleted
+/// routine's agent doesn't keep running unsupervised until the next TTL sweep (#333).
+///
+/// When `id` is a built-in default, records a tombstone (#265) so
+/// [`super::defaults::ensure_default_routines`] does not resurrect it, enabled, on the next
+/// startup — deleting a default is a deliberate "I never want this" gesture, not a no-op.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
-    remove_routine_dir(&slugify(&routine.title)).map_err(|_| AppError::Internal)?;
+    let slug = slugify(&routine.title);
+    let killed = kill_sessions_for_deleted_routine(&slug);
+    if killed > 0 {
+        log::warn!(
+            "routine delete: killed {killed} in-flight session(s) for deleted routine {slug:?}"
+        );
+    }
+    remove_routine_dir(&slug).map_err(|_| AppError::Internal)?;
+    if is_default_slug(&slug) {
+        record_removed_default(&slug);
+    }
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine delete failed: {err}");
     }
     Ok(RoutineResponse::from_routine(routine))
 }
 
-/// Record a manual trigger for `id` and spawn the same command the crontab would run.
-pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    if crate::global_lock::is_globally_locked() {
-        return Err(AppError::Locked("routines are globally locked".into()));
-    }
-    let mut lock = store.lock_recover();
-    let routine = lock.get_mut(id).ok_or(AppError::NotFound)?;
-    routine.last_manual_trigger_at = Some(now_secs());
-    let routine = routine.clone();
-    drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    spawn_routine_command(&routine);
-    Ok(routine)
-}
+#[path = "service_log_tail.rs"]
+mod service_log_tail;
+#[cfg(test)]
+pub(crate) use service_log_tail::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_BYTES};
 
-/// Run a routine on its schedule: spawn the command the crontab line invokes, without recording a
-/// *manual* trigger.
-///
-/// This is the daemon-side endpoint that the generated crontab line drives
-/// (`moadim schedule trigger <id>`). Unlike [`svc_trigger`] it leaves `last_manual_trigger_at`
-/// untouched — the spawned command records `last_scheduled_trigger_at` in the routine's
-/// `scheduled.local.toml` sidecar itself, which the daemon reads back on the next load. Keeping the
-/// two paths distinct preserves the manual-vs-scheduled distinction the timestamps exist to capture.
-pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
-    if crate::global_lock::is_globally_locked() {
-        return Err(AppError::Locked("routines are globally locked".into()));
-    }
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    spawn_routine_command(&routine);
-    Ok(routine)
-}
+#[path = "service_trigger.rs"]
+mod service_trigger;
+use service_trigger::migrate_workbenches;
+#[cfg(test)]
+pub(crate) use service_trigger::sh_bin;
+pub use service_trigger::{
+    svc_cleanup, svc_list_all_runs, svc_list_runs, svc_logs, svc_run_log, svc_set_power_saving,
+    svc_snooze, svc_trigger, svc_trigger_scheduled,
+};
 
-/// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
-/// the agent config cannot be loaded or the process cannot be spawned.
-///
-/// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
-/// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
-/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths.
-fn spawn_routine_command(routine: &Routine) {
-    match load_agent_command(&routine.agent) {
-        Ok(agent) => {
-            let cmd = build_routine_command(routine, &agent);
-            // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
-            // manual trigger sources the user's `~/.profile` and the agent gets the same
-            // environment whether fired by cron or on demand.
-            let mut command = std::process::Command::new("sh");
-            command.arg("-lc").arg(&cmd);
-            // Reap the child in the background so the short-lived launcher shell does not
-            // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
-            crate::utils::process::spawn_and_reap(command, "routine command");
-        }
-        Err(err) => log::warn!(
-            "trigger: cannot load agent {:?} ({}) for routine {:?}",
-            routine.agent,
-            err,
-            routine.id
-        ),
-    }
-}
-
-/// Reap finished, expired run workbenches immediately, returning how many were removed.
-///
-/// Runs the same sweep as the hourly background task ([`cleanup_expired_workbenches`]) but on
-/// demand, so callers need not wait for the next tick. Still-running sessions are never touched.
-pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
-    CleanupResponse {
-        removed: cleanup_expired_workbenches(store),
-    }
-}
-
-/// Return the contents of the newest workbench `agent.log` for routine `id`.
-pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    let mut newest: Option<(u64, String)> = None;
-    if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // Select only this routine's own workbenches by an *exact* slug match.
-            // A bare `{slug}-` prefix would also match another routine whose slug
-            // begins with this one (e.g. `logs` vs `logs-extra`), leaking that
-            // routine's log. Reusing the canonical `{slug}-{ts}` parser also makes
-            // "newest" a numeric timestamp comparison rather than a lexicographic
-            // one over the whole directory name.
-            if let Some((dir_slug, ts)) = parse_workbench_name(&name) {
-                if dir_slug == slug && newest.as_ref().is_none_or(|(newest_ts, _)| ts > *newest_ts)
-                {
-                    newest = Some((ts, name));
-                }
-            }
-        }
-    }
-    let Some((_, dir)) = newest else {
-        return Ok(String::new());
-    };
-    let log_path = workbenches_dir().join(dir).join("agent.log");
-    if !log_path.exists() {
-        return Ok(String::new());
-    }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
-}
-
-/// List this routine's runs (its `{slug}-{ts}` workbench directories), newest first, capped at
-/// [`MAX_RUNS`].
-///
-/// Each run's `running` state reflects whether its tmux session currently exists; its `exit_code`
-/// is read from the run's `exit_code` file (written after the agent invocation exits — see
-/// [`super::command::build_routine_command`]), absent for runs still in progress or predating that
-/// capture.
-pub fn svc_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    let mut runs = workbench_dirs_for_slug(&slug)
-        .into_iter()
-        .map(|(ts, dir)| run_summary(ts, &dir))
-        .collect::<Vec<_>>();
-    runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
-    runs.truncate(MAX_RUNS);
-    Ok(runs)
-}
-
-/// Return the `agent.log` contents of one specific run (`run`, a workbench directory name)
-/// belonging to routine `id`.
-///
-/// `run` is matched against the routine's *actual* workbench directories rather than joined onto
-/// [`workbenches_dir`] directly, so an unrecognized or cross-routine value can never escape it or
-/// read another routine's run.
-pub fn svc_run_log(store: &RoutineStore, id: &str, run: &str) -> Result<String, AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    let found = workbench_dirs_for_slug(&slug)
-        .into_iter()
-        .any(|(_, dir)| dir == run);
-    if !found {
-        return Err(AppError::NotFound);
-    }
-    let log_path = workbenches_dir().join(run).join("agent.log");
-    if !log_path.exists() {
-        return Ok(String::new());
-    }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
-}
-
-/// List `(trigger_timestamp, dir_name)` for every workbench directory owned by `slug` (an *exact*
-/// slug match, so `logs` never picks up `logs-extra`'s runs).
-fn workbench_dirs_for_slug(slug: &str) -> Vec<(u64, String)> {
-    let Ok(entries) = std::fs::read_dir(workbenches_dir()) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let (dir_slug, ts) = parse_workbench_name(&name)?;
-            (dir_slug == slug).then_some((ts, name))
-        })
-        .collect()
-}
-
-/// Build a [`RunSummary`] for workbench `dir`, triggered at `ts`.
-fn run_summary(ts: u64, dir: &str) -> RunSummary {
-    let running = run_session_alive(&format!("moadim-{dir}"));
-    let exit_code = std::fs::read_to_string(workbenches_dir().join(dir).join("exit_code"))
-        .ok()
-        .and_then(|contents| contents.trim().parse::<i32>().ok());
-    RunSummary {
-        id: dir.to_string(),
-        started_at: ts,
-        running,
-        exit_code: if running { None } else { exit_code },
-    }
-}
+#[path = "service_trigger_flags.rs"]
+mod service_trigger_flags;
+pub use service_trigger_flags::{svc_create_flag, svc_list_flags, svc_resolve_flag};
 
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
+
+#[cfg(test)]
+#[path = "service_list_tests.rs"]
+mod service_list_tests;
+
+#[cfg(test)]
+#[path = "service_sync_tests.rs"]
+mod service_sync_tests;
+
+#[cfg(test)]
+#[path = "service_field_validation_tests.rs"]
+mod service_field_validation_tests;
+
+#[cfg(test)]
+#[path = "service_flag_tests.rs"]
+mod service_flag_tests;
+
+#[cfg(test)]
+#[path = "service_rename_machine_tests.rs"]
+mod service_rename_machine_tests;
+
+#[cfg(test)]
+#[path = "service_model_tests.rs"]
+mod service_model_tests;
+
+#[cfg(test)]
+#[path = "service_logs_tests.rs"]
+mod service_logs_tests;
+
+#[cfg(test)]
+#[path = "service_runs_tests.rs"]
+mod service_runs_tests;
+
+#[cfg(test)]
+#[path = "service_trigger_tests.rs"]
+mod service_trigger_tests;
+
+#[cfg(test)]
+#[path = "service_power_saving_tests.rs"]
+mod service_power_saving_tests;
+
+#[cfg(test)]
+#[path = "service_coverage_tests.rs"]
+mod service_coverage_tests;
+
+#[cfg(test)]
+#[path = "service_prompt_tests.rs"]
+mod service_prompt_tests;
+
+#[cfg(test)]
+#[path = "service_slug_tests.rs"]
+mod service_slug_tests;
+
+#[cfg(test)]
+#[path = "service_update_apply_tests.rs"]
+mod service_update_apply_tests;
+
+#[cfg(test)]
+#[path = "service_overlap_guard_tests.rs"]
+mod service_overlap_guard_tests;
+
+#[cfg(test)]
+#[path = "service_update_not_found_tests.rs"]
+mod service_update_not_found_tests;
+
+#[cfg(test)]
+#[path = "service_ceiling_tests.rs"]
+mod service_ceiling_tests;
+
+#[cfg(test)]
+#[path = "service_snooze_tests.rs"]
+mod service_snooze_tests;
+
+#[cfg(test)]
+#[path = "service_ansi_tests.rs"]
+mod service_ansi_tests;

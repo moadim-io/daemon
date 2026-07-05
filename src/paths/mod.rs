@@ -14,7 +14,7 @@ const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 /// Resolve the base home directory, honoring the [`HOME_OVERRIDE_ENV`] test seam when set.
 ///
 /// Exposed to the crate so platform service installers resolve their home-relative paths (e.g. the
-/// macOS LaunchAgents plist) through the same override seam, keeping tests off the real home.
+/// macOS `LaunchAgents` plist) through the same override seam, keeping tests off the real home.
 pub(crate) fn home() -> Option<PathBuf> {
     match std::env::var_os(HOME_OVERRIDE_ENV) {
         Some(dir) => Some(PathBuf::from(dir)),
@@ -76,16 +76,36 @@ pub fn routine_dir(id: &str) -> PathBuf {
     routines_dir().join(id)
 }
 
+/// Returns the path to `{routines_dir}/README.md`, a daemon-generated orientation doc explaining
+/// the per-routine directory layout.
+#[must_use]
+pub fn routines_readme_path() -> PathBuf {
+    routines_dir().join("README.md")
+}
+
 /// Returns the path to `{routines_dir}/{id}/routine.toml`.
 #[must_use]
 pub fn routine_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.toml")
 }
 
-/// Returns the path to `{routines_dir}/{id}/prompt.md`.
+/// Returns the path to `{routines_dir}/{id}/prompts/`.
 #[must_use]
-pub fn routine_prompt_path(id: &str) -> PathBuf {
-    routine_dir(id).join("prompt.md")
+pub fn routine_prompts_dir(id: &str) -> PathBuf {
+    routine_dir(id).join("prompts")
+}
+
+/// Returns the path to `{routines_dir}/{id}/prompts/prompt.pure.md`, the raw user-authored prompt.
+#[must_use]
+pub fn routine_pure_prompt_path(id: &str) -> PathBuf {
+    routine_prompts_dir(id).join("prompt.pure.md")
+}
+
+/// Returns the path to `{routines_dir}/{id}/prompts/prompt.compiled.md`, the composed prompt
+/// (repositories preamble + pure prompt) that the launch command copies into the workbench.
+#[must_use]
+pub fn routine_compiled_prompt_path(id: &str) -> PathBuf {
+    routine_prompts_dir(id).join("prompt.compiled.md")
 }
 
 /// Returns the path to `{routines_dir}/{id}/.gitignore`.
@@ -95,26 +115,57 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
 }
 
 /// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
-/// daemon-written runtime state (e.g. `last_manual_trigger_at`) kept out of the tracked `routine.toml`.
+/// daemon-written runtime state (`snoozed_until`, `skip_runs`) kept out of the tracked `routine.toml`.
 ///
 /// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
-/// trigger churn never produces version-control diffs.
+/// snooze churn never produces version-control diffs.
 #[must_use]
 pub fn routine_state_path(id: &str) -> PathBuf {
     routine_dir(id).join("state.local.toml")
 }
 
-/// Returns the path to `{routines_dir}/{id}/scheduled.local.toml`, the gitignored sidecar that
-/// records `last_scheduled_trigger_at`.
+/// Returns the path to `{routines_dir}/{id}/scheduled.log`, the gitignored append-only log that
+/// records every scheduled (cron) firing as one Unix-timestamp line.
 ///
-/// Unlike [`routine_state_path`] this sidecar is written by the routine's launch command (the
-/// `printf` step of [`crate::routines::build_routine_command`]) at each scheduled cron firing, and is
-/// only ever *read* by the daemon — kept in its own file so a daemon-side re-persist of
-/// `state.local.toml` can't clobber the scheduler-written timestamp. The `.local.` infix matches the
-/// `*.local.*` `.gitignore` pattern, so scheduled-fire churn never produces version-control diffs.
+/// The cron shell command appends a line (`printf '%s\n' "$TS" >> scheduled.log`) at each firing;
+/// the daemon reads only the last line to derive `last_scheduled_trigger_at`. The `.log` suffix
+/// matches the `*.log` pattern seeded into each routine's `.gitignore`.
 #[must_use]
-pub fn routine_scheduled_state_path(id: &str) -> PathBuf {
-    routine_dir(id).join("scheduled.local.toml")
+pub fn routine_scheduled_log_path(id: &str) -> PathBuf {
+    routine_dir(id).join("scheduled.log")
+}
+
+/// Returns the path to `{routines_dir}/{id}/manual.log`, the gitignored append-only log that
+/// records every manual trigger as one Unix-timestamp line.
+///
+/// The daemon appends a line at each manual trigger; reading the last line gives
+/// `last_manual_trigger_at`. The `.log` suffix matches the `*.log` pattern in the routine's
+/// `.gitignore`.
+#[must_use]
+pub fn routine_manual_log_path(id: &str) -> PathBuf {
+    routine_dir(id).join("manual.log")
+}
+
+/// Returns the path to `{routines_dir}/{id}/runs.log`, the gitignored append-only NDJSON log of
+/// every finished run's outcome, keyed by the routine's stable UUID (unlike its workbenches, which
+/// are keyed by slug and reaped after their TTL).
+///
+/// One compact JSON object is appended per run, right before its workbench is reaped (see
+/// `routines::cleanup::reap_dir`), so run history survives past workbench retention instead of
+/// disappearing the moment its workbench directory is removed. The `.log` suffix matches the
+/// `*.log` pattern seeded into each routine's `.gitignore`.
+#[must_use]
+pub fn routine_run_history_path(id: &str) -> PathBuf {
+    routine_dir(id).join("runs.log")
+}
+
+/// Returns the path to `{config_dir}/removed_defaults.local.toml`, the gitignored file recording
+/// which built-in default routines the user has explicitly deleted, so
+/// [`crate::routines::ensure_default_routines`] does not resurrect them on the next startup. The
+/// `.local.` infix matches the `*.local.*` pattern seeded into the config `.gitignore`.
+#[must_use]
+pub fn removed_default_routines_path() -> PathBuf {
+    config_dir().join("removed_defaults.local.toml")
 }
 
 /// Returns the path to `{routines_dir}/{id}/run.sh`, a legacy per-routine launch script.
@@ -125,6 +176,14 @@ pub fn routine_scheduled_state_path(id: &str) -> PathBuf {
 #[must_use]
 pub fn routine_script_path(id: &str) -> PathBuf {
     routine_dir(id).join("run.sh")
+}
+
+/// Returns the path to `{routines_dir}/{id}/flags/`, holding one file per open flag an agent (or a
+/// human, via MCP/HTTP) has raised against the routine — a gap, bug, edge case, or question it
+/// couldn't resolve mid-run. See [`crate::routines::flags`].
+#[must_use]
+pub fn routine_flags_dir(id: &str) -> PathBuf {
+    routine_dir(id).join("flags")
 }
 
 // ─── Agent registry ──────────────────────────────────────────────────────────
@@ -139,6 +198,13 @@ pub fn agents_dir() -> PathBuf {
 #[must_use]
 pub fn agent_toml_path(name: &str) -> PathBuf {
     agents_dir().join(format!("{name}.toml"))
+}
+
+/// Returns the path to `{agents_dir}/README.md`, a daemon-generated orientation doc explaining the
+/// agent registry's file format.
+#[must_use]
+pub fn agents_readme_path() -> PathBuf {
+    agents_dir().join("README.md")
 }
 
 // ─── Daemon runtime files ────────────────────────────────────────────────────
@@ -160,6 +226,13 @@ pub fn daemon_log_file() -> PathBuf {
 #[must_use]
 pub fn config_gitignore_path() -> PathBuf {
     config_dir().join(".gitignore")
+}
+
+/// Returns the path to `{config_dir}/README.md`, a daemon-generated orientation doc explaining the
+/// config tree's layout for anyone who opens or git-tracks it directly.
+#[must_use]
+pub fn config_readme_path() -> PathBuf {
+    config_dir().join("README.md")
 }
 
 /// Returns the path to `~/.config/moadim/.lock`, a committed global lock that halts all routine
@@ -221,6 +294,20 @@ pub(crate) fn moadim_home_from_home(home: Option<PathBuf>) -> PathBuf {
 #[must_use]
 pub fn workbenches_dir() -> PathBuf {
     moadim_home().join("workbenches")
+}
+
+// ─── Claude Code shared config ───────────────────────────────────────────────
+
+/// Returns the path to `~/.claude.json`, the Claude Code config file shared with the live `claude`
+/// process. The built-in `claude` agent's `setup` step seeds a per-workbench `projects` entry here
+/// on every run (see `crate::routines::agents`); `crate::utils::claude_json` prunes that entry
+/// once the cleanup sweep (`crate::routines::cleanup`) reaps the workbench, so the file does not
+/// grow unbounded.
+///
+/// `None` when the home directory cannot be resolved.
+#[must_use]
+pub fn claude_json_path() -> Option<PathBuf> {
+    home().map(|dir| dir.join(".claude.json"))
 }
 
 #[cfg(test)]

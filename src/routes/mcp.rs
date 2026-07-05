@@ -1,16 +1,15 @@
 //! MCP server handler exposing routine tools over the Model Context Protocol.
 
+use crate::routes::http::ShutdownSignal;
+use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
+use crate::utils::time::now_secs;
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
     tool, tool_router,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-
-use crate::routes::http::ShutdownSignal;
-use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
-use crate::utils::time::now_secs;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -22,13 +21,6 @@ pub struct MoadimMcp {
     /// Notify handle that triggers a graceful server shutdown (the `shutdown` tool fires it,
     /// mirroring `POST /api/v1/shutdown` and `moadim stop`).
     shutdown: ShutdownSignal,
-}
-
-/// Input for the `echo` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct EchoInput {
-    /// Message to echo back.
-    message: String,
 }
 
 /// Input for tools that operate on a single routine by ID.
@@ -44,8 +36,7 @@ pub(super) struct ListRoutinesParam {
     /// When `true` (the default), only return routines targeting the current machine.
     /// Pass `false` to see routines from all machines.
     local_only: Option<bool>,
-    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`
-    /// so listings stay compact; use `get_routine` to see a single routine's prompt.
+    /// When `true`, include each routine's `prompt` in the response. Defaults to `false` so listings stay compact; use `get_routine` to see a single routine's prompt.
     include_prompts: Option<bool>,
 }
 
@@ -63,6 +54,51 @@ struct UnlockRoutinesInput {
     scope: String,
 }
 
+/// Input for the `create_flag` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct CreateFlagInput {
+    /// UUID of the routine to flag.
+    id: String,
+    /// Free-text flag category. Common examples: "bug", "gap", `edge_case`, "question", "blocker"
+    /// — any string is accepted.
+    r#type: String,
+    /// Free-text description of what's unclear.
+    description: String,
+    /// `"general"` (committed, shared via git) or `"local"` (gitignored, machine-local).
+    scope: String,
+}
+
+/// Input for the `resolve_flag` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct ResolveFlagInput {
+    /// UUID of the flagged routine.
+    id: String,
+    /// Flag filename, as returned by `create_flag`/`list_flags`.
+    filename: String,
+}
+
+/// Input for the `snooze_routine` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SnoozeRoutineInput {
+    /// UUID of the routine to snooze.
+    id: String,
+    /// Unix timestamp (seconds) to skip scheduled fires until, or omit/null. Mutually exclusive
+    /// with `skip_runs`.
+    snoozed_until: Option<u64>,
+    /// Number of upcoming scheduled fires to skip, or omit/null. Mutually exclusive with
+    /// `snoozed_until`.
+    skip_runs: Option<u32>,
+}
+
+/// Input for the `set_power_saving` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+struct SetPowerSavingInput {
+    /// UUID of the routine to update.
+    id: String,
+    /// `true` to pause scheduled and manual firing for power saving, `false` to resume.
+    active: bool,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 struct UpdateRoutineInput {
@@ -75,8 +111,14 @@ struct UpdateRoutineInput {
     title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     prompt: Option<String>,
+    /// New goal (a very short, ≤5-line statement of the routine's purpose), or `None` to keep the
+    /// existing value. Send an empty string to clear it.
+    goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     repositories: Option<Vec<crate::routines::Repository>>,
     /// New machines targeting list, or `None` to keep the existing value.
@@ -94,14 +136,14 @@ struct UpdateRoutineInput {
 
 /// Wrap a serializable value in a successful `CallToolResult`.
 fn ok(val: impl serde::Serialize) -> CallToolResult {
-    CallToolResult::success(vec![Content::text(
+    CallToolResult::success(vec![ContentBlock::text(
         serde_json::to_string(&val).unwrap_or_default(),
     )])
 }
 
 /// Wrap an error message in a failed `CallToolResult`.
 fn err(msg: impl std::fmt::Display) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(msg.to_string())])
+    CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
 
 #[tool_router(server_handler)]
@@ -137,18 +179,6 @@ impl MoadimMcp {
             "server_exe_dir": loc.server_exe_dir,
         });
         Ok(ok(val))
-    }
-
-    /// Echo `message` back together with the current server timestamp.
-    #[tool(description = "Echo a message back with a server timestamp")]
-    fn echo(
-        &self,
-        Parameters(EchoInput { message }): Parameters<EchoInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(serde_json::json!({
-            "message": message,
-            "timestamp": now_secs(),
-        })))
     }
 
     /// Return managed routines as a JSON array sorted by creation time.
@@ -211,7 +241,9 @@ impl MoadimMcp {
             schedule: input.schedule,
             title: input.title,
             agent: input.agent,
+            model: input.model,
             prompt: input.prompt,
+            goal: input.goal,
             repositories: input.repositories,
             machines: input.machines,
             enabled: input.enabled,
@@ -251,9 +283,47 @@ impl MoadimMcp {
         })
     }
 
-    /// Reap finished, expired run workbenches immediately, returning how many were removed.
+    /// Snooze a routine's scheduled fires without disabling it or touching manual triggers.
     #[tool(
-        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed."
+        description = "Snooze a routine's scheduled (cron) fires without disabling it. Set snoozed_until (unix seconds) to skip fires until that time, or skip_runs (count) to skip that many upcoming scheduled fires — set exactly one, or neither to clear an active snooze. Manual triggers (trigger_routine) always bypass snooze and run normally."
+    )]
+    fn snooze_routine(
+        &self,
+        Parameters(SnoozeRoutineInput {
+            id,
+            snoozed_until,
+            skip_runs,
+        }): Parameters<SnoozeRoutineInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_snooze(&self.routines, &id, snoozed_until, skip_runs) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// Pause or resume a routine's scheduled and manual firing for power saving, without touching
+    /// its `enabled` state or crontab line.
+    #[tool(
+        description = "Set or clear a routine's power-saving state. While active, both trigger_routine and the routine's cron schedule refuse to launch it (distinctly from a disabled routine) — its enabled toggle and crontab line are untouched, so it resumes firing on its own once cleared."
+    )]
+    fn set_power_saving(
+        &self,
+        Parameters(SetPowerSavingInput { id, active }): Parameters<SetPowerSavingInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_set_power_saving(&self.routines, &id, active) {
+                Ok(routine) => ok(routine),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// Reap finished, expired run workbenches immediately, returning how many were removed and the
+    /// bytes freed.
+    #[tool(
+        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed and the total disk space freed in bytes."
     )]
     fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::svc_cleanup(&self.routines)))
@@ -263,6 +333,57 @@ impl MoadimMcp {
     #[tool(description = "List the available agent registry keys a routine can launch")]
     fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::available_agents()))
+    }
+
+    /// Raise a new flag against a routine, refreshing its `prompt.compiled.md` so the next run's
+    /// "Open flags" section includes it.
+    #[tool(
+        description = "Flag something unclear about a routine mid-run — a gap, bug, edge case, or question the agent hit with no other channel to surface it (the run happens unattended inside tmux). `type` is free text (common examples: \"bug\", \"gap\", \"edge_case\", \"question\", \"blocker\"); `scope` is \"general\" (committed, shared via git) or \"local\" (gitignored, machine-local). Unresolved flags are shown back to the agent in the routine's prompt on its next run."
+    )]
+    fn create_flag(
+        &self,
+        Parameters(CreateFlagInput {
+            id,
+            r#type,
+            description,
+            scope,
+        }): Parameters<CreateFlagInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_create_flag(&self.routines, &id, &r#type, &description, &scope) {
+                Ok(flag) => ok(flag),
+                Err(error) => err(error),
+            },
+        )
+    }
+
+    /// List every open flag raised against a routine.
+    #[tool(description = "List open flags raised against a routine, oldest first")]
+    fn list_flags(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match routines::svc_list_flags(&self.routines, &id) {
+            Ok(flags) => ok(flags),
+            Err(error) => err(error),
+        })
+    }
+
+    /// Resolve (delete) a flag by filename, refreshing `prompt.compiled.md` so it stops appearing
+    /// in the next run's prompt.
+    #[tool(
+        description = "Resolve a routine flag by filename (as returned by create_flag/list_flags), removing it"
+    )]
+    fn resolve_flag(
+        &self,
+        Parameters(ResolveFlagInput { id, filename }): Parameters<ResolveFlagInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_resolve_flag(&self.routines, &id, &filename) {
+                Ok(()) => ok(serde_json::json!({ "status": "resolved" })),
+                Err(error) => err(error),
+            },
+        )
     }
 
     /// Return the newest run log for a routine, or an error if the routine does not exist.
@@ -277,15 +398,15 @@ impl MoadimMcp {
         })
     }
 
-    /// List a routine's runs (its workbench directories), newest first.
+    /// List a routine's runs (live workbenches plus durable history), newest first.
     #[tool(
-        description = "List a routine's runs, newest first — each run's id (pass as `run` to routine_logs' companion REST endpoint's ?run= param), start time, whether it is still running, and exit code"
+        description = "List a routine's runs, newest first — each run's workbench id (pass to the REST endpoint GET /routines/{id}/runs/{workbench}/log to fetch its log), start/finish time, status, and exit code"
     )]
     fn list_routine_runs(
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_runs(&self.routines, &id) {
+        Ok(match routines::svc_list_runs(&self.routines, &id) {
             Ok(runs) => ok(runs),
             Err(error) => err(error),
         })
@@ -382,6 +503,12 @@ impl MoadimMcp {
     }
 }
 
+#[cfg(test)]
+#[path = "mcp_lock_tests.rs"]
+mod mcp_lock_tests;
+#[cfg(test)]
+#[path = "mcp_parity_tests.rs"]
+mod mcp_parity_tests;
 #[cfg(test)]
 #[path = "mcp_tests.rs"]
 mod mcp_tests;

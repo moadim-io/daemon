@@ -1,13 +1,17 @@
 //! Persisted routine types, derived API response, and request bodies.
 
+use chrono::Local;
 use croner::Cron;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::command::slugify;
-use crate::paths::{agent_toml_path, routine_toml_path};
+use super::agents::load_agent_command;
+use super::cleanup::tmux_session_prefix_alive;
+use super::command::{agent_command_available, slugify, tmux_session_prefix};
+use super::flags::list_flags;
+use crate::paths::routine_toml_path;
 
 /// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -79,16 +83,6 @@ pub struct IcalFeedQuery {
     pub routine: Option<String>,
 }
 
-/// Query parameters for `GET /routines/{id}/logs`.
-#[derive(Debug, Clone, Default, Deserialize, JsonSchema, utoipa::IntoParams)]
-#[serde(default)]
-#[into_params(parameter_in = Query)]
-pub struct LogsQuery {
-    /// A specific run's workbench directory name (from [`RunSummary::id`]), or absent for the
-    /// newest run.
-    pub run: Option<String>,
-}
-
 /// A persisted routine: a scheduled AI-agent task.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Routine {
@@ -101,6 +95,10 @@ pub struct Routine {
     pub title: String,
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
     pub agent: String,
+    /// Model ID to run the agent with (e.g. `"claude-sonnet-4-6"`), passed as `--model` on the
+    /// agent invocation. `None` uses the agent's own default.
+    #[serde(default)]
+    pub model: Option<String>,
     /// The task prompt handed to the agent.
     ///
     /// Omitted from serialized output when empty. A persisted routine always has a
@@ -109,6 +107,10 @@ pub struct Routine {
     /// it in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub prompt: String,
+    /// A very short (at most 5 lines) statement of the routine's goal — the "why" behind the
+    /// prompt. Rendered into the agent's `prompt.md` as a `## Goal` preamble. `None` when unset.
+    #[serde(default)]
+    pub goal: Option<String>,
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -136,13 +138,37 @@ pub struct Routine {
     ///
     /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
     /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
-    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns stamps this
-    /// timestamp into the gitignored `scheduled.local.toml` sidecar at fire time (via its `printf`
-    /// step); the daemon reads it back on load. The daemon never writes this field directly (it is
-    /// absent from `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a
-    /// routine can't clobber it.
+    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends
+    /// the Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last
+    /// line back on load. The daemon never writes this field directly (it is absent from
+    /// `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't
+    /// clobber the log.
     #[serde(default)]
     pub last_scheduled_trigger_at: Option<u64>,
+    /// Unix timestamp (seconds) until which scheduled (cron) fires are skipped, or `None`.
+    ///
+    /// Cleared automatically the first time a scheduled fire observes `now >= snoozed_until`, which
+    /// also runs that fire. Manual triggers ([`crate::routines::svc_trigger`]) ignore this entirely.
+    /// Set via the `snooze_routine` MCP tool; mutually exclusive with `skip_runs`.
+    #[serde(default)]
+    pub snoozed_until: Option<u64>,
+    /// Number of upcoming scheduled fires still to skip, or `None`.
+    ///
+    /// Decremented (and cleared once it reaches zero) on each skipped scheduled fire; manual
+    /// triggers do not consume it. Mutually exclusive with `snoozed_until`.
+    #[serde(default)]
+    pub skip_runs: Option<u32>,
+    /// Whether scheduled and manual firing is paused to conserve resources, independent of
+    /// [`Routine::enabled`].
+    ///
+    /// `enabled` is user-owned intent ("I want this routine on/off"); `power_saving` is a
+    /// system/policy throttle layered on top — both must hold for a firing to launch an agent
+    /// (`enabled && !power_saving`). Never mutated by `svc_create`/`svc_update` (set via
+    /// [`crate::routines::svc_set_power_saving`] instead), so it survives a config edit the same
+    /// way `snoozed_until` and `skip_runs` do. Daemon-owned runtime state: persisted in the
+    /// gitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`.
+    #[serde(default)]
+    pub power_saving: bool,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
@@ -168,8 +194,18 @@ pub struct RoutineResponse {
     /// The underlying routine.
     #[serde(flatten)]
     pub routine: Routine,
-    /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`.
+    /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses
+    /// successfully. A present-but-malformed config is silently dropped at crontab-sync time, so
+    /// it reports `false` here too — file existence alone is not "registered".
     pub agent_registered: bool,
+    /// `true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable
+    /// on the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a
+    /// present, well-formed agent config yet reference a binary that isn't installed, in which
+    /// case the cron firing launches a tmux session that dies immediately with "command not
+    /// found" — a silent no-op indistinguishable from a healthy routine by `agent_registered`
+    /// alone. `false` whenever the agent config is missing, unreadable, or malformed, since no
+    /// `command` can be resolved in that case either.
+    pub agent_command_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
     /// Human-readable description of the schedule, including the timezone the
@@ -179,6 +215,20 @@ pub struct RoutineResponse {
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
     pub timezone: Option<String>,
+    /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
+    /// listings can badge it without a separate `list_flags` round-trip per routine.
+    pub flag_count: usize,
+    /// Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone
+    /// (matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.
+    /// `None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming
+    /// fire (e.g. `@reboot`). See issue #369.
+    pub next_run_at: Option<u64>,
+    /// `true` if any fire of this routine currently has a live tmux session — i.e. an agent is
+    /// running right now. Derived by probing for a session under the routine's
+    /// `moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not
+    /// persisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing
+    /// best-effort "no tmux, nothing running" stance. See issue #438.
+    pub is_running: bool,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -203,21 +253,48 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
     })
 }
 
+/// Unix epoch seconds of `schedule`'s next fire after now, in the host's local timezone (matching
+/// crontab semantics) — reusing the same `croner` evaluation as the `.ics` feed
+/// ([`super::ical::build_ical`]) and the TTL sweep (`cleanup::ttl::cron_interval_secs`).
+///
+/// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
+/// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
+fn next_run_at(schedule: &str, enabled: bool) -> Option<u64> {
+    if !enabled || crate::global_lock::is_globally_locked() {
+        return None;
+    }
+    let cron: Cron = schedule.parse().ok()?;
+    let next = cron.iter_after(Local::now()).next()?;
+    u64::try_from(next.timestamp()).ok()
+}
+
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
-        let agent_registered = agent_toml_path(&routine.agent).exists();
-        let file_path = routine_toml_path(&slugify(&routine.title))
-            .to_string_lossy()
-            .into_owned();
+        let slug = slugify(&routine.title);
+        // An agent counts as registered only if its config both exists *and* parses: a
+        // present-but-malformed config is silently dropped at crontab-sync time, so reporting it as
+        // registered would paint a never-firing routine as healthy. See issue #301.
+        let agent_command = load_agent_command(&routine.agent);
+        let agent_registered = agent_command.is_ok();
+        let agent_command_available =
+            agent_command.is_ok_and(|agent| agent_command_available(&agent.command));
+        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let flag_count = list_flags(&slug).len();
+        let next_run_at = next_run_at(&routine.schedule, routine.enabled);
+        let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
         Self {
             routine,
             agent_registered,
+            agent_command_available,
             file_path,
             schedule_description,
             timezone,
+            flag_count,
+            next_run_at,
+            is_running,
         }
     }
 }
@@ -227,24 +304,60 @@ impl RoutineResponse {
 pub struct CleanupResponse {
     /// Number of finished, expired run workbenches removed by this sweep.
     pub removed: usize,
+    /// Total disk space reclaimed, in bytes, summed across the removed workbench trees. Additive
+    /// field: existing `{"removed": N}` consumers are unaffected.
+    pub freed_bytes: u64,
 }
 
-/// One past or in-progress execution of a routine, derived from its workbench directory.
-///
-/// There is no separate run-record store: a run *is* a `{slug}-{ts}` workbench directory under
-/// `~/.moadim/workbenches/`, so this is assembled on demand from the filesystem and the live tmux
-/// session table rather than persisted.
-#[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
+/// Outcome of a single past run, derived from its workbench on disk.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// The tmux session is still alive.
+    Running,
+    /// The agent process exited `0`.
+    Success,
+    /// The agent process exited non-zero.
+    Failed,
+    /// The session is gone but no exit code was recorded (killed, crashed before
+    /// writing it, or from a build predating exit-code capture).
+    Unknown,
+}
+
+/// One past (or in-progress) run of a routine, listed newest-first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct RunSummary {
-    /// Workbench directory name (`{slug}-{unix_secs}`); pass as `?run=` to `GET
-    /// /routines/{id}/logs` to fetch this run's log.
-    pub id: String,
-    /// Unix timestamp (seconds) the run was triggered, parsed from the workbench directory name.
+    /// Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`.
+    pub workbench: String,
+    /// Unix seconds the run was triggered.
     pub started_at: u64,
-    /// Whether the run's tmux session is still alive.
-    pub running: bool,
-    /// Process exit status of the agent command, or `None` while still running or if the run
-    /// finished before exit-code capture existed.
+    /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
+    pub finished_at: Option<u64>,
+    /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
+    pub status: RunStatus,
+    /// Process exit code, when recorded.
+    pub exit_code: Option<i32>,
+}
+
+/// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide
+/// counterpart to [`RunSummary`] backing an overview "recent runs" view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
+pub struct FleetRunSummary {
+    /// The routine this run belongs to.
+    pub routine_id: String,
+    /// The routine's title, at the time of this call (not snapshotted per-run).
+    pub routine_title: String,
+    /// Workbench directory name (`{slug}-{unix_secs}`).
+    pub workbench: String,
+    /// Unix seconds the run was triggered.
+    pub started_at: u64,
+    /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
+    pub finished_at: Option<u64>,
+    /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
+    pub status: RunStatus,
+    /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
 }
 
@@ -272,8 +385,16 @@ pub struct CreateRoutineRequest {
     pub title: String,
     /// Agent registry key to launch.
     pub agent: String,
+    /// Model ID to run the agent with, or `None` to use the agent's own default. A
+    /// blank/whitespace-only value is treated the same as `None`.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Task prompt.
     pub prompt: String,
+    /// A very short (at most 5 lines) statement of the routine's goal. Optional; `None` leaves it
+    /// unset. When present it is rendered into the agent's `prompt.md` as a `## Goal` preamble.
+    #[serde(default)]
+    pub goal: Option<String>,
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
@@ -307,8 +428,13 @@ pub struct UpdateRoutineRequest {
     pub title: Option<String>,
     /// New agent key, or `None` to keep the existing value.
     pub agent: Option<String>,
+    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
+    /// the model back to the agent's own default.
+    pub model: Option<String>,
     /// New prompt, or `None` to keep the existing value.
     pub prompt: Option<String>,
+    /// New goal, or `None` to keep the existing value. Send an empty string to clear it.
+    pub goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
     /// New machines targeting list, or `None` to keep the existing value.

@@ -11,19 +11,19 @@ struct EnvGuard {
 
 impl EnvGuard {
     /// Set `name` to `value`, remembering the prior value for restoration.
-    fn set(name: &'static str, value: &str) -> EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe { std::env::set_var(name, value) }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 
     /// Ensure `name` is unset for the duration of the guard.
-    fn unset(name: &'static str) -> EnvGuard {
+    fn unset(name: &'static str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: single-threaded test execution.
         unsafe { std::env::remove_var(name) }
-        EnvGuard { name, previous }
+        Self { name, previous }
     }
 }
 
@@ -250,7 +250,9 @@ fn referenced_machines_unions_routines() {
         schedule: "0 9 * * *".to_string(),
         title: "Routine One".to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do".to_string(),
+        goal: None,
         repositories: Vec::new(),
         machines: vec!["laptop".to_string(), "server".to_string()],
         tags: vec![],
@@ -260,6 +262,9 @@ fn referenced_machines_unions_routines() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
     };
@@ -317,7 +322,9 @@ fn run_list_with_referenced_machine() {
         schedule: "0 9 * * *".to_string(),
         title: "Routine".to_string(),
         agent: "claude".to_string(),
+        model: None,
         prompt: "do".to_string(),
+        goal: None,
         repositories: Vec::new(),
         machines: vec!["alpha".to_string()],
         tags: vec![],
@@ -327,6 +334,9 @@ fn run_list_with_referenced_machine() {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
     };

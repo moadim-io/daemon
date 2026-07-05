@@ -15,7 +15,7 @@ use super::{
 /// piped into scripts.
 ///
 /// Returns the process exit code to surface: `0` when the server handled the sweep, and
-/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
+/// [`crate::cli::EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
 pub fn cleanup(json: bool) -> anyhow::Result<i32> {
     match http_request_with_body("POST", "/api/v1/routines/cleanup") {
         Ok((200, body)) => {
@@ -70,7 +70,7 @@ pub(super) fn humanize_bytes(bytes: u64) -> String {
 /// Prints a confirmation when the routine was triggered, an error when no routine has that id
 /// (`404`), and a "not running" hint when no server is reachable. Returns the process exit code to
 /// surface, mirroring the `status`/`cleanup` contract: `0` when the routine was triggered, and
-/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
+/// [`crate::cli::EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
 pub fn trigger(id: String) -> anyhow::Result<i32> {
     match http_request("POST", &format!("/api/v1/routines/{id}/trigger")) {
         Ok(200) => {
@@ -98,7 +98,7 @@ pub fn trigger(id: String) -> anyhow::Result<i32> {
 /// startup (`moadim & moadim status --wait`) instead of sleeping blindly before probing.
 ///
 /// Returns the process exit code to surface: `0` when a server is reachable, and
-/// [`EXIT_NOT_RUNNING`] when not (including after a `--wait` timeout), so scripts can branch on
+/// [`crate::cli::EXIT_NOT_RUNNING`] when not (including after a `--wait` timeout), so scripts can branch on
 /// `$?` without parsing stdout.
 pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
     let mut running = is_running();

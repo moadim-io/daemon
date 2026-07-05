@@ -175,7 +175,7 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
 /// - If `state.local.toml` contains a `last_manual_trigger_at` field and `manual.log` does not
 ///   exist, the stored timestamp is written as the first log line.
 ///
-/// Call once at startup, after [`migrate_prompt_files`] and before [`load_store`].
+/// Call once at startup, after [`migrate_prompt_files`] and before [`crate::routine_storage::load_store`].
 pub fn migrate_trigger_logs() {
     migrate_trigger_logs_from_dir(&routines_dir());
 }

@@ -226,6 +226,54 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
 }
 
 #[test]
+fn build_routine_command_guards_agent_setup_step() {
+    // When an agent has a `setup` step, it must be fail-fast: a non-zero exit aborts the launch
+    // before `tmux new-session` runs, mirroring the `cp prompt.md` guard. Otherwise a failed setup
+    // (e.g. trust/onboarding pre-seed) is silently ignored and the agent hangs on the interactive
+    // prompt until the watchdog reaps it.
+    let routine = make_routine("Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: Some("python3 seed.py".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // The setup is inserted verbatim, wrapped in a `{ ...; } || { ...; exit 1; }` guard...
+    assert!(
+        cmd.contains(
+            r#"{ python3 seed.py; } || { echo "moadim: agent setup failed; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+        ),
+        "expected guarded setup step in: {cmd}"
+    );
+    // ...and the guard precedes the tmux launch, so a failed setup never reaches it.
+    let setup_pos = cmd.find("agent setup failed").unwrap();
+    let tmux_pos = cmd.find("tmux new-session").unwrap();
+    assert!(
+        setup_pos < tmux_pos,
+        "setup guard must precede tmux new-session in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_omits_setup_guard_when_no_setup() {
+    // With no `setup` step the guard is absent entirely (the `if let Some(setup)` arm is skipped).
+    let routine = make_routine("No Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        !cmd.contains("agent setup failed"),
+        "did not expect a setup guard with no setup step in: {cmd}"
+    );
+}
+
+#[test]
 fn tmux_available_in_true_when_fake_tmux_present() {
     // A temp dir containing a fake `tmux` executable resolves as available — the "present" branch
     // of the injectable detection helper.

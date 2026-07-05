@@ -227,3 +227,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
         </main>
     }
 }
+
+#[cfg(test)]
+#[path = "history_tests.rs"]
+mod history_tests;

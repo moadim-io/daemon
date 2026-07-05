@@ -14,8 +14,7 @@ pub fn now_secs() -> u64 {
 fn secs_since_epoch(moment: SystemTime) -> u64 {
     moment
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 #[cfg(test)]

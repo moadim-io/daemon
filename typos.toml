@@ -15,3 +15,7 @@ extend-exclude = [
 [default.extend-words]
 # Intentional spelling used in the codebase; keep it as-is.
 unparseable = "unparseable"
+
+[default.extend-identifiers]
+# Maintainer's GitHub handle, used as a contact/mention target in docs.
+tupe12334 = "tupe12334"

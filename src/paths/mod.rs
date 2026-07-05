@@ -159,6 +159,15 @@ pub fn routine_run_history_path(id: &str) -> PathBuf {
     routine_dir(id).join("runs.log")
 }
 
+/// Returns the path to `{config_dir}/removed_defaults.local.toml`, the gitignored file recording
+/// which built-in default routines the user has explicitly deleted, so
+/// [`crate::routines::ensure_default_routines`] does not resurrect them on the next startup. The
+/// `.local.` infix matches the `*.local.*` pattern seeded into the config `.gitignore`.
+#[must_use]
+pub fn removed_default_routines_path() -> PathBuf {
+    config_dir().join("removed_defaults.local.toml")
+}
+
 /// Returns the path to `{routines_dir}/{id}/run.sh`, a legacy per-routine launch script.
 ///
 /// No longer generated — the crontab line now invokes `moadim schedule trigger <id>` directly. The

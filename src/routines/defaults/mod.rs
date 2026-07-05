@@ -8,16 +8,24 @@
 //! overrides is [`Routine::enabled`]: a new default is created enabled, but if the user has toggled
 //! an existing default off it stays off across restarts.
 //!
-//! A default that is absent from the store (never seeded, or deleted while the daemon was stopped)
-//! is (re)created enabled. Suppressing re-add after an explicit delete (e.g. a "removed defaults"
-//! marker) is tracked as a follow-up.
+//! A default that is absent from the store because it was never seeded is (re)created enabled. One
+//! that is absent because the user explicitly deleted it stays deleted — [`svc_delete`](
+//! super::service::svc_delete) records its slug in the [`removed_default_routines_path`] tombstone
+//! file, which [`ensure_default_routines`] consults before re-materializing a missing default.
+//! Creating a routine whose title matches a tombstoned default (via [`svc_create`](
+//! super::service::svc_create)) clears the tombstone, since that is a deliberate "I want this back"
+//! signal.
 //!
 //! Each built-in routine lives in its own submodule (e.g. [`update_moadim`], [`the_1_percent`]).
 //! Adding a new default means a new file + one entry in [`DEFAULT_ROUTINES`].
 
+use std::collections::BTreeSet;
+
 use crate::utils::lock::LockRecover;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::paths::removed_default_routines_path;
 use crate::routine_storage::write_routine;
 use crate::utils::cron::normalize_schedule;
 use crate::utils::time::now_secs;
@@ -157,6 +165,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
 /// than aborting startup. Call once at startup after [`crate::routine_storage::load_store`] and
 /// before the crontab sync.
 pub fn ensure_default_routines(store: &RoutineStore) {
+    let removed = read_removed_defaults();
     for spec in DEFAULT_ROUTINES {
         let slug = slugify(spec.title);
         let existing = store
@@ -169,7 +178,12 @@ pub fn ensure_default_routines(store: &RoutineStore) {
                 Some(updated) => updated,
                 None => continue,
             },
-            None => materialize(spec, now_secs()),
+            None => {
+                if removed.contains(&slug) {
+                    continue;
+                }
+                materialize(spec, now_secs())
+            }
         };
         if let Err(err) = write_routine(&routine) {
             log::warn!(
@@ -179,6 +193,70 @@ pub fn ensure_default_routines(store: &RoutineStore) {
             continue;
         }
         store.lock_recover().insert(routine.id.clone(), routine);
+    }
+}
+
+/// True when `slug` matches one of the built-in [`DEFAULT_ROUTINES`].
+#[must_use]
+pub fn is_default_slug(slug: &str) -> bool {
+    DEFAULT_ROUTINES
+        .iter()
+        .any(|spec| slugify(spec.title) == slug)
+}
+
+/// On-disk shape of the [`removed_default_routines_path`] tombstone file.
+#[derive(Default, Serialize, Deserialize)]
+struct RemovedDefaults {
+    /// Slugs of built-in defaults the user has explicitly deleted.
+    #[serde(default)]
+    slugs: BTreeSet<String>,
+}
+
+/// Read the set of tombstoned default slugs, or an empty set if the file is absent or unreadable.
+fn read_removed_defaults() -> BTreeSet<String> {
+    let Ok(raw) = std::fs::read_to_string(removed_default_routines_path()) else {
+        return BTreeSet::new();
+    };
+    toml::from_str::<RemovedDefaults>(&raw)
+        .map(|removed| removed.slugs)
+        .unwrap_or_default()
+}
+
+/// Persist `slugs` to the tombstone file, creating its parent directory if needed.
+fn write_removed_defaults(slugs: &BTreeSet<String>) -> std::io::Result<()> {
+    let path = removed_default_routines_path();
+    let parent = path
+        .parent()
+        .expect("removed-defaults tombstone path has a parent dir");
+    std::fs::create_dir_all(parent)?;
+    let body = RemovedDefaults {
+        slugs: slugs.clone(),
+    };
+    let toml = toml::to_string_pretty(&body).expect("a set of strings always serializes");
+    std::fs::write(path, toml)
+}
+
+/// Record that the built-in default identified by `slug` was explicitly deleted, so
+/// [`ensure_default_routines`] does not re-create it on the next startup. Best-effort: a write
+/// failure is logged rather than propagated, matching [`ensure_default_routines`]'s own
+/// best-effort persistence.
+pub fn record_removed_default(slug: &str) {
+    let mut slugs = read_removed_defaults();
+    if slugs.insert(slug.to_string()) {
+        if let Err(err) = write_removed_defaults(&slugs) {
+            log::warn!("record_removed_default: failed to persist tombstone for {slug:?}: {err}");
+        }
+    }
+}
+
+/// Clear the tombstone for `slug`, if any, letting [`ensure_default_routines`] re-seed it on the
+/// next startup. Called when the user creates a routine whose title matches a tombstoned default.
+pub fn clear_removed_default(slug: &str) {
+    let mut slugs = read_removed_defaults();
+    if slugs.remove(slug) {
+        if let Err(err) = write_removed_defaults(&slugs) {
+            log::warn!("clear_removed_default: failed to clear tombstone for {slug:?}: {err}");
+        }
     }
 }
 

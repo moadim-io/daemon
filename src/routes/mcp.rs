@@ -61,7 +61,7 @@ struct UnlockRoutinesInput {
 struct CreateFlagInput {
     /// UUID of the routine to flag.
     id: String,
-    /// Free-text flag category. Common examples: "bug", "gap", "edge_case", "question", "blocker"
+    /// Free-text flag category. Common examples: "bug", "gap", `edge_case`, "question", "blocker"
     /// — any string is accepted.
     r#type: String,
     /// Free-text description of what's unclear.

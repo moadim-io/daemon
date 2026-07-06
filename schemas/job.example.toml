@@ -1,8 +1,0 @@
-#:schema ./job.schema.json
-
-schedule = "30 9 * * 1-5"
-handler  = "my-handler"
-enabled  = true
-
-[metadata]
-# key = "value"

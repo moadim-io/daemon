@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::ApiDoc;
 
@@ -15,17 +18,16 @@ fn committed_spec_is_current() {
     }
 }
 
-/// The `servers[0].url` must stay relative so Swagger UI "Try it out" resolves
-/// against the page's own origin (works on any `MOADIM_BIND_ADDR` / behind a
-/// proxy). Guards against re-introducing a hardcoded absolute address.
+/// The `servers` URL must stay host-relative so Swagger UI "Try it out" follows the live origin
+/// (a custom `MOADIM_BIND_ADDR` port or a reverse proxy) rather than a hardcoded host:port that is
+/// wrong everywhere but the default bind address (issue #385).
 #[test]
-fn server_url_is_relative() {
+fn server_url_is_host_relative() {
     use utoipa::OpenApi as _;
-    let spec = ApiDoc::openapi();
-    let servers = spec.servers.expect("spec declares a servers list");
-    let url = &servers.first().expect("at least one server entry").url;
-    assert!(
-        url.starts_with('/'),
-        "servers[0].url must be relative (origin-resolved), got {url:?}"
+    let servers = ApiDoc::openapi().servers.unwrap_or_default();
+    let url = &servers.first().expect("a server entry is declared").url;
+    assert_eq!(
+        url, "/api/v1",
+        "server URL must be host-relative, not absolute"
     );
 }

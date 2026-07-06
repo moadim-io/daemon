@@ -10,8 +10,14 @@ pub const NAME: &str = "claude";
 /// — `hasTrustDialogAccepted` and `disabledMcpjsonServers` — so the unattended session never blocks
 /// on the workspace-trust dialog or a project MCP-server approval prompt. Both are keyed by exact
 /// path (not inherited from parent dirs), so they must be seeded for each fresh workbench.
+///
+/// Reads project instructions from `AGENTS.md` — the same file Codex uses — so the moadim-managed
+/// system prompt and routine-origin disclosure are unified onto one instructions file across
+/// agents. Claude Code loads `AGENTS.md` as a memory/context file, so the disclosure is honored
+/// exactly as it would be from `CLAUDE.md`.
 pub const CONFIG: &str = r#"command = "claude"
 args = ["--permission-mode", "auto", "{prompt}"]
+instructions_file = "AGENTS.md"
 # Pre-seed per-directory state for the fresh workbench so interactive claude launches unattended,
 # with no blocking prompts. Both are stored per exact path in ~/.claude.json (not inherited from
 # parent dirs), so they must be seeded per run. Runs with $WB in scope before launch:

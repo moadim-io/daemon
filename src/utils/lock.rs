@@ -15,7 +15,8 @@ pub trait LockRecover<Inner> {
 
 impl<Inner> LockRecover<Inner> for Mutex<Inner> {
     fn lock_recover(&self) -> MutexGuard<'_, Inner> {
-        self.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 

@@ -11,6 +11,109 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-06
+
+Fix `atomic_write` panicking the whole daemon on a write/sync I/O error (e.g. disk full) instead of returning it. `File::create`/`open` reserve no disk space, so `write_all`/`sync_all` can still fail after that call succeeds; they now propagate via `?` like every other step in `atomic_write`, instead of `.expect(...)`.
+
+chore(lint): enable `clippy::explicit_into_iter_loop`
+
+Companion to the already-enabled `clippy::explicit_iter_loop`: rejects
+`for x in collection.into_iter()` in favor of the equivalent, shorter
+`for x in collection`. The workspace was already clean against this lint
+(zero violations), so `deny` just locks that in. No behavior change.
+
+Rotate `daemon.log` to a `.log.1` sibling once it exceeds the size cap instead of letting it grow forever — a daemon meant to run unattended for weeks/months must not silently fill the disk. Adds focused unit test coverage for `rotate_daemon_log_if_oversized` (missing file, small file, oversized file, replacing a stale `.1`).
+
+Derive `Eq` alongside `PartialEq` on `Flag`, `RunSummary`, and `FleetRunSummary` (all fields are already `Eq`-safe), and enable `clippy::derive_partial_eq_without_eq` to lock that in for future types.
+
+### Added
+
+- **`list_routine_runs` MCP tool.** Exposes the existing `GET /routines/{id}/runs` run-history
+  endpoint over MCP, so an agent can list a routine's past and in-progress runs (workbench id,
+  start/finish time, status, exit code) the same way it already can over REST — without needing
+  a separate call per run just to fetch `routine_logs`' newest-only log.
+
+test(routines): cover two untested branches in `service_log_tail.rs`
+
+`cargo llvm-cov`'s region report (not the 100%-line gate, which region
+coverage doesn't affect) showed two real gaps in the routine log-tail /
+ANSI-sanitizing logic used by `svc_logs`/`svc_run_log`:
+
+- `read_log_tail` never had a test for its very first fallible step
+  (`std::fs::metadata(path)?`) — a workbench whose `agent.log` was removed
+  out from under it (e.g. a racing cleanup sweep) must surface an
+  `io::Error`, not panic.
+- `strip_ansi_noise`'s OSC-sequence parser only had a test for the
+  terminator `ESC \`; the other valid terminator, a bare `ESC` not
+  followed by `\`, was never exercised, and it has different behavior
+  (the character right after that `ESC` is not consumed, unlike the
+  `ESC \` case).
+
+No behavior change — regression tests only.
+
+Enable `clippy::needless_pass_by_value` and fix its three violations: `cli::trigger` now takes `&str` instead of an owned `String`, `cli_query::status_json` takes `Option<&HealthInfo>` instead of an owned `Option<HealthInfo>`, and `LockScope` derives `Copy` (a fieldless enum tag) instead of `global_lock::set_lock` taking it by value under the lint. No behavior change; avoids needless clones/moves at call sites.
+
+feat(routines): surface `is_running` on `GET /routines`/`GET /routines/{id}`
+
+Adds a derived, non-persisted `is_running: bool` field to the routine
+response, reporting whether any fire of the routine currently has a live
+tmux session. Reuses the existing overlap-guard tmux-prefix probe
+(`tmux_session_prefix_alive`, #514) that `svc_trigger` already relies on, so
+an operator (or the UI, in a follow-up) can finally tell "is this routine
+running right now?" from `GET /routines` instead of shelling in to `tmux ls`.
+
+### Fixed
+
+Split the MCP tool input structs out of `src/routes/mcp.rs` into a new
+`src/routes/mcp_types.rs` sibling module. `mcp.rs` had crept to 514 lines,
+tripping the pre-push hook's 500-line-per-file gate (`linecheck --max-lines
+500`) for every contributor who has `linecheck` installed, as CONTRIBUTING.md
+instructs. No behavior change.
+
+chore: split every remaining file over the 500-line pre-push gate
+
+Follow-up to #941/#1014/#1017. Splits the rest of the backlog left after
+#1017 (which got 14 files under 600, most already under 500) — every
+`.rs` file in the repo is now ≤500 lines, satisfying `.githooks/pre-push`'s
+`linecheck --max-lines 500` gate with no exceptions left. All splits are
+pure code moves (functions/tests relocated verbatim into new sibling
+modules) with no behavior change:
+
+- `src/routines/service.rs` family (`service_sync_tests.rs`,
+  `service_trigger.rs`, `service_tests.rs`, `service_flag_tests.rs`,
+  `service_slug_tests.rs`, `service_coverage_tests.rs`) → new
+  `service_log_tail.rs`, `service_field_validation_tests.rs`,
+  `service_list_tests.rs`, `service_rename_machine_tests.rs`,
+  `service_update_apply_tests.rs`, `service_prompt_tests.rs`
+- `src/routine_storage.rs` family (`routine_storage_tests.rs`,
+  `routine_storage_migration_tests.rs`, `routine_storage_snooze_tests.rs`)
+  → new `routine_storage_prompt_sidecar_tests.rs`,
+  `routine_storage_prompt_file_migration_tests.rs`,
+  `routine_storage_trigger_log_migration_tests.rs`
+- `src/routes/http.rs` → new `src/routes/http_listener.rs`
+- `src/routes/mcp_tests.rs` → new `src/routes/mcp_parity_tests.rs`
+- `src/cli.rs` / `cli_spawn_tests.rs` → new `src/cli_spawn_error_tests.rs`
+- `src/routines/command.rs` → new `src/routines/command_path_resolution.rs`
+- `src/routines/cleanup/cleanup_tests.rs` → new
+  `cleanup_run_history_tests.rs`
+- `src/sync/mod_tests.rs` → new `src/sync/mod_replace_block_tests.rs`
+- `src/commands.rs` → new `src/commands_http.rs`
+- `ui/src/routines/page.rs` → new `ui/src/routines/actions.rs`
+- `ui/src/routines/filter.rs` / `filter_tests.rs` → new
+  `filter_distinct.rs`, `filter_distinct_tests.rs`
+- `ui/src/routines/state_tests.rs` → new `state_group_by_tests.rs`
+- `ui/src/main.rs`, `overview.rs`, `command_palette.rs`,
+  `schedule_heatmap.rs` → new `ui/src/health.rs`, `cron_utils.rs`,
+  `overview_stats.rs`, `command_palette_match.rs`, `schedule_heatmap_grid.rs`
+
+`cargo test --workspace` (912 + 259 passed), `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo llvm-cov --fail-under-lines 100`, and
+`cargo doc` (deny warnings, including broken intra-doc links) all pass.
+`linecheck --max-lines 500` across every `.rs` file in `src/` and `ui/src/`
+now exits clean with zero violations.
+
+Fix the built-in "Token Trim" routine's PR step so it clones `~/.config/moadim`'s origin into a disposable `mktemp -d` temp dir and does all branch/commit/push work there, instead of checking out a branch directly inside `~/.config/moadim` — the live checkout the daemon reads routines from. This matches the fix already shipped for the sibling "The 1 Percent" routine (#916); "Token Trim" was never updated to the same pattern, so it still risked leaving the daemon's routines checkout parked on a stale branch mid-run.
+
 ## [0.23.0] - 2026-07-05
 
 ### Added
@@ -2703,7 +2806,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/moadim-io/daemon/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/moadim-io/daemon/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/moadim-io/daemon/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/moadim-io/daemon/compare/v0.21.0...v0.22.0

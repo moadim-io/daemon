@@ -3,22 +3,6 @@
 //! keyboard selection-index helpers. All deterministic and DOM-free.
 
 use super::*;
-use serde_json::Value;
-
-fn cron(id: &str, schedule: &str, handler: &str, human: Option<&str>) -> CronJob {
-    CronJob {
-        id: id.into(),
-        schedule: schedule.into(),
-        handler: handler.into(),
-        metadata: Value::Null,
-        machines: vec![],
-        enabled: true,
-        created_at: 0,
-        updated_at: 0,
-        last_manual_trigger_at: None,
-        schedule_description: human.map(Into::into),
-    }
-}
 
 fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&str>) -> Routine {
     Routine {
@@ -26,6 +10,7 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         schedule: schedule.into(),
         title: title.into(),
         agent: agent.into(),
+        model: None,
         prompt: String::new(),
         repositories: vec![],
         machines: vec![],
@@ -35,10 +20,16 @@ fn routine(id: &str, title: &str, agent: &str, schedule: &str, human: Option<&st
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
+        tags: vec![],
         agent_registered: false,
         file_path: String::new(),
         schedule_description: human.map(Into::into),
+        goal: None,
+        flag_count: 0,
     }
 }
 
@@ -75,7 +66,7 @@ fn start_of_string_outranks_later_hit() {
 #[test]
 fn word_boundary_hit_is_rewarded() {
     // 'j' after the space scores the word-boundary bonus.
-    let boundary = fuzzy_score("cron jobs", "j").expect("matches");
+    let boundary = fuzzy_score("nightly jobs", "j").expect("matches");
     let interior = fuzzy_score("major", "j").expect("matches");
     assert!(
         boundary > interior,
@@ -114,7 +105,7 @@ fn case_is_ignored() {
 fn empty_query_keeps_natural_order() {
     let commands = vec![
         cmd(CmdKind::NavOverview, "Overview", ""),
-        cmd(CmdKind::Cron, "backup", ""),
+        cmd(CmdKind::Routine, "backup", ""),
     ];
     assert_eq!(rank(&commands, ""), vec![0, 1]);
 }
@@ -123,7 +114,7 @@ fn empty_query_keeps_natural_order() {
 fn title_match_outranks_keyword_only_match() {
     let commands = vec![
         // index 0: matches only via keyword alias
-        cmd(CmdKind::Cron, "nightly", "backup database"),
+        cmd(CmdKind::Routine, "nightly", "backup database"),
         // index 1: matches directly in the title
         cmd(CmdKind::Routine, "backup", "misc"),
     ];
@@ -135,7 +126,7 @@ fn title_match_outranks_keyword_only_match() {
 #[test]
 fn keyword_only_match_still_surfaces() {
     // Title has no 'z'; only the keywords do. Exercises the (None, Some) arm.
-    let commands = vec![cmd(CmdKind::Cron, "alpha", "zeta")];
+    let commands = vec![cmd(CmdKind::Routine, "alpha", "zeta")];
     assert_eq!(rank(&commands, "zeta"), vec![0]);
 }
 
@@ -149,8 +140,8 @@ fn title_match_with_unmatched_keywords() {
 #[test]
 fn non_matching_commands_are_dropped() {
     let commands = vec![
-        cmd(CmdKind::Cron, "alpha", "one"),
-        cmd(CmdKind::Cron, "beta", "two"),
+        cmd(CmdKind::Routine, "alpha", "one"),
+        cmd(CmdKind::Routine, "beta", "two"),
     ];
     assert!(rank(&commands, "zzz").is_empty());
 }
@@ -158,27 +149,36 @@ fn non_matching_commands_are_dropped() {
 // ─── build_commands ──────────────────────────────────────────────────────────
 
 #[test]
-fn build_lists_pages_then_crons_then_routines() {
-    let crons = vec![cron("backup", "0 * * * *", "snapshot", Some("Every hour"))];
+fn routine_tags_appear_in_keywords() {
+    let mut r = routine("r1", "Report", "claude", "0 0 * * *", None);
+    r.tags = vec!["security".into(), "weekly".into()];
+    r.agent_registered = true;
+    let commands = build_commands(&[r]);
+    let kw = &commands.last().unwrap().keywords;
+    assert!(
+        kw.contains("security"),
+        "tag 'security' not in keywords: {kw}"
+    );
+    assert!(kw.contains("weekly"), "tag 'weekly' not in keywords: {kw}");
+}
+
+#[test]
+fn build_lists_pages_then_routines() {
     let routines = vec![routine("r1", "Nightly Audit", "claude", "0 0 * * *", None)];
-    let commands = build_commands(&crons, &routines);
-    assert_eq!(commands.len(), 9); // 4 nav + 3 action + 1 cron + 1 routine
+    let commands = build_commands(&routines);
+    assert_eq!(commands.len(), 8); // 4 nav + 3 action + 1 routine
     assert_eq!(commands[0].kind, CmdKind::NavOverview);
-    assert_eq!(commands[1].kind, CmdKind::NavCronJobs);
-    assert_eq!(commands[2].kind, CmdKind::NavRoutines);
-    assert_eq!(commands[3].kind, CmdKind::NavHeatmap);
+    assert_eq!(commands[1].kind, CmdKind::NavRoutines);
+    assert_eq!(commands[2].kind, CmdKind::NavHeatmap);
+    assert_eq!(commands[3].kind, CmdKind::NavSettings);
     assert_eq!(commands[4].kind, CmdKind::ActionRefresh);
     assert_eq!(commands[5].kind, CmdKind::ActionStop);
     assert_eq!(commands[6].kind, CmdKind::ActionToggleTheme);
     assert!(commands[6].keywords.contains("theme"));
-    assert_eq!(commands[7].kind, CmdKind::Cron);
-    assert_eq!(commands[7].title, "backup");
-    assert_eq!(commands[7].subtitle, "Every hour"); // human description wins
-    assert!(commands[7].keywords.contains("snapshot"));
-    assert_eq!(commands[8].kind, CmdKind::Routine);
-    assert_eq!(commands[8].title, "Nightly Audit");
-    assert_eq!(commands[8].subtitle, "0 0 * * *"); // falls back to raw expr
-    assert!(commands[8].keywords.contains("claude"));
+    assert_eq!(commands[7].kind, CmdKind::Routine);
+    assert_eq!(commands[7].title, "Nightly Audit");
+    assert_eq!(commands[7].subtitle, "0 0 * * * — AGENT MISSING"); // agent_registered=false → tag appended
+    assert!(commands[7].keywords.contains("claude"));
 }
 
 #[test]
@@ -197,15 +197,86 @@ fn schedule_label_prefers_human_then_raw_then_dash() {
     assert_eq!(schedule_label(&None, "   "), "—");
 }
 
+// ─── routine_subtitle ────────────────────────────────────────────────────────
+
+#[test]
+fn routine_subtitle_healthy_shows_schedule_only() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: true,
+        flag_count: 0,
+        schedule_description: Some("Every 5 minutes".into()),
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert_eq!(routine_subtitle(&r), "Every 5 minutes");
+}
+
+#[test]
+fn routine_subtitle_disabled_appends_tag() {
+    let r = Routine {
+        enabled: false,
+        agent_registered: true,
+        flag_count: 0,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— DISABLED"));
+}
+
+#[test]
+fn routine_subtitle_snoozed_via_skip_runs() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: true,
+        flag_count: 0,
+        skip_runs: Some(2),
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— SNOOZED"));
+}
+
+#[test]
+fn routine_subtitle_agent_missing_appends_tag() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: false,
+        flag_count: 0,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— AGENT MISSING"));
+}
+
+#[test]
+fn routine_subtitle_flags_appended_even_when_healthy() {
+    let r = Routine {
+        enabled: true,
+        agent_registered: true,
+        flag_count: 3,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    assert!(routine_subtitle(&r).ends_with("— FLAGS"));
+}
+
+#[test]
+fn routine_subtitle_disabled_with_flags_shows_both() {
+    let r = Routine {
+        enabled: false,
+        agent_registered: true,
+        flag_count: 2,
+        ..routine("r", "T", "claude", "*/5 * * * *", None)
+    };
+    let s = routine_subtitle(&r);
+    assert!(s.contains("DISABLED"), "expected DISABLED in: {s}");
+    assert!(s.contains("FLAGS"), "expected FLAGS in: {s}");
+}
+
 // ─── route_for / badge_for ────────────────────────────────────────────────────
 
 #[test]
 fn route_for_maps_every_kind() {
     assert_eq!(route_for(CmdKind::NavOverview), Some(RouteKind::Home));
-    assert_eq!(route_for(CmdKind::NavCronJobs), Some(RouteKind::CronJobs));
     assert_eq!(route_for(CmdKind::NavRoutines), Some(RouteKind::Routines));
     assert_eq!(route_for(CmdKind::NavHeatmap), Some(RouteKind::Heatmap));
-    assert_eq!(route_for(CmdKind::Cron), Some(RouteKind::CronJobs));
+    assert_eq!(route_for(CmdKind::NavSettings), Some(RouteKind::Settings));
     assert_eq!(route_for(CmdKind::Routine), Some(RouteKind::Routines));
     // Action commands run a callback, not a navigation.
     assert_eq!(route_for(CmdKind::ActionRefresh), None);
@@ -216,10 +287,9 @@ fn route_for_maps_every_kind() {
 #[test]
 fn badge_for_maps_every_kind() {
     assert_eq!(badge_for(CmdKind::NavOverview), "GO");
-    assert_eq!(badge_for(CmdKind::NavCronJobs), "GO");
     assert_eq!(badge_for(CmdKind::NavRoutines), "GO");
     assert_eq!(badge_for(CmdKind::NavHeatmap), "GO");
-    assert_eq!(badge_for(CmdKind::Cron), "CRON");
+    assert_eq!(badge_for(CmdKind::NavSettings), "GO");
     assert_eq!(badge_for(CmdKind::Routine), "ROUTINE");
     assert_eq!(badge_for(CmdKind::ActionRefresh), "ACTION");
     assert_eq!(badge_for(CmdKind::ActionStop), "ACTION");

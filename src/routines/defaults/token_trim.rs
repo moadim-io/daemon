@@ -7,6 +7,7 @@ pub(super) const SPEC: DefaultRoutine = DefaultRoutine {
     schedule: "0 7 * * 0",
     agent: "claude",
     prompt: PROMPT,
+    goal: "Keep the user's agent workflows token-efficient by auditing recent usage and trimming waste each week.",
 };
 
 /// Task prompt handed to the agent.
@@ -68,17 +69,23 @@ calls, same outputs, same decision logic. When in doubt, keep the instruction.
 
 ## Step 4: Open the PR
 
+**Never edit, checkout, or commit inside `~/.config/moadim` directly** — it is the live \
+checkout the daemon reads routines from. Do all work in a disposable temp clone instead:
+
 ```bash
-git -C ~/.config/moadim checkout -b token-trim/$(date +%Y%m%d-%H%M)
-# Edit the relevant routine.toml / prompt.md file(s) under ~/.config/moadim/routines/.
-# Only touch routine prompt files. Do NOT modify moadim daemon config.
-git -C ~/.config/moadim add -A
-git -C ~/.config/moadim commit -m \"routines: trim token cost in <routine-name>\"
-git -C ~/.config/moadim push -u origin HEAD
 origin=$(git -C ~/.config/moadim remote get-url origin)
+tmp=$(mktemp -d)
+git clone \"$origin\" \"$tmp\"
+git -C \"$tmp\" checkout -b token-trim/$(date +%Y%m%d-%H%M)
+# Edit the relevant <slug>/prompts/prompt.pure.md file(s) under $tmp/routines/.
+# Only touch routine prompt files. Do NOT modify moadim daemon config.
+git -C \"$tmp\" add -A
+git -C \"$tmp\" commit -m \"routines: trim token cost in <routine-name>\"
+git -C \"$tmp\" push -u origin HEAD
 gh pr create --repo \"$origin\" \
   --title \"token-trim: <short description>\" \
   --body \"$(printf '## What changed\\n<one paragraph>\\n\\n## Estimated token saving\\n~<N> tokens per run\\n\\n## Risk\\n<none|low|medium> — <one line>')\"
+rm -rf \"$tmp\"
 ```
 
 ## Report

@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::available_agents;
@@ -103,29 +106,18 @@ fn reconcile_preserves_disabled_toggle() {
 }
 
 #[test]
-fn reconcile_re_seeds_empty_machines_with_current_machine() {
-    // Routines seeded before the machines field was introduced have machines: [].
-    // reconcile must detect the empty list as "not intentionally set" and fill it
-    // in — otherwise the default never fires after upgrading.
+fn reconcile_preserves_power_saving() {
     let spec = &DEFAULT_ROUTINES[0];
+    // Power saving is daemon/policy-owned, not spec-derived — a content drift refresh must not
+    // clear it, the same way it must not touch `enabled`.
     let mut cur = materialize(spec, 100);
-    cur.machines = Vec::new(); // simulate pre-machines-feature routine
-    let updated = reconcile(spec, &cur, 200).expect("empty machines must trigger a rewrite");
+    cur.power_saving = true;
+    cur.prompt = "stale prompt".to_string();
+    let updated = reconcile(spec, &cur, 200).expect("drifted routine should be rewritten");
     assert!(
-        !updated.machines.is_empty(),
-        "reconcile must re-seed machines when the existing list is empty"
+        updated.power_saving,
+        "must not clear power-saving state on a content refresh"
     );
-}
-
-#[test]
-fn reconcile_preserves_non_empty_machines() {
-    // A user who reassigned the default to a different machine must keep their choice.
-    let spec = &DEFAULT_ROUTINES[0];
-    let mut cur = materialize(spec, 100);
-    cur.machines = vec!["other-machine".to_string()];
-    cur.prompt = "stale".to_string(); // force a drift so reconcile runs
-    let updated = reconcile(spec, &cur, 200).expect("drift should trigger a rewrite");
-    assert_eq!(updated.machines, vec!["other-machine".to_string()]);
 }
 
 #[test]
@@ -148,6 +140,51 @@ fn reconcile_keeps_enabled_default_enabled() {
     cur.prompt = "stale".to_string();
     let updated = reconcile(spec, &cur, 200).expect("drift should be rewritten");
     assert!(updated.enabled);
+}
+
+#[test]
+fn reconcile_treats_empty_machines_as_drift_and_seeds_current_machine() {
+    // Legacy default routines seeded before machine-awareness were stored with an empty
+    // `machines` list, leaving them permanently dormant. `reconcile` must detect this
+    // as drift (even when all other daemon-owned fields are current) and seed the current
+    // machine so the routine becomes active. (#723)
+    let spec = &DEFAULT_ROUTINES[0];
+    let mut cur = materialize(spec, 100);
+    cur.machines = Vec::new(); // simulate pre-machine-awareness legacy state
+    let updated = reconcile(spec, &cur, 200)
+        .expect("empty machines list must be treated as drift and trigger a rewrite");
+    assert!(
+        !updated.machines.is_empty(),
+        "reconcile must seed the current machine when cur.machines is empty"
+    );
+}
+
+#[test]
+fn reconcile_returns_none_when_machines_already_set_and_otherwise_current() {
+    // A correctly seeded routine (non-empty machines, current content) must NOT be rewritten
+    // just because reconcile now inspects the machines list.
+    let spec = &DEFAULT_ROUTINES[0];
+    let cur = materialize(spec, 100);
+    assert!(
+        !cur.machines.is_empty(),
+        "materialize must assign a machine — test pre-condition"
+    );
+    assert!(
+        reconcile(spec, &cur, 200).is_none(),
+        "a routine with current content and a non-empty machines list must not trigger a rewrite"
+    );
+}
+
+#[test]
+fn materialize_assigns_non_empty_machines_list() {
+    // materialize must always seed the current machine so a freshly created default runs
+    // immediately instead of being dormant (#723).
+    let spec = &DEFAULT_ROUTINES[0];
+    let routine = materialize(spec, 0);
+    assert!(
+        !routine.machines.is_empty(),
+        "materialize must assign the current machine to a freshly seeded default routine"
+    );
 }
 
 use std::collections::HashMap;
@@ -309,5 +346,140 @@ fn ensure_default_routines_logs_and_skips_on_write_failure() {
         for spec in DEFAULT_ROUTINES {
             assert!(routines.join(slugify(spec.title)).is_file());
         }
+    });
+}
+
+#[test]
+fn is_default_slug_matches_only_built_ins() {
+    let spec = &DEFAULT_ROUTINES[0];
+    assert!(is_default_slug(&slugify(spec.title)));
+    assert!(!is_default_slug("not-a-real-default"));
+}
+
+#[test]
+fn tombstoned_default_is_not_reseeded() {
+    // #265: a default absent from the store *because it was tombstoned* must stay absent, unlike
+    // one that is merely never-seeded (covered by `ensure_default_routines_seeds_empty_store`).
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let slug = slugify(spec.title);
+        record_removed_default(&slug);
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        assert!(
+            !after
+                .values()
+                .any(|routine| slugify(&routine.title) == slug),
+            "a tombstoned default must not be re-created on startup"
+        );
+    });
+}
+
+#[test]
+fn tombstoning_one_default_does_not_suppress_the_others() {
+    with_redirected_home(|_home| {
+        let removed_spec = &DEFAULT_ROUTINES[0];
+        record_removed_default(&slugify(removed_spec.title));
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        for spec in &DEFAULT_ROUTINES[1..] {
+            let slug = slugify(spec.title);
+            assert!(
+                after
+                    .values()
+                    .any(|routine| slugify(&routine.title) == slug),
+                "non-tombstoned default {:?} should still be seeded",
+                spec.title
+            );
+        }
+    });
+}
+
+#[test]
+fn clearing_tombstone_lets_default_reseed() {
+    with_redirected_home(|_home| {
+        let spec = &DEFAULT_ROUTINES[0];
+        let slug = slugify(spec.title);
+        record_removed_default(&slug);
+        clear_removed_default(&slug);
+
+        let store = empty_store();
+        ensure_default_routines(&store);
+
+        let after = store.lock().unwrap();
+        assert!(
+            after
+                .values()
+                .any(|routine| slugify(&routine.title) == slug),
+            "clearing the tombstone must let the default be re-seeded"
+        );
+    });
+}
+
+#[test]
+fn record_removed_default_is_idempotent_and_persists_across_reads() {
+    with_redirected_home(|_home| {
+        let slug = "some-default";
+        record_removed_default(slug);
+        record_removed_default(slug);
+        assert_eq!(read_removed_defaults().len(), 1);
+
+        clear_removed_default(slug);
+        assert!(read_removed_defaults().is_empty());
+        // Clearing an already-cleared (or never-set) tombstone is a no-op, not an error.
+        clear_removed_default(slug);
+        assert!(read_removed_defaults().is_empty());
+    });
+}
+
+#[test]
+fn record_removed_default_is_best_effort_on_write_failure() {
+    // Documented as best-effort: a persist failure is logged, not propagated or panicked on.
+    // Force `write_removed_defaults` to fail by putting a *directory* at the tombstone file's
+    // path, so `std::fs::write` errors instead of succeeding.
+    with_redirected_home(|_home| {
+        let path = removed_default_routines_path();
+        std::fs::create_dir_all(&path).unwrap();
+
+        record_removed_default("some-default");
+    });
+}
+
+#[test]
+fn record_removed_default_is_best_effort_when_parent_dir_cannot_be_created() {
+    // Same best-effort contract, but exercising the `create_dir_all(parent)` failure branch: put
+    // a *file* at the tombstone's parent (config) dir path, so creating it as a directory fails.
+    with_redirected_home(|_home| {
+        let config_dir = crate::paths::config_dir();
+        std::fs::create_dir_all(config_dir.parent().unwrap()).unwrap();
+        std::fs::write(&config_dir, "not a dir").unwrap();
+
+        record_removed_default("some-default");
+    });
+}
+
+#[test]
+fn clear_removed_default_is_best_effort_on_write_failure() {
+    // Same best-effort contract on the clear path: the tombstone must already contain the slug
+    // (so the read succeeds and `remove` returns `true`), but the follow-up persist write fails
+    // because the file itself has been made read-only.
+    use std::os::unix::fs::PermissionsExt as _;
+    with_redirected_home(|_home| {
+        let slug = "some-default";
+        record_removed_default(slug);
+        assert_eq!(read_removed_defaults().len(), 1);
+
+        let path = removed_default_routines_path();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).unwrap();
+
+        clear_removed_default(slug);
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     });
 }

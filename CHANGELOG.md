@@ -45,6 +45,9 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
   isolated test crontab seam.
 - moadim-generated `.gitignore` files (job and routine) now ignore
   user-specific `run.sh` scripts.
+- Enabled the `clippy::map_unwrap_or` lint and rewrote the resulting
+  violations to use `map_or`/`is_ok_and` instead of `map(..).unwrap_or(..)`.
+  Behavior-preserving.
 
 ### Fixed
 

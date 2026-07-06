@@ -20,6 +20,12 @@ name: Lint
 # (see CONTRIBUTING.md) — a PR could silently blow past the 500-line
 # convention and still go fully green. The `linecheck` job below closes
 # that gap the same way this file already does for fmt/clippy.
+#
+# `make readme-check` (scripts/check-readme-blocks.sh) validates every
+# ```json fence in README.md with `jq` but isn't run by any git hook either,
+# so it was previously exercised only when a contributor remembered to run
+# it by hand. The `readme-check` job below runs it on every PR so a
+# README example can't silently drift into invalid JSON.
 
 on:
   pull_request:
@@ -129,3 +135,16 @@ jobs:
         run: |
           # shellcheck disable=SC2046
           linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+
+  readme-check:
+    name: readme-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Validate README's fenced json blocks
+        # jq ships preinstalled on the ubuntu-latest runner image, so no
+        # setup step is needed beyond checkout.
+        run: make readme-check

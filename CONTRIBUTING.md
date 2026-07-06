@@ -12,6 +12,7 @@ By participating in this project you agree to abide by our
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
+| [`linecheck`](https://crates.io/crates/linecheck) | 500-line-per-file gate over `src/` and `ui/src/`, enforced by the pre-push hook and CI's `linecheck` job (`cargo install linecheck`) |
 | [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
 | [pnpm](https://pnpm.io/installation) | Runs [Changesets](https://github.com/changesets/changesets) (`pnpm install` once, then `pnpm changeset`) — see [Workflow](#workflow) below |
 
@@ -33,6 +34,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
+linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 ```
 
 Use `--workspace` for both clippy and test, matching the pre-push hook —
@@ -42,7 +44,11 @@ regression. `cargo llvm-cov` runs the test suite with instrumentation and
 enforces 100% line coverage (excluding `main.rs`), but is deliberately scoped
 to the root package only — the `ui` crate is a Yew/WASM UI that isn't held to
 that floor, so `cargo test --workspace` above is what actually exercises its
-own test suite.
+own test suite. `linecheck` keeps any single `.rs` file under `src/` or
+`ui/src/` from growing past 500 lines — a convention two independently green
+PRs can each respect yet still blow past together, since it isn't a required
+branch-protection check (see the `linecheck` job in
+[`lint.yml`](.github/workflows/lint.yml)).
 
 Enable the bundled git hooks once per clone:
 

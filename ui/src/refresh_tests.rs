@@ -1,7 +1,7 @@
 //! Host-side unit tests for the pure auto-refresh logic in [`super`]: the
 //! `RefreshInterval` codec (token round-trip, millis, labels) and the
 //! `fmt_freshness` staleness formatter. No DOM/wasm dependency (mirrors the
-//! `schedule.rs` / `cron_jobs.rs` test conventions).
+//! `schedule.rs` test conventions).
 
 use super::*;
 

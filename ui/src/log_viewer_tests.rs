@@ -1,5 +1,5 @@
 //! Host-side unit tests for the log viewer's pure helpers.
-//! No DOM / wasm dependency — mirrors the schedule/overview/cron-jobs test conventions.
+//! No DOM / wasm dependency — mirrors the schedule/overview test conventions.
 
 use super::*;
 
@@ -101,4 +101,69 @@ fn empty_content_blank_query() {
     let (hits, total) = match_count("", "");
     assert_eq!(hits, 0);
     assert_eq!(total, 0);
+}
+
+// ── highlight_segments ───────────────────────────────────────────────────────
+
+#[test]
+fn blank_query_yields_a_single_unmatched_segment() {
+    assert_eq!(
+        highlight_segments("hello world", ""),
+        vec![(false, "hello world")]
+    );
+    assert_eq!(
+        highlight_segments("hello world", "   "),
+        vec![(false, "hello world")]
+    );
+}
+
+#[test]
+fn single_case_insensitive_match_in_the_middle() {
+    assert_eq!(
+        highlight_segments("see ERROR here", "error"),
+        vec![(false, "see "), (true, "ERROR"), (false, " here")]
+    );
+}
+
+#[test]
+fn multiple_matches_are_all_highlighted() {
+    assert_eq!(
+        highlight_segments("foo bar foo", "foo"),
+        vec![(true, "foo"), (false, " bar "), (true, "foo")]
+    );
+}
+
+#[test]
+fn no_match_yields_a_single_unmatched_segment() {
+    assert_eq!(
+        highlight_segments("hello world", "zzz"),
+        vec![(false, "hello world")]
+    );
+}
+
+#[test]
+fn match_spanning_the_whole_text_yields_one_segment() {
+    assert_eq!(highlight_segments("foo", "foo"), vec![(true, "foo")]);
+}
+
+#[test]
+fn regression_case_folding_that_shrinks_byte_length_does_not_panic_or_misalign() {
+    // `ẞ` (U+1E9E, capital sharp S, 3 bytes) lowercases to `ß` (U+00DF, 2 bytes): searching for
+    // the match in `text.to_lowercase()` and reapplying its byte offsets to the original `text`
+    // lands mid-character and panics. `chars.get()`-derived boundaries must never do that.
+    assert_eq!(
+        highlight_segments("ẞzz", "zz"),
+        vec![(false, "ẞ"), (true, "zz")]
+    );
+}
+
+#[test]
+fn regression_case_folding_that_grows_byte_length_does_not_panic_or_misalign() {
+    // The reverse direction: `ß` (2 bytes) uppercases to `SS` in full case folding, but even for
+    // lowercasing some single chars expand under `to_lowercase()` (Turkish `İ` → 2 chars); the
+    // per-char projection this relies on must still keep `chars`/`lower` index-aligned.
+    assert_eq!(
+        highlight_segments("İzz", "zz"),
+        vec![(false, "İ"), (true, "zz")]
+    );
 }

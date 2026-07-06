@@ -195,9 +195,42 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     })
 }
 
+/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, the
+/// obsolete per-routine launch script, and `prompts/prompt.compiled.md` — the composed prompt is
+/// fully derived from `prompts/prompt.pure.md` + `routine.toml` and rewritten on every
+/// [`write_routine`] call, so (unlike `prompt.pure.md`) it should never be tracked (issue #1046).
+const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh", "prompt.compiled.md"];
+
+/// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
+/// appending whichever are missing and leaving the rest of the file (including user additions)
+/// untouched. Mirrors `cli_system::ensure_config_gitignore`'s reconciliation, scoped per routine.
+/// [`write_routine`] calls this unconditionally, so [`repersist_routines`] heals existing installs'
+/// `.gitignore` files on every daemon startup, not just newly created ones.
+fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
+    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let lines: Vec<&str> = existing.lines().collect();
+    let missing: Vec<&str> = ROUTINE_GITIGNORE_REQUIRED
+        .iter()
+        .copied()
+        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let mut content = existing;
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    for pattern in &missing {
+        content.push_str(pattern);
+        content.push('\n');
+    }
+    std::fs::write(path, &content)
+}
+
 /// Write `routine` to disk: `routine.toml` (tracked config), the `prompts/prompt.pure.md` (raw) and
 /// `prompts/prompt.compiled.md` (composed) sidecars, the gitignored `state.local.toml` runtime
-/// sidecar, and `.gitignore` if absent.
+/// sidecar, and `.gitignore` (created or reconciled — see [`ensure_routine_gitignore`]).
 ///
 /// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
 /// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
@@ -209,10 +242,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 
-    let gitignore = routine_gitignore_path(&slug);
-    if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
-    }
+    ensure_routine_gitignore(&routine_gitignore_path(&slug))?;
 
     // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
     // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a

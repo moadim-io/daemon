@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -60,6 +63,30 @@ fn into_response_conflict_is_409() {
     assert_eq!(
         AppError::Conflict("x".into()).into_response().status(),
         StatusCode::CONFLICT
+    );
+}
+
+#[test]
+fn display_locked() {
+    assert_eq!(
+        AppError::Locked("routines are globally locked".into()).to_string(),
+        "locked: routines are globally locked"
+    );
+}
+
+#[test]
+fn into_response_locked_is_423() {
+    assert_eq!(
+        AppError::Locked("x".into()).into_response().status(),
+        StatusCode::LOCKED
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_locked_message() {
+    assert_eq!(
+        response_error_field(AppError::Locked("paused".into())).await,
+        "locked: paused"
     );
 }
 

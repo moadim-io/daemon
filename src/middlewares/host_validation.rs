@@ -65,37 +65,56 @@ type ValidationFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
 /// in-process without a real TCP/HTTP round trip — rejecting that would break the whole in-process
 /// test suite for no security benefit. Likewise, a missing `Origin` means a non-browser client,
 /// which carries no forgeable origin to check in the first place.
+///
+/// A `Host`/`Origin` header that **is present** but fails to parse as UTF-8 is rejected with
+/// `403`, not silently let through: `HeaderValue::to_str` only rejects non-ASCII bytes, which no
+/// legitimate client ever sends in these headers, so a present-but-unparseable value is treated
+/// as suspicious rather than being conflated with the benign "no header at all" case above.
 pub(crate) fn host_validation(
     allowed: Vec<String>,
 ) -> impl Fn(Request, Next) -> ValidationFuture + Clone + Send + Sync + 'static {
     move |req: Request, next: Next| {
         let allowed = allowed.clone();
         Box::pin(async move {
-            if let Some(host) = req
-                .headers()
-                .get(header::HOST)
-                .and_then(|value| value.to_str().ok())
-            {
-                if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host)) {
-                    return AppError::Forbidden(format!("host '{host}' is not allowed"))
-                        .into_response();
-                }
+            match req.headers().get(header::HOST) {
+                None => {}
+                Some(value) => match value.to_str() {
+                    Err(_) => {
+                        return AppError::Forbidden("host header is not valid UTF-8".to_string())
+                            .into_response();
+                    }
+                    Ok(host) => {
+                        if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host)) {
+                            return AppError::Forbidden(format!("host '{host}' is not allowed"))
+                                .into_response();
+                        }
+                    }
+                },
             }
             let is_state_changing = matches!(
                 *req.method(),
                 Method::POST | Method::PUT | Method::PATCH | Method::DELETE
             );
             if is_state_changing {
-                if let Some(origin) = req
-                    .headers()
-                    .get(header::ORIGIN)
-                    .and_then(|value| value.to_str().ok())
-                {
-                    let host = origin_host(origin);
-                    if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host)) {
-                        return AppError::Forbidden(format!("origin '{origin}' is not allowed"))
+                match req.headers().get(header::ORIGIN) {
+                    None => {}
+                    Some(value) => match value.to_str() {
+                        Err(_) => {
+                            return AppError::Forbidden(
+                                "origin header is not valid UTF-8".to_string(),
+                            )
                             .into_response();
-                    }
+                        }
+                        Ok(origin) => {
+                            let host = origin_host(origin);
+                            if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host)) {
+                                return AppError::Forbidden(format!(
+                                    "origin '{origin}' is not allowed"
+                                ))
+                                .into_response();
+                            }
+                        }
+                    },
                 }
             }
             next.run(req).await

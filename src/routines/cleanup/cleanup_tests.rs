@@ -281,6 +281,10 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
     // The forced termination is recorded in the run's agent.log.
     let log = std::fs::read_to_string(base.join("hung-900").join("agent.log")).unwrap();
     assert!(log.contains("exceeded max runtime"));
+    // ...and the run's exit_code records the distinct `killed` sentinel (not a misleading `0`),
+    // so a watchdog-killed run is distinguishable from a clean exit (#453).
+    let exit_code = std::fs::read_to_string(base.join("hung-900").join("exit_code")).unwrap();
+    assert_eq!(exit_code.trim(), "killed");
 
     std::fs::remove_dir_all(&base).unwrap();
 }

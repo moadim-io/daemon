@@ -350,4 +350,3 @@ fn cmd_set_error_returns_one() {
     // An empty name makes `set_machine` fail, exercising the error branch (exit code 1).
     assert_eq!(cmd_set("   "), 1);
 }
-

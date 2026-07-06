@@ -1,301 +1,42 @@
 //! The command palette (⌘K / Ctrl-K): a global, keyboard-first launcher that
-//! fuzzy-searches every navigable destination — the three pages plus every
-//! cron job and routine — and jumps to it on Enter. It is the power-user
-//! complement to the nav tabs: no mouse, no remembering which tab a job lives
-//! under, just type a few characters and go.
+//! fuzzy-searches every navigable destination — the pages plus every routine —
+//! and jumps to it on Enter. It is the power-user complement to the nav tabs:
+//! no mouse, no remembering which tab a routine lives under, just type a few
+//! characters and go.
 //!
 //! Best practice (Superhuman / Linear / VS Code command palettes, and the
 //! WAI-ARIA combobox+listbox pattern): bind to the de-facto ⌘K shortcut, show
 //! all destinations before the user types, fuzzy-match against a title *and*
-//! aliases (agent, handler, schedule, id), group results by category, and drive
-//! the whole interaction from the keyboard (↑/↓ to move, Home/End to jump,
-//! Enter to launch, Esc to dismiss) while exposing it to assistive tech via
+//! aliases (agent, schedule, id), group results by category, and drive the
+//! whole interaction from the keyboard (↑/↓ to move, Home/End to jump, Enter to
+//! launch, Esc to dismiss) while exposing it to assistive tech via
 //! `role="combobox"`/`role="listbox"` and `aria-activedescendant`.
 //!
-//! It reads the existing `/api/v1/cron-jobs` and `/api/v1/routines` endpoints —
-//! no backend change. All match/rank/build logic lives in pure, host-tested
-//! functions below (see `command_palette_tests.rs`); the component is a thin
-//! shell that fetches the records, ranks them against the query, and renders.
+//! It reads the existing `/api/v1/routines` endpoint — no backend change. All
+//! match/rank/build logic lives in pure, host-tested functions below (see
+//! `command_palette_tests.rs`); the component is a thin shell that fetches the
+//! records, ranks them against the query, and renders.
 
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::cron_jobs::CronJob;
-use crate::overview::{fetch_crons, fetch_routines};
+use crate::command_palette_match::{
+    badge_for, build_commands, clamp_selection, last_index, next_index, prev_index, rank,
+    route_for, CmdKind, RouteKind,
+};
+#[cfg(test)]
+use crate::command_palette_match::{fuzzy_score, routine_subtitle, schedule_label, Command};
+use crate::overview::fetch_routines;
 use crate::routines::Routine;
 use crate::Route;
-
-/// What a palette entry points at — a fixed page, or an entity that lives on a
-/// page. Kept free of `yew_router::Route` so the ranking/build logic is fully
-/// host-testable; the component maps each variant to a concrete route.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum CmdKind {
-    /// Jump to the OVERVIEW page.
-    NavOverview,
-    /// Jump to the CRON JOBS page.
-    NavCronJobs,
-    /// Jump to the ROUTINES page.
-    NavRoutines,
-    /// Jump to the HEATMAP page.
-    NavHeatmap,
-    /// A specific cron job (lands on the CRON JOBS page).
-    Cron,
-    /// A specific routine (lands on the ROUTINES page).
-    Routine,
-    /// Re-poll server health (the header's ↻ action).
-    ActionRefresh,
-    /// Open the stop-server confirmation (the header's ⏻ action).
-    ActionStop,
-    /// Toggle the light/dark theme (persisted to localStorage).
-    ActionToggleTheme,
-}
-
-/// The destination page a [`CmdKind`] resolves to, independent of the wasm
-/// router so it can be asserted on the host.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum RouteKind {
-    /// The OVERVIEW page (`/`).
-    Home,
-    /// The CRON JOBS page (`/cron-jobs`).
-    CronJobs,
-    /// The ROUTINES page (`/routines`).
-    Routines,
-    /// The HEATMAP page (`/heatmap`).
-    Heatmap,
-}
-
-/// One searchable destination in the palette.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub(crate) struct Command {
-    /// What this entry points at.
-    pub kind: CmdKind,
-    /// Primary label shown and matched first.
-    pub title: String,
-    /// Secondary line (schedule description / route hint).
-    pub subtitle: String,
-    /// Extra terms folded into the fuzzy haystack (agent, handler, id, …) so a
-    /// match on an alias still surfaces the entry.
-    pub keywords: String,
-}
-
-/// The page a command navigates to, or `None` for an action command (which
-/// runs a callback instead of navigating).
-pub(crate) fn route_for(kind: CmdKind) -> Option<RouteKind> {
-    match kind {
-        CmdKind::NavOverview => Some(RouteKind::Home),
-        CmdKind::NavCronJobs | CmdKind::Cron => Some(RouteKind::CronJobs),
-        CmdKind::NavRoutines | CmdKind::Routine => Some(RouteKind::Routines),
-        CmdKind::NavHeatmap => Some(RouteKind::Heatmap),
-        CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => None,
-    }
-}
-
-/// The short category badge text for a command (used in the row and as the
-/// group separator label).
-pub(crate) fn badge_for(kind: CmdKind) -> &'static str {
-    match kind {
-        CmdKind::NavOverview
-        | CmdKind::NavCronJobs
-        | CmdKind::NavRoutines
-        | CmdKind::NavHeatmap => "GO",
-        CmdKind::Cron => "CRON",
-        CmdKind::Routine => "ROUTINE",
-        CmdKind::ActionRefresh | CmdKind::ActionStop | CmdKind::ActionToggleTheme => "ACTION",
-    }
-}
-
-/// Score how well `query` fuzzy-matches `text`: both are compared
-/// case-insensitively, and `query` must appear as an ordered subsequence of
-/// `text`. A higher score is a better match. Returns `None` when `query` is not
-/// a subsequence; an empty (or whitespace-only) query matches everything with a
-/// neutral score of `0`, so the unfiltered list keeps its natural order.
-///
-/// Bonuses reward the matches users perceive as "good": a hit at the very start
-/// of the text, a hit right after a word boundary, and runs of consecutive
-/// characters. Longer texts are mildly penalized so a tight match on a short
-/// label outranks a scattered one on a long string.
-pub(crate) fn fuzzy_score(text: &str, query: &str) -> Option<i32> {
-    let needle = query.trim();
-    if needle.is_empty() {
-        return Some(0);
-    }
-    let hay: Vec<char> = text.to_lowercase().chars().collect();
-    let pins: Vec<char> = needle.to_lowercase().chars().collect();
-    let mut score = 0i32;
-    let mut cursor = 0usize;
-    let mut prev: Option<usize> = None;
-    for &needle_ch in &pins {
-        let mut hit = None;
-        while cursor < hay.len() {
-            let hay_ch = hay[cursor];
-            cursor += 1;
-            if hay_ch == needle_ch {
-                hit = Some(cursor - 1);
-                break;
-            }
-        }
-        let pos = hit?;
-        score += 1;
-        if pos == 0 {
-            score += 10; // start of string
-        } else if !hay[pos - 1].is_alphanumeric() {
-            score += 6; // start of a word
-        }
-        if let Some(prev_pos) = prev {
-            if pos == prev_pos + 1 {
-                score += 8; // consecutive run
-            }
-        }
-        prev = Some(pos);
-    }
-    score -= hay.len() as i32 / 16;
-    Some(score)
-}
-
-/// Best fuzzy score for a command against `query`, matching the title at full
-/// weight and the keyword aliases at a slight discount so a title hit wins a
-/// tie. `None` when neither field matches.
-fn command_score(command: &Command, query: &str) -> Option<i32> {
-    let title = fuzzy_score(&command.title, query);
-    let alias = fuzzy_score(&command.keywords, query).map(|raw| raw - 4);
-    match (title, alias) {
-        (Some(left), Some(right)) => Some(left.max(right)),
-        (left, right) => left.or(right),
-    }
-}
-
-/// Indices of `commands` that match `query`, best-first. Ties keep the input
-/// order (which is already grouped: pages, then cron jobs, then routines), so
-/// an empty query returns every command in its natural grouping.
-pub(crate) fn rank(commands: &[Command], query: &str) -> Vec<usize> {
-    let mut scored: Vec<(usize, i32)> = commands
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, command)| command_score(command, query).map(|score| (idx, score)))
-        .collect();
-    scored.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    scored.into_iter().map(|(idx, _)| idx).collect()
-}
-
-/// Build the full command list: the three pages first, then one entry per cron
-/// job, then one per routine. Subtitles prefer the server's human schedule
-/// description and fall back to the raw expression.
-pub(crate) fn build_commands(crons: &[CronJob], routines: &[Routine]) -> Vec<Command> {
-    let mut commands = vec![
-        Command {
-            kind: CmdKind::NavOverview,
-            title: "Overview".into(),
-            subtitle: "Fleet summary & upcoming runs".into(),
-            keywords: "home dashboard kpi summary landing".into(),
-        },
-        Command {
-            kind: CmdKind::NavCronJobs,
-            title: "Cron Jobs".into(),
-            subtitle: "Manage scheduled handler jobs".into(),
-            keywords: "schedule handler tasks".into(),
-        },
-        Command {
-            kind: CmdKind::NavRoutines,
-            title: "Routines".into(),
-            subtitle: "Manage agent-driven routines".into(),
-            keywords: "agents automation".into(),
-        },
-        Command {
-            kind: CmdKind::NavHeatmap,
-            title: "Heatmap".into(),
-            subtitle: "7-day × 24-hour fire-density grid".into(),
-            keywords: "schedule density grid busy collisions calendar".into(),
-        },
-        Command {
-            kind: CmdKind::ActionRefresh,
-            title: "Refresh".into(),
-            subtitle: "Re-poll server health".into(),
-            keywords: "reload health status action".into(),
-        },
-        Command {
-            kind: CmdKind::ActionStop,
-            title: "Stop Server".into(),
-            subtitle: "Shut the moadim server down".into(),
-            keywords: "shutdown halt kill quit action".into(),
-        },
-        Command {
-            kind: CmdKind::ActionToggleTheme,
-            title: "Toggle Theme".into(),
-            subtitle: "Switch between dark and light mode".into(),
-            keywords: "theme light dark mode toggle appearance action".into(),
-        },
-    ];
-    for job in crons {
-        commands.push(Command {
-            kind: CmdKind::Cron,
-            title: job.id.clone(),
-            subtitle: schedule_label(&job.schedule_description, &job.schedule),
-            keywords: format!("{} {} cron job", job.handler, job.schedule),
-        });
-    }
-    for routine in routines {
-        commands.push(Command {
-            kind: CmdKind::Routine,
-            title: routine.title.clone(),
-            subtitle: schedule_label(&routine.schedule_description, &routine.schedule),
-            keywords: format!(
-                "{} {} {} routine",
-                routine.id, routine.agent, routine.schedule
-            ),
-        });
-    }
-    commands
-}
-
-/// The human schedule description when present, else the raw expression, else a
-/// dash so a row never renders an empty subtitle.
-fn schedule_label(human: &Option<String>, raw: &str) -> String {
-    match human {
-        Some(text) if !text.is_empty() => text.clone(),
-        _ if !raw.trim().is_empty() => raw.to_string(),
-        _ => "—".into(),
-    }
-}
-
-/// Clamp `selected` to a valid row index for a result list of `len` rows: stays
-/// at `0` when empty, otherwise never points past the last row.
-pub(crate) fn clamp_selection(selected: usize, len: usize) -> usize {
-    if len == 0 {
-        0
-    } else {
-        selected.min(len - 1)
-    }
-}
-
-/// Next selection index when pressing ↓: advances by one but never past the
-/// last row (no wrap), and stays at `0` for an empty list.
-pub(crate) fn next_index(selected: usize, len: usize) -> usize {
-    if len == 0 {
-        0
-    } else {
-        (selected + 1).min(len - 1)
-    }
-}
-
-/// Previous selection index when pressing ↑: retreats by one, saturating at the
-/// first row (no wrap).
-pub(crate) fn prev_index(selected: usize) -> usize {
-    selected.saturating_sub(1)
-}
-
-/// Last selection index when pressing End: the final row, or `0` when empty.
-pub(crate) fn last_index(len: usize) -> usize {
-    len.saturating_sub(1)
-}
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 /// Loaded records the palette ranks over.
 #[derive(Clone, PartialEq, Default)]
 struct Records {
-    crons: Vec<CronJob>,
     routines: Vec<Routine>,
 }
 
@@ -341,16 +82,15 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                     let _ = input.focus();
                 }
                 spawn_local(async move {
-                    let crons = fetch_crons().await.unwrap_or_default();
                     let routines = fetch_routines().await.unwrap_or_default();
-                    records.set(Records { crons, routines });
+                    records.set(Records { routines });
                 });
             }
             || ()
         });
     }
 
-    let commands = build_commands(&records.crons, &records.routines);
+    let commands = build_commands(&records.routines);
     let order = rank(&commands, &query);
     let sel = clamp_selection(*selected, order.len());
 
@@ -373,9 +113,9 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                         {
                             let route = match route_kind {
                                 RouteKind::Home => Route::Home,
-                                RouteKind::CronJobs => Route::CronJobs,
                                 RouteKind::Routines => Route::Routines,
                                 RouteKind::Heatmap => Route::Heatmap,
+                                RouteKind::Settings => Route::Settings,
                             };
                             nav.push(&route);
                         }
@@ -448,7 +188,6 @@ pub fn command_palette(props: &PaletteProps) -> Html {
             let row_cls = if active { "cmdk-row active" } else { "cmdk-row" };
             let badge = badge_for(command.kind);
             let badge_cls = match command.kind {
-                CmdKind::Cron => "kind-badge cron",
                 CmdKind::Routine => "kind-badge routine",
                 CmdKind::ActionRefresh
                 | CmdKind::ActionStop
@@ -495,7 +234,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                         ref={input_ref}
                         class="cmdk-input"
                         type="text"
-                        placeholder="Search pages, cron jobs, routines…"
+                        placeholder="Search pages, routines…"
                         autocomplete="off"
                         spellcheck="false"
                         role="combobox"
@@ -514,7 +253,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
                         html! {
                             <div class="cmdk-empty">
                                 <div class="empty-msg">{"NO MATCHES"}</div>
-                                <div class="empty-sub">{"no page, cron job, or routine matches"}</div>
+                                <div class="empty-sub">{"no page or routine matches"}</div>
                             </div>
                         }
                     } else {

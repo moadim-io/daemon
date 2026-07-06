@@ -16,6 +16,16 @@ mod codex;
 #[path = "hermes/setup.rs"]
 mod hermes;
 
+/// The conventions filename a [`AgentCommand`] reads project instructions from when none is
+/// configured. Claude Code's convention; the historical (and still default) target for the
+/// moadim-managed system prompt.
+pub(crate) const DEFAULT_INSTRUCTIONS_FILE: &str = "CLAUDE.md";
+
+/// Default value for [`AgentCommand::instructions_file`] when omitted from the agent's TOML.
+fn default_instructions_file() -> String {
+    DEFAULT_INSTRUCTIONS_FILE.to_string()
+}
+
 /// A resolved agent invocation read from `~/.config/moadim/agents/<name>.toml`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentCommand {
@@ -25,24 +35,17 @@ pub struct AgentCommand {
     /// placeholders; `{prompt}` inlines the composed prompt as a single shell-quoted argument.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Filename, relative to the workbench, that this agent reads its project instructions from.
+    /// The moadim-managed system prompt and routine-origin disclosure are written here so the agent
+    /// that actually runs sees them. Defaults to `CLAUDE.md` (Claude Code's convention); Codex reads
+    /// `AGENTS.md` instead.
+    #[serde(default = "default_instructions_file")]
+    pub instructions_file: String,
     /// Optional shell command run in the workbench *before* the agent launches, inserted verbatim
     /// into the cron line. Runs with the shell vars `$WB` (absolute workbench path) and `$SESS`
     /// (tmux session name) in scope — e.g. to pre-seed per-directory editor trust state.
     #[serde(default)]
     pub setup: Option<String>,
-    /// Filename the agent reads its project instructions from, written into the workbench by the
-    /// daemon so the moadim system prompt and routine-origin disclosure reach the agent that
-    /// actually runs. Claude Code reads `CLAUDE.md` (the default); Codex reads `AGENTS.md`.
-    #[serde(default = "default_instructions_file")]
-    pub instructions_file: String,
-}
-
-/// Default project-instructions filename for an agent: Claude Code's `CLAUDE.md` convention.
-///
-/// Applied when an agent's TOML omits `instructions_file`, preserving the prior behavior of
-/// always writing `CLAUDE.md` for configs that predate this field.
-fn default_instructions_file() -> String {
-    "CLAUDE.md".to_string()
 }
 
 /// Why [`load_agent_command`] could not produce an [`AgentCommand`].
@@ -65,9 +68,9 @@ pub enum AgentLoadError {
 impl std::fmt::Display for AgentLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AgentLoadError::Missing => write!(f, "agent config not found"),
-            AgentLoadError::Unreadable(err) => write!(f, "unreadable agent config: {err}"),
-            AgentLoadError::Parse(err) => write!(f, "malformed agent TOML: {err}"),
+            Self::Missing => write!(f, "agent config not found"),
+            Self::Unreadable(err) => write!(f, "unreadable agent config: {err}"),
+            Self::Parse(err) => write!(f, "malformed agent TOML: {err}"),
         }
     }
 }
@@ -122,9 +125,15 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
-            (path.extension()? == "toml")
-                .then(|| path.file_stem()?.to_str().map(str::to_string))
-                .flatten()
+            // Propagate None for paths without an extension (e.g. a bare "readme" file).
+            if path.extension()? != "toml" {
+                return None;
+            }
+            // For real directory entries file_stem() is always Some; to_str() may be None for
+            // non-UTF-8 names (silently skipped).
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(str::to_string)
         })
         .collect();
     if names.is_empty() {
@@ -144,8 +153,11 @@ pub fn ensure_default_agents() {
 
 /// Write missing built-in agent configs into `dir`. See [`ensure_default_agents`].
 pub(crate) fn ensure_default_agents_in(dir: &Path) {
-    if let Err(err) = std::fs::create_dir_all(dir) {
-        log::warn!("ensure_default_agents: failed to create {dir:?}: {err}");
+    if let Err(err) = crate::utils::fs_perms::create_private_dir_all(dir) {
+        log::warn!(
+            "ensure_default_agents: failed to create {}: {err}",
+            dir.display()
+        );
         return;
     }
     for (name, contents) in DEFAULT_AGENT_CONFIGS {
@@ -154,7 +166,10 @@ pub(crate) fn ensure_default_agents_in(dir: &Path) {
             continue;
         }
         if let Err(err) = std::fs::write(&path, contents) {
-            log::warn!("ensure_default_agents: failed to write {path:?}: {err}");
+            log::warn!(
+                "ensure_default_agents: failed to write {}: {err}",
+                path.display()
+            );
         }
     }
 }

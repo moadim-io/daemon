@@ -66,10 +66,17 @@ pub async fn lock(
     Json(body): Json<LockRequest>,
 ) -> Result<Json<LockStatus>, AppError> {
     let scope = parse_lock_scope(&body.scope)?;
-    crate::global_lock::set_lock(scope, true).map_err(|_| AppError::Internal)?;
-    if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
-        log::warn!("crontab sync after HTTP lock failed: {sync_err}");
-    }
+    // Crontab sync shells out to `crontab`(1); run it on the blocking pool so a slow or
+    // hung invocation can't pin a Tokio worker thread (#360).
+    tokio::task::spawn_blocking(move || {
+        crate::global_lock::set_lock(scope, true).map_err(|_| AppError::Internal)?;
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
+            log::warn!("crontab sync after HTTP lock failed: {sync_err}");
+        }
+        Ok::<_, AppError>(())
+    })
+    .await
+    .map_err(|_| AppError::Internal)??;
     Ok(Json(crate::global_lock::lock_status()))
 }
 
@@ -86,12 +93,18 @@ pub async fn unlock(
     } else {
         vec![parse_lock_scope(&query.scope)?]
     };
-    for scope in scopes {
-        crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;
-    }
-    if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
-        log::warn!("crontab sync after HTTP unlock failed: {sync_err}");
-    }
+    // See `lock` above: crontab sync must not run inline on the async worker thread (#360).
+    tokio::task::spawn_blocking(move || {
+        for scope in scopes {
+            crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
+            log::warn!("crontab sync after HTTP unlock failed: {sync_err}");
+        }
+        Ok::<_, AppError>(())
+    })
+    .await
+    .map_err(|_| AppError::Internal)??;
     Ok(Json(crate::global_lock::lock_status()))
 }
 
@@ -114,7 +127,12 @@ pub async fn create(
     State(store): State<RoutineStore>,
     Json(body): Json<CreateRoutineRequest>,
 ) -> Result<(StatusCode, Json<RoutineResponse>), AppError> {
-    Ok((StatusCode::CREATED, Json(svc_create(&store, body)?)))
+    // `svc_create` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that
+    // off the async worker thread.
+    let resp = tokio::task::spawn_blocking(move || svc_create(&store, body))
+        .await
+        .map_err(|_| AppError::Internal)??;
+    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 /// `GET /routines` — list routines, optionally filtered and sorted by repository.
@@ -156,7 +174,11 @@ pub async fn update(
     Path(id): Path<String>,
     Json(body): Json<UpdateRoutineRequest>,
 ) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_update(&store, &id, body)?))
+    // See `create` above: `svc_update` syncs the crontab (#360).
+    let resp = tokio::task::spawn_blocking(move || svc_update(&store, &id, body))
+        .await
+        .map_err(|_| AppError::Internal)??;
+    Ok(Json(resp))
 }
 
 /// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
@@ -184,7 +206,11 @@ pub async fn delete(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
 ) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_delete(&store, &id)?))
+    // See `create` above: `svc_delete` syncs the crontab (#360).
+    let resp = tokio::task::spawn_blocking(move || svc_delete(&store, &id))
+        .await
+        .map_err(|_| AppError::Internal)??;
+    Ok(Json(resp))
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.

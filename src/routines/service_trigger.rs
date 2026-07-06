@@ -18,7 +18,7 @@ use crate::routines::model::{
 };
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
 
-use super::service_log_tail::read_log_tail;
+use super::service_log_tail::{read_log_tail_with_meta, LogWithMeta};
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 ///
@@ -282,8 +282,9 @@ pub(super) fn migrate_workbenches(old_slug: &str, new_slug: &str) {
     }
 }
 
-/// Return the contents of the newest workbench `agent.log` for routine `id`.
-pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
+/// Return the contents of the newest workbench `agent.log` for routine `id`, plus whether that
+/// content is a truncated window rather than the complete file (see [`LogWithMeta`]).
+pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError> {
     let routine = store
         .lock_recover()
         .get(id)
@@ -309,13 +310,13 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         }
     }
     let Some((_, dir)) = newest else {
-        return Ok(String::new());
+        return Ok(LogWithMeta::empty());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
     if !log_path.exists() {
-        return Ok(String::new());
+        return Ok(LogWithMeta::empty());
     }
-    read_log_tail(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail_with_meta(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status
@@ -341,7 +342,7 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             if dir_slug != slug {
                 continue;
             }
-            runs.push(run_summary(&name, ts));
+            runs.push(run_summary(&name, ts, Some(routine.effective_ttl_secs())));
         }
     }
     for persisted in read_persisted_runs(id) {
@@ -351,6 +352,9 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             finished_at: Some(persisted.finished_at),
             status: persisted.status,
             exit_code: persisted.exit_code,
+            // The workbench is already gone (that's why this run came from `runs.log` instead of
+            // a live directory scan), so there is nothing left to count down to.
+            retention_expires_at: None,
         });
     }
     runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
@@ -390,7 +394,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
             let Some((routine_id, routine_title)) = by_slug.get(dir_slug).cloned() else {
                 continue;
             };
-            let run = run_summary(&name, ts);
+            let run = run_summary(&name, ts, None);
             runs.push(FleetRunSummary {
                 routine_id,
                 routine_title,
@@ -421,7 +425,11 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
 }
 
 /// Derive a single [`RunSummary`] for workbench `dir` (named `{slug}-{started_at}`).
-fn run_summary(dir: &str, started_at: u64) -> RunSummary {
+///
+/// `effective_ttl_secs` is the owning routine's [`Routine::effective_ttl_secs`], used to compute
+/// `retention_expires_at`; pass `None` when the caller (e.g. the fleet-wide
+/// [`svc_list_all_runs`]) doesn't need that field.
+fn run_summary(dir: &str, started_at: u64, effective_ttl_secs: Option<u64>) -> RunSummary {
     let path = workbenches_dir().join(dir);
     let exit_code = read_exit_code(&path);
     let finished_at = std::fs::metadata(path.join("exit_code"))
@@ -436,59 +444,14 @@ fn run_summary(dir: &str, started_at: u64) -> RunSummary {
         None if run_session_alive(&session) => RunStatus::Running,
         None => RunStatus::Unknown,
     };
+    let retention_expires_at =
+        finished_at.and_then(|finish| effective_ttl_secs.map(|ttl| finish + ttl));
     RunSummary {
         workbench: dir.to_string(),
         started_at,
         finished_at,
         status,
         exit_code,
+        retention_expires_at,
     }
-}
-
-/// Return the contents of `filename` inside a specific run's workbench, by workbench directory
-/// name.
-///
-/// `workbench` must be an existing, exact `{slug}-{ts}` directory belonging to routine `id` — this
-/// guards both path traversal (a bare directory name, not an arbitrary path, is joined onto
-/// `workbenches_dir()`) and cross-routine leakage, mirroring the exact-slug check in [`svc_logs`].
-/// Shared by [`svc_run_log`] (`agent.log`) and [`svc_run_summary`] (`summary.md`).
-fn svc_run_file(
-    store: &RoutineStore,
-    id: &str,
-    workbench: &str,
-    filename: &str,
-) -> Result<String, AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    let Some((dir_slug, _)) = parse_workbench_name(workbench) else {
-        return Err(AppError::NotFound);
-    };
-    if dir_slug != slug {
-        return Err(AppError::NotFound);
-    }
-    let path = workbenches_dir().join(workbench).join(filename);
-    if !path.exists() {
-        return Ok(String::new());
-    }
-    read_log_tail(&path).map_err(|_| AppError::Internal)
-}
-
-/// Return the contents of a specific run's `agent.log`, by workbench directory name.
-pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<String, AppError> {
-    svc_run_file(store, id, workbench, "agent.log")
-}
-
-/// Return the contents of a specific run's agent-authored `summary.md` (see the "Work log"
-/// instruction in [`crate::routines::command::system_prompt_stmts`]), by workbench directory
-/// name. Empty string when the agent hasn't written one (yet, or never did).
-pub fn svc_run_summary(
-    store: &RoutineStore,
-    id: &str,
-    workbench: &str,
-) -> Result<String, AppError> {
-    svc_run_file(store, id, workbench, "summary.md")
 }

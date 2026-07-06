@@ -339,6 +339,10 @@ pub struct RunSummary {
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
+    /// Unix seconds this run's workbench is due to be reaped (`finished_at` +
+    /// [`Routine::effective_ttl_secs`]). `None` while the run hasn't finished, or once its
+    /// workbench is already gone (a run restored from `runs.log` after TTL reaping).
+    pub retention_expires_at: Option<u64>,
 }
 
 /// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide

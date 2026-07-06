@@ -27,6 +27,7 @@ use crate::utils::time::now_secs;
 use super::model::{RoutineStore, RunStatus};
 use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
+mod disk_cap;
 mod runtime;
 mod session;
 mod snapshot;
@@ -305,7 +306,8 @@ fn reap_dir(
 /// Remove finished, expired workbenches under `~/.moadim/workbenches/`, using each routine's TTL.
 ///
 /// Returns the count of workbenches removed and the total bytes freed. Safe to call repeatedly; it
-/// only ever touches directories whose run has ended.
+/// only ever touches directories whose run has ended. Also enforces the optional total-disk safety
+/// valve (see [`disk_cap::enforce`]) once the normal TTL reap above has run.
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
     let ttls = snapshot::snapshot_ttls(store);
     let max_runtimes = snapshot::snapshot_max_runtimes(store);
@@ -342,7 +344,7 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
                 },
             );
         };
-    reap_dir(
+    let ttl_stats = reap_dir(
         &workbenches_dir(),
         now_secs(),
         &ttl_for,
@@ -351,7 +353,17 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
         &tmux_kill_session,
         &agent_log_finish_time,
         &persist,
-    )
+    );
+    let cap_stats = disk_cap::enforce(
+        &workbenches_dir(),
+        disk_cap::max_disk_bytes(),
+        &tmux_session_alive,
+        &agent_log_finish_time,
+    );
+    ReapStats {
+        removed: ttl_stats.removed + cap_stats.removed,
+        freed_bytes: ttl_stats.freed_bytes + cap_stats.freed_bytes,
+    }
 }
 
 /// Force-kill hung run sessions under `~/.moadim/workbenches/` that have exceeded their routine's

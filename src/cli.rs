@@ -19,6 +19,16 @@ pub fn bind_addr() -> String {
     std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
 }
 
+/// Returns `true` if `addr` (as returned by [`bind_addr`]) resolves to a loopback interface.
+///
+/// The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
+/// exposes unauthenticated routine CRUD to the network. An address this can't parse is treated
+/// as non-loopback so callers warn rather than stay silent.
+pub fn bind_addr_is_loopback(addr: &str) -> bool {
+    addr.parse::<std::net::SocketAddr>()
+        .is_ok_and(|socket| socket.ip().is_loopback())
+}
+
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
@@ -344,69 +354,6 @@ fn foreground_already_running_message(pid: Option<u32>) -> String {
     )
 }
 
-/// Stop a running background server (if any) and start a fresh detached instance. With `json`,
-/// emits a single machine-readable object (`{"old":N|null,"new":M}`) instead of the human-readable
-/// lines.
-///
-/// Unlike [`run_background`], which restarts only as a side effect of being asked to start while
-/// one is already up, this is the explicit "give me a clean process now" command: it stops the
-/// running server when present, otherwise just starts one.
-pub fn restart(json: bool, quiet: bool) -> anyhow::Result<()> {
-    // Only the bare command narrates the stop/start step and prints the hint block; `--json` emits a
-    // single object and `--quiet` prints just the rotation line.
-    let old_pid = stop_existing_for_restart(json || quiet)?;
-    let new_pid = spawn_detached()?;
-    if json {
-        println!("{}", restart_json(old_pid, new_pid));
-    } else {
-        // Headline the rotation so scripts/logs can see the process actually changed.
-        println!("{}", restart_rotation_line(old_pid, new_pid));
-        if !quiet {
-            report_endpoints();
-        }
-    }
-    Ok(())
-}
-
-/// Format the one-line PID rotation summary `restart` prints, e.g. `restarted: pid 123 -> 456`.
-/// `old` reads `none` when nothing was running (or its PID could not be read).
-fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
-    let old = old.map_or_else(|| "none".to_string(), |pid| pid.to_string());
-    format!("restarted: pid {old} -> {new}")
-}
-
-/// Render the `restart` result as a one-line JSON object: `{"old":N|null,"new":N,"address":…}`.
-/// `old` is `null` when nothing was running (mirroring [`restart_rotation_line`]'s `none`); `new`
-/// is the freshly spawned PID; `address` is the bound [`BIND_ADDR`].
-fn restart_json(old: Option<u32>, new: u32) -> String {
-    serde_json::json!({
-        "old": old,
-        "new": new,
-        "address": bind_addr(),
-    })
-    .to_string()
-}
-
-/// Spawn a detached server process and print where to reach and manage it.
-///
-/// `verb` describes how the process came to be ("started" / "restarted") for the first line.
-fn start_detached_and_report(verb: &str) -> anyhow::Result<()> {
-    let pid = spawn_detached()?;
-    println!(
-        "moadim {verb} in the background (pid {pid}) at http://{}",
-        bind_addr()
-    );
-    report_endpoints();
-    Ok(())
-}
-
-/// Print the reach/manage hints (UI, stop, logs) shared by every detached-launch report.
-fn report_endpoints() {
-    println!("  UI    http://{}", bind_addr());
-    println!("  stop  moadim stop   (or use the STOP button in the UI)");
-    println!("  logs  {}", paths_daemon_log());
-}
-
 /// Ask a running server to stop via the `/shutdown` route. With `json`, emits a single
 /// machine-readable object (`{"running":bool,"pid":N|null,"address":…}`, matching `status --json`'s
 /// shape) instead of the human-readable line. With `quiet`, the human-readable line is suppressed
@@ -472,6 +419,13 @@ use cli_system::{
 };
 #[cfg(test)]
 pub(crate) use cli_system::{parse_body, parse_status_code, DAEMON_LOG_MAX_BYTES};
+
+#[path = "cli_restart.rs"]
+mod cli_restart;
+pub use cli_restart::restart;
+use cli_restart::start_detached_and_report;
+#[cfg(test)]
+use cli_restart::{restart_json, restart_rotation_line};
 
 #[cfg(test)]
 #[path = "cli_tests.rs"]

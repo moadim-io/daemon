@@ -287,7 +287,11 @@ impl MoadimMcp {
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match routines::svc_logs(&self.routines, &id) {
-            Ok(logs) => ok(serde_json::json!({ "logs": logs })),
+            Ok(logs) => ok(serde_json::json!({
+                "logs": logs.content,
+                "total_bytes": logs.total_bytes,
+                "truncated": logs.truncated,
+            })),
             Err(error) => err(error),
         })
     }

@@ -193,6 +193,12 @@ the same sweep includes a watchdog that force-kills any session whose run has ex
 recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
 `ttl_secs` rules.
 
+TTL reaping bounds age, not total size. `routines::cleanup::disk_cap` adds an optional safety valve
+on top of it: if `MOADIM_MAX_WORKBENCH_DISK_BYTES` is set and nonzero, the same sweep sums the whole
+`~/.moadim/workbenches/` tree and, once over that ceiling, evicts finished workbenches
+oldest-finished-first until back under it — a live session is never touched regardless of size or
+age. Unset or `0` preserves the unbounded-by-size behavior above.
+
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.md`, `{workbench}` → `.`,
 `{prompt}` → `"$(cat prompt.md)"`).

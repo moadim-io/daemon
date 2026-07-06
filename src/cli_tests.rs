@@ -15,6 +15,19 @@ fn no_args_defaults_to_background() {
 }
 
 #[test]
+fn bind_addr_is_loopback_true_for_v4_and_v6_loopback() {
+    assert!(bind_addr_is_loopback("127.0.0.1:5784"));
+    assert!(bind_addr_is_loopback("[::1]:5784"));
+}
+
+#[test]
+fn bind_addr_is_loopback_false_for_non_loopback_or_unparsable() {
+    assert!(!bind_addr_is_loopback("0.0.0.0:5784"));
+    assert!(!bind_addr_is_loopback("192.168.1.10:5784"));
+    assert!(!bind_addr_is_loopback("not-an-address"));
+}
+
+#[test]
 fn interactive_flags_select_foreground() {
     for flag in ["-i", "--interactive", "-f", "--foreground"] {
         assert_eq!(parse(argv(&[flag])), Command::Foreground, "flag {flag}");

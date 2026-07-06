@@ -178,6 +178,13 @@ git-trackable:
 periodic (5-minute) sweep so they don't accumulate; trigger a sweep on demand
 with `moadim cleanup`. Sessions still running are never reaped.
 
+TTL is time-only, so a handful of concurrent large runs (e.g. big repo clones)
+can pile up disk before any TTL elapses. Set `MOADIM_MAX_WORKBENCH_DISK_BYTES`
+to a total byte ceiling for the whole `~/.moadim/workbenches/` tree; once
+exceeded, the sweep also evicts finished workbenches oldest-first (regardless
+of their individual TTL) until back under it. A live session is never evicted.
+Unset or `0` (the default) keeps today's unbounded-by-size behavior.
+
 **REST** — under the `/api/v1` prefix:
 
 ```

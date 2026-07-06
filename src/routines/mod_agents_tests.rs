@@ -405,7 +405,7 @@ fn svc_logs_empty_when_no_workbench() {
     let mut routine = make_routine("logs-id");
     routine.title = "Unlikely Title For Logs 9988".into();
     store.lock().unwrap().insert("logs-id".into(), routine);
-    assert_eq!(svc_logs(&store, "logs-id").unwrap(), "");
+    assert_eq!(svc_logs(&store, "logs-id").unwrap().content, "");
 }
 
 #[test]
@@ -424,7 +424,7 @@ fn svc_logs_returns_newest_workbench_log() {
     std::fs::write(old.join("agent.log"), "old-log").unwrap();
     std::fs::write(new.join("agent.log"), "new-log").unwrap();
 
-    assert_eq!(svc_logs(&store, "logs-newest").unwrap(), "new-log");
+    assert_eq!(svc_logs(&store, "logs-newest").unwrap().content, "new-log");
 
     std::fs::remove_dir_all(&old).unwrap();
     std::fs::remove_dir_all(&new).unwrap();
@@ -440,7 +440,7 @@ fn svc_logs_empty_when_newest_has_no_log_file() {
 
     let dir = crate::paths::workbenches_dir().join(format!("{slug}-3000"));
     std::fs::create_dir_all(&dir).unwrap();
-    assert_eq!(svc_logs(&store, "logs-nofile").unwrap(), "");
+    assert_eq!(svc_logs(&store, "logs-nofile").unwrap().content, "");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -463,7 +463,7 @@ fn svc_logs_ignores_other_routine_with_shared_slug_prefix() {
     std::fs::write(mine.join("agent.log"), "mine").unwrap();
     std::fs::write(other.join("agent.log"), "not-mine").unwrap();
 
-    assert_eq!(svc_logs(&store, "logs-prefix").unwrap(), "mine");
+    assert_eq!(svc_logs(&store, "logs-prefix").unwrap().content, "mine");
 
     std::fs::remove_dir_all(&mine).unwrap();
     std::fs::remove_dir_all(&other).unwrap();

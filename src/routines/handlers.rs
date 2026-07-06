@@ -19,8 +19,8 @@ use super::model::{
 };
 use super::service::{
     svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_list, svc_list_all_runs,
-    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_trigger,
-    svc_trigger_scheduled, svc_update,
+    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary,
+    svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -66,10 +66,17 @@ pub async fn lock(
     Json(body): Json<LockRequest>,
 ) -> Result<Json<LockStatus>, AppError> {
     let scope = parse_lock_scope(&body.scope)?;
-    crate::global_lock::set_lock(scope, true).map_err(|_| AppError::Internal)?;
-    if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
-        log::warn!("crontab sync after HTTP lock failed: {sync_err}");
-    }
+    // Crontab sync shells out to `crontab`(1); run it on the blocking pool so a slow or
+    // hung invocation can't pin a Tokio worker thread (#360).
+    tokio::task::spawn_blocking(move || {
+        crate::global_lock::set_lock(scope, true).map_err(|_| AppError::Internal)?;
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
+            log::warn!("crontab sync after HTTP lock failed: {sync_err}");
+        }
+        Ok::<_, AppError>(())
+    })
+    .await
+    .map_err(|_| AppError::Internal)??;
     Ok(Json(crate::global_lock::lock_status()))
 }
 
@@ -86,12 +93,18 @@ pub async fn unlock(
     } else {
         vec![parse_lock_scope(&query.scope)?]
     };
-    for scope in scopes {
-        crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;
-    }
-    if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
-        log::warn!("crontab sync after HTTP unlock failed: {sync_err}");
-    }
+    // See `lock` above: crontab sync must not run inline on the async worker thread (#360).
+    tokio::task::spawn_blocking(move || {
+        for scope in scopes {
+            crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;
+        }
+        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
+            log::warn!("crontab sync after HTTP unlock failed: {sync_err}");
+        }
+        Ok::<_, AppError>(())
+    })
+    .await
+    .map_err(|_| AppError::Internal)??;
     Ok(Json(crate::global_lock::lock_status()))
 }
 
@@ -114,7 +127,12 @@ pub async fn create(
     State(store): State<RoutineStore>,
     Json(body): Json<CreateRoutineRequest>,
 ) -> Result<(StatusCode, Json<RoutineResponse>), AppError> {
-    Ok((StatusCode::CREATED, Json(svc_create(&store, body)?)))
+    // `svc_create` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that
+    // off the async worker thread.
+    let resp = tokio::task::spawn_blocking(move || svc_create(&store, body))
+        .await
+        .map_err(|_| AppError::Internal)??;
+    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 /// `GET /routines` — list routines, optionally filtered and sorted by repository.
@@ -156,7 +174,11 @@ pub async fn update(
     Path(id): Path<String>,
     Json(body): Json<UpdateRoutineRequest>,
 ) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_update(&store, &id, body)?))
+    // See `create` above: `svc_update` syncs the crontab (#360).
+    let resp = tokio::task::spawn_blocking(move || svc_update(&store, &id, body))
+        .await
+        .map_err(|_| AppError::Internal)??;
+    Ok(Json(resp))
 }
 
 /// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
@@ -184,7 +206,11 @@ pub async fn delete(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
 ) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_delete(&store, &id)?))
+    // See `create` above: `svc_delete` syncs the crontab (#360).
+    let resp = tokio::task::spawn_blocking(move || svc_delete(&store, &id))
+        .await
+        .map_err(|_| AppError::Internal)??;
+    Ok(Json(resp))
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
@@ -294,7 +320,7 @@ pub async fn get_logs(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
-    svc_logs(&store, &id)
+    svc_logs(&store, &id).map(|logs| logs.content)
 }
 
 /// `GET /routines/{id}/runs` — list every run workbench for the routine, newest first.
@@ -339,6 +365,21 @@ pub async fn get_run_log(
     Path((id, workbench)): Path<(String, String)>,
 ) -> Result<String, AppError> {
     svc_run_log(&store, &id, &workbench)
+}
+
+/// `GET /routines/{id}/runs/{workbench}/summary` — return one specific run's agent-authored
+/// `summary.md` as plain text (empty when the agent hasn't written one).
+#[utoipa::path(get, path = "/routines/{id}/runs/{workbench}/summary",
+    params(
+        ("id" = String, Path, description = "Routine UUID"),
+        ("workbench" = String, Path, description = "Workbench directory name (`{slug}-{unix_secs}`), from `GET /routines/{id}/runs`"),
+    ),
+    responses((status = 200, description = "Summary file contents as plain text"), (status = 404, description = "Not found")))]
+pub async fn get_run_summary(
+    State(store): State<RoutineStore>,
+    Path((id, workbench)): Path<(String, String)>,
+) -> Result<String, AppError> {
+    svc_run_summary(&store, &id, &workbench)
 }
 
 #[cfg(test)]

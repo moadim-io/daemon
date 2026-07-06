@@ -1,16 +1,20 @@
 //! MCP server handler exposing routine tools over the Model Context Protocol.
 
+use crate::routes::http::ShutdownSignal;
+use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
+use crate::utils::time::now_secs;
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
     tool, tool_router,
 };
-use schemars::JsonSchema;
-use serde::Deserialize;
 
-use crate::routes::http::ShutdownSignal;
-use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
-use crate::utils::time::now_secs;
+#[path = "mcp_types.rs"]
+mod mcp_types;
+use mcp_types::{
+    CreateFlagInput, IdInput, ListRoutinesParam, LockRoutinesInput, ResolveFlagInput,
+    SetPowerSavingInput, SnoozeRoutineInput, UnlockRoutinesInput, UpdateRoutineInput,
+};
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -22,118 +26,6 @@ pub struct MoadimMcp {
     /// Notify handle that triggers a graceful server shutdown (the `shutdown` tool fires it,
     /// mirroring `POST /api/v1/shutdown` and `moadim stop`).
     shutdown: ShutdownSignal,
-}
-
-/// Input for tools that operate on a single routine by ID.
-#[derive(Deserialize, JsonSchema)]
-struct IdInput {
-    /// UUID of the target routine.
-    id: String,
-}
-
-/// Input for the `list_routines` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-pub(super) struct ListRoutinesParam {
-    /// When `true` (the default), only return routines targeting the current machine.
-    /// Pass `false` to see routines from all machines.
-    local_only: Option<bool>,
-    /// When `true`, include each routine's `prompt` in the response. Defaults to `false`
-    /// so listings stay compact; use `get_routine` to see a single routine's prompt.
-    include_prompts: Option<bool>,
-}
-
-/// Input for the `lock_routines` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct LockRoutinesInput {
-    /// Which sentinel to create: `"shared"` (committed `.lock`) or `"local"` (gitignored `.local.lock`).
-    scope: String,
-}
-
-/// Input for the `unlock_routines` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct UnlockRoutinesInput {
-    /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"` (both).
-    scope: String,
-}
-
-/// Input for the `create_flag` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct CreateFlagInput {
-    /// UUID of the routine to flag.
-    id: String,
-    /// Free-text flag category. Common examples: "bug", "gap", `edge_case`, "question", "blocker"
-    /// — any string is accepted.
-    r#type: String,
-    /// Free-text description of what's unclear.
-    description: String,
-    /// `"general"` (committed, shared via git) or `"local"` (gitignored, machine-local).
-    scope: String,
-}
-
-/// Input for the `resolve_flag` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct ResolveFlagInput {
-    /// UUID of the flagged routine.
-    id: String,
-    /// Flag filename, as returned by `create_flag`/`list_flags`.
-    filename: String,
-}
-
-/// Input for the `snooze_routine` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct SnoozeRoutineInput {
-    /// UUID of the routine to snooze.
-    id: String,
-    /// Unix timestamp (seconds) to skip scheduled fires until, or omit/null. Mutually exclusive
-    /// with `skip_runs`.
-    snoozed_until: Option<u64>,
-    /// Number of upcoming scheduled fires to skip, or omit/null. Mutually exclusive with
-    /// `snoozed_until`.
-    skip_runs: Option<u32>,
-}
-
-/// Input for the `set_power_saving` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct SetPowerSavingInput {
-    /// UUID of the routine to update.
-    id: String,
-    /// `true` to pause scheduled and manual firing for power saving, `false` to resume.
-    active: bool,
-}
-
-/// Input for the `update_routine` MCP tool.
-#[derive(Deserialize, JsonSchema)]
-struct UpdateRoutineInput {
-    /// UUID of the routine to update.
-    id: String,
-    /// New cron expression, or `None` to keep the existing value. Evaluated in the
-    /// host's local system timezone (the OS crontab timezone), not UTC.
-    schedule: Option<String>,
-    /// New title, or `None` to keep the existing value.
-    title: Option<String>,
-    /// New agent key, or `None` to keep the existing value.
-    agent: Option<String>,
-    /// New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears
-    /// the model back to the agent's own default.
-    model: Option<String>,
-    /// New prompt, or `None` to keep the existing value.
-    prompt: Option<String>,
-    /// New goal (a very short, ≤5-line statement of the routine's purpose), or `None` to keep the
-    /// existing value. Send an empty string to clear it.
-    goal: Option<String>,
-    /// New repositories list, or `None` to keep the existing value.
-    repositories: Option<Vec<crate::routines::Repository>>,
-    /// New machines targeting list, or `None` to keep the existing value.
-    machines: Option<Vec<String>>,
-    /// New enabled state, or `None` to keep the existing value.
-    enabled: Option<bool>,
-    /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
-    ttl_secs: Option<u64>,
-    /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
-    /// the existing value.
-    max_runtime_secs: Option<u64>,
-    /// New tags list, or `None` to keep the existing value.
-    tags: Option<Vec<String>>,
 }
 
 /// Wrap a serializable value in a successful `CallToolResult`.
@@ -395,7 +287,25 @@ impl MoadimMcp {
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(match routines::svc_logs(&self.routines, &id) {
-            Ok(logs) => ok(serde_json::json!({ "logs": logs })),
+            Ok(logs) => ok(serde_json::json!({
+                "logs": logs.content,
+                "total_bytes": logs.total_bytes,
+                "truncated": logs.truncated,
+            })),
+            Err(error) => err(error),
+        })
+    }
+
+    /// List a routine's runs (live workbenches plus durable history), newest first.
+    #[tool(
+        description = "List a routine's runs, newest first — each run's workbench id (pass to the REST endpoints GET /routines/{id}/runs/{workbench}/log for its log or GET /routines/{id}/runs/{workbench}/summary for the agent's work summary), start/finish time, status, and exit code"
+    )]
+    fn list_routine_runs(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(match routines::svc_list_runs(&self.routines, &id) {
+            Ok(runs) => ok(runs),
             Err(error) => err(error),
         })
     }
@@ -492,9 +402,11 @@ impl MoadimMcp {
 }
 
 #[cfg(test)]
-#[path = "mcp_tests.rs"]
-mod mcp_tests;
-
-#[cfg(test)]
 #[path = "mcp_lock_tests.rs"]
 mod mcp_lock_tests;
+#[cfg(test)]
+#[path = "mcp_parity_tests.rs"]
+mod mcp_parity_tests;
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod mcp_tests;

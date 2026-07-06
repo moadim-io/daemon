@@ -27,6 +27,7 @@ use crate::utils::time::now_secs;
 use super::model::{RoutineStore, RunStatus};
 use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
+mod disk_cap;
 mod runtime;
 mod session;
 mod snapshot;
@@ -40,15 +41,21 @@ pub(crate) use session::tmux_session_prefix_alive;
 pub(crate) use ttl::ttl_ceiling_secs;
 
 /// How often the background task scans for expired workbenches.
-pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
+///
+/// A routine's `effective_ttl_secs` can be as low as the cron interval (e.g. ~60s for an
+/// every-minute schedule, see [`ttl::MAX_TTL_SECS`]), well under an hour. This was previously a
+/// flat 1h, so a high-frequency routine's finished workbenches (full repo clones included) could
+/// pile up dozens deep between sweeps (#170). 5 minutes bounds that worst case to a handful of
+/// stale workbenches while keeping the sweep infrequent enough that its directory walk and
+/// `dir_size`/`remove_dir_all` work stay cheap.
+pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// How often the lightweight watchdog scans for *hung* runs to force-kill.
 ///
-/// Decoupled from [`CLEANUP_INTERVAL`]: TTL-reaping finished workbenches can stay hourly, but the
-/// max-runtime watchdog must fire on a much shorter cadence or a sub-hour `max_runtime_secs` is
-/// unenforceable (a hung run would survive up to ~1h past its bound). At 30s the kill latency is
-/// `effective_max_runtime_secs + <=30s`, so even a routine bounded to a few minutes is reaped near
-/// its limit. This tick only evaluates the kill branch (no directory removal), so it stays cheap.
+/// Shorter than [`CLEANUP_INTERVAL`]: the max-runtime watchdog must fire on a cadence tight enough
+/// that a sub-minute `max_runtime_secs` is still enforceable near its bound. At 30s the kill
+/// latency is `effective_max_runtime_secs + <=30s`. This tick only evaluates the kill branch (no
+/// directory removal), so it stays cheap.
 pub const WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Split a workbench directory name into its `(slug, trigger_timestamp)`.
@@ -299,7 +306,8 @@ fn reap_dir(
 /// Remove finished, expired workbenches under `~/.moadim/workbenches/`, using each routine's TTL.
 ///
 /// Returns the count of workbenches removed and the total bytes freed. Safe to call repeatedly; it
-/// only ever touches directories whose run has ended.
+/// only ever touches directories whose run has ended. Also enforces the optional total-disk safety
+/// valve (see [`disk_cap::enforce`]) once the normal TTL reap above has run.
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
     let ttls = snapshot::snapshot_ttls(store);
     let max_runtimes = snapshot::snapshot_max_runtimes(store);
@@ -336,7 +344,7 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
                 },
             );
         };
-    reap_dir(
+    let ttl_stats = reap_dir(
         &workbenches_dir(),
         now_secs(),
         &ttl_for,
@@ -345,7 +353,17 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
         &tmux_kill_session,
         &agent_log_finish_time,
         &persist,
-    )
+    );
+    let cap_stats = disk_cap::enforce(
+        &workbenches_dir(),
+        disk_cap::max_disk_bytes(),
+        &tmux_session_alive,
+        &agent_log_finish_time,
+    );
+    ReapStats {
+        removed: ttl_stats.removed + cap_stats.removed,
+        freed_bytes: ttl_stats.freed_bytes + cap_stats.freed_bytes,
+    }
 }
 
 /// Force-kill hung run sessions under `~/.moadim/workbenches/` that have exceeded their routine's
@@ -435,3 +453,7 @@ mod cleanup_claude_json_tests;
 #[cfg(test)]
 #[path = "cleanup_freed_bytes_tests.rs"]
 mod cleanup_freed_bytes_tests;
+
+#[cfg(test)]
+#[path = "cleanup_run_history_tests.rs"]
+mod cleanup_run_history_tests;

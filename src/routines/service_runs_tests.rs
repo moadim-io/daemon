@@ -266,6 +266,93 @@ fn svc_run_log_returns_specific_workbench_log() {
 }
 
 #[test]
+fn svc_run_summary_missing_routine_not_found() {
+    let _home = TempHome::set();
+    assert!(matches!(
+        svc_run_summary(&new_store(), "nope", "whatever-1"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_run_summary_not_found_for_unparseable_workbench_name() {
+    let _home = TempHome::set();
+    let title = "Run Summary Bad Name ZZQ";
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("id".into(), make_routine("id", title));
+
+    assert!(matches!(
+        svc_run_summary(&store, "id", "not-a-workbench"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_run_summary_not_found_for_foreign_workbench() {
+    let _home = TempHome::set();
+    let title = "Run Summary Foreign ZZQ";
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("id".into(), make_routine("id", title));
+
+    assert!(matches!(
+        svc_run_summary(&store, "id", "some-other-routine-9999"),
+        Err(AppError::NotFound)
+    ));
+}
+
+#[test]
+fn svc_run_summary_empty_when_summary_missing() {
+    let _home = TempHome::set();
+    let title = "Run Summary Missing File ZZQ";
+    let slug = slugify(title);
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("id".into(), make_routine("id", title));
+
+    let workbench = format!("{slug}-1000");
+    std::fs::create_dir_all(crate::paths::workbenches_dir().join(&workbench)).unwrap();
+
+    assert_eq!(svc_run_summary(&store, "id", &workbench).unwrap(), "");
+}
+
+#[test]
+fn svc_run_summary_returns_specific_workbench_summary() {
+    let _home = TempHome::set();
+    let title = "Run Summary Exact ZZQ";
+    let slug = slugify(title);
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("id".into(), make_routine("id", title));
+
+    let workbenches = crate::paths::workbenches_dir();
+    let older = format!("{slug}-1000");
+    let newer = format!("{slug}-2000");
+    std::fs::create_dir_all(workbenches.join(&older)).unwrap();
+    std::fs::create_dir_all(workbenches.join(&newer)).unwrap();
+    std::fs::write(workbenches.join(&older).join("summary.md"), "older summary").unwrap();
+    std::fs::write(workbenches.join(&newer).join("summary.md"), "newer summary").unwrap();
+
+    assert_eq!(
+        svc_run_summary(&store, "id", &older).unwrap(),
+        "older summary"
+    );
+    assert_eq!(
+        svc_run_summary(&store, "id", &newer).unwrap(),
+        "newer summary"
+    );
+}
+
+#[test]
 fn svc_list_all_runs_merges_across_routines_newest_first() {
     let _home = TempHome::set();
     let title_a = "Fleet Runs A ZZQ";

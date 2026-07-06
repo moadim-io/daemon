@@ -126,3 +126,27 @@ async fn into_response_body_carries_internal_message() {
         "internal server error"
     );
 }
+
+#[test]
+fn display_forbidden() {
+    assert_eq!(
+        AppError::Forbidden("host not allowed".into()).to_string(),
+        "forbidden: host not allowed"
+    );
+}
+
+#[test]
+fn into_response_forbidden_is_403() {
+    assert_eq!(
+        AppError::Forbidden("x".into()).into_response().status(),
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_forbidden_message() {
+    assert_eq!(
+        response_error_field(AppError::Forbidden("nope".into())).await,
+        "forbidden: nope"
+    );
+}

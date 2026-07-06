@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::agents::load_agent_command;
-use super::command::{agent_command_available, slugify};
+use super::cleanup::tmux_session_prefix_alive;
+use super::command::{agent_command_available, slugify, tmux_session_prefix};
 use super::flags::list_flags;
 use crate::paths::routine_toml_path;
 
@@ -222,6 +223,12 @@ pub struct RoutineResponse {
     /// `None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming
     /// fire (e.g. `@reboot`). See issue #369.
     pub next_run_at: Option<u64>,
+    /// `true` if any fire of this routine currently has a live tmux session — i.e. an agent is
+    /// running right now. Derived by probing for a session under the routine's
+    /// `moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not
+    /// persisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing
+    /// best-effort "no tmux, nothing running" stance. See issue #438.
+    pub is_running: bool,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -277,6 +284,7 @@ impl RoutineResponse {
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
         let flag_count = list_flags(&slug).len();
         let next_run_at = next_run_at(&routine.schedule, routine.enabled);
+        let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
         Self {
             routine,
             agent_registered,
@@ -286,6 +294,7 @@ impl RoutineResponse {
             timezone,
             flag_count,
             next_run_at,
+            is_running,
         }
     }
 }
@@ -318,7 +327,7 @@ pub enum RunStatus {
 }
 
 /// One past (or in-progress) run of a routine, listed newest-first.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct RunSummary {
     /// Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`.
     pub workbench: String,
@@ -330,11 +339,15 @@ pub struct RunSummary {
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
+    /// Unix seconds this run's workbench is due to be reaped (`finished_at` +
+    /// [`Routine::effective_ttl_secs`]). `None` while the run hasn't finished, or once its
+    /// workbench is already gone (a run restored from `runs.log` after TTL reaping).
+    pub retention_expires_at: Option<u64>,
 }
 
 /// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide
 /// counterpart to [`RunSummary`] backing an overview "recent runs" view.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct FleetRunSummary {
     /// The routine this run belongs to.
     pub routine_id: String,

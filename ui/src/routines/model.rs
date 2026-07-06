@@ -147,6 +147,7 @@ pub struct RunSummary {
     pub finished_at: Option<u64>,
     pub status: RunStatus,
     pub exit_code: Option<i32>,
+    pub retention_expires_at: Option<u64>,
 }
 
 /// One past (or in-progress) run across every routine (mirrors the server `FleetRunSummary`).

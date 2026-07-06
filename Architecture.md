@@ -111,9 +111,15 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `securit
 | `update_routine` | `routines::svc_update` |
 | `delete_routine` | `routines::svc_delete` |
 | `trigger_routine` | `routines::svc_trigger` |
+| `snooze_routine` | `routines::svc_snooze` |
+| `set_power_saving` | `routines::svc_set_power_saving` |
 | `cleanup_workbenches` | `routines::svc_cleanup` |
 | `list_agents` | `routines::available_agents` |
+| `create_flag` | `routines::svc_create_flag` |
+| `list_flags` | `routines::svc_list_flags` |
+| `resolve_flag` | `routines::svc_resolve_flag` |
 | `routine_logs` | `routines::svc_logs` |
+| `list_routine_runs` | `routines::svc_list_runs` |
 | `get_lock_status` | `global_lock::lock_status` |
 | `lock_routines` | `global_lock::set_lock` + crontab resync |
 | `unlock_routines` | `global_lock::set_lock` + crontab resync |
@@ -178,7 +184,7 @@ instants so external calendars can subscribe without an embedded `VTIMEZONE`. Th
 `?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
 an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
-Finished run workbenches are reaped automatically by an hourly background sweep
+Finished run workbenches are reaped automatically by a background sweep (every 5 minutes)
 (`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
@@ -186,6 +192,12 @@ the same sweep includes a watchdog that force-kills any session whose run has ex
 `max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 1h) — bounding a hung agent that never exits —
 recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
 `ttl_secs` rules.
+
+TTL reaping bounds age, not total size. `routines::cleanup::disk_cap` adds an optional safety valve
+on top of it: if `MOADIM_MAX_WORKBENCH_DISK_BYTES` is set and nonzero, the same sweep sums the whole
+`~/.moadim/workbenches/` tree and, once over that ceiling, evicts finished workbenches
+oldest-finished-first until back under it — a live session is never touched regardless of size or
+age. Unset or `0` preserves the unbounded-by-size behavior above.
 
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.md`, `{workbench}` → `.`,

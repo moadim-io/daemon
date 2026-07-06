@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.22.1"
+version = "0.25.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -114,6 +114,12 @@ unwrap_used = "deny"
 # reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
 # would move). It states "borrow and iterate" at a glance.
 explicit_iter_loop = "deny"
+# Companion to `explicit_iter_loop` above: reject `for x in collection.into_iter()`
+# in favour of the equivalent `for x in collection`. `.into_iter()` here is
+# redundant — a plain `for` loop already calls it implicitly — so spelling it
+# out adds noise without adding meaning. The codebase is already clean, so
+# `deny` locks that in.
+explicit_into_iter_loop = "deny"
 # Reject `use some::module::*;` glob imports. Explicit imports make it clear
 # at the call site which module a name comes from, avoid silent breakage or
 # ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
@@ -151,3 +157,15 @@ manual_string_new = "deny"
 # for flat, early-return control flow (see `manual_let_else`, `if_not_else`
 # above). The codebase is already clean, so `deny` locks that in.
 redundant_else = "deny"
+# A type deriving `PartialEq` whose fields are all themselves `Eq` almost always
+# satisfies `Eq` too (reflexivity holds for everything but float fields, which
+# this codebase avoids in these structs). Deriving it costs nothing and unlocks
+# the type as a `HashSet`/`BTreeMap` key or `HashMap` value in `==`-free contexts
+# without a later, easy-to-forget follow-up PR. The codebase is already clean,
+# so `deny` locks that in.
+derive_partial_eq_without_eq = "deny"
+# Reject a by-value function argument that the body never consumes (never moves, mutates through
+# ownership, or otherwise needs to own) — it should take a reference instead. A needless owned
+# parameter forces every caller to clone or otherwise part with a value the callee never actually
+# needed to own. The codebase is already clean, so `deny` locks that in.
+needless_pass_by_value = "deny"

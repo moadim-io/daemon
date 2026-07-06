@@ -1,6 +1,4 @@
-use croner::Cron;
 use gloo_timers::future::TimeoutFuture;
-use serde::Deserialize;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -8,25 +6,35 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 
 mod command_palette;
+mod command_palette_match;
+mod cron_utils;
 mod day_timeline;
+mod header;
+mod health;
 mod log_viewer;
 mod machines;
 mod overview;
+mod overview_attention;
 mod overview_recent_runs;
+mod overview_stats;
 mod overview_upcoming;
 mod refresh;
 mod routines;
 mod schedule;
 mod schedule_heatmap;
+mod schedule_heatmap_grid;
 mod settings;
 mod shell_dialogs;
 use command_palette::CommandPalette;
+pub(crate) use cron_utils::{describe_cron_live, parse_cron, reltime};
+use header::Header;
+pub(crate) use health::{Health, Toast, ToastKind};
 use overview::OverviewPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
 use settings::SettingsPage;
 use shell_dialogs::{
-    api_get_machine, api_put_machine, api_shutdown, fmt_uptime, poll_health, RenameMachineDialog,
+    api_get_machine, api_put_machine, api_shutdown, poll_health, RenameMachineDialog,
     ShutdownDialog, ToastStack,
 };
 
@@ -63,39 +71,6 @@ pub(crate) fn apply_theme(light: bool) {
             let _ = list.remove_1("theme-light");
         }
     }
-}
-
-// ─── Shared types ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
-pub struct HealthDeps {
-    pub tmux: bool,
-    pub python3: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
-pub struct Health {
-    pub status: String,
-    pub uptime_secs: Option<u64>,
-    pub running: bool,
-    pub version: Option<String>,
-    #[serde(default)]
-    pub git_sha: Option<String>,
-    #[serde(default)]
-    pub dependencies: Option<HealthDeps>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ToastKind {
-    Ok,
-    Err,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Toast {
-    pub id: u32,
-    pub msg: AttrValue,
-    pub kind: ToastKind,
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -500,160 +475,6 @@ pub fn nav() -> Html {
                 { "SETTINGS" }
             </Link<Route>>
         </nav>
-    }
-}
-
-// ─── Header ───────────────────────────────────────────────────────────────────
-
-#[derive(Properties, PartialEq)]
-pub struct HeaderProps {
-    pub health: Health,
-    pub ok: bool,
-    /// `true` when the light theme is active (controls the toggle button icon).
-    pub light: bool,
-    /// Resolved machine name, shown as a clickable badge.
-    pub machine_name: Option<String>,
-    pub on_refresh: Callback<MouseEvent>,
-    pub on_stop: Callback<MouseEvent>,
-    pub on_palette: Callback<MouseEvent>,
-    pub on_theme: Callback<MouseEvent>,
-    /// Opens the rename-machine dialog.
-    pub on_rename_machine: Callback<MouseEvent>,
-}
-
-#[function_component(Header)]
-pub fn header(props: &HeaderProps) -> Html {
-    let dot_class = if props.ok {
-        "health-dot ok"
-    } else {
-        "health-dot error"
-    };
-    let status = props.health.status.to_uppercase();
-    let version_text = props
-        .health
-        .version
-        .as_ref()
-        .map(|v| format!("/ v{v}"))
-        .unwrap_or_default();
-    let version_title = props
-        .health
-        .git_sha
-        .as_deref()
-        .filter(|s| *s != "unknown" && !s.is_empty())
-        .map(|sha| format!("build: {sha}"))
-        .unwrap_or_default();
-    let uptime = props
-        .health
-        .uptime_secs
-        .map(|s| format!("/ UP {}", fmt_uptime(s)))
-        .unwrap_or_default();
-    let theme_icon = if props.light { "☀" } else { "🌙" };
-    let theme_title = if props.light {
-        "Switch to dark mode"
-    } else {
-        "Switch to light mode"
-    };
-    let missing_tmux = props.health.dependencies.as_ref().is_some_and(|d| !d.tmux);
-    let missing_python3 = props
-        .health
-        .dependencies
-        .as_ref()
-        .is_some_and(|d| !d.python3);
-
-    html! {
-        <header>
-            <h1 class="logo">
-                {"MOADIM"}
-                <span class="logo-sub">{"/ CONTROL"}</span>
-                if !version_title.is_empty() {
-                    <span class="logo-version" title={version_title}>{version_text}</span>
-                } else {
-                    <span class="logo-version">{version_text}</span>
-                }
-            </h1>
-            <div class="header-right">
-                if missing_tmux {
-                    <span class="dep-warn" title="tmux is not on the daemon's PATH — all routine runs will silently fail">
-                        {"⚠ NO TMUX"}
-                    </span>
-                }
-                if missing_python3 {
-                    <span class="dep-warn dep-warn-soft" title="python3 is not on the daemon's PATH — the claude agent setup step will fail silently">
-                        {"⚠ NO PYTHON3"}
-                    </span>
-                }
-                <div class="health">
-                    <div class={dot_class}></div>
-                    <span class="health-status">{status}</span>
-                    <span class="health-uptime">{uptime}</span>
-                </div>
-                if let Some(name) = &props.machine_name {
-                    <button class="machine-badge" title="Click to rename this machine"
-                        onclick={props.on_rename_machine.clone()}>
-                        {name.clone()}
-                    </button>
-                }
-                <button class="btn-theme" title={theme_title} aria-label={theme_title} onclick={props.on_theme.clone()}>
-                    {theme_icon}
-                </button>
-                <button class="btn-cmdk" title="Command palette (⌘K)" aria-label="Open command palette" onclick={props.on_palette.clone()}>
-                    {"⌘K"}
-                </button>
-                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
-                <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
-            </div>
-        </header>
-    }
-}
-
-// ─── Utilities (shared with the routines module) ───────────────────────────────
-
-/// Parse a cron expression into a `Cron`, normalizing the 7-field
-/// (sec min hour dom month dow year) form to 5-field to match server behaviour.
-/// Returns `None` for empty or invalid expressions.
-pub(crate) fn parse_cron(expr: &str) -> Option<Cron> {
-    let s = expr.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let normalized = if s.starts_with('@') {
-        s.to_string()
-    } else {
-        let parts: Vec<&str> = s.split_whitespace().collect();
-        if parts.len() == 7 {
-            parts[1..6].join(" ")
-        } else {
-            s.to_string()
-        }
-    };
-    normalized.parse::<Cron>().ok()
-}
-
-/// Returns (is_valid, human description) for a cron expression.
-pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
-    if expr.trim().is_empty() {
-        return (false, "— enter a cron expression —".into());
-    }
-    match parse_cron(expr) {
-        Some(cron) => (true, cron.describe()),
-        None => (false, "Invalid cron expression".into()),
-    }
-}
-
-pub(crate) fn reltime(ts: u64) -> String {
-    if ts == 0 {
-        return "—".into();
-    }
-    let now = (js_sys::Date::now() / 1000.0) as u64;
-    let diff = now.saturating_sub(ts);
-    if diff < 60 {
-        "just now".into()
-    } else if diff < 3_600 {
-        format!("{}m ago", diff / 60)
-    } else if diff < 86_400 {
-        format!("{}h ago", diff / 3_600)
-    } else {
-        format!("{}d ago", diff / 86_400)
     }
 }
 

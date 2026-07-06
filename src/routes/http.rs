@@ -16,10 +16,9 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
-use std::time::Duration;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
@@ -213,121 +212,17 @@ pub async fn restart() -> Result<Json<RestartResponse>, AppError> {
     }))
 }
 
-/// Response body for `GET /machine`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct MachineResponse {
-    /// Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname).
-    pub name: String,
-}
-
-/// `GET /machine` — the current machine's resolved identity.
-///
-/// Returns the name this daemon uses to match `machines[]` targeting lists on routines. Useful for
-/// clients (e.g. the UI) that want to default their views to local entries only.
-#[utoipa::path(get, path = "/machine",
-    responses((status = 200, body = MachineResponse)))]
-pub async fn get_current_machine() -> Json<MachineResponse> {
-    Json(MachineResponse {
-        name: crate::machine::current_machine(),
-    })
-}
-
-/// Request body for `PUT /machine`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct SetMachineRequest {
-    /// New machine name. Trimmed; must be non-empty.
-    pub name: String,
-}
-
-/// `PUT /machine` — rename this machine's identity.
-///
-/// Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name
-/// is empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;
-/// setting the name here persists it for when the env var is absent.
-///
-/// As a side-effect, every routine whose `machines` list contained the old name is updated in
-/// memory, on disk, and in the crontab so that the rename propagates atomically.
-#[utoipa::path(put, path = "/machine",
-    request_body = SetMachineRequest,
-    responses(
-        (status = 200, body = MachineResponse),
-        (status = 400, description = "Empty name"),
-        (status = 500, description = "Write failed"),
-    ))]
-pub async fn put_machine(
-    State(state): State<AppState>,
-    Json(body): Json<SetMachineRequest>,
-) -> Result<Json<MachineResponse>, (StatusCode, String)> {
-    let old_name = crate::machine::current_machine();
-    let new_name = body.name.trim().to_string();
-    match crate::machine::set_machine(&new_name) {
-        Ok(()) => {
-            routines::svc_rename_machine(&state.routines, &old_name, &new_name);
-            Ok(Json(MachineResponse { name: new_name }))
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::InvalidInput => {
-            Err((StatusCode::BAD_REQUEST, err.to_string()))
-        }
-        Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
-    }
-}
-
-/// `GET /config/user-prompt` — the persistent system prompt appended to every routine's agent
-/// instructions file (see [`crate::paths::user_prompt_path`]), as plain text. Empty (not an
-/// error) when nothing has been saved yet.
-#[utoipa::path(get, path = "/config/user-prompt",
-    responses((status = 200, description = "User prompt contents as plain text")))]
-pub async fn get_user_prompt() -> Result<String, AppError> {
-    match std::fs::read_to_string(crate::paths::user_prompt_path()) {
-        Ok(text) => Ok(text),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(_) => Err(AppError::Internal),
-    }
-}
-
-/// Request body for `PUT /config/user-prompt`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct SetUserPromptRequest {
-    /// New persistent prompt contents. An empty string clears it.
-    pub content: String,
-}
-
-/// `PUT /config/user-prompt` — replace the persistent system prompt.
-///
-/// Creates the config directory if absent. Every routine's next run picks up the change (the
-/// launch command re-reads this file each time — see `command::system_prompt_stmts`); already
-/// running agents are unaffected.
-#[utoipa::path(put, path = "/config/user-prompt",
-    request_body = SetUserPromptRequest,
-    responses((status = 204, description = "Saved"), (status = 500, description = "Write failed")))]
-pub async fn put_user_prompt(
-    Json(body): Json<SetUserPromptRequest>,
-) -> Result<StatusCode, AppError> {
-    let path = crate::paths::user_prompt_path();
-    let parent = path.parent().expect("user prompt path has a parent dir");
-    crate::utils::fs_perms::create_private_dir_all(parent).map_err(|_| AppError::Internal)?;
-    std::fs::write(&path, &body.content).map_err(|_| AppError::Internal)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// `GET /machines` — distinct machine names this daemon knows about.
-///
-/// There is no central machine registry, so the "known" set is the union of every `machines`
-/// targeting list declared by a routine, plus this machine's own resolved identity
-/// ([`crate::machine::current_machine`]) so the local machine is always pickable even before
-/// anything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the
-/// `moadim machine list` CLI but reads the live in-memory store instead of disk.
-#[utoipa::path(get, path = "/machines",
-    responses((status = 200, body = Vec<String>, description = "Known machine names, sorted")))]
-pub async fn list_machines(State(state): State<AppState>) -> Json<Vec<String>> {
-    use crate::utils::lock::LockRecover;
-    let mut names = std::collections::BTreeSet::new();
-    names.insert(crate::machine::current_machine());
-    for routine in state.routines.lock_recover().values() {
-        names.extend(routine.machines.iter().cloned());
-    }
-    Json(names.into_iter().collect())
-}
+#[path = "http_settings_routes.rs"]
+mod http_settings_routes;
+#[allow(
+    unused_imports,
+    reason = "utoipa's OpenApi derive resolves these hidden __path_* types via crate::routes::http::__path_*, generated by #[utoipa::path] on the re-exported handlers below"
+)]
+pub use http_settings_routes::{
+    __path_get_current_machine, __path_get_user_prompt, __path_list_machines, __path_put_machine,
+    __path_put_user_prompt, get_current_machine, get_user_prompt, list_machines, put_machine,
+    put_user_prompt, MachineResponse, SetMachineRequest, SetUserPromptRequest,
+};
 
 /// Build the Axum router with all routes, middleware, and state wired up.
 ///
@@ -422,6 +317,10 @@ pub(crate) fn build_app_with_shutdown(
             "/routines/{id}/runs/{workbench}/log",
             get(routines::get_run_log),
         )
+        .route(
+            "/routines/{id}/runs/{workbench}/summary",
+            get(routines::get_run_summary),
+        )
         // Own fallback so unknown `/api/v1` paths return a JSON 404 instead of inheriting
         // the outer SPA fallback and answering with `index.html`/`200` (issue #270).
         .fallback(api_not_found)
@@ -447,6 +346,15 @@ pub(crate) fn build_app_with_shutdown(
         // SPA fallback: client-routed pages (`/routines`) and refreshes on them return the app
         // HTML so the Yew router can resolve the path on load.
         .fallback(get(index))
+        // Innermost of the cross-cutting layers (added first) so a rejected request's `403`
+        // still gets a security-headers pass and a logged inbound/outbound pair, while still
+        // running ahead of every route handler (issue #266: DNS rebinding / cross-origin abuse
+        // of the unauthenticated loopback API).
+        .layer(middleware::from_fn(
+            middlewares::host_validation::host_validation(
+                middlewares::host_validation::allowed_hosts(),
+            ),
+        ))
         .layer(middleware::from_fn(
             middlewares::security_headers::security_headers,
         ))
@@ -466,163 +374,13 @@ pub(crate) fn build_app_with_shutdown(
         .with_state(app_state)
 }
 
-/// Write the generated `OpenAPI` spec JSON to `path`, logging a warning on failure.
-///
-/// Best-effort: the spec is a development convenience (committed under `apis/`), so a write
-/// failure must not abort server startup. Extracted from [`run_with_listener_until`] so the
-/// failure branch can be exercised against an unwritable path.
-///
-/// `path` is `CARGO_MANIFEST_DIR/apis/openapi.json`, baked in at compile time. For an installed
-/// binary (`cargo install`), that directory is wherever the crate happened to build, which
-/// generally doesn't exist on the end user's machine — skip silently rather than warning on
-/// every startup for a path nobody expects to be writable (#319).
-pub(crate) fn write_openapi_spec(path: &std::path::Path) {
-    if !path.parent().is_some_and(std::path::Path::is_dir) {
-        return;
-    }
-    if let Err(err) = std::fs::write(path, crate::openapi::ApiDoc::to_json()) {
-        log::warn!("could not write openapi spec: {err}");
-    }
-}
-
-/// Default window granted to in-flight connections to drain after a shutdown is requested, before
-/// the server is forced to return. Bounds `moadim stop`: axum's `with_graceful_shutdown` waits for
-/// every open connection to close, so a never-ending stream (e.g. an `/mcp` SSE subscription) would
-/// otherwise pin the process open forever (#342).
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
-
-/// Env override for [`SHUTDOWN_GRACE`] in milliseconds (test seam): lets tests drive the grace
-/// window to a few milliseconds instead of waiting whole seconds.
-const SHUTDOWN_GRACE_MS_ENV: &str = "MOADIM_SHUTDOWN_GRACE_MS";
-
-/// The post-shutdown drain deadline, honoring [`SHUTDOWN_GRACE_MS_ENV`] when set to a parseable
-/// millisecond count; otherwise [`SHUTDOWN_GRACE`].
-fn shutdown_grace() -> Duration {
-    std::env::var(SHUTDOWN_GRACE_MS_ENV)
-        .ok()
-        .and_then(|raw| raw.parse::<u64>().ok())
-        .map_or(SHUTDOWN_GRACE, Duration::from_millis)
-}
-
-/// Await `serve`, but once `shutdown_started` fires, allow open connections at most `grace` to
-/// drain before forcing the server to return.
-///
-/// Axum's graceful shutdown blocks until every in-flight connection closes; a long-lived stream
-/// (an `/mcp` SSE subscription, a slow client) can keep that future pending indefinitely, hanging
-/// `moadim stop`/`POST /shutdown` forever (#342). This wrapper caps that wait: it returns `serve`'s
-/// own result if the server drains on its own, or `Ok(())` after logging a warning once the grace
-/// window elapses.
-async fn serve_with_grace(
-    serve: impl std::future::IntoFuture<Output = std::io::Result<()>>,
-    shutdown_started: impl std::future::Future<Output = ()>,
-    grace: Duration,
-) -> std::io::Result<()> {
-    // `axum::serve(..).with_graceful_shutdown(..)` is an `IntoFuture`, not a `Future`; normalize it
-    // (and any plain future the tests pass) before pinning.
-    let serve = serve.into_future();
-    tokio::pin!(serve);
-    // Phase 1: serve normally until it returns on its own or a shutdown is requested.
-    tokio::select! {
-        res = &mut serve => return res,
-        _ = shutdown_started => {}
-    }
-    // Phase 2: shutdown requested — give open connections a bounded window to drain, then force exit.
-    tokio::select! {
-        res = &mut serve => res,
-        _ = tokio::time::sleep(grace) => {
-            log::warn!(
-                "graceful shutdown exceeded {grace:?}; forcing exit with connections still open"
-            );
-            Ok(())
-        }
-    }
-}
-
-/// Serve the application on `listener`, shutting down when `shutdown` resolves.
-pub async fn run_with_listener_until(
-    routines: RoutineStore,
-    listener: tokio::net::TcpListener,
-    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
-) -> anyhow::Result<()> {
-    let addr = listener
-        .local_addr()
-        .expect("TCP listener always has a local address")
-        .to_string();
-    write_openapi_spec(std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/apis/openapi.json"
-    )));
-    let signal: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
-    // Periodically reap finished, expired run workbenches so triggered routines do not accumulate
-    // forever (see `routines::cleanup`). The first tick fires immediately, sweeping leftovers from
-    // before this process started.
-    let cleanup_store = routines.clone();
-    let cleanup_task = tokio::spawn(async move {
-        let mut tick = tokio::time::interval(crate::routines::CLEANUP_INTERVAL);
-        loop {
-            tick.tick().await;
-            let store = cleanup_store.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                crate::routines::cleanup_expired_workbenches(&store)
-            })
-            .await;
-        }
-    });
-    // Force-kill hung runs on a much shorter cadence than the hourly reap above, so a sub-hour
-    // `max_runtime_secs` is enforced near its bound instead of waiting up to ~1h for the next sweep.
-    // This tick only evaluates the kill branch; TTL reaping of the killed workbench still happens in
-    // the hourly sweep.
-    let watchdog_store = routines.clone();
-    let watchdog_task = tokio::spawn(async move {
-        let mut tick = tokio::time::interval(crate::routines::WATCHDOG_INTERVAL);
-        loop {
-            tick.tick().await;
-            let store = watchdog_store.clone();
-            let _ =
-                tokio::task::spawn_blocking(move || crate::routines::kill_hung_sessions(&store))
-                    .await;
-        }
-    });
-    // Periodically warn when the binary on disk has moved on from the one this process is running
-    // (#167): an in-place upgrade with no daemon restart otherwise regenerates every routine's
-    // agent instructions — disclosure included — from stale, silently outdated logic.
-    let version_task = tokio::spawn(async move {
-        let mut tick = tokio::time::interval(crate::build_info::VERSION_DRIFT_CHECK_INTERVAL);
-        loop {
-            tick.tick().await;
-            let _ = tokio::task::spawn_blocking(|| {
-                if let Ok(exe) = std::env::current_exe() {
-                    let running = format!("moadim {}", crate::build_info::long_version());
-                    crate::build_info::warn_on_drift(&exe, &running);
-                }
-            })
-            .await;
-        }
-    });
-    let app = build_app_with_shutdown(routines, signal.clone());
-    crate::utils::startup_print::print(&addr);
-    // Fires the instant a shutdown is requested, so the grace watchdog below can start its clock
-    // independently of how long the in-flight connections take to drain.
-    let shutdown_started: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
-    let started = shutdown_started.clone();
-    // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
-    // the `/shutdown` route fires `signal` (the UI "STOP" button / `moadim stop`).
-    let combined = async move {
-        tokio::select! {
-            _ = shutdown => {}
-            _ = signal.notified() => {}
-        }
-        started.notify_one();
-    };
-    let serve = axum::serve(listener, app).with_graceful_shutdown(combined);
-    // Cap the post-shutdown wait so a connection that never closes (e.g. an open `/mcp` SSE stream)
-    // can't pin the process open forever and hang `moadim stop` (#342).
-    serve_with_grace(serve, shutdown_started.notified(), shutdown_grace()).await?;
-    cleanup_task.abort();
-    watchdog_task.abort();
-    version_task.abort();
-    Ok(())
-}
+#[path = "http_listener.rs"]
+mod http_listener;
+pub use http_listener::run_with_listener_until;
+#[cfg(test)]
+use http_listener::{
+    serve_with_grace, shutdown_grace, write_openapi_spec, SHUTDOWN_GRACE, SHUTDOWN_GRACE_MS_ENV,
+};
 
 #[cfg(test)]
 #[path = "http_tests.rs"]

@@ -19,6 +19,16 @@ pub fn bind_addr() -> String {
     std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
 }
 
+/// Returns `true` if `addr` (as returned by [`bind_addr`]) resolves to a loopback interface.
+///
+/// The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
+/// exposes unauthenticated routine CRUD to the network. An address this can't parse is treated
+/// as non-loopback so callers warn rather than stay silent.
+pub fn bind_addr_is_loopback(addr: &str) -> bool {
+    addr.parse::<std::net::SocketAddr>()
+        .is_ok_and(|socket| socket.ip().is_loopback())
+}
+
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
@@ -369,19 +379,15 @@ pub fn restart(json: bool, quiet: bool) -> anyhow::Result<()> {
 }
 
 /// Format the one-line PID rotation summary `restart` prints, e.g. `restarted: pid 123 -> 456`.
-///
-/// `old` is the PID of the server that was stopped; when nothing was running (or its PID could not
-/// be read) the old side reads `none`, e.g. `restarted: pid none -> 456`.
+/// `old` reads `none` when nothing was running (or its PID could not be read).
 fn restart_rotation_line(old: Option<u32>, new: u32) -> String {
     let old = old.map_or_else(|| "none".to_string(), |pid| pid.to_string());
     format!("restarted: pid {old} -> {new}")
 }
 
-/// Render the `restart` result as a one-line JSON object:
-/// `{"old":N|null,"new":N,"address":…}`. `old` is the PID of the server that was stopped (or `null`
-/// when nothing was running, mirroring the `none` rendering in [`restart_rotation_line`]), `new` is
-/// the freshly spawned PID, and `address` is the bound [`BIND_ADDR`] — matching the `address` field
-/// every other `--json` lifecycle command surfaces.
+/// Render the `restart` result as a one-line JSON object: `{"old":N|null,"new":N,"address":…}`.
+/// `old` is `null` when nothing was running (mirroring [`restart_rotation_line`]'s `none`); `new`
+/// is the freshly spawned PID; `address` is the bound [`BIND_ADDR`].
 fn restart_json(old: Option<u32>, new: u32) -> String {
     serde_json::json!({
         "old": old,
@@ -446,15 +452,9 @@ pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// Render the `stop` result as a one-line JSON object:
-/// `{"running":bool,"pid":N|null,"address":…}` — a subset of `status --json`'s shape (which
-/// additionally folds in server-sourced `uptime_secs`/`version`; see
-/// `status_and_stop_json_share_a_common_key_set`), so both can still be parsed uniformly on their
-/// shared fields. `running` is `true` when a running server was asked to shut down, and `false`
-/// when none was reachable. `pid` is the process that was stopped (read from the pid file before
-/// the shutdown request), or `null` when no pid file was present. `address` is the bound address
-/// the request was sent to ([`bind_addr`], honoring the `MOADIM_BIND_ADDR` override) so it stays
-/// identical to `status --json` under a non-default bind.
+/// Render the `stop` result as a one-line JSON object: `{"running":bool,"pid":N|null,"address":…}`
+/// — a subset of `status --json`'s shape (see `status_and_stop_json_share_a_common_key_set`).
+/// `pid` is read from the pid file before the shutdown request; `address` is [`bind_addr`].
 fn stop_json(running: bool, pid: Option<u32>) -> String {
     serde_json::json!({
         "running": running,
@@ -464,188 +464,13 @@ fn stop_json(running: bool, pid: Option<u32>) -> String {
     .to_string()
 }
 
-/// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
-///
-/// Runs the same sweep as the hourly background task instead of waiting for the next tick, via the
-/// `/api/v1/routines/cleanup` route. Prints how many workbenches were removed, or a hint when no
-/// server is up. With `json`, emits a single machine-readable object instead so the result can be
-/// piped into scripts.
-///
-/// Returns the process exit code to surface: `0` when the server handled the sweep, and
-/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
-pub fn cleanup(json: bool) -> anyhow::Result<i32> {
-    match http_request_with_body("POST", "/api/v1/routines/cleanup") {
-        Ok((200, body)) => {
-            let removed = parse_removed_count(&body).unwrap_or(0);
-            let freed_bytes = parse_freed_bytes(&body).unwrap_or(0);
-            if json {
-                println!("{}", cleanup_json(removed, freed_bytes, true));
-            } else {
-                let plural = if removed == 1 { "" } else { "es" };
-                println!(
-                    "cleanup removed {removed} workbench{plural} (freed {})",
-                    humanize_bytes(freed_bytes)
-                );
-            }
-            Ok(liveness_exit_code(true))
-        }
-        Ok((status, _)) => {
-            anyhow::bail!("unexpected response from server: HTTP {status}");
-        }
-        Err(_) => {
-            if json {
-                println!("{}", cleanup_json(0, 0, false));
-            } else {
-                println!("moadim is not running");
-            }
-            Ok(liveness_exit_code(false))
-        }
-    }
-}
-
-/// Render a byte count as a short human-readable size using 1024-based units. Values under 1 KiB
-/// are shown as a bare integer (`512 B`); larger values use one decimal place (`12.4 MB`). Caps at
-/// TB so the unit table can't be indexed out of range.
-fn humanize_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    let mut size = bytes as f64;
-    let mut unit = 0;
-    while size >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
-    }
-    format!("{size:.1} {}", UNITS[unit])
-}
-
-/// Ask a running server to trigger routine `id` immediately, outside its schedule, via the
-/// `POST /routines/{id}/trigger` route — the same on-demand run the REST API and MCP tool already
-/// expose, finally reachable from the terminal.
-///
-/// Prints a confirmation when the routine was triggered, an error when no routine has that id
-/// (`404`), and a "not running" hint when no server is reachable. Returns the process exit code to
-/// surface, mirroring the `status`/`cleanup` contract: `0` when the routine was triggered, and
-/// [`EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
-pub fn trigger(id: String) -> anyhow::Result<i32> {
-    match http_request("POST", &format!("/api/v1/routines/{id}/trigger")) {
-        Ok(200) => {
-            println!("triggered routine {id}");
-            Ok(liveness_exit_code(true))
-        }
-        Ok(404) => {
-            anyhow::bail!("no routine with id {id}");
-        }
-        Ok(status) => {
-            anyhow::bail!("unexpected response from server: HTTP {status}");
-        }
-        Err(_) => {
-            println!("moadim is not running");
-            Ok(liveness_exit_code(false))
-        }
-    }
-}
-
-/// Report whether a server is running, with its PID when known. With `json`, emits a single
-/// machine-readable object instead of the human-readable line.
-///
-/// When `wait_secs` is `Some`, and no server answers on the first check, polls `GET /health`
-/// every `WAIT_POLL_INTERVAL` until one does or the timeout elapses, so a caller can block on
-/// startup (`moadim & moadim status --wait`) instead of sleeping blindly before probing.
-///
-/// Returns the process exit code to surface: `0` when a server is reachable, and
-/// [`EXIT_NOT_RUNNING`] when not (including after a `--wait` timeout), so scripts can branch on
-/// `$?` without parsing stdout.
-pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
-    let mut running = is_running();
-    if !running {
-        if let Some(secs) = wait_secs {
-            running = wait_until(is_running, Duration::from_secs(secs));
-        }
-    }
-    let pid = read_pid_file();
-    if json {
-        // Fold the server's own /health (uptime + version) into the object so a single
-        // `status --json` answers liveness *and* age/version without a second call. When the
-        // server is down (or answers unparseably) these fields are emitted as null.
-        let health = if running { fetch_health() } else { None };
-        println!("{}", status_json(running, pid, health));
-        return Ok(liveness_exit_code(running));
-    }
-    if running {
-        let pid_suffix = pid
-            .map(|process_id| format!(" (pid {process_id})"))
-            .unwrap_or_default();
-        println!("moadim is running{pid_suffix} at http://{}", bind_addr());
-    } else {
-        println!("moadim is not running");
-    }
-    Ok(liveness_exit_code(running))
-}
-
-/// Server-sourced liveness details pulled from `GET /health` to enrich `status --json`.
-#[derive(Debug, PartialEq, Eq)]
-struct HealthInfo {
-    /// Seconds the server reports it has been up.
-    uptime_secs: u64,
-    /// The daemon version the server reports.
-    version: String,
-}
-
-/// Render the `status` result as a one-line JSON object:
-/// `{"running":bool,"pid":N|null,"address":…,"uptime_secs":N|null,"version":S|null}`.
-///
-/// `pid` is `null` when no pid file is present (or the server is down). `uptime_secs`/`version`
-/// carry the running server's self-reported `/health` details (via `health`), and are `null` when
-/// no server answers or its `/health` body could not be parsed.
-fn status_json(running: bool, pid: Option<u32>, health: Option<HealthInfo>) -> String {
-    let uptime_secs = health.as_ref().map(|info| info.uptime_secs);
-    let version = health.as_ref().map(|info| info.version.as_str());
-    serde_json::json!({
-        "running": running,
-        "pid": pid,
-        "address": bind_addr(),
-        "uptime_secs": uptime_secs,
-        "version": version,
-    })
-    .to_string()
-}
-
-/// Probe the running server's `GET /health` and return its uptime/version, or `None` when the
-/// request fails, the status is not `200`, or the body is not the expected JSON shape.
-fn fetch_health() -> Option<HealthInfo> {
-    let (status, body) = http_request_with_body("GET", "/api/v1/health").ok()?;
-    (status == 200).then(|| parse_health(&body)).flatten()
-}
-
-/// Extract `uptime_secs` and `version` from a [`HealthResponse`](crate::routes::http::HealthResponse)
-/// JSON body. Returns `None` if either field is missing or the wrong type.
-fn parse_health(body: &str) -> Option<HealthInfo> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let uptime_secs = value.get("uptime_secs")?.as_u64()?;
-    let version = value.get("version")?.as_str()?.to_string();
-    Some(HealthInfo {
-        uptime_secs,
-        version,
-    })
-}
-
-/// Render the `cleanup` result as a one-line JSON object:
-/// `{"running":bool,"removed":N,"freed_bytes":N,"address":…}`. `removed`/`freed_bytes` are `0` when
-/// the server is not running (`running:false`). `address` is the effective bound [`bind_addr`] the
-/// request was sent to, matching `status --json`/`stop --json`'s object shape so every `--json`
-/// command surfaces the endpoint it talked to. The pre-existing `running`/`removed` keys are
-/// preserved; `freed_bytes` is additive.
-fn cleanup_json(removed: usize, freed_bytes: u64, running: bool) -> String {
-    serde_json::json!({
-        "running": running,
-        "removed": removed,
-        "freed_bytes": freed_bytes,
-        "address": bind_addr(),
-    })
-    .to_string()
-}
+#[path = "cli_query.rs"]
+mod cli_query;
+pub use cli_query::{cleanup, status, trigger};
+#[cfg(test)]
+use cli_query::{
+    cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, HealthInfo,
+};
 
 #[path = "cli_system.rs"]
 mod cli_system;
@@ -677,3 +502,7 @@ mod cli_json_tests;
 #[cfg(test)]
 #[path = "cli_spawn_tests.rs"]
 mod cli_spawn_tests;
+
+#[cfg(test)]
+#[path = "cli_spawn_error_tests.rs"]
+mod cli_spawn_error_tests;

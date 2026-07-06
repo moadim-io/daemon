@@ -141,8 +141,8 @@ fn load_routine_from_dir_missing_agent_returns_none() {
 #[test]
 fn write_routine_fails_on_gitignore_write_error() {
     use std::os::unix::fs::PermissionsExt as _;
-    // Covers L202: `std::fs::write(&gitignore, ..)? ` — the dir (and its `prompts/`
-    // subdir) already exist but the dir is read-only, and `.gitignore` is absent, so
+    // Covers `ensure_routine_gitignore`'s trailing `std::fs::write(path, ..)?` — the dir (and its
+    // `prompts/` subdir) already exist but the dir is read-only, and `.gitignore` is absent, so
     // writing it fails and the error is propagated.
     //
     // The `prompts/` subdir must be pre-created: `write_routine` calls

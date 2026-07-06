@@ -109,10 +109,10 @@ pub async fn run_with_listener_until(
             .await;
         }
     });
-    // Force-kill hung runs on a much shorter cadence than the hourly reap above, so a sub-hour
-    // `max_runtime_secs` is enforced near its bound instead of waiting up to ~1h for the next sweep.
+    // Force-kill hung runs on a shorter cadence than the reap above, so a sub-minute
+    // `max_runtime_secs` is enforced near its bound instead of waiting for the next sweep.
     // This tick only evaluates the kill branch; TTL reaping of the killed workbench still happens in
-    // the hourly sweep.
+    // the sweep above.
     let watchdog_store = routines.clone();
     let watchdog_task = tokio::spawn(async move {
         let mut tick = tokio::time::interval(crate::routines::WATCHDOG_INTERVAL);

@@ -96,7 +96,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 - Routines created via REST or MCP are written into your OS crontab automatically
 - **Routines** schedule an AI agent — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines)) — git-trackable, diff-friendly
 - **Agents** are a registry of coding agents (`claude`, …) under `~/.config/moadim/agents/<name>.toml`, referenced by routines
-- Each routine run executes in a throwaway **workbench** under `~/.moadim/workbenches/` (a separate tree from the config dir), reaped on an hourly cleanup sweep
+- Each routine run executes in a throwaway **workbench** under `~/.moadim/workbenches/` (a separate tree from the config dir), reaped on a periodic (5-minute) cleanup sweep
 - Same REST and MCP interface — no logic duplication between protocols
 - API spec auto-generated at build time into `apis/`
 
@@ -116,7 +116,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 └── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
 
 ~/.moadim/                     # runtime tree, separate from the config dir above
-└── workbenches/               # per-run throwaway dirs, reaped on the hourly sweep
+└── workbenches/               # per-run throwaway dirs, reaped on the periodic sweep
 ```
 
 ## Crontab sync
@@ -173,9 +173,9 @@ git-trackable:
 | `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
 
 **Workbenches and cleanup:** each run executes in a workbench under
-`~/.moadim/workbenches/`. Finished, expired workbenches are reaped on an
-hourly sweep so they don't accumulate; trigger a sweep on demand with
-`moadim cleanup`. Sessions still running are never reaped.
+`~/.moadim/workbenches/`. Finished, expired workbenches are reaped on a
+periodic (5-minute) sweep so they don't accumulate; trigger a sweep on demand
+with `moadim cleanup`. Sessions still running are never reaped.
 
 **REST** — under the `/api/v1` prefix:
 
@@ -315,7 +315,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim restart -i`, `--interactive` | interactive | Stops the running server (if any), same as `moadim restart`, but brings the fresh instance up in the foreground instead of backgrounding it — mirrors `moadim -i`. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Add `--wait[=SECS]` to poll `GET /health` every 200ms until it answers or `SECS` elapse (default 30) instead of checking once, so a launch script can block on startup rather than sleeping blindly. Exits `0` when running, `3` when not (including a `--wait` timeout). |
-| `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped and the disk space freed, e.g. `cleanup removed 3 workbenches (freed 12.4 MB)` (the on-demand version of the hourly sweep). Add `--json` for `{"running":bool,"removed":N,"freed_bytes":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
+| `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped and the disk space freed, e.g. `cleanup removed 3 workbenches (freed 12.4 MB)` (the on-demand version of the periodic sweep). Add `--json` for `{"running":bool,"removed":N,"freed_bytes":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
 | `moadim trigger <id>` | —          | Sends `POST /api/v1/routines/{id}/trigger` to the running server, launching the routine immediately outside its schedule (the terminal equivalent of the REST/MCP on-demand trigger). Prints `triggered routine <id>` on success. Exits `0` when triggered, `3` when no server is reachable, and `1` with `no routine with id <id>` on a `404`. (`moadim run <id>` is kept as a hidden back-compat alias.) |
 
 `status`, `cleanup`, and `stop` follow a script-friendly exit-code contract so callers can branch

@@ -44,9 +44,9 @@ fn format_version(version: &str, sha: &str, date: &str) -> String {
 /// path differs from the one this process was started from (#167). A daemon left running across an
 /// in-place binary upgrade keeps executing the old compiled-in logic — including whatever it writes
 /// into a routine's generated agent instructions, such as the routine-origin disclosure — with no
-/// signal to the operator that a restart would pick up the newer build. Hourly matches the existing
-/// workbench-cleanup cadence ([`crate::routines::CLEANUP_INTERVAL`]); this is an operator nudge, not
-/// a time-critical check.
+/// signal to the operator that a restart would pick up the newer build. Hourly is plenty: this is
+/// an operator nudge, not a time-critical check, so it runs on its own cadence independent of
+/// [`crate::routines::CLEANUP_INTERVAL`].
 pub const VERSION_DRIFT_CHECK_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(60 * 60);
 

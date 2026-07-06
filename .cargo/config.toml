@@ -5,8 +5,3 @@
 # harness to a single thread so those mutations cannot leak across concurrently-running tests.
 # Only the test harness honors `RUST_TEST_THREADS`; the shipped binary ignores it.
 RUST_TEST_THREADS = "1"
-
-[alias]
-# `cargo xtask <task>` runs the workspace task runner (see the `xtask` crate).
-# e.g. `cargo xtask spellcheck` installs (if needed) and runs `typos`.
-xtask = "run --quiet --package xtask --"

@@ -33,7 +33,7 @@ pub(crate) fn run_status_label(status: RunStatus) -> &'static str {
 }
 
 /// Format the wall-clock duration between a run's start and finish as `"<n>s"`/`"<n>m"`/`"<n>h <n>m"`.
-fn fmt_run_duration(started_at: u64, finished_at: u64) -> String {
+pub(crate) fn fmt_run_duration(started_at: u64, finished_at: u64) -> String {
     let secs = finished_at.saturating_sub(started_at);
     if secs < 60 {
         format!("{secs}s")
@@ -41,6 +41,24 @@ fn fmt_run_duration(started_at: u64, finished_at: u64) -> String {
         format!("{}m", secs / 60)
     } else {
         format!("{}h {}m", secs / 3_600, (secs % 3_600) / 60)
+    }
+}
+
+/// Format a humanized countdown to when a finished run's workbench is due to be reaped, given
+/// the current time and the run's `retention_expires_at`. Once the deadline has passed this
+/// reads `"expired"` rather than a negative countdown — cleanup runs on its own interval, so a
+/// due run can still briefly be visible.
+pub(crate) fn fmt_retention(now: u64, expires_at: u64) -> String {
+    if now >= expires_at {
+        return "expired".to_string();
+    }
+    let secs = expires_at - now;
+    if secs < 60 {
+        "expires in <1m".to_string()
+    } else if secs < 3_600 {
+        format!("expires in {}m", secs / 60)
+    } else {
+        format!("expires in {}h {}m", secs / 3_600, (secs % 3_600) / 60)
     }
 }
 
@@ -134,6 +152,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
         });
     }
 
+    let now_secs = (js_sys::Date::now() / 1000.0) as u64;
     let rows = runs.iter().map(|run| {
         let started = crate::reltime(run.started_at);
         let duration = run.finished_at.map(|f| fmt_run_duration(run.started_at, f));
@@ -141,6 +160,9 @@ pub fn routine_history(props: &HistoryProps) -> Html {
             .exit_code
             .map(|c| c.to_string())
             .unwrap_or_else(|| "—".to_string());
+        let retention = run
+            .retention_expires_at
+            .map(|expires_at| fmt_retention(now_secs, expires_at));
         let workbench = run.workbench.clone();
         let is_selected = selected.as_deref() == Some(workbench.as_str());
         let on_view = {
@@ -160,6 +182,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
                 <td><span class={run_status_class(run.status)}>{run_status_label(run.status)}</span></td>
                 <td>{duration.unwrap_or_else(|| "—".to_string())}</td>
                 <td>{exit_code}</td>
+                <td><span class="cell-meta">{retention.unwrap_or_else(|| "—".to_string())}</span></td>
                 <td>
                     <button class="act-btn logs" onclick={on_view}>
                         { if is_selected { "HIDE LOG" } else { "VIEW LOG" } }
@@ -192,6 +215,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
                             <th>{"STATUS"}</th>
                             <th>{"DURATION"}</th>
                             <th>{"EXIT CODE"}</th>
+                            <th>{"RETENTION"}</th>
                             <th></th>
                         </tr>
                     </thead>

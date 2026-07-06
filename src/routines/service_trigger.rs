@@ -13,11 +13,12 @@ use crate::routines::cleanup::{
 use crate::routines::command::{
     build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix,
 };
-use crate::routines::flags::{self, Flag, FlagScope};
 use crate::routines::model::{
     CleanupResponse, FleetRunSummary, Routine, RoutineStore, RunStatus, RunSummary,
 };
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
+
+use super::service_log_tail::{read_log_tail, read_log_tail_with_meta, LogWithMeta};
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 ///
@@ -238,13 +239,16 @@ fn spawn_routine_command(routine: &Routine) {
     }
 }
 
-/// Reap finished, expired run workbenches immediately, returning how many were removed.
+/// Reap finished, expired run workbenches immediately, returning how many were removed and the
+/// bytes freed.
 ///
 /// Runs the same sweep as the hourly background task ([`cleanup_expired_workbenches`]) but on
 /// demand, so callers need not wait for the next tick. Still-running sessions are never touched.
 pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
+    let stats = cleanup_expired_workbenches(store);
     CleanupResponse {
-        removed: cleanup_expired_workbenches(store),
+        removed: stats.removed,
+        freed_bytes: stats.freed_bytes,
     }
 }
 
@@ -278,8 +282,9 @@ pub(super) fn migrate_workbenches(old_slug: &str, new_slug: &str) {
     }
 }
 
-/// Return the contents of the newest workbench `agent.log` for routine `id`.
-pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
+/// Return the contents of the newest workbench `agent.log` for routine `id`, plus whether that
+/// content is a truncated window rather than the complete file (see [`LogWithMeta`]).
+pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError> {
     let routine = store
         .lock_recover()
         .get(id)
@@ -305,13 +310,13 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         }
     }
     let Some((_, dir)) = newest else {
-        return Ok(String::new());
+        return Ok(LogWithMeta::empty());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
     if !log_path.exists() {
-        return Ok(String::new());
+        return Ok(LogWithMeta::empty());
     }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail_with_meta(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status
@@ -337,7 +342,7 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             if dir_slug != slug {
                 continue;
             }
-            runs.push(run_summary(&name, ts));
+            runs.push(run_summary(&name, ts, Some(routine.effective_ttl_secs())));
         }
     }
     for persisted in read_persisted_runs(id) {
@@ -347,6 +352,9 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             finished_at: Some(persisted.finished_at),
             status: persisted.status,
             exit_code: persisted.exit_code,
+            // The workbench is already gone (that's why this run came from `runs.log` instead of
+            // a live directory scan), so there is nothing left to count down to.
+            retention_expires_at: None,
         });
     }
     runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
@@ -386,7 +394,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
             let Some((routine_id, routine_title)) = by_slug.get(dir_slug).cloned() else {
                 continue;
             };
-            let run = run_summary(&name, ts);
+            let run = run_summary(&name, ts, None);
             runs.push(FleetRunSummary {
                 routine_id,
                 routine_title,
@@ -417,7 +425,11 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
 }
 
 /// Derive a single [`RunSummary`] for workbench `dir` (named `{slug}-{started_at}`).
-fn run_summary(dir: &str, started_at: u64) -> RunSummary {
+///
+/// `effective_ttl_secs` is the owning routine's [`Routine::effective_ttl_secs`], used to compute
+/// `retention_expires_at`; pass `None` when the caller (e.g. the fleet-wide
+/// [`svc_list_all_runs`]) doesn't need that field.
+fn run_summary(dir: &str, started_at: u64, effective_ttl_secs: Option<u64>) -> RunSummary {
     let path = workbenches_dir().join(dir);
     let exit_code = read_exit_code(&path);
     let finished_at = std::fs::metadata(path.join("exit_code"))
@@ -432,21 +444,31 @@ fn run_summary(dir: &str, started_at: u64) -> RunSummary {
         None if run_session_alive(&session) => RunStatus::Running,
         None => RunStatus::Unknown,
     };
+    let retention_expires_at =
+        finished_at.and_then(|finish| effective_ttl_secs.map(|ttl| finish + ttl));
     RunSummary {
         workbench: dir.to_string(),
         started_at,
         finished_at,
         status,
         exit_code,
+        retention_expires_at,
     }
 }
 
-/// Return the contents of a specific run's `agent.log`, by workbench directory name.
+/// Return the contents of `filename` inside a specific run's workbench, by workbench directory
+/// name.
 ///
 /// `workbench` must be an existing, exact `{slug}-{ts}` directory belonging to routine `id` — this
 /// guards both path traversal (a bare directory name, not an arbitrary path, is joined onto
 /// `workbenches_dir()`) and cross-routine leakage, mirroring the exact-slug check in [`svc_logs`].
-pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<String, AppError> {
+/// Shared by [`svc_run_log`] (`agent.log`) and [`svc_run_summary`] (`summary.md`).
+fn svc_run_file(
+    store: &RoutineStore,
+    id: &str,
+    workbench: &str,
+    filename: &str,
+) -> Result<String, AppError> {
     let routine = store
         .lock_recover()
         .get(id)
@@ -459,84 +481,25 @@ pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<St
     if dir_slug != slug {
         return Err(AppError::NotFound);
     }
-    let log_path = workbenches_dir().join(workbench).join("agent.log");
-    if !log_path.exists() {
+    let path = workbenches_dir().join(workbench).join(filename);
+    if !path.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail(&path).map_err(|_| AppError::Internal)
 }
 
-/// Reject a blank (empty/whitespace-only) flag `type` or `description`.
-fn validate_flag_field(field: &str, value: &str) -> Result<(), AppError> {
-    if value.trim().is_empty() {
-        return Err(AppError::BadRequest(format!(
-            "flag {field} must not be empty"
-        )));
-    }
-    Ok(())
+/// Return the contents of a specific run's `agent.log`, by workbench directory name.
+pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<String, AppError> {
+    svc_run_file(store, id, workbench, "agent.log")
 }
 
-/// Parse a `scope` string into a [`FlagScope`], returning `400 BadRequest` on unknown values.
-/// Mirrors `parse_lock_scope` in `handlers.rs`.
-fn parse_flag_scope(scope: &str) -> Result<FlagScope, AppError> {
-    match scope {
-        "general" => Ok(FlagScope::General),
-        "local" => Ok(FlagScope::Local),
-        other => Err(AppError::BadRequest(format!(
-            "unknown flag scope {other:?}; use \"general\" or \"local\""
-        ))),
-    }
-}
-
-/// Look up a routine by `id` and derive its slug, `NotFound` if it does not exist.
-fn routine_and_slug(store: &RoutineStore, id: &str) -> Result<(Routine, String), AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    Ok((routine, slug))
-}
-
-/// Raise a new flag against routine `id`. `flag_type` and `description` must be non-blank;
-/// `scope` is `"general"` (committed) or `"local"` (gitignored). Refreshes the routine's
-/// `prompts/prompt.compiled.md` afterward so the next run's "Open flags" section (see
-/// `compose_prompt`) includes it.
-pub fn svc_create_flag(
+/// Return the contents of a specific run's agent-authored `summary.md` (see the "Work log"
+/// instruction in [`crate::routines::command::system_prompt_stmts`]), by workbench directory
+/// name. Empty string when the agent hasn't written one (yet, or never did).
+pub fn svc_run_summary(
     store: &RoutineStore,
     id: &str,
-    flag_type: &str,
-    description: &str,
-    scope: &str,
-) -> Result<Flag, AppError> {
-    validate_flag_field("type", flag_type)?;
-    validate_flag_field("description", description)?;
-    let scope = parse_flag_scope(scope)?;
-    let (routine, slug) = routine_and_slug(store, id)?;
-    let flag =
-        flags::create_flag(&slug, flag_type, description, scope).map_err(|_| AppError::Internal)?;
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    Ok(flag)
-}
-
-/// List every open flag raised against routine `id`, oldest first.
-pub fn svc_list_flags(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppError> {
-    let (_, slug) = routine_and_slug(store, id)?;
-    Ok(flags::list_flags(&slug))
-}
-
-/// Resolve (delete) the flag named `filename` under routine `id`.
-///
-/// `NotFound` when the routine does not exist, `filename` is unsafe, or names no existing flag.
-/// Refreshes `prompts/prompt.compiled.md` afterward so a resolved flag stops appearing in the next
-/// run's prompt.
-pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Result<(), AppError> {
-    let (routine, slug) = routine_and_slug(store, id)?;
-    let resolved = flags::resolve_flag(&slug, filename).map_err(|_| AppError::Internal)?;
-    if !resolved {
-        return Err(AppError::NotFound);
-    }
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
-    Ok(())
+    workbench: &str,
+) -> Result<String, AppError> {
+    svc_run_file(store, id, workbench, "summary.md")
 }

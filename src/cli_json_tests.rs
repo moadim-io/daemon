@@ -187,7 +187,7 @@ fn readme_status_json_shape_matches_actual_keys() {
     };
     assert_eq!(
         documented,
-        actual_keys(&status_json(true, Some(7), Some(health))),
+        actual_keys(&status_json(true, Some(7), Some(&health))),
         "README `moadim status --json` shape has drifted from status_json's actual keys"
     );
 }
@@ -198,7 +198,7 @@ fn readme_cleanup_json_shape_matches_actual_keys() {
     documented.sort();
     assert_eq!(
         documented,
-        actual_keys(&cleanup_json(3, true)),
+        actual_keys(&cleanup_json(3, 12345, true)),
         "README `moadim cleanup --json` shape has drifted from cleanup_json's actual keys"
     );
 }
@@ -336,7 +336,7 @@ fn cleanup_errors_on_unexpected_status() {
 fn trigger_triggers_routine_when_server_responds() {
     let server = FakeServer::start(200, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert_eq!(trigger("some-id".to_string()).unwrap(), 0);
+    assert_eq!(trigger("some-id").unwrap(), 0);
 }
 
 #[test]
@@ -345,18 +345,18 @@ fn trigger_reports_unknown_routine_on_404() {
     // non-zero exit via the bubbled `Err`, distinct from "server not running".
     let server = FakeServer::start(404, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert!(trigger("missing".to_string()).is_err());
+    assert!(trigger("missing").is_err());
 }
 
 #[test]
 fn trigger_errors_on_unexpected_status() {
     let server = FakeServer::start(500, String::new());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    assert!(trigger("some-id".to_string()).is_err());
+    assert!(trigger("some-id").is_err());
 }
 
 #[test]
 fn trigger_reports_not_running_when_no_server() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert_eq!(trigger("some-id".to_string()).unwrap(), EXIT_NOT_RUNNING);
+    assert_eq!(trigger("some-id").unwrap(), EXIT_NOT_RUNNING);
 }

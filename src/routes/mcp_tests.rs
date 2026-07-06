@@ -211,6 +211,7 @@ fn cleanup_workbenches_tool_returns_removed_count() {
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     assert!(val["removed"].is_u64());
+    assert!(val["freed_bytes"].is_u64());
 }
 
 #[test]
@@ -435,24 +436,8 @@ fn set_power_saving_tool_blocks_trigger_without_touching_enabled() {
     assert!(!result.is_error.unwrap_or(false));
 }
 
-// ── parity tools: agents / logs / shutdown ──────────────────────────────────────
-
 #[test]
-fn list_agents_tool_returns_array() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.list_agents().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert!(val.is_array());
-}
-
-#[test]
-fn routine_logs_tool_returns_logs_for_existing_routine() {
+fn list_routine_runs_tool_returns_empty_list_for_existing_routine() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
@@ -469,7 +454,7 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
         .unwrap()
         .to_string();
     let result = handler
-        .routine_logs(Parameters(IdInput { id: id.clone() }))
+        .list_routine_runs(Parameters(IdInput { id }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
@@ -477,117 +462,16 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    // No run has executed, so there is no newest workbench log yet — empty contents.
-    assert_eq!(val["logs"], "");
+    assert_eq!(val, serde_json::json!([]));
 }
 
 #[test]
-fn routine_logs_tool_not_found_is_error() {
+fn list_routine_runs_tool_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();
     let result = handler
-        .routine_logs(Parameters(IdInput {
+        .list_routine_runs(Parameters(IdInput {
             id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn shutdown_tool_acknowledges() {
-    let handler = make_handler();
-    let result = handler.shutdown().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["status"], "shutting down");
-}
-
-#[test]
-fn restart_tool_spawns_helper_and_acknowledges() {
-    // The tool spawns a detached `current_exe --background` helper; under the test harness that exe
-    // is the test binary, which rejects `--background` and exits at once, so no real server starts.
-    // TempHome keeps the helper's log file out of the real home.
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.restart().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["status"], "restarting");
-    assert!(val["helper_pid"].as_u64().unwrap() > 0);
-}
-
-#[test]
-fn get_lock_status_returns_unlocked_by_default() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.get_lock_status().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], false);
-    assert_eq!(val["shared"], false);
-    assert_eq!(val["local"], false);
-}
-
-#[test]
-fn lock_routines_shared_creates_sentinel_and_returns_status() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler
-        .lock_routines(Parameters(LockRoutinesInput {
-            scope: "shared".into(),
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], true);
-    assert_eq!(val["shared"], true);
-    // Clean up so other tests are not affected.
-    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, false).unwrap();
-}
-
-#[test]
-fn lock_routines_local_creates_sentinel_and_returns_status() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler
-        .lock_routines(Parameters(LockRoutinesInput {
-            scope: "local".into(),
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], true);
-    assert_eq!(val["local"], true);
-    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
-}
-
-#[test]
-fn lock_routines_unknown_scope_is_error() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler
-        .lock_routines(Parameters(LockRoutinesInput {
-            scope: "oops".into(),
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));

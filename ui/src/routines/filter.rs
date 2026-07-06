@@ -7,12 +7,13 @@
 //! narrow a dense list, a live result count keeps the active filter legible, and
 //! clicking a KPI tile cross-filters the detail table.
 
-use std::collections::BTreeSet;
-
 use chrono::{DateTime, Duration, Local};
 
 use crate::schedule::{fires_within, next_fire_after};
 
+pub use super::filter_distinct::{
+    distinct_agents, distinct_machines_r, distinct_repositories, distinct_tags,
+};
 use super::model::Routine;
 
 /// How far ahead a routine's next fire counts as "due soon" for the KPI tile.
@@ -455,55 +456,17 @@ pub fn filter_routines(
         .collect()
 }
 
-/// Distinct agent names across all routines, sorted.
-#[must_use]
-pub fn distinct_agents(routines: &[Routine]) -> Vec<String> {
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    for r in routines {
-        set.insert(r.agent.clone());
-    }
-    set.into_iter().collect()
-}
-
-/// Distinct machine ids across all routines, sorted.
-#[must_use]
-pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    for r in routines {
-        for m in &r.machines {
-            set.insert(m.clone());
-        }
-    }
-    set.into_iter().collect()
-}
-
-/// Distinct repository URLs across all routines, sorted.
-#[must_use]
-pub fn distinct_repositories(routines: &[Routine]) -> Vec<String> {
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    for r in routines {
-        for repo in &r.repositories {
-            set.insert(repo.repository.clone());
-        }
-    }
-    set.into_iter().collect()
-}
-
-/// Distinct tags across all routines, sorted.
-#[must_use]
-pub fn distinct_tags(routines: &[Routine]) -> Vec<String> {
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    for r in routines {
-        for tag in &r.tags {
-            set.insert(tag.clone());
-        }
-    }
-    set.into_iter().collect()
-}
-
 #[cfg(test)]
 #[path = "filter_tests.rs"]
 mod filter_tests;
+
+#[cfg(test)]
+#[path = "filter_distinct_tests.rs"]
+mod filter_distinct_tests;
+
+#[cfg(test)]
+#[path = "filter_facet_codec_tests.rs"]
+mod filter_facet_codec_tests;
 
 #[cfg(test)]
 #[path = "filter_health_tests.rs"]

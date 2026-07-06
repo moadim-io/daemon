@@ -38,9 +38,9 @@ fn cleanup_expired_workbenches_prunes_the_reaped_workbench_claude_json_entry() {
     .unwrap();
 
     let store = super::super::model::new_store();
-    let removed = cleanup_expired_workbenches(&store);
+    let stats = cleanup_expired_workbenches(&store);
 
-    assert!(removed >= 1, "expected the orphan to be reaped");
+    assert!(stats.removed >= 1, "expected the orphan to be reaped");
     assert!(!reaped_workbench.exists());
     let rewritten: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&claude_json).unwrap()).unwrap();
@@ -87,9 +87,9 @@ fn cleanup_expired_workbenches_logs_and_continues_on_malformed_claude_json() {
     std::fs::write(&claude_json, "not json").unwrap();
 
     let store = super::super::model::new_store();
-    let removed = cleanup_expired_workbenches(&store);
+    let stats = cleanup_expired_workbenches(&store);
 
-    assert!(removed >= 1, "expected the orphan to be reaped");
+    assert!(stats.removed >= 1, "expected the orphan to be reaped");
     assert!(!reaped_workbench.exists());
     assert_eq!(
         std::fs::read_to_string(&claude_json).unwrap(),

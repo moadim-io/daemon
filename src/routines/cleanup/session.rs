@@ -60,8 +60,27 @@ pub(crate) fn tmux_session_prefix_alive(prefix: &str) -> bool {
             out.status.success()
                 && String::from_utf8_lossy(&out.stdout)
                     .lines()
-                    .any(|name| name.starts_with(prefix))
+                    .any(|name| is_fire_of_prefix(name, prefix))
         })
+}
+
+/// Return `true` if `name` is a tmux session name for *this* routine's `prefix`
+/// (`moadim-{slug}-`), not merely a different routine whose slug happens to be a string-prefix of
+/// this one's (e.g. slug `deploy` vs slug `deploy-staging`: `"moadim-deploy-"` is a literal prefix
+/// of `"moadim-deploy-staging-<rid>"`). A plain [`str::starts_with`] treated that as a match,
+/// falsely suppressing `deploy`'s own fire while an unrelated `deploy-staging` run was alive.
+///
+/// Requires the remainder after `prefix` to have the exact `$RID` shape `build_routine_command`
+/// emits (`${TS}_$$`, i.e. `<digits>_<digits>`) rather than any suffix at all.
+fn is_fire_of_prefix(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix).is_some_and(|rid| {
+        rid.split_once('_').is_some_and(|(ts, pid)| {
+            !ts.is_empty()
+                && !pid.is_empty()
+                && ts.bytes().all(|byte| byte.is_ascii_digit())
+                && pid.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    })
 }
 
 /// Force-kill the tmux session named `session` (best-effort).
@@ -78,17 +97,26 @@ pub(super) fn tmux_kill_session(session: &str) {
         .status();
 }
 
-/// Record a watchdog kill in the run's `agent.log` (best-effort), so an operator reading the log
-/// sees why the session ended. `workbench` is the run directory; the note is appended to its
-/// `agent.log` (the same file the live session's output is piped to).
+/// Record a watchdog kill in the run's `agent.log` *and* its `exit_code` file (best-effort).
+///
+/// `workbench` is the run directory. The human-readable note is appended to `agent.log` (the same
+/// file the live session's output is piped to) so an operator reading the log sees why the session
+/// ended. The machine-readable `killed` sentinel is written to `exit_code`, the same file a
+/// normally-finishing run writes its numeric `$?` into (see `command::build_routine_command`); the
+/// distinct sentinel keeps a watchdog-killed run from masquerading as a clean `0` exit. The kill
+/// SIGKILLs the agent's pane before its own `echo $? > exit_code` can run, so there is no clobber.
 pub(super) fn note_forced_kill(workbench: &Path) {
     use std::io::Write;
-    let path = workbench.join("agent.log");
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
-        .open(path)
+        .open(workbench.join("agent.log"))
     {
         let _ = file.write_all(b"moadim: routine exceeded max runtime; killing session\n");
     }
+    let _ = std::fs::write(workbench.join("exit_code"), b"killed\n");
 }
+
+#[cfg(test)]
+#[path = "session_tests.rs"]
+mod session_tests;

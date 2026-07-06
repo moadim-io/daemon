@@ -7,10 +7,31 @@ use std::time::Duration;
 /// How long to wait when probing or signalling a running server over HTTP.
 const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
 
+/// Size at which `daemon.log` is rotated to `daemon.log.1` on the next detached spawn. The daemon
+/// is long-lived and appends to this file on every start/restart with no other trim point, so
+/// without a cap it grows unbounded until it fills the disk (#316).
+pub(crate) const DAEMON_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Rotate `log_path` to a sibling `.1` file (overwriting any previous one) if it has grown past
+/// [`DAEMON_LOG_MAX_BYTES`]. Best-effort: a failed rotation (permissions, race) falls through to
+/// the caller's own `append(true)` open rather than blocking the spawn.
+fn rotate_daemon_log_if_oversized(log_path: &std::path::Path) {
+    let Ok(metadata) = std::fs::metadata(log_path) else {
+        return;
+    };
+    if metadata.len() <= DAEMON_LOG_MAX_BYTES {
+        return;
+    }
+    let rotated_path = log_path.with_extension("log.1");
+    let _ = std::fs::rename(log_path, rotated_path);
+}
+
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
-    std::fs::create_dir_all(path.parent().expect("pid file path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("pid file path has a parent dir"),
+    )?;
     ensure_config_gitignore();
     ensure_readme(&crate::paths::config_readme_path(), CONFIG_README);
     ensure_readme(&crate::paths::routines_readme_path(), ROUTINES_README);
@@ -78,7 +99,7 @@ fn ensure_readme(path: &std::path::Path, content: &str) {
         return;
     }
     let parent = path.parent().expect("readme path has a parent dir");
-    if std::fs::create_dir_all(parent).is_err() {
+    if crate::utils::fs_perms::create_private_dir_all(parent).is_err() {
         return;
     }
     let _ = std::fs::write(path, content);
@@ -281,6 +302,13 @@ pub(super) fn parse_removed_count(body: &str) -> Option<usize> {
     value.get("removed")?.as_u64().map(|n| n as usize)
 }
 
+/// Extract the `freed_bytes` total from a [`CleanupResponse`](crate::routines::CleanupResponse) JSON
+/// body. Returns `None` for a body lacking the (additive) field, so older servers degrade to `0`.
+pub(super) fn parse_freed_bytes(body: &str) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    value.get("freed_bytes")?.as_u64()
+}
+
 /// Spawn a detached copy of this binary running the server in the foreground, returning its PID.
 ///
 /// The child runs with `--interactive` (so it actually serves), in its own process group so a
@@ -314,7 +342,10 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
 
     let exe = std::env::current_exe().expect("resolve current executable path");
     let log_path = crate::paths::daemon_log_file();
-    std::fs::create_dir_all(log_path.parent().expect("daemon log path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        log_path.parent().expect("daemon log path has a parent dir"),
+    )?;
+    rotate_daemon_log_if_oversized(&log_path);
     let out = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -348,3 +379,7 @@ fn detach(cmd: &mut std::process::Command) {
 /// No-op on platforms without process groups; the child still detaches via redirected stdio.
 #[cfg(not(unix))]
 fn detach(_cmd: &mut std::process::Command) {}
+
+#[cfg(test)]
+#[path = "cli_system_tests.rs"]
+mod cli_system_tests;

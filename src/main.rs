@@ -52,12 +52,16 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
+        cli::Command::Usage(arg) => {
+            cli::print_usage_error(&arg);
+            std::process::exit(cli::EXIT_USAGE);
+        }
         cli::Command::Status { json, wait_secs } => {
             std::process::exit(cli::status(json, wait_secs)?)
         }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
-        cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
+        cli::Command::Trigger { id } => std::process::exit(cli::trigger(&id)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart {
             json,
@@ -162,7 +166,18 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
     }
-    let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
+    // The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
+    // exposes unauthenticated routine CRUD to anyone who can reach it. Warn loudly at startup,
+    // same as the tmux/python3 checks above, rather than letting this go unnoticed.
+    let bind_addr = cli::bind_addr();
+    if !cli::bind_addr_is_loopback(&bind_addr) {
+        log::warn!(
+            "moadim is binding to {bind_addr}, which is not loopback-only; the REST/MCP API has \
+             no authentication, so anyone who can reach this address can create, modify, or \
+             delete routines. Restrict network access to this port (see issue #504)."
+        );
+    }
+    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     cli::write_pid_file()?;
     let result =
         routes::http::run_with_listener_until(routines, listener, termination_signal()).await;

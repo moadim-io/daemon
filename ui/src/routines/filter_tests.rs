@@ -3,7 +3,7 @@ use super::*;
 use chrono::TimeZone;
 
 /// Build a routine with the fields the filter reads; the rest are inert.
-fn routine(
+pub(super) fn routine(
     id: &str,
     title: &str,
     agent: &str,
@@ -16,6 +16,7 @@ fn routine(
         id: id.into(),
         title: title.into(),
         agent: agent.into(),
+        model: None,
         schedule: schedule.into(),
         prompt: String::new(),
         repositories: repos
@@ -53,113 +54,6 @@ fn now() -> DateTime<Local> {
 /// DueSoon window matching `DUE_SOON_WINDOW_SECS`.
 fn window() -> Duration {
     Duration::seconds(DUE_SOON_WINDOW_SECS)
-}
-
-// ── RoutineStatusFacet codecs ─────────────────────────────────────────────────
-
-#[test]
-fn status_facet_roundtrips_and_defaults_to_all() {
-    for f in [
-        RoutineStatusFacet::All,
-        RoutineStatusFacet::Enabled,
-        RoutineStatusFacet::Disabled,
-        RoutineStatusFacet::Dormant,
-        RoutineStatusFacet::DueSoon,
-        RoutineStatusFacet::Snoozed,
-        RoutineStatusFacet::HasFlags,
-        RoutineStatusFacet::AgentUnregistered,
-    ] {
-        assert_eq!(RoutineStatusFacet::from_str(f.as_str()), f);
-    }
-    assert_eq!(
-        RoutineStatusFacet::from_str("nonsense"),
-        RoutineStatusFacet::All
-    );
-    assert_eq!(RoutineStatusFacet::default(), RoutineStatusFacet::All);
-}
-
-// ── AgentFacet codecs ─────────────────────────────────────────────────────────
-
-#[test]
-fn agent_facet_roundtrips_and_defaults_to_all() {
-    let all = AgentFacet::All;
-    let named = AgentFacet::Named("claude".into());
-    assert_eq!(AgentFacet::from_value(&all.as_value()), all);
-    assert_eq!(AgentFacet::from_value(&named.as_value()), named);
-    assert_eq!(AgentFacet::default(), AgentFacet::All);
-}
-
-#[test]
-fn agent_facet_decodes_a_plain_name_as_named() {
-    assert_eq!(
-        AgentFacet::from_value("codex"),
-        AgentFacet::Named("codex".into())
-    );
-}
-
-// ── RepositoryFacet codecs ─────────────────────────────────────────────────────
-
-#[test]
-fn repository_facet_roundtrips_and_defaults_to_all() {
-    let all = RepositoryFacet::All;
-    let named = RepositoryFacet::Named("github.com/org/repo".into());
-    assert_eq!(RepositoryFacet::from_value(&all.as_value()), all);
-    assert_eq!(RepositoryFacet::from_value(&named.as_value()), named);
-    assert_eq!(RepositoryFacet::default(), RepositoryFacet::All);
-}
-
-#[test]
-fn repository_facet_decodes_a_plain_url_as_named() {
-    assert_eq!(
-        RepositoryFacet::from_value("github.com/org/repo"),
-        RepositoryFacet::Named("github.com/org/repo".into())
-    );
-}
-
-// ── TagFacet codecs ────────────────────────────────────────────────────────────
-
-#[test]
-fn tag_facet_roundtrips_and_defaults_to_all() {
-    let all = TagFacet::All;
-    let named = TagFacet::Named("nightly".into());
-    assert_eq!(TagFacet::from_value(&all.as_value()), all);
-    assert_eq!(TagFacet::from_value(&named.as_value()), named);
-    assert_eq!(TagFacet::default(), TagFacet::All);
-}
-
-#[test]
-fn tag_facet_decodes_a_plain_value_as_named() {
-    assert_eq!(
-        TagFacet::from_value("nightly"),
-        TagFacet::Named("nightly".into())
-    );
-}
-
-// ── RoutineMachineFacet codecs ────────────────────────────────────────────────
-
-#[test]
-fn machine_facet_roundtrips_through_select_value() {
-    let any = RoutineMachineFacet::Any;
-    let unassigned = RoutineMachineFacet::Unassigned;
-    let specific = RoutineMachineFacet::Machine("alpha".into());
-    assert_eq!(RoutineMachineFacet::from_value(&any.as_value()), any);
-    assert_eq!(
-        RoutineMachineFacet::from_value(&unassigned.as_value()),
-        unassigned
-    );
-    assert_eq!(
-        RoutineMachineFacet::from_value(&specific.as_value()),
-        specific
-    );
-    assert_eq!(RoutineMachineFacet::default(), RoutineMachineFacet::Any);
-}
-
-#[test]
-fn machine_facet_decodes_a_plain_id_as_specific() {
-    assert_eq!(
-        RoutineMachineFacet::from_value("worker-1"),
-        RoutineMachineFacet::Machine("worker-1".into())
-    );
 }
 
 // ── is_active ─────────────────────────────────────────────────────────────────
@@ -581,69 +475,4 @@ fn filter_routines_due_soon_returns_imminent_enabled_only() {
     let got = filter_routines(&routines, &f, now(), window());
     assert_eq!(got.len(), 2);
     assert!(got.iter().all(|r| r.enabled));
-}
-
-// ── distinct helpers ──────────────────────────────────────────────────────────
-
-#[test]
-fn distinct_agents_returns_sorted_unique_agents() {
-    let routines = vec![
-        routine("a", "t", "codex", "0 * * * *", &[], &[], true),
-        routine("b", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let agents = distinct_agents(&routines);
-    assert_eq!(agents, vec!["claude", "codex"]);
-}
-
-#[test]
-fn distinct_machines_r_returns_sorted_unique_machines() {
-    let routines = vec![
-        routine("a", "t", "claude", "0 * * * *", &["m2", "m1"], &[], true),
-        routine("b", "t", "claude", "0 * * * *", &["m1", "m3"], &[], true),
-    ];
-    let machines = distinct_machines_r(&routines);
-    assert_eq!(machines, vec!["m1", "m2", "m3"]);
-}
-
-#[test]
-fn distinct_repositories_returns_sorted_unique_repositories() {
-    let routines = vec![
-        routine(
-            "a",
-            "t",
-            "claude",
-            "0 * * * *",
-            &[],
-            &["repo-b", "repo-a"],
-            true,
-        ),
-        routine(
-            "b",
-            "t",
-            "claude",
-            "0 * * * *",
-            &[],
-            &["repo-a", "repo-c"],
-            true,
-        ),
-    ];
-    let repos = distinct_repositories(&routines);
-    assert_eq!(repos, vec!["repo-a", "repo-b", "repo-c"]);
-}
-
-#[test]
-fn distinct_tags_returns_sorted_unique_tags() {
-    let routines = vec![
-        Routine {
-            tags: vec!["nightly".into(), "beta".into()],
-            ..routine("a", "t", "claude", "0 * * * *", &[], &[], true)
-        },
-        Routine {
-            tags: vec!["beta".into(), "prod".into()],
-            ..routine("b", "t", "claude", "0 * * * *", &[], &[], true)
-        },
-    ];
-    let tags = distinct_tags(&routines);
-    assert_eq!(tags, vec!["beta", "nightly", "prod"]);
 }

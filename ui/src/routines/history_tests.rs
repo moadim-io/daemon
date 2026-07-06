@@ -50,3 +50,29 @@ fn fmt_run_duration_saturates_when_finished_precedes_started() {
     // A clock skew or malformed record must not panic on underflow.
     assert_eq!(fmt_run_duration(100, 50), "0s");
 }
+
+#[test]
+fn fmt_retention_under_a_minute_reads_under_a_minute() {
+    assert_eq!(fmt_retention(1_000, 1_030), "expires in <1m");
+}
+
+#[test]
+fn fmt_retention_under_an_hour_is_minutes() {
+    assert_eq!(fmt_retention(0, 754), "expires in 12m");
+}
+
+#[test]
+fn fmt_retention_over_an_hour_is_hours_and_minutes() {
+    assert_eq!(fmt_retention(0, 7_530), "expires in 2h 5m");
+}
+
+#[test]
+fn fmt_retention_at_deadline_reads_expired() {
+    assert_eq!(fmt_retention(1_000, 1_000), "expired");
+}
+
+#[test]
+fn fmt_retention_past_deadline_reads_expired() {
+    // Cleanup runs on its own interval, so a due run can still be visible past its deadline.
+    assert_eq!(fmt_retention(1_500, 1_000), "expired");
+}

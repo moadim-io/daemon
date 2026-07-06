@@ -74,118 +74,15 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
     Arc::new(Mutex::new(map))
 }
 
-#[test]
-fn svc_list_sorts_by_updated_at() {
-    let _home = TempHome::set();
-    // Covers the `RoutineSort::Updated` arm: sort by `updated_at` ascending.
-    let store = store_with(vec![
-        make_routine("late", "Zeta", 100, 300),
-        make_routine("early", "Alpha", 100, 100),
-        make_routine("mid", "Mid", 100, 200),
-    ]);
-    let query = RoutineListQuery {
-        sort: RoutineSort::Updated,
-        ..Default::default()
-    };
-    let list = svc_list(&store, &query);
-    assert_eq!(list[0].routine.id, "early");
-    assert_eq!(list[1].routine.id, "mid");
-    assert_eq!(list[2].routine.id, "late");
-}
-
-#[test]
-fn svc_list_sorts_by_title_case_insensitively() {
-    let _home = TempHome::set();
-    // Covers the `RoutineSort::Title` arm: sort by lowercased title.
-    let store = store_with(vec![
-        make_routine("banana", "banana", 0, 0),
-        make_routine("apple", "Apple", 0, 0),
-        make_routine("cherry", "CHERRY", 0, 0),
-    ]);
-    let query = RoutineListQuery {
-        sort: RoutineSort::Title,
-        ..Default::default()
-    };
-    let list = svc_list(&store, &query);
-    assert_eq!(list[0].routine.id, "apple");
-    assert_eq!(list[1].routine.id, "banana");
-    assert_eq!(list[2].routine.id, "cherry");
-}
-
-#[test]
-fn svc_list_breaks_ties_on_id_deterministically() {
-    // Routines come off a `HashMap` (unspecified iteration order), so equal
-    // sort keys must be broken on the stable routine id for the listing to be
-    // deterministic. Three routines share a `created_at`; ascending lists them
-    // by id (A→Z) and descending reverses that, never an arbitrary order.
-    let tied = || {
-        store_with(vec![
-            make_routine("charlie", "C", 50, 0),
-            make_routine("alpha", "A", 50, 0),
-            make_routine("bravo", "B", 50, 0),
-        ])
-    };
-
-    let asc = svc_list(&tied(), &RoutineListQuery::default());
-    assert_eq!(
-        asc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
-        ["alpha", "bravo", "charlie"],
-    );
-
-    let desc = svc_list(
-        &tied(),
-        &RoutineListQuery {
-            order: SortOrder::Desc,
-            ..Default::default()
-        },
-    );
-    assert_eq!(
-        desc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
-        ["charlie", "bravo", "alpha"],
-    );
-}
-
-#[test]
-fn svc_list_omits_prompt_by_default() {
-    let _home = TempHome::set();
-    // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
-    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
-    let list = svc_list(&store, &RoutineListQuery::default());
-    assert_eq!(list.len(), 1);
-    assert!(list[0].routine.prompt.is_empty());
-    let json = serde_json::to_value(&list[0]).unwrap();
-    assert!(
-        json.get("prompt").is_none(),
-        "prompt should be absent from the serialized listing, got {json}"
-    );
-}
-
-#[test]
-fn svc_list_includes_prompt_when_requested() {
-    let _home = TempHome::set();
-    let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
-    let query = RoutineListQuery {
-        include_prompts: Some(true),
-        ..Default::default()
-    };
-    let list = svc_list(&store, &query);
-    assert_eq!(list[0].routine.prompt, "do the thing");
-    let json = serde_json::to_value(&list[0]).unwrap();
-    assert_eq!(
-        json.get("prompt").and_then(|value| value.as_str()),
-        Some("do the thing")
-    );
-}
-
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
+        goal: None,
         schedule: "@daily".into(),
         title: "Valid Title".into(),
         agent: "claude".into(),
         prompt: "do the thing".into(),
-        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -199,11 +96,11 @@ fn valid_create_request() -> CreateRoutineRequest {
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
         model: None,
+        goal: None,
         schedule: None,
         title: None,
         agent: None,
         prompt: None,
-        goal: None,
         repositories: None,
         machines: None,
         enabled: None,
@@ -211,6 +108,44 @@ fn empty_update_request() -> UpdateRoutineRequest {
         max_runtime_secs: None,
         tags: None,
     }
+}
+
+/// Serializes the tests in this file that swap `MOADIM_CRONTAB_BIN`, so concurrent
+/// service tests never observe a half-restored shim. The poisoned-lock case is
+/// recovered into the guard.
+static PATH_GUARD: Mutex<()> = Mutex::new(());
+
+/// Run `body` with `MOADIM_CRONTAB_BIN` pointed at a shim that succeeds (`crontab -l` prints an
+/// empty crontab and exits 0; `crontab -` swallows stdin and exits 0), so the crontab sync returns
+/// `Ok` and the non-error branch of `svc_create`/`svc_update`/`svc_delete` is exercised without
+/// touching the developer's real crontab. The prior env value is restored and the temp dir removed.
+fn with_working_crontab(body: impl FnOnce()) {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let guard = PATH_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let base = std::env::temp_dir().join(format!("moadim-routcronok-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let script = base.join("crontab-ok.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then cat > /dev/null; fi\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let saved = std::env::var_os("MOADIM_CRONTAB_BIN");
+    std::env::set_var("MOADIM_CRONTAB_BIN", &script);
+    body();
+    match saved {
+        Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),
+        None => std::env::remove_var("MOADIM_CRONTAB_BIN"),
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    drop(guard);
 }
 
 #[test]
@@ -223,6 +158,7 @@ fn svc_create_rejects_blank_title() {
         &store,
         CreateRoutineRequest {
             model: None,
+            goal: None,
             title: "   ".into(),
             ..valid_create_request()
         },
@@ -240,8 +176,8 @@ fn svc_create_rejects_blank_prompt() {
         &store,
         CreateRoutineRequest {
             model: None,
-            prompt: String::new(),
             goal: None,
+            prompt: String::new(),
             ..valid_create_request()
         },
     );
@@ -258,6 +194,7 @@ fn svc_create_rejects_zero_ttl_secs() {
         &store,
         CreateRoutineRequest {
             model: None,
+            goal: None,
             ttl_secs: Some(0),
             ..valid_create_request()
         },
@@ -275,6 +212,7 @@ fn svc_create_rejects_zero_max_runtime_secs() {
         &store,
         CreateRoutineRequest {
             model: None,
+            goal: None,
             max_runtime_secs: Some(0),
             tags: vec![],
             ..valid_create_request()
@@ -292,6 +230,7 @@ fn svc_create_persists_machines() {
         &store,
         CreateRoutineRequest {
             model: None,
+            goal: None,
             machines: vec!["alpha".into(), "beta".into()],
             ..valid_create_request()
         },
@@ -310,6 +249,7 @@ fn svc_update_sets_machines() {
         "upd-machines",
         UpdateRoutineRequest {
             model: None,
+            goal: None,
             machines: Some(vec!["server".into()]),
             ..empty_update_request()
         },
@@ -328,6 +268,7 @@ fn svc_update_rejects_blank_title() {
         "upd-blank-title",
         UpdateRoutineRequest {
             model: None,
+            goal: None,
             title: Some("  ".into()),
             ..empty_update_request()
         },
@@ -345,8 +286,8 @@ fn svc_update_rejects_blank_prompt() {
         "upd-blank-prompt",
         UpdateRoutineRequest {
             model: None,
-            prompt: Some("\t\n".into()),
             goal: None,
+            prompt: Some("\t\n".into()),
             ..empty_update_request()
         },
     );
@@ -381,6 +322,7 @@ fn svc_update_rejects_zero_durations() {
         "upd-zero-secs",
         UpdateRoutineRequest {
             model: None,
+            goal: None,
             ttl_secs: Some(0),
             ..empty_update_request()
         },
@@ -391,30 +333,13 @@ fn svc_update_rejects_zero_durations() {
         "upd-zero-secs",
         UpdateRoutineRequest {
             model: None,
+            goal: None,
             max_runtime_secs: Some(0),
             tags: None,
             ..empty_update_request()
         },
     );
     assert!(matches!(max_runtime, Err(AppError::BadRequest(_))));
-}
-
-#[test]
-fn svc_create_rejects_ttl_above_cron_ceiling() {
-    let _home = TempHome::set();
-    // A `*/5 * * * *` routine has a ttl ceiling of min(3600, 300) = 300s. An explicit 1800 would be
-    // silently clamped to 300, so it is rejected with `BadRequest` up front (#468).
-    let store = new_store();
-    let result = svc_create(
-        &store,
-        CreateRoutineRequest {
-            model: None,
-            schedule: "*/5 * * * *".into(),
-            ttl_secs: Some(1800),
-            ..valid_create_request()
-        },
-    );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
 }
 
 #[test]
@@ -431,6 +356,8 @@ fn svc_create_rejects_agent_config_without_prompt_placeholder() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            model: None,
+            goal: None,
             title: "Svc Create NoPrompt ZZZ".into(),
             agent: agent_name.into(),
             prompt: "p".into(),
@@ -449,128 +376,64 @@ fn svc_create_rejects_agent_config_without_prompt_placeholder() {
 }
 
 #[test]
-fn svc_update_rejects_malformed_agent_config() {
-    // The same rejection applies when an update switches a routine to a malformed agent.
-    let agent_name = "svc-update-malformed-agent-zzz";
-    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
-    let cfg = crate::paths::agent_toml_path(agent_name);
-    std::fs::write(&cfg, "command = [\n").unwrap();
-
-    let title = "Svc Update Malformed ZZZ";
+fn svc_delete_tombstones_a_builtin_default_so_it_is_not_resurrected() {
+    // #265: deleting a built-in default (title matches DEFAULT_ROUTINES[0]; kept as a literal
+    // here since DEFAULT_ROUTINES is private to the `defaults` submodule) must stick — a later
+    // `ensure_default_routines` (simulating the next startup) must not re-create it.
+    let _home = TempHome::set();
+    let title = "Update moadim cargo package";
+    let slug = slugify(title);
     let store = new_store();
-    let routine = make_routine("upd-mal-id", title, 1, 1);
+    let routine = make_routine("default-del-id", title, 1, 1);
     crate::routine_storage::write_routine(&routine).unwrap();
-    store.lock().unwrap().insert("upd-mal-id".into(), routine);
+    store
+        .lock()
+        .unwrap()
+        .insert("default-del-id".into(), routine);
 
-    let result = svc_update(
-        &store,
-        "upd-mal-id",
-        UpdateRoutineRequest {
-            agent: Some(agent_name.into()),
-            ..empty_update_request()
-        },
-    );
-    match result {
-        Err(AppError::BadRequest(msg)) => assert!(msg.contains("malformed config")),
-        other => panic!("expected BadRequest, got {other:?}"),
-    }
+    with_working_crontab(|| {
+        svc_delete(&store, "default-del-id").unwrap();
+    });
 
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
-    std::fs::remove_file(&cfg).unwrap();
-}
-
-#[test]
-fn svc_create_rejects_max_runtime_above_cron_ceiling() {
-    let _home = TempHome::set();
-    // Mirror of the ttl ceiling for the watchdog bound (#468).
-    let store = new_store();
-    let result = svc_create(
-        &store,
-        CreateRoutineRequest {
-            model: None,
-            schedule: "*/5 * * * *".into(),
-            max_runtime_secs: Some(1800),
-            ..valid_create_request()
-        },
-    );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
-}
-
-#[test]
-fn svc_create_accepts_secs_at_cron_ceiling() {
-    let _home = TempHome::set();
-    // A value equal to the cron-derived ceiling (`*/5` -> 300s) is in force, not clamped, so it
-    // passes `reject_over_ceiling` (covering the `secs <= ceiling` arm for both fields). A
-    // duplicate-slug routine pre-seeded in the store makes the create fail *after* that check with a
-    // `Conflict`, so the assertion proves the ceiling check did not reject — without performing any
-    // crontab/disk mutation.
-    let store = store_with(vec![make_routine(
-        "at-ceiling-dupe",
-        "At Ceiling ZZZ",
-        1,
-        1,
-    )]);
-    let result = svc_create(
-        &store,
-        CreateRoutineRequest {
-            model: None,
-            schedule: "*/5 * * * *".into(),
-            // Same slug as the pre-seeded routine.
-            title: "  at   ceiling ZZZ ".into(),
-            ttl_secs: Some(300),
-            max_runtime_secs: Some(300),
-            ..valid_create_request()
-        },
-    );
-    assert!(matches!(result, Err(AppError::Conflict(_))));
-}
-
-#[test]
-fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
-    let _home = TempHome::set();
-    // No schedule supplied: the ceiling derives from the routine's *current* `*/5` schedule, so a
-    // 1800s ttl exceeds the 300s ceiling and is rejected without mutating the store (#468).
-    let store = store_with(vec![Routine {
-        schedule: "*/5 * * * *".to_string(),
-        ..make_routine("upd-ttl-ceiling", "Keep Ceiling", 1, 1)
-    }]);
-    let result = svc_update(
-        &store,
-        "upd-ttl-ceiling",
-        UpdateRoutineRequest {
-            model: None,
-            ttl_secs: Some(1800),
-            ..empty_update_request()
-        },
-    );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
-    // The store value is untouched by the rejected update.
-    assert_eq!(
-        store
+    let restarted_store = new_store();
+    crate::routines::ensure_default_routines(&restarted_store);
+    assert!(
+        !restarted_store
             .lock()
             .unwrap()
-            .get("upd-ttl-ceiling")
-            .unwrap()
-            .ttl_secs,
-        None
+            .values()
+            .any(|routine| slugify(&routine.title) == slug),
+        "a deleted built-in default must not be resurrected on the next startup"
     );
 }
 
 #[test]
-fn svc_update_rejects_secs_above_new_schedule_ceiling() {
+fn svc_create_clears_tombstone_so_a_deliberately_recreated_default_reseeds() {
+    // #265: re-creating a routine under a tombstoned default's title is a deliberate "bring it
+    // back" signal — the next `ensure_default_routines` should treat it as a normal existing
+    // routine again (and, if it's later deleted with no re-create, resume being tombstoned).
     let _home = TempHome::set();
-    // A supplied schedule is the *effective* schedule for the ceiling: tightening a `@daily` routine
-    // to `*/5` while setting max_runtime 1800 exceeds the new 300s ceiling and is rejected (#468).
-    let store = store_with(vec![make_routine("upd-new-sched", "Keep New Sched", 1, 1)]);
-    let result = svc_update(
-        &store,
-        "upd-new-sched",
-        UpdateRoutineRequest {
-            model: None,
-            schedule: Some("*/5 * * * *".into()),
-            max_runtime_secs: Some(1800),
-            ..empty_update_request()
-        },
+    let title = "Update moadim cargo package";
+    let slug = slugify(title);
+    record_removed_default(&slug);
+    assert!(
+        std::fs::read_to_string(crate::paths::removed_default_routines_path())
+            .unwrap()
+            .contains(&slug),
+        "precondition: the tombstone must be recorded before svc_create"
     );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
+
+    let store = new_store();
+    let mut req = valid_create_request();
+    req.title = title.into();
+    with_working_crontab(|| {
+        svc_create(&store, req).unwrap();
+    });
+
+    let tombstones =
+        std::fs::read_to_string(crate::paths::removed_default_routines_path()).unwrap_or_default();
+    assert!(
+        !tombstones.contains(&slug),
+        "svc_create must clear the tombstone for a matching default title"
+    );
 }

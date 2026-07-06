@@ -4,8 +4,11 @@
 # .github/workflows/ — this only wraps the existing gates, it never redefines
 # them.
 
-.PHONY: spell
+.PHONY: spell readme-check
 
 spell:
 	@command -v typos >/dev/null 2>&1 || cargo install typos-cli
 	typos
+
+readme-check:
+	./scripts/check-readme-blocks.sh

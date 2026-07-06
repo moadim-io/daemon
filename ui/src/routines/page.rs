@@ -2,7 +2,6 @@
 //! between the list, create, edit, logs, and flags sub-views.
 
 use chrono::{Duration, Local};
-use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
@@ -10,8 +9,10 @@ use crate::day_timeline::{DayTimeline, TimelineItem};
 use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::ToastKind;
 
+use super::actions::{install_crud_handlers, CrudHandlers};
 use super::banner::{GlobalLockBanner, RoutineGroupBySelector, RoutineStatsBar, ViewToggle};
 use super::bulk::{ConfirmDelete, RoutineBulkBar, RoutineBulkDeleteDialog};
+use super::bulk_actions::{install_bulk_handlers, BulkHandlers};
 use super::calendar::RoutineCalendar;
 use super::filter::{
     distinct_agents, distinct_machines_r, distinct_repositories, distinct_tags, filter_routines,
@@ -27,10 +28,6 @@ use super::hooks::{
     install_now_ticker, install_routines_loader, install_search_hotkey,
 };
 use super::logs::RoutineLogs;
-use super::model::{
-    api_cleanup, api_create, api_delete, api_trigger, api_unlock, api_update, CreateRoutineRequest,
-    UpdateRoutineRequest,
-};
 use super::state::{
     sort_routines, RAction, RCol, RGroupBy, RModal, RPage, RState, RView, RoutineHistoryQuery,
 };
@@ -56,11 +53,6 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     // (ms) of the last successful list load that drives the freshness cue.
     let interval = use_state(crate::refresh::load_interval);
     let updated_at = use_state(|| 0.0_f64);
-
-    let ok_toast = {
-        let toast = toast.clone();
-        move |msg: &str| toast.emit((msg.to_string(), ToastKind::Ok))
-    };
 
     // Load on mount.
     install_routines_loader(state.clone(), toast.clone(), updated_at.clone());
@@ -94,28 +86,6 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         Callback::from(move |next: RefreshInterval| {
             crate::refresh::save_interval(next);
             interval.set(next);
-        })
-    };
-
-    let on_unlock_all = {
-        let state = state.clone();
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |_: MouseEvent| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ok = ok.clone();
-            spawn_local(async move {
-                match api_unlock("all").await {
-                    Ok(status) => {
-                        state.dispatch(RAction::LockStatusLoaded(status));
-                        ok("Routines unlocked");
-                    }
-                    Err(err_msg) => {
-                        toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err))
-                    }
-                }
-            })
         })
     };
 
@@ -206,263 +176,27 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         Callback::from(move |col: RCol| state.dispatch(RAction::SortByCol(col)))
     };
 
-    let on_create = {
-        let state = state.clone();
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |req: CreateRoutineRequest| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ok = ok.clone();
-            spawn_local(async move {
-                match api_create(&req).await {
-                    Ok(r) => {
-                        state.dispatch(RAction::Upsert(Box::new(r)));
-                        state.dispatch(RAction::GoToList);
-                        ok("Routine created");
-                    }
-                    Err(e) => toast.emit((format!("Create failed: {e}"), ToastKind::Err)),
-                }
-            })
-        })
-    };
-
-    let on_cleanup = {
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |_: MouseEvent| {
-            let toast = toast.clone();
-            let ok = ok.clone();
-            spawn_local(async move {
-                match api_cleanup().await {
-                    Ok(n) => ok(&format!(
-                        "Cleanup removed {n} workbench{}",
-                        if n == 1 { "" } else { "es" }
-                    )),
-                    Err(e) => toast.emit((format!("Cleanup failed: {e}"), ToastKind::Err)),
-                }
-            })
-        })
-    };
-
-    let on_trigger = {
-        let state = state.clone();
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |id: String| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ok = ok.clone();
-            spawn_local(async move {
-                match api_trigger(&id).await {
-                    Ok(r) => {
-                        state.dispatch(RAction::Upsert(Box::new(r)));
-                        ok("Routine triggered");
-                    }
-                    Err(e) => toast.emit((format!("Trigger failed: {e}"), ToastKind::Err)),
-                }
-            })
-        })
-    };
-
-    let on_toggle = {
-        let state = state.clone();
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |(id, enabled): (String, bool)| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ok = ok.clone();
-            spawn_local(async move {
-                let req = UpdateRoutineRequest {
-                    enabled: Some(enabled),
-                    ..Default::default()
-                };
-                match api_update(&id, &req).await {
-                    Ok(r) => {
-                        state.dispatch(RAction::Upsert(Box::new(r)));
-                        ok(if enabled {
-                            "Routine enabled"
-                        } else {
-                            "Routine disabled"
-                        });
-                    }
-                    Err(e) => toast.emit((format!("Toggle failed: {e}"), ToastKind::Err)),
-                }
-            })
-        })
-    };
-
-    let current_modal = state.modal.clone();
-    let on_save = {
-        let state = state.clone();
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |req: CreateRoutineRequest| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ok = ok.clone();
-            let modal = current_modal.clone();
-            spawn_local(async move {
-                if let RModal::Edit(id) = &modal {
-                    let upd = UpdateRoutineRequest {
-                        schedule: Some(req.schedule),
-                        title: Some(req.title),
-                        agent: Some(req.agent),
-                        prompt: Some(req.prompt),
-                        // Always send the goal so clearing the field (empty string) clears it server-side.
-                        goal: Some(req.goal.unwrap_or_default()),
-                        repositories: Some(req.repositories),
-                        machines: Some(req.machines),
-                        enabled: Some(req.enabled),
-                        ttl_secs: req.ttl_secs,
-                        tags: Some(req.tags),
-                    };
-                    match api_update(id, &upd).await {
-                        Ok(r) => {
-                            state.dispatch(RAction::Upsert(Box::new(r)));
-                            state.dispatch(RAction::CloseModal);
-                            ok("Routine updated");
-                        }
-                        Err(e) => toast.emit((format!("Update failed: {e}"), ToastKind::Err)),
-                    }
-                }
-            })
-        })
-    };
-
-    let on_confirm_delete = {
-        let state = state.clone();
-        let toast = toast.clone();
-        let ok = ok_toast.clone();
-        Callback::from(move |id: String| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ok = ok.clone();
-            spawn_local(async move {
-                match api_delete(&id).await {
-                    Ok(()) => {
-                        state.dispatch(RAction::Remove(id));
-                        state.dispatch(RAction::CloseModal);
-                        ok("Routine deleted");
-                    }
-                    Err(e) => toast.emit((format!("Delete failed: {e}"), ToastKind::Err)),
-                }
-            })
-        })
-    };
+    // ── CRUD/API actions ──────────────────────────────────────────────────────
+    let CrudHandlers {
+        on_unlock_all,
+        on_create,
+        on_cleanup,
+        on_trigger,
+        on_toggle,
+        on_save,
+        on_confirm_delete,
+    } = install_crud_handlers(state.clone(), toast.clone(), state.modal.clone());
 
     // ── Bulk selection ────────────────────────────────────────────────────────
-    let on_select = {
-        let state = state.clone();
-        Callback::from(move |id: String| state.dispatch(RAction::SelectRoutine(id)))
-    };
-
-    // Header checkbox: toggle "all visible selected ↔ none" (filter-scoped).
-    let on_select_all = {
-        let state = state.clone();
-        let now = now.clone();
-        Callback::from(move |_: ()| {
-            let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
-            let visible = filter_routines(&state.routines, &state.filter, *now, window);
-            let all_visible_selected =
-                !visible.is_empty() && visible.iter().all(|r| state.selected.contains(&r.id));
-            if all_visible_selected {
-                state.dispatch(RAction::ClearSelection);
-            } else {
-                state.dispatch(RAction::SelectAll(
-                    visible.into_iter().map(|r| r.id).collect(),
-                ));
-            }
-        })
-    };
-
-    let on_clear_selection = {
-        let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::ClearSelection))
-    };
-
-    // Bulk enable/disable: PATCH each selected routine, surface one summary toast.
-    let bulk_set_enabled = {
-        let state = state.clone();
-        let toast = toast.clone();
-        move |enabled: bool| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ids: Vec<String> = state.selected.iter().cloned().collect();
-            if ids.is_empty() {
-                return;
-            }
-            spawn_local(async move {
-                let mut ok = 0usize;
-                let mut failed = 0usize;
-                for id in ids {
-                    let req = UpdateRoutineRequest {
-                        enabled: Some(enabled),
-                        ..Default::default()
-                    };
-                    match api_update(&id, &req).await {
-                        Ok(r) => {
-                            state.dispatch(RAction::Upsert(Box::new(r)));
-                            ok += 1;
-                        }
-                        Err(_) => failed += 1,
-                    }
-                }
-                let verb = if enabled { "enabled" } else { "disabled" };
-                if failed == 0 {
-                    toast.emit((format!("{ok} routine(s) {verb}"), ToastKind::Ok));
-                } else {
-                    toast.emit((format!("{ok} {verb}, {failed} failed"), ToastKind::Err));
-                }
-            });
-        }
-    };
-
-    let on_bulk_enable = {
-        let f = bulk_set_enabled.clone();
-        Callback::from(move |_: ()| f(true))
-    };
-    let on_bulk_disable = {
-        let f = bulk_set_enabled.clone();
-        Callback::from(move |_: ()| f(false))
-    };
-
-    let on_bulk_delete = {
-        let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::OpenConfirmBulkDelete))
-    };
-
-    let on_confirm_bulk_delete = {
-        let state = state.clone();
-        let toast = toast.clone();
-        Callback::from(move |_: ()| {
-            let state = state.clone();
-            let toast = toast.clone();
-            let ids: Vec<String> = state.selected.iter().cloned().collect();
-            spawn_local(async move {
-                let mut ok = 0usize;
-                let mut failed = 0usize;
-                let mut deleted: Vec<String> = Vec::new();
-                for id in ids {
-                    match api_delete(&id).await {
-                        Ok(()) => {
-                            deleted.push(id);
-                            ok += 1;
-                        }
-                        Err(_) => failed += 1,
-                    }
-                }
-                state.dispatch(RAction::RemoveMany(deleted));
-                state.dispatch(RAction::CloseModal);
-                if failed == 0 {
-                    toast.emit((format!("{ok} routine(s) deleted"), ToastKind::Ok));
-                } else {
-                    toast.emit((format!("{ok} deleted, {failed} failed"), ToastKind::Err));
-                }
-            });
-        })
-    };
+    let BulkHandlers {
+        on_select,
+        on_select_all,
+        on_clear_selection,
+        on_bulk_enable,
+        on_bulk_disable,
+        on_bulk_delete,
+        on_confirm_bulk_delete,
+    } = install_bulk_handlers(state.clone(), toast.clone(), now.clone());
 
     let routines = state.routines.clone();
     let loading = state.loading;

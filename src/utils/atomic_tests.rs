@@ -86,3 +86,41 @@ fn tmp_path_falls_back_when_no_file_name() {
     let tmp = tmp_path(Path::new("/some/dir/.."));
     assert!(tmp.to_string_lossy().contains(".tmp"));
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn write_tmp_propagates_a_write_failure_instead_of_panicking() {
+    // `/dev/full` always reports the device as full, so `write_all` fails with `ENOSPC` the same
+    // way a real full disk would — the realistic failure mode `write_tmp`'s doc comment calls out,
+    // and the reason its `?` propagation (rather than the `.expect()` this used to be) matters.
+    // `write_tmp` is private, so this calls it directly: `atomic_write`'s own tmp path embeds a
+    // fresh UUID per call, which can't be pointed at `/dev/full` from outside.
+    let dir = scratch_dir();
+    let tmp = dir.join("routine.toml.tmp");
+    std::os::unix::fs::symlink("/dev/full", &tmp).unwrap();
+
+    assert!(
+        write_tmp(&tmp, b"data").is_err(),
+        "write_tmp must return the write error instead of panicking"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn published_file_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = scratch_dir();
+    let target = dir.join("routine.toml");
+    atomic_write(&target, b"secret").unwrap();
+
+    let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o600,
+        "atomic_write must publish an owner-only file, got {mode:o}"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

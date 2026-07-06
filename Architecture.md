@@ -65,6 +65,7 @@ src/
 │   ├── time.rs           now_secs() — Unix timestamp helper
 │   ├── atomic.rs         atomic_write() — torn-write-safe file writes
 │   ├── cron.rs           cron expression normalization/validation
+│   ├── fs_perms.rs       create_private_dir_all() — owner-only (0700) directory creation
 │   ├── lock.rs           Mutex-poisoning recovery helper
 │   ├── process.rs        process-liveness helpers
 │   └── startup_print.rs  startup banner (REST/MCP/UI URLs)
@@ -76,6 +77,16 @@ src/
 
 ui/                      Yew workspace member (separate Cargo.toml)
 ```
+
+### Filesystem permissions
+
+The daemon's on-disk tree is a secret/transcript store (agent.log transcripts, prompt.md instructions, token-referencing routine state), so on unix it is created **owner-only**:
+
+- Directories under `~/.config/moadim/` are made `0700` via `utils::fs_perms::create_private_dir_all`.
+- Files published by `utils::atomic::atomic_write` (routine state, the `prompt.md` sidecar, `machine.local.toml`) are created `0600` before the rename, so they are never briefly world-readable.
+- Each routine's launch script sets `umask 077` before its first `mkdir`, so the workbench dir it creates (`0700`) and everything written inside it — the copied `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` — stays unreadable by other local accounts.
+
+Pre-existing files from older installs are tightened on their next write (the modes are not retroactively migrated). Non-unix builds fall back to default permissions.
 
 ---
 
@@ -100,9 +111,15 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `securit
 | `update_routine` | `routines::svc_update` |
 | `delete_routine` | `routines::svc_delete` |
 | `trigger_routine` | `routines::svc_trigger` |
+| `snooze_routine` | `routines::svc_snooze` |
+| `set_power_saving` | `routines::svc_set_power_saving` |
 | `cleanup_workbenches` | `routines::svc_cleanup` |
 | `list_agents` | `routines::available_agents` |
+| `create_flag` | `routines::svc_create_flag` |
+| `list_flags` | `routines::svc_list_flags` |
+| `resolve_flag` | `routines::svc_resolve_flag` |
 | `routine_logs` | `routines::svc_logs` |
+| `list_routine_runs` | `routines::svc_list_runs` |
 | `get_lock_status` | `global_lock::lock_status` |
 | `lock_routines` | `global_lock::set_lock` + crontab resync |
 | `unlock_routines` | `global_lock::set_lock` + crontab resync |
@@ -167,7 +184,7 @@ instants so external calendars can subscribe without an embedded `VTIMEZONE`. Th
 `?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
 an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
-Finished run workbenches are reaped automatically by an hourly background sweep
+Finished run workbenches are reaped automatically by a background sweep (every 5 minutes)
 (`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
@@ -175,6 +192,12 @@ the same sweep includes a watchdog that force-kills any session whose run has ex
 `max_runtime_secs` (default cap `MAX_RUNTIME_SECS`, 1h) — bounding a hung agent that never exits —
 recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
 `ttl_secs` rules.
+
+TTL reaping bounds age, not total size. `routines::cleanup::disk_cap` adds an optional safety valve
+on top of it: if `MOADIM_MAX_WORKBENCH_DISK_BYTES` is set and nonzero, the same sweep sums the whole
+`~/.moadim/workbenches/` tree and, once over that ceiling, evicts finished workbenches
+oldest-finished-first until back under it — a live session is never touched regardless of size or
+age. Unset or `0` preserves the unbounded-by-size behavior above.
 
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.md`, `{workbench}` → `.`,

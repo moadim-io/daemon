@@ -225,6 +225,7 @@ fn routine(schedule: &str, enabled: bool) -> Routine {
         schedule: schedule.into(),
         title: "t".into(),
         agent: "a".into(),
+        model: None,
         prompt: String::new(),
         repositories: vec![],
         machines: vec![],

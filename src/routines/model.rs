@@ -1,5 +1,6 @@
 //! Persisted routine types, derived API response, and request bodies.
 
+use chrono::Local;
 use croner::Cron;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::agents::load_agent_command;
-use super::command::{agent_command_available, slugify};
+use super::cleanup::tmux_session_prefix_alive;
+use super::command::{agent_command_available, slugify, tmux_session_prefix};
 use super::flags::list_flags;
 use crate::paths::routine_toml_path;
 
@@ -216,6 +218,17 @@ pub struct RoutineResponse {
     /// Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so
     /// listings can badge it without a separate `list_flags` round-trip per routine.
     pub flag_count: usize,
+    /// Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone
+    /// (matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.
+    /// `None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming
+    /// fire (e.g. `@reboot`). See issue #369.
+    pub next_run_at: Option<u64>,
+    /// `true` if any fire of this routine currently has a live tmux session — i.e. an agent is
+    /// running right now. Derived by probing for a session under the routine's
+    /// `moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not
+    /// persisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing
+    /// best-effort "no tmux, nothing running" stance. See issue #438.
+    pub is_running: bool,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -240,6 +253,21 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
     })
 }
 
+/// Unix epoch seconds of `schedule`'s next fire after now, in the host's local timezone (matching
+/// crontab semantics) — reusing the same `croner` evaluation as the `.ics` feed
+/// ([`super::ical::build_ical`]) and the TTL sweep (`cleanup::ttl::cron_interval_secs`).
+///
+/// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
+/// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
+fn next_run_at(schedule: &str, enabled: bool) -> Option<u64> {
+    if !enabled || crate::global_lock::is_globally_locked() {
+        return None;
+    }
+    let cron: Cron = schedule.parse().ok()?;
+    let next = cron.iter_after(Local::now()).next()?;
+    u64::try_from(next.timestamp()).ok()
+}
+
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
@@ -255,6 +283,8 @@ impl RoutineResponse {
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
         let flag_count = list_flags(&slug).len();
+        let next_run_at = next_run_at(&routine.schedule, routine.enabled);
+        let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
         Self {
             routine,
             agent_registered,
@@ -263,6 +293,8 @@ impl RoutineResponse {
             schedule_description,
             timezone,
             flag_count,
+            next_run_at,
+            is_running,
         }
     }
 }
@@ -272,6 +304,9 @@ impl RoutineResponse {
 pub struct CleanupResponse {
     /// Number of finished, expired run workbenches removed by this sweep.
     pub removed: usize,
+    /// Total disk space reclaimed, in bytes, summed across the removed workbench trees. Additive
+    /// field: existing `{"removed": N}` consumers are unaffected.
+    pub freed_bytes: u64,
 }
 
 /// Outcome of a single past run, derived from its workbench on disk.
@@ -292,7 +327,7 @@ pub enum RunStatus {
 }
 
 /// One past (or in-progress) run of a routine, listed newest-first.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct RunSummary {
     /// Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`.
     pub workbench: String,
@@ -304,11 +339,15 @@ pub struct RunSummary {
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
+    /// Unix seconds this run's workbench is due to be reaped (`finished_at` +
+    /// [`Routine::effective_ttl_secs`]). `None` while the run hasn't finished, or once its
+    /// workbench is already gone (a run restored from `runs.log` after TTL reaping).
+    pub retention_expires_at: Option<u64>,
 }
 
 /// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide
 /// counterpart to [`RunSummary`] backing an overview "recent runs" view.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
 pub struct FleetRunSummary {
     /// The routine this run belongs to.
     pub routine_id: String,

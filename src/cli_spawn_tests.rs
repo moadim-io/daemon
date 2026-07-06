@@ -11,15 +11,15 @@ fn argv(args: &[&str]) -> Vec<String> {
     args.iter().map(ToString::to_string).collect()
 }
 
-const UNREACHABLE_ADDR: &str = "127.0.0.1:1";
+pub(crate) const UNREACHABLE_ADDR: &str = "127.0.0.1:1";
 
-struct EnvGuard {
+pub(crate) struct EnvGuard {
     name: &'static str,
     previous: Option<std::ffi::OsString>,
 }
 
 impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> Self {
+    pub(crate) fn set(name: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(name);
         // SAFETY: tests in this crate run single-threaded per binary.
         unsafe {
@@ -41,25 +41,25 @@ impl Drop for EnvGuard {
     }
 }
 
-fn temp_home(tag: &str) -> std::path::PathBuf {
+pub(crate) fn temp_home(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("moadim-cli-{tag}-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("create temp home");
     dir
 }
 
-struct FakeServer {
-    addr: String,
+pub(crate) struct FakeServer {
+    pub(crate) addr: String,
     alive: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl FakeServer {
-    fn start(status: u16, body: String) -> Self {
+    pub(crate) fn start(status: u16, body: String) -> Self {
         Self::start_with_liveness(status, body, true)
     }
 
-    fn start_with_liveness(status: u16, body: String, initial_alive: bool) -> Self {
+    pub(crate) fn start_with_liveness(status: u16, body: String, initial_alive: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
         let addr = listener.local_addr().expect("local addr").to_string();
         listener.set_nonblocking(true).expect("set nonblocking");
@@ -376,122 +376,8 @@ fn parse_health_rejects_version_non_string() {
     assert_eq!(parse_health(r#"{"uptime_secs":1,"version":42}"#), None);
 }
 
-#[test]
-fn write_pid_file_errors_when_config_dir_is_blocked() {
-    // A regular file sitting where the config dir should be causes create_dir_all to fail.
-    let base = temp_home("pid-dir-blocked");
-    std::fs::create_dir_all(base.join(".config")).unwrap();
-    std::fs::write(base.join(".config/moadim"), "block").unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    assert!(write_pid_file().is_err());
-    let _ = std::fs::remove_dir_all(&base);
-}
-
-#[test]
-fn write_pid_file_skips_readme_when_its_subdir_is_blocked() {
-    // A regular file sitting where `routines/` should be blocks that README's create_dir_all,
-    // but write_pid_file is best-effort here and must still succeed overall.
-    let base = temp_home("readme-subdir-blocked");
-    let config_dir = base.join(".config/moadim");
-    std::fs::create_dir_all(&config_dir).unwrap();
-    std::fs::write(config_dir.join("routines"), "block").unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    write_pid_file().unwrap();
-    assert!(crate::paths::config_readme_path().exists());
-    assert!(!crate::paths::routines_readme_path().exists());
-    let _ = std::fs::remove_dir_all(&base);
-}
-
-#[test]
-fn write_pid_file_errors_when_pid_path_is_directory() {
-    // create_dir_all succeeds but writing the pid as a file fails because
-    // a directory already occupies the pid file path.
-    let base = temp_home("pid-path-is-dir");
-    let config_dir = base.join(".config/moadim");
-    // Create a DIRECTORY at the pid file path instead of a plain file.
-    std::fs::create_dir_all(config_dir.join("moadim.pid")).unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    assert!(write_pid_file().is_err());
-    let _ = std::fs::remove_dir_all(&base);
-}
-
-#[test]
-fn spawn_detached_errors_when_log_dir_creation_blocked() {
-    // A file at the config-dir path blocks create_dir_all for the log parent dir.
-    let base = temp_home("spawn-log-blocked");
-    std::fs::create_dir_all(base.join(".config")).unwrap();
-    std::fs::write(base.join(".config/moadim"), "block").unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    assert!(spawn_detached().is_err());
-    let _ = std::fs::remove_dir_all(&base);
-}
-
-#[test]
-fn spawn_detached_errors_when_log_file_path_is_directory() {
-    // create_dir_all for the log parent dir succeeds (the config dir exists), but
-    // opening the log file fails because a directory occupies that exact path.
-    let base = temp_home("spawn-log-is-dir");
-    let config_dir = base.join(".config/moadim");
-    // Place a DIRECTORY at daemon.log so the OpenOptions::open fails.
-    std::fs::create_dir_all(config_dir.join("daemon.log")).unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    assert!(spawn_detached().is_err());
-    let _ = std::fs::remove_dir_all(&base);
-}
-
-#[test]
-fn run_background_errors_when_stop_running_times_out() {
-    // A server that never stops causes stop_running_and_wait() to time out and
-    // return Err, which run_background() propagates (the `?` error branch at L208).
-    let server = FakeServer::start(200, String::new());
-    let home = temp_home("runbg-stop-err");
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
-    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
-    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
-    assert!(run_background().is_err());
-    let _ = std::fs::remove_dir_all(&home);
-}
-
-#[test]
-fn restart_errors_when_stop_running_times_out() {
-    // Same as above but exercises the `?` error branch at L225 (inside `restart()`).
-    let server = FakeServer::start(200, String::new());
-    let home = temp_home("restart-stop-err");
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
-    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "1");
-    let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "1");
-    assert!(restart(false, false).is_err());
-    let _ = std::fs::remove_dir_all(&home);
-}
-
-#[test]
-fn restart_errors_when_spawn_detached_fails() {
-    // Server not running → restart() tries spawn_detached() → blocked log dir → Err.
-    // Exercises the `?` error branch at L231 (let new_pid = spawn_detached()?).
-    let base = temp_home("restart-spawn-err");
-    std::fs::create_dir_all(base.join(".config")).unwrap();
-    std::fs::write(base.join(".config/moadim"), "block").unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert!(restart(false, false).is_err());
-    let _ = std::fs::remove_dir_all(&base);
-}
-
-#[test]
-fn run_background_errors_when_spawn_detached_fails() {
-    // Server not running → run_background() → start_detached_and_report() →
-    // spawn_detached() fails → Err propagated.
-    // Exercises the `?` error branch at L251 (let pid = spawn_detached()?).
-    let base = temp_home("runbg-spawn-err");
-    std::fs::create_dir_all(base.join(".config")).unwrap();
-    std::fs::write(base.join(".config/moadim"), "block").unwrap();
-    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", base.to_str().unwrap());
-    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
-    assert!(run_background().is_err());
-    let _ = std::fs::remove_dir_all(&base);
-}
+// Filesystem-blocked and timeout error-path tests for write_pid_file/spawn_detached/
+// run_background/restart live in cli_spawn_error_tests.rs.
 
 /// `docs/moadim.1` hand-mirrors the CLI and hardcodes its own version in the `.TH` header
 /// (e.g. `"moadim 0.16.0"`). Nothing previously kept that in lockstep with `Cargo.toml`, so a

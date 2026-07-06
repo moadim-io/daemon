@@ -53,7 +53,7 @@ standalone, n8n, Temporal, Airflow, etc.
   offline against the host crontab.
 - **Three interfaces, one port** — UI + REST + MCP with no logic duplication. MCP
   means an agent can read, schedule, and re-fire its **own** routines.
-- **Unattended by design** — per-run throwaway workbench (reaped hourly), tmux
+- **Unattended by design** — per-run throwaway workbench (reaped on a 5-minute sweep), tmux
   session, pre-seeded Claude trust/MCP approvals so the session never blocks.
 - **Ops niceties** — `.ics` feed of fire times, `machines` targeting, run-now
   trigger, `max_runtime_secs` kill cap, `ttl_secs` retention.

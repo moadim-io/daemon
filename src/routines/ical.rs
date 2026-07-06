@@ -211,6 +211,14 @@ fn build_ical_core(
                 lines.push(format!("UID:{}-truncated@moadim", routine.id));
                 lines.push(format!("DTSTAMP:{dtstamp}"));
                 lines.push(format!("DTSTART:{stamp}"));
+                // Mirror the regular fire VEVENT's DURATION/TRANSP/BUSYSTATUS (see the comments
+                // on EVENT_DURATION and on the regular-fire VEVENT above): without a DURATION
+                // this marker is a zero-length instant, which most calendar UIs render as an
+                // invisible sliver — defeating its one job of telling subscribers the feed was
+                // truncated.
+                lines.push(format!("DURATION:{EVENT_DURATION}"));
+                lines.push("TRANSP:TRANSPARENT".to_string());
+                lines.push("X-MICROSOFT-CDO-BUSYSTATUS:FREE".to_string());
                 lines.push(format!("SUMMARY:⚠ {summary} (schedule truncated)"));
                 lines.push(format!("DESCRIPTION:{note}"));
                 lines.push("END:VEVENT".to_string());

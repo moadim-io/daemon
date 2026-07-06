@@ -24,6 +24,10 @@ pub struct Routine {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    /// Model ID the agent runs with (e.g. `"claude-sonnet-4-6"`); `None` uses the agent's own
+    /// default.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub prompt: String,
     /// Short (≤5 line) statement of the routine's goal; `None` when unset.
@@ -100,6 +104,8 @@ pub struct CreateRoutineRequest {
     pub schedule: String,
     pub title: String,
     pub agent: String,
+    /// Model ID to run the agent with; `None` uses the agent's own default.
+    pub model: Option<String>,
     pub prompt: String,
     /// Short (≤5 line) goal statement; `None` when unset.
     pub goal: Option<String>,
@@ -117,6 +123,10 @@ pub struct CreateRoutineRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CleanupResponse {
     pub removed: usize,
+    /// Disk space reclaimed by the sweep, in bytes. `#[serde(default)]` so a response from an older
+    /// server that predates this field still deserializes (freed reads as 0).
+    #[serde(default)]
+    pub freed_bytes: u64,
 }
 
 /// Outcome of a single past run (mirrors the server `RunStatus`).
@@ -137,6 +147,7 @@ pub struct RunSummary {
     pub finished_at: Option<u64>,
     pub status: RunStatus,
     pub exit_code: Option<i32>,
+    pub retention_expires_at: Option<u64>,
 }
 
 /// One past (or in-progress) run across every routine (mirrors the server `FleetRunSummary`).
@@ -159,6 +170,8 @@ pub struct UpdateRoutineRequest {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -275,7 +288,7 @@ pub(crate) async fn api_unlock(scope: &str) -> Result<LockStatus, String> {
     resp.json::<LockStatus>().await.map_err(|e| e.to_string())
 }
 
-pub(crate) async fn api_cleanup() -> Result<usize, String> {
+pub(crate) async fn api_cleanup() -> Result<(usize, u64), String> {
     let resp = Request::post("/api/v1/routines/cleanup")
         .send()
         .await
@@ -285,8 +298,25 @@ pub(crate) async fn api_cleanup() -> Result<usize, String> {
     }
     resp.json::<CleanupResponse>()
         .await
-        .map(|r| r.removed)
+        .map(|r| (r.removed, r.freed_bytes))
         .map_err(|e| e.to_string())
+}
+
+/// Render a byte count as a short human-readable size (`B`/`KB`/`MB`/`GB`/`TB`, 1024-based): values
+/// under 1 KiB show as a bare integer, larger ones with one decimal (`12.4 MB`). Mirrors the CLI's
+/// `humanize_bytes` so the UI cleanup toast and `moadim cleanup` report the freed size identically.
+pub(crate) fn humanize_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    format!("{size:.1} {}", UNITS[unit])
 }
 
 pub(crate) async fn api_logs(id: &str) -> Result<String, String> {

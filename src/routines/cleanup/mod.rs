@@ -25,8 +25,9 @@ use crate::utils::claude_json::prune_project;
 use crate::utils::time::now_secs;
 
 use super::model::{RoutineStore, RunStatus};
-use super::run_history::{append_persisted_run, read_exit_code, PersistedRun};
+use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
+mod disk_cap;
 mod runtime;
 mod session;
 mod snapshot;
@@ -40,15 +41,21 @@ pub(crate) use session::tmux_session_prefix_alive;
 pub(crate) use ttl::ttl_ceiling_secs;
 
 /// How often the background task scans for expired workbenches.
-pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
+///
+/// A routine's `effective_ttl_secs` can be as low as the cron interval (e.g. ~60s for an
+/// every-minute schedule, see [`ttl::MAX_TTL_SECS`]), well under an hour. This was previously a
+/// flat 1h, so a high-frequency routine's finished workbenches (full repo clones included) could
+/// pile up dozens deep between sweeps (#170). 5 minutes bounds that worst case to a handful of
+/// stale workbenches while keeping the sweep infrequent enough that its directory walk and
+/// `dir_size`/`remove_dir_all` work stay cheap.
+pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// How often the lightweight watchdog scans for *hung* runs to force-kill.
 ///
-/// Decoupled from [`CLEANUP_INTERVAL`]: TTL-reaping finished workbenches can stay hourly, but the
-/// max-runtime watchdog must fire on a much shorter cadence or a sub-hour `max_runtime_secs` is
-/// unenforceable (a hung run would survive up to ~1h past its bound). At 30s the kill latency is
-/// `effective_max_runtime_secs + <=30s`, so even a routine bounded to a few minutes is reaped near
-/// its limit. This tick only evaluates the kill branch (no directory removal), so it stays cheap.
+/// Shorter than [`CLEANUP_INTERVAL`]: the max-runtime watchdog must fire on a cadence tight enough
+/// that a sub-minute `max_runtime_secs` is still enforceable near its bound. At 30s the kill
+/// latency is `effective_max_runtime_secs + <=30s`. This tick only evaluates the kill branch (no
+/// directory removal), so it stays cheap.
 pub const WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Split a workbench directory name into its `(slug, trigger_timestamp)`.
@@ -73,6 +80,39 @@ pub(super) fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
 /// that puts `ts` in the future reads as age 0, never expired).
 fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
     now.saturating_sub(ts) > ttl
+}
+
+/// Outcome of a cleanup sweep: how many workbenches were reaped and the disk space reclaimed.
+///
+/// `freed_bytes` is summed across each removed workbench's tree, measured just before deletion, so
+/// operators (and `--json` consumers) learn the payoff of a sweep rather than a bare directory count
+/// — a removed workbench can hold cloned repos worth tens or hundreds of MB.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReapStats {
+    /// Number of finished, expired run workbenches removed by this sweep.
+    pub removed: usize,
+    /// Total bytes freed, summed across the trees of the workbenches actually removed.
+    pub freed_bytes: u64,
+}
+
+/// Total size in bytes of every file under `path`, walked recursively. Best-effort: unreadable
+/// entries are skipped (yielding a lower bound rather than failing), and directory symlinks are not
+/// traversed, so a workbench tree cannot send the walk into a cycle.
+fn dir_size(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        // `file_type()` does not follow symlinks, so a symlinked directory reads as a non-dir and is
+        // counted by its own (small) metadata length instead of being descended into.
+        if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            total += dir_size(&entry.path());
+        } else {
+            total += entry.metadata().map_or(0, |meta| meta.len());
+        }
+    }
+    total
 }
 
 /// Best-effort *finish* time of a finished run, as unix seconds: the mtime of its `agent.log` (the
@@ -190,12 +230,12 @@ fn prune_claude_json(path: &Path, name: &str) {
 /// kept for the full window after it completes (#174); the watchdog still measures elapsed runtime
 /// from the trigger. `finished_at` is evaluated *before* the watchdog can force-kill the session, so
 /// a hung run's forced-kill note (which touches `agent.log`) never masquerades as a fresh finish.
-/// Returns the number of directories removed. `ttl_for`, `max_runtime_for`, `is_alive`, `kill`,
-/// `finished_at`, and `persist` are injected so the decision logic is unit-testable without a
-/// filesystem clock or a live tmux server. `persist` is called with `(slug, workbench name,
-/// workbench path, trigger ts, finish ts)` right before removal, so a durable history record can be
-/// captured while the workbench (and its `exit_code` file) still exists — see
-/// [`super::run_history`].
+/// Returns the count of directories removed and the total bytes freed (summed only over trees
+/// actually removed). `ttl_for`, `max_runtime_for`, `is_alive`, `kill`, `finished_at`, and `persist`
+/// are injected so the decision logic is unit-testable without a filesystem clock or a live tmux
+/// server. `persist` is called with `(slug, workbench name, workbench path, trigger ts, finish ts)`
+/// right before removal, so a durable history record can be captured while the workbench (and its
+/// `exit_code` file) still exists — see [`super::run_history`].
 #[allow(
     clippy::too_many_arguments,
     reason = "each parameter is an independently injected test seam with no natural grouping"
@@ -209,11 +249,11 @@ fn reap_dir(
     kill: &dyn Fn(&str),
     finished_at: &dyn Fn(&Path, u64) -> u64,
     persist: &dyn Fn(&str, &str, &Path, u64, u64),
-) -> usize {
+) -> ReapStats {
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
+        return ReapStats::default();
     };
-    let mut removed = 0;
+    let mut stats = ReapStats::default();
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
@@ -248,23 +288,27 @@ fn reap_dir(
         // Record the run's outcome durably before the workbench (and its `exit_code` file) is
         // removed, so `svc_list_runs`/`svc_list_all_runs` still know about it afterwards.
         persist(slug, &name, &entry.path(), ts, finish_ts);
+        // Measure the tree before deletion so a successful removal can report the space it reclaimed.
+        let size = dir_size(&entry.path());
         match std::fs::remove_dir_all(entry.path()) {
             Ok(()) => {
-                removed += 1;
-                log::info!("cleanup: removed expired workbench {name:?}");
+                stats.removed += 1;
+                stats.freed_bytes += size;
+                log::info!("cleanup: removed expired workbench {name:?} (freed {size} bytes)");
                 prune_claude_json(&entry.path(), &name);
             }
             Err(err) => log::warn!("cleanup: failed to remove workbench {name:?}: {err}"),
         }
     }
-    removed
+    stats
 }
 
 /// Remove finished, expired workbenches under `~/.moadim/workbenches/`, using each routine's TTL.
 ///
-/// Returns the number of workbenches removed. Safe to call repeatedly; it only ever touches
-/// directories whose run has ended.
-pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
+/// Returns the count of workbenches removed and the total bytes freed. Safe to call repeatedly; it
+/// only ever touches directories whose run has ended. Also enforces the optional total-disk safety
+/// valve (see [`disk_cap::enforce`]) once the normal TTL reap above has run.
+pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
     let ttls = snapshot::snapshot_ttls(store);
     let max_runtimes = snapshot::snapshot_max_runtimes(store);
     let routine_ids = snapshot::snapshot_routine_ids(store);
@@ -277,6 +321,12 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
             let Some(routine_id) = routine_ids.get(slug) else {
                 return;
             };
+            if has_persisted_run(routine_id, name) {
+                // Already recorded on a prior sweep whose `remove_dir_all` then failed, leaving
+                // this workbench to be re-expired and re-persisted on the next sweep. Skip it so
+                // one real run doesn't accumulate duplicate `runs.log` entries.
+                return;
+            }
             let exit_code = read_exit_code(workbench_path);
             let status = match exit_code {
                 Some(0) => RunStatus::Success,
@@ -294,7 +344,7 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
                 },
             );
         };
-    reap_dir(
+    let ttl_stats = reap_dir(
         &workbenches_dir(),
         now_secs(),
         &ttl_for,
@@ -303,7 +353,17 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> usize {
         &tmux_kill_session,
         &agent_log_finish_time,
         &persist,
-    )
+    );
+    let cap_stats = disk_cap::enforce(
+        &workbenches_dir(),
+        disk_cap::max_disk_bytes(),
+        &tmux_session_alive,
+        &agent_log_finish_time,
+    );
+    ReapStats {
+        removed: ttl_stats.removed + cap_stats.removed,
+        freed_bytes: ttl_stats.freed_bytes + cap_stats.freed_bytes,
+    }
 }
 
 /// Force-kill hung run sessions under `~/.moadim/workbenches/` that have exceeded their routine's
@@ -379,9 +439,21 @@ pub fn kill_sessions_for_deleted_routine(slug: &str) -> usize {
 mod cleanup_tests;
 
 #[cfg(test)]
+#[path = "cleanup_tmux_tests.rs"]
+mod cleanup_tmux_tests;
+
+#[cfg(test)]
 #[path = "cleanup_watchdog_tests.rs"]
 mod cleanup_watchdog_tests;
 
 #[cfg(test)]
 #[path = "cleanup_claude_json_tests.rs"]
 mod cleanup_claude_json_tests;
+
+#[cfg(test)]
+#[path = "cleanup_freed_bytes_tests.rs"]
+mod cleanup_freed_bytes_tests;
+
+#[cfg(test)]
+#[path = "cleanup_run_history_tests.rs"]
+mod cleanup_run_history_tests;

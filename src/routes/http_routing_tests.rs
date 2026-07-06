@@ -237,6 +237,20 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
+    // runs/{workbench}/summary for a workbench that doesn't exist -> 404
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/routines/{id}/runs/not-a-real-workbench-1/summary"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
     // POST flag
     let resp = build_app(routines.clone())
         .oneshot(
@@ -398,6 +412,7 @@ async fn router_routine_not_found_paths() {
         ("GET", "/logs"),
         ("GET", "/runs"),
         ("GET", "/runs/some-workbench-1/log"),
+        ("GET", "/runs/some-workbench-1/summary"),
     ] {
         let resp = build_app(crate::routines::new_store())
             .oneshot(

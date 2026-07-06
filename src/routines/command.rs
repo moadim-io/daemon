@@ -235,7 +235,14 @@ const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
     > This section is managed by the moadim daemon. Do not edit it.\\n\
     \\n\
     You are running inside a moadim-managed agent session. \
-    Complete the task described in `prompt.md` and exit when done.";
+    Complete the task described in `prompt.md` and exit when done.\\n\
+    \\n\
+    ## Work log\\n\
+    \\n\
+    As you work, append short progress notes to `summary.md` in this workbench (create it if \
+    it doesn't exist) — what you're doing and why, each time you start a new step. Before you \
+    exit, write a `## Final summary` section to `summary.md` describing what was accomplished, \
+    what changed, and anything left unresolved.";
 
 /// Routine-origin disclosure appended to the moadim system prompt.
 ///

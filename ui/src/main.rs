@@ -1,58 +1,94 @@
-use croner::Cron;
-use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
-use serde::Deserialize;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-mod cron_jobs;
+mod command_palette;
+mod command_palette_match;
+mod cron_utils;
 mod day_timeline;
+mod header;
+mod health;
+mod log_viewer;
 mod machines;
 mod overview;
+mod overview_attention;
+mod overview_recent_runs;
+mod overview_stats;
+mod overview_upcoming;
+mod refresh;
 mod routines;
 mod schedule;
-use cron_jobs::CronJobsPage;
+mod schedule_heatmap;
+mod schedule_heatmap_grid;
+mod settings;
+mod shell_dialogs;
+use command_palette::CommandPalette;
+pub(crate) use cron_utils::{describe_cron_live, parse_cron, reltime};
+use header::Header;
+pub(crate) use health::{Health, Toast, ToastKind};
 use overview::OverviewPage;
 use routines::RoutinesPage;
+use schedule_heatmap::HeatmapPage;
+use settings::SettingsPage;
+use shell_dialogs::{
+    api_get_machine, api_put_machine, api_shutdown, poll_health, RenameMachineDialog,
+    ShutdownDialog, ToastStack,
+};
 
-// ─── Shared types ─────────────────────────────────────────────────────────────
+// ─── Theme ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
-pub struct Health {
-    pub status: String,
-    pub uptime_secs: Option<u64>,
-    pub running: bool,
-    pub version: Option<String>,
+/// localStorage key for the theme preference.
+pub(crate) const THEME_KEY: &str = "moadim.theme";
+
+/// Read the persisted theme from localStorage. Returns `true` for light theme.
+pub(crate) fn load_theme_light() -> bool {
+    web_sys::window()
+        .and_then(|win| win.local_storage().ok().flatten())
+        .and_then(|store| store.get_item(THEME_KEY).ok().flatten())
+        .is_some_and(|val| val == "light")
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ToastKind {
-    Ok,
-    Err,
+/// Persist the theme choice to localStorage (best-effort; ignores storage errors).
+pub(crate) fn save_theme_light(light: bool) {
+    if let Some(store) = web_sys::window().and_then(|win| win.local_storage().ok().flatten()) {
+        let _ = store.set_item(THEME_KEY, if light { "light" } else { "dark" });
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Toast {
-    pub id: u32,
-    pub msg: AttrValue,
-    pub kind: ToastKind,
+/// Apply or remove the `theme-light` CSS class from `<html>`.
+pub(crate) fn apply_theme(light: bool) {
+    if let Some(root) = web_sys::window()
+        .and_then(|win| win.document())
+        .and_then(|doc| doc.document_element())
+    {
+        let list = root.class_list();
+        if light {
+            let _ = list.add_1("theme-light");
+        } else {
+            let _ = list.remove_1("theme-light");
+        }
+    }
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-/// Top-level pages, served at the root path space: `CronJobs` at `/cron-jobs` and `Routines` at
-/// `/routines`. The REST API is namespaced under `/api/v1`, so these UI paths never collide with it.
+/// Top-level pages, served at the root path space: `Routines` at `/routines` and `Heatmap` at
+/// `/heatmap`. The REST API is namespaced under `/api/v1`, so these UI paths never collide with it.
 /// The server returns the same self-contained HTML for any unmatched path (SPA fallback), letting
 /// these deep links and refreshes load the app so the router can resolve the path.
 #[derive(Clone, Routable, PartialEq)]
 pub enum Route {
     #[at("/")]
     Home,
-    #[at("/cron-jobs")]
-    CronJobs,
     #[at("/routines")]
     Routines,
+    #[at("/heatmap")]
+    Heatmap,
+    #[at("/settings")]
+    Settings,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -67,6 +103,13 @@ pub struct ShellState {
     pub toasts: Vec<Toast>,
     pub next_toast: u32,
     pub show_shutdown: bool,
+    pub show_palette: bool,
+    /// `true` when the light theme is active; persisted to localStorage.
+    pub show_theme_light: bool,
+    /// Resolved name of this machine, fetched from `GET /api/v1/machine` on mount.
+    pub machine_name: Option<String>,
+    /// Whether the rename-machine dialog is open.
+    pub show_rename_machine: bool,
 }
 
 pub enum ShellAction {
@@ -74,6 +117,12 @@ pub enum ShellAction {
     AddToast { msg: String, kind: ToastKind },
     OpenShutdown,
     CloseShutdown,
+    TogglePalette,
+    ClosePalette,
+    ToggleTheme,
+    MachineName { name: String },
+    OpenRenameMachine,
+    CloseRenameMachine,
 }
 
 impl Reducible for ShellState {
@@ -97,50 +146,18 @@ impl Reducible for ShellState {
             }
             ShellAction::OpenShutdown => s.show_shutdown = true,
             ShellAction::CloseShutdown => s.show_shutdown = false,
+            ShellAction::TogglePalette => s.show_palette = !s.show_palette,
+            ShellAction::ClosePalette => s.show_palette = false,
+            ShellAction::ToggleTheme => {
+                s.show_theme_light = !s.show_theme_light;
+                save_theme_light(s.show_theme_light);
+                apply_theme(s.show_theme_light);
+            }
+            ShellAction::MachineName { name } => s.machine_name = Some(name),
+            ShellAction::OpenRenameMachine => s.show_rename_machine = true,
+            ShellAction::CloseRenameMachine => s.show_rename_machine = false,
         }
         s.into()
-    }
-}
-
-// ─── API layer ────────────────────────────────────────────────────────────────
-
-async fn api_health() -> Result<Health, String> {
-    Request::get("/api/v1/health")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json::<Health>()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-async fn api_shutdown() -> Result<(), String> {
-    let resp = Request::post("/api/v1/shutdown")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if resp.ok() {
-        Ok(())
-    } else {
-        Err(format!("HTTP {}", resp.status()))
-    }
-}
-
-async fn poll_health(state: UseReducerHandle<ShellState>) {
-    match api_health().await {
-        Ok(health) => {
-            let ok = health.running;
-            state.dispatch(ShellAction::HealthLoaded { health, ok });
-        }
-        Err(_) => state.dispatch(ShellAction::HealthLoaded {
-            health: Health {
-                status: "offline".into(),
-                running: false,
-                uptime_secs: None,
-                version: None,
-            },
-            ok: false,
-        }),
     }
 }
 
@@ -159,13 +176,30 @@ pub fn app() -> Html {
 /// the global shutdown dialog, and the toast stack. Lives inside the router so nav `Link`s work.
 #[function_component(Shell)]
 pub fn shell() -> Html {
-    let state = use_reducer(ShellState::default);
+    let state = use_reducer(|| ShellState {
+        show_theme_light: load_theme_light(),
+        ..ShellState::default()
+    });
 
-    // Initial health poll on mount.
+    // Apply the initial theme class from persisted preference.
+    {
+        let light = state.show_theme_light;
+        use_effect_with((), move |_| {
+            apply_theme(light);
+        });
+    }
+
+    // Initial health poll + machine name fetch on mount.
     {
         let state = state.clone();
         use_effect_with((), move |_| {
+            let state2 = state.clone();
             spawn_local(async move { poll_health(state).await });
+            spawn_local(async move {
+                if let Ok(name) = api_get_machine().await {
+                    state2.dispatch(ShellAction::MachineName { name });
+                }
+            });
         });
     }
 
@@ -182,11 +216,76 @@ pub fn shell() -> Html {
         });
     }
 
+    // Global ⌘K / Ctrl-K listener that toggles the command palette from any
+    // page, and Escape to dismiss whichever shell-level dialog is open.
+    // Registered once on mount and torn down on unmount.
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            let on_key =
+                Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
+                    if (event.meta_key() || event.ctrl_key())
+                        && event.key().eq_ignore_ascii_case("k")
+                    {
+                        event.prevent_default();
+                        state.dispatch(ShellAction::TogglePalette);
+                    } else if event.key() == "Escape" {
+                        if state.show_shutdown {
+                            state.dispatch(ShellAction::CloseShutdown);
+                        } else if state.show_rename_machine {
+                            state.dispatch(ShellAction::CloseRenameMachine);
+                        }
+                    }
+                }));
+            let window = web_sys::window().expect("window exists");
+            window
+                .add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref())
+                .expect("keydown listener attaches");
+            move || {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        on_key.as_ref().unchecked_ref(),
+                    );
+                }
+                drop(on_key);
+            }
+        });
+    }
+
     let on_toast = {
         let state = state.clone();
         Callback::from(move |(msg, kind): (String, ToastKind)| {
             state.dispatch(ShellAction::AddToast { msg, kind })
         })
+    };
+
+    let on_close_palette = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ClosePalette))
+    };
+
+    let on_open_palette = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::TogglePalette))
+    };
+
+    // Palette "Refresh" / "Stop Server" actions mirror the header buttons but
+    // take the `()` payload the palette emits.
+    let on_palette_refresh = {
+        let state = state.clone();
+        Callback::from(move |_: ()| {
+            let state = state.clone();
+            spawn_local(async move { poll_health(state).await });
+        })
+    };
+    let on_palette_stop = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
+    };
+    let on_palette_toggle_theme = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::ToggleTheme))
     };
 
     let on_refresh = {
@@ -222,6 +321,8 @@ pub fn shell() -> Html {
                                 running: false,
                                 uptime_secs: None,
                                 version: None,
+                                git_sha: None,
+                                dependencies: None,
                             },
                             ok: false,
                         });
@@ -242,9 +343,10 @@ pub fn shell() -> Html {
     let switch = {
         let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
-            Route::Home => html! { <OverviewPage /> },
-            Route::CronJobs => html! { <CronJobsPage on_toast={on_toast.clone()} /> },
+            Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
+            Route::Heatmap => html! { <HeatmapPage /> },
+            Route::Settings => html! { <SettingsPage on_toast={on_toast.clone()} /> },
             Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
     };
@@ -253,12 +355,82 @@ pub fn shell() -> Html {
     let health_ok = state.health_ok;
     let toasts = state.toasts.clone();
     let show_shutdown = state.show_shutdown;
+    let show_palette = state.show_palette;
+    let show_theme_light = state.show_theme_light;
+    let machine_name = state.machine_name.clone();
+    let show_rename_machine = state.show_rename_machine;
+    let on_theme = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::ToggleTheme))
+    };
+
+    let on_open_rename_machine = {
+        let state = state.clone();
+        Callback::from(move |_: MouseEvent| state.dispatch(ShellAction::OpenRenameMachine))
+    };
+    let on_close_rename_machine = {
+        let state = state.clone();
+        Callback::from(move |_: ()| state.dispatch(ShellAction::CloseRenameMachine))
+    };
+    let on_confirm_rename_machine = {
+        let state = state.clone();
+        Callback::from(
+            move |(name, on_done): (String, Callback<Result<(), String>>)| {
+                let state = state.clone();
+                spawn_local(async move {
+                    match api_put_machine(&name).await {
+                        Ok(new_name) => {
+                            state.dispatch(ShellAction::MachineName {
+                                name: new_name.clone(),
+                            });
+                            state.dispatch(ShellAction::CloseRenameMachine);
+                            state.dispatch(ShellAction::AddToast {
+                                msg: format!("Machine renamed to \"{new_name}\""),
+                                kind: ToastKind::Ok,
+                            });
+                            on_done.emit(Ok(()));
+                        }
+                        Err(e) => {
+                            state.dispatch(ShellAction::AddToast {
+                                msg: format!("Rename failed: {e}"),
+                                kind: ToastKind::Err,
+                            });
+                            on_done.emit(Err(e));
+                        }
+                    }
+                });
+            },
+        )
+    };
 
     html! {
         <>
-            <Header health={health} ok={health_ok} on_refresh={on_refresh} on_stop={on_stop} />
+            <Header health={health} ok={health_ok} light={show_theme_light}
+                machine_name={machine_name.clone()}
+                on_refresh={on_refresh} on_stop={on_stop} on_palette={on_open_palette}
+                on_theme={on_theme} on_rename_machine={on_open_rename_machine} />
             <Nav />
             <Switch<Route> render={switch} />
+            <CommandPalette
+                open={show_palette}
+                on_close={on_close_palette}
+                on_refresh={on_palette_refresh}
+                on_stop={on_palette_stop}
+                on_toggle_theme={on_palette_toggle_theme}
+            />
+            {
+                if show_rename_machine {
+                    html! {
+                        <RenameMachineDialog
+                            current={machine_name.unwrap_or_default()}
+                            on_cancel={on_close_rename_machine}
+                            on_confirm={on_confirm_rename_machine}
+                        />
+                    }
+                } else {
+                    html! {}
+                }
+            }
             {
                 if show_shutdown {
                     html! {
@@ -293,186 +465,16 @@ pub fn nav() -> Html {
             <Link<Route> classes={classes!(cls(&Route::Home))} to={Route::Home}>
                 { "OVERVIEW" }
             </Link<Route>>
-            <Link<Route> classes={classes!(cls(&Route::CronJobs))} to={Route::CronJobs}>
-                { "CRON JOBS" }
-            </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Routines))} to={Route::Routines}>
                 { "ROUTINES" }
             </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Heatmap))} to={Route::Heatmap}>
+                { "HEATMAP" }
+            </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Settings))} to={Route::Settings}>
+                { "SETTINGS" }
+            </Link<Route>>
         </nav>
-    }
-}
-
-// ─── Header ───────────────────────────────────────────────────────────────────
-
-#[derive(Properties, PartialEq)]
-pub struct HeaderProps {
-    pub health: Health,
-    pub ok: bool,
-    pub on_refresh: Callback<MouseEvent>,
-    pub on_stop: Callback<MouseEvent>,
-}
-
-#[function_component(Header)]
-pub fn header(props: &HeaderProps) -> Html {
-    let dot_class = if props.ok {
-        "health-dot ok"
-    } else {
-        "health-dot error"
-    };
-    let status = props.health.status.to_uppercase();
-    let version = props
-        .health
-        .version
-        .as_ref()
-        .map(|v| format!("/ v{v}"))
-        .unwrap_or_default();
-    let uptime = props
-        .health
-        .uptime_secs
-        .map(|s| format!("/ UP {}", fmt_uptime(s)))
-        .unwrap_or_default();
-
-    html! {
-        <header>
-            <h1 class="logo">
-                {"MOADIM"}
-                <span class="logo-sub">{"/ CONTROL"}</span>
-                <span class="logo-version">{version}</span>
-            </h1>
-            <div class="header-right">
-                <div class="health">
-                    <div class={dot_class}></div>
-                    <span class="health-status">{status}</span>
-                    <span class="health-uptime">{uptime}</span>
-                </div>
-                <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={props.on_refresh.clone()}>{"↻"}</button>
-                <button class="btn-stop" title="Stop the server" disabled={!props.ok} onclick={props.on_stop.clone()}>{"⏻ STOP"}</button>
-            </div>
-        </header>
-    }
-}
-
-// ─── Shutdown confirm dialog ──────────────────────────────────────────────────
-
-#[derive(Properties, PartialEq)]
-pub struct ShutdownProps {
-    pub on_cancel: Callback<()>,
-    pub on_confirm: Callback<()>,
-}
-
-#[function_component(ShutdownDialog)]
-pub fn shutdown_dialog(props: &ShutdownProps) -> Html {
-    let on_cancel = {
-        let cb = props.on_cancel.clone();
-        Callback::from(move |_: MouseEvent| cb.emit(()))
-    };
-    let on_confirm = {
-        let cb = props.on_confirm.clone();
-        Callback::from(move |_: MouseEvent| cb.emit(()))
-    };
-
-    html! {
-        <div class="overlay open">
-            <div
-                class="confirm-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="shutdown-dialog-title"
-                aria-describedby="shutdown-dialog-msg"
-            >
-                <div id="shutdown-dialog-title" class="confirm-title">{"⏻ STOP SERVER"}</div>
-                <div id="shutdown-dialog-msg" class="confirm-msg">
-                    { "Stop the moadim server? Scheduled jobs and routines will not run until it is started again." }
-                </div>
-                <div class="confirm-acts">
-                    <button class="btn btn-ghost btn-sm" onclick={on_cancel}>{"CANCEL"}</button>
-                    <button class="btn btn-danger btn-sm" onclick={on_confirm}>{"STOP SERVER"}</button>
-                </div>
-            </div>
-        </div>
-    }
-}
-
-// ─── Toast stack ──────────────────────────────────────────────────────────────
-
-#[derive(Properties, PartialEq)]
-pub struct ToastStackProps {
-    pub toasts: Vec<Toast>,
-}
-
-#[function_component(ToastStack)]
-pub fn toast_stack(props: &ToastStackProps) -> Html {
-    html! {
-        <div class="toast-wrap" role="status" aria-live="polite" aria-atomic="false">
-            { for props.toasts.iter().map(|t| {
-                let cls = match t.kind { ToastKind::Ok => "toast ok", ToastKind::Err => "toast err" };
-                html! {
-                    <div class={cls} key={t.id}>{t.msg.clone()}</div>
-                }
-            }) }
-        </div>
-    }
-}
-
-// ─── Utilities (shared with routines + cron_jobs modules) ─────────────────────
-
-/// Parse a cron expression into a `Cron`, normalizing the 7-field
-/// (sec min hour dom month dow year) form to 5-field to match server behaviour.
-/// Returns `None` for empty or invalid expressions.
-pub(crate) fn parse_cron(expr: &str) -> Option<Cron> {
-    let s = expr.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let normalized = if s.starts_with('@') {
-        s.to_string()
-    } else {
-        let parts: Vec<&str> = s.split_whitespace().collect();
-        if parts.len() == 7 {
-            parts[1..6].join(" ")
-        } else {
-            s.to_string()
-        }
-    };
-    normalized.parse::<Cron>().ok()
-}
-
-/// Returns (is_valid, human description) for a cron expression.
-pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
-    if expr.trim().is_empty() {
-        return (false, "— enter a cron expression —".into());
-    }
-    match parse_cron(expr) {
-        Some(cron) => (true, cron.describe()),
-        None => (false, "Invalid cron expression".into()),
-    }
-}
-
-pub(crate) fn reltime(ts: u64) -> String {
-    if ts == 0 {
-        return "—".into();
-    }
-    let now = (js_sys::Date::now() / 1000.0) as u64;
-    let diff = now.saturating_sub(ts);
-    if diff < 60 {
-        "just now".into()
-    } else if diff < 3_600 {
-        format!("{}m ago", diff / 60)
-    } else if diff < 86_400 {
-        format!("{}h ago", diff / 3_600)
-    } else {
-        format!("{}d ago", diff / 86_400)
-    }
-}
-
-fn fmt_uptime(secs: u64) -> String {
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3_600 {
-        format!("{}m", secs / 60)
-    } else {
-        format!("{}h {}m", secs / 3_600, (secs % 3_600) / 60)
     }
 }
 

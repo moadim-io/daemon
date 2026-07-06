@@ -1,14 +1,30 @@
-//! Reusable machine-targeting picker shared by the routine and cron-job forms.
+//! Reusable machine-targeting picker shared by routine forms.
 //!
 //! Fetches the daemon's known machine names (`GET /api/v1/machines` — every name referenced by a
-//! routine or cron job, plus this machine's own identity) and renders them as toggleable chips.
-//! The selection stays open-ended: a brand-new name can be added even if no entry references it
-//! yet, so the picker never blocks assigning a machine the daemon hasn't seen.
+//! routine, plus this machine's own identity) and renders them as toggleable chips. The selection
+//! stays open-ended: a brand-new name can be added even if no entry references it yet, so the
+//! picker never blocks assigning a machine the daemon hasn't seen.
 
 use gloo_net::http::Request;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
+
+/// Fetch the current machine's resolved name from the daemon.
+pub async fn api_current_machine() -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        name: String,
+    }
+    Request::get("/api/v1/machine")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json::<Resp>()
+        .await
+        .map(|r| r.name)
+        .map_err(|e| e.to_string())
+}
 
 async fn api_machines() -> Result<Vec<String>, String> {
     Request::get("/api/v1/machines")

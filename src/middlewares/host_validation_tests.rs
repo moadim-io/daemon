@@ -5,7 +5,7 @@
 
 use axum::{
     body::Body,
-    http::{header, Request, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
     middleware,
     routing::{get, post},
     Router,
@@ -63,6 +63,44 @@ async fn missing_host_header_passes() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn non_utf8_host_header_is_rejected() {
+    // A real HTTP client's `Host` header is always ASCII; a present-but-unparseable value must
+    // not be conflated with "no Host header at all" (`missing_host_header_passes` above) — that
+    // would let an attacker bypass the allowlist entirely by sending garbage bytes.
+    let resp = app()
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header(header::HOST, HeaderValue::from_bytes(b"\xff\xfe").unwrap())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn non_utf8_origin_header_on_post_is_rejected() {
+    let resp = app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/")
+                .header(header::HOST, "example.com")
+                .header(
+                    header::ORIGIN,
+                    HeaderValue::from_bytes(b"\xff\xfe").unwrap(),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

@@ -1,8 +1,7 @@
 //! Routine data model, agent registry, command builder, service functions, and HTTP handlers.
 //!
-//! A *routine* is a scheduled AI-agent task. Unlike a [`crate::cron_jobs::CronJob`] (which runs a
-//! handler script), a routine launches an agent (claude code, codex, …) inside an interactive tmux
-//! session rooted in a fresh workbench. moadim never clones the routine's `repositories`; it lists
+//! A *routine* is a scheduled AI-agent task: it launches an agent (claude code, codex, …) inside an
+//! interactive tmux session rooted in a fresh workbench. moadim never clones the routine's `repositories`; it lists
 //! them in the prompt as context and the agent clones any it needs.
 //!
 //! The module is split by concern:
@@ -13,20 +12,24 @@
 //! - `service` — store-mutating service functions (list/get/create/update/delete/trigger/logs).
 //! - `cleanup` — auto-removal of finished, expired run workbenches (per-routine TTL).
 //! - `ical` — iCalendar (`.ics`) export of upcoming routine fire times.
+//! - `flags` — agent-raised gap/bug/edge-case notes attached to a routine.
 //! - `handlers` — the Axum HTTP handlers.
 
 mod agents;
 mod cleanup;
 mod command;
 mod defaults;
+pub mod flags;
 mod handlers;
 mod ical;
 mod model;
+mod run_history;
 mod service;
 
 pub use agents::*;
 pub use cleanup::*;
 pub use defaults::*;
+pub use flags::{Flag, FlagScope};
 pub use handlers::*;
 pub use model::*;
 pub use service::*;
@@ -36,3 +39,7 @@ pub(crate) use command::*;
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod routines_tests;
+
+#[cfg(test)]
+#[path = "mod_agents_tests.rs"]
+mod mod_agents_tests;

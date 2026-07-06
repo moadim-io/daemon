@@ -4,7 +4,6 @@
 
 use super::*;
 use chrono::{Local, TimeZone};
-use serde_json::json;
 
 /// A fixed reference instant: Mon 2026-06-22 10:00:00 local. Off midnight and
 /// noon so per-day schedules land unambiguously inside the window.
@@ -32,18 +31,13 @@ fn source(kind: Kind, schedule: &str, enabled: bool) -> HeatSource {
 
 #[test]
 fn filter_accepts_by_kind() {
-    assert!(HeatFilter::All.accepts(Kind::Cron));
     assert!(HeatFilter::All.accepts(Kind::Routine));
-    assert!(HeatFilter::Cron.accepts(Kind::Cron));
-    assert!(!HeatFilter::Cron.accepts(Kind::Routine));
     assert!(HeatFilter::Routine.accepts(Kind::Routine));
-    assert!(!HeatFilter::Routine.accepts(Kind::Cron));
 }
 
 #[test]
 fn filter_labels() {
     assert_eq!(HeatFilter::All.label(), "ALL");
-    assert_eq!(HeatFilter::Cron.label(), "CRON");
     assert_eq!(HeatFilter::Routine.label(), "ROUTINES");
 }
 
@@ -53,7 +47,7 @@ fn filter_labels() {
 fn daily_noon_schedule_fills_one_cell_per_day() {
     // From 10:00 today, "every day at 12:00" fires once on each of the 7 days
     // in the window (today's noon is still ahead), all in the hour-12 column.
-    let sources = vec![source(Kind::Cron, "0 12 * * *", true)];
+    let sources = vec![source(Kind::Routine, "0 12 * * *", true)];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
 
     assert_eq!(map.total, 7);
@@ -69,7 +63,7 @@ fn daily_noon_schedule_fills_one_cell_per_day() {
 fn elapsed_hours_today_stay_empty() {
     // "Every day at 08:00" — 08:00 today already passed at 10:00, so today's
     // row is empty while the other six days each get one fire.
-    let sources = vec![source(Kind::Cron, "0 8 * * *", true)];
+    let sources = vec![source(Kind::Routine, "0 8 * * *", true)];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
 
     assert_eq!(map.grid[0][8], 0, "today's 08:00 already elapsed");
@@ -79,7 +73,7 @@ fn elapsed_hours_today_stay_empty() {
 
 #[test]
 fn disabled_sources_are_ignored() {
-    let sources = vec![source(Kind::Cron, "0 12 * * *", false)];
+    let sources = vec![source(Kind::Routine, "0 12 * * *", false)];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
     assert_eq!(map.total, 0);
     assert!(map.peak.is_none());
@@ -88,7 +82,7 @@ fn disabled_sources_are_ignored() {
 #[test]
 fn far_future_schedule_outside_window_counts_zero() {
     // 1 January fires well beyond the 7-day window from late June.
-    let sources = vec![source(Kind::Cron, "0 0 1 1 *", true)];
+    let sources = vec![source(Kind::Routine, "0 0 1 1 *", true)];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
     assert_eq!(map.total, 0);
 }
@@ -96,8 +90,8 @@ fn far_future_schedule_outside_window_counts_zero() {
 #[test]
 fn invalid_schedule_is_skipped() {
     let sources = vec![
-        source(Kind::Cron, "not a cron", true),
-        source(Kind::Cron, "0 12 * * *", true),
+        source(Kind::Routine, "not a cron", true),
+        source(Kind::Routine, "0 12 * * *", true),
     ];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
     assert_eq!(map.total, 7);
@@ -106,14 +100,13 @@ fn invalid_schedule_is_skipped() {
 #[test]
 fn filter_restricts_counted_sources() {
     let sources = vec![
-        source(Kind::Cron, "0 12 * * *", true),
+        source(Kind::Routine, "0 12 * * *", true),
         source(Kind::Routine, "0 12 * * *", true),
     ];
     assert_eq!(compute_heatmap(&sources, now(), HeatFilter::All).total, 14);
-    assert_eq!(compute_heatmap(&sources, now(), HeatFilter::Cron).total, 7);
     assert_eq!(
         compute_heatmap(&sources, now(), HeatFilter::Routine).total,
-        7
+        14
     );
 }
 
@@ -121,7 +114,7 @@ fn filter_restricts_counted_sources() {
 fn collisions_stack_in_one_cell_and_set_the_peak() {
     // Two daily-noon schedules pile two fires into each noon cell.
     let sources = vec![
-        source(Kind::Cron, "0 12 * * *", true),
+        source(Kind::Routine, "0 12 * * *", true),
         source(Kind::Routine, "0 12 * * *", true),
     ];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
@@ -138,6 +131,15 @@ fn empty_sources_produce_a_zeroed_grid() {
     assert_eq!(map.total, 0);
     assert_eq!(map.max_cell, 0);
     assert!(map.peak.is_none());
+    assert_eq!(map.sources, 0);
+}
+
+#[test]
+fn heatmap_counts_sources_that_fire_within_window() {
+    let active = source(Kind::Routine, "0 12 * * *", true);
+    let disabled = source(Kind::Routine, "0 12 * * *", false);
+    let map = compute_heatmap(&[active, disabled], now(), HeatFilter::All);
+    assert_eq!(map.sources, 1, "disabled sources should not be counted");
 }
 
 // ─── intensity_level ───────────────────────────────────────────────────────
@@ -159,7 +161,7 @@ fn intensity_level_buckets_into_five_steps() {
 #[test]
 fn day_and_hour_totals_sum_the_grid() {
     let sources = vec![
-        source(Kind::Cron, "0 12 * * *", true),
+        source(Kind::Routine, "0 12 * * *", true),
         source(Kind::Routine, "0 12 * * *", true),
     ];
     let map = compute_heatmap(&sources, now(), HeatFilter::All);
@@ -179,7 +181,7 @@ fn day_and_hour_totals_sum_the_grid() {
 #[test]
 fn peak_label_reads_weekday_hour_and_count() {
     let single = compute_heatmap(
-        &[source(Kind::Cron, "0 12 * * *", true)],
+        &[source(Kind::Routine, "0 12 * * *", true)],
         now(),
         HeatFilter::All,
     );
@@ -190,7 +192,7 @@ fn peak_label_reads_weekday_hour_and_count() {
 
     let double = compute_heatmap(
         &[
-            source(Kind::Cron, "0 12 * * *", true),
+            source(Kind::Routine, "0 12 * * *", true),
             source(Kind::Routine, "0 12 * * *", true),
         ],
         now(),
@@ -217,27 +219,13 @@ fn day_label_counts_weekdays_forward_from_today() {
 
 // ─── record → source mappers ─────────────────────────────────────────────────
 
-fn cron_job(schedule: &str, enabled: bool) -> CronJob {
-    CronJob {
-        id: "job".into(),
-        schedule: schedule.into(),
-        handler: "h".into(),
-        metadata: json!({}),
-        machines: vec![],
-        enabled,
-        created_at: 0,
-        updated_at: 0,
-        last_manual_trigger_at: None,
-        schedule_description: None,
-    }
-}
-
 fn routine(schedule: &str, enabled: bool) -> Routine {
     Routine {
         id: "rid".into(),
         schedule: schedule.into(),
         title: "t".into(),
         agent: "a".into(),
+        model: None,
         prompt: String::new(),
         repositories: vec![],
         machines: vec![],
@@ -247,33 +235,34 @@ fn routine(schedule: &str, enabled: bool) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
         ttl_secs: None,
         tags: vec![],
         agent_registered: false,
         file_path: String::new(),
         schedule_description: None,
+        goal: None,
+        flag_count: 0,
     }
 }
 
 #[test]
-fn sources_of_maps_both_records_preserving_kind_and_enabled() {
-    let crons = vec![cron_job("0 12 * * *", true)];
+fn sources_of_maps_records_preserving_kind_and_enabled() {
     let routines = vec![routine("0 0 * * *", false)];
-    let sources = sources_of(&crons, &routines);
+    let sources = sources_of(&routines);
 
-    assert_eq!(sources.len(), 2);
-    assert_eq!(sources[0].kind, Kind::Cron);
-    assert_eq!(sources[0].schedule, "0 12 * * *");
-    assert!(sources[0].enabled);
-    assert_eq!(sources[1].kind, Kind::Routine);
-    assert_eq!(sources[1].schedule, "0 0 * * *");
-    assert!(!sources[1].enabled);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].kind, Kind::Routine);
+    assert_eq!(sources[0].schedule, "0 0 * * *");
+    assert!(!sources[0].enabled);
 }
 
 #[test]
 fn filled_cells_counts_nonempty_cells_only() {
     let map = compute_heatmap(
-        &[source(Kind::Cron, "0 12 * * *", true)],
+        &[source(Kind::Routine, "0 12 * * *", true)],
         now(),
         HeatFilter::All,
     );

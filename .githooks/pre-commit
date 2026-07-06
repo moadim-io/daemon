@@ -4,16 +4,7 @@ set -e
 # ── Spell check ─────────────────────────────────────────────────────────────
 # Catch typos in source and prose before they land. Configured by typos.toml
 # at the repo root (generated/vendored files are excluded there).
-# Requires: cargo xtask spellcheck  (installs the typos-cli crate for you)
-if ! command -v typos >/dev/null 2>&1; then
-  echo ""
-  echo "typos is not installed. Run:"
-  echo "  cargo xtask spellcheck"
-  echo "(installs it for you), or 'cargo install typos-cli' / 'brew install typos-cli',"
-  echo "then commit again."
-  exit 1
-fi
-
-echo "Spell-checking with typos..."
-typos
+# `make spell` installs typos-cli if missing, so contributors never need to
+# know the tool's crate/binary name.
+make spell
 echo "Spell check passed."

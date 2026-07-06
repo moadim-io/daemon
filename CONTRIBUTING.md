@@ -187,6 +187,13 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
   return `Result<_, AppError>`, which converts to the right HTTP status.
 - No `unwrap()` in handler paths — propagate errors via `AppError`.
 - `apis/openapi.json` is generated at build time — never edit it by hand.
+- `prebuilt.html` is a generated, committed artifact: `build.rs` inlines the
+  compiled Yew UI (`ui/`) into it via `trunk build --release`, and it's the
+  fallback used whenever `trunk` isn't installed (notably the `cargo install
+  moadim` path). Regenerate it after any `ui/` change — `cargo install trunk
+  && cargo build` rebuilds and overwrites it — and commit the result.
+  [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml) fails a PR that
+  changes `ui/**` without a matching `prebuilt.html` update.
 
 ## Commit messages
 

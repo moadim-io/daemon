@@ -1,0 +1,108 @@
+name: Bug report
+description: Report something that doesn't work — a crash, a wrong result, or a routine that silently never runs.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. moadim runs as a background
+        daemon, so failures are often silent — the more of the context below you
+        can fill in, the faster this can be triaged. Please redact any secrets
+        (tokens, private repo names) before pasting logs.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe, and what did you expect instead?
+      placeholder: "I created a routine on a */5 schedule, but it never fires and no run workbench appears."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands / API calls (and routine config) that trigger the bug.
+      placeholder: |
+        1. moadim install
+        2. curl -X POST http://127.0.0.1:5784/api/v1/routines -d '{...}'
+        3. wait 5 minutes
+        4. ...
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: moadim version
+      description: Output of `moadim --version`.
+      placeholder: "moadim 0.12.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other (note in "What happened?")
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version & architecture
+      description: e.g. `Ubuntu 24.04 / x86_64`, `macOS 15.5 / arm64`.
+      placeholder: "macOS 15.5 / arm64"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install moadim?
+      options:
+        - cargo install moadim
+        - Built from source (cargo build)
+        - Other (note in "What happened?")
+    validations:
+      required: true
+
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How is the daemon running?
+      options:
+        - Installed OS service (moadim install — launchd / systemd)
+        - Background (moadim)
+        - Foreground (moadim --interactive / -i)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: agent
+    attributes:
+      label: Agent (if relevant)
+      description: Which agent the affected routine uses — e.g. Claude, Codex, Hermes.
+      placeholder: "Claude"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Paste relevant lines from the daemon log (`~/.config/moadim/daemon.log`)
+        and, for a misbehaving run, that run's `agent.log` from its workbench.
+        Redact secrets first.
+      render: text
+    validations:
+      required: false

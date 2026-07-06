@@ -11,6 +11,46 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-06
+
+Add `moadim enable`/`disable <routine>` CLI commands to toggle a routine's enabled state from the terminal (#820).
+
+Add `GET /routines/{id}/runs/{workbench}/summary`, serving an agent-authored work summary (`summary.md`) for a specific run. Every routine's system prompt now instructs the agent to keep a running work log and write a final summary section to that file before exiting.
+
+### Added
+
+Regression test for `write_tmp`'s ENOSPC/EIO error path (via `/dev/full` on Linux), guarding the fix in #1019 where a full or failing disk during `atomic_write` now propagates the I/O error instead of panicking the whole daemon.
+
+Enforce the 500-line-per-file gate in CI, not just the local pre-push hook (#1029).
+
+### Fixed
+
+Lower the background workbench-cleanup sweep from hourly to every 5 minutes, so a high-frequency routine (e.g. an every-minute schedule, whose effective TTL can be as low as ~60s) no longer piles up dozens of expired, finished workbenches — full repo clones included — between sweeps (#170). The max-runtime watchdog is unaffected; it already runs on its own 30s cadence.
+
+Reject requests with a disallowed `Host` header, and state-changing requests with a cross-origin `Origin` header, closing the DNS-rebinding / browser cross-origin gap against the unauthenticated loopback API (#266). Extend the allowlist for reverse-proxy deployments with `MOADIM_ALLOWED_HOSTS`.
+
+test(routines): cover `next_run_at`'s "no future fire" branch in `model.rs`
+
+`next_run_at`'s doc comment documents three `None` cases — disabled, an
+unparseable schedule, and a schedule with no upcoming fire — but only the
+first two had tests. `cargo llvm-cov`'s region report showed the third
+branch (`cron.iter_after(Local::now()).next()?` returning `None`) was never
+exercised. Added a test using a parseable 7-field (`sec min hour dom month
+dow year`) schedule pinned to a year that has already passed, so parsing
+succeeds but the iterator yields no occurrence.
+
+No behavior change — regression test only.
+
+### Fixed
+
+Run crontab sync (`lock`/`unlock`/`create`/`update`/`delete` on `/routines`) via `tokio::task::spawn_blocking` instead of inline on the async handler. These calls shell out to `crontab`(1); without `spawn_blocking` a slow or hung `crontab` invocation pins a Tokio worker thread indefinitely, and the per-request 30s timeout (`middlewares/timeout.rs`) can't preempt it since the thread is synchronously blocked, not polling a future (#360).
+
+Split service_trigger_tests.rs to satisfy the 500-line pre-push gate; no behavior change (#1018).
+
+Remove a dead duplicate `validate_machines` helper left over after merging with `main`, which already validates machines via `routines::service_validate::validate_machines` (#600).
+
+Write a distinct `killed` sentinel to a watchdog-killed run's `exit_code` file so it never reads back as a misleading clean `0` exit (#453).
+
 ## [0.24.0] - 2026-07-06
 
 Fix `atomic_write` panicking the whole daemon on a write/sync I/O error (e.g. disk full) instead of returning it. `File::create`/`open` reserve no disk space, so `write_all`/`sync_all` can still fail after that call succeeds; they now propagate via `?` like every other step in `atomic_write`, instead of `.expect(...)`.
@@ -2813,7 +2853,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/moadim-io/daemon/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/moadim-io/daemon/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/moadim-io/daemon/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/moadim-io/daemon/compare/v0.22.0...v0.22.1

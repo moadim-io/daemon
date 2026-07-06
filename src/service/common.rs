@@ -16,7 +16,7 @@ pub(super) fn run(program: &str, args: &[&str]) -> anyhow::Result<()> {
 
 /// Absolute path to the currently running `moadim` binary, supervised by the service manager.
 pub(super) fn moadim_exe() -> anyhow::Result<PathBuf> {
-    Ok(std::env::current_exe()?)
+    Ok(std::env::current_exe().expect("failed to resolve current executable path"))
 }
 
 /// Absolute path to the daemon log file the service manager redirects stdout/stderr to.

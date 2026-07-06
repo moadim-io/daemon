@@ -1,9 +1,9 @@
 //! Machine identity for multi-machine deployments.
 //!
 //! One `~/.config/moadim` config repo can be shared (via the user's own git workflow) across several
-//! machines — a laptop, a work box, a server. Each routine and cron job declares which machines run
-//! it through a `machines` targeting list; each daemon then filters its crontab sync to only the
-//! entries naming *this* machine. This module answers "which machine am I?".
+//! machines — a laptop, a work box, a server. Each routine declares which machines run it through a
+//! `machines` targeting list; each daemon then filters its crontab sync to only the entries naming
+//! *this* machine. This module answers "which machine am I?".
 //!
 //! Identity resolves in priority order:
 //! 1. the `MOADIM_MACHINE` environment variable (trimmed, non-empty),
@@ -33,7 +33,9 @@ pub enum MachineSource {
     Env,
     /// From the `name` field in `machine.local.toml`.
     File,
-    /// Fell back to the system hostname.
+    /// Auto-generated on first run and written to `machine.local.toml`.
+    Generated,
+    /// Fell back to the system hostname (only when writing the generated name fails).
     Hostname,
 }
 
@@ -43,6 +45,7 @@ impl MachineSource {
         match self {
             Self::Env => "MOADIM_MACHINE env",
             Self::File => "machine.local.toml",
+            Self::Generated => "auto-generated (first run)",
             Self::Hostname => "system hostname",
         }
     }
@@ -55,10 +58,36 @@ pub fn current_machine() -> String {
 
 /// This machine's identity name together with where it was resolved from.
 pub fn resolve() -> (String, MachineSource) {
-    resolve_from(
-        std::env::var("MOADIM_MACHINE").ok(),
-        read_machine_file(),
-        hostname(),
+    let env = std::env::var("MOADIM_MACHINE").ok();
+    let file = read_machine_file();
+    if let Some(name) = non_empty(env) {
+        return (name, MachineSource::Env);
+    }
+    if let Some(name) = non_empty(file) {
+        return (name, MachineSource::File);
+    }
+    // No name configured: generate a unique name and persist it so every subsequent
+    // call returns the same identity without re-generating.
+    let generated = generate_name();
+    match set_machine(&generated) {
+        Ok(()) => {
+            log::warn!(
+                "no machine name configured; generated {generated:?} — run `moadim machine set <name>` to choose your own"
+            );
+            (generated, MachineSource::Generated)
+        }
+        Err(err) => {
+            log::warn!("failed to save generated machine name: {err}; falling back to hostname");
+            (hostname(), MachineSource::Hostname)
+        }
+    }
+}
+
+/// Generate a unique machine name of the form `machine-{8hex}`.
+fn generate_name() -> String {
+    format!(
+        "machine-{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
     )
 }
 
@@ -66,6 +95,7 @@ pub fn resolve() -> (String, MachineSource) {
 ///
 /// Split out from [`resolve`] so the precedence (and each branch) is unit-testable without touching
 /// the real environment or filesystem.
+#[cfg(test)]
 fn resolve_from(
     env: Option<String>,
     file: Option<String>,
@@ -111,15 +141,18 @@ pub fn set_machine(name: &str) -> std::io::Result<()> {
     }
     let path = machine_config_path();
     // The machine-config path is always `<config dir>/machine.local.toml`, so it always has a parent.
-    std::fs::create_dir_all(path.parent().expect("machine config path has a parent dir"))?;
+    crate::utils::fs_perms::create_private_dir_all(
+        path.parent().expect("machine config path has a parent dir"),
+    )?;
     let toml = MachineToml {
         name: Some(name.to_string()),
     };
-    let text = toml::to_string_pretty(&toml).map_err(std::io::Error::other)?;
+    let text = toml::to_string_pretty(&toml)
+        .expect("MachineToml serialization cannot fail for a struct with an Option<String> field");
     atomic_write(&path, text.as_bytes())
 }
 
-/// Distinct machine names referenced across all on-disk routines and cron jobs.
+/// Distinct machine names referenced across all on-disk routines.
 ///
 /// There is no central registry of machines, so the "known" set is the union of every `machines`
 /// targeting list the config repo declares. Backs `moadim machine list`. Reads straight from disk so
@@ -130,17 +163,13 @@ pub fn referenced_machines() -> std::collections::BTreeSet<String> {
     for routine in routines.lock_recover().values() {
         names.extend(routine.machines.iter().cloned());
     }
-    let jobs = crate::storage::load_store();
-    for job in jobs.lock_recover().values() {
-        names.extend(job.machines.iter().cloned());
-    }
     names
 }
 
 /// `true` if an entry targeting `machines` should run on the machine named `me`.
 ///
 /// An empty list targets *no* machine (dormant until assigned), so an entry runs only when its list
-/// explicitly names this machine. Shared by the routine and cron-job crontab sync filters.
+/// explicitly names this machine. Used by the routine crontab sync filter.
 pub fn targets(machines: &[String], me: &str) -> bool {
     machines.iter().any(|name| name == me)
 }
@@ -189,7 +218,7 @@ fn cmd_set(name: &str) -> i32 {
 fn cmd_list() -> i32 {
     let names = referenced_machines();
     if names.is_empty() {
-        println!("no machines referenced by any routine or cron job");
+        println!("no machines referenced by any routine");
     } else {
         for name in &names {
             println!("{name}");

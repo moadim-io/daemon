@@ -53,3 +53,7 @@ pub(crate) fn reltime(ts: u64) -> String {
         format!("{}d ago", diff / 86_400)
     }
 }
+
+#[cfg(test)]
+#[path = "cron_utils_tests.rs"]
+mod cron_utils_tests;

@@ -6,6 +6,38 @@
 /// most recent bytes, since the tail is what matters for "what is this run doing right now".
 pub(crate) const MAX_LOG_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 
+/// A log tail plus the metadata needed to tell "this is the whole file" from "this is a window"
+/// (#280) — `total_bytes` is the full on-disk size and `truncated` is whether `content` was
+/// capped to [`MAX_LOG_TAIL_BYTES`] rather than holding the complete file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LogWithMeta {
+    pub(crate) content: String,
+    pub(crate) total_bytes: u64,
+    pub(crate) truncated: bool,
+}
+
+impl LogWithMeta {
+    pub(crate) fn empty() -> Self {
+        Self {
+            content: String::new(),
+            total_bytes: 0,
+            truncated: false,
+        }
+    }
+}
+
+/// Same read as [`read_log_tail`], but reporting the full on-disk size and whether `content` is a
+/// truncated window rather than the complete file (see [`LogWithMeta`]).
+pub(crate) fn read_log_tail_with_meta(path: &std::path::Path) -> std::io::Result<LogWithMeta> {
+    let total_bytes = std::fs::metadata(path)?.len();
+    let content = read_log_tail(path)?;
+    Ok(LogWithMeta {
+        content,
+        total_bytes,
+        truncated: total_bytes > MAX_LOG_TAIL_BYTES,
+    })
+}
+
 /// Read `path`, returning only the last [`MAX_LOG_TAIL_BYTES`] when it's larger than that.
 ///
 /// The seek point is snapped forward to the next UTF-8 character boundary so a multi-byte

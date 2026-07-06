@@ -294,7 +294,7 @@ pub async fn get_logs(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
-    svc_logs(&store, &id)
+    svc_logs(&store, &id).map(|logs| logs.content)
 }
 
 /// `GET /routines/{id}/runs` — list every run workbench for the routine, newest first.

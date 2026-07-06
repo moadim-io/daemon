@@ -1,6 +1,6 @@
 # moadim vs. the alternatives
 
-Feature comparison: scheduling AI agents (and scripts) on a recurring basis.
+Feature comparison: scheduling AI agents on a recurring basis.
 moadim's niche is **routines** — a prompt + schedule + coding agent that runs
 unattended in a throwaway workbench, locally, with no cloud dependency.
 
@@ -8,13 +8,13 @@ unattended in a throwaway workbench, locally, with no cloud dependency.
 
 | Capability                       | **moadim**            | cron / systemd timers | GitHub Actions (cron) | Claude Code scheduling¹ | Other agent runners² |
 | -------------------------------- | --------------------- | --------------------- | --------------------- | ----------------------- | -------------------- |
-| Schedule a **script**            | ✅ cron jobs          | ✅                    | ✅                    | ⚠️ via shell step       | ✅                   |
+| Schedule a **script**            | ❌ (routines only)    | ✅                    | ✅                    | ⚠️ via shell step       | ✅                   |
 | Schedule an **AI agent + prompt**| ✅ routines           | ❌ (DIY wrapper)      | ⚠️ DIY in a workflow  | ✅                      | ✅                   |
 | Runs **locally** / offline       | ✅                    | ✅                    | ❌ cloud              | ⚠️ varies               | ⚠️ varies            |
 | **Agent-agnostic** (swap CLI)    | ✅ claude/codex/hermes| n/a                   | ✅ any                | ❌ Claude only          | ❌ usually 1 vendor  |
 | **Per-run isolation** (workbench)| ✅ throwaway + reaped | ❌                    | ✅ fresh runner       | ⚠️ varies               | ⚠️ varies            |
 | **Unattended auth** pre-seed     | ✅ (claude trust/MCP) | n/a                   | ⚠️ secrets/tokens     | ✅                      | ⚠️ varies            |
-| Config **git-trackable**         | ✅ TOML + prompt.md   | ⚠️ crontab file       | ✅ YAML in repo       | ⚠️ varies               | ⚠️ varies            |
+| Config **git-trackable**         | ✅ TOML + prompt files| ⚠️ crontab file       | ✅ YAML in repo       | ⚠️ varies               | ⚠️ varies            |
 | **3 interfaces, one port**       | ✅ UI + REST + MCP    | ❌ CLI only           | ❌ web/API            | ⚠️ CLI/web              | ⚠️ varies            |
 | **MCP** native (agents self-schedule) | ✅               | ❌                    | ❌                    | ⚠️                      | ⚠️                   |
 | Calendar feed (`.ics`)           | ✅                    | ❌                    | ❌                    | ❌                      | ❌                   |
@@ -45,8 +45,8 @@ standalone, n8n, Temporal, Airflow, etc.
 
 ## Where moadim wins
 
-- **One primitive for both worlds** — cron jobs (scripts) *and* routines (agents)
-  on the same daemon, same port, same crontab block.
+- **Purpose-built for agent routines** — a prompt + schedule + coding agent,
+  synced to the OS crontab, on the same daemon and port as the REST/MCP/UI surface.
 - **Agent-agnostic** — `claude`, `codex`, `hermes` built in; any CLI via a
   `<name>.toml`. Swap the agent without touching the schedule.
 - **Local-first, self-hosted, free** — no cloud, no per-minute billing, runs

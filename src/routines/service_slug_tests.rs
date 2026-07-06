@@ -424,5 +424,5 @@ fn svc_update_migrates_workbenches_on_rename() {
 
     // `svc_logs` (which looks up by the *current* slug) can still find the newest migrated run.
     let logs = svc_logs(&store, "rename-id").unwrap();
-    assert_eq!(logs, "prior run log");
+    assert_eq!(logs.content, "prior run log");
 }

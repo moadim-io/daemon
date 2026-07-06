@@ -18,7 +18,7 @@ use crate::routines::model::{
 };
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
 
-use super::service_log_tail::read_log_tail;
+use super::service_log_tail::{read_log_tail, read_log_tail_with_meta, LogWithMeta};
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 ///
@@ -282,8 +282,9 @@ pub(super) fn migrate_workbenches(old_slug: &str, new_slug: &str) {
     }
 }
 
-/// Return the contents of the newest workbench `agent.log` for routine `id`.
-pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
+/// Return the contents of the newest workbench `agent.log` for routine `id`, plus whether that
+/// content is a truncated window rather than the complete file (see [`LogWithMeta`]).
+pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError> {
     let routine = store
         .lock_recover()
         .get(id)
@@ -309,13 +310,13 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<String, AppError> {
         }
     }
     let Some((_, dir)) = newest else {
-        return Ok(String::new());
+        return Ok(LogWithMeta::empty());
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
     if !log_path.exists() {
-        return Ok(String::new());
+        return Ok(LogWithMeta::empty());
     }
-    read_log_tail(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail_with_meta(&log_path).map_err(|_| AppError::Internal)
 }
 
 /// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status

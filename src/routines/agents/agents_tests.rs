@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 
@@ -25,6 +28,24 @@ fn available_agents_in_falls_back_when_dir_has_no_toml() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn codex_default_config_enables_sandbox_network_access() {
+    // `codex exec`'s default workspace-write sandbox disables outbound network, which would block
+    // an unattended routine from cloning the repo or pushing / opening a PR. The shipped default
+    // must re-enable it; parse the actual config string and assert the override is present so the
+    // flag can't silently regress to the network-disabled default.
+    let cmd: AgentCommand =
+        toml::from_str(super::codex::CONFIG).expect("codex default config must be valid TOML");
+    assert_eq!(cmd.command, "codex");
+    assert!(
+        cmd.args
+            .iter()
+            .any(|arg| arg == "sandbox_workspace_write.network_access=true"),
+        "codex default args must enable sandbox network access, got {:?}",
+        cmd.args
+    );
 }
 
 #[test]
@@ -61,7 +82,8 @@ fn load_agent_command_reports_parse_error_for_malformed_config() {
 
 #[test]
 fn load_agent_command_reports_missing_for_absent_config() {
-    // No file on disk → `Missing`, leaving the missing-file behavior identical to before.
+    // No file on disk → `Missing` (and ONLY a genuine not-found), leaving the missing-file behavior
+    // identical to before.
     assert!(matches!(
         load_agent_command("load-agent-absent-zzz"),
         Err(AgentLoadError::Missing)
@@ -69,11 +91,34 @@ fn load_agent_command_reports_missing_for_absent_config() {
 }
 
 #[test]
+fn load_agent_command_reports_unreadable_for_non_not_found_io_error() {
+    // A present-but-unreadable config (here: a directory at the `<name>.toml` path, which yields an
+    // I/O error whose kind is NOT `NotFound`) must yield `Unreadable`, NOT `Missing` — so an
+    // unreadable config is never mislabeled "config not found" and silently dropped.
+    let agent_name = "load-agent-unreadable-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::create_dir_all(&cfg).unwrap();
+
+    match load_agent_command(agent_name) {
+        Err(AgentLoadError::Unreadable(err)) => assert!(!err.is_empty()),
+        other => panic!("expected Unreadable error, got {other:?}"),
+    }
+
+    std::fs::remove_dir_all(&cfg).unwrap();
+}
+
+#[test]
 fn agent_load_error_display_distinguishes_variants() {
-    // The two variants render distinctly: missing vs. malformed (with the underlying error).
+    // Each variant renders distinctly: missing vs. unreadable vs. malformed (the latter two carrying
+    // the underlying error).
     assert_eq!(
         AgentLoadError::Missing.to_string(),
         "agent config not found"
+    );
+    assert_eq!(
+        AgentLoadError::Unreadable("permission denied".to_string()).to_string(),
+        "unreadable agent config: permission denied"
     );
     assert_eq!(
         AgentLoadError::Parse("boom".to_string()).to_string(),
@@ -121,6 +166,48 @@ fn ensure_default_agents_in_returns_early_when_dir_is_uncreatable() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+#[test]
+fn ensure_default_agents_in_logs_and_continues_on_write_failure() {
+    // Covers the `std::fs::write` error branch: a directory already occupies the
+    // path where the first agent's `.toml` file would be written, so the write
+    // fails while the loop continues to the next agent.
+    let dir = unique_dir("write-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Block the claude config path with a directory so writing the file fails.
+    std::fs::create_dir_all(dir.join("claude.toml")).unwrap();
+
+    ensure_default_agents_in(&dir);
+
+    // The blocked path remains a directory (write failed, was logged, ignored).
+    assert!(dir.join("claude.toml").is_dir());
+    // The loop still seeded the second agent.
+    assert!(dir.join("codex.toml").is_file());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn builtin_configs_declare_expected_instructions_file() {
+    // Both built-in agents now read their project instructions from AGENTS.md, unifying the
+    // moadim-managed system prompt and routine-origin disclosure onto a single file. Claude Code
+    // loads AGENTS.md as a memory/context file, and AGENTS.md is the file Codex reads, so the
+    // disclosure lands in the file each agent actually reads.
+    let claude: AgentCommand = toml::from_str(claude_code::CONFIG).unwrap();
+    assert_eq!(claude.instructions_file, "AGENTS.md");
+
+    let codex: AgentCommand = toml::from_str(codex::CONFIG).unwrap();
+    assert_eq!(codex.instructions_file, "AGENTS.md");
+}
+
+#[test]
+fn default_instructions_file_falls_back_to_claude_md() {
+    // A config that omits `instructions_file` falls back to the historical CLAUDE.md default,
+    // preserving backward compatibility for user-authored agent configs.
+    let agent: AgentCommand = toml::from_str(r#"command = "x""#).unwrap();
+    assert_eq!(agent.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
+    assert_eq!(agent.instructions_file, "CLAUDE.md");
+}
+
 #[cfg(unix)]
 #[test]
 fn ensure_default_agents_in_swallows_per_config_write_errors() {
@@ -137,5 +224,46 @@ fn ensure_default_agents_in_swallows_per_config_write_errors() {
     // Restore permissions so cleanup can proceed. (Root bypasses the read-only bit, in which case
     // the writes succeed; the call is exercised either way.)
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── available_agents_in: extension-filter branch ────────────────────────────
+
+#[test]
+fn available_agents_in_ignores_files_without_extension() {
+    // Exercises the `path.extension()?` → None branch in the filter_map closure:
+    // a file with no extension (e.g. "readme") has extension() == None, so the `?`
+    // propagates None and the entry is skipped.  The .toml files are still returned.
+    let dir = unique_dir("no-ext");
+    std::fs::create_dir_all(&dir).unwrap();
+    // A file without any extension — must be ignored.
+    std::fs::write(dir.join("readme"), "not an agent").unwrap();
+    // A valid agent config — must be returned.
+    std::fs::write(dir.join("my-agent.toml"), "command = \"x\"\n").unwrap();
+
+    let agents = available_agents_in(&dir);
+    assert!(
+        agents.contains(&"my-agent".to_string()),
+        "toml file should be listed"
+    );
+    assert!(
+        !agents.iter().any(|n| n == "readme"),
+        "no-extension file must be filtered out"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn available_agents_in_ignores_files_with_non_toml_extension() {
+    // Extension is Some but != "toml": the entry is filtered out.
+    let dir = unique_dir("non-toml-ext");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("notes.txt"), "ignore").unwrap();
+    std::fs::write(dir.join("claude.toml"), "command = \"claude\"\n").unwrap();
+
+    let agents = available_agents_in(&dir);
+    assert_eq!(agents, vec!["claude".to_string()]);
+
     let _ = std::fs::remove_dir_all(&dir);
 }

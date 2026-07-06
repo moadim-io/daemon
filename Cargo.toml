@@ -9,13 +9,18 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "0.13.0"
+version = "0.24.0"
 edition = "2021"
-description = "Moadim.io MCP/REST server for managing cron jobs"
+# Floor set by the transitive proc-macro build dependency `darling 0.23`
+# (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
+# `rust-version = "1.88.0"`. Bumping this is a deliberate, CHANGELOG-worthy
+# change — see CONTRIBUTING.md.
+rust-version = "1.88"
+description = "Loop engine for AI agents — routines over REST, MCP, and a built-in web UI"
 license = "MIT"
 repository = "https://github.com/moadim-io/daemon"
-homepage = "https://github.com/moadim-io/daemon"
-keywords = ["cron", "scheduler", "mcp", "automation", "rest"]
+homepage = "https://moadim.io"
+keywords = ["scheduler", "mcp", "automation", "rest"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
@@ -31,19 +36,24 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
-rmcp = { version = "1.7.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "2.0.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 schemars = "1"
 tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["limit", "util"] }
+tower-http = { version = "0.7", features = ["catch-panic", "compression-gzip"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
+gethostname = "1"
+
+# `flock`-based advisory locking for the shared `~/.claude.json` prune (src/utils/claude_json.rs).
+# Unix-only target dependency since the daemon's launch mechanism (tmux sessions) is Unix-only.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [[bin]]
 name = "moadim"
 path = "src/main.rs"
-
-[dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 
 [build-dependencies]
 serde_json = "1"
@@ -56,7 +66,106 @@ all = "deny"
 missing_docs_in_private_items = "deny"
 # Reject single-character identifiers (threshold 1, the lint default).
 min_ident_chars = "deny"
+# Require backticks around code-like items (type names, paths, acronyms) in docs.
+doc_markdown = "deny"
 # Require inline format args (`{x}`) over positional (`{}`, x) where possible.
 uninlined_format_args = "deny"
 # Reject leftover `dbg!` debugging macros so they never ship to production.
 dbg_macro = "deny"
+# Reject leftover `todo!()`/`unimplemented!()` stubs so they never ship to
+# production — a stray one would panic the daemon on that code path.
+todo = "deny"
+unimplemented = "deny"
+# Reject `async fn`s that never `.await` anything — they don't need to be
+# async, and being async needlessly propagates async-ness to callers.
+unused_async = "deny"
+# Prefer `map_or`/`map_or_else`/`is_ok_and` over `.map(f).unwrap_or(_)`.
+map_unwrap_or = "deny"
+# Require a trailing `;` on the last statement of a `()`-returning block so
+# statement-only blocks read consistently and intent stays explicit.
+semicolon_if_nothing_returned = "deny"
+# Prefer `let PATTERN = expr else { diverge }` over a `match` whose only
+# non-binding arm diverges (return/continue/break), keeping the happy path
+# unindented.
+manual_let_else = "deny"
+# Prefer naming the method directly (`Result::ok`, `ToString::to_string`) over
+# wrapping it in a closure that only forwards the receiver
+# (`|e| e.ok()`, `|s| s.to_string()`).
+redundant_closure_for_method_calls = "deny"
+# Require every `#[allow(...)]` suppression to carry a `reason = "..."` so
+# reviewers can tell at a glance why the lint was silenced, and silenced lints
+# stay documented as the code evolves.
+allow_attributes_without_reason = "deny"
+# Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }`
+# to eliminate double-negation and reduce cognitive load when reading branches.
+if_not_else = "deny"
+# Forbid `.unwrap()` in production code: a panic in a long-running daemon process
+# kills the server without a graceful shutdown, swallowing the in-flight request
+# and leaving connected agents in an undefined state. All error paths must instead
+# propagate via `?` or be handled explicitly so the structured error responses and
+# logging this daemon provides remain intact. Production code is already clean, so
+# `deny` locks in that state and keeps every future error path deliberate.
+# Test code is exempt because test modules are gated with `#[cfg(test)]` and
+# legitimately use `.unwrap()` to assert invariants.
+unwrap_used = "deny"
+# Prefer `for x in &collection` / `for x in &mut collection` over the explicit
+# `for x in collection.iter()` / `.iter_mut()` form. The reference syntax is
+# shorter, is the idiomatic way to iterate without consuming, and avoids the
+# reader having to confirm that `.iter()` isn't secretly `.into_iter()` (which
+# would move). It states "borrow and iterate" at a glance.
+explicit_iter_loop = "deny"
+# Companion to `explicit_iter_loop` above: reject `for x in collection.into_iter()`
+# in favour of the equivalent `for x in collection`. `.into_iter()` here is
+# redundant — a plain `for` loop already calls it implicitly — so spelling it
+# out adds noise without adding meaning. The codebase is already clean, so
+# `deny` locks that in.
+explicit_into_iter_loop = "deny"
+# Reject `use some::module::*;` glob imports. Explicit imports make it clear
+# at the call site which module a name comes from, avoid silent breakage or
+# ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
+# "go to definition" unambiguous.
+wildcard_imports = "deny"
+# Reject `match` arms with identical bodies — either the arm is dead code
+# already covered by another pattern, or the duplication is an unintentional
+# bug where the bodies were meant to differ.
+match_same_arms = "deny"
+# Prefer `Self`/`Self::Variant` over spelling out the concrete type name
+# inside its own `impl` block. `Self` always tracks the current type, so
+# renaming the type requires zero edits inside the `impl` block, and it's
+# the idiomatic way to say "same type as the one being implemented".
+use_self = "deny"
+# Reject `{:?}` (Debug) formatting of a `Path`/`PathBuf` in user-facing output
+# (log lines, error messages). Debug-formats a path with surrounding quotes and
+# escaped separators/backslashes, which reads oddly and diverges from every
+# other path already printed via `.display()` in this codebase. `Path::display`
+# is the correct, consistent way to show a filesystem path to a human.
+unnecessary_debug_formatting = "deny"
+# Reject a `&mut` parameter that's never actually mutated through. A stale
+# `&mut` overstates what the function does to its caller (and to the borrow
+# checker, needlessly ruling out concurrent shared borrows) — the signature
+# should say `&T` once the mutation it was written for is gone. The codebase
+# is already clean, so `deny` keeps every future `&mut` parameter honest.
+needless_pass_by_ref_mut = "deny"
+# Prefer `String::new()` over `"".into()`/`"".to_string()`/`"".to_owned()` for
+# constructing an empty `String` — it says "empty string" directly instead of
+# making the reader infer it from an empty literal plus a conversion call.
+manual_string_new = "deny"
+# Reject an `else` branch after an `if` whose every path already diverges
+# (return/break/continue/panic) — the `else` adds a level of nesting for
+# nothing, since control flow never falls through to it. Dropping it keeps the
+# non-diverging code unindented, matching this codebase's existing preference
+# for flat, early-return control flow (see `manual_let_else`, `if_not_else`
+# above). The codebase is already clean, so `deny` locks that in.
+redundant_else = "deny"
+# A type deriving `PartialEq` whose fields are all themselves `Eq` almost always
+# satisfies `Eq` too (reflexivity holds for everything but float fields, which
+# this codebase avoids in these structs). Deriving it costs nothing and unlocks
+# the type as a `HashSet`/`BTreeMap` key or `HashMap` value in `==`-free contexts
+# without a later, easy-to-forget follow-up PR. The codebase is already clean,
+# so `deny` locks that in.
+derive_partial_eq_without_eq = "deny"
+# Reject a by-value function argument that the body never consumes (never moves, mutates through
+# ownership, or otherwise needs to own) — it should take a reference instead. A needless owned
+# parameter forces every caller to clone or otherwise part with a value the callee never actually
+# needed to own. The codebase is already clean, so `deny` locks that in.
+needless_pass_by_value = "deny"

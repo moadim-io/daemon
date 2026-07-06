@@ -111,8 +111,13 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `securit
 | `update_routine` | `routines::svc_update` |
 | `delete_routine` | `routines::svc_delete` |
 | `trigger_routine` | `routines::svc_trigger` |
+| `snooze_routine` | `routines::svc_snooze` |
+| `set_power_saving` | `routines::svc_set_power_saving` |
 | `cleanup_workbenches` | `routines::svc_cleanup` |
 | `list_agents` | `routines::available_agents` |
+| `create_flag` | `routines::svc_create_flag` |
+| `list_flags` | `routines::svc_list_flags` |
+| `resolve_flag` | `routines::svc_resolve_flag` |
 | `routine_logs` | `routines::svc_logs` |
 | `list_routine_runs` | `routines::svc_list_runs` |
 | `get_lock_status` | `global_lock::lock_status` |

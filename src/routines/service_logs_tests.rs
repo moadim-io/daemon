@@ -83,7 +83,9 @@ fn svc_logs_returns_newest_workbench_log() {
     std::fs::write(newer.join("agent.log"), "new log contents").unwrap();
 
     let logs = svc_logs(&store, "logs-id").unwrap();
-    assert_eq!(logs, "new log contents");
+    assert_eq!(logs.content, "new log contents");
+    assert_eq!(logs.total_bytes, "new log contents".len() as u64);
+    assert!(!logs.truncated);
 }
 
 #[test]
@@ -121,7 +123,7 @@ fn svc_logs_skips_foreign_and_unparseable_workbenches() {
     std::fs::write(mine.join("agent.log"), "mine log contents").unwrap();
 
     let logs = svc_logs(&store, "logs-mixed-id").unwrap();
-    assert_eq!(logs, "mine log contents");
+    assert_eq!(logs.content, "mine log contents");
 }
 
 #[test]
@@ -140,7 +142,9 @@ fn svc_logs_empty_when_workbenches_dir_absent() {
     assert!(!crate::paths::workbenches_dir().exists());
 
     let logs = svc_logs(&store, "logs-empty-id").unwrap();
-    assert_eq!(logs, "");
+    assert_eq!(logs.content, "");
+    assert_eq!(logs.total_bytes, 0);
+    assert!(!logs.truncated);
 }
 
 #[test]
@@ -150,6 +154,17 @@ fn svc_logs_missing_routine_not_found() {
         svc_logs(&new_store(), "nope"),
         Err(AppError::NotFound)
     ));
+}
+
+#[test]
+fn read_log_tail_errors_when_file_is_missing() {
+    // The very first thing `read_log_tail` does is `std::fs::metadata(path)?`; a workbench
+    // whose `agent.log` was removed out from under it (e.g. a racing cleanup sweep) must
+    // surface an `io::Error` here instead of panicking.
+    let dir = std::env::temp_dir().join(format!("moadim-logtail-missing-{}", uuid::Uuid::new_v4()));
+    let path = dir.join("agent.log");
+
+    assert!(read_log_tail(&path).is_err());
 }
 
 #[test]
@@ -230,6 +245,11 @@ fn svc_logs_reads_through_the_size_cap() {
     std::fs::write(dir.join("agent.log"), &big).unwrap();
 
     let logs = svc_logs(&store, "logs-big-id").unwrap();
-    assert_ne!(logs, big, "an oversized log must not be served in full");
-    assert!(logs.contains("10 bytes omitted"), "got: {logs}");
+    assert_ne!(
+        logs.content, big,
+        "an oversized log must not be served in full"
+    );
+    assert!(logs.content.contains("10 bytes omitted"), "got: {logs:?}");
+    assert_eq!(logs.total_bytes, big.len() as u64);
+    assert!(logs.truncated);
 }

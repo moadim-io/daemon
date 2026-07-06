@@ -42,7 +42,7 @@ impl FlagScope {
 }
 
 /// A single flag raised against a routine.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Flag {
     /// Filename on disk under the routine's `flags/` dir; the handle used to resolve it.
     pub filename: String,

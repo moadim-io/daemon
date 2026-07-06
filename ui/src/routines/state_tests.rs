@@ -306,151 +306,6 @@ fn sort_by_health_descending_puts_healthy_first() {
     assert_eq!(sorted[1].id, "dormant");
 }
 
-// ── RGroupBy codec ────────────────────────────────────────────────────────────
-
-#[test]
-fn r_group_by_as_str_roundtrips() {
-    for by in [
-        RGroupBy::None,
-        RGroupBy::Agent,
-        RGroupBy::Machine,
-        RGroupBy::Status,
-        RGroupBy::Health,
-    ] {
-        assert_eq!(RGroupBy::from_str(by.as_str()), by);
-    }
-}
-
-#[test]
-fn r_group_by_default_is_none() {
-    assert_eq!(RGroupBy::default(), RGroupBy::None);
-}
-
-#[test]
-fn r_group_by_unknown_token_decodes_to_none() {
-    assert_eq!(RGroupBy::from_str("bogus"), RGroupBy::None);
-    assert_eq!(RGroupBy::from_str(""), RGroupBy::None);
-}
-
-// ── routine_group_key ─────────────────────────────────────────────────────────
-
-#[test]
-fn routine_group_key_agent_returns_agent_field() {
-    let r = routine("id1", "t", "claude", "0 * * * *", &["m1"], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::Agent), "claude");
-}
-
-#[test]
-fn routine_group_key_machine_returns_first_machine() {
-    let r = routine(
-        "id1",
-        "t",
-        "claude",
-        "0 * * * *",
-        &["alpha", "beta"],
-        &[],
-        true,
-    );
-    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "alpha");
-}
-
-#[test]
-fn routine_group_key_machine_returns_unassigned_when_no_machines() {
-    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::Machine), "(unassigned)");
-}
-
-#[test]
-fn routine_group_key_status_enabled() {
-    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Enabled");
-}
-
-#[test]
-fn routine_group_key_status_disabled() {
-    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], false);
-    assert_eq!(routine_group_key(&r, RGroupBy::Status), "Disabled");
-}
-
-#[test]
-fn routine_group_key_none_returns_empty_string() {
-    let r = routine("id1", "t", "claude", "0 * * * *", &[], &[], true);
-    assert_eq!(routine_group_key(&r, RGroupBy::None), "");
-}
-
-// ── group_routines ────────────────────────────────────────────────────────────
-
-#[test]
-fn group_routines_none_returns_single_group_with_all_routines() {
-    let rs = vec![
-        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "t", "codex", "0 * * * *", &[], &[], false),
-    ];
-    let groups = group_routines(&rs, RGroupBy::None);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].0, "");
-    assert_eq!(groups[0].1.len(), 2);
-}
-
-#[test]
-fn group_routines_by_agent_creates_one_group_per_agent() {
-    let rs = vec![
-        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "t", "codex", "0 * * * *", &[], &[], true),
-        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Agent);
-    // BTreeMap → alphabetical: claude, codex
-    assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].0, "claude");
-    assert_eq!(groups[0].1.len(), 2);
-    assert_eq!(groups[1].0, "codex");
-    assert_eq!(groups[1].1.len(), 1);
-}
-
-#[test]
-fn group_routines_by_agent_preserves_input_order_within_group() {
-    let rs = vec![
-        routine("first", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("second", "t", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Agent);
-    assert_eq!(groups[0].1[0].id, "first");
-    assert_eq!(groups[0].1[1].id, "second");
-}
-
-#[test]
-fn group_routines_by_machine_separates_unassigned() {
-    let rs = vec![
-        routine("a", "t", "claude", "0 * * * *", &["worker-1"], &[], true),
-        routine("b", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("c", "t", "claude", "0 * * * *", &["worker-1"], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Machine);
-    // alphabetical: "(unassigned)" sorts before "worker-1"
-    assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].0, "(unassigned)");
-    assert_eq!(groups[0].1.len(), 1);
-    assert_eq!(groups[1].0, "worker-1");
-    assert_eq!(groups[1].1.len(), 2);
-}
-
-#[test]
-fn group_routines_by_status_splits_enabled_and_disabled() {
-    let rs = vec![
-        routine("a", "t", "claude", "0 * * * *", &[], &[], true),
-        routine("b", "t", "claude", "0 * * * *", &[], &[], false),
-        routine("c", "t", "claude", "0 * * * *", &[], &[], true),
-    ];
-    let groups = group_routines(&rs, RGroupBy::Status);
-    // alphabetical: "Disabled" before "Enabled"
-    assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].0, "Disabled");
-    assert_eq!(groups[0].1.len(), 1);
-    assert_eq!(groups[1].0, "Enabled");
-    assert_eq!(groups[1].1.len(), 2);
-}
-
 // ── sort by RCol::LastFire ────────────────────────────────────────────────────
 
 fn routine_with_last_fire(id: &str, manual: Option<u64>, scheduled: Option<u64>) -> Routine {
@@ -482,4 +337,52 @@ fn sort_by_last_fire_descending_puts_newest_first() {
     let sorted = sort_routines(rs, Some(RCol::LastFire), RDir::Desc, now());
     assert_eq!(sorted[0].id, "new");
     assert_eq!(sorted[1].id, "old");
+}
+
+// ── CloseModal (Esc dismissal) ────────────────────────────────────────────────
+// `install_search_hotkey` (routines/hooks.rs) dispatches this same action when
+// Escape is pressed and a modal is open. These tests pin the reducer behavior
+// it relies on: every modal variant resets to `None`, and no destructive/data
+// action (delete, bulk-delete) ever fires as a side effect.
+
+#[test]
+fn close_modal_from_edit_resets_to_none() {
+    let s = state_with_routines(&["a"]);
+    let s = s.reduce(RAction::OpenEdit("a".into()));
+    assert_eq!(s.modal, RModal::Edit("a".into()));
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+}
+
+#[test]
+fn close_modal_from_confirm_delete_resets_to_none_without_deleting() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::OpenConfirmDelete {
+        id: "a".into(),
+        title: "a".into(),
+    });
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+    // Esc must not act like a confirmed delete: both routines are still present.
+    assert_eq!(s.routines.len(), 2);
+}
+
+#[test]
+fn close_modal_from_confirm_bulk_delete_resets_to_none_without_deleting() {
+    let s = state_with_routines(&["a", "b"]);
+    let s = s.reduce(RAction::SelectAll(vec!["a".into(), "b".into()]));
+    let s = s.reduce(RAction::OpenConfirmBulkDelete);
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
+    // Esc must not act like a confirmed bulk delete: selection and routines survive.
+    assert_eq!(s.routines.len(), 2);
+    assert_eq!(s.selected.len(), 2);
+}
+
+#[test]
+fn close_modal_is_a_noop_when_no_modal_is_open() {
+    let s = state_with_routines(&["a"]);
+    assert_eq!(s.modal, RModal::None);
+    let s = s.reduce(RAction::CloseModal);
+    assert_eq!(s.modal, RModal::None);
 }

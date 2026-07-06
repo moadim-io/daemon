@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.22.1"
+    "version": "0.25.0"
   },
   "servers": [
     {
@@ -875,6 +875,43 @@
         }
       }
     },
+    "/routines/{id}/runs/{workbench}/summary": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs/{workbench}/summary` — return one specific run's agent-authored\n`summary.md` as plain text (empty when the agent hasn't written one).",
+        "operationId": "get_run_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workbench",
+            "in": "path",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`), from `GET /routines/{id}/runs`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Summary file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/scheduled-trigger": {
       "post": {
         "tags": [
@@ -1514,7 +1551,8 @@
               "agent_registered",
               "agent_command_available",
               "file_path",
-              "flag_count"
+              "flag_count",
+              "is_running"
             ],
             "properties": {
               "agent_command_available": {
@@ -1533,6 +1571,10 @@
                 "type": "integer",
                 "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
                 "minimum": 0
+              },
+              "is_running": {
+                "type": "boolean",
+                "description": "`true` if any fire of this routine currently has a live tmux session — i.e. an agent is\nrunning right now. Derived by probing for a session under the routine's\n`moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not\npersisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing\nbest-effort \"no tmux, nothing running\" stance. See issue #438."
               },
               "next_run_at": {
                 "type": [

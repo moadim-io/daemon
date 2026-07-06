@@ -395,30 +395,48 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
     Ok(RoutineResponse::from_routine(routine))
 }
 
+#[path = "service_log_tail.rs"]
+mod service_log_tail;
+#[cfg(test)]
+pub(crate) use service_log_tail::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_BYTES};
+
 #[path = "service_trigger.rs"]
 mod service_trigger;
 use service_trigger::migrate_workbenches;
 #[cfg(test)]
 pub(crate) use service_trigger::sh_bin;
-#[cfg(test)]
-pub(crate) use service_trigger::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_BYTES};
 pub use service_trigger::{
-    svc_cleanup, svc_create_flag, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_set_power_saving, svc_snooze, svc_trigger,
-    svc_trigger_scheduled,
+    svc_cleanup, svc_list_all_runs, svc_list_runs, svc_logs, svc_run_log, svc_run_summary,
+    svc_set_power_saving, svc_snooze, svc_trigger, svc_trigger_scheduled,
 };
+
+#[path = "service_trigger_flags.rs"]
+mod service_trigger_flags;
+pub use service_trigger_flags::{svc_create_flag, svc_list_flags, svc_resolve_flag};
 
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
 
 #[cfg(test)]
+#[path = "service_list_tests.rs"]
+mod service_list_tests;
+
+#[cfg(test)]
 #[path = "service_sync_tests.rs"]
 mod service_sync_tests;
 
 #[cfg(test)]
+#[path = "service_field_validation_tests.rs"]
+mod service_field_validation_tests;
+
+#[cfg(test)]
 #[path = "service_flag_tests.rs"]
 mod service_flag_tests;
+
+#[cfg(test)]
+#[path = "service_rename_machine_tests.rs"]
+mod service_rename_machine_tests;
 
 #[cfg(test)]
 #[path = "service_model_tests.rs"]
@@ -445,8 +463,16 @@ mod service_power_saving_tests;
 mod service_coverage_tests;
 
 #[cfg(test)]
+#[path = "service_prompt_tests.rs"]
+mod service_prompt_tests;
+
+#[cfg(test)]
 #[path = "service_slug_tests.rs"]
 mod service_slug_tests;
+
+#[cfg(test)]
+#[path = "service_update_apply_tests.rs"]
+mod service_update_apply_tests;
 
 #[cfg(test)]
 #[path = "service_overlap_guard_tests.rs"]
@@ -455,3 +481,15 @@ mod service_overlap_guard_tests;
 #[cfg(test)]
 #[path = "service_update_not_found_tests.rs"]
 mod service_update_not_found_tests;
+
+#[cfg(test)]
+#[path = "service_ceiling_tests.rs"]
+mod service_ceiling_tests;
+
+#[cfg(test)]
+#[path = "service_snooze_tests.rs"]
+mod service_snooze_tests;
+
+#[cfg(test)]
+#[path = "service_ansi_tests.rs"]
+mod service_ansi_tests;

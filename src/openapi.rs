@@ -34,6 +34,7 @@
         crate::routines::get_logs,
         crate::routines::get_runs,
         crate::routines::get_run_log,
+        crate::routines::get_run_summary,
         crate::routines::get_all_runs,
         crate::routines::ical_feed,
         crate::routines::create_flag,

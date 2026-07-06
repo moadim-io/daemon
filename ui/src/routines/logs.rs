@@ -1,9 +1,14 @@
 //! Routine logs page.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
+use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
 use crate::log_viewer::LogViewer;
+use crate::refresh::{RefreshControl, RefreshInterval};
 
 use super::model::api_logs;
 
@@ -57,6 +62,39 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         });
     }
 
+    // Operator-chosen auto-refresh cadence (shared with the routines list page via
+    // `localStorage`), re-armed whenever it changes. Without this, a workbench reaped by the
+    // periodic backend cleanup sweep while this page is open leaves stale, already-deleted run
+    // output on screen until the operator remembers to hit the manual "↻" button (#357).
+    let interval = use_state(crate::refresh::load_interval);
+    {
+        let load = load.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                let load = load.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        load();
+                    }
+                });
+            }
+            move || cancelled.set(true)
+        });
+    }
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            interval.set(next);
+            crate::refresh::save_interval(next);
+        })
+    };
+
     let on_back = {
         let cb = props.on_back.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
@@ -66,19 +104,16 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         Callback::from(move |_: MouseEvent| load())
     };
 
-    let freshness = if *updated_at > 0.0 {
-        let secs = ((js_sys::Date::now() - *updated_at).max(0.0) / 1000.0) as u64;
-        crate::refresh::fmt_freshness(secs)
-    } else {
-        String::new()
-    };
-
     html! {
         <main class="logs-page">
             <div class="page-hd">
                 <button class="btn btn-ghost btn-sm" onclick={on_back}>{"← BACK"}</button>
                 <div class="page-title">{format!("LOGS / {}", props.title)}</div>
-                <span class="page-freshness">{freshness}</span>
+                <RefreshControl
+                    interval={*interval}
+                    updated_at_ms={*updated_at}
+                    on_change={on_set_interval}
+                />
                 <button class="btn-refresh" title="Refresh" aria-label="Refresh" onclick={on_refresh}>{"↻"}</button>
             </div>
             <LogViewer

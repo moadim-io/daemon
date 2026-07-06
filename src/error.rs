@@ -20,6 +20,8 @@ pub enum AppError {
     Conflict(String),
     /// 423 Locked — a global lock sentinel is preventing the operation.
     Locked(String),
+    /// 403 Forbidden — a request failed the `Host`/`Origin` allowlist check (issue #266).
+    Forbidden(String),
 }
 
 impl fmt::Display for AppError {
@@ -30,6 +32,7 @@ impl fmt::Display for AppError {
             Self::NotFound => write!(f, "not found"),
             Self::Conflict(msg) => write!(f, "conflict: {msg}"),
             Self::Locked(msg) => write!(f, "locked: {msg}"),
+            Self::Forbidden(msg) => write!(f, "forbidden: {msg}"),
         }
     }
 }
@@ -42,6 +45,7 @@ impl IntoResponse for AppError {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Locked(_) => StatusCode::LOCKED,
+            Self::Forbidden(_) => StatusCode::FORBIDDEN,
         };
         (
             status,

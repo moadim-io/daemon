@@ -19,6 +19,16 @@ pub fn bind_addr() -> String {
     std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
 }
 
+/// Returns `true` if `addr` (as returned by [`bind_addr`]) resolves to a loopback interface.
+///
+/// The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
+/// exposes unauthenticated routine CRUD to the network. An address this can't parse is treated
+/// as non-loopback so callers warn rather than stay silent.
+pub fn bind_addr_is_loopback(addr: &str) -> bool {
+    addr.parse::<std::net::SocketAddr>()
+        .is_ok_and(|socket| socket.ip().is_loopback())
+}
+
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 

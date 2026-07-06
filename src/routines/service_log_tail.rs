@@ -11,12 +11,16 @@ pub(crate) const MAX_LOG_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 /// capped to [`MAX_LOG_TAIL_BYTES`] rather than holding the complete file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LogWithMeta {
+    /// The (possibly truncated) tail content.
     pub(crate) content: String,
+    /// Full on-disk size of the log file, regardless of truncation.
     pub(crate) total_bytes: u64,
+    /// Whether `content` was capped to [`MAX_LOG_TAIL_BYTES`] rather than the complete file.
     pub(crate) truncated: bool,
 }
 
 impl LogWithMeta {
+    /// An empty log tail: no content, zero size, not truncated.
     pub(crate) fn empty() -> Self {
         Self {
             content: String::new(),

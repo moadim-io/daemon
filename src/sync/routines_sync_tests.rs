@@ -1,15 +1,20 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::{new_store, slugify, Routine};
 
 fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
     Routine {
+        model: None,
         id: id.to_string(),
         schedule: "30 9 * * 1-5".to_string(),
         title: title.to_string(),
         agent: agent.to_string(),
         prompt: "p".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -18,6 +23,10 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
+        tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
     }
@@ -121,6 +130,14 @@ struct CronShim {
 
 impl CronShim {
     fn new(initial: &str) -> Self {
+        Self::new_with_write_delay(initial, 0)
+    }
+
+    /// Like [`Self::new`], but the shim sleeps `delay_ms` milliseconds between receiving a
+    /// `crontab -` write on stdin and installing it, widening the window for concurrency
+    /// regression tests that must observe two `sync_routines_to_crontab` calls overlapping (or
+    /// not) in wall-clock time.
+    fn new_with_write_delay(initial: &str, delay_ms: u64) -> Self {
         use std::os::unix::fs::PermissionsExt;
 
         let base = std::env::temp_dir().join(format!("moadim-rcronshim-{}", uuid::Uuid::new_v4()));
@@ -129,10 +146,11 @@ impl CronShim {
         std::fs::write(&store_file, initial).unwrap();
         let store_display = store_file.to_string_lossy().into_owned();
         let script_path = base.join("crontab-shim.sh");
+        let delay_secs = delay_ms as f64 / 1000.0;
         std::fs::write(
             &script_path,
             format!(
-                "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-l\" ]; then cat \"$STORE\"; elif [ \"$1\" = \"-\" ]; then cat > \"$STORE\"; fi\n"
+                "#!/bin/sh\nSTORE=\"{store_display}\"\nif [ \"$1\" = \"-l\" ]; then cat \"$STORE\"; elif [ \"$1\" = \"-\" ]; then cat > \"$STORE.tmp\"; sleep {delay_secs}; mv \"$STORE.tmp\" \"$STORE\"; fi\n"
             ),
         )
         .unwrap();
@@ -216,6 +234,45 @@ fn sync_writes_block_for_a_loaded_store() {
 }
 
 #[test]
+fn build_block_orders_tied_created_at_by_id_deterministically() {
+    // Two enabled managed routines sharing a created_at must emit in a stable, id-ordered
+    // sequence regardless of HashMap iteration order, so the generated crontab block does not
+    // churn across syncs. Insert in id-descending order to prove the sort — not insertion or
+    // hash order — fixes the line order.
+    let agent_name = "test-sync-agent-tied-order";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let title_a = "Tied Order Alpha Routine";
+    let title_b = "Tied Order Beta Routine";
+    let slug_a = slugify(title_a);
+    let slug_b = slugify(title_b);
+
+    let store = new_store();
+    // id "b-tied" > "a-tied"; both created_at == 0 (the make_routine default).
+    store
+        .lock()
+        .unwrap()
+        .insert("b-tied".into(), make_routine("b-tied", title_b, agent_name));
+    store
+        .lock()
+        .unwrap()
+        .insert("a-tied".into(), make_routine("a-tied", title_a, agent_name));
+
+    let block = build_block(&store);
+    let pos_a = block.find("# moadim-routine:a-tied").unwrap();
+    let pos_b = block.find("# moadim-routine:b-tied").unwrap();
+    assert!(pos_a < pos_b, "lower id must sort first: {block}");
+    // Stable across repeated builds.
+    assert_eq!(block, build_block(&store));
+
+    std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug_a));
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug_b));
+}
+
+#[test]
 fn build_block_includes_routine_with_agent_config() {
     let agent_name = "test-sync-agent-build-block";
     let title = "Inc Sync Routine";
@@ -265,4 +322,97 @@ fn build_block_skips_routine_with_no_machine_assignment() {
     store.lock().unwrap().insert("dormant".into(), routine);
     let block = build_block(&store);
     assert!(!block.contains("moadim-routine:"));
+}
+
+#[test]
+fn build_block_empty_when_globally_locked() {
+    let agent_name = "test-sync-agent-global-lock";
+    let title = "Global Lock Sync Routine";
+    let slug = crate::routines::slugify(title);
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "lock-test".into(),
+        make_routine("lock-test", title, agent_name),
+    );
+
+    // Create the shared lock sentinel and verify it suppresses all crontab lines.
+    let lock_path = crate::paths::global_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(&lock_path, b"").unwrap();
+
+    let block = build_block(&store);
+    assert!(
+        !block.contains("moadim-routine:"),
+        "locked block must have no routine lines"
+    );
+    assert!(block.contains(BLOCK_BEGIN));
+    assert!(block.contains(BLOCK_END));
+
+    std::fs::remove_file(&lock_path).unwrap();
+    std::fs::remove_file(&cfg).unwrap();
+    let _ = std::fs::remove_dir_all(crate::paths::routine_dir(&slug));
+}
+
+#[test]
+fn crontab_sync_lock_is_mutually_exclusive() {
+    // Same static `Mutex` instance every call: while held here, a second attempt to acquire it
+    // must fail instead of silently locking a *different* mutex.
+    let _guard = crontab_sync_lock().lock_recover();
+    assert!(
+        crontab_sync_lock().try_lock().is_err(),
+        "crontab_sync_lock() must return the same process-wide mutex on every call"
+    );
+}
+
+#[test]
+fn sync_routines_to_crontab_serializes_concurrent_calls() {
+    // Regression test for #365: two `sync_routines_to_crontab` calls whose crontab I/O overlaps
+    // must not interleave. Proven by timing rather than by racing on store content: the shim
+    // sleeps a fixed delay on every `crontab -` write, so two *unserialized* read-modify-write
+    // round trips would overlap and finish in roughly one delay; serialized by the lock, they run
+    // back to back and take roughly two.
+    let agent_name = "test-sync-agent-concurrent-lock";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    const DELAY_MS: u64 = 150;
+    let shim = CronShim::new_with_write_delay(
+        "# BEGIN MOADIM-ROUTINES\n# END MOADIM-ROUTINES\n",
+        DELAY_MS,
+    );
+
+    let store_a = new_store();
+    store_a.lock().unwrap().insert(
+        "lock-a".into(),
+        make_routine("lock-a", "Lock A Sync Routine", agent_name),
+    );
+    let store_b = new_store();
+    store_b.lock().unwrap().insert(
+        "lock-b".into(),
+        make_routine("lock-b", "Lock B Sync Routine", agent_name),
+    );
+
+    let start = std::time::Instant::now();
+    std::thread::scope(|scope| {
+        scope.spawn(|| sync_routines_to_crontab(&store_a).unwrap());
+        scope.spawn(|| sync_routines_to_crontab(&store_b).unwrap());
+    });
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed.as_millis() >= u128::from(DELAY_MS) * 2,
+        "two concurrent syncs completed in {elapsed:?}, faster than {}ms — the crontab lock did \
+         not serialize their read-modify-write round trips",
+        DELAY_MS * 2,
+    );
+
+    drop(shim);
+    std::fs::remove_file(&cfg).unwrap();
 }

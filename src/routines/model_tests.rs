@@ -183,6 +183,15 @@ fn next_run_at_none_for_unparseable_schedule() {
 }
 
 #[test]
+fn next_run_at_none_for_a_schedule_with_no_future_fire() {
+    // A parseable 7-field (sec min hour dom month dow year) schedule pinned to a year that has
+    // already passed matches croner's own syntax, so `.parse()` succeeds, but `iter_after(now)`
+    // never yields an occurrence — covering the third documented `None` case (no upcoming fire)
+    // distinct from "unparseable" and "disabled".
+    assert!(next_run_at("0 0 0 1 1 * 2020", true).is_none());
+}
+
+#[test]
 fn from_routine_populates_derived_fields() {
     let routine = Routine {
         id: "rid".into(),

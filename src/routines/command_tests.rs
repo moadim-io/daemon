@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use crate::routines::model::Routine;
@@ -12,6 +15,7 @@ fn make_routine(title: &str) -> Routine {
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do it".to_string(),
+        goal: None,
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -20,6 +24,9 @@ fn make_routine(title: &str) -> Routine {
         updated_at: 0,
         last_manual_trigger_at: None,
         last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -71,7 +78,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             instructions_file: "CLAUDE.md".to_string(),
             setup: None,
         };
-        let cmd = build_routine_command(&routine, &agent, true);
+        let cmd = build_routine_command(&routine, &agent);
         // The resolved tmux dir is baked into the exported PATH.
         assert!(
             cmd.contains(&dir_str),
@@ -83,10 +90,30 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
 }
 
 #[test]
-fn build_routine_command_stamps_scheduled_trigger_sidecar() {
-    // The generated launch script records each scheduled firing by writing `$TS` into the
-    // routine's `scheduled.local.toml` sidecar (best-effort, before the prompt-copy guard), since
-    // the OS crontab runs this script directly without the daemon observing the fire.
+fn build_routine_command_extends_path_rather_than_replacing_it() {
+    // The exported PATH must keep the login shell's `$PATH` (where version managers such as
+    // nvm/pyenv/asdf/volta prepend their shim dirs when the profile is sourced) and only *append*
+    // the curated fallback dirs. A bare `export PATH=<curated>` would drop those shims and silently
+    // break agents that depend on a version-manager-selected node/python.
+    let routine = make_routine("Path Extend Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains("export PATH=$PATH:"),
+        "expected PATH to extend the profile's $PATH, not replace it, in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_appends_scheduled_trigger_log() {
+    // The generated launch script records each scheduled firing by appending `$TS` to the
+    // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab
+    // runs this script directly without the daemon observing the fire.
     let routine = make_routine("Cmd Scheduled Stamp Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -94,49 +121,21 @@ fn build_routine_command_stamps_scheduled_trigger_sidecar() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent, true);
-    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
+    let cmd = build_routine_command(&routine, &agent);
+    let log = crate::paths::routine_scheduled_log_path(&slugify(&routine.title))
         .to_string_lossy()
         .into_owned();
     assert!(
         cmd.contains(&format!(
-            r#"printf 'last_scheduled_trigger_at = %s\n' "$TS" > {} || true"#,
-            shell_quote(&sidecar)
+            r#"printf '%s\n' "$TS" >> {} || true"#,
+            shell_quote(&log)
         )),
-        "expected scheduled-trigger sidecar stamp in: {cmd}"
+        "expected scheduled-trigger log append in: {cmd}"
     );
     // It must run before the prompt-copy guard so an aborted run still records the firing.
-    let stamp = cmd.find("last_scheduled_trigger_at").unwrap();
+    let stamp = cmd.find("scheduled.log").unwrap();
     let copy = cmd.find("/prompt.md\"").unwrap();
-    assert!(stamp < copy, "sidecar stamp must precede the prompt copy");
-}
-
-#[test]
-fn build_routine_command_omits_scheduled_sidecar_stamp_for_manual_trigger() {
-    // Regression test for #478: a manual trigger (`svc_trigger`, `stamp_scheduled: false`) must not
-    // write the `scheduled.local.toml` sidecar at all — otherwise the daemon reads it back into
-    // `last_scheduled_trigger_at` on the next load and falsely reports a cron firing that never
-    // happened. Only the scheduled/crontab path (`svc_trigger_scheduled`, `stamp_scheduled: true`,
-    // covered by `build_routine_command_stamps_scheduled_trigger_sidecar` above) writes it.
-    let routine = make_routine("Cmd Manual Trigger No Stamp Routine");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        instructions_file: "CLAUDE.md".to_string(),
-        setup: None,
-    };
-    let cmd = build_routine_command(&routine, &agent, false);
-    assert!(
-        !cmd.contains("last_scheduled_trigger_at"),
-        "manual trigger must not stamp last_scheduled_trigger_at: {cmd}"
-    );
-    let sidecar = crate::paths::routine_scheduled_state_path(&slugify(&routine.title))
-        .to_string_lossy()
-        .into_owned();
-    assert!(
-        !cmd.contains(&sidecar),
-        "manual trigger must not reference the scheduled.local.toml sidecar path: {cmd}"
-    );
+    assert!(stamp < copy, "log append must precede the prompt copy");
 }
 
 #[test]
@@ -152,7 +151,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent, true);
+    let cmd = build_routine_command(&routine, &agent);
 
     // The primary write is guarded with an aborting `|| { ...; exit 1; }`.
     let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
@@ -174,6 +173,55 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     assert!(
         cmd.contains(r#">> "$WB/CLAUDE.md" || true"#),
         "user-prompt append must remain best-effort in: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_workbench_base_tracks_moadim_home_override() {
+    // The `WB=` assignment must derive its base from `paths::workbenches_dir()` rather than a
+    // hardcoded `$HOME/.moadim/workbenches` literal, so a run is launched under the same base the
+    // reaper (`routines/cleanup/mod.rs`) and the LOGS view (`routines/service.rs`) scan. Exercise
+    // this under `MOADIM_HOME_OVERRIDE` — a divergence here would leak workbenches the reaper never
+    // sees and leave the LOGS view empty for real runs (see #601).
+    let dir = std::env::temp_dir().join(format!("moadim-cmd-home-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: the test harness runs single-threaded; the prior value is restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    }
+
+    let expected_base = crate::paths::workbenches_dir()
+        .to_string_lossy()
+        .into_owned();
+    let routine = make_routine("Cmd Workbench Base Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+
+    // SAFETY: single-threaded test execution.
+    unsafe {
+        match previous {
+            Some(prev) => std::env::set_var("MOADIM_HOME_OVERRIDE", prev),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        cmd.contains(&format!(
+            r#"WB={}/"$SLUG-$RID""#,
+            shell_quote(&expected_base)
+        )),
+        "expected WB base derived from paths::workbenches_dir() ({expected_base}) in: {cmd}"
+    );
+    assert!(
+        !cmd.contains(r#"WB="$HOME/.moadim/workbenches"#),
+        "expected the hardcoded $HOME/.moadim/workbenches literal to be gone, got: {cmd}"
     );
 }
 
@@ -202,254 +250,51 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
 }
 
 #[test]
-fn tmux_available_in_true_when_fake_tmux_present() {
-    // A temp dir containing a fake `tmux` executable resolves as available — the "present" branch
-    // of the injectable detection helper.
-    let dir = std::env::temp_dir().join(format!("moadim-tmux-present-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let tmux = dir.join("tmux");
-    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+fn build_routine_command_guards_agent_setup_step() {
+    // When an agent has a `setup` step, it must be fail-fast: a non-zero exit aborts the launch
+    // before `tmux new-session` runs, mirroring the `cp prompt.md` guard. Otherwise a failed setup
+    // (e.g. trust/onboarding pre-seed) is silently ignored and the agent hangs on the interactive
+    // prompt until the watchdog reaps it.
+    let routine = make_routine("Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: Some("python3 seed.py".to_string()),
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
 
-    assert!(tmux_available_in(&dir.to_string_lossy()));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn tmux_available_in_false_when_dir_has_no_tmux() {
-    // A temp dir without a `tmux` file resolves as missing — the "missing" branch of the helper.
-    let dir = std::env::temp_dir().join(format!("moadim-tmux-missing-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-
-    assert!(!tmux_available_in(&dir.to_string_lossy()));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn tmux_available_reads_live_path_present() {
-    // `tmux_available()` reads the process `PATH`; pointed at a dir with a fake tmux it returns
-    // true, exercising the `is_some_and(..)` Some/true arm.
-    let dir = std::env::temp_dir().join(format!("moadim-tmux-live-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let tmux = dir.join("tmux");
-    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    with_path(&dir, || assert!(tmux_available()));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn tmux_available_false_when_path_unset() {
-    // With PATH removed entirely, `std::env::var("PATH").ok()` is None and `is_some_and` short-
-    // circuits to false — the missing-PATH arm.
-    let saved = std::env::var_os("PATH");
-    // SAFETY: single-threaded test harness; restored immediately below.
-    unsafe {
-        std::env::remove_var("PATH");
-    }
-    assert!(!tmux_available());
-    unsafe {
-        if let Some(prev) = saved {
-            std::env::set_var("PATH", prev);
-        }
-    }
-}
-
-#[test]
-fn agent_command_available_in_true_when_fake_command_present() {
-    // A temp dir containing a fake agent executable resolves as available — the "present" branch
-    // of the injectable detection helper.
-    let dir =
-        std::env::temp_dir().join(format!("moadim-agentcmd-present-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let bin = dir.join("fake-agent-cmd");
-    std::fs::write(&bin, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    assert!(agent_command_available_in(
-        &dir.to_string_lossy(),
-        "fake-agent-cmd"
-    ));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn resolve_tmux_bin_from_prefers_path_over_fallbacks() {
-    // tmux present on `path` -> returned immediately, fallback_dirs never consulted (Some-arm of
-    // `bin_dir_in`, early return before the fallback loop).
-    let dir =
-        std::env::temp_dir().join(format!("moadim-resolve-tmux-path-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("tmux"), "#!/bin/sh\n").unwrap();
-
-    let dir_str = dir.to_string_lossy().into_owned();
-    let resolved = resolve_tmux_bin_from(&dir_str, &["/definitely/not/here".to_string()]);
-    assert_eq!(resolved, format!("{dir_str}/tmux"));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn agent_command_available_in_false_when_dir_has_no_command() {
-    // A temp dir without the named executable resolves as missing.
-    let dir =
-        std::env::temp_dir().join(format!("moadim-agentcmd-missing-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-
-    assert!(!agent_command_available_in(
-        &dir.to_string_lossy(),
-        "fake-agent-cmd"
-    ));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn resolve_tmux_bin_from_falls_back_to_first_matching_fallback_dir() {
-    // Not on `path`, but present in the second fallback dir -> the `for` loop's `is_file()` Some
-    // (true) arm returns from there, having skipped the first (missing) dir.
-    let base =
-        std::env::temp_dir().join(format!("moadim-resolve-tmux-fb-{}", uuid::Uuid::new_v4()));
-    let missing = base.join("missing");
-    let present = base.join("present");
-    std::fs::create_dir_all(&present).unwrap();
-    std::fs::write(present.join("tmux"), "#!/bin/sh\n").unwrap();
-
-    let resolved = resolve_tmux_bin_from(
-        "",
-        &[
-            missing.to_string_lossy().into_owned(),
-            present.to_string_lossy().into_owned(),
-        ],
+    // The setup is inserted verbatim, wrapped in a `{ ...; } || { ...; exit 1; }` guard...
+    assert!(
+        cmd.contains(
+            r#"{ python3 seed.py; } || { echo "moadim: agent setup failed; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+        ),
+        "expected guarded setup step in: {cmd}"
     );
-    assert_eq!(resolved, format!("{}/tmux", present.to_string_lossy()));
-
-    let _ = std::fs::remove_dir_all(&base);
+    // ...and the guard precedes the tmux launch, so a failed setup never reaches it.
+    let setup_pos = cmd.find("agent setup failed").unwrap();
+    let tmux_pos = cmd.find("tmux new-session").unwrap();
+    assert!(
+        setup_pos < tmux_pos,
+        "setup guard must precede tmux new-session in: {cmd}"
+    );
 }
 
 #[test]
-fn resolve_tmux_bin_from_returns_bare_name_when_nowhere_found() {
-    // Neither `path` nor any fallback dir holds `tmux` -> the loop runs to completion and the
-    // final bare `"tmux"` fallback is returned.
-    let resolved = resolve_tmux_bin_from("", &["/definitely/not/here".to_string()]);
-    assert_eq!(resolved, "tmux");
-}
-
-#[test]
-fn tmux_fallback_dirs_are_anchored_under_home() {
-    let dirs = tmux_fallback_dirs("/home/u");
-    assert!(dirs.contains(&"/opt/homebrew/bin".to_string()));
-    assert!(dirs.contains(&"/usr/local/bin".to_string()));
-    assert!(dirs.contains(&"/home/u/.local/bin".to_string()));
-}
-
-#[test]
-fn resolve_tmux_bin_reads_live_path_and_home() {
-    // End-to-end live-env wrapper: with a fake tmux on PATH it resolves through the same
-    // `bin_dir_in` Some-arm as `resolve_tmux_bin_from`, proving the live `PATH`/`HOME` plumbing
-    // reaches it.
-    let dir =
-        std::env::temp_dir().join(format!("moadim-resolve-tmux-live-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("tmux"), "#!/bin/sh\n").unwrap();
-
-    let dir_str = dir.to_string_lossy().into_owned();
-    with_path(&dir, || {
-        assert_eq!(resolve_tmux_bin(), format!("{dir_str}/tmux"));
-    });
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn agent_command_available_reads_live_path_present() {
-    // `agent_command_available()` reads the process `PATH`; pointed at a dir with the fake command
-    // it returns true, exercising the `is_some_and(..)` Some/true arm.
-    let dir = std::env::temp_dir().join(format!("moadim-agentcmd-live-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let bin = dir.join("fake-agent-cmd");
-    std::fs::write(&bin, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    with_path(&dir, || assert!(agent_command_available("fake-agent-cmd")));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn agent_command_available_false_when_path_unset() {
-    // With PATH removed entirely, `std::env::var("PATH").ok()` is None and `is_some_and` short-
-    // circuits to false — the missing-PATH arm.
-    let saved = std::env::var_os("PATH");
-    // SAFETY: single-threaded test harness; restored immediately below.
-    unsafe {
-        std::env::remove_var("PATH");
-    }
-    assert!(!agent_command_available("definitely-not-a-real-binary-xyz"));
-    unsafe {
-        if let Some(prev) = saved {
-            std::env::set_var("PATH", prev);
-        }
-    }
-}
-
-#[test]
-fn resolve_tmux_bin_falls_back_to_root_home_when_home_unset() {
-    // With HOME removed, `std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())` takes its
-    // fallback arm — mirrors `cron_path_falls_back_to_root_home_when_home_unset` for the identical
-    // pattern here. `home` is computed unconditionally before the PATH/fallback-dir search, so this
-    // covers the closure regardless of whether a real `tmux` is on the test machine's live PATH.
-    let saved = std::env::var_os("HOME");
-    // SAFETY: single-threaded test harness; restored immediately below.
-    unsafe {
-        std::env::remove_var("HOME");
-    }
-
-    let _ = resolve_tmux_bin();
-
-    unsafe {
-        match saved {
-            Some(prev) => std::env::set_var("HOME", prev),
-            None => std::env::remove_var("HOME"),
-        }
-    }
-}
-
-#[test]
-fn bin_dir_returns_none_when_path_unset() {
-    // With PATH removed entirely, `std::env::var("PATH").ok()?` short-circuits to None.
-    let saved = std::env::var_os("PATH");
-    // SAFETY: single-threaded test harness; restored immediately below.
-    unsafe {
-        std::env::remove_var("PATH");
-    }
-    assert!(bin_dir("definitely-not-a-real-binary-xyz").is_none());
-    unsafe {
-        if let Some(prev) = saved {
-            std::env::set_var("PATH", prev);
-        }
-    }
+fn build_routine_command_omits_setup_guard_when_no_setup() {
+    // With no `setup` step the guard is absent entirely (the `if let Some(setup)` arm is skipped).
+    let routine = make_routine("No Setup Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        setup: None,
+        instructions_file: "CLAUDE.md".to_string(),
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        !cmd.contains("agent setup failed"),
+        "did not expect a setup guard with no setup step in: {cmd}"
+    );
 }
 
 #[test]
@@ -464,7 +309,7 @@ fn build_routine_command_appends_model_override() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent, true);
+    let cmd = build_routine_command(&routine, &agent);
     // The whole invocation is itself shell-quoted once for the `tmux new-session` argument, which
     // re-escapes the inner `shell_quote(model)` quotes into `'\''`, so assert on ordering and
     // content rather than the exact (implementation-detail) escaped byte sequence.
@@ -490,9 +335,166 @@ fn build_routine_command_omits_model_flag_when_unset() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent, true);
+    let cmd = build_routine_command(&routine, &agent);
     assert!(
         !cmd.contains("--model"),
         "expected no --model flag in: {cmd}"
     );
 }
+
+#[test]
+fn tmux_session_prefix_matches_the_sess_line_build_routine_command_emits() {
+    // The overlap guard (#514) matches on `tmux_session_prefix(slug)` to find *any* live fire of a
+    // routine, so the literal `TMUX_SESSION_PREFIX` it's built from must stay byte-for-byte in sync
+    // with the `SESS=` line the launch script actually emits (`moadim-$SLUG-$RID`).
+    let routine = make_routine("Cmd Session Prefix Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    assert!(
+        cmd.contains(&format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#)),
+        "expected SESS line built from TMUX_SESSION_PREFIX in: {cmd}"
+    );
+
+    let slug = slugify(&routine.title);
+    assert_eq!(
+        tmux_session_prefix(&slug),
+        format!("{TMUX_SESSION_PREFIX}{slug}-")
+    );
+}
+
+#[test]
+fn build_routine_command_records_exit_code_after_invocation() {
+    // The tmux pane's shell-command must record `$?` to a *workbench-relative* `exit_code` file
+    // (not `$WB/exit_code`: `$WB` is never exported, so the new shell tmux spawns wouldn't see it)
+    // once the agent invocation finishes, so run-history can distinguish success from failure.
+    let routine = make_routine("Cmd Exit Code Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec!["--permission-mode".to_string(), "auto".to_string()],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    // The whole tmux shell-command (invocation + exit-code capture) is itself shell-quoted as one
+    // `tmux new-session` argument, which re-escapes the inner single quotes around `printf`'s
+    // `'%s'` into `'\''` — assert on ordering/content of the unescaped pieces rather than the
+    // exact (implementation-detail) escaped byte sequence.
+    let new_session_pos = cmd.find("tmux new-session").unwrap();
+    let invocation_pos = cmd.find("--permission-mode auto").unwrap();
+    // Multiple `printf`s appear earlier in the script (the disclosure write, the scheduled-fire
+    // stamp); only the one after the invocation is the exit-code capture.
+    let printf_pos = invocation_pos + cmd[invocation_pos..].find("printf").unwrap();
+    let exit_code_pos = cmd.rfind("> exit_code").unwrap();
+    assert!(
+        new_session_pos < invocation_pos
+            && invocation_pos < printf_pos
+            && printf_pos < exit_code_pos,
+        "expected exit-code capture after the invocation inside tmux new-session in: {cmd}"
+    );
+    assert!(cmd.contains(r#""$?""#), "expected $? capture in: {cmd}");
+    assert!(
+        !cmd.contains("$WB/exit_code"),
+        "exit_code must be workbench-relative, not $WB-prefixed, since $WB isn't exported: {cmd}"
+    );
+}
+
+#[test]
+fn build_routine_command_attaches_pipe_pane_in_the_same_tmux_invocation() {
+    // `pipe-pane` must be chained onto the *same* tmux invocation as `new-session` via `\;`
+    // (tmux's own multi-command separator) rather than run as a separate, later `;`-joined shell
+    // statement — otherwise output the agent writes between session creation and that second
+    // statement running is silently dropped from `agent.log` (#289).
+    // Deliberately avoids "pipe" or "pane" in the title: it becomes part of the slugified
+    // workbench/log paths embedded earlier in the script, which would otherwise collide with the
+    // `pipe-pane` substring this test searches for.
+    let routine = make_routine("Cmd Log Capture Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent);
+    let new_session_pos = cmd.find("tmux new-session").unwrap();
+    // No `tmux pipe-pane` invocation as its own separate command: the only "pipe-pane" text is the
+    // subcommand name chained after `new-session` via `\;` within the same `tmux` invocation.
+    assert!(
+        !cmd.contains("tmux pipe-pane"),
+        "pipe-pane must not be a standalone tmux invocation, but chained onto new-session: {cmd}"
+    );
+    let pipe_pane_pos = cmd.find("pipe-pane").unwrap();
+    let next_tmux_or_end = cmd[new_session_pos + 1..]
+        .find("tmux ")
+        .map_or(cmd.len(), |offset| new_session_pos + 1 + offset);
+    assert!(
+        new_session_pos < pipe_pane_pos && pipe_pane_pos < next_tmux_or_end,
+        "expected pipe-pane chained via \\; inside the same tmux new-session invocation in: {cmd}"
+    );
+    assert!(
+        cmd.contains(r#"\; pipe-pane -o -t "$SESS""#),
+        "expected pipe-pane chained with tmux's own \\; separator, targeting $SESS, in: {cmd}"
+    );
+}
+
+#[test]
+fn inline_prompt_overflow_none_for_prompt_file_agent_regardless_of_size() {
+    // `{prompt_file}` (codex/hermes) passes the prompt as a path, never as an inlined argument, so
+    // it is never subject to the inline-argument cap no matter how large the composed prompt is.
+    let mut routine = make_routine("Cmd Overflow Prompt File Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "codex".to_string(),
+        args: vec!["exec".to_string(), "{prompt_file}".to_string()],
+        instructions_file: "AGENTS.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_none_when_composed_prompt_fits() {
+    let routine = make_routine("Cmd Overflow Small Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    assert_eq!(inline_prompt_overflow(&routine, &agent), None);
+}
+
+#[test]
+fn inline_prompt_overflow_some_when_composed_prompt_exceeds_inline_limit() {
+    // A `{prompt}` agent (the shipped `claude` default) with a composed prompt over the inline
+    // cap must be flagged, so the caller can skip a launch doomed to fail silently (#443).
+    let mut routine = make_routine("Cmd Overflow Large Routine");
+    routine.prompt = "x".repeat(MAX_INLINE_PROMPT_BYTES * 2);
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![
+            "--permission-mode".to_string(),
+            "auto".to_string(),
+            "{prompt}".to_string(),
+        ],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let overflow = inline_prompt_overflow(&routine, &agent);
+    assert_eq!(overflow, Some(compose_prompt(&routine).len()));
+    assert!(overflow.unwrap() > MAX_INLINE_PROMPT_BYTES);
+}
+
+#[path = "command_run_id_tests.rs"]
+mod command_run_id_tests;
+
+#[path = "command_umask_tests.rs"]
+mod command_umask_tests;

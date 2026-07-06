@@ -16,202 +16,28 @@
 //! existing `/api/v1/routines` records, maps them to sources, and renders the
 //! computed grid — no backend or API change.
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Timelike};
+#[cfg(test)]
+use chrono::DateTime;
+use chrono::{Local, NaiveDate, Timelike};
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
-use crate::overview::{fetch_routines, Kind};
-use crate::parse_cron;
+use crate::overview::fetch_routines;
+#[cfg(test)]
+use crate::overview::Kind;
+use crate::refresh::{RefreshControl, RefreshInterval};
 use crate::routines::Routine;
+#[cfg(test)]
+use crate::schedule_heatmap_grid::HeatSource;
+use crate::schedule_heatmap_grid::{
+    compute_heatmap, day_label, day_totals, hour_totals, intensity_level, peak_label, sources_of,
+    HeatFilter, Heatmap, HEAT_DAYS, HEAT_HOURS,
+};
 
-/// Rows in the grid: the next 7 calendar days, row 0 = today.
-pub(crate) const HEAT_DAYS: usize = 7;
-/// Columns in the grid: the 24 hours of the day.
-pub(crate) const HEAT_HOURS: usize = 24;
-/// Upper bound on fire-time iterations per source over the window. An
-/// every-minute schedule fires 7×1440 = 10 080 times/week; this leaves headroom
-/// while bounding cost on pathological (e.g. per-second) inputs.
-const MAX_FIRES_PER_SOURCE: usize = 20_000;
-/// How often the page re-fetches the underlying records (counts can change as
-/// jobs are toggled elsewhere).
-const REFETCH_MS: u32 = 30_000;
 /// How often the live "now" advances so the grid (and its today/current-hour
 /// highlight) rolls forward between fetches.
 const TICK_MS: u32 = 60_000;
-
-/// Weekday abbreviations indexed by [`chrono::Weekday::num_days_from_sunday`].
-const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
-/// Source-kind filter for the grid.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum HeatFilter {
-    /// Count all sources (currently just routines).
-    All,
-    /// Count routines only.
-    Routine,
-}
-
-impl HeatFilter {
-    /// Whether a source of `kind` is counted under this filter.
-    pub(crate) fn accepts(self, kind: Kind) -> bool {
-        match self {
-            HeatFilter::All => true,
-            HeatFilter::Routine => kind == Kind::Routine,
-        }
-    }
-
-    /// Short uppercase label for the toggle button.
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            HeatFilter::All => "ALL",
-            HeatFilter::Routine => "ROUTINES",
-        }
-    }
-}
-
-/// A schedule-bearing entity reduced to just what the heatmap needs. `Routine`
-/// maps onto this so the aggregation stays agnostic of its full shape (and
-/// host-testable without wasm types).
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) struct HeatSource {
-    /// Always `Kind::Routine` for now.
-    pub kind: Kind,
-    /// Raw cron expression used to compute fire times.
-    pub schedule: String,
-    /// Whether the entity is currently enabled (disabled ones never fire).
-    pub enabled: bool,
-}
-
-/// The computed 7×24 density grid plus derived stats.
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) struct Heatmap {
-    /// `grid[day][hour]` = number of fires; day 0 = today.
-    pub grid: Vec<Vec<u32>>,
-    /// Total fires across the whole window.
-    pub total: u32,
-    /// Largest single-cell count — the color-ramp denominator.
-    pub max_cell: u32,
-    /// `(day, hour)` of the busiest cell, or `None` when nothing fires.
-    pub peak: Option<(usize, usize)>,
-}
-
-/// Aggregate the next-7-day fire density of every enabled source matching
-/// `filter`, bucketed by `(day, hour)` with day 0 = `now`'s calendar day. Fires
-/// are counted strictly after `now`, so hours already elapsed today read empty.
-pub(crate) fn compute_heatmap(
-    sources: &[HeatSource],
-    now: DateTime<Local>,
-    filter: HeatFilter,
-) -> Heatmap {
-    let today = now.date_naive();
-    let end_date = today + Duration::days(HEAT_DAYS as i64);
-    let mut grid = vec![vec![0u32; HEAT_HOURS]; HEAT_DAYS];
-
-    for source in sources
-        .iter()
-        .filter(|s| s.enabled && filter.accepts(s.kind))
-    {
-        let Some(cron) = parse_cron(&source.schedule) else {
-            continue;
-        };
-        // `iter_after(now)` yields fires strictly after `now` in chronological
-        // order, so each `date` is on or after `today`; stop at the first fire
-        // that lands on or past the window's end. The take() caps cost on
-        // pathological (sub-minute) schedules.
-        for dt in cron.iter_after(now).take(MAX_FIRES_PER_SOURCE) {
-            let date = dt.date_naive();
-            if date >= end_date {
-                break;
-            }
-            let day = (date - today).num_days() as usize;
-            grid[day][dt.hour() as usize] += 1;
-        }
-    }
-
-    let mut total = 0u32;
-    let mut max_cell = 0u32;
-    let mut peak = None;
-    for (day, hours) in grid.iter().enumerate() {
-        for (hour, &count) in hours.iter().enumerate() {
-            total += count;
-            if count > max_cell {
-                max_cell = count;
-                peak = Some((day, hour));
-            }
-        }
-    }
-
-    Heatmap {
-        grid,
-        total,
-        max_cell,
-        peak,
-    }
-}
-
-/// The 0–4 color-ramp bucket for `count` relative to the grid's `max` cell.
-/// 0 = empty; 1–4 split the non-empty range into quartiles so the busiest cells
-/// reach the top of the ramp.
-pub(crate) fn intensity_level(count: u32, max: u32) -> u8 {
-    if count == 0 || max == 0 {
-        return 0;
-    }
-    let ratio = f64::from(count) / f64::from(max);
-    ((ratio * 4.0).ceil() as u8).clamp(1, 4)
-}
-
-/// Per-day fire totals (length [`HEAT_DAYS`]).
-pub(crate) fn day_totals(map: &Heatmap) -> Vec<u32> {
-    map.grid.iter().map(|hours| hours.iter().sum()).collect()
-}
-
-/// Per-hour fire totals across all days (length [`HEAT_HOURS`]).
-pub(crate) fn hour_totals(map: &Heatmap) -> Vec<u32> {
-    (0..HEAT_HOURS)
-        .map(|hour| map.grid.iter().map(|day| day[hour]).sum())
-        .collect()
-}
-
-/// Human label for the busiest window, e.g. "THU 14:00 · 3 runs", or `None`
-/// when the grid is empty.
-pub(crate) fn peak_label(map: &Heatmap, today: NaiveDate) -> Option<String> {
-    map.peak.map(|(day, hour)| {
-        let count = map.grid[day][hour];
-        let plural = if count == 1 { "run" } else { "runs" };
-        format!("{} {hour:02}:00 · {count} {plural}", weekday_of(today, day))
-    })
-}
-
-/// `"MON 23"`-style label for grid row `day`, counting forward from `today`.
-pub(crate) fn day_label(today: NaiveDate, day: usize) -> String {
-    let date = today + Duration::days(day as i64);
-    format!("{} {}", WEEKDAYS[weekday_index(date)], date.day())
-}
-
-/// Weekday abbreviation for the row `day` days after `today`.
-fn weekday_of(today: NaiveDate, day: usize) -> &'static str {
-    WEEKDAYS[weekday_index(today + Duration::days(day as i64))]
-}
-
-/// Index into [`WEEKDAYS`] for `date`.
-fn weekday_index(date: NaiveDate) -> usize {
-    date.weekday().num_days_from_sunday() as usize
-}
-
-/// Map a routine onto the shared heatmap source.
-fn from_routine(routine: &Routine) -> HeatSource {
-    HeatSource {
-        kind: Kind::Routine,
-        schedule: routine.schedule.clone(),
-        enabled: routine.enabled,
-    }
-}
-
-/// Map the routine record list into one `HeatSource` vector.
-fn sources_of(routines: &[Routine]) -> Vec<HeatSource> {
-    routines.iter().map(from_routine).collect()
-}
 
 /// Loaded state for the heatmap shell.
 #[derive(Clone, PartialEq, Default)]
@@ -229,15 +55,20 @@ pub fn heatmap_page() -> Html {
     });
     let now = use_state(Local::now);
     let filter = use_state(|| HeatFilter::All);
+    let interval = use_state(crate::refresh::load_interval);
+    let updated_at = use_state(|| 0.0_f64);
 
     // Fetch the routine record list.
     let load = {
         let data = data.clone();
+        let updated_at = updated_at.clone();
         move || {
             let data = data.clone();
+            let updated_at = updated_at.clone();
             spawn_local(async move {
                 let routines = fetch_routines().await;
                 let error = routines.as_ref().err().cloned();
+                updated_at.set(js_sys::Date::now());
                 data.set(Data {
                     routines: routines.unwrap_or_default(),
                     loading: false,
@@ -247,19 +78,42 @@ pub fn heatmap_page() -> Html {
         }
     };
 
-    // Load on mount, then re-fetch on a slow cadence.
+    // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| {
-            load();
-            spawn_local(async move {
-                loop {
-                    TimeoutFuture::new(REFETCH_MS).await;
-                    load();
-                }
-            });
+        use_effect_with((), move |_| load());
+    }
+
+    // Auto-refresh loop, re-armed when the interval changes.
+    {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let load = load.clone();
+        use_effect_with(*interval, move |interval| {
+            let cancelled = Rc::new(Cell::new(false));
+            if let Some(period_ms) = interval.as_millis() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        TimeoutFuture::new(period_ms).await;
+                        if cancelled.get() {
+                            break;
+                        }
+                        load();
+                    }
+                });
+            }
+            move || cancelled.set(true)
         });
     }
+
+    let on_set_interval = {
+        let interval = interval.clone();
+        Callback::from(move |next: RefreshInterval| {
+            crate::refresh::save_interval(next);
+            interval.set(next);
+        })
+    };
 
     // Advance "now" so the grid rolls forward between fetches.
     {
@@ -290,6 +144,11 @@ pub fn heatmap_page() -> Html {
             <div class="section-hd">
                 <span class="section-label">{"SCHEDULE HEATMAP"}</span>
                 <FilterTabs active={*filter} on_pick={set_filter} />
+                <RefreshControl
+                    interval={*interval}
+                    updated_at_ms={*updated_at}
+                    on_change={on_set_interval}
+                />
             </div>
             <HeatStats map={map.clone()} today={today} />
             <HeatGrid
@@ -360,6 +219,10 @@ fn heat_stats(props: &HeatStatsProps) -> Html {
             <div class="stat-card enabled">
                 <div class="stat-label">{"PEAK / HOUR"}</div>
                 <div class="stat-val c-accent">{map.max_cell}</div>
+            </div>
+            <div class="stat-card disabled">
+                <div class="stat-label">{"SOURCES"}</div>
+                <div class="stat-val">{map.sources}</div>
             </div>
             <div class="stat-card system">
                 <div class="stat-label">{"OPEN SLOTS"}</div>

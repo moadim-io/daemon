@@ -2,7 +2,14 @@ name: Publish to crates.io
 
 # Publish the crate. Triggered two ways:
 #   * `workflow_call` from auto-release.yml on a version bump (automated path).
-#   * a manual `v*` tag push (escape hatch for hotfixes cut by hand).
+#     That commit already passed lint/test before landing on main (via
+#     cut-release.yml's `needs: [version, lint, test]` gate and/or PR branch
+#     protection), so re-running here would be redundant — skipped below.
+#   * a manual `v*` tag push (escape hatch for hotfixes cut by hand). Unlike
+#     the automated path, this can tag *any* commit, verified or not, so this
+#     is where the gap was (see #260): publish ran without ever checking
+#     cargo test/fmt/clippy. Fixed by calling lint.yml/test.yml (already
+#     workflow_call-callable) and gating `publish` on them via `needs:`.
 
 on:
   push:
@@ -15,10 +22,37 @@ on:
         required: true
         type: string
 
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only checks
+# out the repo to build and publish to crates.io (via CARGO_REGISTRY_TOKEN,
+# a separate secret) — it never pushes back to GitHub.
+permissions:
+  contents: read
+
 jobs:
+  # Gate for the manual `push: tags` escape hatch only — see #260. Skipped
+  # entirely on the `workflow_call` path since that commit is already verified
+  # (see header comment above).
+  lint:
+    name: Lint tagged commit
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/lint.yml
+
+  test:
+    name: Test tagged commit
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/test.yml
+
   publish:
     name: Publish
+    needs: [lint, test]
+    # Run if lint/test passed (push path) or were skipped (workflow_call path).
+    # Do NOT use the default `success()` here: a skipped need would otherwise
+    # make this job skip too.
+    if: always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped') && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for crates.io Trusted Publishing (OIDC)
+      contents: read
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -70,5 +104,11 @@ jobs:
             exit 1
           fi
 
+      - name: Authenticate with crates.io (Trusted Publishing)
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        id: auth
+
       - name: Publish
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --allow-dirty
+        run: cargo publish --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

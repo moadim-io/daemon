@@ -14,7 +14,7 @@ unattended in a throwaway workbench, locally, with no cloud dependency.
 | **Agent-agnostic** (swap CLI)    | ✅ claude/codex/hermes| n/a                   | ✅ any                | ❌ Claude only          | ❌ usually 1 vendor  |
 | **Per-run isolation** (workbench)| ✅ throwaway + reaped | ❌                    | ✅ fresh runner       | ⚠️ varies               | ⚠️ varies            |
 | **Unattended auth** pre-seed     | ✅ (claude trust/MCP) | n/a                   | ⚠️ secrets/tokens     | ✅                      | ⚠️ varies            |
-| Config **git-trackable**         | ✅ TOML + prompt.md   | ⚠️ crontab file       | ✅ YAML in repo       | ⚠️ varies               | ⚠️ varies            |
+| Config **git-trackable**         | ✅ TOML + prompt files| ⚠️ crontab file       | ✅ YAML in repo       | ⚠️ varies               | ⚠️ varies            |
 | **3 interfaces, one port**       | ✅ UI + REST + MCP    | ❌ CLI only           | ❌ web/API            | ⚠️ CLI/web              | ⚠️ varies            |
 | **MCP** native (agents self-schedule) | ✅               | ❌                    | ❌                    | ⚠️                      | ⚠️                   |
 | Calendar feed (`.ics`)           | ✅                    | ❌                    | ❌                    | ❌                      | ❌                   |

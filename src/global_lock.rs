@@ -12,6 +12,11 @@
 use std::io;
 
 /// Which lock sentinel to create or remove.
+///
+/// `Copy` because it is a plain tag with no payload — passing it by value (the natural way to
+/// pass an enum selector) then costs nothing, whereas passing it by reference would just add a
+/// pointless indirection at every call site.
+#[derive(Clone, Copy)]
 pub enum LockScope {
     /// The committed `.lock` file, shareable via version control.
     Shared,
@@ -56,7 +61,7 @@ pub fn set_lock(scope: LockScope, locked: bool) -> io::Result<()> {
         LockScope::Local => crate::paths::global_local_lock_path(),
     };
     if locked {
-        std::fs::create_dir_all(crate::paths::config_dir())?;
+        crate::utils::fs_perms::create_private_dir_all(&crate::paths::config_dir())?;
         std::fs::write(&path, b"")?;
     } else if path.exists() {
         std::fs::remove_file(&path)?;

@@ -42,7 +42,7 @@ impl FlagScope {
 }
 
 /// A single flag raised against a routine.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Flag {
     /// Filename on disk under the routine's `flags/` dir; the handle used to resolve it.
     pub filename: String,
@@ -101,7 +101,7 @@ pub fn create_flag(
     let flag_type = flag_type.trim();
     let description = description.trim();
     let dir = routine_flags_dir(slug);
-    std::fs::create_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
 
     let type_slug = slugify(flag_type);
     let mut created_at = now_secs();

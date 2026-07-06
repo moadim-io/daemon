@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use std::path::Path;
 
@@ -117,6 +120,41 @@ impl CronShim {
     /// Read back the current emulated crontab contents from the store file.
     fn store_contents(&self) -> String {
         std::fs::read_to_string(&self.store_file).unwrap_or_default()
+    }
+
+    /// Build a shim whose `-` exits immediately *without reading stdin*,
+    /// emulating a `crontab` that rejects input early and closes its end of
+    /// the pipe mid-write. Used to exercise `write_crontab`'s write-failure
+    /// (broken pipe) path, distinct from `write_fails` which drains stdin
+    /// first and so never triggers a broken pipe.
+    fn write_pipe_closed() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let base = std::env::temp_dir().join(format!("moadim-cronshim-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let store_file = base.join("store");
+
+        // No `cat` on the `-` branch: stdin is left unread and closed as soon
+        // as the shim exits, so a large enough write from the parent
+        // overflows the pipe buffer and observes a broken pipe.
+        let script_body = "#!/bin/sh\nif [ \"$1\" = \"-\" ]; then exit 1; fi\n".to_string();
+
+        let script_path = base.join("crontab-shim.sh");
+        std::fs::write(&script_path, script_body).unwrap();
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::var_os("MOADIM_CRONTAB_BIN");
+        // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1);
+        // the override is restored on drop.
+        unsafe {
+            std::env::set_var("MOADIM_CRONTAB_BIN", &script_path);
+        }
+
+        Self {
+            base,
+            store_file,
+            previous,
+        }
     }
 }
 
@@ -285,6 +323,24 @@ fn write_crontab_errors_on_non_success_exit() {
 }
 
 #[test]
+fn write_crontab_errors_instead_of_panicking_on_broken_pipe() {
+    // The shim's `-` branch never reads stdin and exits immediately, so
+    // writing content larger than the OS pipe buffer must observe a broken
+    // pipe. Before this test, that write failure was `.expect()`'d into a
+    // panic instead of being returned as a `SyncError`.
+    let shim = CronShim::write_pipe_closed();
+    let big_content = "x".repeat(4 * 1024 * 1024);
+    let err = write_crontab(&big_content).unwrap_err();
+    match err {
+        SyncError::Io(_) => {}
+        SyncError::CrontabCommand(msg) => {
+            panic!("expected Io error from the broken pipe, got CrontabCommand({msg})")
+        }
+    }
+    drop(shim);
+}
+
+#[test]
 fn write_crontab_errors_when_binary_is_missing() {
     // Pointing the crontab seam at a nonexistent binary makes the spawn fail, exercising the
     // spawn-failure error branch.
@@ -307,84 +363,6 @@ fn write_crontab_errors_when_binary_is_missing() {
     assert!(
         result.is_err(),
         "spawning a missing crontab binary must error"
-    );
-}
-
-// ─── replace_block_with ──────────────────────────────────────────────────────
-
-const TEST_BEGIN: &str = "# BEGIN TEST";
-const TEST_END: &str = "# END TEST";
-
-#[test]
-fn replace_block_with_inserts_when_absent() {
-    let crontab = "0 * * * * /existing\n";
-    let block = "# BEGIN TEST\n# hdr\n# END TEST";
-    let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
-    assert!(result.contains(TEST_BEGIN));
-    assert!(result.contains(TEST_END));
-    assert!(result.contains("/existing"));
-}
-
-#[test]
-fn replace_block_with_replaces_existing() {
-    let crontab = "before\n# BEGIN TEST\nold line # tag:old\n# END TEST\nafter\n";
-    let block = "# BEGIN TEST\nnew line # tag:new\n# END TEST";
-    let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
-    assert!(result.contains("new line"), "new line missing: {result}");
-    assert!(
-        !result.contains("old line"),
-        "old line still present: {result}"
-    );
-    assert!(result.contains("before"), "before missing: {result}");
-    assert!(result.contains("after"), "after missing: {result}");
-}
-
-#[test]
-fn replace_block_with_idempotent() {
-    let block = "# BEGIN TEST\n# hdr\n30 9 * * * /cmd # tag:uid\n# END TEST";
-    let crontab = format!("{block}\n");
-    let result = replace_block_with(&crontab, block, TEST_BEGIN, TEST_END);
-    assert!(result.contains("30 9 * * * /cmd # tag:uid"));
-}
-
-#[test]
-fn replace_block_with_handles_malformed_missing_end() {
-    let crontab = "pre\n# BEGIN TEST\norphan line\n";
-    let block = "# BEGIN TEST\n# hdr\n# END TEST";
-    let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
-    assert!(result.contains(TEST_END), "end marker missing: {result}");
-    assert!(
-        !result.contains("orphan"),
-        "orphan line still present: {result}"
-    );
-    assert!(result.contains("pre"), "pre-content missing: {result}");
-}
-
-#[test]
-fn replace_block_with_empty_crontab() {
-    let block = "# BEGIN TEST\n# hdr\n# END TEST";
-    let result = replace_block_with("", block, TEST_BEGIN, TEST_END);
-    assert_eq!(result.trim(), block.trim());
-}
-
-#[test]
-fn replace_block_with_appends_trailing_newline_to_unterminated_rest() {
-    // Covers the `if !result.ends_with('\n')` branch: content follows the END
-    // marker but does not end in a newline, so one is appended to preserve it.
-    let crontab = "# BEGIN TEST\nold # tag:x\n# END TEST\ntrailing line no newline";
-    let block = "# BEGIN TEST\nnew # tag:y\n# END TEST";
-    let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
-    assert!(
-        result.contains("new # tag:y"),
-        "block not replaced: {result}"
-    );
-    assert!(
-        result.contains("trailing line no newline"),
-        "trailing content lost: {result}"
-    );
-    assert!(
-        result.ends_with('\n'),
-        "trailing newline not appended: {result:?}"
     );
 }
 

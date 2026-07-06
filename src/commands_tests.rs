@@ -210,6 +210,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "t",
             "--agent",
             "a",
+            "--model",
+            "claude-sonnet-4-6",
             "--prompt",
             "p",
             "--disabled",
@@ -228,6 +230,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "rid",
             "--title",
             "t2",
+            "--model",
+            "",
             "--repositories",
             "[]",
             "--enabled",
@@ -261,7 +265,6 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
-        &["echo", "hello"],
     ];
     for call in calls {
         assert_eq!(run(argv(call)), 0, "call {call:?}");
@@ -312,6 +315,65 @@ fn no_server_returns_not_running_exit_code() {
     );
 }
 
+// ─── enable / disable ────────────────────────────────────────────────────────
+
+#[test]
+fn enable_disable_report_server_echoed_state() {
+    // A 2xx whose body echoes the routine drives the "prefer the server's id/enabled" path, for
+    // both states and both output modes (human line + --json object).
+    {
+        let server = FakeServer::start(200, "{\"id\":\"r-1\",\"enabled\":true}");
+        let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+        assert_eq!(run(argv(&["enable", "r-1"])), 0);
+        assert_eq!(run(argv(&["enable", "r-1", "--json"])), 0);
+    }
+    {
+        let server = FakeServer::start(200, "{\"id\":\"r-1\",\"enabled\":false}");
+        let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+        assert_eq!(run(argv(&["disable", "slug"])), 0);
+        assert_eq!(run(argv(&["disable", "slug", "--json"])), 0);
+    }
+}
+
+#[test]
+fn enable_disable_fall_back_to_requested_state() {
+    // A 2xx whose body lacks id/enabled (here: an empty JSON object, and a non-JSON body) exercises
+    // the fallback to the addressed routine and the requested flag, for both states.
+    {
+        let server = FakeServer::start(200, "{}");
+        let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+        assert_eq!(run(argv(&["enable", "slug"])), 0);
+        assert_eq!(run(argv(&["disable", "slug", "--json"])), 0);
+    }
+    {
+        let server = FakeServer::start(200, "not json");
+        let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+        assert_eq!(run(argv(&["enable", "slug"])), 0);
+    }
+}
+
+#[test]
+fn enable_unknown_routine_returns_one() {
+    // A non-empty error body exercises the "print the body" branch...
+    {
+        let server = FakeServer::start(404, "{\"error\":\"not found\"}");
+        let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+        assert_eq!(run(argv(&["enable", "missing"])), 1);
+    }
+    // ...and an empty one the "skip the body" branch.
+    {
+        let server = FakeServer::start(500, "");
+        let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+        assert_eq!(run(argv(&["disable", "missing"])), 1);
+    }
+}
+
+#[test]
+fn enable_without_server_returns_not_running() {
+    let _addr = EnvGuard::set(BIND_ENV, UNREACHABLE_ADDR);
+    assert_eq!(run(argv(&["enable", "r-1"])), crate::cli::EXIT_NOT_RUNNING);
+}
+
 // ─── Body-builder unit tests ─────────────────────────────────────────────────
 
 #[test]
@@ -324,19 +386,15 @@ fn insert_opt_only_inserts_present_values() {
 }
 
 #[test]
-fn object_and_to_body_build_compact_json() {
-    let body = object([("message", Value::String("hi".to_string()))]);
-    assert_eq!(body, "{\"message\":\"hi\"}");
-}
-
-#[test]
 fn routine_body_serializes_all_fields() {
     let value: Value = serde_json::from_str(
         &routine_body(
             "* * * * *".into(),
             "title".into(),
             "agent".into(),
+            Some("claude-sonnet-4-6".into()),
             "prompt".into(),
+            Some("keep it small".into()),
             Some("[]".into()),
             Some("[\"work\"]".into()),
             Some(30),
@@ -348,6 +406,11 @@ fn routine_body_serializes_all_fields() {
     )
     .unwrap();
     assert_eq!(value["title"], Value::String("title".to_string()));
+    assert_eq!(value["goal"], Value::String("keep it small".to_string()));
+    assert_eq!(
+        value["model"],
+        Value::String("claude-sonnet-4-6".to_string())
+    );
     assert_eq!(value["repositories"], Value::Array(vec![]));
     assert_eq!(
         value["machines"],
@@ -371,7 +434,9 @@ fn routine_body_rejects_bad_repositories() {
             "* * * * *".into(),
             "t".into(),
             "a".into(),
+            None,
             "p".into(),
+            None,
             Some("{bad".into()),
             None,
             None,
@@ -391,7 +456,9 @@ fn routine_body_rejects_bad_machines() {
             "* * * * *".into(),
             "t".into(),
             "a".into(),
+            None,
             "p".into(),
+            None,
             None,
             Some("{bad".into()),
             None,

@@ -13,6 +13,19 @@ name: Lint
 # member crate is linted too; `ui`'s deps (yew/gloo/web-sys) build fine on the
 # host target for clippy's purposes, so no wasm32 target install is required
 # here either.
+#
+# The pre-push hook's file-size gate (`linecheck --max-lines 500` over
+# `src/` and `ui/src/`) has no CI equivalent, so it's a no-op for any
+# contributor who hasn't opted into `git config core.hooksPath .githooks`
+# (see CONTRIBUTING.md) — a PR could silently blow past the 500-line
+# convention and still go fully green. The `linecheck` job below closes
+# that gap the same way this file already does for fmt/clippy.
+#
+# `make readme-check` (scripts/check-readme-blocks.sh) validates every
+# ```json fence in README.md with `jq` but isn't run by any git hook either,
+# so it was previously exercised only when a contributor remembered to run
+# it by hand. The `readme-check` job below runs it on every PR so a
+# README example can't silently drift into invalid JSON.
 
 on:
   pull_request:
@@ -28,6 +41,11 @@ on:
           other than the one that triggered it.
         required: false
         type: string
+
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
+# check out the repo to run cargo fmt/clippy.
+permissions:
+  contents: read
 
 # Cancel a stale run when a PR gets a new push, so superseded lint runs don't
 # pile up and burn CI minutes. Scoped per-workflow-per-ref so unrelated PRs
@@ -90,3 +108,43 @@ jobs:
         # never enforced here, so a PR could lint-regress the dashboard and
         # still go fully green.
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  linecheck:
+    name: linecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: linecheck
+
+      - name: Install linecheck
+        run: cargo install linecheck --locked
+
+      - name: Check .rs files do not exceed 500 lines
+        # Match the local pre-push hook exactly (same paths, same limit).
+        run: |
+          # shellcheck disable=SC2046
+          linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+
+  readme-check:
+    name: readme-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Validate README's fenced json blocks
+        # jq ships preinstalled on the ubuntu-latest runner image, so no
+        # setup step is needed beyond checkout.
+        run: make readme-check

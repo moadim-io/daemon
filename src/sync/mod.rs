@@ -122,17 +122,22 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         .spawn()
         .map_err(|err| SyncError::CrontabCommand(format!("failed to spawn crontab: {err}")))?;
 
-    // Taking stdin drops (closes) it after write_all, signalling EOF.
-    child
+    // Taking stdin drops (closes) it after write_all, signalling EOF. A write
+    // failure (e.g. the child exits early — a strict `crontab` rejecting
+    // malformed input mid-stream — and closes its end of the pipe) is a real,
+    // externally-triggerable I/O condition, not a programmer error, so it is
+    // propagated as `SyncError::Io` instead of panicking: every caller of
+    // crontab sync already treats a `SyncError` as warn-and-continue (see the
+    // module docs), and a panic here would defeat that graceful degradation.
+    let write_result = child
         .stdin
         .take()
         .expect("stdin is piped")
-        .write_all(content.as_bytes())
-        .expect("writing crontab content to crontab stdin must not fail");
+        .write_all(content.as_bytes());
 
-    let status = child
-        .wait()
-        .expect("waiting for crontab child process failed");
+    // Always wait() to reap the child, even when the write above failed.
+    let status = child.wait()?;
+    write_result?;
 
     if !status.success() {
         return Err(SyncError::CrontabCommand(format!(
@@ -228,3 +233,7 @@ pub fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod sync_tests;
+
+#[cfg(test)]
+#[path = "mod_replace_block_tests.rs"]
+mod replace_block_tests;

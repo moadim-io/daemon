@@ -4,7 +4,10 @@
 //! server and a real short-lived child process, using the `MOADIM_BIND_ADDR`/`MOADIM_HOME_OVERRIDE`
 //! and restart-timeout seams. The single-threaded test harness (`.cargo/config.toml`) makes the
 //! env overrides race-free.
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
 use std::io::{Read as _, Write as _};
@@ -254,13 +257,16 @@ fn stop_running_and_wait_succeeds_without_pid_file_when_server_eventually_stops(
     let home = temp_home("no-pid-file");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set("MOADIM_BIND_ADDR", &server.addr);
-    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "60");
+    let _timeout = EnvGuard::set("MOADIM_RESTART_TIMEOUT_MS", "300");
     let _poll = EnvGuard::set("MOADIM_RESTART_POLL_MS", "10");
     // Deliberately write NO pid file: read_pid_file() will return None and the
     // `if let Some(pid)` body is skipped, exercising the closing `}` on that branch.
     //
     // The server stops after the first wait has timed out but before the second wait ends.
-    server.stop_after(Duration::from_millis(80));
+    // 450ms (1.5x the 300ms timeout) leaves a wide margin on both sides of the deadline so
+    // CPU contention or coverage instrumentation overhead can't flip which window catches the
+    // stop (this previously used 60ms/80ms and flaked under `cargo llvm-cov`).
+    server.stop_after(Duration::from_millis(450));
     let result = stop_running_and_wait();
     assert!(
         result.is_ok(),

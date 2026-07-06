@@ -24,10 +24,10 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                                │ read+write on every mutation
                                ▼
                ~/.config/moadim/routines/
-               ├── <uuid>/routine.toml      (tracked)
-               ├── <uuid>/prompt.md         (tracked)
-               ├── <uuid>/run.sh            (generated)
-               └── <uuid>/.gitignore        (generated)
+               ├── <uuid>/routine.toml                  (tracked)
+               ├── <uuid>/prompts/prompt.pure.md         (tracked)
+               ├── <uuid>/prompts/prompt.compiled.md     (tracked)
+               └── <uuid>/.gitignore                    (generated)
 ```
 
 ---
@@ -44,7 +44,7 @@ src/
 ├── global_lock.rs       lock sentinel that halts all routine scheduling/triggers
 ├── openapi.rs           utoipa ApiDoc definition served at /docs/openapi.json
 ├── restart.rs           replaces an already-running daemon with a fresh process
-├── routine_storage.rs   routine.toml + prompt.md persistence
+├── routine_storage.rs   routine.toml + prompts/ (pure/compiled) persistence
 │
 ├── routes/
 │   ├── http.rs          Axum router assembly + run_with_listener_until
@@ -52,10 +52,9 @@ src/
 │
 ├── middlewares/
 │   ├── logger.rs             request/response logger
-│   ├── fs_location.rs        injects x-server-root / x-server-exe-dir headers
 │   └── security_headers.rs   adds CSP and related response headers
 │
-├── filesystem/mod.rs    FsLocation — server working dir + exe dir
+├── filesystem/mod.rs    FsLocation — server working dir + exe dir (surfaced via GET /health and the MCP `health` tool)
 ├── paths/mod.rs         path builders for ~/.config/moadim/routines/
 ├── machine/mod.rs       machine identity resolution (env/file/hostname)
 ├── service/             `moadim install`/`uninstall` OS-service registration (linux/macos)
@@ -66,6 +65,7 @@ src/
 │   ├── time.rs           now_secs() — Unix timestamp helper
 │   ├── atomic.rs         atomic_write() — torn-write-safe file writes
 │   ├── cron.rs           cron expression normalization/validation
+│   ├── fs_perms.rs       create_private_dir_all() — owner-only (0700) directory creation
 │   ├── lock.rs           Mutex-poisoning recovery helper
 │   ├── process.rs        process-liveness helpers
 │   └── startup_print.rs  startup banner (REST/MCP/UI URLs)
@@ -78,13 +78,23 @@ src/
 ui/                      Yew workspace member (separate Cargo.toml)
 ```
 
+### Filesystem permissions
+
+The daemon's on-disk tree is a secret/transcript store (agent.log transcripts, prompt.md instructions, token-referencing routine state), so on unix it is created **owner-only**:
+
+- Directories under `~/.config/moadim/` are made `0700` via `utils::fs_perms::create_private_dir_all`.
+- Files published by `utils::atomic::atomic_write` (routine state, the `prompt.md` sidecar, `machine.local.toml`) are created `0600` before the rename, so they are never briefly world-readable.
+- Each routine's launch script sets `umask 077` before its first `mkdir`, so the workbench dir it creates (`0700`) and everything written inside it — the copied `prompt.md`, the appended `CLAUDE.md`, and the tmux-piped `agent.log` — stays unreadable by other local accounts.
+
+Pre-existing files from older installs are tightened on their next write (the modes are not retroactively migrated). Non-unix builds fall back to default permissions.
+
 ---
 
 ## REST API
 
 Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
-Middleware stack (outermost first): `CompressionLayer` → `logger` → `fs_location` → `security_headers`.
+Middleware stack (outermost first): `CompressionLayer` → `logger` → `security_headers`.
 
 ---
 
@@ -95,7 +105,6 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `fs_loca
 | MCP tool | Delegates to |
 |---|---|
 | `health` | `FsLocation::current()` + uptime calc |
-| `echo` | inline |
 | `list_routines` | `routines::svc_list` |
 | `get_routine` | `routines::svc_get` |
 | `create_routine` | `routines::svc_create` |
@@ -105,6 +114,7 @@ Middleware stack (outermost first): `CompressionLayer` → `logger` → `fs_loca
 | `cleanup_workbenches` | `routines::svc_cleanup` |
 | `list_agents` | `routines::available_agents` |
 | `routine_logs` | `routines::svc_logs` |
+| `list_routine_runs` | `routines::svc_list_runs` |
 | `get_lock_status` | `global_lock::lock_status` |
 | `lock_routines` | `global_lock::set_lock` + crontab resync |
 | `unlock_routines` | `global_lock::set_lock` + crontab resync |
@@ -128,16 +138,17 @@ and a `title`. Routines have their own store (`RoutineStore`), REST endpoints
 (`/routines`), MCP tools (`create_routine`, …), and crontab block.
 
 When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
-time moadim composes `prompt.md` (a repositories-as-context preamble + the prompt) into
-`~/.config/moadim/routines/<id>/`, then writes a single self-contained shell command into a dedicated
-crontab block:
+time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.md`
+(a repositories-as-context preamble + the prompt) into `~/.config/moadim/routines/<id>/`, then writes a
+single self-contained shell command into a dedicated crontab block:
 
 ```
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
-<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; cp …/prompt.md $WB/; \
-  tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
-  tmux pipe-pane -o -t … "cat >> $WB/agent.log"   # moadim-routine:<id>
+<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; \
+  { cp …/prompts/prompt.compiled.md $WB/prompt.md; \
+    tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
+    tmux pipe-pane -o -t … "cat >> $WB/agent.log"; } >> $WB/launch.log 2>&1   # moadim-routine:<id>
 # END MOADIM-ROUTINES
 ```
 
@@ -148,13 +159,27 @@ placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection
 agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
 identical command via `sh -c`.
 
+Everything after the `mkdir` runs inside a `{ … } >> $WB/launch.log 2>&1` group, so a failure in the
+prompt copy, the agent's `setup` step, or the `tmux` launch itself is captured next to the run's other
+artifacts instead of going to cron's mail spool (silently discarded on the headless hosts this daemon
+targets). `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's
+diagnostics for the steps that get the session running in the first place. Only the `PATH` export and
+the `mkdir` itself precede the redirect — a failure that early means `$WB` may not exist yet, so
+there's nowhere to write a launch log to.
+
+Before either path launches, the daemon checks for a live tmux session under the routine's
+`moadim-<slug>-` prefix (any `$TS` suffix) and skips the fire — logging a warning instead of
+spawning — if one is still running. This overlap guard prevents a run that outlives its schedule
+interval from piling up concurrent agent sessions against the same target (duplicate PRs/issues,
+racing pushes); see `routines::service_trigger::spawn_routine_command`.
+
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
 instants so external calendars can subscribe without an embedded `VTIMEZONE`. The optional
 `?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
 an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
-Finished run workbenches are reaped automatically by an hourly background sweep
+Finished run workbenches are reaped automatically by a background sweep (every 5 minutes)
 (`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;
@@ -169,8 +194,15 @@ The agent command is resolved from a configurable registry at `~/.config/moadim/
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 
+The only placeholders `args` may contain are `{workbench}`, `{prompt_file}`, and `{prompt}`, and at
+least one of `{prompt}` / `{prompt_file}` must appear so the agent actually receives the task.
+Creating or updating a routine validates the referenced agent's `args` against both rules: an unknown
+(typo'd) placeholder token or a missing prompt placeholder is rejected with `400 Bad Request` at edit
+time, rather than silently launching the agent with a garbage or empty task at fire time.
+
 Modules: `src/routines/` (model + service + command builder + handlers), `src/routine_storage.rs`
-(`routine.toml` + `prompt.md` persistence), `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
+(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.md` persistence),
+`src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
 Reverse sync (crontab → store) is not implemented for routines.
 
 ## Error handling (`src/error.rs`)
@@ -217,10 +249,11 @@ The prebuilt is stored at the package root — not under `ui/` — because `ui/`
 
 ```
 main()
-  routine_storage::migrate_prompt_files() / migrate_routine_dirs()   pre-load-time healing
+  routine_storage::migrate_prompt_files() / migrate_prompts_to_subfolder() / migrate_routine_dirs()
+                                          pre-load-time healing
   routine_storage::load_store()          scan ~/.config/moadim/routines/ → RoutineStore
   routines::ensure_default_routines()    seed missing built-in default routines
-  routine_storage::repersist_routines()  heal any dirs missing a prompt.md sidecar
+  routine_storage::repersist_routines()  heal any dirs missing a prompts/ sidecar
   sync::routines::sync_routines_to_crontab()   re-sync the MOADIM-ROUTINES crontab block
   TcpListener::bind(:5784)
   cli::write_pid_file()

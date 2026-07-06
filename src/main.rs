@@ -52,14 +52,28 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
+        cli::Command::Usage(arg) => {
+            cli::print_usage_error(&arg);
+            std::process::exit(cli::EXIT_USAGE);
+        }
         cli::Command::Status { json, wait_secs } => {
             std::process::exit(cli::status(json, wait_secs)?)
         }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
-        cli::Command::Trigger { id } => std::process::exit(cli::trigger(id)?),
+        cli::Command::Trigger { id } => std::process::exit(cli::trigger(&id)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart => cli::restart(),
+        cli::Command::Restart {
+            json,
+            quiet,
+            interactive: false,
+        } => cli::restart(json, quiet),
+        cli::Command::Restart {
+            interactive: true, ..
+        } => {
+            cli::stop_existing_for_restart(false)?;
+            run_server().await
+        }
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => uninstall(),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
@@ -109,22 +123,42 @@ async fn run_server() -> anyhow::Result<()> {
              agent. Install tmux (e.g. `brew install tmux` or `apt install tmux`)."
         );
     }
+    // python3 is a hard dependency of the built-in `claude` agent's `setup` step (workspace-trust
+    // seeding). When it is missing, that step fails and the routine's agent never actually
+    // launches, yet nothing else surfaces the failure — the routine still shows a healthy status
+    // (issue #404). Warn at startup, same as the tmux check above; also surfaced in `GET /health`.
+    if !routines::agent_command_available("python3") {
+        log::warn!(
+            "python3 not found on PATH; the built-in `claude` agent's setup step requires it to \
+             pre-seed workspace-trust state, so routines using that agent will silently fail to \
+             launch. Install python3, or use a different agent."
+        );
+    }
     routines::ensure_default_agents();
     // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
-    // cron trigger after upgrade would fail on the launch command's `cp prompt.md` step.
+    // cron trigger after upgrade would fail on the launch command's `cp prompt.compiled.md` step.
     routine_storage::migrate_prompt_files();
+    // Move each routine's prompt file(s) into its prompts/ subfolder, and extract the raw prompt
+    // out of routine.toml into prompts/prompt.pure.md. Must run before migrate_routine_dirs and
+    // load_store, which both read the prompt from the new sidecar location.
+    routine_storage::migrate_prompts_to_subfolder();
     // Move legacy UUID-named routine dirs to the current slug-based layout before loading, so the
-    // store reflects the canonical dirs the crontab sync and the launch command's `cp prompt.md`
-    // both target.
+    // store reflects the canonical dirs the crontab sync and the launch command's
+    // `cp prompt.compiled.md` both target.
     routine_storage::migrate_routine_dirs();
+    // Migrate per-routine trigger timestamps from legacy TOML sidecars (scheduled.local.toml,
+    // last_manual_trigger_at in state.local.toml) into the new append-only log files
+    // (scheduled.log, manual.log). Must run before load_store so the first load already reads from
+    // the log files.
+    routine_storage::migrate_trigger_logs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // Re-persist so every routine has its routine.toml + prompt.md sidecar in the slug dir (and any
+    // Re-persist so every routine has its routine.toml + prompts/ sidecars in the slug dir (and any
     // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
-    // command's `cp prompt.md` fails and the agent launches with an empty prompt).
+    // command's `cp prompt.compiled.md` fails and the agent launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next

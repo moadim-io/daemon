@@ -2,12 +2,12 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Moadim Server API",
-    "description": "REST API for managing cron jobs",
+    "description": "REST API for managing routines",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.1.0"
+    "version": "0.24.0"
   },
   "servers": [
     {
@@ -40,315 +40,42 @@
         }
       }
     },
-    "/cron-jobs": {
+    "/config/user-prompt": {
       "get": {
         "tags": [
-          "crate::cron_jobs"
+          "crate::routes::http"
         ],
-        "summary": "`GET /cron-jobs` — list all cron jobs sorted by creation time.",
-        "operationId": "list",
+        "summary": "`GET /config/user-prompt` — the persistent system prompt appended to every routine's agent\ninstructions file (see [`crate::paths::user_prompt_path`]), as plain text. Empty (not an\nerror) when nothing has been saved yet.",
+        "operationId": "get_user_prompt",
         "responses": {
           "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CronJobResponse"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`POST /cron-jobs` — create a new cron job.",
-        "operationId": "create",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid cron expression"
-          }
-        }
-      }
-    },
-    "/cron-jobs/{id}": {
-      "get": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`GET /cron-jobs/{id}` — retrieve a single cron job by UUID.",
-        "operationId": "get",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
+            "description": "User prompt contents as plain text"
           }
         }
       },
       "put": {
         "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`PUT /cron-jobs/{id}` — fully replace a cron job (behaves identically to PATCH).",
-        "operationId": "replace",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`DELETE /cron-jobs/{id}` — delete a cron job by UUID.",
-        "operationId": "delete",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`PATCH /cron-jobs/{id}` — partially update a cron job.",
-        "operationId": "update",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      }
-    },
-    "/cron-jobs/{id}/logs": {
-      "get": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`GET /cron-jobs/{id}/logs` — return the contents of the job's log file as plain text.",
-        "operationId": "get_logs",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Log file contents as plain text"
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      }
-    },
-    "/cron-jobs/{id}/trigger": {
-      "post": {
-        "tags": [
-          "crate::cron_jobs"
-        ],
-        "summary": "`POST /cron-jobs/{id}/trigger` — manually trigger a cron job outside its schedule.",
-        "operationId": "trigger",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Cron job UUID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CronJob"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      }
-    },
-    "/echo": {
-      "post": {
-        "tags": [
           "crate::routes::http"
         ],
-        "summary": "`POST /echo` — parse a JSON body and return the message with a server timestamp.",
-        "operationId": "echo",
+        "summary": "`PUT /config/user-prompt` — replace the persistent system prompt.",
+        "description": "Creates the config directory if absent. Every routine's next run picks up the change (the\nlaunch command re-reads this file each time — see `command::system_prompt_stmts`); already\nrunning agents are unaffected.",
+        "operationId": "put_user_prompt",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EchoRequest"
+                "$ref": "#/components/schemas/SetUserPromptRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EchoResponse"
-                }
-              }
-            }
+          "204": {
+            "description": "Saved"
           },
-          "400": {
-            "description": "Invalid body"
+          "500": {
+            "description": "Write failed"
           }
         }
       }
@@ -367,6 +94,89 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/machine": {
+      "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /machine` — the current machine's resolved identity.",
+        "description": "Returns the name this daemon uses to match `machines[]` targeting lists on routines. Useful for\nclients (e.g. the UI) that want to default their views to local entries only.",
+        "operationId": "get_current_machine",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`PUT /machine` — rename this machine's identity.",
+        "description": "Writes the new name to `machine.local.toml` and returns it trimmed. Returns `400` if the name\nis empty, `500` if the write fails. The `MOADIM_MACHINE` env var takes precedence at runtime;\nsetting the name here persists it for when the env var is absent.\n\nAs a side-effect, every routine whose `machines` list contained the old name is updated in\nmemory, on disk, and in the crontab so that the rename propagates atomically.",
+        "operationId": "put_machine",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMachineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty name"
+          },
+          "500": {
+            "description": "Write failed"
+          }
+        }
+      }
+    },
+    "/machines": {
+      "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /machines` — distinct machine names this daemon knows about.",
+        "description": "There is no central machine registry, so the \"known\" set is the union of every `machines`\ntargeting list declared by a routine, plus this machine's own resolved identity\n([`crate::machine::current_machine`]) so the local machine is always pickable even before\nanything targets it. Sorted and de-duplicated. Backs the UI machine picker; mirrors the\n`moadim machine list` CLI but reads the live in-memory store instead of disk.",
+        "operationId": "list_machines",
+        "responses": {
+          "200": {
+            "description": "Known machine names, sorted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -433,6 +243,24 @@
             "schema": {
               "$ref": "#/components/schemas/SortOrder"
             }
+          },
+          {
+            "name": "local_only",
+            "in": "query",
+            "description": "When `true`, only return routines whose `machines` list includes the current machine.\nDefaults to `false` (return all routines, preserving backwards compatibility).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "include_prompts",
+            "in": "query",
+            "description": "When `true`, include each routine's `prompt` in the response. Defaults to `false`:\nthe prompt (often the largest field) is omitted so listings stay compact. Fetch a\nsingle routine with `svc_get` / `GET /routines/{id}` to always see its prompt.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -490,8 +318,19 @@
           "crate::routines"
         ],
         "summary": "`GET /routines.ics` — iCalendar feed of every enabled routine's upcoming fire times.",
-        "description": "Returns a `text/calendar` body suitable for subscribing to in an external calendar\n(Google Calendar, Apple Calendar, …) so upcoming runs show up alongside other events.",
+        "description": "Returns a `text/calendar` body suitable for subscribing to in an external calendar\n(Google Calendar, Apple Calendar, …) so upcoming runs show up alongside other events.\nWith `?routine=<id>` the feed is scoped to a single routine (named after it); without\nit every enabled routine is rendered (issue #263).",
         "operationId": "ical_feed",
+        "parameters": [
+          {
+            "name": "routine",
+            "in": "query",
+            "description": "Render only the fire times of the routine with this UUID. Absent (the default)\nrenders every enabled routine. An unknown or disabled id yields a well-formed\nempty calendar.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "iCalendar (text/calendar) feed of upcoming routine fire times"
@@ -508,11 +347,142 @@
         "operationId": "cleanup",
         "responses": {
           "200": {
-            "description": "Number of workbenches removed",
+            "description": "Workbenches removed and bytes freed",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CleanupResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/routines/lock": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/lock` — return the current global lock status.",
+        "operationId": "get_lock_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.",
+        "operationId": "lock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown scope"
+          },
+          "500": {
+            "description": "IO error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`DELETE /routines/lock` — remove lock sentinel(s), restoring routine scheduling.",
+        "operationId": "unlock",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Which sentinel(s) to remove: `\"shared\"`, `\"local\"`, or `\"all\"`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown scope"
+          },
+          "500": {
+            "description": "IO error"
+          }
+        }
+      }
+    },
+    "/routines/runs": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/runs` — the most recent runs across every routine, newest first. Backs the\noverview \"recent runs\" panel with a single workbench scan instead of one request per routine.",
+        "operationId": "get_all_runs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Cap on the number of runs returned (default: `DEFAULT_FLEET_RUNS_LIMIT`).",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FleetRunSummary"
+                  }
                 }
               }
             }
@@ -558,7 +528,8 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`PUT /routines/{id}` — fully replace a routine (behaves identically to PATCH).",
+        "summary": "`PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.",
+        "description": "Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.\nA client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to\ndefault) should not rely on this route for that; use `PATCH` and set every field explicitly.",
         "operationId": "replace",
         "parameters": [
           {
@@ -680,6 +651,127 @@
         }
       }
     },
+    "/routines/{id}/flags": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/flags` — list open flags raised against a routine.",
+        "operationId": "list_flags",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Flag"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/{id}/flags` — raise a new flag against a routine.",
+        "operationId": "create_flag",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFlagRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flag"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid type/description/scope"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/flags/{filename}": {
+      "delete": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.",
+        "operationId": "resolve_flag",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "description": "Flag filename, as returned by create/list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resolved"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/logs": {
       "get": {
         "tags": [
@@ -708,12 +800,124 @@
         }
       }
     },
+    "/routines/{id}/runs": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs` — list every run workbench for the routine, newest first.",
+        "operationId": "get_runs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummary"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/runs/{workbench}/log": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs/{workbench}/log` — return one specific run's `agent.log` as plain text.",
+        "operationId": "get_run_log",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workbench",
+            "in": "path",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`), from `GET /routines/{id}/runs`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/routines/{id}/scheduled-trigger": {
+      "post": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.",
+        "description": "The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).\nUnlike [`trigger`] it does not record a manual trigger; the spawned command records the scheduled\ntimestamp itself. See [`svc_trigger_scheduled`].",
+        "operationId": "scheduled_trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Routine"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/trigger": {
       "post": {
         "tags": [
           "crate::routines"
         ],
         "summary": "`POST /routines/{id}/trigger` — manually run a routine outside its schedule.",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`svc_trigger`].",
         "operationId": "trigger",
         "parameters": [
           {
@@ -772,9 +976,16 @@
         "type": "object",
         "description": "Result of an on-demand workbench cleanup sweep.",
         "required": [
-          "removed"
+          "removed",
+          "freed_bytes"
         ],
         "properties": {
+          "freed_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total disk space reclaimed, in bytes, summed across the removed workbench trees. Additive\nfield: existing `{\"removed\": N}` consumers are unaffected.",
+            "minimum": 0
+          },
           "removed": {
             "type": "integer",
             "description": "Number of finished, expired run workbenches removed by this sweep.",
@@ -782,28 +993,26 @@
           }
         }
       },
-      "CreateRequest": {
+      "CreateFlagRequest": {
         "type": "object",
-        "description": "Request body for creating a new cron job.",
+        "description": "Request body for `POST /routines/{id}/flags`.",
         "required": [
-          "schedule",
-          "handler"
+          "type",
+          "description",
+          "scope"
         ],
         "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether to create the job in an enabled state (defaults to `true`)."
-          },
-          "handler": {
+          "description": {
             "type": "string",
-            "description": "Handler identifier to invoke when the schedule fires."
+            "description": "Free-text description of what's unclear."
           },
-          "metadata": {
-            "description": "Optional metadata (defaults to null)."
-          },
-          "schedule": {
+          "scope": {
             "type": "string",
-            "description": "Cron expression for the new job. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
+            "description": "`\"general\"` (committed, shared via git) or `\"local\"` (gitignored, machine-local)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Free-text flag category. Common examples: `\"bug\"`, `\"gap\"`, `\"edge_case\"`, `\"question\"`,\n`\"blocker\"` — any string is accepted."
           }
         }
       },
@@ -825,6 +1034,20 @@
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
           },
+          "goal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A very short (at most 5 lines) statement of the routine's goal. Optional; `None` leaves it\nunset. When present it is rendered into the agent's `prompt.md` as a `## Goal` preamble."
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Machines to run this routine on (defaults to empty = runs nowhere until assigned)."
+          },
           "max_runtime_secs": {
             "type": [
               "integer",
@@ -833,6 +1056,13 @@
             "format": "int64",
             "description": "Max wall-clock seconds a run may execute before the watchdog kills its hung\nsession. `None` uses the default cap (`MAX_RUNTIME_SECS`).",
             "minimum": 0
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model ID to run the agent with, or `None` to use the agent's own default. A\nblank/whitespace-only value is treated the same as `None`."
           },
           "prompt": {
             "type": "string",
@@ -849,6 +1079,13 @@
             "type": "string",
             "description": "Cron expression for the new routine. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels for the routine (defaults to empty). Each entry is trimmed\nand must be non-blank."
+          },
           "title": {
             "type": "string",
             "description": "Human name for the routine."
@@ -864,142 +1101,116 @@
           }
         }
       },
-      "CronJob": {
+      "DependencyHealth": {
         "type": "object",
-        "description": "A persisted cron job with scheduling and metadata.",
+        "description": "External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on\nthe daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency\ninstead of having routine runs silently no-op.",
         "required": [
-          "id",
-          "schedule",
-          "handler",
-          "metadata",
-          "enabled",
-          "source",
-          "created_at",
-          "updated_at"
+          "tmux",
+          "python3"
+        ],
+        "properties": {
+          "python3": {
+            "type": "boolean",
+            "description": "Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`\nstep runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that\nstep fails silently and the routine still shows a healthy status (issue #404)."
+          },
+          "tmux": {
+            "type": "boolean",
+            "description": "Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`."
+          }
+        }
+      },
+      "Flag": {
+        "type": "object",
+        "description": "A single flag raised against a routine.",
+        "required": [
+          "filename",
+          "type",
+          "description",
+          "scope",
+          "created_at"
         ],
         "properties": {
           "created_at": {
             "type": "integer",
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was created.",
+            "description": "Unix timestamp (seconds) the flag was created.",
             "minimum": 0
           },
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether the job is active."
-          },
-          "handler": {
+          "description": {
             "type": "string",
-            "description": "Identifier for the handler that processes the job."
+            "description": "Free-text body describing what's unclear."
           },
-          "id": {
+          "filename": {
             "type": "string",
-            "description": "Unique identifier (UUID v4)."
+            "description": "Filename on disk under the routine's `flags/` dir; the handle used to resolve it."
           },
-          "last_manual_trigger_at": {
+          "scope": {
+            "$ref": "#/components/schemas/FlagScope",
+            "description": "Whether this flag is committed (general) or machine-local."
+          },
+          "type": {
+            "type": "string",
+            "description": "Free-text category, e.g. `\"bug\"`, `\"gap\"`, `\"edge_case\"`, `\"question\"`."
+          }
+        }
+      },
+      "FlagScope": {
+        "type": "string",
+        "description": "Whether a flag file is committed to version control or kept machine-local.",
+        "enum": [
+          "general",
+          "local"
+        ]
+      },
+      "FleetRunSummary": {
+        "type": "object",
+        "description": "One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide\ncounterpart to [`RunSummary`] backing an overview \"recent runs\" view.",
+        "required": [
+          "routine_id",
+          "routine_title",
+          "workbench",
+          "started_at",
+          "status"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Process exit code, when recorded."
+          },
+          "finished_at": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was last manually triggered, if ever.\n\nOnly manual triggers update this; scheduled cron firings run the built command directly and\ndo not. Accepts the legacy `last_triggered_at` key on deserialize.",
+            "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
             "minimum": 0
           },
-          "metadata": {
-            "description": "Arbitrary JSON metadata attached to the job."
-          },
-          "schedule": {
+          "routine_id": {
             "type": "string",
-            "description": "Cron expression defining when the job runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
+            "description": "The routine this run belongs to."
           },
-          "source": {
+          "routine_title": {
             "type": "string",
-            "description": "`\"managed\"` for jobs owned by this server; `\"system:*\"` for read-only system cron entries."
+            "description": "The routine's title, at the time of this call (not snapshotted per-run)."
           },
-          "updated_at": {
+          "started_at": {
             "type": "integer",
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the job was last updated.",
+            "description": "Unix seconds the run was triggered.",
             "minimum": 0
-          }
-        }
-      },
-      "CronJobResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CronJob",
-            "description": "The underlying cron job."
           },
-          {
-            "type": "object",
-            "required": [
-              "source_type",
-              "handler_registered",
-              "file_path"
-            ],
-            "properties": {
-              "file_path": {
-                "type": "string",
-                "description": "Absolute path to the job's `job.toml` file on disk."
-              },
-              "handler_registered": {
-                "type": "boolean",
-                "description": "`true` if the job's handler appears in the server's handler registry."
-              },
-              "schedule_description": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Human-readable description of the schedule (e.g. `\"At 09:30, Monday through Friday\"`).\n`null` for expressions that cannot be parsed into a description (e.g. `@reboot`)."
-              },
-              "source_type": {
-                "$ref": "#/components/schemas/CronJobSourceType",
-                "description": "Whether the job is owned by this server or the host OS."
-              }
-            }
-          }
-        ],
-        "description": "A [`CronJob`] enriched with a flag indicating whether its handler is registered."
-      },
-      "CronJobSourceType": {
-        "type": "string",
-        "description": "Whether a cron job is owned by this server or discovered from the OS.",
-        "enum": [
-          "managed",
-          "system"
-        ]
-      },
-      "EchoRequest": {
-        "type": "object",
-        "description": "Request body for `POST /echo`.",
-        "required": [
-          "message"
-        ],
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "Message to echo back."
-          }
-        }
-      },
-      "EchoResponse": {
-        "type": "object",
-        "description": "Response body for `POST /echo`.",
-        "required": [
-          "message",
-          "timestamp"
-        ],
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "The echoed message."
+          "status": {
+            "$ref": "#/components/schemas/RunStatus",
+            "description": "Success/failure/running/unknown, derived from the exit-code file and tmux session liveness."
           },
-          "timestamp": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Server timestamp (Unix seconds) when the echo was produced.",
-            "minimum": 0
+          "workbench": {
+            "type": "string",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`)."
           }
         }
       },
@@ -1010,6 +1221,8 @@
           "status",
           "uptime_secs",
           "running",
+          "machine",
+          "dependencies",
           "version",
           "git_sha",
           "build_date"
@@ -1019,9 +1232,17 @@
             "type": "string",
             "description": "Committer date (`YYYY-MM-DD`) of the build commit, or `\"unknown\"` outside a git checkout."
           },
+          "dependencies": {
+            "$ref": "#/components/schemas/DependencyHealth",
+            "description": "Presence of required external binaries on the daemon's `PATH`."
+          },
           "git_sha": {
             "type": "string",
             "description": "Short git commit SHA the daemon was built from, or `\"unknown\"` outside a git checkout."
+          },
+          "machine": {
+            "type": "string",
+            "description": "Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname)."
           },
           "running": {
             "type": "boolean",
@@ -1040,6 +1261,55 @@
           "version": {
             "type": "string",
             "description": "Daemon version (from `CARGO_PKG_VERSION`)."
+          }
+        }
+      },
+      "LockRequest": {
+        "type": "object",
+        "description": "Request body for `POST /routines/lock`.",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "Which sentinel to create: `\"shared\"` (committed `.lock`) or `\"local\"` (gitignored `.local.lock`)."
+          }
+        }
+      },
+      "LockStatus": {
+        "type": "object",
+        "description": "Current state of both lock sentinels.",
+        "required": [
+          "shared",
+          "local",
+          "locked"
+        ],
+        "properties": {
+          "local": {
+            "type": "boolean",
+            "description": "Whether the gitignored `.local.lock` file is present."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "`true` if either sentinel is present (all routine scheduling and triggers halted)."
+          },
+          "shared": {
+            "type": "boolean",
+            "description": "Whether the committed `.lock` file is present."
+          }
+        }
+      },
+      "MachineResponse": {
+        "type": "object",
+        "description": "Response body for `GET /machine`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname)."
           }
         }
       },
@@ -1091,7 +1361,6 @@
           "schedule",
           "title",
           "agent",
-          "prompt",
           "enabled",
           "source",
           "created_at",
@@ -1112,6 +1381,13 @@
             "type": "boolean",
             "description": "Whether the routine is active."
           },
+          "goal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A very short (at most 5 lines) statement of the routine's goal — the \"why\" behind the\nprompt. Rendered into the agent's `prompt.md` as a `## Goal` preamble. `None` when unset."
+          },
           "id": {
             "type": "string",
             "description": "Unique identifier (UUID v4)."
@@ -1131,8 +1407,15 @@
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The scheduler is\nthe host OS crontab, which runs the routine's generated `run.sh` directly without going\nthrough the daemon — so the script itself stamps this timestamp into the gitignored\n`scheduled.local.toml` sidecar at fire time, and the daemon reads it back on load. The\ndaemon never writes this field (it is absent from `routine.toml` and the daemon-owned\n`state.local.toml`), so re-persisting a routine can't clobber it.",
+            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The host OS crontab\nline runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends\nthe Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last\nline back on load. The daemon never writes this field directly (it is absent from\n`routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't\nclobber the log.",
             "minimum": 0
+          },
+          "machines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Machines this routine runs on. Each daemon schedules a routine only when this list names its\nown machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so\na routine is dormant until explicitly assigned. Lets one shared config repo drive different\nroutines on different machines."
           },
           "max_runtime_secs": {
             "type": [
@@ -1143,9 +1426,20 @@
             "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module.",
             "minimum": 0
           },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model ID to run the agent with (e.g. `\"claude-sonnet-4-6\"`), passed as `--model` on the\nagent invocation. `None` uses the agent's own default."
+          },
+          "power_saving": {
+            "type": "boolean",
+            "description": "Whether scheduled and manual firing is paused to conserve resources, independent of\n[`Routine::enabled`].\n\n`enabled` is user-owned intent (\"I want this routine on/off\"); `power_saving` is a\nsystem/policy throttle layered on top — both must hold for a firing to launch an agent\n(`enabled && !power_saving`). Never mutated by `svc_create`/`svc_update` (set via\n[`crate::routines::svc_set_power_saving`] instead), so it survives a config edit the same\nway `snoozed_until` and `skip_runs` do. Daemon-owned runtime state: persisted in the\ngitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`."
+          },
           "prompt": {
             "type": "string",
-            "description": "The task prompt handed to the agent."
+            "description": "The task prompt handed to the agent.\n\nOmitted from serialized output when empty. A persisted routine always has a\nnon-blank prompt (enforced by `validate_prompt`), so this never affects\n`routine.toml` persistence; it lets list responses drop the prompt by blanking\nit in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`)."
           },
           "repositories": {
             "type": "array",
@@ -1158,9 +1452,34 @@
             "type": "string",
             "description": "Cron expression defining when the routine runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
           },
+          "skip_runs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Number of upcoming scheduled fires still to skip, or `None`.\n\nDecremented (and cleared once it reaches zero) on each skipped scheduled fire; manual\ntriggers do not consume it. Mutually exclusive with `snoozed_until`.",
+            "minimum": 0
+          },
+          "snoozed_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp (seconds) until which scheduled (cron) fires are skipped, or `None`.\n\nCleared automatically the first time a scheduled fire observes `now >= snoozed_until`, which\nalso runs that fire. Manual triggers ([`crate::routines::svc_trigger`]) ignore this entirely.\nSet via the `snooze_routine` MCP tool; mutually exclusive with `skip_runs`.",
+            "minimum": 0
+          },
           "source": {
             "type": "string",
             "description": "`\"managed\"` for routines owned by this server."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels for grouping and filtering routines (e.g. `\"triage\"`, `\"nightly\"`).\nDefaults to empty; each entry is trimmed and must be non-blank."
           },
           "title": {
             "type": "string",
@@ -1193,16 +1512,41 @@
             "type": "object",
             "required": [
               "agent_registered",
-              "file_path"
+              "agent_command_available",
+              "file_path",
+              "flag_count",
+              "is_running"
             ],
             "properties": {
+              "agent_command_available": {
+                "type": "boolean",
+                "description": "`true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable\non the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a\npresent, well-formed agent config yet reference a binary that isn't installed, in which\ncase the cron firing launches a tmux session that dies immediately with \"command not\nfound\" — a silent no-op indistinguishable from a healthy routine by `agent_registered`\nalone. `false` whenever the agent config is missing, unreadable, or malformed, since no\n`command` can be resolved in that case either."
+              },
               "agent_registered": {
                 "type": "boolean",
-                "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml`."
+                "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses\nsuccessfully. A present-but-malformed config is silently dropped at crontab-sync time, so\nit reports `false` here too — file existence alone is not \"registered\"."
               },
               "file_path": {
                 "type": "string",
                 "description": "Absolute path to the routine's `routine.toml` file on disk."
+              },
+              "flag_count": {
+                "type": "integer",
+                "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
+                "minimum": 0
+              },
+              "is_running": {
+                "type": "boolean",
+                "description": "`true` if any fire of this routine currently has a live tmux session — i.e. an agent is\nrunning right now. Derived by probing for a session under the routine's\n`moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not\npersisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing\nbest-effort \"no tmux, nothing running\" stance. See issue #438."
+              },
+              "next_run_at": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone\n(matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.\n`None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming\nfire (e.g. `@reboot`). See issue #369.",
+                "minimum": 0
               },
               "schedule_description": {
                 "type": [
@@ -1233,6 +1577,84 @@
           "repository"
         ]
       },
+      "RunStatus": {
+        "type": "string",
+        "description": "Outcome of a single past run, derived from its workbench on disk.",
+        "enum": [
+          "running",
+          "success",
+          "failed",
+          "unknown"
+        ]
+      },
+      "RunSummary": {
+        "type": "object",
+        "description": "One past (or in-progress) run of a routine, listed newest-first.",
+        "required": [
+          "workbench",
+          "started_at",
+          "status"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Process exit code, when recorded."
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds the run was triggered.",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus",
+            "description": "Success/failure/running/unknown, derived from the exit-code file and tmux session liveness."
+          },
+          "workbench": {
+            "type": "string",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`."
+          }
+        }
+      },
+      "SetMachineRequest": {
+        "type": "object",
+        "description": "Request body for `PUT /machine`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New machine name. Trimmed; must be non-empty."
+          }
+        }
+      },
+      "SetUserPromptRequest": {
+        "type": "object",
+        "description": "Request body for `PUT /config/user-prompt`.",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "New persistent prompt contents. An empty string clears it."
+          }
+        }
+      },
       "ShutdownResponse": {
         "type": "object",
         "description": "Response body for `POST /shutdown`.",
@@ -1254,36 +1676,6 @@
           "desc"
         ]
       },
-      "UpdateRequest": {
-        "type": "object",
-        "description": "Request body for partially updating an existing cron job.",
-        "properties": {
-          "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "New enabled state, or `None` to keep the existing value."
-          },
-          "handler": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "New handler identifier, or `None` to keep the existing value."
-          },
-          "metadata": {
-            "description": "New metadata, or `None` to keep the existing value."
-          },
-          "schedule": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
-          }
-        }
-      },
       "UpdateRoutineRequest": {
         "type": "object",
         "description": "Request body for partially updating an existing routine.",
@@ -1302,6 +1694,23 @@
             ],
             "description": "New enabled state, or `None` to keep the existing value."
           },
+          "goal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New goal, or `None` to keep the existing value. Send an empty string to clear it."
+          },
+          "machines": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "New machines targeting list, or `None` to keep the existing value."
+          },
           "max_runtime_secs": {
             "type": [
               "integer",
@@ -1310,6 +1719,13 @@
             "format": "int64",
             "description": "New max runtime (seconds) for a single run, or `None` to keep the existing value.",
             "minimum": 0
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears\nthe model back to the agent's own default."
           },
           "prompt": {
             "type": [
@@ -1334,6 +1750,16 @@
               "null"
             ],
             "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "New tags list, or `None` to keep the existing value."
           },
           "title": {
             "type": [

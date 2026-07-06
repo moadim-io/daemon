@@ -45,6 +45,16 @@ pub fn max_runtime_for(snapshot: &HashMap<String, u64>, slug: &str) -> u64 {
     snapshot.get(slug).copied().unwrap_or(MAX_RUNTIME_SECS)
 }
 
+/// Snapshot each routine's `slug -> stable UUID` from the store, so a reaped workbench's outcome
+/// can be persisted against its owning routine's durable `runs.log` (keyed by UUID, not slug — see
+/// [`super::super::run_history`]) even though the reap sweep only has the workbench's slug to go on.
+pub fn snapshot_routine_ids(store: &RoutineStore) -> HashMap<String, String> {
+    let lock = store.lock_recover();
+    lock.values()
+        .map(|routine| (slugify(&routine.title), routine.id.clone()))
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "snapshot_tests.rs"]
 mod snapshot_tests;

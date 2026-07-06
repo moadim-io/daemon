@@ -406,8 +406,8 @@ use service_trigger::migrate_workbenches;
 #[cfg(test)]
 pub(crate) use service_trigger::sh_bin;
 pub use service_trigger::{
-    svc_cleanup, svc_list_all_runs, svc_list_runs, svc_logs, svc_run_log, svc_set_power_saving,
-    svc_snooze, svc_trigger, svc_trigger_scheduled,
+    svc_cleanup, svc_list_all_runs, svc_list_runs, svc_logs, svc_run_log, svc_run_summary,
+    svc_set_power_saving, svc_snooze, svc_trigger, svc_trigger_scheduled,
 };
 
 #[path = "service_trigger_flags.rs"]

@@ -445,12 +445,19 @@ fn run_summary(dir: &str, started_at: u64) -> RunSummary {
     }
 }
 
-/// Return the contents of a specific run's `agent.log`, by workbench directory name.
+/// Return the contents of `filename` inside a specific run's workbench, by workbench directory
+/// name.
 ///
 /// `workbench` must be an existing, exact `{slug}-{ts}` directory belonging to routine `id` — this
 /// guards both path traversal (a bare directory name, not an arbitrary path, is joined onto
 /// `workbenches_dir()`) and cross-routine leakage, mirroring the exact-slug check in [`svc_logs`].
-pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<String, AppError> {
+/// Shared by [`svc_run_log`] (`agent.log`) and [`svc_run_summary`] (`summary.md`).
+fn svc_run_file(
+    store: &RoutineStore,
+    id: &str,
+    workbench: &str,
+    filename: &str,
+) -> Result<String, AppError> {
     let routine = store
         .lock_recover()
         .get(id)
@@ -463,9 +470,25 @@ pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<St
     if dir_slug != slug {
         return Err(AppError::NotFound);
     }
-    let log_path = workbenches_dir().join(workbench).join("agent.log");
-    if !log_path.exists() {
+    let path = workbenches_dir().join(workbench).join(filename);
+    if !path.exists() {
         return Ok(String::new());
     }
-    read_log_tail(&log_path).map_err(|_| AppError::Internal)
+    read_log_tail(&path).map_err(|_| AppError::Internal)
+}
+
+/// Return the contents of a specific run's `agent.log`, by workbench directory name.
+pub fn svc_run_log(store: &RoutineStore, id: &str, workbench: &str) -> Result<String, AppError> {
+    svc_run_file(store, id, workbench, "agent.log")
+}
+
+/// Return the contents of a specific run's agent-authored `summary.md` (see the "Work log"
+/// instruction in [`crate::routines::command::system_prompt_stmts`]), by workbench directory
+/// name. Empty string when the agent hasn't written one (yet, or never did).
+pub fn svc_run_summary(
+    store: &RoutineStore,
+    id: &str,
+    workbench: &str,
+) -> Result<String, AppError> {
+    svc_run_file(store, id, workbench, "summary.md")
 }

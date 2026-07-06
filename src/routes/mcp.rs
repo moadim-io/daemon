@@ -294,7 +294,7 @@ impl MoadimMcp {
 
     /// List a routine's runs (live workbenches plus durable history), newest first.
     #[tool(
-        description = "List a routine's runs, newest first — each run's workbench id (pass to the REST endpoint GET /routines/{id}/runs/{workbench}/log to fetch its log), start/finish time, status, and exit code"
+        description = "List a routine's runs, newest first — each run's workbench id (pass to the REST endpoints GET /routines/{id}/runs/{workbench}/log for its log or GET /routines/{id}/runs/{workbench}/summary for the agent's work summary), start/finish time, status, and exit code"
     )]
     fn list_routine_runs(
         &self,

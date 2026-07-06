@@ -19,8 +19,8 @@ use super::model::{
 };
 use super::service::{
     svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_list, svc_list_all_runs,
-    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_trigger,
-    svc_trigger_scheduled, svc_update,
+    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary,
+    svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -339,6 +339,21 @@ pub async fn get_run_log(
     Path((id, workbench)): Path<(String, String)>,
 ) -> Result<String, AppError> {
     svc_run_log(&store, &id, &workbench)
+}
+
+/// `GET /routines/{id}/runs/{workbench}/summary` — return one specific run's agent-authored
+/// `summary.md` as plain text (empty when the agent hasn't written one).
+#[utoipa::path(get, path = "/routines/{id}/runs/{workbench}/summary",
+    params(
+        ("id" = String, Path, description = "Routine UUID"),
+        ("workbench" = String, Path, description = "Workbench directory name (`{slug}-{unix_secs}`), from `GET /routines/{id}/runs`"),
+    ),
+    responses((status = 200, description = "Summary file contents as plain text"), (status = 404, description = "Not found")))]
+pub async fn get_run_summary(
+    State(store): State<RoutineStore>,
+    Path((id, workbench)): Path<(String, String)>,
+) -> Result<String, AppError> {
+    svc_run_summary(&store, &id, &workbench)
 }
 
 #[cfg(test)]

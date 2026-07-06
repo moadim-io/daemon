@@ -875,6 +875,43 @@
         }
       }
     },
+    "/routines/{id}/runs/{workbench}/summary": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/runs/{workbench}/summary` — return one specific run's agent-authored\n`summary.md` as plain text (empty when the agent hasn't written one).",
+        "operationId": "get_run_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workbench",
+            "in": "path",
+            "description": "Workbench directory name (`{slug}-{unix_secs}`), from `GET /routines/{id}/runs`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Summary file contents as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/scheduled-trigger": {
       "post": {
         "tags": [

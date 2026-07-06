@@ -446,6 +446,20 @@ Export the variable in your shell profile to make the change stick across comman
 `127.0.0.1:5784` addresses shown above and in the `--json` payloads reflect the default; they
 follow `MOADIM_BIND_ADDR` when it is set.
 
+Loopback isn't a full security boundary against a **browser**: any page you have open can still
+send requests to `http://127.0.0.1:5784`, and DNS rebinding can point an attacker-controlled domain
+at that same address. To close that off, every request's `Host` header is checked against an
+allowlist (`localhost`, `127.0.0.1`, `[::1]`, and the configured bind address), and a state-changing
+request (`POST`/`PUT`/`PATCH`/`DELETE`) carrying a cross-origin `Origin` header is rejected too — both
+with `403`. Non-browser clients (`curl`, the `moadim` CLI, the MCP transport) are unaffected, since
+they never send a forged `Origin` and always address the daemon by an allowlisted host. If you put
+the daemon behind a reverse proxy on another hostname, add it to the allowlist with
+`MOADIM_ALLOWED_HOSTS` (comma-separated `host[:port]` entries):
+
+```sh
+MOADIM_ALLOWED_HOSTS=moadim.example.internal moadim
+```
+
 ### Log format
 
 The server logs to stdout (foreground) or `~/.config/moadim/daemon.log` (background) using

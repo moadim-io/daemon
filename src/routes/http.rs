@@ -342,6 +342,15 @@ pub(crate) fn build_app_with_shutdown(
         // SPA fallback: client-routed pages (`/routines`) and refreshes on them return the app
         // HTML so the Yew router can resolve the path on load.
         .fallback(get(index))
+        // Innermost of the cross-cutting layers (added first) so a rejected request's `403`
+        // still gets a security-headers pass and a logged inbound/outbound pair, while still
+        // running ahead of every route handler (issue #266: DNS rebinding / cross-origin abuse
+        // of the unauthenticated loopback API).
+        .layer(middleware::from_fn(
+            middlewares::host_validation::host_validation(
+                middlewares::host_validation::allowed_hosts(),
+            ),
+        ))
         .layer(middleware::from_fn(
             middlewares::security_headers::security_headers,
         ))

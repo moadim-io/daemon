@@ -179,7 +179,7 @@ instants so external calendars can subscribe without an embedded `VTIMEZONE`. Th
 `?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
 an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
-Finished run workbenches are reaped automatically by an hourly background sweep
+Finished run workbenches are reaped automatically by a background sweep (every 5 minutes)
 (`routines::cleanup`, per-routine `ttl_secs`). `POST /routines/cleanup` (MCP tool
 `cleanup_workbenches`) runs that same sweep on demand and returns `{ "removed": N }`, so a caller
 need not wait for the next tick. A live tmux session within its run's max runtime is never touched;

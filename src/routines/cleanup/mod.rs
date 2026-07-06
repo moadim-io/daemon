@@ -40,15 +40,21 @@ pub(crate) use session::tmux_session_prefix_alive;
 pub(crate) use ttl::ttl_ceiling_secs;
 
 /// How often the background task scans for expired workbenches.
-pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
+///
+/// A routine's `effective_ttl_secs` can be as low as the cron interval (e.g. ~60s for an
+/// every-minute schedule, see [`ttl::MAX_TTL_SECS`]), well under an hour. This was previously a
+/// flat 1h, so a high-frequency routine's finished workbenches (full repo clones included) could
+/// pile up dozens deep between sweeps (#170). 5 minutes bounds that worst case to a handful of
+/// stale workbenches while keeping the sweep infrequent enough that its directory walk and
+/// `dir_size`/`remove_dir_all` work stay cheap.
+pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// How often the lightweight watchdog scans for *hung* runs to force-kill.
 ///
-/// Decoupled from [`CLEANUP_INTERVAL`]: TTL-reaping finished workbenches can stay hourly, but the
-/// max-runtime watchdog must fire on a much shorter cadence or a sub-hour `max_runtime_secs` is
-/// unenforceable (a hung run would survive up to ~1h past its bound). At 30s the kill latency is
-/// `effective_max_runtime_secs + <=30s`, so even a routine bounded to a few minutes is reaped near
-/// its limit. This tick only evaluates the kill branch (no directory removal), so it stays cheap.
+/// Shorter than [`CLEANUP_INTERVAL`]: the max-runtime watchdog must fire on a cadence tight enough
+/// that a sub-minute `max_runtime_secs` is still enforceable near its bound. At 30s the kill
+/// latency is `effective_max_runtime_secs + <=30s`. This tick only evaluates the kill branch (no
+/// directory removal), so it stays cheap.
 pub const WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Split a workbench directory name into its `(slug, trigger_timestamp)`.

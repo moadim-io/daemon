@@ -42,7 +42,7 @@ pub fn routine_row(props: &RowProps) -> Html {
     let machines: Vec<&str> = r
         .machines
         .iter()
-        .map(|m| m.as_str())
+        .map(std::string::String::as_str)
         .filter(|m| !m.trim().is_empty())
         .collect();
 

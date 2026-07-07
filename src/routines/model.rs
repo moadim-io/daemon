@@ -172,14 +172,16 @@ pub struct Routine {
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
-    /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.
+    /// never reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module. Must
+    /// be greater than zero when set; `0` is rejected by `svc_create`/`svc_update` (#233).
     #[serde(default)]
     pub ttl_secs: Option<u64>,
     /// Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills
     /// its (hung) tmux session, after which the workbench is reaped under the normal TTL rules.
     /// `None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A
     /// session still within this bound is never touched. The cap and
-    /// [`Routine::effective_max_runtime_secs`] live in the cleanup module.
+    /// [`Routine::effective_max_runtime_secs`] live in the cleanup module. Must be greater than
+    /// zero when set; `0` is rejected by `svc_create`/`svc_update` (#233).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
     /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
@@ -409,11 +411,13 @@ pub struct CreateRoutineRequest {
     #[serde(default = "bool_true")]
     pub enabled: bool,
     /// Workbench retention in seconds for finished runs; caps the cron-derived
-    /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.
+    /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`. Must be
+    /// greater than zero when set; `0` is rejected (#233).
     #[serde(default)]
     pub ttl_secs: Option<u64>,
     /// Max wall-clock seconds a run may execute before the watchdog kills its hung
-    /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`).
+    /// session. `None` uses the default cap (`MAX_RUNTIME_SECS`). Must be greater
+    /// than zero when set; `0` is rejected (#233).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
     /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
@@ -445,9 +449,11 @@ pub struct UpdateRoutineRequest {
     pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
-    /// New workbench TTL (seconds), or `None` to keep the existing value.
+    /// New workbench TTL (seconds), or `None` to keep the existing value. Must be
+    /// greater than zero when set; `0` is rejected (#233).
     pub ttl_secs: Option<u64>,
-    /// New max runtime (seconds) for a single run, or `None` to keep the existing value.
+    /// New max runtime (seconds) for a single run, or `None` to keep the existing value. Must be
+    /// greater than zero when set; `0` is rejected (#233).
     pub max_runtime_secs: Option<u64>,
     /// New tags list, or `None` to keep the existing value.
     pub tags: Option<Vec<String>>,

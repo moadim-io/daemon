@@ -106,10 +106,11 @@ pub(super) struct UpdateRoutineInput {
     pub(super) machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub(super) enabled: Option<bool>,
-    /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value.
+    /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value. Must
+    /// be greater than zero when set; `0` is rejected (#233).
     pub(super) ttl_secs: Option<u64>,
     /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
-    /// the existing value.
+    /// the existing value. Must be greater than zero when set; `0` is rejected (#233).
     pub(super) max_runtime_secs: Option<u64>,
     /// New tags list, or `None` to keep the existing value.
     pub(super) tags: Option<Vec<String>>,

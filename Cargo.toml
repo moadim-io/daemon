@@ -200,3 +200,7 @@ items_after_statements = "deny"
 # dispatches every handler through `self.method(...)` uniformly, so `&self` there is a framework
 # requirement, not a mistake. The rest of the codebase is already clean, so `deny` locks that in.
 unused_self = "deny"
+# Reject a `&T` parameter where `T` is `Copy` and no bigger than a pointer — passing it by value is
+# at least as cheap and states the function doesn't need the caller's own reference. The codebase
+# is already clean, so `deny` locks that in.
+trivially_copy_pass_by_ref = "deny"

@@ -205,6 +205,16 @@ The agent command is resolved from a configurable registry at `~/.config/moadim/
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 
+The daemon **owns** the content of a built-in agent config (`claude.toml`, `codex.toml`,
+`hermes.toml`), refreshing it from the built-in on every start — the same guarantee
+`routines::ensure_default_routines` gives built-in routines — so a shipped fix or improvement reaches
+existing installs, not just new ones. A user's edits are still never overwritten: each written config
+carries a fingerprint header recording the exact built-in content it was seeded from, and on startup
+only a file whose current content still matches that fingerprint (provably untouched since the daemon
+wrote it) is refreshed to the current built-in; anything else — an edited file, or one with no
+fingerprint at all (seeded before this mechanism existed) — is left alone. See
+`routines::agents::ensure_default_agents_in`.
+
 The only placeholders `args` may contain are `{workbench}`, `{prompt_file}`, and `{prompt}`, and at
 least one of `{prompt}` / `{prompt_file}` must appear so the agent actually receives the task.
 Creating or updating a routine validates the referenced agent's `args` against both rules: an unknown

@@ -57,7 +57,10 @@ pub(crate) async fn api_put_machine(name: &str) -> Result<String, String> {
     }
     let resp = Request::put("/api/v1/machine")
         .header("content-type", "application/json")
-        .body(serde_json::to_string(&Body { name }).unwrap())
+        .body(
+            serde_json::to_string(&Body { name })
+                .expect("Body serialization cannot fail for a struct with only a string field"),
+        )
         .map_err(|e| e.to_string())?
         .send()
         .await

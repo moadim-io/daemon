@@ -179,3 +179,8 @@ needless_collect = "deny"
 # "copy this value"; `.copied()` states the intent directly and optimizes
 # identically. The codebase is already clean, so `deny` locks that in.
 cloned_instead_of_copied = "deny"
+# Reject `.push_str(&format!(...))` in favour of `write!`/`writeln!` directly into the `String`.
+# The `format!` call allocates a throwaway `String` only to immediately copy its contents into
+# the target and drop it, so it's pure overhead that `write!` avoids by writing straight into the
+# existing buffer. The codebase is already clean, so `deny` locks that in.
+format_push_string = "deny"

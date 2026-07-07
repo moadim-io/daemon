@@ -225,11 +225,15 @@ impl MoadimMcp {
 
     /// List the available agent registry keys a routine can launch.
     #[tool(description = "List the available agent registry keys a routine can launch")]
+    #[allow(
+        clippy::unused_self,
+        reason = "tool_router dispatches every handler through self.method(...) uniformly"
+    )]
     fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::available_agents()))
     }
 
-    /// Raise a new flag against a routine, refreshing its `prompt.compiled.md` so the next run's
+    /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
     /// "Open flags" section includes it.
     #[tool(
         description = "Flag something unclear about a routine mid-run — a gap, bug, edge case, or question the agent hit with no other channel to surface it (the run happens unattended inside tmux). `type` is free text (common examples: \"bug\", \"gap\", \"edge_case\", \"question\", \"blocker\"); `scope` is \"general\" (committed, shared via git) or \"local\" (gitignored, machine-local). Unresolved flags are shown back to the agent in the routine's prompt on its next run."
@@ -263,7 +267,7 @@ impl MoadimMcp {
         })
     }
 
-    /// Resolve (delete) a flag by filename, refreshing `prompt.compiled.md` so it stops appearing
+    /// Resolve (delete) a flag by filename, refreshing `prompt.compiled.local.md` so it stops appearing
     /// in the next run's prompt.
     #[tool(
         description = "Resolve a routine flag by filename (as returned by create_flag/list_flags), removing it"
@@ -313,6 +317,10 @@ impl MoadimMcp {
     /// Return whether the global routine lock is active and which sentinels are present.
     #[tool(
         description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
+    )]
+    #[allow(
+        clippy::unused_self,
+        reason = "tool_router dispatches every handler through self.method(...) uniformly"
     )]
     fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(crate::global_lock::lock_status()))
@@ -392,6 +400,10 @@ impl MoadimMcp {
     /// `moadim restart`. Delegates to a detached helper process that performs the swap.
     #[tool(
         description = "Restart the server: stop it and start a fresh instance. Mirrors the POST /api/v1/restart route and `moadim restart`."
+    )]
+    #[allow(
+        clippy::unused_self,
+        reason = "tool_router dispatches every handler through self.method(...) uniformly"
     )]
     fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         log::info!("restart requested via MCP");

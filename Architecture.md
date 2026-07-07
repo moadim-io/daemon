@@ -26,7 +26,7 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                ~/.config/moadim/routines/
                ├── <uuid>/routine.toml                  (tracked)
                ├── <uuid>/prompts/prompt.pure.md         (tracked)
-               ├── <uuid>/prompts/prompt.compiled.md     (tracked)
+               ├── <uuid>/prompts/prompt.compiled.local.md (gitignored)
                └── <uuid>/.gitignore                    (generated)
 ```
 
@@ -143,7 +143,7 @@ and a `title`. Routines have their own store (`RoutineStore`), REST endpoints
 (`/routines`), MCP tools (`create_routine`, …), and crontab block.
 
 When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
-time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.md`
+time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.local.md`
 (a repositories-as-context preamble + the prompt) into `~/.config/moadim/routines/<id>/`, then writes a
 single self-contained shell command into a dedicated crontab block:
 
@@ -151,7 +151,7 @@ single self-contained shell command into a dedicated crontab block:
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
 <sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; \
-  { cp …/prompts/prompt.compiled.md $WB/prompt.md; \
+  { cp …/prompts/prompt.compiled.local.md $WB/prompt.md; \
     tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
     tmux pipe-pane -o -t … "cat >> $WB/agent.log"; } >> $WB/launch.log 2>&1   # moadim-routine:<id>
 # END MOADIM-ROUTINES
@@ -205,6 +205,16 @@ The agent command is resolved from a configurable registry at `~/.config/moadim/
 The resolved values are baked into the crontab line at sync time, so editing an agent config requires
 re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
 
+The daemon **owns** the content of a built-in agent config (`claude.toml`, `codex.toml`,
+`hermes.toml`), refreshing it from the built-in on every start — the same guarantee
+`routines::ensure_default_routines` gives built-in routines — so a shipped fix or improvement reaches
+existing installs, not just new ones. A user's edits are still never overwritten: each written config
+carries a fingerprint header recording the exact built-in content it was seeded from, and on startup
+only a file whose current content still matches that fingerprint (provably untouched since the daemon
+wrote it) is refreshed to the current built-in; anything else — an edited file, or one with no
+fingerprint at all (seeded before this mechanism existed) — is left alone. See
+`routines::agents::ensure_default_agents_in`.
+
 The only placeholders `args` may contain are `{workbench}`, `{prompt_file}`, and `{prompt}`, and at
 least one of `{prompt}` / `{prompt_file}` must appear so the agent actually receives the task.
 Creating or updating a routine validates the referenced agent's `args` against both rules: an unknown
@@ -212,7 +222,7 @@ Creating or updating a routine validates the referenced agent's `args` against b
 time, rather than silently launching the agent with a garbage or empty task at fire time.
 
 Modules: `src/routines/` (model + service + command builder + handlers), `src/routine_storage.rs`
-(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.md` persistence),
+(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.local.md` persistence),
 `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
 Reverse sync (crontab → store) is not implemented for routines.
 
@@ -288,6 +298,17 @@ fires its `ShutdownSignal`, whichever comes first.
 - **Single Tokio runtime** (`#[tokio::main]`), all async.
 - **`RoutineStore`** is `Arc<Mutex<...>>` — synchronous lock, held only for the duration of the HashMap operation, then released before any disk I/O.
 - **MCP sessions** each get a cloned `Arc` of the same store, so mutations from REST and MCP are immediately visible to both.
+- **Global routine concurrency cap** (`routines::concurrency_cap`, #335): the per-routine overlap
+  guard described above only stops one routine from stacking on its own still-running fire — it
+  does nothing to bound how many *different* routines run at once. Since routines fire off the OS
+  crontab, many routines' schedules naturally align on the same minute boundary (e.g. `*/5 * * * *`,
+  `0 * * * *`), so without a cap a shared tick can launch an unbounded thundering herd of agent
+  sessions (CPU/RAM exhaustion, provider API rate-limit bursts). `spawn_routine_command` counts live
+  sessions sharing the `moadim-` prefix (`cleanup::tmux_session_count` — derived from actual tmux
+  session liveness, not an in-memory counter that could drift after a crash) and, at or over
+  `MOADIM_MAX_CONCURRENT_RUNS` (default `4`), skips the fire with a logged reason instead of
+  launching it or queueing it — the simpler, lower-risk policy, matching the overlap guard's own
+  skip-with-warning shape rather than adding new queueing infrastructure.
 
 ---
 

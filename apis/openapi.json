@@ -1091,7 +1091,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Max wall-clock seconds a run may execute before the watchdog kills its hung\nsession. `None` uses the default cap (`MAX_RUNTIME_SECS`).",
+            "description": "Max wall-clock seconds a run may execute before the watchdog kills its hung\nsession. `None` uses the default cap (`MAX_RUNTIME_SECS`). Must be greater\nthan zero when set; `0` is rejected (#233).",
             "minimum": 0
           },
           "model": {
@@ -1133,7 +1133,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Workbench retention in seconds for finished runs; caps the cron-derived\nretention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`.",
+            "description": "Workbench retention in seconds for finished runs; caps the cron-derived\nretention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`. Must be\ngreater than zero when set; `0` is rejected (#233).",
             "minimum": 0
           }
         }
@@ -1460,7 +1460,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module.",
+            "description": "Maximum wall-clock seconds a single run may execute before the cleanup watchdog force-kills\nits (hung) tmux session, after which the workbench is reaped under the normal TTL rules.\n`None` uses `min(MAX_RUNTIME_SECS, cron interval)`; an explicit value can only lower that. A\nsession still within this bound is never touched. The cap and\n[`Routine::effective_max_runtime_secs`] live in the cleanup module. Must be greater than\nzero when set; `0` is rejected by `svc_create`/`svc_update` (#233).",
             "minimum": 0
           },
           "model": {
@@ -1528,7 +1528,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\nCaps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only\nshorten, never extend it. `None` uses the cron-derived value. Sessions still running are\nnever reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module.",
+            "description": "How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.\nCaps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only\nshorten, never extend it. `None` uses the cron-derived value. Sessions still running are\nnever reaped. The cap and [`Routine::effective_ttl_secs`] live in the cleanup module. Must\nbe greater than zero when set; `0` is rejected by `svc_create`/`svc_update` (#233).",
             "minimum": 0
           },
           "updated_at": {
@@ -1763,7 +1763,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "New max runtime (seconds) for a single run, or `None` to keep the existing value.",
+            "description": "New max runtime (seconds) for a single run, or `None` to keep the existing value. Must be\ngreater than zero when set; `0` is rejected (#233).",
             "minimum": 0
           },
           "model": {
@@ -1820,7 +1820,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "New workbench TTL (seconds), or `None` to keep the existing value.",
+            "description": "New workbench TTL (seconds), or `None` to keep the existing value. Must be\ngreater than zero when set; `0` is rejected (#233).",
             "minimum": 0
           }
         }

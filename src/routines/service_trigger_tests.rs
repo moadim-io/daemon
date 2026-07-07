@@ -379,3 +379,65 @@ fn svc_delete_syncs_crontab_on_success() {
         assert_eq!(deleted.routine.title, title);
     });
 }
+
+#[test]
+fn svc_trigger_skips_spawn_when_the_global_concurrency_cap_is_reached() {
+    // The global cap (#335) must trip even when the live sessions belong to *other* routines —
+    // unlike the per-routine overlap guard, it counts every `moadim-`-prefixed session regardless
+    // of slug. The stub reports one live session under an unrelated slug ("other"), so this
+    // routine's own overlap guard sees no match, but the cap (set to 1 below) is already at its
+    // limit and the fire must still be skipped.
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let _home = TempHome::set();
+
+    let agent_name = "svc-trigger-cap-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"true\"\nargs = []\n").unwrap();
+
+    let title = "Svc Trigger Concurrency Cap ZZZ";
+    let dir = std::env::temp_dir().join(format!("moadim-svc-cap-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = dir.join("tmux");
+    std::fs::write(
+        &stub,
+        "#!/bin/sh\nprintf 'moadim-other-1730000000_1\\n'\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("trig-cap-id", title, 1, 1);
+    routine.agent = agent_name.into();
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("trig-cap-id".into(), routine);
+
+    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    let prev_cap = std::env::var_os("MOADIM_MAX_CONCURRENT_RUNS");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1).
+    unsafe {
+        std::env::set_var("MOADIM_TMUX_BIN", &stub);
+        std::env::set_var("MOADIM_MAX_CONCURRENT_RUNS", "1");
+    }
+
+    let triggered = svc_trigger(&store, "trig-cap-id").unwrap();
+    // The trigger still records its own timestamp and returns Ok — the same non-fatal shape as the
+    // overlap guard's skip in `service_overlap_guard_tests.rs` — it's the *launch* that is skipped.
+    assert!(triggered.last_manual_trigger_at.is_some());
+
+    // SAFETY: single-threaded harness; restore the saved overrides.
+    unsafe {
+        match prev_tmux {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+        match prev_cap {
+            Some(value) => std::env::set_var("MOADIM_MAX_CONCURRENT_RUNS", value),
+            None => std::env::remove_var("MOADIM_MAX_CONCURRENT_RUNS"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

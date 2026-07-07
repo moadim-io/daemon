@@ -101,11 +101,15 @@ pub fn routine_pure_prompt_path(id: &str) -> PathBuf {
     routine_prompts_dir(id).join("prompt.pure.md")
 }
 
-/// Returns the path to `{routines_dir}/{id}/prompts/prompt.compiled.md`, the composed prompt
+/// Returns the path to `{routines_dir}/{id}/prompts/prompt.compiled.local.md`, the composed prompt
 /// (repositories preamble + pure prompt) that the launch command copies into the workbench.
+///
+/// `.local.` keeps it matching the routine `.gitignore`'s `*.local.*` pattern: it is fully derived
+/// from `prompt.pure.md` + `routine.toml` and rewritten on every [`crate::routine_storage::write_routine`]
+/// call, so (unlike `prompt.pure.md`) it should never be tracked (issue #1046).
 #[must_use]
 pub fn routine_compiled_prompt_path(id: &str) -> PathBuf {
-    routine_prompts_dir(id).join("prompt.compiled.md")
+    routine_prompts_dir(id).join("prompt.compiled.local.md")
 }
 
 /// Returns the path to `{routines_dir}/{id}/.gitignore`.

@@ -178,13 +178,14 @@ pub fn targets(machines: &[String], me: &str) -> bool {
 pub fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         None | Some("show") => cmd_show(),
-        Some("set") => match args.get(1) {
-            Some(name) => cmd_set(name),
-            None => {
+        Some("set") => {
+            if let Some(name) = args.get(1) {
+                cmd_set(name)
+            } else {
                 eprintln!("usage: moadim machine set <name>");
                 2
             }
-        },
+        }
         Some("list") => cmd_list(),
         Some(other) => {
             eprintln!("unknown machine subcommand {other:?}; expected show, set, or list");

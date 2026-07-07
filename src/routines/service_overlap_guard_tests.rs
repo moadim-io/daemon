@@ -59,7 +59,6 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
 
 #[test]
 fn svc_trigger_skips_spawn_when_a_previous_run_is_still_alive() {
-    let _home = TempHome::set();
     // The overlap guard (#514): a tmux stub reporting a live session under this routine's
     // `moadim-{slug}-` prefix must suppress the new fire instead of launching a second, concurrent
     // agent session. The trigger still records its timestamp and returns Ok, the same non-fatal
@@ -67,6 +66,7 @@ fn svc_trigger_skips_spawn_when_a_previous_run_is_still_alive() {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt as _;
 
+    let _home = TempHome::set();
     let agent_name = "svc-trigger-overlap-agent-zzz";
     std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
     let cfg = crate::paths::agent_toml_path(agent_name);

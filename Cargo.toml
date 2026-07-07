@@ -169,3 +169,38 @@ derive_partial_eq_without_eq = "deny"
 # parameter forces every caller to clone or otherwise part with a value the callee never actually
 # needed to own. The codebase is already clean, so `deny` locks that in.
 needless_pass_by_value = "deny"
+# Reject collecting an iterator into a `Vec`/collection only to immediately
+# iterate over it again (or check its length/emptiness) — the intermediate
+# collection is pure allocation overhead the iterator chain never needed. The
+# codebase is already clean, so `deny` locks that in.
+needless_collect = "deny"
+# Prefer `.copied()` over `.cloned()` when iterating `Copy` items (e.g.
+# `&i32`, `&bool`) — cloning a `Copy` type is a needlessly indirect way to say
+# "copy this value"; `.copied()` states the intent directly and optimizes
+# identically. The codebase is already clean, so `deny` locks that in.
+cloned_instead_of_copied = "deny"
+# Reject `.push_str(&format!(...))` in favour of `write!`/`writeln!` directly into the `String`.
+# The `format!` call allocates a throwaway `String` only to immediately copy its contents into
+# the target and drop it, so it's pure overhead that `write!` avoids by writing straight into the
+# existing buffer. The codebase is already clean, so `deny` locks that in.
+format_push_string = "deny"
+# Reject a `match` whose only non-wildcard arm destructures a single pattern, with the rest
+# falling to a catch-all `else`-like arm — `if let ... else` says the same thing without the
+# unused generality of `match`, keeping the two-way branch as readable as a plain `if`. The
+# codebase is already clean, so `deny` locks that in.
+single_match_else = "deny"
+# Reject an item (`use`, `const`, etc.) declared after a statement in the same block — items are
+# scoped to the whole block from the start regardless of where they're written, so placing one
+# mid-block after other code misleads the reader into thinking order matters here. Hoisting it to
+# the top of the block states that up front. The codebase is already clean, so `deny` locks that in.
+items_after_statements = "deny"
+# Reject a `&self` method that never reads `self` — it should be an associated function instead, so
+# the signature doesn't overstate what the method needs from its receiver. The handful of MCP tool
+# handlers that don't touch `self` are exempted with a documented `#[allow]`: `#[tool_router]`
+# dispatches every handler through `self.method(...)` uniformly, so `&self` there is a framework
+# requirement, not a mistake. The rest of the codebase is already clean, so `deny` locks that in.
+unused_self = "deny"
+# Reject a `&T` parameter where `T` is `Copy` and no bigger than a pointer — passing it by value is
+# at least as cheap and states the function doesn't need the caller's own reference. The codebase
+# is already clean, so `deny` locks that in.
+trivially_copy_pass_by_ref = "deny"

@@ -32,9 +32,15 @@ impl LogWithMeta {
 
 /// Same read as [`read_log_tail`], but reporting the full on-disk size and whether `content` is a
 /// truncated window rather than the complete file (see [`LogWithMeta`]).
+///
+/// Stats `path` exactly once and reuses that length for both the `content` read and the
+/// `total_bytes`/`truncated` fields. A file actively appended to by a live `tmux pipe-pane`
+/// capture can grow between two separate `metadata()` calls; stating twice risked reporting
+/// `total_bytes`/`truncated` for a different moment in time than the `content` actually read,
+/// which callers (the MCP `routine_logs` tool, the HTTP logs route) surface to clients verbatim.
 pub(crate) fn read_log_tail_with_meta(path: &std::path::Path) -> std::io::Result<LogWithMeta> {
     let total_bytes = std::fs::metadata(path)?.len();
-    let content = read_log_tail(path)?;
+    let content = read_log_tail_of_len(path, total_bytes)?;
     Ok(LogWithMeta {
         content,
         total_bytes,
@@ -52,6 +58,12 @@ pub(crate) fn read_log_tail_with_meta(path: &std::path::Path) -> std::io::Result
 /// don't clutter the served log.
 pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
     let len = std::fs::metadata(path)?.len();
+    read_log_tail_of_len(path, len)
+}
+
+/// Shared implementation of [`read_log_tail`] for an already-known file length, so a caller that
+/// also needs the length for its own purposes (see [`read_log_tail_with_meta`]) can stat once.
+fn read_log_tail_of_len(path: &std::path::Path, len: u64) -> std::io::Result<String> {
     if len <= MAX_LOG_TAIL_BYTES {
         return std::fs::read_to_string(path).map(|contents| strip_ansi_noise(&contents));
     }

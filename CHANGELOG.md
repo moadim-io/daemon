@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-07
+
 ### Added
 
 The build now generates `schemas/routine.schema.json` and `schemas/routine.example.toml` (a JSON Schema + annotated example for the on-disk `routine.toml`), giving routine configs editor validation/completion. The schema documents every field the daemon writes — including the legacy, read-only `last_(manual_)trigger_at` keys now kept in the `state.local.toml` sidecar — and is regenerated on every build from the `RoutineToml` shape (#388).
@@ -18,6 +20,183 @@ The build now generates `schemas/routine.schema.json` and `schemas/routine.examp
 ### Fixed
 
 A manual ("run now") routine trigger no longer overwrites `last_scheduled_trigger_at`. The launch script it shares with the scheduled path unconditionally appended the fire time to the routine's `scheduled.log`, so every manual run masqueraded as a scheduled fire and clobbered the real last-scheduled time. `build_routine_command` now takes a `TriggerSource` (`Scheduled`/`Manual`); only a genuine scheduled fire appends to `scheduled.log`, while a manual trigger launches the agent but leaves it untouched, staying tracked solely via `last_manual_trigger_at` (#478).
+
+Move the `moadim` CLI's parsing/lifecycle files (`cli.rs`, `cli_query.rs`, `cli_system.rs`, `cli_restart.rs`, and their `*_tests.rs` siblings — 14 files total) into a `src/cli/` folder, per the TODO.md request to colocate all CLI-command files instead of leaving them as flat, prefix-named siblings in `src/`. Pure file move: module paths, `#[path = ...]` attributes, and one `include_str!("../README.md")` → `("../../README.md")` were updated to match the new depth; no behavior change.
+
+chore(lint): enable `clippy::case_sensitive_file_extension_comparisons`
+
+Locks in the codebase's existing (near-)zero-violation state for `clippy::case_sensitive_file_extension_comparisons`, so a future case-sensitive `.ends_with(".ext")` file-extension check fails CI instead of silently disagreeing with the case-insensitive filesystems (macOS, Windows) this daemon runs on. Fixes the two existing violations in `src/routines/flags.rs` and its tests by switching `is_safe_flag_filename` (and the test asserting its shape) from `ends_with(".md")` to `Path::extension()` compared with `eq_ignore_ascii_case`. No behavior change on case-sensitive filesystems (Linux); on case-insensitive ones, a flag file named e.g. `bug-123.MD` is now correctly recognized instead of rejected.
+
+chore(lint): enable `clippy::cloned_instead_of_copied`
+
+Locks in the codebase's existing zero-violation state for `clippy::cloned_instead_of_copied`, so a future `.cloned()` call on an iterator/`Option` of a `Copy` type fails CI instead of shipping a needlessly indirect clone where `.copied()` says the same thing more directly. No behavior change.
+
+chore(lint): enable `clippy::format_push_string`
+
+Fixes the 3 existing violations in `compose_prompt` (`src/routines/command.rs`), which built a repository/flag line with `format!` only to immediately copy it into the routine's prompt body via `push_str` — an unnecessary throwaway `String` allocation per line. Switches those to `write!`/`writeln!` directly into the existing buffer, and enables `format_push_string = "deny"` to lock in the zero-violation state going forward. No behavior change.
+
+chore(lint): enable `clippy::items_after_statements`
+
+Fixes the 3 existing violations — a `use` mid-function in `read_log_tail_of_len` (`src/routines/service_log_tail.rs`), a `use` mid-test in `service_overlap_guard_tests.rs`, and a `const` mid-test in `routines_sync_tests.rs` — by hoisting each item to the top of its block. Enables `items_after_statements = "deny"` to lock in the zero-violation state going forward. No behavior change.
+
+### Changed
+
+chore(lint): enable `clippy::map_unwrap_or` in the `ui` crate
+
+Adds `map_unwrap_or = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint already
+denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]` table (no
+`workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. Fixes the 7 violations this surfaced across `log_viewer.rs`,
+`overview_recent_runs.rs`, `routines/form.rs`, `routines/history.rs`, and `routines/hooks.rs`,
+rewriting each `.map(f).unwrap_or(_)`/`.map(f).unwrap_or_else(_)` into the idiomatic
+`map_or`/`map_or_else`/`is_some_and` single-combinator form. No behavior change.
+
+### Changed
+
+chore(lint): enable `clippy::match_same_arms` in the `ui` crate
+
+Adds `match_same_arms = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint
+already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]` table (no
+`workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. Fixes the 5 violations this surfaced in `routines/filter.rs`: each facet's explicit
+`Facet::All`/`Facet::Any` match arm did nothing that the trailing wildcard arm didn't already do, so
+they're removed as dead code. No behavior change.
+
+chore(lint): enable `clippy::needless_collect`
+
+Locks in the codebase's existing zero-violation state for `clippy::needless_collect`, so a future PR that collects an iterator into a `Vec`/collection only to immediately re-iterate it (or check its length/emptiness) fails CI instead of shipping needless allocation overhead. No behavior change.
+
+chore(lint): enable `clippy::needless_pass_by_ref_mut` in the `ui` crate
+
+Mirrors the root crate's existing `needless_pass_by_ref_mut = "deny"` into `ui/Cargo.toml`'s own `[lints.clippy]` table, which doesn't inherit root's extended deny-list. Locks in the crate's existing zero-violation state so a future stale `&mut` parameter fails CI instead of overstating what the function does to its caller. No behavior change.
+
+chore(lint): enable `clippy::redundant_closure_for_method_calls` in the `ui` crate
+
+The `ui` (Yew/WASM) crate has its own `[lints.clippy]` table with only `all = "deny"` — it does not inherit the workspace root's extended deny-list via `[lints] workspace = true`, so every lint enabled in root `Cargo.toml` (e.g. `redundant_closure_for_method_calls`, already denied since #549) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Enables it in `ui/Cargo.toml` and fixes the 3 violations it surfaces. No behavior change.
+
+chore(lint): enable `clippy::single_match_else`
+
+Fixes the 2 existing violations — `machine::run`'s `Some("set")` arm and `defaults::ensure_default_routines`'s existing-routine lookup — each a `match` destructuring a single pattern with the rest falling to a catch-all arm. Switches both to `if let ... else`, and enables `single_match_else = "deny"` to lock in the zero-violation state going forward. No behavior change.
+
+Enable `clippy::trivially_copy_pass_by_ref` (deny) to reject `&T` parameters where `T` is a small `Copy` type — pass-by-value is at least as cheap and states the callee doesn't need the caller's own reference. Codebase was already compliant, no code changes needed.
+
+Deny `clippy::uninlined_format_args` in the `ui` crate, matching the root crate's lint config. The `ui` crate has its own `[lints.clippy]` table that doesn't inherit the root's deny-list, so this lint never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The crate is already clean, so this locks it in.
+
+chore(lint): enable `clippy::unreadable_literal`
+
+Locks in the codebase's existing (near-)zero-violation state for `clippy::unreadable_literal`, so a future long integer literal without `_` digit-group separators fails CI instead of shipping a number that's hard to judge the magnitude of at a glance. Fixes the one existing violation (`424242` → `424_242` in `restart_tests.rs`). No behavior change.
+
+chore(lint): enable `clippy::unused_async` in the `ui` crate
+
+The `ui` (Yew/WASM) crate has its own `[lints.clippy]` table with only `all = "deny"` — it does not inherit the workspace root's extended deny-list via `[lints] workspace = true`, so every lint enabled in root `Cargo.toml` (e.g. `unused_async`) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Enables it in `ui/Cargo.toml`; the `ui` crate already has zero violations, so no code changes are needed. No behavior change.
+
+chore(lint): enable `clippy::unused_self` in the `ui` crate
+
+The `ui` (Yew/WASM) crate has its own `[lints.clippy]` table with only `all = "deny"` — it does not inherit the workspace root's extended deny-list via `[lints] workspace = true`, so every lint enabled in root `Cargo.toml` (e.g. `unused_self`, already denied since #1067) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Enables it in `ui/Cargo.toml`; the `ui` crate already has zero violations, so no code changes are needed. No behavior change.
+
+chore(lint): enable `clippy::unused_self`
+
+Enables `unused_self = "deny"` to reject a `&self` method that never reads `self`. The 3 existing
+violations — `list_agents`, `get_lock_status`, and `restart` in `src/routes/mcp.rs` — are `#[tool_router]`
+MCP tool handlers whose `&self` receiver is dictated by the framework's uniform `self.method(...)`
+dispatch, not by need, so each gets a documented `#[allow(clippy::unused_self, reason = "...")]` instead
+of a signature change. No behavior change.
+
+chore(lint): enable `clippy::unwrap_used` in the `ui` crate
+
+The root crate denies `clippy::unwrap_used` in production code so a panic can't kill the
+long-running daemon process; `ui/Cargo.toml` never inherited it, so the same class of
+unhandled panic could ship in the dashboard UI unchecked. Adds the lint to `ui/Cargo.toml`
+and fixes the one existing violation in `shell_dialogs.rs` (a `serde_json::to_string` call
+that cannot actually fail, now an `.expect()` with a reason instead of a bare `.unwrap()`).
+No behavior change.
+
+chore(lint): enable `clippy::wildcard_imports` in the `ui` crate
+
+The `ui` (Yew/WASM) crate has its own `[lints.clippy]` table with only `all = "deny"` — it does not inherit the workspace root's extended deny-list via `[lints] workspace = true`, so every lint enabled in root `Cargo.toml` (e.g. `wildcard_imports`) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Enables it in `ui/Cargo.toml`; the `ui` crate already has zero violations, so no code changes are needed. No behavior change.
+
+Move `POST /routines/{id}/trigger`, `/scheduled-trigger`, and `/routines/cleanup` off the async worker thread. These handlers call `svc_trigger`/`svc_trigger_scheduled`/`svc_cleanup`, which shell out to `tmux`(1) and do blocking filesystem I/O; they previously ran inline on the Tokio worker thread instead of `spawn_blocking`, unlike the sibling create/update/delete/lock/unlock handlers. A hung `tmux` call (or a `*/N` scheduled-trigger herd) could stall unrelated requests such as `GET /health`.
+
+fix(routines): guard `write_routine` against a stale on-disk slug collision (#188)
+
+Two distinct routine titles can slugify to the same folder name (e.g. `"Update deps!"` and `"Update deps?"` both become `update-deps`). The in-memory create/update handlers already reject that when both routines are loaded, but a slug could also collide with a stale `routine.toml` left on disk by something outside the in-memory store (e.g. a directory `remove_routine_dir` failed to clean up) — and `write_routine` would silently overwrite it, including the wrong `prompt.md` a scheduled run then executes. `write_routine` now checks the target slug's existing `routine.toml` id before writing and refuses to overwrite a different routine's files, surfaced as a 409 Conflict instead of a 500 at the `create`/`update` API handlers.
+
+### Added
+
+A shared cron minute (e.g. `*/5 * * * *`, `0 * * * *`) could launch an unbounded thundering herd of agent sessions: each routine fire spawns its own detached tmux session with no cap on how many may be alive across *all* routines at once — distinct from the existing per-routine overlap guard, which only stops one routine from stacking on its own still-running fire. `MOADIM_MAX_CONCURRENT_RUNS` (default `4`) now caps the number of concurrently-running routine agent sessions; a fire that would exceed it is skipped (logged, not queued) and picked up again on its next scheduled tick. The live count is derived from actual tmux session liveness, not an in-memory counter, so it stays correct across a daemon crash/restart.
+
+fix(routines): iCalendar feed now skips power-saving and snoozed fires
+
+`GET /routines.ics` only excluded disabled routines and unparseable schedules,
+so a routine in power-saving mode, snoozed via `snoozed_until`, or with
+`skip_runs` pending still advertised upcoming fire times that
+`svc_trigger_scheduled` would actually refuse to spawn — a subscribed calendar
+lied about what would run. The feed now filters/skips those fires the same way
+the trigger path does, so `.ics` subscribers never see a run that will
+silently no-op.
+
+docs(routines): note the `> 0` requirement on `ttl_secs`/`max_runtime_secs`
+
+`svc_create`/`svc_update` already reject `ttl_secs: 0` and `max_runtime_secs: 0`
+with `400 Bad Request` (#239), but the REST/MCP field docs (and the generated
+OpenAPI spec) never said so, leaving the constraint undiscoverable to callers
+until they hit the error. Documents the minimum on `Routine`,
+`CreateRoutineRequest`, `UpdateRoutineRequest`, and the MCP `update_routine`
+input, closing the last unchecked box on #233.
+
+fix(routines): stat `agent.log` once when reading its tail with metadata
+
+`read_log_tail_with_meta` (backing the MCP `routine_logs` tool and the HTTP
+logs route) stated the log file twice: once for `total_bytes`/`truncated`,
+then again inside `read_log_tail` to size the actual read. For a log still
+being appended to by a live `tmux pipe-pane` capture, the file could grow
+between those two stats, so the reported `total_bytes`/`truncated` could
+describe a different moment in time than the `content` actually returned.
+Both callers now share a single stat, so the metadata always matches the
+content it describes.
+
+fix(routines): manual triggers no longer clobber `last_scheduled_trigger_at`
+
+A manual ("run now") routine trigger no longer overwrites `last_scheduled_trigger_at`. The launch script it shares with the scheduled path unconditionally appended the fire time to the routine's `scheduled.log`, so every manual run masqueraded as a scheduled fire and clobbered the real last-scheduled time. `build_routine_command` now takes a `TriggerSource` (`Scheduled`/`Manual`); only a genuine scheduled fire appends to `scheduled.log`, while a manual trigger launches the agent but leaves it untouched, staying tracked solely via `last_manual_trigger_at` (#478).
+
+Add `GET /routines/{id}/prompt-preview` (and the matching `preview_routine_prompt` MCP tool) to return the exact composed prompt body a routine's run would receive, computed in-memory with no workbench, `prompt.md` write, or agent launch. Lets operators verify repo clone bullets and prompt composition before a scheduled or manual run consumes a workbench.
+
+fix(routines): reconcile pristine built-in agent configs on startup
+
+Built-in agent configs (`claude.toml`, `codex.toml`, `hermes.toml`) were only seeded when absent and never refreshed afterward — a shipped fix to a default agent config never reached an existing install. Startup now rewrites an existing config that is still pristine (unedited since the daemon wrote it) but stale, using a fingerprint header to distinguish pristine-but-stale from user-edited, mirroring the existing routine-defaults reconciliation. A user-edited config, or one with no managed header, is left untouched.
+
+fix(routines): rename the compiled-prompt sidecar to prompt.compiled.local.md
+
+`prompts/prompt.compiled.md` is fully derived from `prompt.pure.md` + `routine.toml`
+and rewritten on every save, so it should never be tracked — but relying on an
+explicit `.gitignore` entry (added in #1050) only stopped *new* writes from being
+tracked; it did nothing for installs where the file had already been `git add`-ed
+before that fix landed. Renamed it to `prompt.compiled.local.md` so it matches the
+`*.local.*` pattern the same way `state.local.toml` does, and dropped the now-redundant
+explicit `.gitignore` entry (#1046).
+
+A new startup migration (`migrate_compiled_prompt_filename`) renames the file on disk
+for existing routines. This does not touch git history or the index — the daemon has
+no git integration — so an install with `prompt.compiled.md` already committed will
+still need a manual `git rm --cached prompts/prompt.compiled.md` (or just let the next
+commit record the rename) after upgrading.
+
+fix(routines): rotate a routine's `runs.log` instead of letting it grow forever
+
+The reaper appends one durable [`PersistedRun`] record to a routine's
+`runs.log` right before reaping its workbench, with no other trim point —
+the same unbounded-growth shape already fixed for `daemon.log` (#316), just
+scoped per routine instead of per daemon. A long-lived, frequently-firing
+routine's history would otherwise grow without bound. `append_persisted_run`
+now rotates `runs.log` to a sibling `runs.log.1` (replacing any previous one)
+once it exceeds 1 MiB, mirroring `DAEMON_LOG_MAX_BYTES`'s rotate-and-replace
+approach.
+
+feat(build): generate `routine.toml` JSON Schema + example
+
+Generates `schemas/routine.schema.json` and `schemas/routine.example.toml` at build time from the
+`RoutineToml` shape, mirroring the existing `job.schema.json` generation. Example TOMLs can reference
+the schema via `#:schema ./routine.schema.json` for editor validation.
 
 ## [0.26.0] - 2026-07-07
 
@@ -2915,7 +3094,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/moadim-io/daemon/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/moadim-io/daemon/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/moadim-io/daemon/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/moadim-io/daemon/compare/v0.23.0...v0.24.0

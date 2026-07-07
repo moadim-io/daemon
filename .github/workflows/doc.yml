@@ -1,7 +1,7 @@
 name: Doc
 
 # The codebase leans heavily on rustdoc intra-doc links (e.g.
-# `[Routine::effective_ttl_secs]` in src/routines/model.rs, 15+ in src/cli/,
+# `[Routine::effective_ttl_secs]` in src/routines/model.rs, 15+ in src/cli.rs,
 # 9+ each in src/restart.rs and src/routines/mod.rs — 60+ total). Rustdoc only
 # resolves these when docs are actually built, and none of the existing gates
 # (fmt, clippy, test, spellcheck) build them. A renamed or moved item silently

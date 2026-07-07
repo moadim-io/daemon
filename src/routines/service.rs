@@ -25,9 +25,9 @@ mod service_validate;
 #[cfg(test)]
 use service_validate::MAX_TITLE_LEN;
 use service_validate::{
-    normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs, validate_agent,
-    validate_goal, validate_machines, validate_prompt, validate_repositories, validate_tags,
-    validate_title,
+    map_write_routine_err, normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs,
+    validate_agent, validate_goal, validate_machines, validate_prompt, validate_repositories,
+    validate_tags, validate_title,
 };
 
 /// Sort key placing routines with a repository before those without, then by
@@ -184,7 +184,7 @@ pub fn svc_create(
         max_runtime_secs: req.max_runtime_secs,
         tags,
     };
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     store
         .lock_recover()
         .insert(routine.id.clone(), routine.clone());
@@ -317,7 +317,7 @@ pub fn svc_update(
     let routine = routine.clone();
     drop(lock);
     let new_slug = slugify(&routine.title);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     if new_slug != old_slug {
         migrate_workbenches(&old_slug, &new_slug);
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;

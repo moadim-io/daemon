@@ -8,15 +8,18 @@ use crate::utils::time::now_secs;
 
 use crate::routines::agents::load_agent_command;
 use crate::routines::cleanup::{
-    cleanup_expired_workbenches, parse_workbench_name, run_session_alive, tmux_session_prefix_alive,
+    cleanup_expired_workbenches, parse_workbench_name, run_session_alive, tmux_session_count,
+    tmux_session_prefix_alive,
 };
 use crate::routines::command::{
     build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix,
+    TMUX_SESSION_PREFIX,
 };
 use crate::routines::model::{
     CleanupResponse, FleetRunSummary, Routine, RoutineStore, RunStatus, RunSummary,
 };
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
+use crate::routines::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};
 
 use super::service_log_tail::{read_log_tail_with_meta, LogWithMeta};
 
@@ -182,7 +185,8 @@ pub fn svc_set_power_saving(
 
 /// Spawn the launch command for `routine` under a login shell, logging (rather than failing) when
 /// the agent config cannot be loaded, the composed prompt won't fit in an inlined `{prompt}`
-/// argument, a previous fire of this routine is still running, or the process cannot be spawned.
+/// argument, a previous fire of this routine is still running, the global concurrency cap is
+/// already reached, or the process cannot be spawned.
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
@@ -217,6 +221,28 @@ fn spawn_routine_command(routine: &Routine) {
                      still active (overlap guard)",
                     routine.id,
                     session_prefix,
+                );
+                return;
+            }
+            // Global concurrency cap (#335): the overlap guard above only stops one routine from
+            // stacking on its own still-running fire — it does nothing to bound how many
+            // *different* routines run at once. Cron fires for every routine on a shared schedule
+            // (e.g. `*/5 * * * *`) naturally align on the same minute boundary, so an unbounded
+            // fan-out can thunder-herd the host (CPU/RAM exhaustion, provider API rate-limit
+            // bursts). Counted from actual tmux session liveness — not an in-memory counter, which
+            // would drift after a crash — via the same list-sessions seam the overlap guard above
+            // uses, just matched against every routine's shared `moadim-` prefix instead of one
+            // routine's own. Skips (rather than queues) this fire when at/over the cap: the
+            // simpler, lower-risk policy, and consistent with the overlap guard's own
+            // skip-with-warning shape above.
+            let live = tmux_session_count(TMUX_SESSION_PREFIX);
+            let cap = max_concurrent_runs();
+            if live >= cap {
+                log::warn!(
+                    "trigger: routine {:?} skipped — {live} routine session(s) already running, \
+                     at or over the global concurrency cap of {cap} (set {MAX_CONCURRENT_RUNS_ENV} \
+                     to raise it); this fire will be retried on its next scheduled tick",
+                    routine.id,
                 );
                 return;
             }

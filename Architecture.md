@@ -288,6 +288,17 @@ fires its `ShutdownSignal`, whichever comes first.
 - **Single Tokio runtime** (`#[tokio::main]`), all async.
 - **`RoutineStore`** is `Arc<Mutex<...>>` — synchronous lock, held only for the duration of the HashMap operation, then released before any disk I/O.
 - **MCP sessions** each get a cloned `Arc` of the same store, so mutations from REST and MCP are immediately visible to both.
+- **Global routine concurrency cap** (`routines::concurrency_cap`, #335): the per-routine overlap
+  guard described above only stops one routine from stacking on its own still-running fire — it
+  does nothing to bound how many *different* routines run at once. Since routines fire off the OS
+  crontab, many routines' schedules naturally align on the same minute boundary (e.g. `*/5 * * * *`,
+  `0 * * * *`), so without a cap a shared tick can launch an unbounded thundering herd of agent
+  sessions (CPU/RAM exhaustion, provider API rate-limit bursts). `spawn_routine_command` counts live
+  sessions sharing the `moadim-` prefix (`cleanup::tmux_session_count` — derived from actual tmux
+  session liveness, not an in-memory counter that could drift after a crash) and, at or over
+  `MOADIM_MAX_CONCURRENT_RUNS` (default `4`), skips the fire with a logged reason instead of
+  launching it or queueing it — the simpler, lower-risk policy, matching the overlap guard's own
+  skip-with-warning shape rather than adding new queueing infrastructure.
 
 ---
 

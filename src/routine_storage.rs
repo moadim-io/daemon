@@ -1,4 +1,5 @@
-//! TOML-backed persistence for routines, plus the composed `prompt.md` sidecar file.
+//! TOML-backed persistence for routines, plus the `prompts/prompt.pure.md` (raw) and
+//! `prompts/prompt.compiled.local.md` (composed) sidecar files.
 
 use crate::utils::lock::LockRecover;
 use std::collections::HashMap;
@@ -7,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_dir, routine_gitignore_path, routine_prompt_path, routine_script_path,
+    routine_compiled_prompt_path, routine_dir, routine_gitignore_path, routine_manual_log_path,
+    routine_prompts_dir, routine_pure_prompt_path, routine_scheduled_log_path, routine_script_path,
     routine_state_path, routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
@@ -24,8 +26,21 @@ struct RoutineToml {
     title: Option<String>,
     /// Agent registry key.
     agent: Option<String>,
+    /// Model ID override for the agent invocation; absent means the agent's own default.
+    #[serde(default)]
+    model: Option<String>,
     /// Task prompt.
+    ///
+    /// **Read-only / legacy.** The prompt now lives in the `prompts/prompt.pure.md` sidecar so it
+    /// is diff/edit-friendly markdown instead of an escaped TOML string. This field is still parsed
+    /// so routines written by older daemons keep their prompt (the value migrates into the sidecar
+    /// via [`migrate_prompts_to_subfolder`] on the next startup), but it is never written back —
+    /// `skip_serializing` keeps it out of every freshly written `routine.toml`.
+    #[serde(default, skip_serializing)]
     prompt: Option<String>,
+    /// Short (≤5 line) goal statement; absent means unset.
+    #[serde(default)]
+    goal: Option<String>,
     /// Context repositories.
     #[serde(default)]
     repositories: Vec<Repository>,
@@ -63,24 +78,31 @@ struct RoutineToml {
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
 /// sidecar so it never appears in the version-controlled `routine.toml`.
-#[derive(Debug, Deserialize, Serialize)]
+///
+/// Trigger history (`last_manual_trigger_at`, `last_scheduled_trigger_at`) is no longer stored
+/// here — it lives in the append-only `manual.log` / `scheduled.log` files instead.
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct RuntimeState {
     /// Unix timestamp of the last manual trigger, or `None` if it has never been triggered.
-    #[serde(default)]
+    ///
+    /// **Read-only / legacy.** Manual trigger history now lives in the `manual.log` append-only
+    /// sidecar. This field is still parsed so routines written by older daemons keep their
+    /// timestamp (the value migrates into `manual.log` on the next startup), but it is never
+    /// written back — `skip_serializing` keeps it out of every freshly written `state.local.toml`.
+    #[serde(default, skip_serializing)]
     last_manual_trigger_at: Option<u64>,
-}
-
-/// Scheduler-written runtime state for a routine, persisted to the gitignored
-/// `scheduled.local.toml` sidecar.
-///
-/// Written by the routine's launch command (the `printf` step of `build_routine_command`) at each
-/// scheduled cron firing and only ever read here — kept separate from [`RuntimeState`] so a
-/// daemon-side re-persist of `state.local.toml` can never clobber the scheduler's timestamp.
-#[derive(Debug, Deserialize, Serialize)]
-struct ScheduledState {
-    /// Unix timestamp of the last scheduled (cron) firing, or `None` if it has never fired.
+    /// Unix timestamp until which scheduled fires are skipped, or `None`. See
+    /// [`crate::routines::Routine::snoozed_until`].
     #[serde(default)]
-    last_scheduled_trigger_at: Option<u64>,
+    snoozed_until: Option<u64>,
+    /// Count of upcoming scheduled fires still to skip, or `None`. See
+    /// [`crate::routines::Routine::skip_runs`].
+    #[serde(default)]
+    skip_runs: Option<u32>,
+    /// Whether firing is paused for power saving. See
+    /// [`crate::routines::Routine::power_saving`].
+    #[serde(default)]
+    power_saving: bool,
 }
 
 /// Parse a routine TOML file at `path`, returning `None` on any error.
@@ -89,26 +111,47 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read `last_manual_trigger_at` from a routine's `state.local.toml` sidecar under `base`, returning
-/// `None` when the sidecar is absent or unparsable (e.g. before the routine has ever been triggered).
-fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
-    let path = base.join(dir_name).join("state.local.toml");
-    let text = std::fs::read_to_string(path).ok()?;
-    toml::from_str::<RuntimeState>(&text)
-        .ok()?
-        .last_manual_trigger_at
+/// Read a routine's `state.local.toml` sidecar under `base`, defaulting to an empty
+/// [`RuntimeState`] when the sidecar is absent or unparsable (e.g. before the routine has ever
+/// been snoozed).
+///
+/// Base-dir-aware so [`load_routine_from_base`] can resolve it coherently for any scan root, not
+/// only the global [`routines_dir`].
+fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> RuntimeState {
+    std::fs::read_to_string(base.join(dir_name).join("state.local.toml"))
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
-/// Read `last_scheduled_trigger_at` from a routine's `scheduled.local.toml` sidecar under `base`,
-/// returning `None` when the sidecar is absent or unparsable (e.g. before the routine's schedule has
-/// ever fired). The daemon only reads this file; it is written by the routine's launch command at
-/// fire time.
-fn read_scheduled_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
-    let path = base.join(dir_name).join("scheduled.local.toml");
+/// Read the last Unix-timestamp line from an append-only trigger log (e.g. `scheduled.log` or
+/// `manual.log`), returning `None` when the file is absent or contains no parsable timestamp.
+fn read_last_log_timestamp(path: &std::path::Path) -> Option<u64> {
     let text = std::fs::read_to_string(path).ok()?;
-    toml::from_str::<ScheduledState>(&text)
-        .ok()?
-        .last_scheduled_trigger_at
+    text.lines()
+        .rev()
+        .find_map(|line| line.trim().parse::<u64>().ok())
+}
+
+/// Read `last_scheduled_trigger_at` from a routine's `scheduled.log` under `base`, returning
+/// `None` when the log is absent or empty (e.g. before the routine's schedule has ever fired).
+fn read_scheduled_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
+    read_last_log_timestamp(&base.join(dir_name).join("scheduled.log"))
+}
+
+/// Read `last_manual_trigger_at` from a routine's `manual.log` under `base`, returning `None`
+/// when the log is absent or empty.
+fn read_manual_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
+    read_last_log_timestamp(&base.join(dir_name).join("manual.log"))
+}
+
+/// Read a routine's raw prompt from its `prompts/prompt.pure.md` sidecar under `base`, falling
+/// back to the legacy `routine.toml` `prompt` field for a dir that has not been migrated yet.
+fn read_pure_prompt(base: &std::path::Path, dir_name: &str, legacy: Option<String>) -> String {
+    std::fs::read_to_string(base.join(dir_name).join("prompts").join("prompt.pure.md"))
+        .ok()
+        .or(legacy)
+        .unwrap_or_default()
 }
 
 /// Load a routine from `{routines_dir}/{dir_name}/routine.toml` (the production base directory).
@@ -116,30 +159,41 @@ fn read_scheduled_state(base: &std::path::Path, dir_name: &str) -> Option<u64> {
 /// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
 /// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
 ///
-/// `last_manual_trigger_at` is read from the `state.local.toml` sidecar, falling back to the legacy
-/// `routine.toml` field for routines written before the runtime state was split out.
+/// `snoozed_until` and `skip_runs` are read from the `state.local.toml` sidecar;
+/// `last_manual_trigger_at`/`last_scheduled_trigger_at` are read from the `manual.log`/
+/// `scheduled.log` append-only logs, falling back to legacy fields for routines written before
+/// those were split out.
 fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     load_routine_from_base(&routines_dir(), dir_name)
 }
 
-/// Load a routine from `{base}/{dir_name}/routine.toml`, reading the sidecars from the same `{base}`.
+/// Load a routine from `{base}/{dir_name}/routine.toml`, reading every sidecar (`state.local.toml`,
+/// `manual.log`, `scheduled.log`, `prompts/prompt.pure.md`) from the same `{base}`.
 ///
-/// This is the directory-coherent variant of [`load_routine_from_dir`]: every file (the tracked
-/// `routine.toml` and the `state.local.toml` / `scheduled.local.toml` sidecars) is resolved relative
-/// to `base` rather than the global [`routines_dir`]. The scheduler-written
+/// This is the directory-coherent variant of [`load_routine_from_dir`]: every file is resolved
+/// relative to `base` rather than the global [`routines_dir`], so a reload against a tempdir (tests)
+/// or the production directory both read a self-consistent set of files. The scheduler-written
 /// `last_scheduled_trigger_at` is read back here, so a reload through this path preserves it.
 fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Routine> {
     let toml = read_routine_toml(&base.join(dir_name).join("routine.toml"))?;
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
-    let last_manual_trigger_at = read_runtime_state(base, dir_name).or(toml.last_manual_trigger_at);
+    let runtime_state = read_runtime_state(base, dir_name);
+    // Prefer the log file; fall back to legacy state.local.toml field then routine.toml field for
+    // routines that predate the log-file migration.
+    let last_manual_trigger_at = read_manual_state(base, dir_name)
+        .or(runtime_state.last_manual_trigger_at)
+        .or(toml.last_manual_trigger_at);
     let last_scheduled_trigger_at = read_scheduled_state(base, dir_name);
+    let prompt = read_pure_prompt(base, dir_name, toml.prompt);
     Some(Routine {
         id,
         schedule: toml.schedule?,
         title,
         agent: toml.agent?,
-        prompt: toml.prompt.unwrap_or_default(),
+        model: toml.model,
+        prompt,
+        goal: toml.goal,
         repositories: toml.repositories,
         machines: toml.machines,
         enabled: toml.enabled.unwrap_or(true),
@@ -148,28 +202,82 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         updated_at: toml.updated_at.unwrap_or(0),
         last_manual_trigger_at,
         last_scheduled_trigger_at,
+        snoozed_until: runtime_state.snoozed_until,
+        skip_runs: runtime_state.skip_runs,
+        power_saving: runtime_state.power_saving,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         tags: toml.tags,
     })
 }
 
-/// Write `routine` to disk: `routine.toml` (tracked config), the composed `prompt.md`, the
-/// gitignored `state.local.toml` runtime sidecar, and `.gitignore` if absent.
+/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
+/// obsolete per-routine launch script. `prompts/prompt.compiled.local.md` needs no entry of its
+/// own — its `.local.` filename already matches `*.local.*` (issue #1046).
+const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh"];
+
+/// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
+/// appending whichever are missing and leaving the rest of the file (including user additions)
+/// untouched. Mirrors `cli_system::ensure_config_gitignore`'s reconciliation, scoped per routine.
+/// [`write_routine`] calls this unconditionally, so [`repersist_routines`] heals existing installs'
+/// `.gitignore` files on every daemon startup, not just newly created ones.
+fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
+    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let lines: Vec<&str> = existing.lines().collect();
+    let missing: Vec<&str> = ROUTINE_GITIGNORE_REQUIRED
+        .iter()
+        .copied()
+        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let mut content = existing;
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    for pattern in &missing {
+        content.push_str(pattern);
+        content.push('\n');
+    }
+    std::fs::write(path, &content)
+}
+
+/// Write `routine` to disk: `routine.toml` (tracked config), the `prompts/prompt.pure.md` (raw) and
+/// `prompts/prompt.compiled.local.md` (composed) sidecars, the gitignored `state.local.toml` runtime
+/// sidecar, and `.gitignore` (created or reconciled — see [`ensure_routine_gitignore`]).
 ///
 /// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
 /// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
 /// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
 /// version-controlled config file.
+///
+/// Two distinct titles can slugify to the same folder name (e.g. `"Update deps!"` and
+/// `"Update deps?"` both become `update-deps`). In-memory create/update handlers already reject
+/// that when both routines are loaded in the [`RoutineStore`], but a slug can also collide with a
+/// stale on-disk `routine.toml` that isn't (or is no longer) in memory — e.g. a directory left
+/// behind by a failed [`remove_routine_dir`]. Guard here too, as the last line of defense against
+/// silently overwriting another routine's files (#188): refuse to write when the target slug's
+/// `routine.toml` already exists and belongs to a different `id`.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
-    std::fs::create_dir_all(&dir)?;
-
-    let gitignore = routine_gitignore_path(&slug);
-    if !gitignore.exists() {
-        std::fs::write(&gitignore, "*.local.*\n*.log\nrun.sh\n")?;
+    if let Some(existing_id) =
+        read_routine_toml(&routine_toml_path(&slug)).and_then(|existing| existing.id)
+    {
+        if existing_id != routine.id {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "slug \"{slug}\" is already used on disk by routine {existing_id}; refusing to overwrite it"
+                ),
+            ));
+        }
     }
+    crate::utils::fs_perms::create_private_dir_all(&dir)?;
+    crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
+
+    ensure_routine_gitignore(&routine_gitignore_path(&slug))?;
 
     // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
     // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a
@@ -181,7 +289,10 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         schedule: Some(routine.schedule.clone()),
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
-        prompt: Some(routine.prompt.clone()),
+        model: routine.model.clone(),
+        // Never written; the raw prompt now lives in the `prompts/prompt.pure.md` sidecar below.
+        prompt: None,
+        goal: routine.goal.clone(),
         repositories: routine.repositories.clone(),
         machines: routine.machines.clone(),
         enabled: Some(routine.enabled),
@@ -202,36 +313,60 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
     // is implemented but not wired up — see issue #218.)
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
+    atomic_write(&routine_pure_prompt_path(&slug), routine.prompt.as_bytes())?;
     atomic_write(
-        &routine_prompt_path(&slug),
+        &routine_compiled_prompt_path(&slug),
         compose_prompt(routine).as_bytes(),
     )?;
-    write_runtime_state(&slug, routine.last_manual_trigger_at)?;
+    write_runtime_state(&slug, routine)?;
     Ok(())
 }
 
 /// Persist a routine's runtime state to its gitignored `state.local.toml` sidecar.
 ///
-/// Writes the sidecar (atomically) when `last_manual_trigger_at` is set, and removes any stale
-/// sidecar when it is `None`, so the on-disk state always mirrors the in-memory routine.
-fn write_runtime_state(slug: &str, last_manual_trigger_at: Option<u64>) -> std::io::Result<()> {
+/// Writes the sidecar (atomically) when any tracked field is set, and removes any stale sidecar
+/// when all are `None`, so the on-disk state always mirrors the in-memory routine.
+fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    match last_manual_trigger_at {
-        Some(_) => {
-            let state = RuntimeState {
-                last_manual_trigger_at,
-            };
-            let text = toml::to_string_pretty(&state)
-                .expect("RuntimeState serialization cannot fail for a struct with only an Option<u64> field");
-            atomic_write(&path, text.as_bytes())?;
+    if routine.snoozed_until.is_none() && routine.skip_runs.is_none() && !routine.power_saving {
+        if path.exists() {
+            std::fs::remove_file(&path)?;
         }
-        None => {
-            if path.exists() {
-                std::fs::remove_file(&path)?;
-            }
-        }
+        return Ok(());
     }
+    let state = RuntimeState {
+        // Not written (skip_serializing); stored only to satisfy the struct; reads migrate the
+        // legacy value from here into manual.log on first load.
+        last_manual_trigger_at: None,
+        snoozed_until: routine.snoozed_until,
+        skip_runs: routine.skip_runs,
+        power_saving: routine.power_saving,
+    };
+    let text = toml::to_string_pretty(&state)
+        .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
+    atomic_write(&path, text.as_bytes())?;
     Ok(())
+}
+
+/// Append a Unix-timestamp entry to a routine's `manual.log`, recording a manual trigger.
+///
+/// Called by `svc_trigger` immediately after stamping `last_manual_trigger_at` on the in-memory
+/// routine. Best-effort: a log-write failure is warned but never surfaced to the caller, so a
+/// disk hiccup can't block the trigger itself.
+pub fn append_manual_trigger_log(slug: &str, ts: u64) {
+    let path = routine_manual_log_path(slug);
+    let line = format!("{ts}\n");
+    if let Err(err) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()))
+    {
+        log::warn!(
+            "append_manual_trigger_log: failed to write {}: {err}",
+            path.display()
+        );
+    }
 }
 
 /// Remove the directory for a routine identified by its slug, doing nothing if it does not exist.
@@ -243,92 +378,15 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Rename any `prompt.txt` sidecar to `prompt.md` in every routine directory.
+/// Re-persist every loaded routine to disk, recreating `routine.toml`, `prompts/prompt.pure.md`,
+/// `prompts/prompt.compiled.local.md`, and `.gitignore` in its canonical slug directory.
 ///
-/// Call once at startup before syncing the crontab. Routines written by older daemon versions have
-/// `prompt.txt` on disk; the new `run.sh` references `prompt.md`, so the first cron trigger would
-/// fail the `cp` step if this migration has not run.
-pub fn migrate_prompt_files() {
-    migrate_prompt_files_from_dir(&routines_dir());
-}
-
-/// Inner variant of [`migrate_prompt_files`] that scans `dir` instead of [`routines_dir`].
-///
-/// Extracted so tests can drive the migration against a controlled scratch directory, including the
-/// `read_dir` error-return branch and the per-entry rename-failure branch.
-pub(crate) fn migrate_prompt_files_from_dir(dir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-            continue;
-        }
-        let old = entry.path().join("prompt.txt");
-        let new = entry.path().join("prompt.md");
-        if old.exists() && !new.exists() {
-            if let Err(err) = std::fs::rename(&old, &new) {
-                log::warn!("migrate_prompt_files: failed to rename {old:?}: {err}");
-            }
-        }
-    }
-}
-
-/// Migrate legacy UUID-named routine directories to the current slug-based layout.
-///
-/// Early daemon versions stored each routine under `{routines_dir}/{id}/` (the UUID). The current
-/// layout uses `{routines_dir}/{slugify(title)}/`. After an upgrade the legacy dir still holds the
-/// real `routine.toml` + `prompt.md`, while the crontab sync creates a *fresh* slug dir containing
-/// only `run.sh` — so the cron `cp prompt.md` reads an empty dir and the agent launches task-less.
-///
-/// For every on-disk routine whose directory name does not already equal its slug, this re-persists
-/// it into the slug dir (preserving any `run.sh` already there) and removes the stale legacy dir.
-/// Idempotent: routines already in their slug dir are skipped. Call once at startup before
-/// `load_store` so the in-memory store reflects the canonical layout.
-pub fn migrate_routine_dirs() {
-    migrate_routine_dirs_from_dir(&routines_dir());
-}
-
-/// Inner variant of [`migrate_routine_dirs`] that scans `dir` instead of [`routines_dir`].
-///
-/// Extracted so tests can drive the migration against a controlled scratch directory, exercising the
-/// `read_dir` error-return branch, the non-directory and unparsable-toml `continue` branches, and the
-/// `write_routine`/`remove_routine_dir` failure-log branches.
-pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-            continue;
-        }
-        let dir_name = entry.file_name().to_string_lossy().to_string();
-        let Some(routine) = load_routine_from_dir(&dir_name) else {
-            // A dir without a parsable routine.toml (e.g. a sync-created dir holding only run.sh)
-            // carries no routine to migrate; the routine it shadows is healed from its own dir.
-            continue;
-        };
-        let slug = slugify(&routine.title);
-        if slug == dir_name {
-            continue;
-        }
-        if let Err(err) = write_routine(&routine) {
-            log::warn!("migrate_routine_dirs: failed to write {slug:?}: {err}; leaving legacy dir");
-            continue;
-        }
-        if let Err(err) = remove_routine_dir(&dir_name) {
-            log::warn!("migrate_routine_dirs: failed to remove legacy dir {dir_name:?}: {err}");
-        }
-    }
-}
-
-/// Re-persist every loaded routine to disk, recreating `routine.toml`, `prompt.md`, and `.gitignore`
-/// in its canonical slug directory.
-///
-/// Nothing else rewrites the prompt sidecar on startup, so a slug dir missing its `prompt.md` (e.g.
-/// after the UUID→slug migration, or if the sidecar was lost) would fail the launch command's
-/// `cp prompt.md`. Re-persisting from the in-memory store heals those dirs (and removes any stale
-/// legacy `run.sh`). Idempotent; safe to call on every startup after [`load_store`].
+/// Nothing else rewrites the prompt sidecars on startup, so a slug dir missing its
+/// `prompts/prompt.compiled.local.md` (e.g. after the UUID→slug migration, or if the sidecar was
+/// lost) would fail the launch command's `cp prompt.compiled.local.md`. Re-persisting from the
+/// in-memory store
+/// heals those dirs (and removes any stale legacy `run.sh`). Idempotent; safe to call on every
+/// startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     for routine in &routines {
@@ -348,9 +406,10 @@ pub fn load_store() -> RoutineStore {
 
 /// Scan `dir` and load all valid routines into a new store.
 ///
-/// Every per-routine file (the tracked `routine.toml` and the `state.local.toml` /
-/// `scheduled.local.toml` sidecars) is read relative to `dir`, so the scan is fully coherent for any
-/// directory — not only the global [`routines_dir`].
+/// Every per-routine file (the tracked `routine.toml`, the `state.local.toml` sidecar, the
+/// `manual.log`/`scheduled.log` trigger logs, and the `prompts/prompt.pure.md` sidecar) is read
+/// relative to `dir`, so the scan is fully coherent for any directory — not only the global
+/// [`routines_dir`].
 pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
     Arc::new(Mutex::new(scan_routines(dir)))
 }
@@ -360,7 +419,7 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
 /// Disk is the source of truth: this lets a routine pulled or edited on disk under a running daemon
 /// (e.g. after a `git pull` of the config repo, including a changed `machines` list) become visible
 /// on the next read without a restart. Because the reload goes through [`load_routine_from_base`],
-/// each routine's gitignored `scheduled.local.toml` (`last_scheduled_trigger_at`) is read back and
+/// each routine's gitignored `scheduled.log` (`last_scheduled_trigger_at`) is read back and
 /// preserved rather than clobbered. Routines whose dir disappeared on disk drop out of the store.
 ///
 /// The whole map is replaced under a single lock so a concurrent reader never observes a partial
@@ -404,6 +463,51 @@ fn scan_routines(dir: &std::path::Path) -> HashMap<String, Routine> {
     routines
 }
 
+#[path = "routine_storage_migrations.rs"]
+mod routine_storage_migrations;
+pub use routine_storage_migrations::{
+    migrate_compiled_prompt_filename, migrate_prompt_files, migrate_prompts_to_subfolder,
+    migrate_routine_dirs, migrate_trigger_logs,
+};
+#[cfg(test)]
+pub(crate) use routine_storage_migrations::{
+    migrate_compiled_prompt_filename_from_dir, migrate_prompt_files_from_dir,
+    migrate_prompts_to_subfolder_from_dir, migrate_routine_dirs_from_dir,
+    migrate_trigger_logs_from_dir,
+};
+
 #[cfg(test)]
 #[path = "routine_storage_tests.rs"]
 mod routine_storage_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_prompt_sidecar_tests.rs"]
+mod routine_storage_prompt_sidecar_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_migration_tests.rs"]
+mod routine_storage_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_prompt_file_migration_tests.rs"]
+mod routine_storage_prompt_file_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_compiled_prompt_migration_tests.rs"]
+mod routine_storage_compiled_prompt_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_snooze_tests.rs"]
+mod routine_storage_snooze_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_trigger_log_migration_tests.rs"]
+mod routine_storage_trigger_log_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_sidecar_state_tests.rs"]
+mod routine_storage_sidecar_state_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_slug_collision_tests.rs"]
+mod routine_storage_slug_collision_tests;

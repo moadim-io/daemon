@@ -1,5 +1,9 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
+#[cfg(target_os = "macos")]
 use super::*;
 
 #[cfg(target_os = "macos")]
@@ -8,13 +12,23 @@ fn plist_carries_label_program_args_and_supervision_keys() {
     let plist = render_plist(
         std::path::Path::new("/opt/moadim/bin/moadim"),
         std::path::Path::new("/Users/u/.config/moadim/daemon.log"),
+        std::path::Path::new("/Users/u"),
     );
     assert!(plist.contains("<string>io.moadim.daemon</string>"));
     assert!(plist.contains("<string>/opt/moadim/bin/moadim</string>"));
     assert!(plist.contains("<string>--interactive</string>"));
     assert!(plist.contains("<key>RunAtLoad</key>"));
+    // KeepAlive is failure-only (a `{ SuccessfulExit = false }` dict, not unconditional `true`), so
+    // a clean `moadim stop` is not resurrected by launchd while a crash still restarts (#444).
     assert!(plist.contains("<key>KeepAlive</key>"));
+    assert!(plist.contains("<key>SuccessfulExit</key>"));
+    assert!(
+        !plist.contains("<key>KeepAlive</key>\n  <true/>"),
+        "KeepAlive must not be unconditional true"
+    );
     assert!(plist.contains("/Users/u/.config/moadim/daemon.log"));
+    assert!(plist.contains("<key>EnvironmentVariables</key>"));
+    assert!(plist.contains("/opt/homebrew/bin:/usr/local/bin:/Users/u/.cargo/bin"));
 }
 
 #[cfg(target_os = "macos")]
@@ -23,6 +37,7 @@ fn plist_escapes_xml_metacharacters_in_paths() {
     let plist = render_plist(
         std::path::Path::new("/tmp/a&b<c>"),
         std::path::Path::new("/tmp/log"),
+        std::path::Path::new("/tmp/home"),
     );
     assert!(plist.contains("/tmp/a&amp;b&lt;c&gt;"));
     assert!(!plist.contains("a&b<c>"));
@@ -76,22 +91,7 @@ fn plist_path_honors_home_override() {
     }
 }
 
-#[cfg(target_os = "linux")]
-#[test]
-fn unit_carries_exec_start_and_install_section() {
-    let unit = render_unit(std::path::Path::new("/opt/moadim/bin/moadim"));
-    assert!(unit.contains("ExecStart=/opt/moadim/bin/moadim --interactive"));
-    assert!(unit.contains("[Install]"));
-    assert!(unit.contains("WantedBy=default.target"));
-    assert!(unit.contains("Restart=always"));
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn unit_path_is_under_systemd_user() {
-    let path = unit_path().unwrap();
-    assert!(path.ends_with("systemd/user/moadim.service"));
-}
+// systemd unit + loginctl/linger coverage (Linux backend) lives in `mod_linux_tests.rs`.
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
@@ -161,7 +161,7 @@ fn write_plist_skips_dir_creation_when_paths_have_no_parent() {
     // path ("") skips create_dir_all for both the plist and the log. The trailing write then fails,
     // which is expected — only the no-parent branches need exercising.
     let no_parent = std::path::Path::new("");
-    assert!(write_plist(no_parent, no_parent, no_parent).is_err());
+    assert!(write_plist(no_parent, no_parent, no_parent, no_parent).is_err());
 }
 
 #[cfg(target_os = "macos")]
@@ -175,7 +175,13 @@ fn write_plist_errors_when_plist_dir_creation_blocked() {
     std::fs::write(base.join("LaunchAgents"), "block").unwrap();
     let plist = base.join("LaunchAgents/io.moadim.daemon.plist");
     let log = base.join("daemon.log");
-    assert!(write_plist(&plist, std::path::Path::new("/usr/local/bin/moadim"), &log).is_err());
+    assert!(write_plist(
+        &plist,
+        std::path::Path::new("/usr/local/bin/moadim"),
+        &log,
+        &base
+    )
+    .is_err());
     let _ = std::fs::remove_dir_all(&base);
 }
 
@@ -193,7 +199,13 @@ fn write_plist_errors_when_log_dir_creation_blocked() {
     let plist = launch_agents.join("io.moadim.daemon.plist");
     // Give a log path whose parent is the blocked non-directory.
     let log = log_parent.join("daemon.log");
-    assert!(write_plist(&plist, std::path::Path::new("/usr/local/bin/moadim"), &log).is_err());
+    assert!(write_plist(
+        &plist,
+        std::path::Path::new("/usr/local/bin/moadim"),
+        &log,
+        &base
+    )
+    .is_err());
     let _ = std::fs::remove_dir_all(&base);
 }
 

@@ -71,7 +71,7 @@ pub fn log_viewer(props: &LogViewerProps) -> Html {
     // Auto-tail: scroll the wrapper to its bottom whenever content arrives or changes.
     {
         let wrap_ref = wrap_ref.clone();
-        let content_len = props.content.as_ref().map(String::len).unwrap_or(0);
+        let content_len = props.content.as_ref().map_or(0, String::len);
         use_effect_with(content_len, move |_| {
             if let Some(el) = wrap_ref.cast::<Element>() {
                 el.set_scroll_top(el.scroll_height());
@@ -156,43 +156,71 @@ fn render_line(ln: usize, text: &str, query: &str) -> Html {
     }
 }
 
-/// Split `text` into `Html` with each case-insensitive occurrence of `query`
-/// wrapped in `<mark class="log-hl">`.  Returns plain text when `query` is blank.
+/// Split `text` into `(is_match, segment)` pairs, `true` for each case-insensitive occurrence of
+/// `query`, in original order; `false` segments fill the gaps. Blank `query` (after trimming)
+/// yields the whole text as a single non-matching segment.
 ///
-/// Note: byte-offset arithmetic is correct for ASCII log content (the primary use
-/// case).  Non-ASCII queries that change byte length when lowercased are guarded
-/// by the `end > text.len()` safety check.
-fn highlight(text: &str, query: &str) -> Html {
-    let needle = query.trim().to_lowercase();
+/// Every slice boundary comes from `text.char_indices()`, so it is always a valid char boundary in
+/// `text`. This matters because a naive approach — find the match in `text.to_lowercase()` and
+/// reapply *its* byte offsets to `text` — panics on input like `text = "ẞzz"`, `query = "zz"`:
+/// `ẞ` (U+1E9E, 3 bytes) lowercases to `ß` (U+00DF, 2 bytes), so the byte offset found in the
+/// lowercased string no longer lands on a char boundary in the original. Some chars also *expand*
+/// under `to_lowercase()` (Turkish `İ` → `i̇`, two chars), which a byte-length guard alone can't
+/// catch either. Instead, each char of `text` is projected to exactly one lowercase char (dropping
+/// any expansion beyond the first), keeping a 1:1 index correspondence between `chars` and `lower`
+/// so every match position maps back to an exact, valid byte span in `text`.
+#[must_use]
+fn highlight_segments<'a>(text: &'a str, query: &str) -> Vec<(bool, &'a str)> {
+    let needle: Vec<char> = query.trim().to_lowercase().chars().collect();
     if needle.is_empty() {
-        return html! { {text} };
+        return vec![(false, text)];
     }
-    let lower = text.to_lowercase();
-    let mut parts: Vec<Html> = Vec::new();
-    let mut start = 0usize;
-    while start <= text.len() {
-        match lower[start..].find(&needle) {
-            None => break,
-            Some(pos) => {
-                let abs = start + pos;
-                let end = abs + needle.len();
-                if end > text.len() {
-                    break;
-                }
-                if abs > start {
-                    let before = &text[start..abs];
-                    parts.push(html! { {before} });
-                }
-                let matched = &text[abs..end];
-                parts.push(html! { <mark class="log-hl">{matched}</mark> });
-                start = end;
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let lower: Vec<char> = chars
+        .iter()
+        .map(|&(_, c)| c.to_lowercase().next().unwrap_or(c))
+        .collect();
+
+    let mut segments = Vec::new();
+    let mut cursor = 0usize; // char index into `chars`/`lower`
+    let mut last_byte = 0usize; // byte offset in `text` already emitted
+    while cursor + needle.len() <= lower.len() {
+        if lower[cursor..cursor + needle.len()] == needle[..] {
+            let match_start = chars[cursor].0;
+            let match_end = chars
+                .get(cursor + needle.len())
+                .map_or(text.len(), |&(byte, _)| byte);
+            if match_start > last_byte {
+                segments.push((false, &text[last_byte..match_start]));
             }
+            segments.push((true, &text[match_start..match_end]));
+            last_byte = match_end;
+            cursor += needle.len();
+        } else {
+            cursor += 1;
         }
     }
-    if start < text.len() {
-        parts.push(html! { {&text[start..]} });
+    if last_byte < text.len() {
+        segments.push((false, &text[last_byte..]));
     }
-    html! { <>{for parts.into_iter()}</> }
+    segments
+}
+
+/// Render `text` as `Html`, wrapping each case-insensitive occurrence of `query` in
+/// `<mark class="log-hl">`. Returns plain text when `query` is blank. See
+/// [`highlight_segments`] for the (host-testable) matching logic.
+fn highlight(text: &str, query: &str) -> Html {
+    html! {
+        <>
+            { for highlight_segments(text, query).into_iter().map(|(is_match, seg)| {
+                if is_match {
+                    html! { <mark class="log-hl">{seg}</mark> }
+                } else {
+                    html! { {seg} }
+                }
+            }) }
+        </>
+    }
 }
 
 #[cfg(test)]

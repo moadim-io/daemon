@@ -13,6 +13,17 @@ const HORIZON_DAYS: i64 = 30;
 const MAX_EVENTS_PER_ROUTINE: usize = 100;
 /// Product identifier advertised in the `PRODID` property.
 const PRODID: &str = "-//moadim//routines//EN";
+/// Suggested polling interval advertised to subscribers, as an iCalendar DURATION.
+///
+/// Routine schedules can change at any time, but the feed itself is regenerated on
+/// every request, so the only freshness limit is how often a subscriber re-fetches.
+/// Without a hint, clients fall back to their own default (often 12–24h), making
+/// routine edits lag for hours. One hour balances freshness against feed load.
+const REFRESH_DURATION: &str = "PT1H";
+/// Duration assigned to each fire so it renders as a visible block rather than a
+/// zero-length instant. RFC 5545 requires a `VEVENT` to carry either `DTEND` or
+/// `DURATION`; a routine fire has no intrinsic end, so a short fixed window is used.
+const EVENT_DURATION: &str = "PT15M";
 /// Calendar display name (`X-WR-CALNAME`) for the unfiltered, all-routines feed.
 const DEFAULT_CAL_NAME: &str = "Moadim Routines";
 
@@ -102,8 +113,11 @@ fn fold_line(line: &str) -> String {
 /// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
 /// `(now, now + HORIZON_DAYS]`, capped at [`MAX_EVENTS_PER_ROUTINE`]. Fire times are evaluated in
 /// the host's local timezone (matching crontab semantics) and emitted as UTC instants so the feed
-/// needs no embedded `VTIMEZONE`. Disabled routines and unparseable schedules (e.g. `@reboot`)
-/// contribute nothing. The calendar is named [`DEFAULT_CAL_NAME`]; for a single-routine feed see
+/// needs no embedded `VTIMEZONE`. Disabled, power-saving, and unparseable-schedule (e.g. `@reboot`)
+/// routines contribute nothing. A snoozed routine (`snoozed_until` in the future, or `skip_runs`
+/// above zero) has its would-be-skipped fires filtered out too, mirroring the skip that
+/// `svc_trigger_scheduled` actually performs at fire time, so the feed never advertises a run that
+/// will silently no-op. The calendar is named [`DEFAULT_CAL_NAME`]; for a single-routine feed see
 /// [`build_ical_named`].
 ///
 /// When a routine fires more often than the cap allows within the horizon, the count cap is hit
@@ -139,10 +153,15 @@ fn build_ical_core(
         format!("PRODID:{PRODID}"),
         "CALSCALE:GREGORIAN".to_string(),
         format!("X-WR-CALNAME:{}", escape_text(cal_name)),
+        // RFC 7986 §5.7 standard hint plus the widely-honored Microsoft/Google
+        // X-PUBLISHED-TTL fallback, so subscribers poll often enough to pick up
+        // routine changes promptly instead of using their slow built-in default.
+        format!("REFRESH-INTERVAL;VALUE=DURATION:{REFRESH_DURATION}"),
+        format!("X-PUBLISHED-TTL:{REFRESH_DURATION}"),
     ];
     let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {
-        if !routine.enabled || globally_locked {
+        if !routine.enabled || globally_locked || routine.power_saving {
             continue;
         }
         let Ok(cron) = routine.schedule.parse::<Cron>() else {
@@ -157,7 +176,18 @@ fn build_ical_core(
         // Fire times within the horizon, in order. Kept as a stateful iterator so that after the
         // per-routine cap is spent we can peek whether more fires remain inside the horizon and, if
         // so, surface the truncation rather than letting the feed silently stop short of 30 days.
-        let mut fires = cron.iter_after(now).take_while(|dt| *dt <= horizon);
+        //
+        // `snoozed_until`/`skip_runs` are mutually exclusive (enforced by `svc_snooze`): a fire is
+        // dropped either because it falls before the snooze deadline, or because it's among the
+        // next `skip_runs` fires that `svc_trigger_scheduled` will skip and decrement past. Both
+        // mirror the exact skip performed there so the feed matches what will actually run.
+        let snoozed_until = routine.snoozed_until;
+        let skip_runs = routine.skip_runs.unwrap_or(0) as usize;
+        let mut fires = cron
+            .iter_after(now)
+            .take_while(|dt| *dt <= horizon)
+            .filter(move |dt| snoozed_until.is_none_or(|until| dt.timestamp() as u64 >= until))
+            .skip(skip_runs);
         let mut emitted = 0usize;
         for fire in fires.by_ref().take(max_events) {
             let stamp = format_utc(fire.with_timezone(&Utc));
@@ -165,12 +195,17 @@ fn build_ical_core(
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
             lines.push(format!("DTSTAMP:{dtstamp}"));
             lines.push(format!("DTSTART:{stamp}"));
+            lines.push(format!("DURATION:{EVENT_DURATION}"));
+            // The feed is purely informational ("when will my loops fire?"), so a
+            // fire must not consume the subscriber's free/busy time. RFC 5545
+            // §3.8.2.7 defaults `TRANSP` to `OPAQUE` (counts as busy); mark each
+            // event `TRANSPARENT` so it never blocks availability. The legacy
+            // `X-MICROSOFT-CDO-BUSYSTATUS:FREE` carries the same intent to Outlook
+            // clients that honor the Microsoft property instead of `TRANSP`.
+            lines.push("TRANSP:TRANSPARENT".to_string());
+            lines.push("X-MICROSOFT-CDO-BUSYSTATUS:FREE".to_string());
             lines.push(format!("SUMMARY:{summary}"));
             lines.push(format!("DESCRIPTION:{description}"));
-            // A fire time is a momentary trigger, not a block of busy time. Mark
-            // the event TRANSPARENT (RFC 5545 §3.8.2.7) so subscribing to the feed
-            // does not show the operator as BUSY at every scheduled run.
-            lines.push("TRANSP:TRANSPARENT".to_string());
             lines.push("END:VEVENT".to_string());
             emitted += 1;
         }
@@ -190,6 +225,14 @@ fn build_ical_core(
                 lines.push(format!("UID:{}-truncated@moadim", routine.id));
                 lines.push(format!("DTSTAMP:{dtstamp}"));
                 lines.push(format!("DTSTART:{stamp}"));
+                // Mirror the regular fire VEVENT's DURATION/TRANSP/BUSYSTATUS (see the comments
+                // on EVENT_DURATION and on the regular-fire VEVENT above): without a DURATION
+                // this marker is a zero-length instant, which most calendar UIs render as an
+                // invisible sliver — defeating its one job of telling subscribers the feed was
+                // truncated.
+                lines.push(format!("DURATION:{EVENT_DURATION}"));
+                lines.push("TRANSP:TRANSPARENT".to_string());
+                lines.push("X-MICROSOFT-CDO-BUSYSTATUS:FREE".to_string());
                 lines.push(format!("SUMMARY:⚠ {summary} (schedule truncated)"));
                 lines.push(format!("DESCRIPTION:{note}"));
                 lines.push("END:VEVENT".to_string());
@@ -236,13 +279,12 @@ pub fn svc_ical(store: &RoutineStore, dir: &std::path::Path) -> String {
 /// rather than the generic all-routines name. An unknown id yields a well-formed empty
 /// calendar (named [`DEFAULT_CAL_NAME`]) rather than an error, mirroring how a disabled
 /// routine already contributes no events.
+///
+/// Refreshes the store from `dir` first so the feed reflects a routine pulled or edited on disk
+/// under a running daemon without a restart (disk is the source of truth).
 pub fn svc_ical_routine(store: &RoutineStore, dir: &std::path::Path, id: &str) -> String {
     crate::routine_storage::reload_store_from_dir(store, dir);
-    let routine = store
-        .lock()
-        .expect("routine store lock poisoned")
-        .get(id)
-        .cloned();
+    let routine = store.lock_recover().get(id).cloned();
     match routine {
         Some(routine) => {
             let cal_name = routine.title.clone();

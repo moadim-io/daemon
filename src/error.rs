@@ -20,16 +20,19 @@ pub enum AppError {
     Conflict(String),
     /// 423 Locked — a global lock sentinel is preventing the operation.
     Locked(String),
+    /// 403 Forbidden — a request failed the `Host`/`Origin` allowlist check (issue #266).
+    Forbidden(String),
 }
 
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AppError::Internal => write!(f, "internal server error"),
-            AppError::BadRequest(msg) => write!(f, "bad request: {msg}"),
-            AppError::NotFound => write!(f, "not found"),
-            AppError::Conflict(msg) => write!(f, "conflict: {msg}"),
-            AppError::Locked(msg) => write!(f, "locked: {msg}"),
+            Self::Internal => write!(f, "internal server error"),
+            Self::BadRequest(msg) => write!(f, "bad request: {msg}"),
+            Self::NotFound => write!(f, "not found"),
+            Self::Conflict(msg) => write!(f, "conflict: {msg}"),
+            Self::Locked(msg) => write!(f, "locked: {msg}"),
+            Self::Forbidden(msg) => write!(f, "forbidden: {msg}"),
         }
     }
 }
@@ -37,11 +40,12 @@ impl fmt::Display for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match &self {
-            AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            AppError::NotFound => StatusCode::NOT_FOUND,
-            AppError::Conflict(_) => StatusCode::CONFLICT,
-            AppError::Locked(_) => StatusCode::LOCKED,
+            Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::Locked(_) => StatusCode::LOCKED,
+            Self::Forbidden(_) => StatusCode::FORBIDDEN,
         };
         (
             status,

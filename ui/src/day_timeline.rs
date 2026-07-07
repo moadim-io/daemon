@@ -1,8 +1,8 @@
 //! Shared "day" calendar view: a single day's fire times laid out on a scrollable
-//! 24-hour timeline. Used by both the routines and cron-jobs pages.
+//! 24-hour timeline. Used by the routines page.
 //!
-//! The caller maps its own items (routines, cron jobs) to [`TimelineItem`]s — a label
-//! plus a cron schedule — and this component computes each item's fire times for the
+//! The caller maps its own items (routines) to [`TimelineItem`]s — a label plus a
+//! cron schedule — and this component computes each item's fire times for the
 //! selected day and buckets them into hour rows.
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Timelike};
@@ -33,6 +33,19 @@ pub struct TimelineItem {
     pub id: Option<String>,
     pub label: String,
     pub schedule: String,
+    /// True when this routine is currently snoozed; the chip is rendered muted.
+    pub snoozed: bool,
+    /// Open flag count; shown as a badge when non-zero.
+    pub flag_count: usize,
+}
+
+/// One resolved fire event inside a single hour bucket.
+struct BucketEntry {
+    time: NaiveTime,
+    label: String,
+    id: Option<String>,
+    snoozed: bool,
+    flag_count: usize,
 }
 
 /// All fire times for `schedule` that fall on `day`, in chronological order.
@@ -130,17 +143,22 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
     };
 
     // Bucket every item's fire times into the hour rows.
-    // Each entry is (fire time, display label, optional entity id for click handling).
-    let mut buckets: Vec<Vec<(NaiveTime, String, Option<String>)>> = vec![Vec::new(); 24];
+    let mut buckets: Vec<Vec<BucketEntry>> = (0..24).map(|_| Vec::new()).collect();
     let mut total = 0usize;
     for it in props.items.iter() {
         for t in fire_times(&it.schedule, day) {
-            buckets[t.hour() as usize].push((t, it.label.clone(), it.id.clone()));
+            buckets[t.hour() as usize].push(BucketEntry {
+                time: t,
+                label: it.label.clone(),
+                id: it.id.clone(),
+                snoozed: it.snoozed,
+                flag_count: it.flag_count,
+            });
             total += 1;
         }
     }
     for b in buckets.iter_mut() {
-        b.sort_by_key(|(t, _, _)| *t);
+        b.sort_by_key(|e| e.time);
     }
 
     let date_label = format!(
@@ -195,23 +213,30 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
                         <div class={cls} ref={row_ref}>
                             {label}
                             <div class="day-hour-slot">
-                                { for slot.iter().map(|(t, lbl, id)| {
+                                { for slot.iter().map(|e| {
+                                    let t = e.time;
                                     let frac = (t.minute() as f32 + t.second() as f32 / 60.0) / 60.0;
                                     let style = if detailed {
                                         Some(format!("top:{:.3}%", frac * 100.0))
                                     } else {
                                         None
                                     };
-                                    let on_chip = props.on_click.as_ref().zip(id.as_ref()).map(|(cb, item_id)| {
+                                    let on_chip = props.on_click.as_ref().zip(e.id.as_ref()).map(|(cb, item_id)| {
                                         let cb = cb.clone();
                                         let item_id = item_id.clone();
                                         Callback::from(move |_: MouseEvent| cb.emit(item_id.clone()))
                                     });
-                                    let chip_cls = if on_chip.is_some() { "day-chip clickable" } else { "day-chip" };
+                                    let mut chip_cls = String::from("day-chip");
+                                    if on_chip.is_some() { chip_cls.push_str(" clickable"); }
+                                    if e.snoozed { chip_cls.push_str(" snoozed"); }
+                                    let flag_count = e.flag_count;
                                     html! {
-                                        <div class={chip_cls} style={style} title={lbl.clone()} onclick={on_chip}>
+                                        <div class={chip_cls} style={style} title={e.label.clone()} onclick={on_chip}>
                                             <span class="day-chip-time">{format!("{:02}:{:02}", t.hour(), t.minute())}</span>
-                                            <span class="day-chip-label">{lbl.clone()}</span>
+                                            <span class="day-chip-label">{e.label.clone()}</span>
+                                            if flag_count > 0 {
+                                                <span class="day-chip-flag">{format!("⚑{flag_count}")}</span>
+                                            }
                                         </div>
                                     }
                                 }) }

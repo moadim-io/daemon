@@ -1,56 +1,9 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::*;
-
-#[test]
-fn jobs_dir_contains_moadim_and_ends_with_jobs() {
-    let path = jobs_dir().to_string_lossy().into_owned();
-    assert!(path.contains("moadim"), "expected 'moadim' in {path}");
-    assert!(
-        path.ends_with("jobs"),
-        "expected path to end with 'jobs': {path}"
-    );
-}
-
-#[test]
-fn job_dir_appends_id() {
-    let path = job_dir("my-id").to_string_lossy().into_owned();
-    assert!(
-        path.ends_with("my-id"),
-        "expected path to end with 'my-id': {path}"
-    );
-}
-
-#[test]
-fn job_toml_path_filename() {
-    let path = job_toml_path("abc");
-    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "job.toml");
-    assert!(path.to_string_lossy().contains("abc"));
-}
-
-#[test]
-fn job_local_toml_path_filename() {
-    let path = job_local_toml_path("abc");
-    assert_eq!(
-        path.file_name().unwrap().to_str().unwrap(),
-        "job.local.toml"
-    );
-    assert!(path.to_string_lossy().contains("abc"));
-}
-
-#[test]
-fn job_gitignore_path_filename() {
-    let path = job_gitignore_path("abc");
-    assert_eq!(path.file_name().unwrap().to_str().unwrap(), ".gitignore");
-    assert!(path.to_string_lossy().contains("abc"));
-}
-
-#[test]
-fn job_dir_is_child_of_jobs_dir() {
-    let base = jobs_dir();
-    let child = job_dir("xyz");
-    assert_eq!(child.parent().unwrap(), base);
-}
 
 #[test]
 
@@ -71,23 +24,6 @@ fn machine_config_path_from_home_none_falls_back_to_dot() {
 }
 
 #[test]
-fn handlers_dir_contains_moadim_and_ends_with_handlers() {
-    let path = handlers_dir().to_string_lossy().into_owned();
-    assert!(path.contains("moadim"), "expected 'moadim' in {path}");
-    assert!(
-        path.ends_with("handlers"),
-        "expected path to end with 'handlers': {path}"
-    );
-}
-
-#[test]
-fn job_log_path_filename() {
-    let path = super::job_log_path("abc");
-    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "job.local.log");
-    assert!(path.to_string_lossy().contains("abc"));
-}
-
-#[test]
 fn routines_dir_ends_with_routines() {
     let path = routines_dir().to_string_lossy().into_owned();
     assert!(path.contains("moadim"), "expected 'moadim' in {path}");
@@ -103,6 +39,13 @@ fn routine_dir_is_child_of_routines_dir() {
 }
 
 #[test]
+fn routines_readme_path_in_routines_dir() {
+    let path = routines_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), routines_dir());
+}
+
+#[test]
 fn routine_toml_path_filename() {
     let path = routine_toml_path("abc");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "routine.toml");
@@ -110,10 +53,30 @@ fn routine_toml_path_filename() {
 }
 
 #[test]
-fn routine_prompt_path_filename() {
-    let path = routine_prompt_path("abc");
-    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "prompt.md");
-    assert!(path.to_string_lossy().contains("abc"));
+fn routine_prompts_dir_filename() {
+    let path = routine_prompts_dir("abc");
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "prompts");
+    assert_eq!(path.parent().unwrap(), routine_dir("abc"));
+}
+
+#[test]
+fn routine_pure_prompt_path_filename() {
+    let path = routine_pure_prompt_path("abc");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "prompt.pure.md"
+    );
+    assert_eq!(path.parent().unwrap(), routine_prompts_dir("abc"));
+}
+
+#[test]
+fn routine_compiled_prompt_path_filename() {
+    let path = routine_compiled_prompt_path("abc");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "prompt.compiled.local.md"
+    );
+    assert_eq!(path.parent().unwrap(), routine_prompts_dir("abc"));
 }
 
 #[test]
@@ -134,6 +97,13 @@ fn routine_state_path_filename() {
 }
 
 #[test]
+fn routine_flags_dir_is_child_of_routine_dir() {
+    let path = routine_flags_dir("abc");
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "flags");
+    assert_eq!(path.parent().unwrap(), routine_dir("abc"));
+}
+
+#[test]
 fn agents_dir_ends_with_agents() {
     let path = agents_dir().to_string_lossy().into_owned();
     assert!(
@@ -146,6 +116,13 @@ fn agents_dir_ends_with_agents() {
 fn agent_toml_path_appends_name_and_extension() {
     let path = agent_toml_path("claude");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "claude.toml");
+}
+
+#[test]
+fn agents_readme_path_in_agents_dir() {
+    let path = agents_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
+    assert_eq!(path.parent().unwrap(), agents_dir());
 }
 
 #[test]
@@ -171,6 +148,13 @@ fn workbenches_dir_under_moadim_home() {
 fn config_gitignore_path_in_config_dir() {
     let path = config_gitignore_path();
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), ".gitignore");
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
+fn config_readme_path_in_config_dir() {
+    let path = config_readme_path();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
     assert_eq!(path.parent().unwrap(), config_dir());
 }
 
@@ -250,4 +234,25 @@ fn config_root_from_none_home_falls_back_to_dot() {
 fn config_dir_nests_moadim_under_config_root() {
     assert!(config_dir().ends_with("moadim"));
     assert_eq!(config_dir().file_name().unwrap(), "moadim");
+}
+
+#[test]
+fn claude_json_path_is_dot_claude_json_under_home() {
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", "/home/u");
+    }
+
+    let path = claude_json_path();
+
+    // SAFETY: single-threaded harness; restore the saved override.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+
+    assert_eq!(path, Some(std::path::PathBuf::from("/home/u/.claude.json")));
 }

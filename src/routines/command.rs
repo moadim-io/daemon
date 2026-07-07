@@ -50,7 +50,7 @@ pub(crate) fn tmux_session_prefix(slug: &str) -> String {
     format!("{TMUX_SESSION_PREFIX}{slug}-")
 }
 
-/// Compose the `prompt.compiled.md` body: a repositories-as-context preamble, an optional `## Goal`
+/// Compose the `prompt.compiled.local.md` body: a repositories-as-context preamble, an optional `## Goal`
 /// section, the prompt, and — when the routine has any — an "Open flags" section listing
 /// gaps/bugs/edge cases the agent raised on a previous run (see [`super::flags`]) that no one has
 /// resolved yet.

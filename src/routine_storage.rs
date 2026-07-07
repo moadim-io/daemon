@@ -1,5 +1,5 @@
 //! TOML-backed persistence for routines, plus the `prompts/prompt.pure.md` (raw) and
-//! `prompts/prompt.compiled.md` (composed) sidecar files.
+//! `prompts/prompt.compiled.local.md` (composed) sidecar files.
 
 use crate::utils::lock::LockRecover;
 use std::collections::HashMap;
@@ -195,11 +195,10 @@ fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     })
 }
 
-/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, the
-/// obsolete per-routine launch script, and `prompts/prompt.compiled.md` — the composed prompt is
-/// fully derived from `prompts/prompt.pure.md` + `routine.toml` and rewritten on every
-/// [`write_routine`] call, so (unlike `prompt.pure.md`) it should never be tracked (issue #1046).
-const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh", "prompt.compiled.md"];
+/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
+/// obsolete per-routine launch script. `prompts/prompt.compiled.local.md` needs no entry of its
+/// own — its `.local.` filename already matches `*.local.*` (issue #1046).
+const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh"];
 
 /// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
 /// appending whichever are missing and leaving the rest of the file (including user additions)
@@ -229,7 +228,7 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 /// Write `routine` to disk: `routine.toml` (tracked config), the `prompts/prompt.pure.md` (raw) and
-/// `prompts/prompt.compiled.md` (composed) sidecars, the gitignored `state.local.toml` runtime
+/// `prompts/prompt.compiled.local.md` (composed) sidecars, the gitignored `state.local.toml` runtime
 /// sidecar, and `.gitignore` (created or reconciled — see [`ensure_routine_gitignore`]).
 ///
 /// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
@@ -344,11 +343,12 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 }
 
 /// Re-persist every loaded routine to disk, recreating `routine.toml`, `prompts/prompt.pure.md`,
-/// `prompts/prompt.compiled.md`, and `.gitignore` in its canonical slug directory.
+/// `prompts/prompt.compiled.local.md`, and `.gitignore` in its canonical slug directory.
 ///
 /// Nothing else rewrites the prompt sidecars on startup, so a slug dir missing its
-/// `prompts/prompt.compiled.md` (e.g. after the UUID→slug migration, or if the sidecar was lost)
-/// would fail the launch command's `cp prompt.compiled.md`. Re-persisting from the in-memory store
+/// `prompts/prompt.compiled.local.md` (e.g. after the UUID→slug migration, or if the sidecar was
+/// lost) would fail the launch command's `cp prompt.compiled.local.md`. Re-persisting from the
+/// in-memory store
 /// heals those dirs (and removes any stale legacy `run.sh`). Idempotent; safe to call on every
 /// startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
@@ -401,12 +401,14 @@ pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
 #[path = "routine_storage_migrations.rs"]
 mod routine_storage_migrations;
 pub use routine_storage_migrations::{
-    migrate_prompt_files, migrate_prompts_to_subfolder, migrate_routine_dirs, migrate_trigger_logs,
+    migrate_compiled_prompt_filename, migrate_prompt_files, migrate_prompts_to_subfolder,
+    migrate_routine_dirs, migrate_trigger_logs,
 };
 #[cfg(test)]
 pub(crate) use routine_storage_migrations::{
-    migrate_prompt_files_from_dir, migrate_prompts_to_subfolder_from_dir,
-    migrate_routine_dirs_from_dir, migrate_trigger_logs_from_dir,
+    migrate_compiled_prompt_filename_from_dir, migrate_prompt_files_from_dir,
+    migrate_prompts_to_subfolder_from_dir, migrate_routine_dirs_from_dir,
+    migrate_trigger_logs_from_dir,
 };
 
 #[cfg(test)]
@@ -424,6 +426,10 @@ mod routine_storage_migration_tests;
 #[cfg(test)]
 #[path = "routine_storage_prompt_file_migration_tests.rs"]
 mod routine_storage_prompt_file_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_compiled_prompt_migration_tests.rs"]
+mod routine_storage_compiled_prompt_migration_tests;
 
 #[cfg(test)]
 #[path = "routine_storage_snooze_tests.rs"]

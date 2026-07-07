@@ -74,7 +74,7 @@ fn routine_compiled_prompt_path_filename() {
     let path = routine_compiled_prompt_path("abc");
     assert_eq!(
         path.file_name().unwrap().to_str().unwrap(),
-        "prompt.compiled.md"
+        "prompt.compiled.local.md"
     );
     assert_eq!(path.parent().unwrap(), routine_prompts_dir("abc"));
 }

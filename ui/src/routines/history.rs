@@ -158,8 +158,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
         let duration = run.finished_at.map(|f| fmt_run_duration(run.started_at, f));
         let exit_code = run
             .exit_code
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "—".to_string());
+            .map_or_else(|| "—".to_string(), |c| c.to_string());
         let retention = run
             .retention_expires_at
             .map(|expires_at| fmt_retention(now_secs, expires_at));

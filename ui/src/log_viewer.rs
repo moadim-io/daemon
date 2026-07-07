@@ -71,7 +71,7 @@ pub fn log_viewer(props: &LogViewerProps) -> Html {
     // Auto-tail: scroll the wrapper to its bottom whenever content arrives or changes.
     {
         let wrap_ref = wrap_ref.clone();
-        let content_len = props.content.as_ref().map(String::len).unwrap_or(0);
+        let content_len = props.content.as_ref().map_or(0, String::len);
         use_effect_with(content_len, move |_| {
             if let Some(el) = wrap_ref.cast::<Element>() {
                 el.set_scroll_top(el.scroll_height());

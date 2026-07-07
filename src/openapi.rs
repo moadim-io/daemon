@@ -22,6 +22,7 @@
         crate::routines::list_agents,
         crate::routines::create,
         crate::routines::get,
+        crate::routines::get_prompt_preview,
         crate::routines::replace,
         crate::routines::update,
         crate::routines::delete,

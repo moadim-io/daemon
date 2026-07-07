@@ -12,7 +12,7 @@ use crate::routines::cleanup::{
     tmux_session_prefix_alive,
 };
 use crate::routines::command::{
-    build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix,
+    build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix, TriggerSource,
     TMUX_SESSION_PREFIX,
 };
 use crate::routines::model::{
@@ -47,7 +47,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
     append_manual_trigger_log(&crate::routines::slugify(&routine.title), ts);
-    spawn_routine_command(&routine);
+    spawn_routine_command(&routine, TriggerSource::Manual);
     Ok(routine)
 }
 
@@ -91,7 +91,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
         let routine = routine.clone();
         drop(lock);
         write_routine(&routine).map_err(|_| AppError::Internal)?;
-        spawn_routine_command(&routine);
+        spawn_routine_command(&routine, TriggerSource::Scheduled);
         return Ok(routine);
     }
     if let Some(runs) = routine.skip_runs {
@@ -109,7 +109,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
 
     let routine = routine.clone();
     drop(lock);
-    spawn_routine_command(&routine);
+    spawn_routine_command(&routine, TriggerSource::Scheduled);
     Ok(routine)
 }
 
@@ -190,8 +190,10 @@ pub fn svc_set_power_saving(
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
-/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths.
-fn spawn_routine_command(routine: &Routine) {
+/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths, which pass `source`
+/// through to [`build_routine_command`] so only a genuine scheduled fire appends to
+/// `scheduled.log` — a manual "run now" must never masquerade as one (#478).
+fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
             // Guard against the silent `execve(E2BIG)` no-op an oversized `{prompt}` argument
@@ -246,7 +248,7 @@ fn spawn_routine_command(routine: &Routine) {
                 );
                 return;
             }
-            let cmd = build_routine_command(routine, &agent);
+            let cmd = build_routine_command(routine, &agent, source);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a
             // manual trigger sources the user's `~/.profile` and the agent gets the same
             // environment whether fired by cron or on demand.

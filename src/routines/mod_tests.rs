@@ -180,7 +180,7 @@ fn build_routine_command_contains_expected_pieces() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
     // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
     assert!(cmd.contains("export PATH="));
@@ -212,7 +212,7 @@ fn build_routine_command_substitutes_arg_placeholders() {
         instructions_file: "AGENTS.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     // The invocation is quoted as one `tmux new-session` shell-command argument together with
     // the exit-code capture appended to it (see `build_routine_command_records_exit_code_after_invocation`
     // in `command_tests.rs`), so the substituted invocation no longer stands alone as its own
@@ -229,7 +229,7 @@ fn build_routine_command_writes_claude_md() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     // moadim-managed section written via printf %b
     assert!(cmd.contains("CLAUDE.md"), "CLAUDE.md write missing");
     assert!(
@@ -275,7 +275,7 @@ fn build_routine_command_writes_disclosure_to_codex_instructions_file() {
         instructions_file: "AGENTS.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     // The disclosure is written to AGENTS.md, the file Codex reads...
     assert!(
         cmd.contains(r#"> "$WB/AGENTS.md""#),
@@ -307,7 +307,7 @@ fn build_routine_command_aborts_when_prompt_missing() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     // The cp of the routine's source prompt must fail-fast: a missing source aborts the launch
     // instead of starting the agent with an empty "$(cat prompt.md)" argument (a task-less session).
     let cp_at = cmd.find("cp ").expect("cp in cmd");
@@ -333,7 +333,7 @@ fn build_routine_command_inserts_setup_before_launch() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: Some("seed-trust \"$WB\"".to_string()),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     let setup_at = cmd.find("seed-trust").expect("setup present");
     let launch_at = cmd.find("tmux new-session").expect("launch present");
     // setup runs before the agent launches
@@ -355,7 +355,7 @@ fn build_routine_command_redirects_launch_wrapper_to_launch_log() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: Some("seed-trust \"$WB\"".to_string()),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(
         cmd.contains(r#"} >> "$WB/launch.log" 2>&1"#),
         "expected the setup/launch wrapper to redirect into launch.log in: {cmd}"

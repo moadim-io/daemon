@@ -15,6 +15,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 The build now generates `schemas/routine.schema.json` and `schemas/routine.example.toml` (a JSON Schema + annotated example for the on-disk `routine.toml`), giving routine configs editor validation/completion. The schema documents every field the daemon writes — including the legacy, read-only `last_(manual_)trigger_at` keys now kept in the `state.local.toml` sidecar — and is regenerated on every build from the `RoutineToml` shape (#388).
 
+### Fixed
+
+A manual ("run now") routine trigger no longer overwrites `last_scheduled_trigger_at`. The launch script it shares with the scheduled path unconditionally appended the fire time to the routine's `scheduled.log`, so every manual run masqueraded as a scheduled fire and clobbered the real last-scheduled time. `build_routine_command` now takes a `TriggerSource` (`Scheduled`/`Manual`); only a genuine scheduled fire appends to `scheduled.log`, while a manual trigger launches the agent but leaves it untouched, staying tracked solely via `last_manual_trigger_at` (#478).
+
 ## [0.26.0] - 2026-07-07
 
 ### Fixed

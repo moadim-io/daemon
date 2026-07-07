@@ -18,9 +18,9 @@ use super::model::{
     RoutineListQuery, RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_list, svc_list_all_runs,
-    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary,
-    svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview,
+    svc_list, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag,
+    svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -162,6 +162,19 @@ pub async fn get(
     Path(id): Path<String>,
 ) -> Result<Json<RoutineResponse>, AppError> {
     Ok(Json(svc_get(&store, &id)?))
+}
+
+/// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed
+/// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include
+/// the routine-origin disclosure written separately to `CLAUDE.md` at trigger time.
+#[utoipa::path(get, path = "/routines/{id}/prompt-preview",
+    params(("id" = String, Path, description = "Routine UUID")),
+    responses((status = 200, description = "Composed prompt body as plain text"), (status = 404, description = "Not found")))]
+pub async fn get_prompt_preview(
+    State(store): State<RoutineStore>,
+    Path(id): Path<String>,
+) -> Result<String, AppError> {
+    svc_get_prompt_preview(&store, &id)
 }
 
 /// `PATCH /routines/{id}` — partially update a routine.

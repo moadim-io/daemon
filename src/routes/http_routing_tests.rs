@@ -110,6 +110,27 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // prompt-preview (issue #391): the composed prompt body, computed with no workbench or agent
+    // launch.
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/routines/{id}/prompt-preview"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let preview = String::from_utf8(bytes.to_vec()).unwrap();
+    // The routine's own prompt body and its declared repository both flow into the preview
+    // verbatim (see `compose_prompt`), same as they would in a real run's `prompt.md`.
+    assert!(preview.contains("- r (branch main)\n"));
+    assert!(preview.trim_end().ends_with('p'));
+
     // PATCH
     let resp = build_app(routines.clone())
         .oneshot(
@@ -409,6 +430,7 @@ async fn router_routine_not_found_paths() {
         ("DELETE", ""),
         ("POST", "/trigger"),
         ("POST", "/scheduled-trigger"),
+        ("GET", "/prompt-preview"),
         ("GET", "/logs"),
         ("GET", "/runs"),
         ("GET", "/runs/some-workbench-1/log"),

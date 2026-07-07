@@ -50,6 +50,27 @@ unwrap_used = "deny"
 # crate has its own `[lints]` table (no `workspace = true` inheritance) so it was
 # silently exempt despite `clippy --workspace` covering it in CI.
 redundant_closure_for_method_calls = "deny"
+# Reject a `&mut` parameter that's never actually mutated through. Mirrors the root
+# crate's `needless_pass_by_ref_mut = "deny"` (see Cargo.toml) — the `ui` crate has
+# its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so
+# this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
+# The `ui` crate is already clean, so `deny` locks that in.
+needless_pass_by_ref_mut = "deny"
+# Prefer `map_or`/`map_or_else`/`is_some_and` over `.map(f).unwrap_or(_)`. Kept in lockstep with
+# the same lint already enabled workspace-root-side in Cargo.toml — the `ui` crate has its own
+# `[lints]` table (no `workspace = true` inheritance) so it was silently exempt despite
+# `clippy --workspace` covering it in CI. Fixes the 7 violations this surfaced across
+# `log_viewer.rs`, `overview_recent_runs.rs`, `routines/form.rs`, `routines/history.rs`, and
+# `routines/hooks.rs`.
+map_unwrap_or = "deny"
+# Reject `match` arms with identical bodies — either the arm is dead code already covered by
+# another pattern, or the duplication is an unintentional bug where the bodies were meant to
+# differ. Kept in lockstep with the same lint already enabled workspace-root-side in Cargo.toml —
+# the `ui` crate has its own `[lints]` table (no `workspace = true` inheritance) so it was silently
+# exempt despite `clippy --workspace` covering it in CI. Fixes the 5 violations this surfaced in
+# `routines/filter.rs`, where each facet's explicit `Facet::All`/`Facet::Any` arm did nothing that
+# the trailing wildcard arm didn't already do.
+match_same_arms = "deny"
 # Reject `async fn`s that never `.await` anything — they don't need to be async,
 # and being async needlessly propagates async-ness to callers. Denied root-side
 # (see Cargo.toml), but the `ui` crate has its own `[lints.clippy]` table and

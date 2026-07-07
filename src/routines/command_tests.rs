@@ -78,7 +78,7 @@ fn build_routine_command_resolves_bin_dir_when_tool_on_path() {
             instructions_file: "CLAUDE.md".to_string(),
             setup: None,
         };
-        let cmd = build_routine_command(&routine, &agent);
+        let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
         // The resolved tmux dir is baked into the exported PATH.
         assert!(
             cmd.contains(&dir_str),
@@ -102,40 +102,11 @@ fn build_routine_command_extends_path_rather_than_replacing_it() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(
         cmd.contains("export PATH=$PATH:"),
         "expected PATH to extend the profile's $PATH, not replace it, in: {cmd}"
     );
-}
-
-#[test]
-fn build_routine_command_appends_scheduled_trigger_log() {
-    // The generated launch script records each scheduled firing by appending `$TS` to the
-    // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab
-    // runs this script directly without the daemon observing the fire.
-    let routine = make_routine("Cmd Scheduled Stamp Routine");
-    let agent = AgentCommand {
-        command: "claude".to_string(),
-        args: vec![],
-        instructions_file: "CLAUDE.md".to_string(),
-        setup: None,
-    };
-    let cmd = build_routine_command(&routine, &agent);
-    let log = crate::paths::routine_scheduled_log_path(&slugify(&routine.title))
-        .to_string_lossy()
-        .into_owned();
-    assert!(
-        cmd.contains(&format!(
-            r#"printf '%s\n' "$TS" >> {} || true"#,
-            shell_quote(&log)
-        )),
-        "expected scheduled-trigger log append in: {cmd}"
-    );
-    // It must run before the prompt-copy guard so an aborted run still records the firing.
-    let stamp = cmd.find("scheduled.log").unwrap();
-    let copy = cmd.find("/prompt.md\"").unwrap();
-    assert!(stamp < copy, "log append must precede the prompt copy");
 }
 
 #[test]
@@ -151,7 +122,7 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
 
     // The primary write is guarded with an aborting `|| { ...; exit 1; }`.
     let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
@@ -201,7 +172,7 @@ fn build_routine_command_workbench_base_tracks_moadim_home_override() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
 
     // SAFETY: single-threaded test execution.
     unsafe {
@@ -262,7 +233,7 @@ fn build_routine_command_guards_agent_setup_step() {
         setup: Some("python3 seed.py".to_string()),
         instructions_file: "CLAUDE.md".to_string(),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
 
     // The setup is inserted verbatim, wrapped in a `{ ...; } || { ...; exit 1; }` guard...
     assert!(
@@ -290,7 +261,7 @@ fn build_routine_command_omits_setup_guard_when_no_setup() {
         setup: None,
         instructions_file: "CLAUDE.md".to_string(),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(
         !cmd.contains("agent setup failed"),
         "did not expect a setup guard with no setup step in: {cmd}"
@@ -309,7 +280,7 @@ fn build_routine_command_appends_model_override() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     // The whole invocation is itself shell-quoted once for the `tmux new-session` argument, which
     // re-escapes the inner `shell_quote(model)` quotes into `'\''`, so assert on ordering and
     // content rather than the exact (implementation-detail) escaped byte sequence.
@@ -335,7 +306,7 @@ fn build_routine_command_omits_model_flag_when_unset() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(
         !cmd.contains("--model"),
         "expected no --model flag in: {cmd}"
@@ -354,7 +325,7 @@ fn tmux_session_prefix_matches_the_sess_line_build_routine_command_emits() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(
         cmd.contains(&format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#)),
         "expected SESS line built from TMUX_SESSION_PREFIX in: {cmd}"
@@ -379,7 +350,7 @@ fn build_routine_command_records_exit_code_after_invocation() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     // The whole tmux shell-command (invocation + exit-code capture) is itself shell-quoted as one
     // `tmux new-session` argument, which re-escapes the inner single quotes around `printf`'s
     // `'%s'` into `'\''` — assert on ordering/content of the unescaped pieces rather than the
@@ -419,7 +390,7 @@ fn build_routine_command_attaches_pipe_pane_in_the_same_tmux_invocation() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     let new_session_pos = cmd.find("tmux new-session").unwrap();
     // No `tmux pipe-pane` invocation as its own separate command: the only "pipe-pane" text is the
     // subcommand name chained after `new-session` via `\;` within the same `tmux` invocation.
@@ -498,3 +469,6 @@ mod command_run_id_tests;
 
 #[path = "command_umask_tests.rs"]
 mod command_umask_tests;
+
+#[path = "command_trigger_source_tests.rs"]
+mod command_trigger_source_tests;

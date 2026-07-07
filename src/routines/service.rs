@@ -30,6 +30,16 @@ use service_validate::{
     validate_title,
 };
 
+/// Map a [`write_routine`] failure to an [`AppError`], turning the on-disk slug-collision guard
+/// (#188, `ErrorKind::AlreadyExists`) into a 409 the caller can act on instead of a generic 500.
+fn map_write_routine_err(err: &std::io::Error) -> AppError {
+    if err.kind() == std::io::ErrorKind::AlreadyExists {
+        AppError::Conflict(err.to_string())
+    } else {
+        AppError::Internal
+    }
+}
+
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).
 fn repo_sort_key(routine: &Routine) -> (bool, String) {
@@ -184,7 +194,7 @@ pub fn svc_create(
         max_runtime_secs: req.max_runtime_secs,
         tags,
     };
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     store
         .lock_recover()
         .insert(routine.id.clone(), routine.clone());
@@ -317,7 +327,7 @@ pub fn svc_update(
     let routine = routine.clone();
     drop(lock);
     let new_slug = slugify(&routine.title);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     if new_slug != old_slug {
         migrate_workbenches(&old_slug, &new_slug);
         remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;

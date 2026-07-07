@@ -114,6 +114,42 @@ fn write_then_load_round_trips() {
 }
 
 #[test]
+fn write_routine_rejects_slug_collision_with_a_different_id() {
+    // Two distinct titles that slugify to the same folder name (#188) must not let the second
+    // write silently clobber the first routine's on-disk files.
+    with_override_home(|_home| {
+        let title = "Update deps!";
+        let other_title = "Update deps?";
+        assert_eq!(slugify(title), slugify(other_title));
+
+        write_routine(&make_routine("rs-collision-a", title)).unwrap();
+        let err = write_routine(&make_routine("rs-collision-b", other_title)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+
+        // The first routine's file must be untouched.
+        let slug = slugify(title);
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.id, "rs-collision-a");
+    });
+}
+
+#[test]
+fn write_routine_allows_rewriting_its_own_slug() {
+    // The same routine (same id) writing to its own slug again — e.g. an update that doesn't
+    // change the title — must not trip the collision guard.
+    with_override_home(|_home| {
+        let title = "Rs Rewrite Routine";
+        let mut routine = make_routine("rs-rewrite-id", title);
+        write_routine(&routine).unwrap();
+        routine.updated_at = 99;
+        write_routine(&routine).unwrap();
+
+        let loaded = load_routine_from_dir(&slugify(title)).unwrap();
+        assert_eq!(loaded.updated_at, 99);
+    });
+}
+
+#[test]
 fn tags_round_trip_through_routine_toml() {
     // Tags are persisted to the tracked `routine.toml` and read back on load.
     let title = "Rs Tags Routine";

@@ -235,9 +235,29 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
 /// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
 /// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
 /// version-controlled config file.
+///
+/// Two distinct titles can slugify to the same folder name (e.g. `"Update deps!"` and
+/// `"Update deps?"` both become `update-deps`). In-memory create/update handlers already reject
+/// that when both routines are loaded in the [`RoutineStore`], but a slug can also collide with a
+/// stale on-disk `routine.toml` that isn't (or is no longer) in memory — e.g. a directory left
+/// behind by a failed [`remove_routine_dir`]. Guard here too, as the last line of defense against
+/// silently overwriting another routine's files (#188): refuse to write when the target slug's
+/// `routine.toml` already exists and belongs to a different `id`.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
+    if let Some(existing_id) =
+        read_routine_toml(&routine_toml_path(&slug)).and_then(|existing| existing.id)
+    {
+        if existing_id != routine.id {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "slug \"{slug}\" is already used on disk by routine {existing_id}; refusing to overwrite it"
+                ),
+            ));
+        }
+    }
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 

@@ -84,3 +84,10 @@ unused_async = "deny"
 # `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
 # covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
 uninlined_format_args = "deny"
+# Reject a numeric literal with 5+ digits that has no `_` separators (e.g. `86400`), preferring
+# `86_400` so a reviewer can judge magnitude at a glance instead of counting digits one by one.
+# Mirrors the root crate's `unreadable_literal = "deny"` (see Cargo.toml) — the `ui` crate has its
+# own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+unreadable_literal = "deny"

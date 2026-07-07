@@ -29,6 +29,13 @@ on:
 
 permissions:
   contents: write
+  # `publish.yml`'s `publish` job requests `id-token: write` for crates.io
+  # Trusted Publishing (OIDC). A reusable-workflow chain is capped by the
+  # top-level caller's `permissions:` block — any scope not listed here is
+  # `none` for every job in the chain, regardless of what a called workflow
+  # requests. Omitting `id-token` made every run since 2026-07-02 fail with
+  # `startup_failure` before a single job was created (#1049).
+  id-token: write
 
 concurrency:
   group: auto-release

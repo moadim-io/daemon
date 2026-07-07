@@ -377,12 +377,13 @@ fn sync_routines_to_crontab_serializes_concurrent_calls() {
     // sleeps a fixed delay on every `crontab -` write, so two *unserialized* read-modify-write
     // round trips would overlap and finish in roughly one delay; serialized by the lock, they run
     // back to back and take roughly two.
+    const DELAY_MS: u64 = 150;
+
     let agent_name = "test-sync-agent-concurrent-lock";
     std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
     let cfg = crate::paths::agent_toml_path(agent_name);
     std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
 
-    const DELAY_MS: u64 = 150;
     let shim = CronShim::new_with_write_delay(
         "# BEGIN MOADIM-ROUTINES\n# END MOADIM-ROUTINES\n",
         DELAY_MS,

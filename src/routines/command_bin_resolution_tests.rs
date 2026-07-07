@@ -44,6 +44,24 @@ fn tmux_available_in_true_when_fake_tmux_present() {
 }
 
 #[test]
+#[cfg(unix)]
+fn tmux_available_in_false_when_file_present_but_not_executable() {
+    use std::os::unix::fs::PermissionsExt as _;
+    // A regular file named `tmux` that lost its `+x` bit (broken install, untarred archive) must
+    // not be reported as available — `is_file()` alone would say yes, but `sh -c 'tmux …'` would
+    // actually fail with "Permission denied" at fire time.
+    let dir = std::env::temp_dir().join(format!("moadim-tmux-not-exec-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tmux = dir.join("tmux");
+    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(!tmux_available_in(&dir.to_string_lossy()));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn tmux_available_in_false_when_dir_has_no_tmux() {
     // A temp dir without a `tmux` file resolves as missing — the "missing" branch of the helper.
     let dir = std::env::temp_dir().join(format!("moadim-tmux-missing-{}", uuid::Uuid::new_v4()));
@@ -120,7 +138,13 @@ fn resolve_tmux_bin_from_prefers_path_over_fallbacks() {
     let dir =
         std::env::temp_dir().join(format!("moadim-resolve-tmux-path-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("tmux"), "#!/bin/sh\n").unwrap();
+    let tmux = dir.join("tmux");
+    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 
     let dir_str = dir.to_string_lossy().into_owned();
     let resolved = resolve_tmux_bin_from(&dir_str, &["/definitely/not/here".to_string()]);
@@ -153,7 +177,13 @@ fn resolve_tmux_bin_from_falls_back_to_first_matching_fallback_dir() {
     let missing = base.join("missing");
     let present = base.join("present");
     std::fs::create_dir_all(&present).unwrap();
-    std::fs::write(present.join("tmux"), "#!/bin/sh\n").unwrap();
+    let tmux = present.join("tmux");
+    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 
     let resolved = resolve_tmux_bin_from(
         "",
@@ -191,7 +221,13 @@ fn resolve_tmux_bin_reads_live_path_and_home() {
     let dir =
         std::env::temp_dir().join(format!("moadim-resolve-tmux-live-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("tmux"), "#!/bin/sh\n").unwrap();
+    let tmux = dir.join("tmux");
+    std::fs::write(&tmux, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 
     let dir_str = dir.to_string_lossy().into_owned();
     with_path(&dir, || {

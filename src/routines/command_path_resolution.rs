@@ -14,8 +14,33 @@ pub(crate) fn bin_dir(bin: &str) -> Option<String> {
 pub(crate) fn bin_dir_in(path: &str, bin: &str) -> Option<String> {
     path.split(':')
         .filter(|dir| !dir.is_empty())
-        .find(|dir| std::path::Path::new(dir).join(bin).is_file())
+        .find(|dir| is_executable_file(&std::path::Path::new(dir).join(bin)))
         .map(str::to_string)
+}
+
+/// Whether `path` is a regular file the daemon can actually execute.
+///
+/// `Path::is_file()` alone says nothing about the executable bit: a regular file that lost its
+/// `+x` (a broken install, an untarred archive, a `chmod`-stripped copy) still passes `is_file()`,
+/// so a naive check would report `tmux`/an agent `command` as "available" when `sh -c '<bin> …'`
+/// would actually fail with "Permission denied" at fire time — the exact silent-no-op failure mode
+/// [`agent_command_available_in`] and [`tmux_available_in`] exist to catch, just missed via a
+/// different error string. On unix, also require at least one executable bit (owner, group, or
+/// other) via the file's mode. Non-unix targets have no POSIX exec bit to check, so `is_file()`
+/// alone is the best available signal there.
+fn is_executable_file(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 /// Whether `tmux` resolves to a file on the given `:`-separated `path` list.
@@ -83,7 +108,7 @@ pub(crate) fn resolve_tmux_bin_from(path: &str, fallback_dirs: &[String]) -> Str
         return format!("{dir}/tmux");
     }
     for dir in fallback_dirs {
-        if std::path::Path::new(dir).join("tmux").is_file() {
+        if is_executable_file(&std::path::Path::new(dir).join("tmux")) {
             return format!("{dir}/tmux");
         }
     }

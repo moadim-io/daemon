@@ -189,3 +189,8 @@ format_push_string = "deny"
 # unused generality of `match`, keeping the two-way branch as readable as a plain `if`. The
 # codebase is already clean, so `deny` locks that in.
 single_match_else = "deny"
+# Reject an item (`use`, `const`, etc.) declared after a statement in the same block — items are
+# scoped to the whole block from the start regardless of where they're written, so placing one
+# mid-block after other code misleads the reader into thinking order matters here. Hoisting it to
+# the top of the block states that up front. The codebase is already clean, so `deny` locks that in.
+items_after_statements = "deny"

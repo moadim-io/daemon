@@ -64,10 +64,10 @@ pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
 /// Shared implementation of [`read_log_tail`] for an already-known file length, so a caller that
 /// also needs the length for its own purposes (see [`read_log_tail_with_meta`]) can stat once.
 fn read_log_tail_of_len(path: &std::path::Path, len: u64) -> std::io::Result<String> {
+    use std::io::{Read, Seek, SeekFrom};
     if len <= MAX_LOG_TAIL_BYTES {
         return std::fs::read_to_string(path).map(|contents| strip_ansi_noise(&contents));
     }
-    use std::io::{Read, Seek, SeekFrom};
     let omitted = len - MAX_LOG_TAIL_BYTES;
     let mut file = std::fs::File::open(path)?;
     file.seek(SeekFrom::Start(omitted))?;

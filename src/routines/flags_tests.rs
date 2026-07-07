@@ -37,7 +37,9 @@ fn create_flag_writes_general_file_with_md_suffix() {
     let _home = TempHome::set();
     let flag = create_flag("r1", "bug", "the thing is broken", FlagScope::General).unwrap();
     assert!(flag.filename.starts_with("bug-"));
-    assert!(flag.filename.ends_with(".md"));
+    assert!(std::path::Path::new(&flag.filename)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md")));
     assert!(!flag.filename.ends_with(".local.md"));
     assert_eq!(flag.flag_type, "bug");
     assert_eq!(flag.description, "the thing is broken");

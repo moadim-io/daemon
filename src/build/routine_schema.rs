@@ -1,9 +1,8 @@
 //! Generates `schemas/routine.schema.json` and `schemas/routine.example.toml`.
 //!
-//! Mirrors [`super::job_schema`] for the routine config. A `routine.toml` is normally written by the
-//! daemon (one folder per routine under the config tree), but a committed JSON Schema gives editors
-//! validation/completion and documents the on-disk shape — the same parity `job.schema.json` gives
-//! `job.toml`. The shape tracks the `RoutineToml` serializer in `src/routine_storage.rs`.
+//! A `routine.toml` is normally written by the daemon (one folder per routine under the config
+//! tree), but a committed JSON Schema gives editors validation/completion and documents the
+//! on-disk shape. The shape tracks the `RoutineToml` serializer in `src/routine_storage.rs`.
 
 use serde_json::{json, to_string_pretty};
 use std::fs;

@@ -1,12 +1,26 @@
 #![deny(warnings)]
+// Forbid `.unwrap()` in production code so a poisoned lock or other panic
+// cannot take the daemon down. Tests use `.unwrap()` freely (panicking is the
+// desired failure mode there), so the lint is scoped to non-test builds.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 //! Moadim server binary. Runs the Axum HTTP server with REST and MCP transports.
 
+/// Compile-time build provenance (crate version + git commit/date).
+mod build_info;
 /// Command-line interface and background-process lifecycle.
 mod cli;
-mod cron_jobs;
+/// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
+mod commands;
 mod error;
 /// Server filesystem location helpers.
 mod filesystem;
+/// Global lock sentinel that halts all routine scheduling and triggers without modifying routine
+/// enabled states.
+mod global_lock;
+/// `log` backend initialization: human-readable by default, opt-in JSON via `MOADIM_LOG_FORMAT`.
+mod logging;
+/// Machine identity for multi-machine deployments (per-machine routine/job targeting).
+mod machine;
 /// Axum middleware stack.
 mod middlewares;
 mod openapi;
@@ -22,10 +36,7 @@ mod routine_storage;
 mod routines;
 /// `moadim install` / `uninstall`: register the daemon as an OS service.
 mod service;
-/// TOML-backed job persistence.
-mod storage;
-/// Forward sync of managed jobs into the OS crontab (reverse sync is implemented
-/// but not wired up — see the `sync` module docs and issue #218).
+/// Forward sync of managed routines into the OS crontab.
 mod sync;
 /// Shared utility functions.
 mod utils;
@@ -41,15 +52,57 @@ async fn main() -> anyhow::Result<()> {
             cli::print_version();
             Ok(())
         }
-        cli::Command::Status { json } => std::process::exit(cli::status(json)?),
+        cli::Command::Usage(arg) => {
+            cli::print_usage_error(&arg);
+            std::process::exit(cli::EXIT_USAGE);
+        }
+        cli::Command::Status { json, wait_secs } => {
+            std::process::exit(cli::status(json, wait_secs)?)
+        }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
+        cli::Command::Trigger { id } => std::process::exit(cli::trigger(&id)?),
         cli::Command::Background => cli::run_background(),
-        cli::Command::Restart => cli::restart(),
+        cli::Command::Restart {
+            json,
+            quiet,
+            interactive: false,
+        } => cli::restart(json, quiet),
+        cli::Command::Restart {
+            interactive: true, ..
+        } => {
+            cli::stop_existing_for_restart(false)?;
+            run_server().await
+        }
         cli::Command::Install => service::install(),
-        cli::Command::Uninstall => service::uninstall(),
-        cli::Command::Foreground => run_server().await,
+        cli::Command::Uninstall => uninstall(),
+        cli::Command::Data(args) => std::process::exit(commands::run(args)),
+        cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
+        cli::Command::Foreground => {
+            cli::ensure_not_running_for_foreground()?;
+            run_server().await
+        }
     }
+}
+
+/// `moadim uninstall`: tear down everything install/usage added — the OS service
+/// registration AND the managed crontab block the daemon wrote. Without the
+/// crontab step, `cron` keeps firing routines against a removed daemon (#380).
+///
+/// Both steps are best-effort and independent: a failure (or unsupported-platform
+/// error) in the service step is reported but does not skip the crontab cleanup,
+/// and the command still succeeds so a partial install can always be torn down.
+fn uninstall() -> anyhow::Result<()> {
+    if let Err(err) = service::uninstall() {
+        eprintln!("moadim: service uninstall step failed: {err}");
+    }
+    match sync::clear_managed_crontab_blocks() {
+        Ok(0) => println!("moadim: no managed crontab entries to remove"),
+        Ok(1) => println!("moadim: removed 1 managed crontab entry"),
+        Ok(n) => println!("moadim: removed {n} managed crontab entries"),
+        Err(err) => eprintln!("moadim: crontab cleanup failed: {err}"),
+    }
+    Ok(())
 }
 
 /// Run the HTTP/MCP/UI server in the foreground until a termination signal or the `/shutdown` route
@@ -57,27 +110,55 @@ async fn main() -> anyhow::Result<()> {
 async fn run_server() -> anyhow::Result<()> {
     // Initialize the logging backend so the `log::*` call sites across the daemon actually emit;
     // without an installed backend the `log` facade is a silent no-op and startup, crontab-sync,
-    // and HTTP-request diagnostics are dropped. Defaults to the `info` level and is overridable via
-    // `RUST_LOG`. A detached daemon redirects stderr to its log file, so these lines land there
-    // with timestamps and levels. Use `try_init` to avoid panicking if a backend is already set.
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .try_init();
+    // and HTTP-request diagnostics are dropped. A detached daemon redirects stderr to its log
+    // file, so these lines land there with timestamps and levels. See `logging` for format
+    // selection (`MOADIM_LOG_FORMAT`) and level filtering (`RUST_LOG`).
+    logging::init();
+    // tmux is a hard runtime dependency: every routine agent launches via `tmux new-session`. When
+    // it is missing the launch command silently no-ops (the statements are `;`-joined), so warn
+    // loudly at startup rather than letting scheduled runs vanish. Also surfaced in `GET /health`.
+    if !routines::tmux_available() {
+        log::warn!(
+            "tmux not found on PATH; scheduled routine runs will silently fail to launch their \
+             agent. Install tmux (e.g. `brew install tmux` or `apt install tmux`)."
+        );
+    }
+    // python3 is a hard dependency of the built-in `claude` agent's `setup` step (workspace-trust
+    // seeding). When it is missing, that step fails and the routine's agent never actually
+    // launches, yet nothing else surfaces the failure — the routine still shows a healthy status
+    // (issue #404). Warn at startup, same as the tmux check above; also surfaced in `GET /health`.
+    if !routines::agent_command_available("python3") {
+        log::warn!(
+            "python3 not found on PATH; the built-in `claude` agent's setup step requires it to \
+             pre-seed workspace-trust state, so routines using that agent will silently fail to \
+             launch. Install python3, or use a different agent."
+        );
+    }
     routines::ensure_default_agents();
-    let store = storage::load_store();
-    // Rename any prompt.txt sidecars to prompt.md before rewriting run.sh scripts; otherwise the
-    // first cron trigger after upgrade would fail on the cp step.
+    // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
+    // cron trigger after upgrade would fail on the launch command's `cp prompt.compiled.md` step.
     routine_storage::migrate_prompt_files();
+    // Move each routine's prompt file(s) into its prompts/ subfolder, and extract the raw prompt
+    // out of routine.toml into prompts/prompt.pure.md. Must run before migrate_routine_dirs and
+    // load_store, which both read the prompt from the new sidecar location.
+    routine_storage::migrate_prompts_to_subfolder();
     // Move legacy UUID-named routine dirs to the current slug-based layout before loading, so the
-    // store reflects the canonical dirs the crontab sync and run.sh `cp prompt.md` both target.
+    // store reflects the canonical dirs the crontab sync and the launch command's
+    // `cp prompt.compiled.md` both target.
     routine_storage::migrate_routine_dirs();
+    // Migrate per-routine trigger timestamps from legacy TOML sidecars (scheduled.local.toml,
+    // last_manual_trigger_at in state.local.toml) into the new append-only log files
+    // (scheduled.log, manual.log). Must run before load_store so the first load already reads from
+    // the log files.
+    routine_storage::migrate_trigger_logs();
     let routines = routine_storage::load_store();
     // Seed any missing built-in default routines (e.g. the daily moadim cargo update check) so a
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // The crontab sync writes only run.sh; re-persist so every routine also has its routine.toml +
-    // prompt.md sidecar in the slug dir, healing dirs left with run.sh but no prompt (otherwise the
-    // cron `cp prompt.md` fails and the agent launches with an empty prompt).
+    // Re-persist so every routine has its routine.toml + prompts/ sidecars in the slug dir (and any
+    // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
+    // command's `cp prompt.compiled.md` fails and the agent launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
@@ -85,11 +166,21 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup crontab sync failed: {err}");
     }
-    let listener = tokio::net::TcpListener::bind(cli::bind_addr()).await?;
+    // The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
+    // exposes unauthenticated routine CRUD to anyone who can reach it. Warn loudly at startup,
+    // same as the tmux/python3 checks above, rather than letting this go unnoticed.
+    let bind_addr = cli::bind_addr();
+    if !cli::bind_addr_is_loopback(&bind_addr) {
+        log::warn!(
+            "moadim is binding to {bind_addr}, which is not loopback-only; the REST/MCP API has \
+             no authentication, so anyone who can reach this address can create, modify, or \
+             delete routines. Restrict network access to this port (see issue #504)."
+        );
+    }
+    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     cli::write_pid_file()?;
     let result =
-        routes::http::run_with_listener_until(store, routines, listener, termination_signal())
-            .await;
+        routes::http::run_with_listener_until(routines, listener, termination_signal()).await;
     cli::clear_pid_file();
     result
 }

@@ -1,0 +1,66 @@
+name: Prebuilt UI
+
+# Guard against a stale (or silently broken) `prebuilt.html` — the
+# self-contained UI bundle `build.rs` inlines at compile time, and falls back
+# to verbatim whenever `trunk` isn't installed (e.g. `cargo install moadim`
+# from a git checkout, or a Docker build that never installs trunk). It ships
+# to those builds exactly as committed, so it has to stay in lockstep with
+# `ui/src` by hand — nothing previously verified that in CI.
+#
+# That drift already happened silently: the `prebuilt.html` committed on
+# `main` was regenerated from a stale UI checkout and shipped without the
+# machine-name badge, machine filter, and rename-machine dialog entirely,
+# even though that code had long since landed in `ui/src`. Anyone building
+# from git source without trunk got a UI silently missing those features.
+#
+# This job rebuilds the UI with trunk (same as publish.yml does at release
+# time) and fails if the freshly built `prebuilt.html` doesn't match what's
+# committed, so a PR that changes `ui/` can't merge without also regenerating
+# the fallback bundle.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'ui/**'
+      - 'src/build/ui.rs'
+      - 'prebuilt.html'
+
+jobs:
+  freshness:
+    name: prebuilt-html-fresh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry (registry only, not target)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install trunk
+        run: cargo install --locked trunk
+
+      - name: Rebuild the UI (build.rs regenerates prebuilt.html via trunk)
+        run: cargo check
+
+      - name: Fail if the committed prebuilt.html is stale
+        run: |
+          if ! git diff --exit-code -- prebuilt.html; then
+            echo ""
+            echo "prebuilt.html is out of date for the current ui/ source."
+            echo "Rebuild it locally (cargo install trunk && cargo build) and commit the result."
+            exit 1
+          fi

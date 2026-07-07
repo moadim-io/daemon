@@ -27,3 +27,9 @@ console_log = "1"
 
 [lints.clippy]
 all = "deny"
+# Mirrors the root crate's `unwrap_used = "deny"` (see Cargo.toml): a panic in the UI
+# crate tears down the running Yew app for the user with no graceful recovery, the
+# same class of failure the root crate's lint doc guards against for the server.
+# `all` above doesn't cover this — `unwrap_used` is a `restriction`-group lint, not
+# part of `clippy::all` — so it needs its own explicit entry.
+unwrap_used = "deny"

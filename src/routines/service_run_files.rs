@@ -1,9 +1,10 @@
-//! Per-run file reads: a specific run's `agent.log` tail and agent-authored `summary.md`.
+//! Per-run file reads: a specific run's `agent.log` tail and agent-authored `summary.md`, plus a
+//! side-effect-free preview of the composed prompt a run would receive.
 
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
 use crate::routines::cleanup::parse_workbench_name;
-use crate::routines::command::slugify;
+use crate::routines::command::{compose_prompt, slugify};
 use crate::routines::model::RoutineStore;
 use crate::utils::lock::LockRecover;
 
@@ -56,3 +57,22 @@ pub fn svc_run_summary(
 ) -> Result<String, AppError> {
     svc_run_file(store, id, workbench, "summary.md")
 }
+
+/// Compose the exact body an agent run would receive for routine `id`, without creating a
+/// workbench, writing `prompt.md`, or launching an agent (issue #391). Mirrors `svc_get`'s lookup,
+/// but returns the *derived* prompt body instead of the stored routine fields.
+///
+/// Does not include the routine-origin disclosure written separately to `CLAUDE.md` at trigger
+/// time — that isn't part of [`compose_prompt`], so it isn't part of this preview either.
+pub fn svc_get_prompt_preview(store: &RoutineStore, id: &str) -> Result<String, AppError> {
+    let routine = store
+        .lock_recover()
+        .get(id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    Ok(compose_prompt(&routine))
+}
+
+#[cfg(test)]
+#[path = "service_prompt_preview_tests.rs"]
+mod service_prompt_preview_tests;

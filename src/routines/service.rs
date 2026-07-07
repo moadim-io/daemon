@@ -412,7 +412,7 @@ pub use service_trigger::{
 
 #[path = "service_run_files.rs"]
 mod service_run_files;
-pub use service_run_files::{svc_run_log, svc_run_summary};
+pub use service_run_files::{svc_get_prompt_preview, svc_run_log, svc_run_summary};
 
 #[path = "service_trigger_flags.rs"]
 mod service_trigger_flags;

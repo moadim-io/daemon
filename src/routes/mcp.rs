@@ -109,6 +109,23 @@ impl MoadimMcp {
         })
     }
 
+    /// Return the exact prompt body a routine's run would receive, without creating a workbench
+    /// or launching an agent.
+    #[tool(
+        description = "Preview the exact composed prompt body a routine's run would receive, without triggering a real run (no workbench, no agent launch). Does not include the routine-origin disclosure written separately to CLAUDE.md at trigger time."
+    )]
+    fn preview_routine_prompt(
+        &self,
+        Parameters(IdInput { id }): Parameters<IdInput>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(
+            match routines::svc_get_prompt_preview(&self.routines, &id) {
+                Ok(prompt) => ok(serde_json::json!({ "prompt": prompt })),
+                Err(error) => err(error),
+            },
+        )
+    }
+
     /// Validate and persist a new routine, returning the created record.
     #[tool(
         description = "Create a new routine (agent-driven job). The `schedule` cron expression is interpreted in the local system timezone of the host running the daemon, NOT UTC. The response includes a `timezone` field and a `schedule_description` annotated with that timezone — verify them to confirm the firing time."

@@ -800,6 +800,34 @@
         }
       }
     },
+    "/routines/{id}/prompt-preview": {
+      "get": {
+        "tags": [
+          "crate::routines"
+        ],
+        "summary": "`GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed\nin-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include\nthe routine-origin disclosure written separately to `CLAUDE.md` at trigger time.",
+        "operationId": "get_prompt_preview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Composed prompt body as plain text"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
     "/routines/{id}/runs": {
       "get": {
         "tags": [

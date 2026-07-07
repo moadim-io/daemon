@@ -44,7 +44,7 @@ pub(crate) fn read_exit_code(workbench_path: &Path) -> Option<i32> {
 /// previous one) on the next append. The reaper appends one record here per finished run for the
 /// whole life of the daemon with no other trim point, so a long-lived, frequently-firing routine's
 /// history would otherwise grow unbounded — the same shape already fixed for `daemon.log` (see
-/// [`crate::cli_system::DAEMON_LOG_MAX_BYTES`], #316). A routine's `runs.log` is far smaller per
+/// `DAEMON_LOG_MAX_BYTES` in `cli_system`, #316). A routine's `runs.log` is far smaller per
 /// entry and per-routine, so it gets a smaller cap.
 const RUN_HISTORY_MAX_BYTES: u64 = 1024 * 1024;
 

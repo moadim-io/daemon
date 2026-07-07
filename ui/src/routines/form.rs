@@ -48,7 +48,7 @@ fn text_to_repos(text: &str) -> Vec<Repository> {
         .filter_map(|line| {
             let mut it = line.split_whitespace();
             let repository = it.next()?.to_string();
-            let branch = it.next().map(|s| s.to_string());
+            let branch = it.next().map(std::string::ToString::to_string);
             Some(Repository { repository, branch })
         })
         .collect()
@@ -129,7 +129,7 @@ pub fn routine_form(props: &FormProps) -> Html {
     let agents = use_state(|| {
         AVAILABLE_AGENTS
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
     });
     {

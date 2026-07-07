@@ -208,3 +208,9 @@ trivially_copy_pass_by_ref = "deny"
 # judge magnitude at a glance instead of counting digits one by one. The codebase is already
 # clean, so `deny` locks that in.
 unreadable_literal = "deny"
+# Reject a case-sensitive `.ends_with(".ext")`/`.starts_with(...)` file-extension check in favour
+# of `Path::extension()` compared with `eq_ignore_ascii_case`. A literal `.md` check silently
+# mismatches an uppercase or mixed-case extension even though macOS's and Windows' default
+# filesystems treat the two names as the same file, so the check's pass/fail result can disagree
+# with what's actually on disk. The codebase is already clean, so `deny` locks that in.
+case_sensitive_file_extension_comparisons = "deny"

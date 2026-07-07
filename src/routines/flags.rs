@@ -64,7 +64,9 @@ fn is_safe_flag_filename(filename: &str) -> bool {
     !filename.is_empty()
         && !filename.contains(['/', '\\'])
         && !filename.contains("..")
-        && filename.ends_with(".md")
+        && std::path::Path::new(filename)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
 }
 
 /// Split a flag filename into its `(created_at, scope)`, or `None` if it doesn't match the

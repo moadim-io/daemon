@@ -8,7 +8,12 @@ use rmcp::handler::server::wrapper::Parameters;
 use super::*;
 
 fn make_handler() -> MoadimMcp {
-    MoadimMcp::new(crate::routines::new_store(), 0, test_shutdown())
+    MoadimMcp::new(
+        crate::routines::new_store(),
+        crate::paths::routines_dir(),
+        0,
+        test_shutdown(),
+    )
 }
 
 /// A throwaway shutdown signal for constructing a handler in tests; the `shutdown` tool fires it but

@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths::{
     routine_compiled_prompt_path, routine_dir, routine_gitignore_path, routine_manual_log_path,
-    routine_prompts_dir, routine_pure_prompt_path, routine_scheduled_log_path, routine_script_path,
-    routine_state_path, routine_toml_path, routines_dir,
+    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_state_path,
+    routine_toml_path, routines_dir,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;

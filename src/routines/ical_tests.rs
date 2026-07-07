@@ -409,14 +409,13 @@ fn svc_ical_routine_unknown_id_is_well_formed_empty_calendar() {
 #[test]
 fn svc_ical_routine_survives_a_poisoned_store_lock() {
     // A `std::sync::Mutex` poisons permanently the instant any thread panics while
-    // holding the guard. `svc_ical_routine` must recover the guard (like every other
-    // store accessor) instead of propagating that poisoning as its own panic — see
+    // holding the guard. `svc_ical_routine` reloads the store before serving (which itself
+    // takes the lock via `LockRecover`) and must recover the guard — like every other store
+    // accessor — instead of propagating that poisoning as its own panic — see
     // `utils::lock::LockRecover`.
+    let dir = scratch_dir();
+    write_routine_to(&dir, &routine_with("r1", "@daily", true));
     let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("r1".to_string(), routine_with("r1", "@daily", true));
 
     let poisoner = std::sync::Arc::clone(&store);
     let handle = std::thread::spawn(move || {
@@ -428,7 +427,7 @@ fn svc_ical_routine_survives_a_poisoned_store_lock() {
         "the spawned thread should have panicked"
     );
 
-    let ics = svc_ical_routine(&store, "r1");
+    let ics = svc_ical_routine(&store, &dir, "r1");
     assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
     assert!(ics.contains("BEGIN:VEVENT"));
 }

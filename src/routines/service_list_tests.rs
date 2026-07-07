@@ -134,7 +134,11 @@ fn svc_list_breaks_ties_on_id_deterministically() {
         ])
     };
 
-    let asc = svc_list(&tied(), &crate::paths::routines_dir(), &RoutineListQuery::default());
+    let asc = svc_list(
+        &tied(),
+        &crate::paths::routines_dir(),
+        &RoutineListQuery::default(),
+    );
     assert_eq!(
         asc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
         ["alpha", "bravo", "charlie"],
@@ -159,7 +163,11 @@ fn svc_list_omits_prompt_by_default() {
     let _home = TempHome::set();
     // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
     let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
-    let list = svc_list(&store, &crate::paths::routines_dir(), &RoutineListQuery::default());
+    let list = svc_list(
+        &store,
+        &crate::paths::routines_dir(),
+        &RoutineListQuery::default(),
+    );
     assert_eq!(list.len(), 1);
     assert!(list[0].routine.prompt.is_empty());
     let json = serde_json::to_value(&list[0]).unwrap();

@@ -51,6 +51,7 @@ fn scratch_routines_dir() -> std::path::PathBuf {
 /// way the slug-based on-disk layout would. Rooted at an arbitrary `base` rather than the global
 /// routines dir, keeping the test self-contained and parallel with no shared global state.
 fn write_routine_to(base: &std::path::Path, routine: &Routine) {
+    use std::fmt::Write as _;
     let dir = base.join(&routine.id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut toml = format!(
@@ -68,9 +69,9 @@ fn write_routine_to(base: &std::path::Path, routine: &Routine) {
     );
     for repo in &routine.repositories {
         toml.push_str("\n[[repositories]]\n");
-        toml.push_str(&format!("repository = \"{}\"\n", repo.repository));
+        let _ = writeln!(toml, "repository = \"{}\"", repo.repository);
         if let Some(branch) = &repo.branch {
-            toml.push_str(&format!("branch = \"{branch}\"\n"));
+            let _ = writeln!(toml, "branch = \"{branch}\"");
         }
     }
     std::fs::write(dir.join("routine.toml"), toml).unwrap();

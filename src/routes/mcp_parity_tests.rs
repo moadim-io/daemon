@@ -6,7 +6,12 @@
 use super::*;
 
 fn make_handler() -> MoadimMcp {
-    MoadimMcp::new(crate::routines::new_store(), 0, test_shutdown())
+    MoadimMcp::new(
+        crate::routines::new_store(),
+        crate::paths::routines_dir(),
+        0,
+        test_shutdown(),
+    )
 }
 
 /// A throwaway shutdown signal for constructing a handler in tests; the `shutdown` tool fires it but
@@ -81,7 +86,12 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(routines.clone(), 0, test_shutdown());
+    let handler = MoadimMcp::new(
+        routines.clone(),
+        crate::paths::routines_dir(),
+        0,
+        test_shutdown(),
+    );
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();

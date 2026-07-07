@@ -225,6 +225,10 @@ impl MoadimMcp {
 
     /// List the available agent registry keys a routine can launch.
     #[tool(description = "List the available agent registry keys a routine can launch")]
+    #[allow(
+        clippy::unused_self,
+        reason = "tool_router dispatches every handler through self.method(...) uniformly"
+    )]
     fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(routines::available_agents()))
     }
@@ -314,6 +318,10 @@ impl MoadimMcp {
     #[tool(
         description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
     )]
+    #[allow(
+        clippy::unused_self,
+        reason = "tool_router dispatches every handler through self.method(...) uniformly"
+    )]
     fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         Ok(ok(crate::global_lock::lock_status()))
     }
@@ -392,6 +400,10 @@ impl MoadimMcp {
     /// `moadim restart`. Delegates to a detached helper process that performs the swap.
     #[tool(
         description = "Restart the server: stop it and start a fresh instance. Mirrors the POST /api/v1/restart route and `moadim restart`."
+    )]
+    #[allow(
+        clippy::unused_self,
+        reason = "tool_router dispatches every handler through self.method(...) uniformly"
     )]
     fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         log::info!("restart requested via MCP");

@@ -1,5 +1,7 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
+use std::fmt::Write as _;
+
 use crate::paths::{routine_compiled_prompt_path, routine_scheduled_log_path};
 
 use super::agents::AgentCommand;
@@ -65,11 +67,17 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
             "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
         );
         for repo in &routine.repositories {
+            // `write!` into the existing `String` directly rather than `format!` + `push_str`,
+            // which would allocate a throwaway `String` per repository just to copy it into
+            // `body` immediately after. Writing to a `String` is infallible, so the `Result` is
+            // deliberately discarded.
             match &repo.branch {
                 Some(branch) => {
-                    body.push_str(&format!("- {} (branch {})\n", repo.repository, branch));
+                    let _ = writeln!(body, "- {} (branch {})", repo.repository, branch);
                 }
-                None => body.push_str(&format!("- {}\n", repo.repository)),
+                None => {
+                    let _ = writeln!(body, "- {}", repo.repository);
+                }
             }
         }
     }
@@ -96,10 +104,11 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
                 FlagScope::General => "general",
                 FlagScope::Local => "local",
             };
-            body.push_str(&format!(
-                "- **{}** ({scope}): {}\n",
+            let _ = writeln!(
+                body,
+                "- **{}** ({scope}): {}",
                 flag.flag_type, flag.description
-            ));
+            );
         }
     }
     body

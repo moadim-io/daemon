@@ -43,11 +43,10 @@ pub(crate) fn install_search_hotkey(search_ref: NodeRef, state: UseReducerHandle
                 let typing = event
                     .target()
                     .and_then(|t| t.dyn_into::<HtmlElement>().ok())
-                    .map(|el| {
+                    .is_some_and(|el| {
                         let tag = el.tag_name();
                         tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT"
-                    })
-                    .unwrap_or(false);
+                    });
                 if typing {
                     return;
                 }

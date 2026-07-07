@@ -50,3 +50,10 @@ unwrap_used = "deny"
 # crate has its own `[lints]` table (no `workspace = true` inheritance) so it was
 # silently exempt despite `clippy --workspace` covering it in CI.
 redundant_closure_for_method_calls = "deny"
+# Prefer `map_or`/`map_or_else`/`is_some_and` over `.map(f).unwrap_or(_)`. Kept in lockstep with
+# the same lint already enabled workspace-root-side in Cargo.toml — the `ui` crate has its own
+# `[lints]` table (no `workspace = true` inheritance) so it was silently exempt despite
+# `clippy --workspace` covering it in CI. Fixes the 7 violations this surfaced across
+# `log_viewer.rs`, `overview_recent_runs.rs`, `routines/form.rs`, `routines/history.rs`, and
+# `routines/hooks.rs`.
+map_unwrap_or = "deny"

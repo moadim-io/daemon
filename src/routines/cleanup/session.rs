@@ -64,6 +64,32 @@ pub(crate) fn tmux_session_prefix_alive(prefix: &str) -> bool {
         })
 }
 
+/// Count how many live tmux sessions have a name starting with `prefix`.
+///
+/// Backs the global concurrency cap (#335): every routine's fires share the one
+/// [`crate::routines::command::TMUX_SESSION_PREFIX`] (`"moadim-"`) regardless of which routine/slug
+/// spawned them, so — unlike [`tmux_session_prefix_alive`]'s per-routine-fire prefix (which further
+/// validates the trailing `$RID` shape) — a plain [`str::starts_with`] count over that shared prefix
+/// is the total number of routine agent sessions alive right now. Derived from the same
+/// `list-sessions` call each time it's needed (no cached/in-memory counter that could drift after a
+/// crash). A missing `tmux` binary or non-zero exit (no server running) reads as `0`, mirroring
+/// [`tmux_session_alive`]'s "no tmux, nothing running" stance.
+pub(crate) fn tmux_session_count(prefix: &str) -> usize {
+    std::process::Command::new(tmux_bin())
+        .arg("list-sessions")
+        .arg("-F")
+        .arg("#{session_name}")
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map_or(0, |out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter(|name| name.starts_with(prefix))
+                .count()
+        })
+}
+
 /// Return `true` if `name` is a tmux session name for *this* routine's `prefix`
 /// (`moadim-{slug}-`), not merely a different routine whose slug happens to be a string-prefix of
 /// this one's (e.g. slug `deploy` vs slug `deploy-staging`: `"moadim-deploy-"` is a literal prefix

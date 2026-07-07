@@ -6,6 +6,7 @@ mod build;
 fn main() {
     println!("cargo:rerun-if-changed=ui/index.html");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=schemas/routine.schema.json");
     // Re-stamp the embedded git provenance whenever HEAD moves (new commit or
     // checkout) or the index changes (staging). Harmless when these paths are
     // absent (e.g. a crates.io tarball): cargo just watches paths that never

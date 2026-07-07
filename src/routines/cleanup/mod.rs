@@ -37,6 +37,7 @@ use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
 pub(crate) use runtime::max_runtime_ceiling_secs;
 pub(crate) use session::tmux_session_alive as run_session_alive;
+pub(crate) use session::tmux_session_count;
 pub(crate) use session::tmux_session_prefix_alive;
 pub(crate) use ttl::ttl_ceiling_secs;
 

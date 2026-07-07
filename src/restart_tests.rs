@@ -208,7 +208,7 @@ fn kill_pid_honors_kill_bin_override() {
 
     let _kill = EnvGuard::set("MOADIM_KILL_BIN", script.to_str().unwrap());
     // A PID that does not exist: if the real `kill` ran it would error, but we never invoke it.
-    kill_pid(424242);
+    kill_pid(424_242);
 
     let recorded = std::fs::read_to_string(&marker).expect("shim ran and wrote its args");
     assert!(

@@ -27,6 +27,23 @@ console_log = "1"
 
 [lints.clippy]
 all = "deny"
+# Reject a `&self` method that never reads `self` — it should be an associated function instead, so
+# the signature doesn't overstate what the method needs from its receiver. Denied root-side since
+# #1067, but the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended
+# deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The
+# `ui` crate is already clean, so `deny` locks that in.
+unused_self = "deny"
+# Reject `use some::module::*;` glob imports. Explicit imports make it clear
+# at the call site which module a name comes from, avoid silent breakage or
+# ambiguity when the globbed module adds a new item, and keep `rust-analyzer`
+# "go to definition" unambiguous.
+wildcard_imports = "deny"
+# Mirrors the root crate's `unwrap_used = "deny"` (see Cargo.toml): a panic in the UI
+# crate tears down the running Yew app for the user with no graceful recovery, the
+# same class of failure the root crate's lint doc guards against for the server.
+# `all` above doesn't cover this — `unwrap_used` is a `restriction`-group lint, not
+# part of `clippy::all` — so it needs its own explicit entry.
+unwrap_used = "deny"
 # Prefer naming the method directly (`ToString::to_string`, `String::as_str`) over
 # wrapping it in a closure that only forwards the receiver. Kept in lockstep with
 # the same lint already enabled workspace-root-side in Cargo.toml — the `ui`

@@ -437,5 +437,8 @@ mod mcp_lock_tests;
 #[path = "mcp_parity_tests.rs"]
 mod mcp_parity_tests;
 #[cfg(test)]
+#[path = "mcp_prompt_preview_tests.rs"]
+mod mcp_prompt_preview_tests;
+#[cfg(test)]
 #[path = "mcp_tests.rs"]
 mod mcp_tests;

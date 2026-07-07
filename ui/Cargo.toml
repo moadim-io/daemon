@@ -63,3 +63,11 @@ needless_pass_by_ref_mut = "deny"
 # `log_viewer.rs`, `overview_recent_runs.rs`, `routines/form.rs`, `routines/history.rs`, and
 # `routines/hooks.rs`.
 map_unwrap_or = "deny"
+# Reject `match` arms with identical bodies — either the arm is dead code already covered by
+# another pattern, or the duplication is an unintentional bug where the bodies were meant to
+# differ. Kept in lockstep with the same lint already enabled workspace-root-side in Cargo.toml —
+# the `ui` crate has its own `[lints]` table (no `workspace = true` inheritance) so it was silently
+# exempt despite `clippy --workspace` covering it in CI. Fixes the 5 violations this surfaced in
+# `routines/filter.rs`, where each facet's explicit `Facet::All`/`Facet::Any` arm did nothing that
+# the trailing wildcard arm didn't already do.
+match_same_arms = "deny"

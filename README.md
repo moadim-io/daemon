@@ -206,6 +206,7 @@ PUT    /routines/{id}         # replace
 PATCH  /routines/{id}         # update fields
 DELETE /routines/{id}         # delete
 POST   /routines/{id}/trigger # run now, outside the schedule
+GET    /routines/{id}/prompt-preview # composed prompt body a run would receive, no run
 GET    /routines/{id}/logs    # run output
 POST   /routines/cleanup      # reap expired workbenches now
 GET    /agents                # list registered agents
@@ -213,8 +214,9 @@ GET    /routines.ics          # subscribe to fire times as a calendar feed
 ```
 
 **MCP** — the same operations are exposed as tools: `list_routines`,
-`get_routine`, `create_routine`, `update_routine`, `delete_routine`,
-`trigger_routine`, `routine_logs`, `list_agents`, and `cleanup_workbenches`.
+`get_routine`, `preview_routine_prompt`, `create_routine`, `update_routine`,
+`delete_routine`, `trigger_routine`, `routine_logs`, `list_agents`, and
+`cleanup_workbenches`.
 
 **Agents:** the `agent` field resolves to a config at
 `~/.config/moadim/agents/<agent>.toml`. API responses include

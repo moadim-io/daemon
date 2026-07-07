@@ -300,6 +300,10 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route("/routines/{id}/trigger", post(routines::trigger))
         .route(
+            "/routines/{id}/prompt-preview",
+            get(routines::get_prompt_preview),
+        )
+        .route(
             "/routines/{id}/scheduled-trigger",
             post(routines::scheduled_trigger),
         )

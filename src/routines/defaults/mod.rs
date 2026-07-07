@@ -173,17 +173,16 @@ pub fn ensure_default_routines(store: &RoutineStore) {
             .values()
             .find(|routine| slugify(&routine.title) == slug)
             .cloned();
-        let routine = match existing {
-            Some(cur) => match reconcile(spec, &cur, now_secs()) {
+        let routine = if let Some(cur) = existing {
+            match reconcile(spec, &cur, now_secs()) {
                 Some(updated) => updated,
                 None => continue,
-            },
-            None => {
-                if removed.contains(&slug) {
-                    continue;
-                }
-                materialize(spec, now_secs())
             }
+        } else {
+            if removed.contains(&slug) {
+                continue;
+            }
+            materialize(spec, now_secs())
         };
         if let Err(err) = write_routine(&routine) {
             log::warn!(

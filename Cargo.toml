@@ -184,3 +184,8 @@ cloned_instead_of_copied = "deny"
 # the target and drop it, so it's pure overhead that `write!` avoids by writing straight into the
 # existing buffer. The codebase is already clean, so `deny` locks that in.
 format_push_string = "deny"
+# Reject a `match` whose only non-wildcard arm destructures a single pattern, with the rest
+# falling to a catch-all `else`-like arm — `if let ... else` says the same thing without the
+# unused generality of `match`, keeping the two-way branch as readable as a plain `if`. The
+# codebase is already clean, so `deny` locks that in.
+single_match_else = "deny"

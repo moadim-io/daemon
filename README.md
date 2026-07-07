@@ -185,6 +185,17 @@ exceeded, the sweep also evicts finished workbenches oldest-first (regardless
 of their individual TTL) until back under it. A live session is never evicted.
 Unset or `0` (the default) keeps today's unbounded-by-size behavior.
 
+A routine already refuses to overlap with its own still-running fire, but
+nothing on its own bounds how many *different* routines run at once — the OS
+crontab naturally aligns fires from separate routines onto the same minute
+boundary (e.g. `*/5 * * * *`), so a shared tick can otherwise launch an
+unbounded thundering herd of agent sessions. Set `MOADIM_MAX_CONCURRENT_RUNS`
+to cap how many routine agent sessions may be alive at once (default `4`);
+once reached, a new fire is skipped — logging the reason — rather than
+launched, and is picked up again on its next scheduled tick. The count is
+derived from actual live tmux sessions, not an in-memory counter, so it stays
+correct across a daemon crash/restart.
+
 **REST** — under the `/api/v1` prefix:
 
 ```

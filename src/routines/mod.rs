@@ -18,6 +18,7 @@
 mod agents;
 mod cleanup;
 mod command;
+mod concurrency_cap;
 mod defaults;
 pub mod flags;
 mod handlers;
@@ -35,6 +36,8 @@ pub use model::*;
 pub use service::*;
 // `command` holds only crate-internal helpers (slugify, compose_prompt, build_routine_command, …).
 pub(crate) use command::*;
+// `concurrency_cap` is a crate-internal config knob for `service_trigger::spawn_routine_command`.
+pub(crate) use concurrency_cap::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

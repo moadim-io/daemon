@@ -64,7 +64,13 @@ jobs:
           shared-key: test
 
       - name: Run tests
-        run: cargo test
+        # Match the local pre-push hook and the `clippy` job in lint.yml:
+        # this is a non-virtual workspace (the root Cargo.toml declares both
+        # a [package] and a [workspace]), so a bare `cargo test` only runs
+        # the root `moadim` package's ~985 tests and silently skips the `ui`
+        # member crate's ~274 tests. Without `--workspace`, a PR could break
+        # every test in `ui/` and this job would still go green.
+        run: cargo test --workspace
 
   coverage:
     name: cargo llvm-cov (100% line floor)

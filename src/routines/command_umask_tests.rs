@@ -16,7 +16,7 @@ fn build_routine_command_sets_owner_only_umask_before_creating_files() {
         instructions_file: "CLAUDE.md".to_string(),
         setup: None,
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     let umask_at = cmd.find("umask 077").expect("umask 077 statement present");
     let mkdir_at = cmd.find("mkdir -p").expect("workbench mkdir present");
     assert!(

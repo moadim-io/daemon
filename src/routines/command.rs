@@ -234,83 +234,24 @@ pub(crate) fn shell_quote(text: &str) -> String {
     out
 }
 
-/// Moadim-managed preamble written to every workbench `CLAUDE.md`.
-///
-/// Uses `\n` as literal two-character sequences (not real newlines) so the text can be embedded
-/// in a single crontab line and passed to `printf '%b'`, which re-expands them into newlines at
-/// run time. The run date and timezone are appended dynamically by the shell.
-const MOADIM_SYSTEM_PROMPT: &str = "# Moadim Context\\n\
-    \\n\
-    > This section is managed by the moadim daemon. Do not edit it.\\n\
-    \\n\
-    You are running inside a moadim-managed agent session. \
-    Complete the task described in `prompt.md` and exit when done.\\n\
-    \\n\
-    ## Work log\\n\
-    \\n\
-    As you work, append short progress notes to `summary.md` in this workbench (create it if \
-    it doesn't exist) — what you're doing and why, each time you start a new step. Before you \
-    exit, write a `## Final summary` section to `summary.md` describing what was accomplished, \
-    what changed, and anything left unresolved.";
+#[path = "command_system_prompt.rs"]
+mod command_system_prompt;
+pub(crate) use command_system_prompt::system_prompt_stmts;
 
-/// Routine-origin disclosure appended to the moadim system prompt.
+/// Who is launching the routine command — which decides whether the run records a *scheduled*
+/// firing.
 ///
-/// Instructs the agent to reveal, in every outward-facing communication, that it acts on behalf of
-/// the moadim routine — naming it. The routine name itself is *not* part of this constant: it is
-/// injected at run time as a separate `printf` `%s` argument (text expanded by `printf '%b'` is not
-/// re-scanned for conversions, so a `%s` placed inside this `%b` string would print literally).
-/// This constant therefore ends just before the name. `\n` are literal two-character sequences
-/// re-expanded into newlines by `printf '%b'`, matching `MOADIM_SYSTEM_PROMPT`.
-const MOADIM_DISCLOSURE: &str = "## Routine origin disclosure\\n\
-    \\n\
-    You act on behalf of the moadim routine named below. In every external, outward-facing \
-    communication you produce — GitHub issues, pull requests and comments; Slack messages; emails; \
-    any channel a human or third-party system receives — you MUST disclose that the action \
-    originates from this moadim routine, naming it (for example: 'This pull request was opened by \
-    the <routine name> routine of moadim.'). Phrasing may be adapted per channel but must \
-    include the routine name. This does NOT apply to internal logs or in-repo working files.\\n\
-    \\n\
-    Routine name: ";
-
-/// Shell statements that write the agent's instructions file (e.g. `CLAUDE.md` for Claude,
-/// `AGENTS.md` for Codex) into `$WB` with two layers:
-///
-/// 1. **Moadim prompt** — daemon-managed preamble, the routine-origin disclosure naming
-///    `routine_title`, plus a run-time date stamp.
-/// 2. **User prompt** — contents of `~/.config/moadim/user_prompt.md`, appended if the file exists.
-///
-/// `instructions_file` is the workbench-relative filename the selected agent reads its project
-/// instructions from; writing the disclosure there guarantees the agent that actually runs sees it.
-///
-/// Uses `printf '%b'` so `\n` sequences in the static header expand to real newlines without
-/// embedding literal newlines in the crontab line. `$WB` must be in scope when the statements run.
-pub(crate) fn system_prompt_stmts(
-    user_prompt_path: &str,
-    routine_title: &str,
-    instructions_file: &str,
-) -> Vec<String> {
-    let header = shell_quote(MOADIM_SYSTEM_PROMPT);
-    let disclosure = shell_quote(MOADIM_DISCLOSURE);
-    let title = shell_quote(routine_title);
-    let uq = shell_quote(user_prompt_path);
-    let dest = format!(r#""$WB/{instructions_file}""#);
-    vec![
-        // Fail-fast if the disclosure write fails. The statements are `;`-joined, so a bare
-        // redirection failure (read-only/full $HOME, an unwritable $WB, disk-quota/inode
-        // exhaustion) would be ignored and the agent would launch with no `CLAUDE.md` — hence no
-        // routine-origin disclosure mandate, the central transparency guarantee of this project.
-        // Abort instead, mirroring the `cp prompt.md` guard below: record the reason in the
-        // workbench's agent.log (already created via mkdir) and on stderr. Only this primary write
-        // is guarded; the optional user-prompt append below stays best-effort (`|| true`).
-        format!(
-            r#"printf '%b\n\n%b%s\n\n**Run date**: %s\n**Timezone**: %s\n' {} {} {} "$(date)" "$(date +%Z)" > {dest} || {{ echo "moadim: failed to write agent instructions disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
-            header, disclosure, title
-        ),
-        format!(
-            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> {dest} || true"#,
-            uq = uq
-        ),
-    ]
+/// Only the OS crontab firing on schedule should append to `scheduled.log`; a manual (on-demand)
+/// trigger reuses the very same launch script but must not masquerade as a scheduled fire, or
+/// `last_scheduled_trigger_at` would be overwritten every time an operator hits "run now".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TriggerSource {
+    /// The OS crontab firing on schedule — records the fire time into `scheduled.log`.
+    Scheduled,
+    /// An on-demand trigger (UI/API/CLI) — runs the agent but leaves `scheduled.log` untouched, so
+    /// the manual run is tracked only via `last_manual_trigger_at` (recorded in-process by
+    /// `svc_trigger`, not by this script).
+    Manual,
 }
 
 /// Build the single-line shell command that creates a workbench and launches the agent in tmux.
@@ -319,7 +260,15 @@ pub(crate) fn system_prompt_stmts(
 /// `{workbench}` to `.`, and `{prompt}` to the prompt's contents passed as one argument. The prompt
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
-pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> String {
+///
+/// `source` controls whether the script records a scheduled firing: a [`TriggerSource::Scheduled`]
+/// run (the crontab) appends to `scheduled.log`, while a [`TriggerSource::Manual`] run omits the
+/// append so an on-demand trigger never clobbers `last_scheduled_trigger_at`.
+pub(crate) fn build_routine_command(
+    routine: &Routine,
+    agent: &AgentCommand,
+    source: TriggerSource,
+) -> String {
     let slug = slugify(&routine.title);
     let prompt_path = routine_compiled_prompt_path(&slug)
         .to_string_lossy()
@@ -377,15 +326,24 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
             shell_quote(&cron_path(&agent.command))
         ),
         r#"TS="$(date +%s)""#.to_string(),
+    ];
+    if source == TriggerSource::Scheduled {
         // Record this scheduled firing. Appends the Unix timestamp as one line to the routine's
         // gitignored `scheduled.log`; the daemon reads the last line back as
         // `last_scheduled_trigger_at` on load. Using `>>` (append) preserves the full run history.
         // Written before the prompt-copy guard below so an aborted run still records that the
         // schedule fired, and best-effort (`|| true`) so a log write failure never blocks launching.
-        format!(
+        //
+        // A manual ([`TriggerSource::Manual`]) trigger deliberately omits this append: it shares
+        // the exact same launch script but is tracked via `last_manual_trigger_at` (recorded
+        // in-process by `svc_trigger`), so appending here would conflate an on-demand "run now"
+        // with a genuine scheduled fire.
+        stmts.push(format!(
             r#"printf '%s\n' "$TS" >> {} || true"#,
             shell_quote(&scheduled_log_path)
-        ),
+        ));
+    }
+    stmts.extend([
         format!("SLUG={}", shell_quote(&slug)),
         // Collision-resistant run id. `$TS` alone has one-second granularity, so two runs of the
         // *same* routine in the same wall-clock second (a double-clicked "Run now", a `trigger`
@@ -403,7 +361,7 @@ pub(crate) fn build_routine_command(routine: &Routine, agent: &AgentCommand) -> 
         format!(r#"WB={}/"$SLUG-$RID""#, shell_quote(&workbenches_base)),
         format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#),
         r#"mkdir -p "$WB""#.to_string(),
-    ];
+    ]);
 
     // Everything from here on runs with stdout/stderr redirected into the workbench itself, so a
     // failure in the setup step or the tmux launch leaves a readable trace instead of being handed

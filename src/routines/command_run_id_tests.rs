@@ -20,7 +20,7 @@ fn build_routine_command_uses_collision_resistant_run_id() {
         setup: None,
         instructions_file: "CLAUDE.md".to_string(),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
 
     // The run id carries the PID for intra-second uniqueness (joined with `_` so the slug and
     // timestamp stay recoverable by `parse_workbench_name`).
@@ -57,7 +57,7 @@ fn build_routine_command_fails_loudly_on_session_collision() {
         setup: None,
         instructions_file: "CLAUDE.md".to_string(),
     };
-    let cmd = build_routine_command(&routine, &agent);
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
     assert!(
         cmd.contains(r#"tmux new-session -d -s "$SESS" -c "$WB""#)
             && cmd.contains(r#"aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#),

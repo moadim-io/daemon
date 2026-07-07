@@ -59,9 +59,9 @@ pub(crate) fn recent_runs_table(props: &RecentRunsTableProps) -> Html {
                                 >{ &run.routine_title }</Link<Route, RoutineHistoryQuery>>
                             </td>
                             <td><div class="cell-time">{reltime(run.started_at)}</div></td>
-                            <td><span class="cell-meta">{ run.finished_at.map(|f| fmt_run_duration(run.started_at, f)).unwrap_or_else(|| "—".to_string()) }</span></td>
+                            <td><span class="cell-meta">{ run.finished_at.map_or_else(|| "—".to_string(), |f| fmt_run_duration(run.started_at, f)) }</span></td>
                             <td><span class={run_status_class(run.status)}>{run_status_label(run.status)}</span></td>
-                            <td>{ run.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "—".to_string()) }</td>
+                            <td>{ run.exit_code.map_or_else(|| "—".to_string(), |c| c.to_string()) }</td>
                         </tr>
                     }) }
                 </tbody>

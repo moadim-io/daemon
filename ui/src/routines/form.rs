@@ -121,8 +121,7 @@ pub fn routine_form(props: &FormProps) -> Html {
     let agent = use_state(|| {
         editing
             .as_ref()
-            .map(|r| r.agent.clone())
-            .unwrap_or_else(|| "claude".to_string())
+            .map_or_else(|| "claude".to_string(), |r| r.agent.clone())
     });
     // Agent options fetched from `GET /agents`; seed with the built-in list so the select is never
     // empty before the request resolves or if it fails.
@@ -177,7 +176,7 @@ pub fn routine_form(props: &FormProps) -> Html {
             .map(|r| r.machines.clone())
             .unwrap_or_default()
     });
-    let enabled = use_state(|| editing.as_ref().map(|r| r.enabled).unwrap_or(true));
+    let enabled = use_state(|| editing.as_ref().is_none_or(|r| r.enabled));
     // Comma-separated tags; blank means no tags.
     let tags_raw = use_state(|| {
         editing

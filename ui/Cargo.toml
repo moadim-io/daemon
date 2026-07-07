@@ -27,3 +27,9 @@ console_log = "1"
 
 [lints.clippy]
 all = "deny"
+# Reject a `&self` method that never reads `self` — it should be an associated function instead, so
+# the signature doesn't overstate what the method needs from its receiver. Denied root-side since
+# #1067, but the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended
+# deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The
+# `ui` crate is already clean, so `deny` locks that in.
+unused_self = "deny"

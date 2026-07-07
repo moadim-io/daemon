@@ -1,5 +1,5 @@
 //! Tests for the query-command (`status`/`cleanup`/`stop`) JSON rendering and health-probing
-//! helpers split out of `cli.rs`'s `cli_query` module.
+//! helpers split out of `cli/mod.rs`'s `cli_query` module.
 
 use super::*;
 

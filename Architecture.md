@@ -37,7 +37,11 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
 ```
 src/
 ├── main.rs              entry point — binds socket, loads store, starts server
-├── cli.rs               CLI parsing + background-process lifecycle (status/stop/cleanup/…)
+├── cli/                 CLI parsing + background-process lifecycle (status/stop/cleanup/…)
+│   ├── mod.rs               top-level parser + start/stop/status lifecycle
+│   ├── query.rs             server-query commands (cleanup/trigger/status)
+│   ├── system.rs            pidfile + detached-process helpers
+│   └── restart.rs           the `restart` command + detached-spawn reporting
 ├── commands.rs          data-plane CLI subcommands that drive a running server over HTTP
 ├── build_info.rs        compile-time build provenance (crate version + git commit/date)
 ├── error.rs             AppError → HTTP status codes

@@ -438,11 +438,11 @@ impl Drop for FakeServer {
     }
 }
 
-#[path = "cli_query_tests.rs"]
+#[path = "query_tests.rs"]
 mod cli_query_tests;
 
-#[path = "cli_bind_override_tests.rs"]
+#[path = "bind_override_tests.rs"]
 mod cli_bind_override_tests;
 
-#[path = "cli_restart_tests.rs"]
+#[path = "restart_tests.rs"]
 mod cli_restart_tests;

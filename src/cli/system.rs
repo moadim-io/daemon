@@ -383,5 +383,5 @@ fn detach(cmd: &mut std::process::Command) {
 fn detach(_cmd: &mut std::process::Command) {}
 
 #[cfg(test)]
-#[path = "cli_system_tests.rs"]
+#[path = "system_tests.rs"]
 mod cli_system_tests;

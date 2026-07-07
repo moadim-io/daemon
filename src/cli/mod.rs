@@ -401,7 +401,7 @@ fn stop_json(running: bool, pid: Option<u32>) -> String {
     .to_string()
 }
 
-#[path = "cli_query.rs"]
+#[path = "query.rs"]
 mod cli_query;
 pub use cli_query::{cleanup, status, trigger};
 #[cfg(test)]
@@ -409,7 +409,7 @@ use cli_query::{
     cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, HealthInfo,
 };
 
-#[path = "cli_system.rs"]
+#[path = "system.rs"]
 mod cli_system;
 pub use cli_system::{clear_pid_file, spawn_restart, write_pid_file};
 pub(crate) use cli_system::{http_request, http_request_json, is_running, read_pid_file};
@@ -420,7 +420,7 @@ use cli_system::{
 #[cfg(test)]
 pub(crate) use cli_system::{parse_body, parse_status_code, DAEMON_LOG_MAX_BYTES};
 
-#[path = "cli_restart.rs"]
+#[path = "restart.rs"]
 mod cli_restart;
 pub use cli_restart::restart;
 use cli_restart::start_detached_and_report;
@@ -428,25 +428,25 @@ use cli_restart::start_detached_and_report;
 use cli_restart::{restart_json, restart_rotation_line};
 
 #[cfg(test)]
-#[path = "cli_tests.rs"]
+#[path = "tests.rs"]
 mod cli_tests;
 
 #[cfg(test)]
-#[path = "cli_cleanup_bytes_tests.rs"]
+#[path = "cleanup_bytes_tests.rs"]
 mod cli_cleanup_bytes_tests;
 
 #[cfg(test)]
-#[path = "cli_help_tests.rs"]
+#[path = "help_tests.rs"]
 mod cli_help_tests;
 
 #[cfg(test)]
-#[path = "cli_json_tests.rs"]
+#[path = "json_tests.rs"]
 mod cli_json_tests;
 
 #[cfg(test)]
-#[path = "cli_spawn_tests.rs"]
+#[path = "spawn_tests.rs"]
 mod cli_spawn_tests;
 
 #[cfg(test)]
-#[path = "cli_spawn_error_tests.rs"]
+#[path = "spawn_error_tests.rs"]
 mod cli_spawn_error_tests;

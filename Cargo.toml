@@ -194,3 +194,9 @@ single_match_else = "deny"
 # mid-block after other code misleads the reader into thinking order matters here. Hoisting it to
 # the top of the block states that up front. The codebase is already clean, so `deny` locks that in.
 items_after_statements = "deny"
+# Reject a `&self` method that never reads `self` — it should be an associated function instead, so
+# the signature doesn't overstate what the method needs from its receiver. The handful of MCP tool
+# handlers that don't touch `self` are exempted with a documented `#[allow]`: `#[tool_router]`
+# dispatches every handler through `self.method(...)` uniformly, so `&self` there is a framework
+# requirement, not a mistake. The rest of the codebase is already clean, so `deny` locks that in.
+unused_self = "deny"

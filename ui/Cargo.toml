@@ -27,3 +27,9 @@ console_log = "1"
 
 [lints.clippy]
 all = "deny"
+# Prefer naming the method directly (`ToString::to_string`, `String::as_str`) over
+# wrapping it in a closure that only forwards the receiver. Kept in lockstep with
+# the same lint already enabled workspace-root-side in Cargo.toml — the `ui`
+# crate has its own `[lints]` table (no `workspace = true` inheritance) so it was
+# silently exempt despite `clippy --workspace` covering it in CI.
+redundant_closure_for_method_calls = "deny"

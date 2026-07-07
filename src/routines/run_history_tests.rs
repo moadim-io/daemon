@@ -147,6 +147,87 @@ fn has_persisted_run_true_only_for_matching_workbench() {
     assert!(!has_persisted_run("other-id", "my-routine-1000"));
 }
 
+#[test]
+fn rotate_run_history_if_oversized_is_a_no_op_when_file_is_missing() {
+    let path = std::env::temp_dir().join(format!("moadim-runs-missing-{}", uuid::Uuid::new_v4()));
+    rotate_run_history_if_oversized(&path);
+    assert!(!path.exists());
+}
+
+#[test]
+fn rotate_run_history_if_oversized_leaves_small_files_in_place() {
+    let base = std::env::temp_dir().join(format!("moadim-runs-small-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let path = base.join("runs.log");
+    std::fs::write(&path, b"a few bytes").unwrap();
+
+    rotate_run_history_if_oversized(&path);
+
+    assert!(path.exists(), "file under the cap must not be rotated");
+    assert!(!path.with_extension("log.1").exists());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn rotate_run_history_if_oversized_rolls_the_file_past_the_cap() {
+    let base = std::env::temp_dir().join(format!("moadim-runs-big-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let path = base.join("runs.log");
+    std::fs::write(&path, vec![b'x'; (RUN_HISTORY_MAX_BYTES + 1) as usize]).unwrap();
+
+    rotate_run_history_if_oversized(&path);
+
+    assert!(
+        !path.exists(),
+        "the oversized file must be moved out of the way"
+    );
+    assert!(
+        path.with_extension("log.1").exists(),
+        "the oversized file must land at the .1 sibling"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn rotate_run_history_if_oversized_replaces_a_previous_1_file() {
+    let base = std::env::temp_dir().join(format!("moadim-runs-replace-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&base).unwrap();
+    let path = base.join("runs.log");
+    std::fs::write(&path, vec![b'y'; (RUN_HISTORY_MAX_BYTES + 1) as usize]).unwrap();
+    let rotated = path.with_extension("log.1");
+    std::fs::write(&rotated, b"stale rotated content").unwrap();
+
+    rotate_run_history_if_oversized(&path);
+
+    assert!(rotated.exists());
+    assert_eq!(
+        std::fs::metadata(&rotated).unwrap().len(),
+        RUN_HISTORY_MAX_BYTES + 1,
+        "rotation must replace a stale .1 file with the freshly-rolled one"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn append_persisted_run_rotates_an_oversized_log_before_appending() {
+    let _home = TempHome::set();
+    let path = crate::paths::routine_run_history_path("big-id");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, vec![b'z'; (RUN_HISTORY_MAX_BYTES + 1) as usize]).unwrap();
+
+    append_persisted_run("big-id", &sample_run("my-routine-1000", 1000));
+
+    assert!(
+        path.with_extension("log.1").exists(),
+        "the oversized log must be rotated aside"
+    );
+    assert_eq!(
+        read_persisted_runs("big-id"),
+        vec![sample_run("my-routine-1000", 1000)],
+        "the fresh log must contain only the newly appended run, not the rotated-away content"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn append_persisted_run_creates_owner_only_log_and_dir() {

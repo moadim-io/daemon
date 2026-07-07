@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+### Added
+
+The build now generates `schemas/routine.schema.json` and `schemas/routine.example.toml` (a JSON Schema + annotated example for the on-disk `routine.toml`), giving routine configs editor validation/completion. The schema documents every field the daemon writes — including the legacy, read-only `last_(manual_)trigger_at` keys now kept in the `state.local.toml` sidecar — and is regenerated on every build from the `RoutineToml` shape (#388).
+
 ## [0.26.0] - 2026-07-07
 
 ### Fixed
@@ -71,6 +75,7 @@ Add `moadim enable`/`disable <routine>` CLI commands to toggle a routine's enabl
 Add `GET /routines/{id}/runs/{workbench}/summary`, serving an agent-authored work summary (`summary.md`) for a specific run. Every routine's system prompt now instructs the agent to keep a running work log and write a final summary section to that file before exiting.
 
 ### Added
+
 
 Regression test for `write_tmp`'s ENOSPC/EIO error path (via `/dev/full` on Linux), guarding the fix in #1019 where a full or failing disk during `atomic_write` now propagates the I/O error instead of panicking the whole daemon.
 

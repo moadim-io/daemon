@@ -140,10 +140,10 @@ pub async fn create(
     params(RoutineListQuery),
     responses((status = 200, body = Vec<RoutineResponse>)))]
 pub async fn list(
-    State(store): State<RoutineStore>,
+    State(state): State<crate::routes::http::AppState>,
     Query(query): Query<RoutineListQuery>,
 ) -> Json<Vec<RoutineResponse>> {
-    Json(svc_list(&store, &query))
+    Json(svc_list(&state.routines, &state.routines_dir, &query))
 }
 
 /// `GET /agents` — list the agent registry keys a routine may target.
@@ -158,10 +158,10 @@ pub async fn list_agents() -> Json<Vec<String>> {
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
 pub async fn get(
-    State(store): State<RoutineStore>,
+    State(state): State<crate::routes::http::AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_get(&store, &id)?))
+    Ok(Json(svc_get(&state.routines, &state.routines_dir, &id)?))
 }
 
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed
@@ -277,12 +277,12 @@ pub async fn scheduled_trigger(
     params(IcalFeedQuery),
     responses((status = 200, description = "iCalendar (text/calendar) feed of upcoming routine fire times")))]
 pub async fn ical_feed(
-    State(store): State<RoutineStore>,
+    State(state): State<crate::routes::http::AppState>,
     Query(query): Query<IcalFeedQuery>,
 ) -> impl IntoResponse {
     let body = match query.routine.as_deref() {
-        Some(id) => svc_ical_routine(&store, id),
-        None => svc_ical(&store),
+        Some(id) => svc_ical_routine(&state.routines, &state.routines_dir, id),
+        None => svc_ical(&state.routines, &state.routines_dir),
     };
     (
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],

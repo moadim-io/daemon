@@ -45,6 +45,9 @@ pub type ShutdownSignal = Arc<tokio::sync::Notify>;
 pub struct AppState {
     /// Shared routine (agent-driven job) store.
     pub routines: RoutineStore,
+    /// On-disk directory the routine store is re-scanned from on every list/get request.
+    /// Defaults to [`crate::paths::routines_dir`]; tests point it at a tempdir for isolation.
+    pub routines_dir: std::path::PathBuf,
     /// Unix timestamp (seconds) when the server started.
     pub uptime_start: u64,
     /// Fired by the `/shutdown` route to ask the server to stop.
@@ -250,16 +253,19 @@ pub(crate) fn build_app_with_shutdown(
 
     let app_state = AppState {
         routines,
+        routines_dir: crate::paths::routines_dir(),
         uptime_start: now_secs(),
         shutdown: shutdown_signal,
     };
 
+    let mcp_routines_dir = app_state.routines_dir.clone();
     let uptime_start = app_state.uptime_start;
     let mcp_shutdown = app_state.shutdown.clone();
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(MoadimMcp::new(
                 mcp_routines.clone(),
+                mcp_routines_dir.clone(),
                 uptime_start,
                 mcp_shutdown.clone(),
             ))

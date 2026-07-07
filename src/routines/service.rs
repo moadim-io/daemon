@@ -45,7 +45,14 @@ fn repo_sort_key(routine: &Routine) -> (bool, String) {
 /// reproduces the previous behaviour, except each routine's `prompt` is omitted
 /// unless `include_prompts` is `true`. The `repository` filter keeps routines
 /// referencing a matching repository URL; `sort`/`order` control ordering.
-pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineResponse> {
+pub fn svc_list(
+    store: &RoutineStore,
+    dir: &std::path::Path,
+    query: &RoutineListQuery,
+) -> Vec<RoutineResponse> {
+    // Refresh from disk first so a routine pulled/edited on disk under a running daemon (including a
+    // changed `machines` list) is reflected without a restart. Disk is the source of truth.
+    crate::routine_storage::reload_store_from_dir(store, dir);
     let lock = store.lock_recover();
     let mut routines: Vec<Routine> = lock.values().cloned().collect();
     drop(lock);
@@ -109,7 +116,13 @@ pub fn svc_list(store: &RoutineStore, query: &RoutineListQuery) -> Vec<RoutineRe
 }
 
 /// Look up a routine by `id`, returning `NotFound` if it does not exist.
-pub fn svc_get(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
+pub fn svc_get(
+    store: &RoutineStore,
+    dir: &std::path::Path,
+    id: &str,
+) -> Result<RoutineResponse, AppError> {
+    // Refresh from disk first so a freshly-pulled or edited routine is visible without a restart.
+    crate::routine_storage::reload_store_from_dir(store, dir);
     let routine = store
         .lock_recover()
         .get(id)
@@ -199,134 +212,9 @@ pub fn svc_create(
     Ok(RoutineResponse::from_routine(routine))
 }
 
-/// Apply non-`None` fields from `req` to the routine identified by `id`.
-pub fn svc_update(
-    store: &RoutineStore,
-    id: &str,
-    req: UpdateRoutineRequest,
-) -> Result<RoutineResponse, AppError> {
-    if let Some(ref sched) = req.schedule {
-        validate_cron(sched)?;
-    }
-    if let Some(ref title) = req.title {
-        reject_blank("title", title)?;
-        validate_title(title)?;
-    }
-    if let Some(ref prompt) = req.prompt {
-        validate_prompt(prompt)?;
-    }
-    if let Some(ref agent) = req.agent {
-        validate_agent(agent)?;
-    }
-    reject_zero_secs("ttl_secs", req.ttl_secs)?;
-    reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
-    let repositories = match req.repositories {
-        Some(ref repos) => Some(validate_repositories(repos)?),
-        None => None,
-    };
-    let tags = match req.tags {
-        Some(ref tags) => Some(validate_tags(tags)?),
-        None => None,
-    };
-    // `Some(None)` clears the goal (empty string sent), `Some(Some(_))` sets it, `None` keeps it.
-    let goal = match req.goal {
-        Some(ref goal) => Some(validate_goal(Some(goal))?),
-        None => None,
-    };
-    let machines = match req.machines {
-        Some(ref machines) => Some(validate_machines(machines)?),
-        None => None,
-    };
-    let mut lock = store.lock_recover();
-    let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
-    // Check slug conflict before mutating.
-    if let Some(ref new_title) = req.title {
-        let new_slug = slugify(new_title);
-        if new_slug != old_slug
-            && lock
-                .values()
-                .any(|routine| routine.id != id && slugify(&routine.title) == new_slug)
-        {
-            return Err(AppError::Conflict(format!(
-                "a routine with the name \"{new_slug}\" already exists"
-            )));
-        }
-    }
-    // Reject ttl/max-runtime above the cron-derived ceiling for the *effective* schedule (the new
-    // one if supplied, else the routine's current schedule) — before any mutation, so a rejected
-    // update leaves the in-memory store untouched (#468).
-    let effective_schedule = match req.schedule.as_deref() {
-        Some(schedule) => normalize_schedule(schedule),
-        None => lock
-            .get(id)
-            .expect("id existence checked above, and the lock has been held continuously since")
-            .schedule
-            .clone(),
-    };
-    reject_over_ceiling(
-        "ttl_secs",
-        req.ttl_secs,
-        ttl_ceiling_secs(&effective_schedule),
-    )?;
-    reject_over_ceiling(
-        "max_runtime_secs",
-        req.max_runtime_secs,
-        max_runtime_ceiling_secs(&effective_schedule),
-    )?;
-    let routine = lock
-        .get_mut(id)
-        .expect("id existence checked above, and the lock has been held continuously since");
-    if let Some(schedule) = req.schedule {
-        routine.schedule = normalize_schedule(&schedule);
-    }
-    if let Some(title) = req.title {
-        // Trim on rename for the same reason as `svc_create` above.
-        routine.title = title.trim().to_string();
-    }
-    if let Some(agent) = req.agent {
-        routine.agent = agent;
-    }
-    if let Some(model) = req.model {
-        routine.model = normalize_model(Some(model));
-    }
-    if let Some(prompt) = req.prompt {
-        routine.prompt = prompt;
-    }
-    if let Some(goal) = goal {
-        routine.goal = goal;
-    }
-    if let Some(repositories) = repositories {
-        routine.repositories = repositories;
-    }
-    if let Some(machines) = machines {
-        routine.machines = machines;
-    }
-    if let Some(enabled) = req.enabled {
-        routine.enabled = enabled;
-    }
-    if let Some(ttl) = req.ttl_secs {
-        routine.ttl_secs = Some(ttl);
-    }
-    if let Some(max_runtime) = req.max_runtime_secs {
-        routine.max_runtime_secs = Some(max_runtime);
-    }
-    if let Some(tags) = tags {
-        routine.tags = tags;
-    }
-    routine.updated_at = now_secs();
-    let routine = routine.clone();
-    drop(lock);
-    let new_slug = slugify(&routine.title);
-    write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
-    if new_slug != old_slug {
-        migrate_workbenches(&old_slug, &new_slug);
-        remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?;
-    }
-    if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
-        log::warn!("crontab sync after routine update failed: {err}");
-    }
-    Ok(RoutineResponse::from_routine(routine))
-}
+#[path = "service_update.rs"]
+mod service_update;
+pub use service_update::svc_update;
 
 /// Rename `old_name` to `new_name` in every routine's `machines` list, persist each changed
 /// routine to disk, and sync the crontab so the new machine identity takes effect immediately.

@@ -59,9 +59,13 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
     }
 }
 
+/// Wrap a list of routines into a populated [`RoutineStore`], and persist each one to disk (under
+/// the active `TempHome`) so `svc_list`'s reload-from-disk doesn't wipe the fixture the test just
+/// built — disk is the source of truth the reload re-scans on every call.
 fn store_with(routines: Vec<Routine>) -> RoutineStore {
     let mut map = HashMap::new();
     for routine in routines {
+        write_routine(&routine).expect("write_routine");
         map.insert(routine.id.clone(), routine);
     }
     Arc::new(Mutex::new(map))
@@ -133,7 +137,7 @@ fn svc_list_local_only_filters_non_matching_machines() {
         local_only: Some(true),
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&store, &crate::paths::routines_dir(), &query);
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].routine.id, "list-local-id");
 }

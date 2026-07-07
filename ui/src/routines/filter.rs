@@ -217,7 +217,6 @@ impl RoutineFilter {
     #[must_use]
     pub fn matches(&self, r: &Routine, now: DateTime<Local>, window: Duration) -> bool {
         match self.status {
-            RoutineStatusFacet::All => {}
             RoutineStatusFacet::Enabled if !r.enabled => return false,
             RoutineStatusFacet::Disabled if r.enabled => return false,
             RoutineStatusFacet::Dormant if !(r.enabled && r.machines.is_empty()) => return false,
@@ -232,25 +231,21 @@ impl RoutineFilter {
             _ => {}
         }
         match &self.agent {
-            AgentFacet::All => {}
             AgentFacet::Named(a) if r.agent != *a => return false,
             _ => {}
         }
         match &self.machine {
-            RoutineMachineFacet::Any => {}
             RoutineMachineFacet::Unassigned if !r.machines.is_empty() => return false,
             RoutineMachineFacet::Machine(m) if !r.machines.iter().any(|x| x == m) => return false,
             _ => {}
         }
         match &self.repository {
-            RepositoryFacet::All => {}
             RepositoryFacet::Named(rp) if !r.repositories.iter().any(|x| x.repository == *rp) => {
                 return false
             }
             _ => {}
         }
         match &self.tag {
-            TagFacet::All => {}
             TagFacet::Named(t) if !r.tags.iter().any(|x| x == t) => return false,
             _ => {}
         }

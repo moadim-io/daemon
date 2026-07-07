@@ -1,4 +1,4 @@
-//! The `restart` command and its detached-spawn reporting, split out of `cli.rs` to stay under
+//! The `restart` command and its detached-spawn reporting, split out of `cli/mod.rs` to stay under
 //! the repo's per-file line gate.
 
 use super::{bind_addr, paths_daemon_log, spawn_detached, stop_existing_for_restart};

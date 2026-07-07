@@ -182,7 +182,10 @@ fn fingerprint(data: &str) -> String {
 /// Render `contents` as a daemon-managed file: [`MANAGED_HEADER_PREFIX`] plus its fingerprint, then
 /// `contents` verbatim.
 fn render_managed(contents: &str) -> String {
-    format!("{MANAGED_HEADER_PREFIX}{}\n{contents}", fingerprint(contents))
+    format!(
+        "{MANAGED_HEADER_PREFIX}{}\n{contents}",
+        fingerprint(contents)
+    )
 }
 
 /// Split a daemon-written file's `text` into its recorded fingerprint and body.

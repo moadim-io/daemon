@@ -122,19 +122,16 @@ fn report_installed(unit: &Path) {
 /// no systemd-logind, insufficient privilege), print a warning with the manual command instead of
 /// aborting the install.
 fn enable_linger(unit: &Path) {
-    match run(&loginctl_bin(), &["enable-linger"]) {
-        Ok(()) => {
-            if let Some(marker) = linger_marker_path(unit) {
-                // Best-effort: if the marker can't be written, uninstall just won't disable
-                // linger later, which is the safe direction to fail in.
-                let _ = std::fs::write(&marker, "");
-            }
-            println!("  linger  enabled (survives logout and starts at boot)");
+    if let Ok(()) = run(&loginctl_bin(), &["enable-linger"]) {
+        if let Some(marker) = linger_marker_path(unit) {
+            // Best-effort: if the marker can't be written, uninstall just won't disable
+            // linger later, which is the safe direction to fail in.
+            let _ = std::fs::write(&marker, "");
         }
-        Err(_) => {
-            println!("  linger  NOT enabled — service stops at logout, won't start at boot");
-            println!("          run `loginctl enable-linger` as this user for persistence");
-        }
+        println!("  linger  enabled (survives logout and starts at boot)");
+    } else {
+        println!("  linger  NOT enabled — service stops at logout, won't start at boot");
+        println!("          run `loginctl enable-linger` as this user for persistence");
     }
 }
 

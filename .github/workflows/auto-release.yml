@@ -25,7 +25,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'Cargo.toml'
+      - "Cargo.toml"
+  workflow_dispatch: {}
 
 permissions:
   contents: write

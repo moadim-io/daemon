@@ -174,3 +174,8 @@ needless_pass_by_value = "deny"
 # collection is pure allocation overhead the iterator chain never needed. The
 # codebase is already clean, so `deny` locks that in.
 needless_collect = "deny"
+# Prefer `.copied()` over `.cloned()` when iterating `Copy` items (e.g.
+# `&i32`, `&bool`) — cloning a `Copy` type is a needlessly indirect way to say
+# "copy this value"; `.copied()` states the intent directly and optimizes
+# identically. The codebase is already clean, so `deny` locks that in.
+cloned_instead_of_copied = "deny"

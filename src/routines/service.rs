@@ -25,20 +25,10 @@ mod service_validate;
 #[cfg(test)]
 use service_validate::MAX_TITLE_LEN;
 use service_validate::{
-    normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs, validate_agent,
-    validate_goal, validate_machines, validate_prompt, validate_repositories, validate_tags,
-    validate_title,
+    map_write_routine_err, normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs,
+    validate_agent, validate_goal, validate_machines, validate_prompt, validate_repositories,
+    validate_tags, validate_title,
 };
-
-/// Map a [`write_routine`] failure to an [`AppError`], turning the on-disk slug-collision guard
-/// (#188, `ErrorKind::AlreadyExists`) into a 409 the caller can act on instead of a generic 500.
-fn map_write_routine_err(err: &std::io::Error) -> AppError {
-    if err.kind() == std::io::ErrorKind::AlreadyExists {
-        AppError::Conflict(err.to_string())
-    } else {
-        AppError::Internal
-    }
-}
 
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).

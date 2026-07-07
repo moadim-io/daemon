@@ -462,3 +462,7 @@ mod routine_storage_trigger_log_migration_tests;
 #[cfg(test)]
 #[path = "routine_storage_sidecar_state_tests.rs"]
 mod routine_storage_sidecar_state_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_slug_collision_tests.rs"]
+mod routine_storage_slug_collision_tests;

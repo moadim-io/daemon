@@ -71,3 +71,10 @@ map_unwrap_or = "deny"
 # `routines/filter.rs`, where each facet's explicit `Facet::All`/`Facet::Any` arm did nothing that
 # the trailing wildcard arm didn't already do.
 match_same_arms = "deny"
+# Reject `async fn`s that never `.await` anything — they don't need to be async,
+# and being async needlessly propagates async-ness to callers. Denied root-side
+# (see Cargo.toml), but the `ui` crate has its own `[lints.clippy]` table and
+# doesn't inherit root's extended deny-list, so this never applied to `ui/src`
+# despite CI's `clippy` job running `--workspace`. The `ui` crate is already
+# clean, so `deny` locks that in.
+unused_async = "deny"

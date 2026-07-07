@@ -169,3 +169,8 @@ derive_partial_eq_without_eq = "deny"
 # parameter forces every caller to clone or otherwise part with a value the callee never actually
 # needed to own. The codebase is already clean, so `deny` locks that in.
 needless_pass_by_value = "deny"
+# Reject collecting an iterator into a `Vec`/collection only to immediately
+# iterate over it again (or check its length/emptiness) — the intermediate
+# collection is pure allocation overhead the iterator chain never needed. The
+# codebase is already clean, so `deny` locks that in.
+needless_collect = "deny"

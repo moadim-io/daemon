@@ -122,8 +122,8 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
 /// [`RuntimeState`] when the sidecar is absent or unparsable (e.g. before the routine has ever
 /// been snoozed).
 ///
-/// Base-dir-aware so [`load_routine_from_base`] can resolve it coherently for any scan root, not
-/// only the global [`routines_dir`].
+/// Base-dir-aware so the `routine_storage_load` loaders can resolve it coherently for any scan
+/// root, not only the global [`routines_dir`].
 fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> RuntimeState {
     std::fs::read_to_string(base.join(dir_name).join("state.local.toml"))
         .ok()

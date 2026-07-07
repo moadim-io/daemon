@@ -78,3 +78,9 @@ match_same_arms = "deny"
 # despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 unused_async = "deny"
+# Reject a positional `format!`/`write!`/`println!` arg (`format!("{}", x)`) in favor of the
+# inlined form (`format!("{x}")`). Kept in lockstep with the same lint already enabled
+# workspace-root-side in Cargo.toml — the `ui` crate has its own `[lints]` table (no
+# `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
+# covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
+uninlined_format_args = "deny"

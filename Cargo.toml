@@ -204,3 +204,7 @@ unused_self = "deny"
 # at least as cheap and states the function doesn't need the caller's own reference. The codebase
 # is already clean, so `deny` locks that in.
 trivially_copy_pass_by_ref = "deny"
+# Require `_`-separated digit groups in long integer literals (e.g. `424_242`) so a reader can
+# judge magnitude at a glance instead of counting digits one by one. The codebase is already
+# clean, so `deny` locks that in.
+unreadable_literal = "deny"

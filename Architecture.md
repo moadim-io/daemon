@@ -172,6 +172,15 @@ diagnostics for the steps that get the session running in the first place. Only 
 the `mkdir` itself precede the redirect — a failure that early means `$WB` may not exist yet, so
 there's nowhere to write a launch log to.
 
+`agent.log` capture optimizes for **operator readability** over raw audit fidelity: `svc_logs` /
+`svc_run_log` (`src/routines/service_log_tail.rs`) strip ANSI/VT escape sequences and collapse
+`\r`-based redraw overwrites down to the final on-screen line before serving a tail, and cap the
+served window to `MAX_LOG_TAIL_BYTES` (2 MiB, UTF-8-boundary-safe) with a `"N bytes omitted"` marker
+rather than the full file. The on-disk file itself is untouched — this is a read-time view, not a
+write-time transform — so the raw `pipe-pane` capture remains available on disk for anyone who needs
+the byte-exact record; the served view just optimizes for "what is a human looking at right now"
+over "what did the terminal literally emit."
+
 Before either path launches, the daemon checks for a live tmux session under the routine's
 `moadim-<slug>-` prefix (any `$TS` suffix) and skips the fire — logging a warning instead of
 spawning — if one is still running. This overlap guard prevents a run that outlives its schedule

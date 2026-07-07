@@ -11,6 +11,59 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-07
+
+### Fixed
+
+Auto-refresh the routine LOGS view on the same operator-chosen cadence already used by the routines list (via the shared `AUTO` interval control), instead of only reloading once on mount. Previously, a workbench reaped by the periodic background cleanup sweep while a run's LOGS page was open left stale, already-deleted output on screen until the operator remembered to click the manual "↻" button (#357).
+
+test(ui): cover `parse_cron`/`describe_cron_live` in `cron_utils.rs`
+
+`cron_utils.rs`'s field-count normalization (5-field passthrough, 6-field
+with seconds, 7-field seconds+year stripping, `@keyword`, and invalid input)
+and `describe_cron_live`'s validity/description pairing had no tests at
+all, unlike the sibling `schedule.rs`/`schedule_heatmap.rs` pure-logic
+modules which both have dedicated `*_tests.rs` files. Added
+`cron_utils_tests.rs` following that same host-tested convention.
+`reltime` is left untested — it calls `js_sys::Date::now()` and needs a
+wasm/DOM host, mirroring the pure/DOM split already documented in
+`refresh.rs`.
+
+No behavior change — regression tests only.
+
+### Fixed
+
+Each routine's seeded `.gitignore` now also ignores `prompts/prompt.compiled.md` — the composed prompt is fully derived from `prompt.pure.md` + `routine.toml` and rewritten on every save, so it was getting tracked/committed even though it carries no information of its own (#1046). The pattern is reconciled into existing `.gitignore` files (not just newly created ones) the next time the daemon starts, alongside any other patterns a user has added.
+
+`host_validation` middleware: a present-but-non-UTF-8 `Host` or `Origin` header is now rejected with `403` instead of being silently treated the same as a missing header. `HeaderValue::to_str()` only rejects non-ASCII bytes, which no legitimate client ever sends in these headers, so falling through to "allow" on that error let an attacker bypass the DNS-rebinding/cross-origin allowlist entirely by sending garbage bytes in `Host`/`Origin`. Adds regression tests for both headers.
+
+Report `total_bytes` + `truncated` alongside log tail content in the logs MCP tool, so callers can tell a full log from a truncated window (#280).
+
+feat(ui): add TTL preset row (1h/1d/7d/30d) to the routine form
+
+The WORKBENCH TTL input required typing a raw second count from memory,
+unlike the SCHEDULE field which already has one-click cron presets. The
+routine create/edit form now has a matching preset row under the TTL
+input — 1h/1d/7d/30d buttons that set the field to the corresponding
+second count — mirroring the cron schedule presets' styling and behavior.
+
+feat(routines): show a humanized retention countdown per finished run in the
+run-history view
+
+`RunSummary` now carries `retention_expires_at` (finish time + the routine's
+effective TTL) for runs whose workbench is still on disk. The HISTORY page
+renders it as a `RETENTION` column ("expires in 12m" / "expired"), so users
+can see how long a finished run's log stays before cleanup reaps it, instead
+of guessing from the TTL alone (#477).
+
+Split `src/routines/service_trigger.rs` (→ `service_run_files.rs`) and `src/cli.rs` (→ `cli_restart.rs`) to satisfy the 500-line pre-push gate, which two independently-passing PRs had combined to exceed (`linecheck` isn't a required status check on the branch ruleset, so neither merge was blocked by it). No behavior change.
+
+### Fixed
+
+Warn at startup when the server binds to a non-loopback address. The REST/MCP API has no authentication (#504), so exposing it beyond `127.0.0.1`/`::1` grants anyone who can reach that address unauthenticated routine CRUD; the daemon now logs a loud warning at launch, matching the existing tmux/python3 startup checks, instead of leaving this risk silent.
+
+Add `MOADIM_MAX_WORKBENCH_DISK_BYTES`, an optional total-disk ceiling for `~/.moadim/workbenches/`. The existing TTL sweep only reaps a workbench once it is old enough, so a handful of concurrent large runs (e.g. big repo clones) could exhaust the disk before any TTL elapsed (#398). Once set and exceeded, the same sweep now also evicts finished workbenches oldest-first — never a live session — until back under the cap. Unset or `0` keeps today's unbounded-by-size behavior.
+
 ## [0.25.0] - 2026-07-06
 
 Add `moadim enable`/`disable <routine>` CLI commands to toggle a routine's enabled state from the terminal (#820).
@@ -2853,7 +2906,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/moadim-io/daemon/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/moadim-io/daemon/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/moadim-io/daemon/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/moadim-io/daemon/compare/v0.22.1...v0.23.0

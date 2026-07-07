@@ -40,15 +40,40 @@ pub(crate) fn read_exit_code(workbench_path: &Path) -> Option<i32> {
         .and_then(|text| text.trim().parse::<i32>().ok())
 }
 
+/// Size at which a routine's `runs.log` is rotated to a sibling `.log.1` file (replacing any
+/// previous one) on the next append. The reaper appends one record here per finished run for the
+/// whole life of the daemon with no other trim point, so a long-lived, frequently-firing routine's
+/// history would otherwise grow unbounded — the same shape already fixed for `daemon.log` (see
+/// [`crate::cli_system::DAEMON_LOG_MAX_BYTES`], #316). A routine's `runs.log` is far smaller per
+/// entry and per-routine, so it gets a smaller cap.
+const RUN_HISTORY_MAX_BYTES: u64 = 1024 * 1024;
+
+/// Rotate `path` to a sibling `.1` file (overwriting any previous one) if it has grown past
+/// [`RUN_HISTORY_MAX_BYTES`]. Best-effort: a failed rotation (permissions, race) falls through to
+/// the caller's own `append(true)` open rather than blocking the reap sweep that triggered it.
+fn rotate_run_history_if_oversized(path: &Path) {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return;
+    };
+    if metadata.len() <= RUN_HISTORY_MAX_BYTES {
+        return;
+    }
+    let rotated_path = path.with_extension("log.1");
+    let _ = std::fs::rename(path, rotated_path);
+}
+
 /// Append `run` as one NDJSON line to routine `id`'s `runs.log`.
 ///
-/// Best-effort: a write failure (creating the routine's directory, opening the log, or the write
-/// itself — collapsed into a single chain so there is one failure path to reason about, not three)
-/// is logged and swallowed rather than blocking the reap sweep that triggered it — losing one
-/// history entry is far cheaper than a stuck cleanup loop.
+/// Rotates the log first if it's grown past [`RUN_HISTORY_MAX_BYTES`] (see
+/// [`rotate_run_history_if_oversized`]), then the append itself is best-effort: a write failure
+/// (creating the routine's directory, opening the log, or the write itself — collapsed into a
+/// single chain so there is one failure path to reason about, not three) is logged and swallowed
+/// rather than blocking the reap sweep that triggered it — losing one history entry is far
+/// cheaper than a stuck cleanup loop.
 pub(crate) fn append_persisted_run(id: &str, run: &PersistedRun) {
     let line = serde_json::to_string(run).expect("PersistedRun always serializes");
     let path = routine_run_history_path(id);
+    rotate_run_history_if_oversized(&path);
     let parent = path
         .parent()
         .expect("routine run-history path has a parent dir");

@@ -113,8 +113,11 @@ fn fold_line(line: &str) -> String {
 /// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
 /// `(now, now + HORIZON_DAYS]`, capped at [`MAX_EVENTS_PER_ROUTINE`]. Fire times are evaluated in
 /// the host's local timezone (matching crontab semantics) and emitted as UTC instants so the feed
-/// needs no embedded `VTIMEZONE`. Disabled routines and unparseable schedules (e.g. `@reboot`)
-/// contribute nothing. The calendar is named [`DEFAULT_CAL_NAME`]; for a single-routine feed see
+/// needs no embedded `VTIMEZONE`. Disabled, power-saving, and unparseable-schedule (e.g. `@reboot`)
+/// routines contribute nothing. A snoozed routine (`snoozed_until` in the future, or `skip_runs`
+/// above zero) has its would-be-skipped fires filtered out too, mirroring the skip that
+/// `svc_trigger_scheduled` actually performs at fire time, so the feed never advertises a run that
+/// will silently no-op. The calendar is named [`DEFAULT_CAL_NAME`]; for a single-routine feed see
 /// [`build_ical_named`].
 ///
 /// When a routine fires more often than the cap allows within the horizon, the count cap is hit
@@ -158,7 +161,7 @@ fn build_ical_core(
     ];
     let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {
-        if !routine.enabled || globally_locked {
+        if !routine.enabled || globally_locked || routine.power_saving {
             continue;
         }
         let Ok(cron) = routine.schedule.parse::<Cron>() else {
@@ -173,7 +176,18 @@ fn build_ical_core(
         // Fire times within the horizon, in order. Kept as a stateful iterator so that after the
         // per-routine cap is spent we can peek whether more fires remain inside the horizon and, if
         // so, surface the truncation rather than letting the feed silently stop short of 30 days.
-        let mut fires = cron.iter_after(now).take_while(|dt| *dt <= horizon);
+        //
+        // `snoozed_until`/`skip_runs` are mutually exclusive (enforced by `svc_snooze`): a fire is
+        // dropped either because it falls before the snooze deadline, or because it's among the
+        // next `skip_runs` fires that `svc_trigger_scheduled` will skip and decrement past. Both
+        // mirror the exact skip performed there so the feed matches what will actually run.
+        let snoozed_until = routine.snoozed_until;
+        let skip_runs = routine.skip_runs.unwrap_or(0) as usize;
+        let mut fires = cron
+            .iter_after(now)
+            .take_while(|dt| *dt <= horizon)
+            .filter(move |dt| snoozed_until.is_none_or(|until| dt.timestamp() as u64 >= until))
+            .skip(skip_runs);
         let mut emitted = 0usize;
         for fire in fires.by_ref().take(max_events) {
             let stamp = format_utc(fire.with_timezone(&Utc));

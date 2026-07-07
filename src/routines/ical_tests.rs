@@ -112,6 +112,62 @@ fn unparseable_schedule_is_skipped() {
 }
 
 #[test]
+fn power_saving_routine_contributes_nothing() {
+    // power_saving is an independent signal from enabled (see svc_trigger_scheduled),
+    // and blocks a scheduled fire the same way; the feed must honor it too.
+    let mut routine = routine_with("r1", "@daily", true);
+    routine.power_saving = true;
+    let ics = build_ical(&[routine], fixed_now());
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
+}
+
+#[test]
+fn snoozed_routine_skips_fires_before_the_deadline() {
+    // svc_trigger_scheduled refuses to spawn any fire before `snoozed_until`; the feed
+    // must not advertise those as real runs either.
+    let mut routine = routine_with("r1", "* * * * *", true);
+    let now = fixed_now();
+    let deadline = now + Duration::minutes(3);
+    routine.snoozed_until = Some(u64::try_from(deadline.timestamp()).unwrap());
+    let ics = build_ical_with_cap(&[routine], now, 5);
+    // The first two per-minute fires (00:01, 00:02) fall before the deadline and are
+    // dropped; the feed starts at the deadline itself (00:03).
+    assert!(ics.contains(&format!(
+        "DTSTART:{}\r\n",
+        format_utc(deadline.with_timezone(&Utc))
+    )));
+    let first_dropped = now + Duration::minutes(1);
+    assert!(!ics.contains(&format!(
+        "DTSTART:{}\r\n",
+        format_utc(first_dropped.with_timezone(&Utc))
+    )));
+    // 5 real VEVENTs (starting at the deadline) plus the truncation marker.
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 6);
+}
+
+#[test]
+fn skip_runs_drops_the_next_n_fires() {
+    // svc_trigger_scheduled decrements skip_runs once per skipped scheduled fire without
+    // spawning it; the feed must skip the same leading fires instead of showing them.
+    let mut routine = routine_with("r1", "* * * * *", true);
+    routine.skip_runs = Some(2);
+    let now = fixed_now();
+    let ics = build_ical_with_cap(&[routine], now, 3);
+    let first_kept = now + Duration::minutes(3);
+    let first_dropped = now + Duration::minutes(1);
+    assert!(ics.contains(&format!(
+        "DTSTART:{}\r\n",
+        format_utc(first_kept.with_timezone(&Utc))
+    )));
+    assert!(!ics.contains(&format!(
+        "DTSTART:{}\r\n",
+        format_utc(first_dropped.with_timezone(&Utc))
+    )));
+    // 3 real VEVENTs (starting after the 2 skipped fires) plus the truncation marker.
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 4);
+}
+
+#[test]
 fn high_frequency_schedule_is_capped() {
     let ics = build_ical(&[routine_with("r1", "* * * * *", true)], fixed_now());
     // 100 real events plus one trailing truncation-marker VEVENT (see below).

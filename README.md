@@ -109,7 +109,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │       ├── routine.toml       # tracked — schedule, agent, repositories
 │       ├── prompts/
 │       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-│       │   └── prompt.compiled.md  # tracked — the rendered prompt handed to the agent
+│       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 │       └── .gitignore         # generated — excludes *.local.* and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
@@ -155,7 +155,7 @@ git-trackable:
     ├── routine.toml   # tracked — schedule, agent, repositories
     ├── prompts/
     │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-    │   └── prompt.compiled.md  # tracked — the rendered prompt handed to the agent
+    │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
     └── .gitignore     # generated — excludes *.local.* and *.log
 ```
 

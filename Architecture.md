@@ -26,7 +26,7 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                ~/.config/moadim/routines/
                ├── <uuid>/routine.toml                  (tracked)
                ├── <uuid>/prompts/prompt.pure.md         (tracked)
-               ├── <uuid>/prompts/prompt.compiled.md     (tracked)
+               ├── <uuid>/prompts/prompt.compiled.local.md (gitignored)
                └── <uuid>/.gitignore                    (generated)
 ```
 
@@ -143,7 +143,7 @@ and a `title`. Routines have their own store (`RoutineStore`), REST endpoints
 (`/routines`), MCP tools (`create_routine`, …), and crontab block.
 
 When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
-time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.md`
+time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.local.md`
 (a repositories-as-context preamble + the prompt) into `~/.config/moadim/routines/<id>/`, then writes a
 single self-contained shell command into a dedicated crontab block:
 
@@ -151,7 +151,7 @@ single self-contained shell command into a dedicated crontab block:
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
 <sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; \
-  { cp …/prompts/prompt.compiled.md $WB/prompt.md; \
+  { cp …/prompts/prompt.compiled.local.md $WB/prompt.md; \
     tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
     tmux pipe-pane -o -t … "cat >> $WB/agent.log"; } >> $WB/launch.log 2>&1   # moadim-routine:<id>
 # END MOADIM-ROUTINES
@@ -222,7 +222,7 @@ Creating or updating a routine validates the referenced agent's `args` against b
 time, rather than silently launching the agent with a garbage or empty task at fire time.
 
 Modules: `src/routines/` (model + service + command builder + handlers), `src/routine_storage.rs`
-(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.md` persistence),
+(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.local.md` persistence),
 `src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
 Reverse sync (crontab → store) is not implemented for routines.
 

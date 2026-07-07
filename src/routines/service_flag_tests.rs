@@ -105,7 +105,7 @@ fn svc_create_flag_persists_and_refreshes_prompt() {
     assert_eq!(flag.flag_type, "bug");
     assert_eq!(flag.description, "broken thing");
 
-    // prompt.compiled.md is refreshed with the new open flag so the next run sees it.
+    // prompt.compiled.local.md is refreshed with the new open flag so the next run sees it.
     let slug = slugify(title);
     let prompt =
         std::fs::read_to_string(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();

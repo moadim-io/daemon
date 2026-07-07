@@ -136,15 +136,21 @@ async fn run_server() -> anyhow::Result<()> {
     }
     routines::ensure_default_agents();
     // Rename any prompt.txt sidecars to prompt.md before the crontab resync; otherwise the first
-    // cron trigger after upgrade would fail on the launch command's `cp prompt.compiled.md` step.
+    // cron trigger after upgrade would fail on the launch command's `cp prompt.compiled.local.md`
+    // step.
     routine_storage::migrate_prompt_files();
     // Move each routine's prompt file(s) into its prompts/ subfolder, and extract the raw prompt
     // out of routine.toml into prompts/prompt.pure.md. Must run before migrate_routine_dirs and
     // load_store, which both read the prompt from the new sidecar location.
     routine_storage::migrate_prompts_to_subfolder();
+    // Rename the compiled-prompt sidecar from the legacy prompt.compiled.md to
+    // prompt.compiled.local.md so it matches the *.local.* gitignore pattern instead of relying on
+    // an explicit entry (issue #1046). Must run after migrate_prompts_to_subfolder (which is what
+    // lands the legacy filename in prompts/) and before load_store.
+    routine_storage::migrate_compiled_prompt_filename();
     // Move legacy UUID-named routine dirs to the current slug-based layout before loading, so the
     // store reflects the canonical dirs the crontab sync and the launch command's
-    // `cp prompt.compiled.md` both target.
+    // `cp prompt.compiled.local.md` both target.
     routine_storage::migrate_routine_dirs();
     // Migrate per-routine trigger timestamps from legacy TOML sidecars (scheduled.local.toml,
     // last_manual_trigger_at in state.local.toml) into the new append-only log files
@@ -158,7 +164,7 @@ async fn run_server() -> anyhow::Result<()> {
     routines::ensure_default_routines(&routines);
     // Re-persist so every routine has its routine.toml + prompts/ sidecars in the slug dir (and any
     // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
-    // command's `cp prompt.compiled.md` fails and the agent launches with an empty prompt).
+    // command's `cp prompt.compiled.local.md` fails and the agent launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next

@@ -404,7 +404,7 @@ fn repersist_routines_recreates_missing_prompt_sidecar() {
         let title = "Rs Repersist Routine";
         let slug = slugify(title);
         write_routine(&make_routine(id, title)).unwrap();
-        // Simulate the sync-only state: prompt.compiled.md gone, only run.sh-style dir remains.
+        // Simulate the sync-only state: prompt.compiled.local.md gone, only run.sh-style dir remains.
         std::fs::remove_file(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
         assert!(!crate::paths::routine_compiled_prompt_path(&slug).exists());
 
@@ -429,7 +429,7 @@ fn write_routine_seeds_gitignore_with_all_required_patterns() {
         write_routine(&make_routine(id, title)).unwrap();
 
         let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        for pattern in ["*.local.*", "*.log", "run.sh", "prompt.compiled.md"] {
+        for pattern in ["*.local.*", "*.log", "run.sh"] {
             assert!(
                 content.lines().any(|line| line == pattern),
                 "missing required pattern {pattern:?} in {content:?}"
@@ -449,25 +449,25 @@ fn write_routine_seeds_gitignore_with_all_required_patterns() {
 }
 
 #[test]
-fn write_routine_heals_a_legacy_gitignore_missing_prompt_compiled_md() {
+fn write_routine_heals_a_legacy_gitignore_missing_required_patterns() {
     with_override_home(|_home| {
         let id = "rs-gitignore-heal-id";
         let title = "Rs Gitignore Heal Routine";
         let slug = slugify(title);
         std::fs::create_dir_all(crate::paths::routine_dir(&slug)).unwrap();
-        // Simulate an install from before `prompt.compiled.md` was added to the required patterns,
-        // plus a user-added custom entry that reconciliation must preserve. No trailing newline,
+        // Simulate an install from before `run.sh` was added to the required patterns, plus a
+        // user-added custom entry that reconciliation must preserve. No trailing newline,
         // exercising the "append one before the new patterns" branch too.
         std::fs::write(
             crate::paths::routine_gitignore_path(&slug),
-            "*.local.*\n*.log\nrun.sh\nmy-custom-pattern",
+            "*.local.*\n*.log\nmy-custom-pattern",
         )
         .unwrap();
 
         write_routine(&make_routine(id, title)).unwrap();
 
         let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        assert!(content.lines().any(|line| line == "prompt.compiled.md"));
+        assert!(content.lines().any(|line| line == "run.sh"));
         assert!(
             content.lines().any(|line| line == "my-custom-pattern"),
             "user-added pattern must survive reconciliation: {content:?}"

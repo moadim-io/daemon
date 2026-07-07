@@ -75,7 +75,7 @@ fn prompt_file_contains_composed_prompt() {
 fn write_routine_persists_composed_prompt_sidecar_with_repos() {
     // Focused coverage for the `atomic_write(routine_compiled_prompt_path, compose_prompt(..))`
     // call in `write_routine`: a routine with a non-empty prompt AND repositories runs
-    // `compose_prompt` fully, and the composed body lands in prompts/prompt.compiled.md on disk.
+    // `compose_prompt` fully, and the composed body lands in prompts/prompt.compiled.local.md on disk.
     with_override_home(|_home| {
         let id = "rs-prompt-sidecar-id";
         let title = "Rs Prompt Sidecar Routine";
@@ -140,14 +140,14 @@ fn write_routine_errors_when_prompt_sidecar_write_fails() {
 fn write_routine_errors_when_compiled_prompt_sidecar_write_fails() {
     // Covers the error-propagation (`?`) on the compiled-prompt `atomic_write` in `write_routine`:
     // routine.toml and the pure-prompt sidecar both write successfully, but a non-empty directory
-    // occupies the `prompt.compiled.md` path, so the atomic rename over it fails.
+    // occupies the `prompt.compiled.local.md` path, so the atomic rename over it fails.
     with_override_home(|_home| {
         let id = "rs-compiled-prompt-write-fail-id";
         let title = "Rs Compiled Prompt Write Fail Routine";
         let slug = slugify(title);
         let dir = crate::paths::routine_dir(&slug);
         std::fs::create_dir_all(&dir).unwrap();
-        // Block prompt.compiled.md with a *non-empty* directory so the atomic rename over it fails.
+        // Block prompt.compiled.local.md with a *non-empty* directory so the atomic rename over it fails.
         let prompt_dir = crate::paths::routine_compiled_prompt_path(&slug);
         std::fs::create_dir_all(&prompt_dir).unwrap();
         std::fs::write(prompt_dir.join("occupant"), "keep me non-empty").unwrap();

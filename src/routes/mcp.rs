@@ -233,7 +233,7 @@ impl MoadimMcp {
         Ok(ok(routines::available_agents()))
     }
 
-    /// Raise a new flag against a routine, refreshing its `prompt.compiled.md` so the next run's
+    /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
     /// "Open flags" section includes it.
     #[tool(
         description = "Flag something unclear about a routine mid-run — a gap, bug, edge case, or question the agent hit with no other channel to surface it (the run happens unattended inside tmux). `type` is free text (common examples: \"bug\", \"gap\", \"edge_case\", \"question\", \"blocker\"); `scope` is \"general\" (committed, shared via git) or \"local\" (gitignored, machine-local). Unresolved flags are shown back to the agent in the routine's prompt on its next run."
@@ -267,7 +267,7 @@ impl MoadimMcp {
         })
     }
 
-    /// Resolve (delete) a flag by filename, refreshing `prompt.compiled.md` so it stops appearing
+    /// Resolve (delete) a flag by filename, refreshing `prompt.compiled.local.md` so it stops appearing
     /// in the next run's prompt.
     #[tool(
         description = "Resolve a routine flag by filename (as returned by create_flag/list_flags), removing it"

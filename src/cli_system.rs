@@ -66,9 +66,10 @@ Each subdirectory here is one routine (a prompt + schedule + agent, run on a cro
 
 - `<id>/routine.toml` — the schedule, agent, and repositories.
 - `<id>/prompts/prompt.pure.md` — the prompt you wrote.
-- `<id>/prompts/prompt.compiled.md` — the composed prompt (repositories preamble + pure
-  prompt) copied into each run's workbench. Gitignored: it's fully derived from
-  `prompt.pure.md` + `routine.toml` and rewritten on every save.
+- `<id>/prompts/prompt.compiled.local.md` — the composed prompt (repositories preamble +
+  pure prompt) copied into each run's workbench. Gitignored (`.local.` matches the
+  `*.local.*` pattern): it's fully derived from `prompt.pure.md` + `routine.toml` and
+  rewritten on every save.
 - `<id>/flags/` — open questions an agent raised mid-run: a gap, bug, edge case, or question
   it couldn't resolve.
 - `<id>/state.local.toml` — gitignored sidecar holding snooze/skip-runs state.

@@ -42,7 +42,7 @@ fn routine_and_slug(store: &RoutineStore, id: &str) -> Result<(Routine, String),
 
 /// Raise a new flag against routine `id`. `flag_type` and `description` must be non-blank;
 /// `scope` is `"general"` (committed) or `"local"` (gitignored). Refreshes the routine's
-/// `prompts/prompt.compiled.md` afterward so the next run's "Open flags" section (see
+/// `prompts/prompt.compiled.local.md` afterward so the next run's "Open flags" section (see
 /// `compose_prompt`) includes it.
 pub fn svc_create_flag(
     store: &RoutineStore,
@@ -70,7 +70,7 @@ pub fn svc_list_flags(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppEr
 /// Resolve (delete) the flag named `filename` under routine `id`.
 ///
 /// `NotFound` when the routine does not exist, `filename` is unsafe, or names no existing flag.
-/// Refreshes `prompts/prompt.compiled.md` afterward so a resolved flag stops appearing in the next
+/// Refreshes `prompts/prompt.compiled.local.md` afterward so a resolved flag stops appearing in the next
 /// run's prompt.
 pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Result<(), AppError> {
     let (routine, slug) = routine_and_slug(store, id)?;

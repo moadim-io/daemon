@@ -93,7 +93,7 @@ pub(super) fn validate_agent(agent: &str) -> Result<(), AppError> {
 /// Reject a prompt that is empty or whitespace-only with `400 Bad Request`.
 ///
 /// The prompt is the one field that defines what a routine actually does. A blank
-/// prompt still produces a valid `prompt.compiled.md` (just the moadim preamble + repo list),
+/// prompt still produces a valid `prompt.compiled.local.md` (just the moadim preamble + repo list),
 /// so the routine fires on every cron tick and launches an agent with no task —
 /// silently burning scheduled runs and the user's agent/API budget (issue #224).
 /// Shared by the create and update paths so the REST and MCP surfaces reject it
@@ -143,7 +143,7 @@ pub(super) fn validate_title(title: &str) -> Result<(), AppError> {
 /// Reject `repositories` entries whose URL (or set branch) is empty/whitespace-only, and return a
 /// normalized copy with surrounding whitespace trimmed.
 ///
-/// `repository` is a free-form string rendered verbatim into the agent's `prompt.compiled.md` preamble by
+/// `repository` is a free-form string rendered verbatim into the agent's `prompt.compiled.local.md` preamble by
 /// `compose_prompt` (see #241), so a blank or padded entry yields a broken `- ` clone bullet. An
 /// empty list is valid — this only guards the contents of non-empty entries. Mirrors the
 /// `validate_cron` / `validate_agent` boundary checks for the other routine fields (#224/#226).

@@ -11,6 +11,46 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-09
+
+chore(lint): enable `clippy::map_unwrap_or`
+
+Adds `map_unwrap_or = "deny"` to the workspace root `Cargo.toml`'s `[lints.clippy]` table, rejecting `.map(f).unwrap_or(_)`/`.map(f).unwrap_or_else(_)` in favour of the idiomatic `map_or`/`map_or_else`/`is_ok_and` single-combinator form. Fixes the violations this surfaced across `src/` at the time (`routes/mcp.rs`, `routine_storage.rs`, `routines/cleanup/mod.rs`, `routines/cleanup/session.rs`, `utils/time.rs`). No behavior change. (#524)
+
+fix(build): inline the compiled CSS into `prebuilt.html`, not just JS/WASM
+
+`src/build/ui.rs`'s `inline_into_html` folded trunk's compiled JS and WASM
+into a single self-contained `index.html`, but left the CSS as an external
+`<link rel="stylesheet" href="./styles-<hash>.css">` — a file that never
+gets embedded or shipped alongside `prebuilt.html` (only the HTML itself is
+copied to the package root and committed). Every `cargo install moadim`
+user hit this: the server's catch-all route serves `index.html` for that
+missing CSS request, the browser gets `text/html` back for a `.css`
+request, and strict MIME checking refuses to apply it — the control panel
+rendered completely unstyled. Present since CSS inlining was never added
+alongside JS/WASM inlining (reproduces on the v0.26.0 tag too); this is the
+first release to carry the fix.
+
+`find_dist_assets` now also locates the `.css` file in trunk's `dist/`,
+and `assemble_html` inlines it into a `<style>` block in `<head>` the same
+way the WASM bytes are inlined into the boot script, so the served bundle
+makes zero external asset requests.
+
+fix(routines): verify the Claude trust-dialog pre-seed actually persisted before launching
+
+The `claude` agent's `setup` step pre-seeds `~/.claude.json` so a headless routine run
+never blocks on Claude Code's "Do you trust this folder?" dialog. Live runs were found
+parked at that exact dialog for hours — reaped only by the ~1h watchdog, with an empty
+log — because the write had silently not taken effect for that workbench. The setup
+script now reads `~/.claude.json` back after writing and asserts the seeded entry is
+actually there; a failed assertion makes the script exit non-zero, which the launcher's
+existing `{setup}; } || { ...; exit 1; }` guard turns into an immediate, diagnosable
+"agent setup failed" abort instead of a silent multi-hour hang.
+
+feat(read): reload the routine store from disk on every GET (#774)
+
+The daemon used to load `~/.config/moadim/routines/` once at startup into an in-memory cache; every `GET` (HTTP `/routines`, `/routines/{id}`, `/routines.ics`, and the equivalent MCP tools) served that stale snapshot, so config edits pulled into the directory — e.g. a routine's `machines` targeting list changing via `git pull` — stayed invisible until a daemon restart. `svc_list`/`svc_get`/the iCal feed now re-scan the on-disk routines directory and refresh the store before serving each request; disk is already the source of truth (every mutation persists before returning), so the reload-on-read loses no state, and the scheduler-written `last_scheduled_trigger_at` log is read back on every reload so it survives the refresh.
+
 ## [0.27.0] - 2026-07-07
 
 ### Added
@@ -3094,7 +3134,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/moadim-io/daemon/compare/v0.27.0...v1.0.0
 [0.27.0]: https://github.com/moadim-io/daemon/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/moadim-io/daemon/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/moadim-io/daemon/compare/v0.24.0...v0.25.0

@@ -84,3 +84,10 @@ unused_async = "deny"
 # `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
 # covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
 uninlined_format_args = "deny"
+# Reject `{:?}` (Debug) formatting of a `Path`/`PathBuf` in user-facing output. Debug-formats
+# a path with surrounding quotes and escaped separators/backslashes, which reads oddly and
+# diverges from every other path already printed via `.display()`. Kept in lockstep with the
+# same lint already enabled workspace-root-side in Cargo.toml — the `ui` crate has its own
+# `[lints]` table (no `workspace = true` inheritance) so it was silently exempt despite
+# `clippy --workspace` covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
+unnecessary_debug_formatting = "deny"

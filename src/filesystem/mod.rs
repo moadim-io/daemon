@@ -1,4 +1,4 @@
-/// Server filesystem location, reported by the MCP `health` tool.
+/// Server filesystem location, surfaced via `GET /health` and the MCP `health` tool.
 #[derive(serde::Serialize)]
 pub struct FsLocation {
     /// Absolute path of the server's working directory.

@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-09
+
+fix(ci): stop `publish.yml`/`release.yml` from racing their own redundant `test.yml` re-run on the automated release path (#1099)
+
+Both workflows gated a redundant `lint`/`test` re-run on `github.event_name == 'push'`, meant to skip it when called from `auto-release.yml` on a verified version bump. A nested `workflow_call` inherits `github.event_name` from the chain's originating event, so it read `push` there too and the guard never actually skipped anything — every version bump ran three concurrent `test.yml` calls sharing one `test-<ref>` concurrency group with `cancel-in-progress: true`, and `auto-release.yml`'s `publish`/`release` jobs routinely lost that race, silently skipping the crates.io publish and/or GitHub Release step (reproduced on `v1.0.0`). The guard now keys off `inputs.tag == ''`, which reliably distinguishes the two paths regardless of what `github.event_name` reports.
+
 ## [1.0.0] - 2026-07-09
 
 chore(lint): enable `clippy::map_unwrap_or`
@@ -3134,7 +3140,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/moadim-io/daemon/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/moadim-io/daemon/compare/v0.27.0...v1.0.0
 [0.27.0]: https://github.com/moadim-io/daemon/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/moadim-io/daemon/compare/v0.25.0...v0.26.0

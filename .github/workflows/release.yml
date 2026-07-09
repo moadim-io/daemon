@@ -15,6 +15,20 @@ name: GitHub Release
 # Release notes are extracted from the matching version section in CHANGELOG.md
 # so the published notes stay in sync with the changelog. Runs independently of
 # publish.yml — neither blocks the other.
+#
+# The `lint`/`test` skip below keys off `inputs.tag`, not `github.event_name`:
+# a *nested* `workflow_call` (this workflow, called from auto-release.yml,
+# itself triggered by a `push` to main) inherits `github.event_name` from the
+# chain's originating event — it reads `push` here too, not `workflow_call` —
+# so `github.event_name == 'push'` was always true and never actually skipped
+# anything. That silently ran this workflow's own `test.yml` call alongside
+# publish.yml's identical call *and* the plain push-triggered `test.yml`, all
+# three racing for the same `test-${{ github.ref }}` concurrency group with
+# `cancel-in-progress: true` — auto-release.yml's `publish`/`release` jobs
+# routinely lost that race. `inputs` is only populated on the `workflow_call`
+# path (`required: true` there), so `inputs.tag == ''` reliably means "not
+# called with a tag" — i.e. the direct tag-push escape hatch — regardless of
+# what `github.event_name` reports.
 
 on:
   push:
@@ -36,12 +50,12 @@ jobs:
   # (see header comment above).
   lint:
     name: Lint tagged commit
-    if: github.event_name == 'push'
+    if: inputs.tag == ''
     uses: ./.github/workflows/lint.yml
 
   test:
     name: Test tagged commit
-    if: github.event_name == 'push'
+    if: inputs.tag == ''
     uses: ./.github/workflows/test.yml
 
   release:

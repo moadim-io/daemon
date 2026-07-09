@@ -17,11 +17,18 @@ use std::time::Duration;
 /// binary (`cargo install`), that directory is wherever the crate happened to build, which
 /// generally doesn't exist on the end user's machine — skip silently rather than warning on
 /// every startup for a path nobody expects to be writable (#319).
+///
+/// Also skips the write when the on-disk spec already matches the freshly generated one, so a
+/// dev checkout doesn't churn the committed file's mtime on every startup (#319).
 pub(crate) fn write_openapi_spec(path: &std::path::Path) {
     if !path.parent().is_some_and(std::path::Path::is_dir) {
         return;
     }
-    if let Err(err) = std::fs::write(path, crate::openapi::ApiDoc::to_json()) {
+    let spec = crate::openapi::ApiDoc::to_json();
+    if std::fs::read_to_string(path).is_ok_and(|existing| existing == spec) {
+        return;
+    }
+    if let Err(err) = std::fs::write(path, spec) {
         log::warn!("could not write openapi spec: {err}");
     }
 }

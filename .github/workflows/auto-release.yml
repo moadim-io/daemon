@@ -1,0 +1,109 @@
+name: Auto Release
+
+# Releasing is now automated by design: a release is whatever lands on `main`
+# with a bumped `Cargo.toml` version. The old manual "push the vX.Y.Z tag after
+# merging" step is gone — this workflow performs it.
+#
+# Flow on every push to `main` that touches `Cargo.toml`:
+#   1. detect  — read the package version; release only if no `v<version>` tag
+#                exists yet (idempotent: dependency-only edits don't release).
+#                Also verifies CHANGELOG.md's topmost dated `## [x.y.z]`
+#                heading matches that version, per CONTRIBUTING.md's release
+#                checklist, so a forgotten "promote Unreleased" step fails fast
+#                here instead of tagging/publishing a release with stale notes.
+#   2. tag     — create and push `v<version>`.
+#   3. publish — call publish.yml (crates.io) directly via `workflow_call`.
+#   4. release — call release.yml (GitHub Release) directly via `workflow_call`.
+#
+# Why call publish/release directly instead of letting the tag push trigger
+# their `on: push: tags` listeners: a tag pushed with the default GITHUB_TOKEN
+# does NOT trigger other workflows (GitHub's loop-guard), so we invoke them
+# here. Manual `v*` tag pushes (by a human) still trigger those workflows as an
+# escape hatch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  # `publish.yml`'s `publish` job requests `id-token: write` for crates.io
+  # Trusted Publishing (OIDC). A reusable-workflow chain is capped by the
+  # top-level caller's `permissions:` block — any scope not listed here is
+  # `none` for every job in the chain, regardless of what a called workflow
+  # requests. Omitting `id-token` made every run since 2026-07-02 fail with
+  # `startup_failure` before a single job was created (#1049).
+  id-token: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect version bump
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.v.outputs.release }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # need all tags to check existence
+
+      - id: v
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          TAG="v$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists — nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version $VERSION — will tag and release."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify CHANGELOG.md's topmost dated heading matches the version
+        if: steps.v.outputs.release == 'true'
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          HEADING=$(grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
+          if [ "$HEADING" != "$VERSION" ]; then
+            echo "::error::CHANGELOG.md's topmost dated heading is [$HEADING] but Cargo.toml's version is $VERSION. Promote '## [Unreleased]' to '## [$VERSION] - $(date +%Y-%m-%d)' before releasing."
+            exit 1
+          fi
+          echo "CHANGELOG.md heading matches Cargo.toml version ($VERSION)."
+
+  tag:
+    name: Push tag
+    needs: detect
+    if: needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ needs.detect.outputs.tag }}"
+          git push origin "${{ needs.detect.outputs.tag }}"
+
+  publish:
+    needs: [detect, tag]
+    if: needs.detect.outputs.release == 'true'
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.detect.outputs.tag }}
+    secrets: inherit
+
+  release:
+    needs: [detect, tag]
+    if: needs.detect.outputs.release == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.detect.outputs.tag }}

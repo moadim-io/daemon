@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "A scheduled AI-agent task. Normally written and maintained by the daemon (one routine.toml per routine); this schema documents its on-disk shape and powers editor validation. Runtime trigger state lives in a gitignored state.local.toml sidecar, not here.",
+  "properties": {
+    "agent": {
+      "description": "Agent registry key (e.g. \"claude\") resolved from the agents config directory.",
+      "type": "string"
+    },
+    "created_at": {
+      "description": "Unix timestamp (seconds) when the routine was created. Daemon-assigned.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "enabled": {
+      "default": true,
+      "description": "Whether the routine is active.",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "UUID v4 uniquely identifying the routine, stable across renames. Assigned by the daemon on create.",
+      "type": "string"
+    },
+    "last_manual_trigger_at": {
+      "description": "Legacy/read-only. Last-manual-trigger timestamp; runtime trigger state now lives in the gitignored state.local.toml sidecar and is never written to routine.toml.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "last_triggered_at": {
+      "description": "Legacy/read-only. Pre-rename last-manual-trigger timestamp; migrated into the state.local.toml sidecar on the next write and never written back. Accepted only so routine.toml files from older daemons still load.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "max_runtime_secs": {
+      "description": "Max wall-clock seconds a single run may execute before the watchdog kills its hung session. Absent uses the daemon default.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "prompt": {
+      "description": "Task prompt handed to the agent.",
+      "type": "string"
+    },
+    "repositories": {
+      "description": "Git repositories listed to the agent as prompt context (not cloned by moadim).",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "description": "Branch to use; omit for the remote default branch.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Git remote URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schedule": {
+      "description": "Cron expression for when the routine runs, evaluated in the host's local system timezone (the OS crontab timezone), not UTC.",
+      "examples": [
+        "@hourly",
+        "@daily",
+        "30 9 * * 1-5"
+      ],
+      "type": "string"
+    },
+    "title": {
+      "description": "Human name; slugified to name the workbench folder and tmux session.",
+      "type": "string"
+    },
+    "ttl_secs": {
+      "description": "Workbench retention (seconds) for finished runs; caps the cron-derived retention lower. Absent uses the daemon default.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "updated_at": {
+      "description": "Unix timestamp (seconds) when the routine was last updated. Daemon-assigned.",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schedule",
+    "title",
+    "agent",
+    "prompt"
+  ],
+  "title": "Routine",
+  "type": "object"
+}

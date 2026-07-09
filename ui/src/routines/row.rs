@@ -9,7 +9,8 @@ use crate::schedule::{fmt_until, fmt_when, next_fires};
 
 use super::filter::{last_fire_at, routine_health, trigger_button_title};
 use super::form::format_ttl;
-use super::model::Routine;
+use super::model::{FleetRunSummary, Routine};
+use super::sparkline::RunHistorySparkline;
 use super::table::next_routine_run_cell;
 
 #[derive(Properties, PartialEq)]
@@ -17,6 +18,8 @@ pub struct RowProps {
     pub routine: Routine,
     /// Reference instant for the NEXT RUN countdown.
     pub now: chrono::DateTime<Local>,
+    /// This routine's recent runs, oldest to newest, backing the RUN HISTORY sparkline cell.
+    pub runs: Vec<FleetRunSummary>,
     /// Whether this row is currently selected.
     pub selected: bool,
     /// Fired when the selection checkbox is clicked.
@@ -186,6 +189,7 @@ pub fn routine_row(props: &RowProps) -> Html {
             </td>
             <td>{next_run}</td>
             <td>{last_fire}</td>
+            <td><RunHistorySparkline runs={props.runs.clone()} /></td>
             <td>
                 <span class="cell-handler" title={agent_title}>
                     <span class={agent_dot}></span>

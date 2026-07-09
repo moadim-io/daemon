@@ -1,7 +1,7 @@
 //! Routine table: sortable/groupable header, empty states, and the NEXT RUN cell
 //! helper shared with the row component.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use chrono::{Duration, Local};
 use yew::prelude::*;
@@ -9,7 +9,7 @@ use yew::prelude::*;
 use crate::schedule::{fmt_until, fmt_when, next_fire_after};
 
 use super::filter::{is_routine_snoozed, snooze_detail, DUE_SOON_WINDOW_SECS};
-use super::model::Routine;
+use super::model::{FleetRunSummary, Routine};
 use super::row::RoutineRow;
 use super::state::{group_routines, RCol, RDir, RGroupBy};
 
@@ -67,6 +67,9 @@ pub struct TableProps {
     pub sort_dir: RDir,
     /// Active group-by dimension; `None` renders a flat list.
     pub group_by: RGroupBy,
+    /// Each routine's recent runs (oldest to newest), keyed by routine id, backing the RUN
+    /// HISTORY sparkline column.
+    pub run_history: HashMap<String, Vec<FleetRunSummary>>,
     /// Fired when the user clicks a sortable column header.
     pub on_sort: Callback<RCol>,
     pub on_edit: Callback<String>,
@@ -150,6 +153,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                         <th>{"SCHEDULE"}</th>
                         { sort_th("NEXT RUN", RCol::NextRun, props.sort_col, props.sort_dir, &props.on_sort) }
                         { sort_th("LAST FIRE", RCol::LastFire, props.sort_col, props.sort_dir, &props.on_sort) }
+                        <th>{"RUN HISTORY"}</th>
                         { sort_th("AGENT", RCol::Agent, props.sort_col, props.sort_dir, &props.on_sort) }
                         <th>{"REPOS"}</th>
                         <th>{"MACHINES"}</th>
@@ -169,17 +173,20 @@ pub fn routine_table(props: &TableProps) -> Html {
                             <>
                                 if grouped {
                                     <tr class="group-hd" key={format!("ghd-{label}")}>
-                                        <td colspan="12">
+                                        <td colspan="13">
                                             <span class="group-label">{label.clone()}</span>
                                             <span class="group-count">{format!("({count})")}</span>
                                         </td>
                                     </tr>
                                 }
-                                { for group.into_iter().map(|r| html! {
+                                { for group.into_iter().map(|r| {
+                                    let runs = props.run_history.get(&r.id).cloned().unwrap_or_default();
+                                    html! {
                                     <RoutineRow
                                         key={r.id.clone()}
                                         routine={r.clone()}
                                         now={props.now}
+                                        runs={runs}
                                         selected={props.selected.contains(&r.id)}
                                         on_select={props.on_select.clone()}
                                         on_edit={props.on_edit.clone()}
@@ -191,6 +198,7 @@ pub fn routine_table(props: &TableProps) -> Html {
                                         on_history={props.on_history.clone()}
                                         on_flags={props.on_flags.clone()}
                                     />
+                                    }
                                 }) }
                             </>
                         }

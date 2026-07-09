@@ -1,0 +1,44 @@
+# cargo-deny configuration (see .github/workflows/cargo-deny.yml).
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = false
+no-default-features = false
+
+[advisories]
+ignore = []
+
+[licenses]
+# Every license currently in the dependency tree (`cargo deny check licenses`
+# lists any newly introduced license that isn't covered here).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+workspace-default-features = "allow"
+external-default-features = "allow"
+deny = []
+# rand 0.10 pulls a newer getrandom than the rest of the tree; both major
+# versions are maintained upstream, so this is noise rather than a real
+# duplication problem worth failing CI over. (wit-bindgen was listed here too,
+# but it isn't actually in the dependency tree — `cargo deny check` has been
+# printing an `unmatched-skip` warning on every run because of it.)
+skip = ["getrandom"]
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

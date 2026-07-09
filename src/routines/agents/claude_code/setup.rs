@@ -10,8 +10,25 @@ pub const NAME: &str = "claude";
 /// — `hasTrustDialogAccepted` and `disabledMcpjsonServers` — so the unattended session never blocks
 /// on the workspace-trust dialog or a project MCP-server approval prompt. Both are keyed by exact
 /// path (not inherited from parent dirs), so they must be seeded for each fresh workbench.
+///
+/// The write is verified by reading `~/.claude.json` back and asserting the seeded entry is
+/// actually there before declaring success: a run that hit this seen live sessions parked at the
+/// trust dialog for hours with `hasTrustDialogAccepted` missing from the file despite `setup`
+/// having (apparently) run — most plausibly a write silently lost to disk pressure, a permission
+/// hiccup on `~/.claude.json`, or `$WB` disagreeing with the path `claude` actually resolves for
+/// the workbench. Any of those now makes the assertion fail, which `build_routine_command`'s
+/// `{setup}; } || { ... exit 1; }` guard turns into a same-run `agent setup failed` abort instead
+/// of the agent launching anyway into an unattended dialog that only the ~1h watchdog reaps, with
+/// no diagnostic. This can't catch the CLI itself changing what it reads from the file — only that
+/// this process actually wrote what it meant to.
+///
+/// Reads project instructions from `AGENTS.md` — the same file Codex uses — so the moadim-managed
+/// system prompt and routine-origin disclosure are unified onto one instructions file across
+/// agents. Claude Code loads `AGENTS.md` as a memory/context file, so the disclosure is honored
+/// exactly as it would be from `CLAUDE.md`.
 pub const CONFIG: &str = r#"command = "claude"
 args = ["--permission-mode", "auto", "{prompt}"]
+instructions_file = "AGENTS.md"
 # Pre-seed per-directory state for the fresh workbench so interactive claude launches unattended,
 # with no blocking prompts. Both are stored per exact path in ~/.claude.json (not inherited from
 # parent dirs), so they must be seeded per run. Runs with $WB in scope before launch:
@@ -22,5 +39,8 @@ args = ["--permission-mode", "auto", "{prompt}"]
 # temp file + os.replace (atomic rename). ~/.claude.json is shared with the live claude process,
 # so a plain open("w") truncate-then-write could interleave with a concurrent writer and leave a
 # spliced, unparseable file; the atomic replace guarantees readers always see one complete JSON.
-setup = '''python3 -c 'import json,os,sys,tempfile,fcntl; home=os.path.expanduser("~"); p=home+"/.claude.json"; lf=open(p+".lock","w"); fcntl.flock(lf,fcntl.LOCK_EX); d=json.load(open(p)) if os.path.exists(p) else {}; wb=sys.argv[1]; e=d.setdefault("projects",{}).setdefault(wb,{}); e.update({"hasTrustDialogAccepted":True,"hasCompletedProjectOnboarding":True}); e.setdefault("projectOnboardingSeenCount",1); g=lambda f: list(json.load(open(f)).get("mcpServers",{}).keys()) if os.path.exists(f) else []; e["disabledMcpjsonServers"]=sorted(set(e.get("disabledMcpjsonServers",[]))|set(g(home+"/.mcp.json"))|set(g(wb+"/.mcp.json"))); fd,tmp=tempfile.mkstemp(dir=home,prefix=".claude.json.",suffix=".tmp"); os.write(fd,json.dumps(d).encode()); os.close(fd); os.replace(tmp,p); fcntl.flock(lf,fcntl.LOCK_UN)' "$WB"'''
+# After unlocking, re-read the file from disk and assert the entry landed — a non-zero exit here
+# aborts the launch instead of leaving the agent to hang unattended at the dialog this was meant
+# to skip.
+setup = '''python3 -c 'import json,os,sys,tempfile,fcntl; home=os.path.expanduser("~"); p=home+"/.claude.json"; lf=open(p+".lock","w"); fcntl.flock(lf,fcntl.LOCK_EX); d=json.load(open(p)) if os.path.exists(p) else {}; wb=sys.argv[1]; e=d.setdefault("projects",{}).setdefault(wb,{}); e.update({"hasTrustDialogAccepted":True,"hasCompletedProjectOnboarding":True}); e.setdefault("projectOnboardingSeenCount",1); g=lambda f: list(json.load(open(f)).get("mcpServers",{}).keys()) if os.path.exists(f) else []; e["disabledMcpjsonServers"]=sorted(set(e.get("disabledMcpjsonServers",[]))|set(g(home+"/.mcp.json"))|set(g(wb+"/.mcp.json"))); fd,tmp=tempfile.mkstemp(dir=home,prefix=".claude.json.",suffix=".tmp"); os.write(fd,json.dumps(d).encode()); os.close(fd); os.replace(tmp,p); fcntl.flock(lf,fcntl.LOCK_UN); v=json.load(open(p)).get("projects",{}).get(wb,{}); assert v.get("hasTrustDialogAccepted") is True, "trust-dialog pre-seed did not persist to "+p+" for "+wb' "$WB"'''
 "#;

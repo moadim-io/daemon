@@ -229,34 +229,34 @@ async fn mcp_endpoint_triggers_factory() {
 
 #[tokio::test]
 async fn router_serves_routines_ical_feed() {
-    let routines = crate::routines::new_store();
-    routines.lock().unwrap().insert(
-        "r1".to_string(),
-        crate::routines::Routine {
-            model: None,
-            id: "r1".to_string(),
-            schedule: "@daily".to_string(),
-            title: "My Routine".to_string(),
-            agent: "claude".to_string(),
-            prompt: "do the thing".to_string(),
-            goal: None,
-            repositories: vec![],
-            machines: vec![crate::machine::current_machine()],
-            enabled: true,
-            source: "managed".to_string(),
-            created_at: 0,
-            updated_at: 0,
-            last_manual_trigger_at: None,
-            last_scheduled_trigger_at: None,
-            snoozed_until: None,
-            skip_runs: None,
-            power_saving: false,
-            tags: vec![],
-            ttl_secs: None,
-            max_runtime_secs: None,
-        },
-    );
-    let resp = build_app(routines)
+    // The iCal feed reloads from disk first, so the routine must be persisted to the (temp-home)
+    // routines dir; an in-memory-only insert would be wiped by the reload.
+    let _home = TempHome::set();
+    crate::routine_storage::write_routine(&crate::routines::Routine {
+        model: None,
+        id: "r1".to_string(),
+        schedule: "@daily".to_string(),
+        title: "My Routine".to_string(),
+        agent: "claude".to_string(),
+        prompt: "do the thing".to_string(),
+        goal: None,
+        repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
+        enabled: true,
+        source: "managed".to_string(),
+        created_at: 0,
+        updated_at: 0,
+        last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
+        tags: vec![],
+        ttl_secs: None,
+        max_runtime_secs: None,
+    })
+    .unwrap();
+    let resp = build_app(crate::routines::new_store())
         .oneshot(
             Request::builder()
                 .uri("/api/v1/routines.ics")
@@ -283,7 +283,9 @@ async fn router_serves_routines_ical_feed() {
 async fn router_serves_per_routine_ical_feed_via_query() {
     // `GET /routines.ics?routine=<id>` scopes the feed to one routine and names the
     // calendar after it; an unknown id returns a well-formed empty calendar (issue #263).
-    let routines = crate::routines::new_store();
+    // The iCal feed reloads from disk first, so the routines must be persisted to the (temp-home)
+    // routines dir; in-memory-only inserts would be wiped by the reload.
+    let _home = TempHome::set();
     let mk = |id: &str, title: &str| crate::routines::Routine {
         id: id.to_string(),
         schedule: "@daily".to_string(),
@@ -307,14 +309,11 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         ttl_secs: None,
         max_runtime_secs: None,
     };
-    {
-        let mut lock = routines.lock().unwrap();
-        lock.insert("a".to_string(), mk("a", "Routine A"));
-        lock.insert("b".to_string(), mk("b", "Routine B"));
-    }
+    crate::routine_storage::write_routine(&mk("a", "Routine A")).unwrap();
+    crate::routine_storage::write_routine(&mk("b", "Routine B")).unwrap();
 
     let fetch = |uri: &'static str| {
-        let app = build_app(routines.clone());
+        let app = build_app(crate::routines::new_store());
         async move {
             let resp = app
                 .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -346,6 +345,7 @@ async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
     // underflow; saturating_sub must clamp uptime to 0 instead.
     let state = AppState {
         routines: crate::routines::new_store(),
+        routines_dir: crate::paths::routines_dir(),
         uptime_start: now_secs() + 10_000,
         shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
     };

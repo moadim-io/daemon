@@ -13,6 +13,11 @@ use std::sync::{Arc, Mutex};
 /// other disk-touching paths off the developer's real `~/.moadim`, so a panicking assertion can never
 /// leak test routines into the real home. Tests in this crate run single-threaded
 /// (`RUST_TEST_THREADS=1`), so the global env mutation is safe.
+///
+/// `svc_list`/`svc_get` reload the store from disk before serving (see [`crate::routine_storage`]),
+/// so every test here needs a `TempHome` regardless of whether it also builds an in-memory store —
+/// otherwise the reload would either wipe the in-memory fixture or, worse, read the developer's real
+/// `~/.config/moadim/routines`.
 struct TempHome(std::path::PathBuf);
 
 impl TempHome {
@@ -64,10 +69,13 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
     }
 }
 
-/// Wrap a list of routines into a populated [`RoutineStore`].
+/// Wrap a list of routines into a populated [`RoutineStore`], and persist each one to disk (under
+/// the active `TempHome`) so `svc_list`'s reload-from-disk doesn't wipe the fixture the test just
+/// built — disk is the source of truth the reload re-scans on every call.
 fn store_with(routines: Vec<Routine>) -> RoutineStore {
     let mut map = HashMap::new();
     for routine in routines {
+        write_routine(&routine).expect("write_routine");
         map.insert(routine.id.clone(), routine);
     }
     Arc::new(Mutex::new(map))
@@ -86,7 +94,7 @@ fn svc_list_sorts_by_updated_at() {
         sort: RoutineSort::Updated,
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&store, &crate::paths::routines_dir(), &query);
     assert_eq!(list[0].routine.id, "early");
     assert_eq!(list[1].routine.id, "mid");
     assert_eq!(list[2].routine.id, "late");
@@ -105,7 +113,7 @@ fn svc_list_sorts_by_title_case_insensitively() {
         sort: RoutineSort::Title,
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&store, &crate::paths::routines_dir(), &query);
     assert_eq!(list[0].routine.id, "apple");
     assert_eq!(list[1].routine.id, "banana");
     assert_eq!(list[2].routine.id, "cherry");
@@ -117,6 +125,7 @@ fn svc_list_breaks_ties_on_id_deterministically() {
     // sort keys must be broken on the stable routine id for the listing to be
     // deterministic. Three routines share a `created_at`; ascending lists them
     // by id (A→Z) and descending reverses that, never an arbitrary order.
+    let _home = TempHome::set();
     let tied = || {
         store_with(vec![
             make_routine("charlie", "C", 50, 0),
@@ -125,7 +134,11 @@ fn svc_list_breaks_ties_on_id_deterministically() {
         ])
     };
 
-    let asc = svc_list(&tied(), &RoutineListQuery::default());
+    let asc = svc_list(
+        &tied(),
+        &crate::paths::routines_dir(),
+        &RoutineListQuery::default(),
+    );
     assert_eq!(
         asc.iter().map(|resp| &resp.routine.id).collect::<Vec<_>>(),
         ["alpha", "bravo", "charlie"],
@@ -133,6 +146,7 @@ fn svc_list_breaks_ties_on_id_deterministically() {
 
     let desc = svc_list(
         &tied(),
+        &crate::paths::routines_dir(),
         &RoutineListQuery {
             order: SortOrder::Desc,
             ..Default::default()
@@ -149,7 +163,11 @@ fn svc_list_omits_prompt_by_default() {
     let _home = TempHome::set();
     // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
     let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
-    let list = svc_list(&store, &RoutineListQuery::default());
+    let list = svc_list(
+        &store,
+        &crate::paths::routines_dir(),
+        &RoutineListQuery::default(),
+    );
     assert_eq!(list.len(), 1);
     assert!(list[0].routine.prompt.is_empty());
     let json = serde_json::to_value(&list[0]).unwrap();
@@ -167,7 +185,7 @@ fn svc_list_includes_prompt_when_requested() {
         include_prompts: Some(true),
         ..Default::default()
     };
-    let list = svc_list(&store, &query);
+    let list = svc_list(&store, &crate::paths::routines_dir(), &query);
     assert_eq!(list[0].routine.prompt, "do the thing");
     let json = serde_json::to_value(&list[0]).unwrap();
     assert_eq!(

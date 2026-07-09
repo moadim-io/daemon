@@ -5,6 +5,17 @@ use crate::routines::agents::{available_agents, load_agent_command, AgentLoadErr
 use crate::routines::command::validate_placeholders;
 use crate::routines::model::Repository;
 
+/// Map a [`crate::routine_storage::write_routine`] failure to an [`AppError`], turning the
+/// on-disk slug-collision guard (#188, `ErrorKind::AlreadyExists`) into a 409 the caller can act
+/// on instead of a generic 500.
+pub(super) fn map_write_routine_err(err: &std::io::Error) -> AppError {
+    if err.kind() == std::io::ErrorKind::AlreadyExists {
+        AppError::Conflict(err.to_string())
+    } else {
+        AppError::Internal
+    }
+}
+
 /// Reject a blank (empty or whitespace-only) required text field.
 ///
 /// An empty `prompt` makes a routine fire forever with no task (#224); an empty

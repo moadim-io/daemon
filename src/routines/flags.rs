@@ -64,7 +64,9 @@ fn is_safe_flag_filename(filename: &str) -> bool {
     !filename.is_empty()
         && !filename.contains(['/', '\\'])
         && !filename.contains("..")
-        && filename.ends_with(".md")
+        && std::path::Path::new(filename)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
 }
 
 /// Split a flag filename into its `(created_at, scope)`, or `None` if it doesn't match the
@@ -76,10 +78,9 @@ fn is_safe_flag_filename(filename: &str) -> bool {
 fn parse_filename(filename: &str) -> Option<(u64, FlagScope)> {
     let (stem, scope) = if let Some(stem) = filename.strip_suffix(".local.md") {
         (stem, FlagScope::Local)
-    } else if let Some(stem) = filename.strip_suffix(".md") {
-        (stem, FlagScope::General)
     } else {
-        return None;
+        let stem = filename.strip_suffix(".md")?;
+        (stem, FlagScope::General)
     };
     let (_, ts) = stem.rsplit_once('-')?;
     let created_at = ts.parse().ok()?;

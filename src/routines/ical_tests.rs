@@ -41,6 +41,27 @@ fn count(haystack: &str, needle: &str) -> usize {
     haystack.matches(needle).count()
 }
 
+/// A unique, freshly-created scratch directory under the system temp dir. `svc_ical`/
+/// `svc_ical_routine` reload the store from this dir before rendering, so tests persist their
+/// routines here to exercise the real reload in isolation.
+fn scratch_dir() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("moadim-ical-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Write `routine` to `{base}/{routine.id}/routine.toml` so the directory-aware reload loads it
+/// back keyed by the `id` inside the file.
+fn write_routine_to(base: &std::path::Path, routine: &Routine) {
+    let dir = base.join(&routine.id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let toml = format!(
+        "id = \"{}\"\nschedule = \"{}\"\ntitle = \"{}\"\nagent = \"{}\"\nprompt = \"{}\"\nenabled = {}\ncreated_at = 0\nupdated_at = 0\nmachines = []\ntags = []\n",
+        routine.id, routine.schedule, routine.title, routine.agent, routine.prompt, routine.enabled,
+    );
+    std::fs::write(dir.join("routine.toml"), toml).unwrap();
+}
+
 #[test]
 fn empty_feed_has_only_calendar_wrapper() {
     let ics = build_ical(&[], fixed_now());
@@ -344,12 +365,11 @@ fn carriage_returns_are_normalized() {
 
 #[test]
 fn svc_ical_reads_store() {
-    let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("r1".to_string(), routine_with("r1", "@daily", true));
-    let ics = svc_ical(&store);
+    // `svc_ical` reloads from disk first: a routine present on disk is rendered even though the
+    // in-memory store starts empty, proving the iCal read path re-scans the directory.
+    let dir = scratch_dir();
+    write_routine_to(&dir, &routine_with("r1", "@daily", true));
+    let ics = svc_ical(&new_store(), &dir);
     assert!(ics.starts_with("BEGIN:VCALENDAR"));
     assert!(ics.contains("BEGIN:VEVENT"));
 }
@@ -358,17 +378,14 @@ fn svc_ical_reads_store() {
 fn svc_ical_routine_filters_to_one_routine() {
     // Two enabled routines in the store; the filtered feed contains only the requested
     // one's events, and the calendar is named after that routine (issue #263).
-    let store = new_store();
-    {
-        let mut lock = store.lock().unwrap();
-        let mut keep = routine_with("keep", "@daily", true);
-        keep.title = "Keep Me".to_string();
-        lock.insert("keep".to_string(), keep);
-        let mut other = routine_with("other", "@daily", true);
-        other.title = "Other".to_string();
-        lock.insert("other".to_string(), other);
-    }
-    let ics = svc_ical_routine(&store, "keep");
+    let dir = scratch_dir();
+    let mut keep = routine_with("keep", "@daily", true);
+    keep.title = "Keep Me".to_string();
+    write_routine_to(&dir, &keep);
+    let mut other = routine_with("other", "@daily", true);
+    other.title = "Other".to_string();
+    write_routine_to(&dir, &other);
+    let ics = svc_ical_routine(&new_store(), &dir, "keep");
     assert!(ics.contains("UID:keep-"));
     assert!(!ics.contains("UID:other-"));
     assert!(ics.contains("SUMMARY:Keep Me\r\n"));
@@ -380,12 +397,9 @@ fn svc_ical_routine_filters_to_one_routine() {
 #[test]
 fn svc_ical_routine_unknown_id_is_well_formed_empty_calendar() {
     // An unknown id is not an error: a valid, empty VCALENDAR with the default name.
-    let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("r1".to_string(), routine_with("r1", "@daily", true));
-    let ics = svc_ical_routine(&store, "does-not-exist");
+    let dir = scratch_dir();
+    write_routine_to(&dir, &routine_with("r1", "@daily", true));
+    let ics = svc_ical_routine(&new_store(), &dir, "does-not-exist");
     assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
     assert!(ics.contains("X-WR-CALNAME:Moadim Routines\r\n"));
     assert!(ics.ends_with("END:VCALENDAR\r\n"));
@@ -395,14 +409,13 @@ fn svc_ical_routine_unknown_id_is_well_formed_empty_calendar() {
 #[test]
 fn svc_ical_routine_survives_a_poisoned_store_lock() {
     // A `std::sync::Mutex` poisons permanently the instant any thread panics while
-    // holding the guard. `svc_ical_routine` must recover the guard (like every other
-    // store accessor) instead of propagating that poisoning as its own panic — see
+    // holding the guard. `svc_ical_routine` reloads the store before serving (which itself
+    // takes the lock via `LockRecover`) and must recover the guard — like every other store
+    // accessor — instead of propagating that poisoning as its own panic — see
     // `utils::lock::LockRecover`.
+    let dir = scratch_dir();
+    write_routine_to(&dir, &routine_with("r1", "@daily", true));
     let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("r1".to_string(), routine_with("r1", "@daily", true));
 
     let poisoner = std::sync::Arc::clone(&store);
     let handle = std::thread::spawn(move || {
@@ -414,7 +427,7 @@ fn svc_ical_routine_survives_a_poisoned_store_lock() {
         "the spawned thread should have panicked"
     );
 
-    let ics = svc_ical_routine(&store, "r1");
+    let ics = svc_ical_routine(&store, &dir, "r1");
     assert!(ics.starts_with("BEGIN:VCALENDAR\r\n"));
     assert!(ics.contains("BEGIN:VEVENT"));
 }

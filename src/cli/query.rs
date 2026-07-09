@@ -1,6 +1,6 @@
-//! Server-query commands (`cleanup`, `trigger`, `status`) split out of `cli.rs` to stay under the
+//! Server-query commands (`cleanup`, `trigger`, `status`) split out of `cli/mod.rs` to stay under the
 //! repo's per-file line gate: they report on/query the running server rather than managing its
-//! lifecycle (start/stop/restart), which remain in `cli.rs`.
+//! lifecycle (start/stop/restart), which remain in `cli/mod.rs`.
 
 use super::{
     bind_addr, http_request, http_request_with_body, is_running, liveness_exit_code,

@@ -149,7 +149,7 @@ fn shape_keys(shape: &str) -> Vec<String> {
 /// Extract the documented `--json` shape literal (the `{...}` text) from the README "Scripting"
 /// table row whose first cell is `` `moadim <command> --json` ``.
 fn readme_json_shape(command: &str) -> String {
-    let readme = include_str!("../README.md");
+    let readme = include_str!("../../README.md");
     let marker = format!("`moadim {command} --json`");
     let line = readme
         .lines()

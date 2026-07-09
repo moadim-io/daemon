@@ -3,6 +3,7 @@
 //! `page.rs`'s component body to the wiring that actually varies per-render.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use chrono::{DateTime, Local};
@@ -17,7 +18,8 @@ use crate::machines::api_current_machine;
 use crate::refresh::RefreshInterval;
 use crate::ToastKind;
 
-use super::model::{api_list, api_lock_status};
+use super::model::{api_all_runs, api_list, api_lock_status, FleetRunSummary};
+use super::sparkline::{group_recent_runs, RUN_HISTORY_FETCH_LIMIT};
 use super::state::{RAction, RModal, RState};
 
 /// Tick cadence for the live "now" handle (keeps DueSoon count fresh between fetches).
@@ -159,6 +161,35 @@ pub(crate) fn install_auto_refresh(
                 }
             });
         }
+        move || cancelled.set(true)
+    });
+}
+
+/// Loads the fleet-wide recent-run history backing the RUN HISTORY sparkline column,
+/// immediately on mount and then re-fetched on the same cadence as `interval` (an `Off`
+/// interval loads once and stops, matching `install_routines_loader`'s load-once behaviour).
+pub(crate) fn install_run_history_loader(
+    interval: RefreshInterval,
+    run_history: UseStateHandle<HashMap<String, Vec<FleetRunSummary>>>,
+) {
+    use_effect_with(interval, move |interval| {
+        let cancelled = Rc::new(Cell::new(false));
+        let period_ms = interval.as_millis();
+        let loop_cancelled = cancelled.clone();
+        spawn_local(async move {
+            loop {
+                if let Ok(runs) = api_all_runs(RUN_HISTORY_FETCH_LIMIT).await {
+                    if loop_cancelled.get() {
+                        break;
+                    }
+                    run_history.set(group_recent_runs(runs));
+                }
+                match period_ms {
+                    Some(ms) if !loop_cancelled.get() => TimeoutFuture::new(ms).await,
+                    _ => break,
+                }
+            }
+        });
         move || cancelled.set(true)
     });
 }

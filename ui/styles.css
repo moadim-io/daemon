@@ -1083,6 +1083,27 @@
     .run-status.success { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
     .run-status.failed  { border-color: var(--red);   color: var(--red);   background: var(--red-dim); }
     .run-status.unknown { border-color: var(--border-hi); color: var(--text-dim); }
+
+    /* ── Run history sparkline (Routines table RUN HISTORY column) ── */
+    .spark { display: flex; align-items: center; gap: 3px; }
+    .spark-empty { font-size: 12px; }
+    .spark-tick {
+      width: 6px;
+      height: 14px;
+      border-radius: 1px;
+      flex-shrink: 0;
+      background: var(--border-hi);
+    }
+    .spark-tick.success { background: var(--accent); }
+    .spark-tick.failed  { background: var(--red); }
+    .spark-tick.unknown { background: var(--border-hi); }
+    .spark-tick.running { background: var(--amber); animation: spark-pulse 1.2s ease-in-out infinite; }
+
+    @keyframes spark-pulse {
+      0%,100% { opacity: 1; }
+      50%     { opacity: 0.35; }
+    }
+
     .flag-badge {
       display: inline-block;
       min-width: 14px;

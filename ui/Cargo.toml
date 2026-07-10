@@ -145,3 +145,11 @@ redundant_else = "deny"
 # this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
 # already clean, so `deny` locks that in.
 format_push_string = "deny"
+# Reject `.cloned()` on an iterator of `&Copy` items (e.g. `&i32`, `&bool`) in favour of
+# `.copied()` — cloning a `Copy` type is a needlessly indirect way to say "copy this value";
+# `.copied()` states the intent directly and optimizes identically. Mirrors the root crate's
+# `cloned_instead_of_copied = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean,
+# so `deny` locks that in.
+cloned_instead_of_copied = "deny"

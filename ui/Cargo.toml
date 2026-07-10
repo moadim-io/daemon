@@ -130,3 +130,11 @@ trivially_copy_pass_by_ref = "deny"
 # applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 redundant_else = "deny"
+# Reject `.push_str(&format!(...))` in favour of `write!`/`writeln!` directly into the `String`.
+# The `format!` call allocates a throwaway `String` only to immediately copy its contents into the
+# target and drop it, so it's pure overhead that `write!` avoids by writing straight into the
+# existing buffer. Mirrors the root crate's `format_push_string = "deny"` (see Cargo.toml) — the
+# `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so
+# this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+format_push_string = "deny"

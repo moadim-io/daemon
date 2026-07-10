@@ -107,3 +107,12 @@ uninlined_format_args = "deny"
 # `[lints]` table (no `workspace = true` inheritance) so it was silently exempt despite
 # `clippy --workspace` covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
 unnecessary_debug_formatting = "deny"
+# Reject a case-sensitive `.ends_with(".ext")`/`.starts_with(...)` file-extension check in favour
+# of `Path::extension()` compared with `eq_ignore_ascii_case`. A literal `.md` check silently
+# mismatches an uppercase or mixed-case extension even though macOS's and Windows' default
+# filesystems treat the two names as the same file. Mirrors the root crate's
+# `case_sensitive_file_extension_comparisons = "deny"` (see Cargo.toml) — the `ui` crate has its
+# own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+case_sensitive_file_extension_comparisons = "deny"

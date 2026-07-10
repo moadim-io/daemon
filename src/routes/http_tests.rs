@@ -57,6 +57,23 @@ fn write_openapi_spec_skips_when_parent_dir_is_missing() {
     );
 }
 
+#[test]
+fn write_openapi_spec_skips_rewrite_when_unchanged() {
+    // A second call with identical content must not rewrite the file, so dev startups don't churn
+    // the committed spec's mtime on every run.
+    let dir = std::env::temp_dir().join(format!("moadim-openapi-nochurn-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("openapi.json");
+
+    write_openapi_spec(&path);
+    let first = std::fs::metadata(&path).unwrap().modified().unwrap();
+    write_openapi_spec(&path);
+    let second = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+    assert_eq!(first, second, "unchanged spec should not be rewritten");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ── build_app / router smoke tests ───────────────────────────────────────────
 
 #[tokio::test]

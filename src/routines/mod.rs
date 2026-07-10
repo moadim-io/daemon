@@ -46,3 +46,7 @@ mod routines_tests;
 #[cfg(test)]
 #[path = "mod_agents_tests.rs"]
 mod mod_agents_tests;
+
+#[cfg(test)]
+#[path = "mod_agents_reload_tests.rs"]
+mod mod_agents_reload_tests;

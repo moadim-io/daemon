@@ -78,6 +78,22 @@ match_same_arms = "deny"
 # despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 unused_async = "deny"
+# Reject leftover `dbg!` debugging macros so they never ship to production.
+# Mirrors the root crate's `dbg_macro = "deny"` (see Cargo.toml) — the `ui`
+# crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's
+# `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+dbg_macro = "deny"
+# Reject leftover `todo!()`/`unimplemented!()` stubs so they never ship to
+# production — a stray one would panic the running Yew app on that code
+# path. Mirrors the root crate's `todo`/`unimplemented` (see Cargo.toml) —
+# the `ui` crate has its own `[lints.clippy]` table and doesn't inherit
+# root's extended deny-list, so neither ever applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. The `ui` crate is already clean,
+# so `deny` locks that in.
+todo = "deny"
+unimplemented = "deny"
 # Reject a positional `format!`/`write!`/`println!` arg (`format!("{}", x)`) in favor of the
 # inlined form (`format!("{x}")`). Kept in lockstep with the same lint already enabled
 # workspace-root-side in Cargo.toml — the `ui` crate has its own `[lints]` table (no
@@ -91,3 +107,33 @@ uninlined_format_args = "deny"
 # to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
 # `deny` locks that in.
 unreadable_literal = "deny"
+# Reject `{:?}` (Debug) formatting of a `Path`/`PathBuf` in user-facing output. Debug-formats
+# a path with surrounding quotes and escaped separators/backslashes, which reads oddly and
+# diverges from every other path already printed via `.display()`. Kept in lockstep with the
+# same lint already enabled workspace-root-side in Cargo.toml — the `ui` crate has its own
+# `[lints]` table (no `workspace = true` inheritance) so it was silently exempt despite
+# `clippy --workspace` covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
+unnecessary_debug_formatting = "deny"
+# Reject a case-sensitive `.ends_with(".ext")`/`.starts_with(...)` file-extension check in favour
+# of `Path::extension()` compared with `eq_ignore_ascii_case`. A literal `.md` check silently
+# mismatches an uppercase or mixed-case extension even though macOS's and Windows' default
+# filesystems treat the two names as the same file. Mirrors the root crate's
+# `case_sensitive_file_extension_comparisons = "deny"` (see Cargo.toml) — the `ui` crate has its
+# own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+case_sensitive_file_extension_comparisons = "deny"
+# Reject a by-value `&self`-sized `Copy` parameter (e.g. `bool`, `u32`, small enums) passed by
+# reference — the indirection costs a pointer dereference for no benefit over passing the value
+# directly. Mirrors the root crate's `trivially_copy_pass_by_ref = "deny"` (see Cargo.toml) — the
+# `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so
+# this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+trivially_copy_pass_by_ref = "deny"
+# Reject an `else` branch after an `if` whose every path already diverges (return/break/continue/
+# panic) — the `else` adds a level of nesting for nothing, since control flow never falls through
+# to it. Mirrors the root crate's `redundant_else = "deny"` (see Cargo.toml) — the `ui` crate has
+# its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+# applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
+# clean, so `deny` locks that in.
+redundant_else = "deny"

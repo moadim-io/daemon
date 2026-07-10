@@ -2,15 +2,22 @@
 //! `prompts/prompt.compiled.local.md` (composed) sidecar files.
 
 use crate::utils::lock::LockRecover;
+// Re-exported (as `super::routines_dir`) for `routine_storage_migrations`; not called directly
+// in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
+use crate::paths::routines_dir;
+// Only referenced by the `#[cfg(test)]` sibling test modules via `use super::*;` (they build a
+// `RoutineStore` map by hand); not used directly in this file's own (non-test) code.
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
     routine_compiled_prompt_path, routine_dir, routine_gitignore_path, routine_manual_log_path,
-    routine_prompts_dir, routine_pure_prompt_path, routine_scheduled_log_path, routine_script_path,
-    routine_state_path, routine_toml_path, routines_dir,
+    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_state_path,
+    routine_toml_path,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -111,88 +118,17 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read a routine's `state.local.toml` sidecar, defaulting to an empty [`RuntimeState`] when the
-/// sidecar is absent or unparsable (e.g. before the routine has ever been snoozed).
-fn read_runtime_state(dir_name: &str) -> RuntimeState {
-    std::fs::read_to_string(routine_state_path(dir_name))
+/// Read a routine's `state.local.toml` sidecar under `base`, defaulting to an empty
+/// [`RuntimeState`] when the sidecar is absent or unparsable (e.g. before the routine has ever
+/// been snoozed).
+///
+/// Base-dir-aware so the `routine_storage_load` loaders can resolve it coherently for any scan
+/// root, not only the global [`routines_dir`].
+fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> RuntimeState {
+    std::fs::read_to_string(base.join(dir_name).join("state.local.toml"))
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default()
-}
-
-/// Read the last Unix-timestamp line from an append-only trigger log (e.g. `scheduled.log` or
-/// `manual.log`), returning `None` when the file is absent or contains no parsable timestamp.
-fn read_last_log_timestamp(path: &std::path::Path) -> Option<u64> {
-    let text = std::fs::read_to_string(path).ok()?;
-    text.lines()
-        .rev()
-        .find_map(|line| line.trim().parse::<u64>().ok())
-}
-
-/// Read `last_scheduled_trigger_at` from a routine's `scheduled.log`, returning `None` when the
-/// log is absent or empty (e.g. before the routine's schedule has ever fired).
-fn read_scheduled_state(dir_name: &str) -> Option<u64> {
-    read_last_log_timestamp(&routine_scheduled_log_path(dir_name))
-}
-
-/// Read `last_manual_trigger_at` from a routine's `manual.log`, returning `None` when the log is
-/// absent or empty.
-fn read_manual_state(dir_name: &str) -> Option<u64> {
-    read_last_log_timestamp(&routine_manual_log_path(dir_name))
-}
-
-/// Read a routine's raw prompt from its `prompts/prompt.pure.md` sidecar, falling back to the
-/// legacy `routine.toml` `prompt` field for a dir that has not been migrated yet.
-fn read_pure_prompt(dir_name: &str, legacy: Option<String>) -> String {
-    std::fs::read_to_string(routine_pure_prompt_path(dir_name))
-        .ok()
-        .or(legacy)
-        .unwrap_or_default()
-}
-
-/// Load a routine from `{routines_dir}/{dir_name}/routine.toml`.
-///
-/// `dir_name` is the slug (title-derived folder name). The routine's UUID `id` is read from
-/// `routine.toml`; for legacy dirs created before this change `id` falls back to `dir_name`.
-///
-/// `last_manual_trigger_at`, `snoozed_until`, and `skip_runs` are read from the `state.local.toml`
-/// sidecar; `last_manual_trigger_at` falls back to the legacy `routine.toml` field for routines
-/// written before the runtime state was split out.
-fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
-    let toml = read_routine_toml(&routine_toml_path(dir_name))?;
-    let title = toml.title?;
-    let id = toml.id.unwrap_or_else(|| dir_name.to_string());
-    let runtime_state = read_runtime_state(dir_name);
-    // Prefer the log file; fall back to legacy state.local.toml field then routine.toml field for
-    // routines that predate the log-file migration.
-    let last_manual_trigger_at = read_manual_state(dir_name)
-        .or(runtime_state.last_manual_trigger_at)
-        .or(toml.last_manual_trigger_at);
-    let last_scheduled_trigger_at = read_scheduled_state(dir_name);
-    let prompt = read_pure_prompt(dir_name, toml.prompt);
-    Some(Routine {
-        id,
-        schedule: toml.schedule?,
-        title,
-        agent: toml.agent?,
-        model: toml.model,
-        prompt,
-        goal: toml.goal,
-        repositories: toml.repositories,
-        machines: toml.machines,
-        enabled: toml.enabled.unwrap_or(true),
-        source: "managed".to_string(),
-        created_at: toml.created_at.unwrap_or(0),
-        updated_at: toml.updated_at.unwrap_or(0),
-        last_manual_trigger_at,
-        last_scheduled_trigger_at,
-        snoozed_until: runtime_state.snoozed_until,
-        skip_runs: runtime_state.skip_runs,
-        power_saving: runtime_state.power_saving,
-        ttl_secs: toml.ttl_secs,
-        max_runtime_secs: toml.max_runtime_secs,
-        tags: toml.tags,
-    })
 }
 
 /// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
@@ -383,40 +319,13 @@ pub fn repersist_routines(store: &RoutineStore) {
     }
 }
 
-/// Scan `~/.config/moadim/routines/` and load all valid routines into a new store.
-pub fn load_store() -> RoutineStore {
-    load_store_from_dir(&routines_dir())
-}
-
-/// Scan `dir` and load all valid routines into a new store.
-pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
-    let mut routines = HashMap::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-                let dir_name = entry.file_name().to_string_lossy().to_string();
-                match load_routine_from_dir(&dir_name) {
-                    Some(routine) => {
-                        routines.insert(routine.id.clone(), routine);
-                    }
-                    // A dir whose routine.toml exists but the loader rejected (unparsable, or
-                    // missing a required field) would otherwise vanish from the store, UI, API
-                    // and crontab with no trace. Warn so the operator can find and fix the file
-                    // instead of hunting a routine that silently disappeared.
-                    None if routine_toml_path(&dir_name).exists() => {
-                        log::warn!(
-                            "load_store: skipping routine dir {dir_name:?}: its routine.toml is \
-                             unparsable or missing a required field (title, schedule, or agent)"
-                        );
-                    }
-                    // No routine.toml at all — not a routine dir; skip it quietly.
-                    None => {}
-                }
-            }
-        }
-    }
-    Arc::new(Mutex::new(routines))
-}
+#[path = "routine_storage_load.rs"]
+mod routine_storage_load;
+use routine_storage_load::load_routine_from_dir;
+pub use routine_storage_load::load_store;
+#[cfg(test)]
+pub(crate) use routine_storage_load::load_store_from_dir;
+pub(crate) use routine_storage_load::reload_store_from_dir;
 
 #[path = "routine_storage_migrations.rs"]
 mod routine_storage_migrations;

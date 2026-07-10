@@ -1,6 +1,8 @@
 //! The routines list page: data loading, filter/sort/group wiring, bulk actions, and routing
 //! between the list, create, edit, logs, and flags sub-views.
 
+use std::collections::HashMap;
+
 use chrono::{Duration, Local};
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -25,9 +27,10 @@ use super::form::{clone_title, RoutineForm};
 use super::history::RoutineHistory;
 use super::hooks::{
     install_auto_refresh, install_current_machine_loader, install_lock_status_loader,
-    install_now_ticker, install_routines_loader, install_search_hotkey,
+    install_now_ticker, install_routines_loader, install_run_history_loader, install_search_hotkey,
 };
 use super::logs::RoutineLogs;
+use super::model::FleetRunSummary;
 use super::state::{
     sort_routines, RAction, RCol, RGroupBy, RModal, RPage, RState, RView, RoutineHistoryQuery,
 };
@@ -62,6 +65,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
 
     // Fetch lock status on mount and whenever routines reload.
     install_lock_status_loader(state.clone());
+
+    // Fleet-wide recent-run history backing the RUN HISTORY sparkline column, loaded on mount
+    // and re-fetched on the same cadence as the routine list.
+    let run_history: UseStateHandle<HashMap<String, Vec<FleetRunSummary>>> =
+        use_state(HashMap::new);
+    install_run_history_loader(*interval, run_history.clone());
 
     // Deep-link straight to a routine's HISTORY page when the URL carries a `?history=<id>`
     // query (e.g. `/routines?history=<id>`, as followed from the overview page's RECENT RUNS
@@ -340,6 +349,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                             sort_col={sort_col}
                                             sort_dir={sort_dir}
                                             group_by={group_by}
+                                            run_history={(*run_history).clone()}
                                             on_sort={on_col_sort}
                                             on_edit={on_edit}
                                             on_clone={on_clone}

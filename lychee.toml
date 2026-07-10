@@ -49,6 +49,9 @@ timeout = 20
 # GET directly rather than false-positiving on those.
 method = "get"
 
-# Treat "too many requests" as acceptable rather than a broken link — it
-# means the host is alive, just rate-limiting us.
-accept = ["200..=299", "429"]
+# Treat "too many requests" (and shields.io's own overload signal, a bare
+# 408 with no slow/absent connection behind it — reproduced against its
+# badge URLs in README.md/.changeset/README.md while otherwise reachable)
+# as acceptable rather than a broken link — both mean the host is alive,
+# just struggling, not that the link is dead.
+accept = ["200..=299", "408", "429"]

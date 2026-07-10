@@ -82,11 +82,13 @@ fn run_trunk(ui_dir: &Path) -> bool {
 /// Strategy: monkey-patch `fetch` before the wasm-bindgen init call so that
 /// any request for a `.wasm` URL returns our base64-encoded bytes instead.
 /// This avoids touching wasm-bindgen internals while keeping a single file.
+/// The compiled CSS is inlined into a `<style>` block the same way, so the
+/// served bundle makes zero external asset requests.
 fn inline_into_html(dist: &Path, output: &Path) {
     let html_src = std::fs::read_to_string(dist.join("index.html"))
         .expect("dist/index.html missing after trunk build");
 
-    let (js_path, wasm_path) = find_dist_assets(dist);
+    let (js_path, wasm_path, css_path) = find_dist_assets(dist);
 
     let js = js_path
         .as_ref()
@@ -101,6 +103,11 @@ fn inline_into_html(dist: &Path, output: &Path) {
         })
         .unwrap_or_default();
 
+    let css = css_path
+        .as_ref()
+        .map(|path| std::fs::read_to_string(path).expect("failed to read .css dist asset"))
+        .unwrap_or_default();
+
     let wasm_file = wasm_path
         .as_ref()
         .and_then(|path| path.file_name())
@@ -108,6 +115,12 @@ fn inline_into_html(dist: &Path, output: &Path) {
         .unwrap_or_default();
 
     let js_file = js_path
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let css_file = css_path
         .as_ref()
         .and_then(|path| path.file_name())
         .map(|n| n.to_string_lossy().to_string())
@@ -130,7 +143,20 @@ await __wbg_init();
 </script>"#
     );
 
-    let final_html = assemble_html(&html_src, &inline_script, &js_file, &wasm_file);
+    let inline_style = if css.is_empty() {
+        String::new()
+    } else {
+        format!("<style>{css}</style>")
+    };
+
+    let final_html = assemble_html(
+        &html_src,
+        &inline_script,
+        &inline_style,
+        &js_file,
+        &wasm_file,
+        &css_file,
+    );
 
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent).expect("failed to create output dir");
@@ -138,10 +164,11 @@ await __wbg_init();
     std::fs::write(output, final_html).expect("failed to write inlined index.html");
 }
 
-/// Locate the `.js` and `.wasm` files in trunk's `dist/` directory.
-fn find_dist_assets(dist: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
+/// Locate the `.js`, `.wasm`, and `.css` files in trunk's `dist/` directory.
+fn find_dist_assets(dist: &Path) -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
     let mut js_path = None;
     let mut wasm_path = None;
+    let mut css_path = None;
     for entry in std::fs::read_dir(dist).expect("dist dir missing").flatten() {
         let path = entry.path();
         let name = path.file_name().unwrap_or_default().to_string_lossy();
@@ -149,38 +176,61 @@ fn find_dist_assets(dist: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
             js_path = Some(path);
         } else if name.ends_with(".wasm") {
             wasm_path = Some(path);
+        } else if name.ends_with(".css") {
+            css_path = Some(path);
         }
     }
-    (js_path, wasm_path)
+    (js_path, wasm_path, css_path)
 }
 
-/// Strip external asset references and inject the inline script.
-fn assemble_html(html: &str, inline_script: &str, js_file: &str, wasm_file: &str) -> String {
-    // Drop <link> preload/modulepreload lines referencing the generated assets
+/// Strip external asset references and inject the inline script and style.
+fn assemble_html(
+    html: &str,
+    inline_script: &str,
+    inline_style: &str,
+    js_file: &str,
+    wasm_file: &str,
+    css_file: &str,
+) -> String {
+    // Drop <link> preload/modulepreload/stylesheet lines referencing the
+    // generated assets — their bytes are inlined instead. A blank filename
+    // (asset not found in dist/) matches every line via `contains("")`, so
+    // guard against that rather than filtering the whole document away.
     let stripped: String = html
         .lines()
         .filter(|line| {
             let trimmed = line.trim();
-            !(trimmed.contains(js_file) || trimmed.contains(wasm_file))
+            let references = |name: &str| !name.is_empty() && trimmed.contains(name);
+            !(references(js_file) || references(wasm_file) || references(css_file))
         })
         .collect::<Vec<_>>()
         .join("\n");
+
+    // Inline the compiled CSS into <head> so no `<link rel="stylesheet">`
+    // ever points at an asset that isn't shipped with the single-file bundle.
+    let with_style = if inline_style.is_empty() {
+        stripped
+    } else if stripped.contains("</head>") {
+        stripped.replacen("</head>", &format!("{inline_style}\n</head>"), 1)
+    } else {
+        format!("{inline_style}\n{stripped}")
+    };
 
     // Replace the trunk-generated <script type="module">…</script> with our inline version.
     // Trunk emits exactly one such block; if the pattern changes between trunk versions
     // this falls back to appending before </body>.
     let marker = r#"<script type="module">"#;
-    if let Some(start) = stripped.find(marker) {
-        if let Some(rel_end) = stripped[start..].find("</script>") {
+    if let Some(start) = with_style.find(marker) {
+        if let Some(rel_end) = with_style[start..].find("</script>") {
             let end = start + rel_end + "</script>".len();
-            let mut out = stripped.clone();
+            let mut out = with_style.clone();
             out.replace_range(start..end, inline_script);
             return out;
         }
     }
 
     // Fallback: append before </body>
-    stripped.replace("</body>", &format!("{inline_script}\n</body>"))
+    with_style.replace("</body>", &format!("{inline_script}\n</body>"))
 }
 
 /// Encode `bytes` as standard base64.

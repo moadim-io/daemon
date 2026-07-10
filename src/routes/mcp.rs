@@ -21,6 +21,9 @@ use mcp_types::{
 pub struct MoadimMcp {
     /// Shared routine store.
     routines: RoutineStore,
+    /// On-disk directory the routine store is re-scanned from on every list/get tool call.
+    /// Defaults to [`crate::paths::routines_dir`]; tests point it at a tempdir for isolation.
+    routines_dir: std::path::PathBuf,
     /// Unix timestamp (seconds) recorded at server startup.
     uptime_start: u64,
     /// Notify handle that triggers a graceful server shutdown (the `shutdown` tool fires it,
@@ -43,9 +46,15 @@ fn err(msg: impl std::fmt::Display) -> CallToolResult {
 #[tool_router(server_handler)]
 impl MoadimMcp {
     /// Create a new `MoadimMcp` handler connected to the given routine store.
-    pub fn new(routines: RoutineStore, uptime_start: u64, shutdown: ShutdownSignal) -> Self {
+    pub fn new(
+        routines: RoutineStore,
+        routines_dir: std::path::PathBuf,
+        uptime_start: u64,
+        shutdown: ShutdownSignal,
+    ) -> Self {
         Self {
             routines,
+            routines_dir,
             uptime_start,
             shutdown,
         }
@@ -94,7 +103,11 @@ impl MoadimMcp {
             include_prompts: Some(params.include_prompts.unwrap_or(false)),
             ..Default::default()
         };
-        Ok(ok(routines::svc_list(&self.routines, &query)))
+        Ok(ok(routines::svc_list(
+            &self.routines,
+            &self.routines_dir,
+            &query,
+        )))
     }
 
     /// Return the routine matching the given UUID.
@@ -103,10 +116,12 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_get(&self.routines, &id) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
+        Ok(
+            match routines::svc_get(&self.routines, &self.routines_dir, &id) {
+                Ok(resp) => ok(resp),
+                Err(error) => err(error),
+            },
+        )
     }
 
     /// Return the exact prompt body a routine's run would receive, without creating a workbench

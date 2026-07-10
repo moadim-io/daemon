@@ -43,9 +43,11 @@ src/
 │   ├── system.rs            pidfile + detached-process helpers
 │   └── restart.rs           the `restart` command + detached-spawn reporting
 ├── commands.rs          data-plane CLI subcommands that drive a running server over HTTP
+├── commands_http.rs     JSON request-body helpers + loopback HTTP request/response cycle shared by commands.rs
 ├── build_info.rs        compile-time build provenance (crate version + git commit/date)
 ├── error.rs             AppError → HTTP status codes
 ├── global_lock.rs       lock sentinel that halts all routine scheduling/triggers
+├── logging/mod.rs       logging backend init (env_logger text, or JSON via MOADIM_LOG_FORMAT=json)
 ├── openapi.rs           utoipa ApiDoc definition served at /docs/openapi.json
 ├── restart.rs           replaces an already-running daemon with a fresh process
 ├── routine_storage.rs   routine.toml + prompts/ (pure/compiled) persistence
@@ -55,8 +57,10 @@ src/
 │   └── mcp.rs           MoadimMcp — rmcp tool_router
 │
 ├── middlewares/
+│   ├── host_validation.rs    guards against DNS-rebinding / cross-origin abuse of the loopback API
 │   ├── logger.rs             request/response logger
-│   └── security_headers.rs   adds CSP and related response headers
+│   ├── security_headers.rs   adds CSP and related response headers
+│   └── timeout.rs            per-request deadline for the REST API (/api/v1 only)
 │
 ├── filesystem/mod.rs    FsLocation — server working dir + exe dir (surfaced via GET /health and the MCP `health` tool)
 ├── paths/mod.rs         path builders for ~/.config/moadim/routines/
@@ -72,6 +76,7 @@ src/
 │   ├── fs_perms.rs       create_private_dir_all() — owner-only (0700) directory creation
 │   ├── lock.rs           Mutex-poisoning recovery helper
 │   ├── process.rs        process-liveness helpers
+│   ├── claude_json.rs    prunes a reaped workbench's stale entry from ~/.claude.json
 │   └── startup_print.rs  startup banner (REST/MCP/UI URLs)
 │
 └── build/               build-script modules (compiled by build.rs, not the binary)
@@ -98,7 +103,7 @@ Pre-existing files from older installs are tightened on their next write (the mo
 
 Router built in `src/routes/http.rs::build_app`. The full route list is the OpenAPI spec at `apis/openapi.json` (also served live at `/docs/openapi.json`).
 
-Middleware stack (outermost first): `CompressionLayer` → `logger` → `security_headers`.
+Middleware stack (outermost first): `GlobalConcurrencyLimitLayer` → `CatchPanicLayer` → `CompressionLayer` → `logger` → `security_headers` → `host_validation` → `timeout` (the last, `request_timeout`, wraps only the nested `/api/v1` sub-router, so it never applies to the long-lived `/mcp` SSE stream).
 
 ---
 

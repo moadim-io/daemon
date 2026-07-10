@@ -16,7 +16,7 @@
 //! - `actions` — the list page's CRUD/API callbacks (unlock-all, create, cleanup,
 //!   trigger, toggle, save, confirm-delete).
 //! - `banner`, `filter_bar`, `calendar`, `table`, `row`, `form`, `bulk`, `logs`,
-//!   `flags_panel` — the list page's sub-components.
+//!   `flags_panel`, `sparkline` — the list page's sub-components.
 
 mod actions;
 mod banner;
@@ -34,6 +34,7 @@ mod logs;
 mod model;
 mod page;
 mod row;
+mod sparkline;
 mod state;
 mod table;
 

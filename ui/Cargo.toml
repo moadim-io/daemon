@@ -116,3 +116,10 @@ unnecessary_debug_formatting = "deny"
 # to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
 # `deny` locks that in.
 case_sensitive_file_extension_comparisons = "deny"
+# Reject a by-value `&self`-sized `Copy` parameter (e.g. `bool`, `u32`, small enums) passed by
+# reference — the indirection costs a pointer dereference for no benefit over passing the value
+# directly. Mirrors the root crate's `trivially_copy_pass_by_ref = "deny"` (see Cargo.toml) — the
+# `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so
+# this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+trivially_copy_pass_by_ref = "deny"

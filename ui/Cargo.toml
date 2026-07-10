@@ -123,3 +123,10 @@ case_sensitive_file_extension_comparisons = "deny"
 # this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
 # already clean, so `deny` locks that in.
 trivially_copy_pass_by_ref = "deny"
+# Reject an `else` branch after an `if` whose every path already diverges (return/break/continue/
+# panic) — the `else` adds a level of nesting for nothing, since control flow never falls through
+# to it. Mirrors the root crate's `redundant_else = "deny"` (see Cargo.toml) — the `ui` crate has
+# its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+# applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
+# clean, so `deny` locks that in.
+redundant_else = "deny"

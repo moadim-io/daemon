@@ -130,3 +130,10 @@ trivially_copy_pass_by_ref = "deny"
 # applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 redundant_else = "deny"
+# Reject collecting an iterator into a `Vec`/collection only to immediately iterate over it again
+# (or check its length/emptiness) — the intermediate collection is pure allocation overhead the
+# iterator chain never needed. Mirrors the root crate's `needless_collect = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+needless_collect = "deny"

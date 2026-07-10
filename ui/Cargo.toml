@@ -145,3 +145,11 @@ redundant_else = "deny"
 # this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
 # already clean, so `deny` locks that in.
 format_push_string = "deny"
+# Reject a `match` whose only non-wildcard arm destructures a single pattern, with the rest
+# falling to a catch-all `else`-like arm — `if let ... else` says the same thing without the
+# unused generality of `match`, keeping the two-way branch as readable as a plain `if`. Mirrors
+# the root crate's `single_match_else = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+single_match_else = "deny"

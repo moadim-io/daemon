@@ -137,6 +137,13 @@ trivially_copy_pass_by_ref = "deny"
 # applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 redundant_else = "deny"
+# Reject collecting an iterator into a `Vec`/collection only to immediately iterate over it again
+# (or check its length/emptiness) — the intermediate collection is pure allocation overhead the
+# iterator chain never needed. Mirrors the root crate's `needless_collect = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+needless_collect = "deny"
 # Reject `.push_str(&format!(...))` in favour of `write!`/`writeln!` directly into the `String`.
 # The `format!` call allocates a throwaway `String` only to immediately copy its contents into the
 # target and drop it, so it's pure overhead that `write!` avoids by writing straight into the
@@ -153,6 +160,14 @@ format_push_string = "deny"
 # `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
 # `deny` locks that in.
 single_match_else = "deny"
+# Reject an item (`use`, `const`, etc.) declared after a statement in the same block — items are
+# scoped to the whole block from the start regardless of where they're written, so placing one
+# mid-block after other code misleads the reader into thinking order matters here. Hoisting it to
+# the top of the block states that up front. Mirrors the root crate's `items_after_statements =
+# "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit
+# root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+items_after_statements = "deny"
 # Reject `.cloned()` on an iterator of `&Copy` items (e.g. `&i32`, `&bool`) in favour of
 # `.copied()` — cloning a `Copy` type is a needlessly indirect way to say "copy this value";
 # `.copied()` states the intent directly and optimizes identically. Mirrors the root crate's
@@ -161,3 +176,17 @@ single_match_else = "deny"
 # to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean,
 # so `deny` locks that in.
 cloned_instead_of_copied = "deny"
+# Prefer `String::new()` over `"".into()`/`"".to_string()`/`"".to_owned()` for constructing an
+# empty `String` — it says "empty string" directly instead of making the reader infer it from an
+# empty literal plus a conversion call. Mirrors the root crate's `manual_string_new = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+manual_string_new = "deny"
+# Require every `#[allow(...)]` suppression to carry a `reason = "..."` so reviewers can tell
+# at a glance why the lint was silenced, and silenced lints stay documented as the code
+# evolves. Mirrors the root crate's `allow_attributes_without_reason = "deny"` (see Cargo.toml)
+# — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended
+# deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
+# The `ui` crate is already clean, so `deny` locks that in.
+allow_attributes_without_reason = "deny"

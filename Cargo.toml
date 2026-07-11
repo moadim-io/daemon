@@ -214,3 +214,11 @@ unreadable_literal = "deny"
 # filesystems treat the two names as the same file, so the check's pass/fail result can disagree
 # with what's actually on disk. The codebase is already clean, so `deny` locks that in.
 case_sensitive_file_extension_comparisons = "deny"
+# Reject `std::mem::forget` in favour of `drop` or letting the value go out of scope. In a
+# long-running daemon, a forgotten value's `Drop` impl never runs — for file handles, locks, and
+# other RAII guards that means leaked descriptors/locks that accumulate over the process's
+# lifetime instead of a single one-off leak in a short-lived program. The one legitimate use in
+# this codebase (a test that manually closes a fd and must stop `File::drop` from closing it
+# again) is exempted with a documented `#[allow]`. The rest of the codebase is already clean, so
+# `deny` locks that in.
+mem_forget = "deny"

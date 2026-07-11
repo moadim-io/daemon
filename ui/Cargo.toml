@@ -175,3 +175,10 @@ cloned_instead_of_copied = "deny"
 # extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
 # `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
 manual_string_new = "deny"
+# Require every `#[allow(...)]` suppression to carry a `reason = "..."` so reviewers can tell
+# at a glance why the lint was silenced, and silenced lints stay documented as the code
+# evolves. Mirrors the root crate's `allow_attributes_without_reason = "deny"` (see Cargo.toml)
+# — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended
+# deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
+# The `ui` crate is already clean, so `deny` locks that in.
+allow_attributes_without_reason = "deny"

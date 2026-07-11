@@ -100,6 +100,13 @@ unimplemented = "deny"
 # `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
 # covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
 uninlined_format_args = "deny"
+# Reject a numeric literal with 5+ digits that has no `_` separators (e.g. `86400`), preferring
+# `86_400` so a reviewer can judge magnitude at a glance instead of counting digits one by one.
+# Mirrors the root crate's `unreadable_literal = "deny"` (see Cargo.toml) — the `ui` crate has its
+# own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+unreadable_literal = "deny"
 # Reject `{:?}` (Debug) formatting of a `Path`/`PathBuf` in user-facing output. Debug-formats
 # a path with surrounding quotes and escaped separators/backslashes, which reads oddly and
 # diverges from every other path already printed via `.display()`. Kept in lockstep with the
@@ -137,3 +144,19 @@ redundant_else = "deny"
 # extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
 # `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
 needless_collect = "deny"
+# Reject `.push_str(&format!(...))` in favour of `write!`/`writeln!` directly into the `String`.
+# The `format!` call allocates a throwaway `String` only to immediately copy its contents into the
+# target and drop it, so it's pure overhead that `write!` avoids by writing straight into the
+# existing buffer. Mirrors the root crate's `format_push_string = "deny"` (see Cargo.toml) — the
+# `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so
+# this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+format_push_string = "deny"
+# Reject `.cloned()` on an iterator of `&Copy` items (e.g. `&i32`, `&bool`) in favour of
+# `.copied()` — cloning a `Copy` type is a needlessly indirect way to say "copy this value";
+# `.copied()` states the intent directly and optimizes identically. Mirrors the root crate's
+# `cloned_instead_of_copied = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean,
+# so `deny` locks that in.
+cloned_instead_of_copied = "deny"

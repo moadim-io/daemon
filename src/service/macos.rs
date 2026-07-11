@@ -148,9 +148,13 @@ fn report_installed(plist: &Path, log: &Path) {
 pub fn install() -> anyhow::Result<()> {
     let exe = moadim_exe().expect("current executable path is always available");
     let log = daemon_log();
-    let home =
-        crate::paths::home().expect("home directory must be known to install the launchd agent");
-    let plist = plist_path().expect("home directory must be known to install the launchd agent");
+    // Propagate an undeterminable home directory with `?` instead of `.expect()`-ing it into a
+    // panic. Mirrors the Linux backend's `install()`, which propagates `unit_path()` the same way.
+    let home = crate::paths::home();
+    let plist = plist_path_from_home(home.clone())?;
+    // The `?` above already returned if `home` were `None` (see `plist_path_from_home`), so this
+    // can never panic.
+    let home = home.expect("plist_path_from_home errors before this point when home is None");
     write_plist(&plist, &exe, &log, &home)?;
     reload_agent(&plist)?;
     report_installed(&plist, &log);
@@ -178,7 +182,7 @@ granting it here prevents background interruptions"
 
 /// Unload the `LaunchAgent` (if loaded) and delete its plist.
 pub fn uninstall() -> anyhow::Result<()> {
-    let plist = plist_path().expect("home directory must be known to uninstall the launchd agent");
+    let plist = plist_path()?;
     if plist.exists() {
         let plist_arg = plist.display().to_string();
         let _ = run(&launchctl_bin(), &["unload", "-w", &plist_arg]);

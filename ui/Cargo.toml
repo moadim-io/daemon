@@ -153,3 +153,10 @@ format_push_string = "deny"
 # to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean,
 # so `deny` locks that in.
 cloned_instead_of_copied = "deny"
+# Prefer `String::new()` over `"".into()`/`"".to_string()`/`"".to_owned()` for constructing an
+# empty `String` — it says "empty string" directly instead of making the reader infer it from an
+# empty literal plus a conversion call. Mirrors the root crate's `manual_string_new = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+manual_string_new = "deny"

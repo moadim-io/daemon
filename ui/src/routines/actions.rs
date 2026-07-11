@@ -51,10 +51,10 @@ pub(crate) fn install_crud_handlers(
                         ok("Routines unlocked");
                     }
                     Err(err_msg) => {
-                        toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err))
+                        toast.emit((format!("Unlock failed: {err_msg}"), ToastKind::Err));
                     }
                 }
-            })
+            });
         })
     };
 
@@ -75,7 +75,7 @@ pub(crate) fn install_crud_handlers(
                     }
                     Err(e) => toast.emit((format!("Create failed: {e}"), ToastKind::Err)),
                 }
-            })
+            });
         })
     };
 
@@ -94,7 +94,7 @@ pub(crate) fn install_crud_handlers(
                     )),
                     Err(e) => toast.emit((format!("Cleanup failed: {e}"), ToastKind::Err)),
                 }
-            })
+            });
         })
     };
 
@@ -114,7 +114,7 @@ pub(crate) fn install_crud_handlers(
                     }
                     Err(e) => toast.emit((format!("Trigger failed: {e}"), ToastKind::Err)),
                 }
-            })
+            });
         })
     };
 
@@ -142,7 +142,7 @@ pub(crate) fn install_crud_handlers(
                     }
                     Err(e) => toast.emit((format!("Toggle failed: {e}"), ToastKind::Err)),
                 }
-            })
+            });
         })
     };
 
@@ -181,7 +181,7 @@ pub(crate) fn install_crud_handlers(
                         Err(e) => toast.emit((format!("Update failed: {e}"), ToastKind::Err)),
                     }
                 }
-            })
+            });
         })
     };
 
@@ -202,7 +202,7 @@ pub(crate) fn install_crud_handlers(
                     }
                     Err(e) => toast.emit((format!("Delete failed: {e}"), ToastKind::Err)),
                 }
-            })
+            });
         })
     };
 

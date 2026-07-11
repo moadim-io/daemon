@@ -256,7 +256,7 @@ pub fn shell() -> Html {
     let on_toast = {
         let state = state.clone();
         Callback::from(move |(msg, kind): (String, ToastKind)| {
-            state.dispatch(ShellAction::AddToast { msg, kind })
+            state.dispatch(ShellAction::AddToast { msg, kind });
         })
     };
 

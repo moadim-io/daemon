@@ -224,6 +224,12 @@ fn lock_exclusive_and_unlock_error_on_a_closed_fd() {
     assert!(lock_exclusive(&file).is_err());
     assert!(unlock(&file).is_err());
 
+    #[allow(
+        clippy::mem_forget,
+        reason = "the fd was already manually closed above; letting `file`'s Drop run would close \
+                  it a second time (or, worse, a reused fd from an unrelated file), so forgetting \
+                  it is deliberate here, not a leak"
+    )]
     std::mem::forget(file);
     fs::remove_dir_all(&dir).unwrap();
 }

@@ -145,7 +145,7 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
     // Bucket every item's fire times into the hour rows.
     let mut buckets: Vec<Vec<BucketEntry>> = (0..24).map(|_| Vec::new()).collect();
     let mut total = 0usize;
-    for it in props.items.iter() {
+    for it in &props.items {
         for t in fire_times(&it.schedule, day) {
             buckets[t.hour() as usize].push(BucketEntry {
                 time: t,
@@ -157,7 +157,7 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
             total += 1;
         }
     }
-    for b in buckets.iter_mut() {
+    for b in &mut buckets {
         b.sort_by_key(|e| e.time);
     }
 

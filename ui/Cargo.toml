@@ -204,3 +204,10 @@ explicit_iter_loop = "deny"
 # `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
 # `deny` locks that in.
 explicit_into_iter_loop = "deny"
+# Prefer `let PATTERN = expr else { diverge }` over a `match` whose only non-binding arm
+# diverges (return/continue/break) — the happy-path binding stays unindented instead of
+# living inside a `match` arm. Mirrors the root crate's `manual_let_else = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit
+# root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
+# running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
+manual_let_else = "deny"

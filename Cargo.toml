@@ -222,3 +222,8 @@ case_sensitive_file_extension_comparisons = "deny"
 # again) is exempted with a documented `#[allow]`. The rest of the codebase is already clean, so
 # `deny` locks that in.
 mem_forget = "deny"
+# Reject a raw string literal (`r#"..."#`) whose `#` delimiters aren't needed because the string
+# body contains no unescaped `"` that would otherwise terminate it early. The extra hashes are
+# pure noise once nothing inside requires them. The codebase is already clean, so `deny` locks
+# that in.
+needless_raw_string_hashes = "deny"

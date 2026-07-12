@@ -88,7 +88,9 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install trunk
-        run: cargo install --locked trunk
+        # Keep in lockstep with the version pinned in prebuilt-ui.yml — see
+        # the comment there for why an unpinned install is unsafe here.
+        run: cargo install --locked --version 0.21.14 trunk
 
       - name: Build UI
         run: cargo check

@@ -8,7 +8,7 @@ By participating in this project you agree to abide by our
 | Tool | Purpose |
 | --- | --- |
 | [Rust stable](https://rustup.rs/) | Build the daemon |
-| [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
+| [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install --locked --version 0.21.14 trunk` — pinned to match CI, see [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml)) |
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
@@ -196,10 +196,11 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 - `prebuilt.html` is a generated, committed artifact: `build.rs` inlines the
   compiled Yew UI (`ui/`) into it via `trunk build --release`, and it's the
   fallback used whenever `trunk` isn't installed (notably the `cargo install
-  moadim` path). Regenerate it after any `ui/` change — `cargo install trunk
-  && cargo build` rebuilds and overwrites it — and commit the result.
-  [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml) fails a PR that
-  changes `ui/**` without a matching `prebuilt.html` update.
+  moadim` path). Regenerate it after any `ui/` change with the pinned trunk
+  version above (`cargo build` rebuilds and overwrites it) and commit the
+  result. [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml) fails a PR
+  that changes `ui/**` without a matching `prebuilt.html` update — including
+  one regenerated with an unpinned, newer trunk than CI's.
 
 ## Commit messages
 

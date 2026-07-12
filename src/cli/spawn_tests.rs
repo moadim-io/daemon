@@ -255,6 +255,15 @@ fn restart_json_skips_human_text_when_none_running() {
 }
 
 #[test]
+fn restart_quiet_skips_endpoint_hints_when_none_running() {
+    let home = temp_home("restart-fresh-quiet");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    restart(false, true).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn restart_replaces_running_server() {
     let server = FakeServer::start(200, String::new());
     let home = temp_home("restart-running");

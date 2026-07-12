@@ -76,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Install => service::install(),
         cli::Command::Uninstall => uninstall(),
+        cli::Command::Completions(shell) => std::process::exit(cli::completions(shell.as_deref())),
         cli::Command::Data(args) => std::process::exit(commands::run(args)),
         cli::Command::Machine(args) => std::process::exit(machine::run(&args)),
         cli::Command::Foreground => {

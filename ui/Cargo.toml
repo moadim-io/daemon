@@ -182,3 +182,9 @@ manual_string_new = "deny"
 # deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
 # The `ui` crate is already clean, so `deny` locks that in.
 allow_attributes_without_reason = "deny"
+# Reject `mem::forget` (and `Box::leak`-style forgetting) of a value that has a `Drop` impl,
+# leaking the resource it would otherwise release. Mirrors the root crate's `mem_forget = "deny"`
+# (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+mem_forget = "deny"

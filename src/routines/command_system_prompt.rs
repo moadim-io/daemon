@@ -76,7 +76,7 @@ pub(crate) fn system_prompt_stmts(
             header, disclosure, title
         ),
         format!(
-            r#"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> {dest} || true"#,
+            r"[ -f {uq} ] && {{ printf '\n---\n\n'; cat {uq}; printf '\n'; }} >> {dest} || true",
             uq = uq
         ),
     ]

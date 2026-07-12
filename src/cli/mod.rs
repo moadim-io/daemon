@@ -112,6 +112,10 @@ pub enum Command {
     Usage(String),
     /// Print the binary version.
     Version,
+    /// Print a shell-completion script for `shell` (bash/zsh/fish/powershell/elvish) to stdout,
+    /// or (when `shell` is missing or unrecognized) a usage error to stderr. See
+    /// [`crate::cli::completions`].
+    Completions(Option<String>),
     /// A data-plane subcommand (`routines`, `agents`) handled by the clap-based
     /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
     /// argv (including the subcommand keyword) for clap to parse.
@@ -161,6 +165,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
+        Some("completions") => Command::Completions(args.get(1).cloned()),
         Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
@@ -232,6 +237,8 @@ pub fn help_text() -> String {
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
+         \x20   completions <shell>    print a completion script for bash/zsh/fish/powershell/elvish\n\
+         \x20                          (e.g. `moadim completions zsh > _moadim`)\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V, --version show the version\n\
          \n\
@@ -427,9 +434,19 @@ use cli_restart::start_detached_and_report;
 #[cfg(test)]
 use cli_restart::{restart_json, restart_rotation_line};
 
+#[path = "completions.rs"]
+mod cli_completions;
+pub use cli_completions::completions;
+#[cfg(test)]
+use cli_completions::{build_cli, write_completions};
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod cli_tests;
+
+#[cfg(test)]
+#[path = "completions_tests.rs"]
+mod cli_completions_tests;
 
 #[cfg(test)]
 #[path = "cleanup_bytes_tests.rs"]

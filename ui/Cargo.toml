@@ -190,3 +190,11 @@ allow_attributes_without_reason = "deny"
 # `ui/src` despite CI's `clippy` job running `--workspace`. Fixes the 2 violations this surfaced
 # in `day_timeline.rs`.
 explicit_iter_loop = "deny"
+# Companion to `explicit_iter_loop` above: reject `for x in collection.into_iter()` in favour of
+# the equivalent `for x in collection` — `.into_iter()` is redundant since a plain `for` loop
+# already calls it implicitly, so spelling it out adds noise without adding meaning. Mirrors the
+# root crate's `explicit_into_iter_loop = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+explicit_into_iter_loop = "deny"

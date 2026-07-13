@@ -193,7 +193,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let on_ask_delete = {
         let state = state.clone();
         Callback::from(move |(id, title): (String, String)| {
-            state.dispatch(RAction::OpenConfirmDelete { id, title })
+            state.dispatch(RAction::OpenConfirmDelete { id, title });
         })
     };
     let on_set_view = {

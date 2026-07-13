@@ -182,6 +182,15 @@ manual_string_new = "deny"
 # deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
 # The `ui` crate is already clean, so `deny` locks that in.
 allow_attributes_without_reason = "deny"
+# Require a trailing `;` on the last statement of a `()`-returning block so statement-only blocks
+# read consistently and intent stays explicit — otherwise the final expression reads like a
+# tail-position return value even though the block discards it. Mirrors the root crate's
+# `semicolon_if_nothing_returned = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. Fixes the 10 violations this surfaced
+# across `main.rs`, `routines/actions.rs`, and `routines/page.rs` — all `Callback::from` closures
+# whose body was a bare `spawn_local(...)`/`toast.emit(...)` call with no trailing semicolon.
+semicolon_if_nothing_returned = "deny"
 # Reject `mem::forget` (and `Box::leak`-style forgetting) of a value that has a `Drop` impl,
 # leaking the resource it would otherwise release. Mirrors the root crate's `mem_forget = "deny"`
 # (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's

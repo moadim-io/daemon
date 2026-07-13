@@ -270,9 +270,13 @@ fn http_request_core(
          Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
-    stream
-        .write_all(req.as_bytes())
-        .expect("write HTTP request to local server");
+    // Unlike the read below, a failed write here means the request never went out at all, so
+    // there is no partial response to salvage — propagate the error via `?` like the connect
+    // above, instead of panicking. The server can legitimately close the connection between
+    // `connect_timeout` succeeding and this write running (e.g. mid-`restart`, while the old
+    // server is being killed), and every caller already matches on this function's `Result` to
+    // degrade gracefully ("moadim is not running") rather than crash with a panic trace.
+    stream.write_all(req.as_bytes())?;
     let mut resp = String::new();
     // A failed read after a clean shutdown can still yield the status line we already received.
     let _ = stream.read_to_string(&mut resp);

@@ -147,6 +147,19 @@ pub async fn run_with_listener_until(
             .await;
         }
     });
+    // Periodically rotate `daemon.log` if it has grown past its size cap or aged past its daily
+    // floor. The spawn-time check in `cli::system` only fires when the daemon restarts, so a
+    // long-lived process needs this tick to ever roll its own log over (#1157).
+    let log_rotation_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::cli::LOG_ROTATION_CHECK_INTERVAL);
+        loop {
+            tick.tick().await;
+            let _ = tokio::task::spawn_blocking(|| {
+                crate::cli::rotate_daemon_log_if_due(&crate::paths::daemon_log_file());
+            })
+            .await;
+        }
+    });
     let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Fires the instant a shutdown is requested, so the grace watchdog below can start its clock
@@ -169,5 +182,6 @@ pub async fn run_with_listener_until(
     cleanup_task.abort();
     watchdog_task.abort();
     version_task.abort();
+    log_rotation_task.abort();
     Ok(())
 }

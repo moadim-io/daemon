@@ -187,7 +187,7 @@
     "/restart": {
       "post": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::restart"
         ],
         "summary": "`POST /restart` — stop this server and start a fresh instance.",
         "description": "The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper\nthat stops it and starts a new process, mirroring the `moadim restart` CLI command and the\n`restart` MCP tool. Responds with the helper's PID before the restart completes.",
@@ -1414,7 +1414,7 @@
       },
       "RestartResponse": {
         "type": "object",
-        "description": "Response body for `POST /restart`.",
+        "description": "Response body for `POST /restart` and the `restart` MCP tool.",
         "required": [
           "status",
           "helper_pid"

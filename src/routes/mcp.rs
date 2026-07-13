@@ -25,6 +25,11 @@ mod health;
 #[path = "shutdown/mcp.rs"]
 mod shutdown;
 
+/// The `restart` tool, kept in `routes/restart/mcp.rs` beside the `POST /restart` HTTP handler it
+/// mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "restart/mcp.rs"]
+mod restart;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -402,28 +407,12 @@ impl MoadimMcp {
         }
         Ok(ok(crate::global_lock::lock_status()))
     }
-
-    /// Stop this server and start a fresh instance, mirroring `POST /api/v1/restart` and
-    /// `moadim restart`. Delegates to a detached helper process that performs the swap.
-    #[tool(
-        description = "Restart the server: stop it and start a fresh instance. Mirrors the POST /api/v1/restart route and `moadim restart`."
-    )]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        log::info!("restart requested via MCP");
-        Ok(crate::cli::spawn_restart().map_or_else(err, |helper_pid| {
-            ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
-        }))
-    }
 }
 
-/// Combines this file's tool router with the split-out tools' (see the [`health`] and
-/// [`shutdown`] modules), since a `#[tool_router]` block only collects the `#[tool]` methods in
+/// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
+/// and [`restart`] modules), since a `#[tool_router]` block only collects the `#[tool]` methods in
 /// its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

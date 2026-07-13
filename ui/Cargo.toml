@@ -236,3 +236,10 @@ needless_raw_string_hashes = "deny"
 # root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
 # running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
 manual_let_else = "deny"
+# Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }` to
+# eliminate double-negation and reduce cognitive load when reading branches. Mirrors the root
+# crate's `if_not_else = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. Fixes the 2 violations this surfaced in `header.rs`
+# and `overview.rs`.
+if_not_else = "deny"

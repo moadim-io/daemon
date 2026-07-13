@@ -251,3 +251,9 @@ if_not_else = "deny"
 # `--workspace`. Fixes the 6 violations this surfaced across `cron_utils.rs`, `routines/banner.rs`,
 # `routines/filter.rs`, `routines/filter_bar.rs`, `routines/filter_tests.rs`, and `routines/hooks.rs`.
 doc_markdown = "deny"
+# Reject spelling out a type's own name in an impl block where `Self` says the same thing
+# without repeating it — if the type gets renamed, `Self` doesn't need a matching edit.
+# Mirrors the root crate's `use_self = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`.
+use_self = "deny"

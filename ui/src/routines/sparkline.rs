@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use yew::prelude::*;
 
-use crate::reltime;
+use crate::{abstime, reltime};
 
 use super::history::run_status_label;
 use super::model::{FleetRunSummary, RunStatus};
@@ -64,7 +64,12 @@ pub fn run_history_sparkline(props: &RunHistorySparklineProps) -> Html {
     html! {
         <div class="spark" role="img" aria-label={format!("Last {} runs", props.runs.len())}>
             { for props.runs.iter().map(|run| {
-                let title = format!("{} · {}", run_status_label(run.status), reltime(run.started_at));
+                let title = format!(
+                    "{} · {} ({})",
+                    run_status_label(run.status),
+                    reltime(run.started_at),
+                    abstime(run.started_at)
+                );
                 html! { <span class={spark_tick_class(run.status)} {title}></span> }
             }) }
         </div>

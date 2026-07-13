@@ -335,8 +335,12 @@ pub struct RunSummary {
     pub workbench: String,
     /// Unix seconds the run was triggered.
     pub started_at: u64,
+    /// `started_at` as a human-readable local (daemon machine's timezone) timestamp.
+    pub started_at_local: String,
     /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
     pub finished_at: Option<u64>,
+    /// `finished_at` as a human-readable local timestamp, when finished.
+    pub finished_at_local: Option<String>,
     /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
     pub status: RunStatus,
     /// Process exit code, when recorded.
@@ -359,8 +363,12 @@ pub struct FleetRunSummary {
     pub workbench: String,
     /// Unix seconds the run was triggered.
     pub started_at: u64,
+    /// `started_at` as a human-readable local (daemon machine's timezone) timestamp.
+    pub started_at_local: String,
     /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
     pub finished_at: Option<u64>,
+    /// `finished_at` as a human-readable local timestamp, when finished.
+    pub finished_at_local: Option<String>,
     /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
     pub status: RunStatus,
     /// Process exit code, when recorded.

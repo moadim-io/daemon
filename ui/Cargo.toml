@@ -246,6 +246,13 @@ manual_let_else = "deny"
 # `install_bulk_handlers` only ever `.clone()`d their `state`/`toast`/`now` handles into closures
 # instead of consuming them.
 needless_pass_by_value = "deny"
+# Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }` to
+# eliminate double-negation and reduce cognitive load when reading branches. Mirrors the root
+# crate's `if_not_else = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. Fixes the 2 violations this surfaced in `header.rs`
+# and `overview.rs`.
+if_not_else = "deny"
 # Reject a `CamelCase`/`snake_case`-looking identifier in a doc comment that isn't wrapped in
 # backticks — without them, rustdoc renders it as plain prose and a reader can't tell it's a type,
 # field, or item name rather than an English word. Mirrors the root crate's `doc_markdown = "deny"`

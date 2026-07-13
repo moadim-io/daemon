@@ -105,8 +105,25 @@ echo "Checking .rs files do not exceed 500 lines..."
 linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 echo "Line-count check passed."
 
+# ── 8. Client (React) checks ────────────────────────────────────────────────────
+# `client/` isn't a Cargo workspace member, so none of the cargo-based gates
+# above ever touch it. Mirror them here the same way this hook already mirrors
+# CI for `src/`/`ui/` — matching the CI jobs added in `.github/workflows/lint.yml`
+# and `test.yml`.
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo ""
+  echo "pnpm is not installed. Install it from https://pnpm.io/installation."
+  exit 1
+fi
+
+echo "Checking client/ (typecheck, lint, test)..."
+pnpm --filter client typecheck
+pnpm --filter client lint
+pnpm --filter client test
+echo "Client checks passed."
+
 if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
-  echo "Checking for a changeset covering src/ or ui/ changes..."
+  echo "Checking for a changeset covering src/, ui/, or client/ changes..."
   # Range being pushed: everything on HEAD not yet on the upstream main branch,
   # via the merge-base with origin/main.
   base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
@@ -118,7 +135,7 @@ if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
     changeset_added=0
     for path in $changed; do
       case "$path" in
-        src/*|ui/*) code_changed=1 ;;
+        src/*|ui/*|client/*) code_changed=1 ;;
         .changeset/*.md)
           [ "$(basename "$path")" != "README.md" ] && changeset_added=1
           ;;
@@ -126,7 +143,7 @@ if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
     done
     if [ "$code_changed" = "1" ] && [ "$changeset_added" = "0" ]; then
       echo ""
-      echo "  FAIL: changes under src/ or ui/ but no changeset was added."
+      echo "  FAIL: changes under src/, ui/, or client/ but no changeset was added."
       echo "  Run 'pnpm changeset', or set SKIP_CHANGELOG=1 to bypass (the local"
       echo "  equivalent of the 'skip-changelog' PR label)."
       exit 1

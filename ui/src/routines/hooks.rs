@@ -85,25 +85,6 @@ pub(crate) fn install_now_ticker(now: UseStateHandle<DateTime<Local>>) {
     });
 }
 
-/// Loads the routine list once on mount.
-pub(crate) fn install_routines_loader(
-    state: UseReducerHandle<RState>,
-    toast: Callback<(String, ToastKind)>,
-    updated_at: UseStateHandle<f64>,
-) {
-    use_effect_with((), move |_| {
-        spawn_local(async move {
-            match api_list().await {
-                Ok(r) => {
-                    state.dispatch(RAction::Loaded(r));
-                    updated_at.set(js_sys::Date::now());
-                }
-                Err(e) => toast.emit((format!("Failed to load routines: {e}"), ToastKind::Err)),
-            }
-        });
-    });
-}
-
 /// Fetches and applies the current machine as the default machine filter.
 pub(crate) fn install_current_machine_loader(state: UseReducerHandle<RState>) {
     use_effect_with((), move |_| {

@@ -27,6 +27,7 @@ pub(crate) fn allowed_hosts() -> Vec<String> {
     ];
     if let Some(port) = port {
         hosts.push(format!("localhost:{port}"));
+        hosts.push(format!("127.0.0.1:{port}"));
         hosts.push(format!("[::1]:{port}"));
     }
     if let Ok(extra) = std::env::var(ALLOWED_HOSTS_ENV) {

@@ -190,11 +190,12 @@ nothing on its own bounds how many *different* routines run at once — the OS
 crontab naturally aligns fires from separate routines onto the same minute
 boundary (e.g. `*/5 * * * *`), so a shared tick can otherwise launch an
 unbounded thundering herd of agent sessions. Set `MOADIM_MAX_CONCURRENT_RUNS`
-to cap how many routine agent sessions may be alive at once (default `4`);
-once reached, a new fire is skipped — logging the reason — rather than
-launched, and is picked up again on its next scheduled tick. The count is
-derived from actual live tmux sessions, not an in-memory counter, so it stays
-correct across a daemon crash/restart.
+to cap how many routine agent sessions may be alive at once. Unset or `0`
+(the default) means unlimited; once the cap is reached, a new fire is
+skipped — logging the reason — rather than launched, and is picked up again
+on its next scheduled tick. The count is derived from actual live tmux
+sessions, not an in-memory counter, so it stays correct across a daemon
+crash/restart.
 
 **REST** — under the `/api/v1` prefix:
 
@@ -333,7 +334,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 |--------------------|---------------|-----------|
 | `moadim`           | background    | Spawns a detached server, writes its PID to `~/.config/moadim/moadim.pid`, logs to `~/.config/moadim/daemon.log`, and exits. Refuses to start if one is already running. |
 | `moadim -i`        | interactive   | Runs in the foreground; logs to the terminal; Ctrl-C stops it. |
-| `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. Add `--quiet`/`-q` to print only that rotation line, suppressing the preamble and the reach/manage hint block. Add `--json` for `{"old":N\|null,"new":M}`. |
+| `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. Add `--quiet`/`-q` to print only that rotation line, suppressing the preamble and the reach/manage hint block. Add `--json` for `{"old":N\|null,"new":M,"address":"127.0.0.1:5784"}`. |
 | `moadim restart -i`, `--interactive` | interactive | Stops the running server (if any), same as `moadim restart`, but brings the fresh instance up in the foreground instead of backgrounding it — mirrors `moadim -i`. |
 | `moadim stop`      | —             | Sends `POST /shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. |
 | `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null}` — `uptime_secs`/`version` come from the server's `GET /health`, so a single call returns liveness **and** age/version (both `null` when no server answers). Add `--wait[=SECS]` to poll `GET /health` every 200ms until it answers or `SECS` elapse (default 30) instead of checking once, so a launch script can block on startup rather than sleeping blindly. Exits `0` when running, `3` when not (including a `--wait` timeout). |

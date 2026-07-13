@@ -27,7 +27,7 @@ use super::form::{clone_title, RoutineForm};
 use super::history::RoutineHistory;
 use super::hooks::{
     install_auto_refresh, install_current_machine_loader, install_lock_status_loader,
-    install_now_ticker, install_routines_loader, install_run_history_loader, install_search_hotkey,
+    install_now_ticker, install_run_history_loader, install_search_hotkey,
 };
 use super::logs::RoutineLogs;
 use super::model::FleetRunSummary;
@@ -114,7 +114,24 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     let updated_at = use_state(|| 0.0_f64);
 
     // Load on mount.
-    install_routines_loader(state.clone(), toast.clone(), updated_at.clone());
+    {
+        let state = state.clone();
+        let toast = toast.clone();
+        let updated_at = updated_at.clone();
+        use_effect_with((), move |()| {
+            wasm_bindgen_futures::spawn_local(async move {
+                match super::model::api_list().await {
+                    Ok(r) => {
+                        state.dispatch(RAction::Loaded(r));
+                        updated_at.set(js_sys::Date::now());
+                    }
+                    Err(e) => {
+                        toast.emit((format!("Failed to load routines: {e}"), ToastKind::Err));
+                    }
+                }
+            });
+        });
+    }
 
     // Fetch and apply the current machine as the default machine filter.
     install_current_machine_loader(state.clone());

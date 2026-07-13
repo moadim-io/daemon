@@ -150,6 +150,19 @@ pub fn routine_manual_log_path(id: &str) -> PathBuf {
     routine_dir(id).join("manual.log")
 }
 
+/// Returns the path to `{routines_dir}/{id}/skip.log`, the gitignored append-only log recording
+/// why a trigger did not spawn a workbench (agent load failure, an oversized inline prompt, the
+/// per-routine overlap guard, or the global concurrency cap — see
+/// `crate::routines::service_trigger::spawn_routine_command`).
+///
+/// Without this, a skipped trigger left no trace anywhere a caller could read back: `routine_logs`
+/// looks up the newest *workbench's* `agent.log`, and a skipped trigger never creates a workbench
+/// (#1145). The `.log` suffix matches the `*.log` pattern in the routine's `.gitignore`.
+#[must_use]
+pub fn routine_skip_log_path(id: &str) -> PathBuf {
+    routine_dir(id).join("skip.log")
+}
+
 /// Returns the path to `{routines_dir}/{id}/runs.log`, the gitignored append-only NDJSON log of
 /// every finished run's outcome, keyed by the routine's stable UUID (unlike its workbenches, which
 /// are keyed by slug and reaped after their TTL).

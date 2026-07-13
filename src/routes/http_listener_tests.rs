@@ -117,27 +117,6 @@ async fn run_with_listener_serves_over_tcp() {
 }
 
 #[tokio::test]
-async fn build_app_shutdown_route_acknowledges() {
-    let app = build_app(crate::routines::new_store());
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/shutdown")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["status"], "shutting down");
-}
-
-#[tokio::test]
 async fn build_app_restart_route_acknowledges() {
     // The route spawns a detached `current_exe --background` helper; under the test harness that exe
     // is the test binary, which rejects `--background` and exits at once, so no real server starts.

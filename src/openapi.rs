@@ -11,7 +11,7 @@
     servers((url = "/api/v1", description = "This server")),
     paths(
         crate::routes::health::health,
-        crate::routes::http::shutdown,
+        crate::routes::shutdown::shutdown,
         crate::routes::http::restart,
         crate::routes::http::get_current_machine,
         crate::routes::http::put_machine,
@@ -59,7 +59,7 @@
         crate::routines::CreateFlagRequest,
         crate::routes::health::HealthResponse,
         crate::routes::health::DependencyHealth,
-        crate::routes::http::ShutdownResponse,
+        crate::routes::shutdown::ShutdownResponse,
         crate::routes::http::RestartResponse,
         crate::routes::http::MachineResponse,
         crate::routes::http::SetMachineRequest,

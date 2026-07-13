@@ -223,11 +223,26 @@ fn allowed_hosts_extends_from_env_var() {
 fn allowed_hosts_skips_port_suffixed_entries_when_bind_addr_has_no_port() {
     // A bind address without a `:port` suffix (e.g. an operator setting `MOADIM_BIND_ADDR=0.0.0.0`
     // and letting the port default elsewhere) means `bind.rsplit_once(':')` returns `None`, so the
-    // `localhost:<port>`/`[::1]:<port>` allowlist entries must not be added — only the bare `bind`
-    // value itself.
+    // `localhost:<port>`/`127.0.0.1:<port>`/`[::1]:<port>` allowlist entries must not be added —
+    // only the bare `bind` value itself.
     let _guard = EnvGuard::set("MOADIM_BIND_ADDR", "0.0.0.0");
     let hosts = allowed_hosts();
     assert!(hosts.iter().any(|host| host == "0.0.0.0"));
     assert!(!hosts.iter().any(|host| host.starts_with("localhost:")));
+    assert!(!hosts.iter().any(|host| host.starts_with("127.0.0.1:")));
     assert!(!hosts.iter().any(|host| host.starts_with("[::1]:")));
+}
+
+#[test]
+fn allowed_hosts_includes_port_suffixed_loopback_entries_when_bind_addr_has_port() {
+    // A `Host` header carries the port a browser actually connected to (e.g.
+    // `127.0.0.1:5784`), so every loopback spelling needs a `:<port>` counterpart alongside its
+    // bare form — `127.0.0.1:<port>` was previously missing here even though `localhost:<port>`
+    // and `[::1]:<port>` were both present, silently rejecting IPv4-loopback requests that
+    // included the port.
+    let _guard = EnvGuard::set("MOADIM_BIND_ADDR", "127.0.0.1:5784");
+    let hosts = allowed_hosts();
+    assert!(hosts.iter().any(|host| host == "localhost:5784"));
+    assert!(hosts.iter().any(|host| host == "127.0.0.1:5784"));
+    assert!(hosts.iter().any(|host| host == "[::1]:5784"));
 }

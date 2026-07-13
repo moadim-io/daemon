@@ -61,7 +61,7 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
     }
 }
 
-/// The embedded SPA HTML, baked into the binary at compile time.
+/// The embedded Yew SPA HTML (served at `/`), baked into the binary at compile time.
 const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 
 /// Strong `ETag` for [`INDEX_HTML`], computed once from its content.
@@ -70,26 +70,30 @@ const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 /// deterministic across restarts of the same binary and only changes when a new build embeds
 /// different bytes. It isn't cryptographic — an `ETag` just needs to change when the content
 /// does, not resist tampering.
-static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    INDEX_HTML.hash(&mut hasher);
-    format!("\"{:016x}\"", hasher.finish())
-});
+static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| etag_for(INDEX_HTML));
 
-/// `GET /` — serve the web client (single-page UI).
-///
-/// Sends a strong `ETag` for the ~1.1 MB embedded SPA and honors `If-None-Match` with a bodyless
-/// `304 Not Modified`, so a client that already has the current build only pays for the request
+/// The embedded React `client/` SPA HTML (served at `/client`), baked into the binary at compile
+/// time by `src/build/client.rs`. A second, independent bundle from [`INDEX_HTML`] — see
+/// `Architecture.md`'s "UI inlining strategy" for why both exist side by side during the
+/// `ui/` → `client/` rollout.
+const CLIENT_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/client.html"));
+
+/// Strong `ETag` for [`CLIENT_HTML`], mirroring [`INDEX_ETAG`].
+static CLIENT_ETAG: LazyLock<String> = LazyLock::new(|| etag_for(CLIENT_HTML));
+
+/// Strong `ETag` for an embedded SPA HTML body, deterministic across restarts of the same binary.
+fn etag_for(html: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    html.hash(&mut hasher);
+    format!("\"{:016x}\"", hasher.finish())
+}
+
+/// Serves an embedded SPA's HTML with a strong `ETag`, honoring `If-None-Match` with a bodyless
+/// `304 Not Modified` so a client that already has the current build only pays for the request
 /// round-trip on reload, not a re-download of the full body (issue #401). `Cache-Control:
 /// no-cache` forces that revalidation on every load rather than trusting a local TTL, since the
-/// content can change on any daemon upgrade.
-#[utoipa::path(get, path = "/",
-    responses(
-        (status = 200, description = "Web client HTML", body = str),
-        (status = 304, description = "Client's cached copy is still current"),
-    ))]
-pub async fn index(headers: HeaderMap) -> Response {
-    let etag = INDEX_ETAG.as_str();
+/// content can change on any daemon upgrade. Shared by [`index`] and [`client_index`].
+fn serve_spa(html: &'static str, etag: &'static str, headers: &HeaderMap) -> Response {
     let not_modified = headers
         .get(IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok())
@@ -99,9 +103,32 @@ pub async fn index(headers: HeaderMap) -> Response {
     }
     (
         [(ETAG, etag), (CACHE_CONTROL, "no-cache")],
-        axum::response::Html(INDEX_HTML),
+        axum::response::Html(html),
     )
         .into_response()
+}
+
+/// `GET /` — serve the web client (single-page UI).
+#[utoipa::path(get, path = "/",
+    responses(
+        (status = 200, description = "Web client HTML", body = str),
+        (status = 304, description = "Client's cached copy is still current"),
+    ))]
+pub async fn index(headers: HeaderMap) -> Response {
+    serve_spa(INDEX_HTML, INDEX_ETAG.as_str(), &headers)
+}
+
+/// `GET /client` (and any `/client/*` deep link) — serve the React client SPA. The nested
+/// router's own `.fallback` (see [`build_app_with_shutdown`]) routes every `/client/*` path here
+/// too, so React Router's client-side routes resolve on a hard refresh or a direct deep link,
+/// exactly like [`index`] does for the Yew `ui/` SPA at `/`.
+#[utoipa::path(get, path = "/client",
+    responses(
+        (status = 200, description = "React client HTML", body = str),
+        (status = 304, description = "Client's cached copy is still current"),
+    ))]
+pub async fn client_index(headers: HeaderMap) -> Response {
+    serve_spa(CLIENT_HTML, CLIENT_ETAG.as_str(), &headers)
 }
 
 /// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
@@ -241,6 +268,15 @@ pub(crate) fn build_app_with_shutdown(
             middlewares::timeout::API_REQUEST_TIMEOUT,
         )));
 
+    // The React client, served alongside `ui/` at `/client` during the rollout (see
+    // `CLIENT_HTML`'s doc comment). Its own `.fallback` scopes the SPA-routing trick to the
+    // `/client` prefix only, the same technique the `/api/v1` nest above uses for
+    // `api_not_found` — so `/client/routines` etc. resolve without touching the outer
+    // `.fallback(get(index))` that still serves `ui/` for everything else.
+    let client_router = Router::new()
+        .route("/", get(client_index))
+        .fallback(client_index);
+
     Router::new()
         .route("/", get(index))
         // Back-compat: the UI used to live at `/ui`; redirect old links to the root.
@@ -249,6 +285,7 @@ pub(crate) fn build_app_with_shutdown(
             get(|| async { axum::response::Redirect::permanent("/") }),
         )
         .nest("/api/v1", api)
+        .nest("/client", client_router)
         .nest_service("/mcp", mcp_service)
         .merge({
             use utoipa::OpenApi as _;

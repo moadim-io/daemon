@@ -58,7 +58,7 @@ pub fn global_lock_banner(props: &GlobalLockBannerProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct StatsBarProps {
     pub routines: Vec<Routine>,
-    /// "Now" used to compute the DueSoon count.
+    /// "Now" used to compute the `DueSoon` count.
     pub now: DateTime<Local>,
     /// Currently active status facet — drives `aria-pressed`.
     pub active: RoutineStatusFacet,

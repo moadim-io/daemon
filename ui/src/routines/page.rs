@@ -425,7 +425,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} on_toast={Some(toast.clone())} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} on_toast={Some(toast.clone())} on_trigger={Some(on_trigger)} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {

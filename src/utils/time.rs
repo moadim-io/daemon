@@ -1,8 +1,20 @@
 use std::time::SystemTime;
 
+use chrono::{Local, TimeZone};
+
 /// Return current Unix time in whole seconds.
 pub fn now_secs() -> u64 {
     secs_since_epoch(SystemTime::now())
+}
+
+/// Format Unix seconds `ts` as a human-readable local (this machine's timezone) timestamp,
+/// e.g. `"2026-07-13 14:30:05 +0300"`. The offset is included since "local" is the *daemon
+/// process's* timezone, which a remote reader can't otherwise infer.
+pub(crate) fn format_local(ts: u64) -> String {
+    Local.timestamp_opt(ts as i64, 0).single().map_or_else(
+        || "—".to_string(),
+        |dt| dt.format("%Y-%m-%d %H:%M:%S %z").to_string(),
+    )
 }
 
 /// Whole seconds between the Unix epoch and `moment`.

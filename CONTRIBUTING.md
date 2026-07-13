@@ -14,10 +14,14 @@ By participating in this project you agree to abide by our
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
 | [`linecheck`](https://crates.io/crates/linecheck) | 500-line-per-file gate over `src/` and `ui/src/`, enforced by the pre-push hook and CI's `linecheck` job (`cargo install linecheck`) |
 | [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
-| [pnpm](https://pnpm.io/installation) | Runs [Changesets](https://github.com/changesets/changesets) (`pnpm install` once, then `pnpm changeset`) — see [Workflow](#workflow) below |
+| [pnpm](https://pnpm.io/installation) | Builds the React client (`client/`, `pnpm install` once at the repo root) and runs [Changesets](https://github.com/changesets/changesets) (`pnpm changeset`) — see [Workflow](#workflow) below |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
-(`ui/`). The daemon itself is a native binary and builds without them.
+(`ui/`); pnpm is only needed when working on the React client (`client/`,
+served at `/client` alongside `ui/` during its rollout) or cutting a
+changeset. The daemon itself is a native binary and builds without any of
+them — `cargo build` falls back to the committed `prebuilt.html`/
+`prebuilt-client.html` when `trunk`/`pnpm` aren't installed.
 
 ## Setup
 
@@ -38,8 +42,11 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
-pnpm exec changeset status --since=origin/main
 linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+pnpm --filter client typecheck
+pnpm --filter client lint
+pnpm --filter client test
+pnpm exec changeset status --since=origin/main
 ```
 
 Use `--workspace` for both clippy and test, matching the pre-push hook —
@@ -53,8 +60,11 @@ own test suite. `linecheck` keeps any single `.rs` file under `src/` or
 `ui/src/` from growing past 500 lines — a convention two independently green
 PRs can each respect yet still blow past together, since it isn't a required
 branch-protection check (see the `linecheck` job in
-[`lint.yml`](.github/workflows/lint.yml)). The `changeset status` check only
-fails when a commit touches `src/` or `ui/` without an accompanying
+[`lint.yml`](.github/workflows/lint.yml)). `client/` isn't a Cargo workspace
+member, so none of the cargo-based commands above touch it — the three `pnpm
+--filter client` commands mirror them for the React client, matching the
+`client-lint`/`client-test` CI jobs. The `changeset status` check only fails
+when a commit touches `src/`, `ui/`, or `client/` without an accompanying
 `.changeset/*.md` file, matching the CI `unreleased-entry` job (see
 [Workflow](#workflow) below) — run `pnpm install` once first so `pnpm exec`
 can find it, or set `SKIP_CHANGELOG=1` to bypass it locally the way the
@@ -77,9 +87,10 @@ make spell
 `make spell` installs `typos-cli` if it's missing, then runs `typos` against
 the repo root — you don't need to know the crate/binary name to run it.
 
-Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
-`schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`
-flags, add it to `[default.extend-words]` there.
+Generated and vendored files (`prebuilt.html`, `prebuilt-client.html`,
+lockfiles, `apis/openapi.json`, `schemas/`) are excluded in `typos.toml`. To
+accept a real word that `typos` flags, add it to `[default.extend-words]`
+there.
 
 Lint the workflow files under `.github/workflows/` (YAML syntax, `${{ }}`
 expressions, the `needs`/`if`/matrix job graph, action input names, and,
@@ -109,7 +120,10 @@ exposes the same routine (agent-scheduling) functionality over three interfaces 
 
 - **REST** — handlers in `src/routes/http.rs`
 - **MCP** — handlers in `src/routes/mcp.rs`
-- **UI** — a separate Yew/WASM crate in `ui/`, embedded at build time
+- **UI** — a separate Yew/WASM crate in `ui/`, served at `/`, embedded at build time
+- **Client** — a React/TypeScript app in `client/`, served at `/client`
+  alongside `ui/` during its rollout, also embedded at build time (see
+  `src/build/client.rs`)
 
 Routines are persisted to the OS crontab so they run on schedule. See
 [`Architecture.md`](Architecture.md) for the full picture.
@@ -214,6 +228,15 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
   result. [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml) fails a PR
   that changes `ui/**` without a matching `prebuilt.html` update — including
   one regenerated with an unpinned, newer trunk than CI's.
+- `prebuilt-client.html` is the same idea for the React client (`client/`,
+  served at `/client` alongside `ui/` during its rollout): `build.rs` copies
+  `client/dist/index.html` (already a single self-contained file, built by
+  `pnpm --filter client build` via `vite-plugin-singlefile` — see
+  `src/build/client.rs`) to the package root, and it's the fallback used
+  whenever `pnpm` isn't installed. Regenerate it after any `client/` change
+  with `pnpm install && cargo build` and commit the result.
+  [`prebuilt-client.yml`](.github/workflows/prebuilt-client.yml) fails a PR
+  that changes `client/**` without a matching `prebuilt-client.html` update.
 
 ## Commit messages
 

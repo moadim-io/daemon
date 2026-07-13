@@ -32,7 +32,13 @@ use axum::{
 ///   block, and the embedded Swagger UI (`utoipa-swagger-ui`) sets inline `style="…"` attributes
 ///   from its React components at runtime. `script-src` additionally carries
 ///   `'wasm-unsafe-eval'`, required for the SPA's `WebAssembly.instantiate` call — narrower than
-///   `'unsafe-eval'`, it permits WASM compilation without permitting `eval()`/`Function()`.
+///   `'unsafe-eval'`, it permits WASM compilation without permitting `eval()`/`Function()`. The
+///   React `client/` bundle served at `/client` (`prebuilt-client.html`, built by
+///   `src/build/client.rs`) is inlined the same way by `vite-plugin-singlefile` — one inline
+///   `<script type="module">` and one inline `<style>` — so it needs the same `'unsafe-inline'`
+///   allowance, but has no WASM and so never needs `'wasm-unsafe-eval'` itself. This is one
+///   blanket policy applied to every response, `ui/` and `client/` alike; it can't be tightened
+///   per-route without splitting the middleware, which isn't warranted while both SPAs are served.
 /// - `style-src` and `font-src` allow `https://fonts.googleapis.com` / `https://fonts.gstatic.com`
 ///   respectively: the dashboard still loads its webfont from Google Fonts pending #467 (tracked
 ///   separately in open PR #519); once that self-hosts the font, these CDN allowances should be

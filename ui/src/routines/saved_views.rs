@@ -28,7 +28,7 @@ const LAST_VIEW_KEY: &str = "moadim.routines.last_view";
 /// Every field is a plain string token (reusing each facet's existing
 /// `as_str`/`as_value` codec), so this round-trips through JSON without
 /// depending on enum discriminant stability.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ViewSnapshot {
     pub query: String,
     pub status: String,
@@ -85,7 +85,7 @@ pub fn decode(snapshot: &ViewSnapshot) -> (RoutineFilter, Option<RCol>, RDir, RG
 }
 
 /// A named, saved filter/sort/group-by preset.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedView {
     pub name: String,
     pub snapshot: ViewSnapshot,

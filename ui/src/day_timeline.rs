@@ -27,7 +27,7 @@ const MONTHS: [&str; 12] = [
 const ZOOM_LEVELS: [i32; 4] = [40, 140, 300, 600];
 
 /// One schedulable thing on the timeline: a display label and its cron schedule.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TimelineItem {
     /// Optional entity ID emitted by `on_click` when a chip is clicked.
     pub id: Option<String>,

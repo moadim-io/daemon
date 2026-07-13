@@ -10,7 +10,7 @@ pub const AVAILABLE_AGENTS: &[&str] = &["claude", "codex"];
 // ─── Types (mirror server API exactly) ────────────────────────────────────────
 
 /// A git repository listed in a routine's prompt as context.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Repository {
     pub repository: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -18,7 +18,7 @@ pub struct Repository {
 }
 
 /// A routine as returned by `GET /routines` (the flattened `RoutineResponse`).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Routine {
     pub id: String,
     pub schedule: String,
@@ -80,7 +80,7 @@ pub struct Routine {
 }
 
 /// Whether a flag file is committed to version control or kept machine-local.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlagScope {
     General,
@@ -88,7 +88,7 @@ pub enum FlagScope {
 }
 
 /// A flag raised against a routine (mirrors the server `Flag`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Flag {
     pub filename: String,
     #[serde(rename = "type")]
@@ -140,7 +140,7 @@ pub enum RunStatus {
 }
 
 /// One past (or in-progress) run of a routine (mirrors the server `RunSummary`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RunSummary {
     pub workbench: String,
     pub started_at: u64,
@@ -151,7 +151,7 @@ pub struct RunSummary {
 }
 
 /// One past (or in-progress) run across every routine (mirrors the server `FleetRunSummary`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct FleetRunSummary {
     pub routine_id: String,
     pub routine_title: String,
@@ -260,7 +260,7 @@ pub(crate) async fn api_trigger(id: &str) -> Result<Routine, String> {
 }
 
 /// Lock state as returned by `GET /api/v1/routines/lock`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
 pub struct LockStatus {
     pub shared: bool,
     pub local: bool,

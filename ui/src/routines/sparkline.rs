@@ -50,7 +50,7 @@ fn spark_tick_class(status: RunStatus) -> &'static str {
     }
 }
 
-#[derive(Properties, PartialEq)]
+#[derive(Properties, PartialEq, Eq)]
 pub struct RunHistorySparklineProps {
     /// This routine's recent runs, oldest to newest (as produced by [`group_recent_runs`]).
     pub runs: Vec<FleetRunSummary>,

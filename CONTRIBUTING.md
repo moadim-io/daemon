@@ -27,15 +27,19 @@ cd daemon
 cargo build
 ```
 
-Run the checks the pre-push hook enforces before any push:
+Run the checks the pre-push hook enforces before any push. The hook's first
+gate isn't a single reusable command — it scans `src/` and `ui/src/` for
+inline `#[cfg(test)] mod foo { ... }` test blocks and rejects them in favor
+of `*_tests.rs` siblings (see [Tests](#tests) below) — everything after that
+is:
 
 ```sh
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
-linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 pnpm exec changeset status --since=origin/main
+linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 ```
 
 Use `--workspace` for both clippy and test, matching the pre-push hook —

@@ -65,8 +65,15 @@ impl Drop for HomeOnly {
 
 /// Run `git <args>` in `dir`, panicking on failure — a test fixture helper, not the code under
 /// test (which is [`super::run_git`]).
+///
+/// Ignores the developer's global/system git config (`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`
+/// pointed at `/dev/null`) so these disposable fixture repos never depend on — or are broken by —
+/// host-specific settings (commit signing, custom hooks, aliases). `dir` is always an absolute
+/// tempdir path, and every call is scoped to it via `-C`, so this never touches the real repo.
 fn git(dir: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
         .arg("-C")
         .arg(dir)
         .args(args)

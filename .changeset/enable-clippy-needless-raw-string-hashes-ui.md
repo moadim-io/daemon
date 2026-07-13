@@ -1,5 +1,5 @@
 ---
-"ui": patch
+"moadim": patch
 ---
 
 chore(lint): enable `clippy::needless_raw_string_hashes` in the ui crate

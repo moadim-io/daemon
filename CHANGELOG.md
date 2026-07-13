@@ -11,6 +11,214 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-12
+
+chore(deps): bump `rmcp`/`rmcp-macros` to 2.2.0
+
+Both stay within the `rmcp = "2.0.0"` (caret) requirement already declared in `Cargo.toml`, so
+this is a `Cargo.lock`-only refresh — no manifest or code changes. The 2.1.0 -> 2.2.0 release
+notes list only fixes (cancel-safe transport receive, refresh-token preservation, redirect
+header-leak guard, unparsable-message handling, protocol version negotiation) and one addition
+(rejecting auth servers lacking S256 PKCE support); no breaking changes. `cargo build`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass
+unchanged after the bump.
+
+### Added
+
+feat(cli): `moadim completions <shell>` prints a shell-completion script
+
+Prints a completion script for `bash`, `zsh`, `fish`, `powershell`, or
+`elvish` to stdout (e.g. `moadim completions zsh > _moadim`), covering the
+lifecycle subcommands (`restart`, `stop`, `status`, `cleanup`, `trigger`,
+`install`, `uninstall`, `machine`, `help`, `version`) and their `--json`/
+`--quiet` flags. A missing or unrecognized shell prints a usage error to
+stderr and exits non-zero, matching the rest of the CLI's error convention.
+
+Generated via `clap_complete` from a small `clap::Command` built only for
+this purpose — the CLI's existing hand-rolled argument parser is untouched
+by this change (#307).
+
+chore(lint): enable `clippy::allow_attributes_without_reason` in the `ui` crate
+
+Adds `allow_attributes_without_reason = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table,
+matching the lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its
+own `[lints]` table (no `workspace = true` inheritance) so it silently escaped this despite
+CI's `clippy` job running `--workspace`. There are no `#[allow(...)]` attributes anywhere in
+`ui/src` today, so the `ui` crate is already clean under this lint; `deny` just locks that state
+in and keeps any future suppression documented with a reason. No behavior change.
+
+chore(lint): enable `clippy::case_sensitive_file_extension_comparisons` in the `ui` crate
+
+Adds `case_sensitive_file_extension_comparisons = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]`
+table, matching the lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has
+its own `[lints]` table (no `workspace = true` inheritance) so it silently escaped this despite
+CI's `clippy` job running `--workspace`. The `ui` crate is already clean under this lint, so no
+code changes are needed; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::cloned_instead_of_copied` in the `ui` crate
+
+Adds `cloned_instead_of_copied = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the
+lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]`
+table (no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job
+running `--workspace`. The `ui` crate is already clean under this lint, so no code changes are
+needed; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::dbg_macro`, `clippy::todo`, and `clippy::unimplemented` in the `ui` crate
+
+The `ui` (Yew/WASM) crate has its own `[lints.clippy]` table with only `all = "deny"` — it does not inherit the workspace root's extended deny-list via `[lints] workspace = true`, so every lint enabled in root `Cargo.toml` (e.g. `dbg_macro`, `todo`, `unimplemented`) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`. A stray `dbg!()`, `todo!()`, or `unimplemented!()` left in the UI crate would ship straight into the release build and panic the running Yew app on that code path. Enables all three in `ui/Cargo.toml`; the `ui` crate already has zero violations, so no code changes are needed. No behavior change.
+
+chore(lint): enable `clippy::explicit_into_iter_loop` in the `ui` crate
+
+Adds `explicit_into_iter_loop = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the
+lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]`
+table (no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job
+running `--workspace`. Companion to the just-enabled `explicit_iter_loop`, this one catches the
+`.into_iter()` (as opposed to `.iter()`/`.iter_mut()`) form of a redundant explicit iterator call
+in a `for` loop. There are no such calls anywhere in `ui/src` today, so the `ui` crate is already
+clean under this lint; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::explicit_iter_loop` in the `ui` crate
+
+Adds `explicit_iter_loop = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint
+already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]` table
+(no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. Unlike most sibling `ui`-crate lint-enablement PRs, this one wasn't a no-op: it
+surfaced two real violations in `day_timeline.rs`, rewritten from `for it in props.items.iter()`
+and `for b in buckets.iter_mut()` to `for it in &props.items` and `for b in &mut buckets`. No
+behavior change.
+
+chore(lint): enable `clippy::format_push_string` in the `ui` crate
+
+Adds `format_push_string = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, mirroring the
+root crate's `format_push_string = "deny"` (`Cargo.toml`). The `ui` crate has its own
+`[lints.clippy]` table with no `workspace = true` inheritance, so this lint (like several others
+before it) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
+
+`format_push_string` catches `.push_str(&format!(...))`, which allocates a throwaway `String`
+only to immediately copy its contents into the target and drop it — a real perf-adjacent gap, not
+just a style one. `write!`/`writeln!` write straight into the existing buffer instead.
+
+The `ui` crate is already clean under this lint, so no code changes are needed — `deny` just locks
+that state in. No behavior change.
+
+chore(lint): enable `clippy::items_after_statements` in the `ui` crate
+
+Adds `items_after_statements = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the
+lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]`
+table (no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job
+running `--workspace`. The `ui` crate is already clean under this lint, so no code changes are
+needed; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::manual_string_new` in the `ui` crate
+
+Adds `manual_string_new = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the
+lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]`
+table (no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job
+running `--workspace`. The `ui` crate is already clean under this lint, so no code changes are
+needed; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::mem_forget` in the `ui` crate
+
+Adds `mem_forget = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint already
+denied workspace-root-side in `Cargo.toml` (#1121) — the `ui` crate has its own `[lints]` table
+(no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. The `ui` crate is already clean under this lint, so no code changes are needed;
+`deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::mem_forget` in the root crate
+
+Adds `mem_forget = "deny"` to `Cargo.toml`'s `[lints.clippy]` table. In a long-running daemon,
+a `std::mem::forget`'d value's `Drop` impl never runs — for file handles, locks, and other RAII
+guards that's an indefinitely leaked descriptor/lock rather than a one-off leak in a short-lived
+program. The single existing use (a test that manually closes a file descriptor and must stop
+`File::drop` from closing it again) gets a documented `#[allow(clippy::mem_forget, reason = ...)]`
+so the intent stays explicit. No behavior change.
+
+chore(lint): enable `clippy::needless_collect` in the `ui` crate
+
+Adds `needless_collect = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint
+already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]` table
+(no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. The `ui` crate is already clean under this lint, so no code changes are needed;
+`deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::needless_raw_string_hashes` in the root crate
+
+Adds `needless_raw_string_hashes = "deny"` to `Cargo.toml`'s `[lints.clippy]` table and drops the
+unneeded `#` delimiters from the one raw string literal that had them
+(`src/routines/command_system_prompt.rs`) — its body contains no unescaped `"`, so the hashes
+were pure noise. No behavior change.
+
+chore(lint): enable `clippy::redundant_else` in the `ui` crate
+
+Adds `redundant_else = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint
+already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]` table
+(no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. The `ui` crate is already clean under this lint, so no code changes are needed;
+`deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::trivially_copy_pass_by_ref` in the `ui` crate
+
+Adds `trivially_copy_pass_by_ref = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching
+the lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]`
+table (no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job
+running `--workspace`. The `ui` crate is already clean under this lint, so no code changes are
+needed; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::unnecessary_debug_formatting` in the `ui` crate
+
+Adds `unnecessary_debug_formatting = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching
+the lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]`
+table (no `workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job
+running `--workspace`. The `ui` crate is already clean under this lint, so no code changes are
+needed; `deny` just locks that state in. No behavior change.
+
+chore(lint): enable `clippy::unreadable_literal` in the `ui` crate
+
+Adds `unreadable_literal = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, matching the lint
+already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its own `[lints]` table (no
+`workspace = true` inheritance) so it silently escaped this despite CI's `clippy` job running
+`--workspace`. The `ui` crate is already clean under this lint, so no code changes are needed;
+`deny` just locks that state in. No behavior change.
+
+fix(service): `install`/`uninstall` return an error instead of panicking on macOS when `$HOME` is undeterminable
+
+The macOS launchd backend's `install()` and `uninstall()` both `.expect()`-ed the home directory
+lookup, crashing the whole process with a panic if the home directory couldn't be resolved (e.g.
+`$HOME` unset and no passwd entry, such as some minimal service/CI contexts). `plist_path_from_home`
+already turns that condition into a proper `anyhow::Error` — the callers just weren't using it. Now
+both functions propagate the error via `?`, matching the Linux systemd backend's `install()`/
+`uninstall()`, which already propagate their equivalent `unit_path()` lookup the same way. No
+behavior change on the happy path.
+
+fix(server): skip rewriting the on-disk openapi spec when it hasn't changed
+
+`write_openapi_spec` already skipped the write when `apis/`'s parent directory is
+absent (the installed-binary case). It still rewrote the file unconditionally on
+every dev startup even when the freshly generated spec was byte-for-byte identical
+to what's already on disk, needlessly bumping the committed file's mtime. It now
+compares against the existing contents first and skips the write when unchanged (#319).
+
+### Added
+
+feat(ui): inline run-history sparkline column in the Routines table
+
+Each row now shows a compact strip of ticks for its last ~10 runs (green =
+success, red = failed, pulsing amber = running, gray = unknown/no data),
+between LAST FIRE and AGENT — an at-a-glance pass/fail trend without opening
+the routine's HISTORY page, mirroring the "pipeline graph" pattern common to
+CI dashboards. Reuses the existing fleet-wide `GET /routines/runs` endpoint
+(already backing the Overview page's recent-runs panel), fetched once and
+grouped client-side by routine — no new API calls per row (#1103).
+
+test(cli): cover `restart --quiet` skipping the endpoint-hint block
+
+`restart(json, quiet)` never had a test exercising `quiet=true` — every existing case (parse
+tests aside) only called `restart(_, false)`, so the `if !quiet { report_endpoints(); }` branch
+that suppresses the UI/stop/logs hints was unverified behavior. Adds
+`restart_quiet_skips_endpoint_hints_when_none_running`, mirroring the existing
+`restart_json_skips_human_text_when_none_running` case. Test-only, no behavior change.
+
 ## [1.0.1] - 2026-07-09
 
 fix(ci): stop `publish.yml`/`release.yml` from racing their own redundant `test.yml` re-run on the automated release path (#1099)
@@ -3140,7 +3348,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/moadim-io/daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/moadim-io/daemon/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/moadim-io/daemon/compare/v0.27.0...v1.0.0
 [0.27.0]: https://github.com/moadim-io/daemon/compare/v0.26.0...v0.27.0

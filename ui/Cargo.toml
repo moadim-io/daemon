@@ -246,3 +246,11 @@ manual_let_else = "deny"
 # `install_bulk_handlers` only ever `.clone()`d their `state`/`toast`/`now` handles into closures
 # instead of consuming them.
 needless_pass_by_value = "deny"
+# Reject a `CamelCase`/`snake_case`-looking identifier in a doc comment that isn't wrapped in
+# backticks — without them, rustdoc renders it as plain prose and a reader can't tell it's a type,
+# field, or item name rather than an English word. Mirrors the root crate's `doc_markdown = "deny"`
+# (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. Fixes the 6 violations this surfaced across `cron_utils.rs`, `routines/banner.rs`,
+# `routines/filter.rs`, `routines/filter_bar.rs`, `routines/filter_tests.rs`, and `routines/hooks.rs`.
+doc_markdown = "deny"

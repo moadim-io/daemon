@@ -50,14 +50,14 @@ fn max_concurrent_runs_falls_back_to_default_on_garbage() {
 }
 
 #[test]
-fn max_concurrent_runs_falls_back_to_default_on_zero() {
-    // Unlike the disk-cap env var, `0` is not "unbounded" here — an unbounded fan-out is exactly
-    // the bug this cap prevents, so `0` is rejected like any other unparsable value.
+fn max_concurrent_runs_parses_zero_as_unlimited() {
+    // `0` is a valid, meaningful value here (unbounded) — same convention as the disk-cap env
+    // var — not rejected like an unparsable value.
     let prev = std::env::var_os(MAX_CONCURRENT_RUNS_ENV);
     // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
     unsafe {
         std::env::set_var(MAX_CONCURRENT_RUNS_ENV, "0");
     }
-    assert_eq!(max_concurrent_runs(), DEFAULT_MAX_CONCURRENT_RUNS);
+    assert_eq!(max_concurrent_runs(), 0);
     restore(prev);
 }

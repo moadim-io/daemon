@@ -237,10 +237,10 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // uses, just matched against every routine's shared `moadim-` prefix instead of one
             // routine's own. Skips (rather than queues) this fire when at/over the cap: the
             // simpler, lower-risk policy, and consistent with the overlap guard's own
-            // skip-with-warning shape above.
+            // skip-with-warning shape above. A cap of `0` (the default) means unlimited, so the check is skipped entirely.
             let live = tmux_session_count(TMUX_SESSION_PREFIX);
             let cap = max_concurrent_runs();
-            if live >= cap {
+            if cap > 0 && live >= cap {
                 let reason = format!(
                     "{live} routine session(s) already running, at or over the global \
                      concurrency cap of {cap} (set {MAX_CONCURRENT_RUNS_ENV} to raise it); this \

@@ -226,6 +226,32 @@ fn read_log_tail_snaps_to_a_utf8_char_boundary() {
 }
 
 #[test]
+fn read_log_tail_snaps_to_the_next_line_start() {
+    let dir = std::env::temp_dir().join(format!("moadim-logtail-line-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("agent.log");
+    // The seek point lands 3 bytes into the word "PARTIAL" (all ASCII, so no UTF-8 boundary
+    // issue), which without a line-aware snap would leak "TIAL" as a mangled first line. The
+    // fix must also skip past the following '\n' so the kept tail starts on a clean line.
+    let mut content = "PAR".to_string();
+    content.push_str("TIAL\n");
+    content.push_str(&"a".repeat(MAX_LOG_TAIL_BYTES as usize - 5));
+    std::fs::write(&path, &content).unwrap();
+
+    let tail = read_log_tail(&path).unwrap();
+
+    assert_eq!(
+        tail,
+        format!(
+            "... [3 bytes omitted; showing the last {} bytes] ...\n{}",
+            MAX_LOG_TAIL_BYTES,
+            "a".repeat(MAX_LOG_TAIL_BYTES as usize - 5),
+        )
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn svc_logs_reads_through_the_size_cap() {
     let _home = TempHome::set();
     // End-to-end: svc_logs must go through read_log_tail, not a raw read_to_string, so an

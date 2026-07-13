@@ -350,3 +350,46 @@ fn append_manual_trigger_log_warns_on_write_failure() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn append_skip_log_creates_and_appends() {
+    // Each call appends one `{ts}\t{reason}` line; the log grows across calls (#1145).
+    with_override_home(|_home| {
+        let title = "Rs Skip Log Append Routine";
+        let slug = slugify(title);
+        write_routine(&make_routine("rs-skip-log-id", title)).unwrap();
+
+        append_skip_log(&slug, 100, "overlap guard");
+        append_skip_log(&slug, 200, "concurrency cap");
+
+        let log_path = crate::paths::routine_skip_log_path(&slug);
+        let text = std::fs::read_to_string(&log_path).unwrap();
+        assert_eq!(text, "100\toverlap guard\n200\tconcurrency cap\n");
+    });
+}
+
+#[test]
+fn append_skip_log_warns_on_write_failure() {
+    // Pointing the log path at a directory (so open fails) exercises the warn branch and
+    // does not panic, mirroring `append_manual_trigger_log_warns_on_write_failure`.
+    let dir = scratch_dir("skip-log-fail");
+    std::fs::create_dir_all(&dir).unwrap();
+    let slug_dir = dir.join("rs-skip-log-fail-routine");
+    std::fs::create_dir_all(&slug_dir).unwrap();
+    let blocker = slug_dir.join("skip.log");
+    std::fs::create_dir_all(&blocker).unwrap();
+
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
+    }
+    // Should not panic; just logs a warning.
+    append_skip_log("rs-skip-log-fail-routine", 42, "agent load failure");
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

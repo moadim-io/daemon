@@ -68,10 +68,10 @@ pub fn header(props: &HeaderProps) -> Html {
             <h1 class="logo">
                 {"MOADIM"}
                 <span class="logo-sub">{"/ CONTROL"}</span>
-                if !version_title.is_empty() {
-                    <span class="logo-version" title={version_title}>{version_text}</span>
-                } else {
+                if version_title.is_empty() {
                     <span class="logo-version">{version_text}</span>
+                } else {
+                    <span class="logo-version" title={version_title}>{version_text}</span>
                 }
             </h1>
             <div class="header-right">

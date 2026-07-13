@@ -208,9 +208,9 @@ async fn build_app_serves_root_when_if_none_match_stale() {
 #[tokio::test]
 async fn build_app_sets_security_headers_on_ui_and_api() {
     // The whole router carries the security headers (issue #406, hardened further in #551):
-    // assert on a representative UI response (the SPA at `/`) and a representative API response
-    // (`/api/v1/health`).
-    for uri in ["/", "/api/v1/health"] {
+    // assert on a representative UI response (the SPA at `/`), the React client (`/client`), and
+    // a representative API response (`/api/v1/health`).
+    for uri in ["/", "/client", "/api/v1/health"] {
         let resp = build_app(crate::routines::new_store())
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
@@ -317,43 +317,6 @@ async fn build_app_serves_machines() {
 }
 
 #[tokio::test]
-async fn build_app_serves_health() {
-    let app = build_app(crate::routines::new_store());
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["status"], "ok");
-    assert_eq!(json["running"], true);
-    // The dependencies section reports tmux presence so the UI/CLI can flag a missing dependency.
-    assert!(
-        json["dependencies"]["tmux"].is_boolean(),
-        "health payload should carry a boolean dependencies.tmux flag, got: {json}"
-    );
-    // Likewise for python3, which the built-in `claude` agent's setup step depends on (#404).
-    assert!(
-        json["dependencies"]["python3"].is_boolean(),
-        "health payload should carry a boolean dependencies.python3 flag, got: {json}"
-    );
-    assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
-    // The resolved machine name is surfaced so clients can identify which daemon answered.
-    assert!(
-        json["machine"].is_string() && !json["machine"].as_str().unwrap().is_empty(),
-        "health payload should carry a non-empty machine name, got: {json}"
-    );
-}
-
-#[tokio::test]
 async fn build_app_serves_ui_at_root() {
     let app = build_app(crate::routines::new_store());
     let resp = app
@@ -439,3 +402,7 @@ async fn router_unknown_api_path_non_get_returns_404() {
 #[cfg(test)]
 #[path = "http_settings_routes_tests.rs"]
 mod http_settings_routes_tests;
+
+#[cfg(test)]
+#[path = "http_client_tests.rs"]
+mod http_client_tests;

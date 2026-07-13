@@ -2,6 +2,7 @@
 
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
+use web_sys::RequestCache;
 
 /// Agents the daemon ships built-in configs for (see `src/routines/agents`). Keep in sync with
 /// `DEFAULT_AGENT_CONFIGS`.
@@ -191,7 +192,11 @@ pub struct UpdateRoutineRequest {
 // ─── API layer ────────────────────────────────────────────────────────────────
 
 pub(crate) async fn api_list() -> Result<Vec<Routine>, String> {
+    // RequestCache::NoStore: the browser's HTTP cache otherwise serves a stale (or stale-empty)
+    // list forever, since `fetch`'s default cache mode still trusts a heuristically-fresh cached
+    // GET even when the routine set changes on the server between polls.
     Request::get("/api/v1/routines")
+        .cache(RequestCache::NoStore)
         .send()
         .await
         .map_err(|e| e.to_string())?

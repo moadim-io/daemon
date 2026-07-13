@@ -4,8 +4,8 @@
 use chrono::Local;
 use yew::prelude::*;
 
-use crate::reltime;
 use crate::schedule::{fmt_until, fmt_when, next_fires};
+use crate::{abstime, reltime};
 
 use super::filter::{last_fire_at, routine_health, trigger_button_title};
 use super::form::format_ttl;
@@ -239,7 +239,7 @@ pub fn routine_row(props: &RowProps) -> Html {
                     <div class="toggle-track"></div>
                 </label>
             </td>
-            <td><div class="cell-time">{updated}</div></td>
+            <td><div class="cell-time" title={abstime(r.updated_at)}>{updated}</div></td>
             <td>
                 <div class="row-actions">
                     <button class="act-btn run" title={trigger_button_title(r)} aria-label="Run now" onclick={on_trigger}>{"▶"}</button>

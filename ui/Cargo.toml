@@ -182,6 +182,12 @@ manual_string_new = "deny"
 # deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
 # The `ui` crate is already clean, so `deny` locks that in.
 allow_attributes_without_reason = "deny"
+# Reject `mem::forget` (and `Box::leak`-style forgetting) of a value that has a `Drop` impl,
+# leaking the resource it would otherwise release. Mirrors the root crate's `mem_forget = "deny"`
+# (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+mem_forget = "deny"
 # Reject `for x in collection.iter()`/`.iter_mut()` in favour of `for x in &collection`/
 # `&mut collection` — the reference syntax is shorter and states "borrow and iterate" without
 # making the reader confirm `.iter()` isn't secretly `.into_iter()` (which would move). Mirrors
@@ -190,3 +196,18 @@ allow_attributes_without_reason = "deny"
 # `ui/src` despite CI's `clippy` job running `--workspace`. Fixes the 2 violations this surfaced
 # in `day_timeline.rs`.
 explicit_iter_loop = "deny"
+# Companion to `explicit_iter_loop` above: reject `for x in collection.into_iter()` in favour of
+# the equivalent `for x in collection` — `.into_iter()` is redundant since a plain `for` loop
+# already calls it implicitly, so spelling it out adds noise without adding meaning. Mirrors the
+# root crate's `explicit_into_iter_loop = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+explicit_into_iter_loop = "deny"
+# Prefer `let PATTERN = expr else { diverge }` over a `match` whose only non-binding arm
+# diverges (return/continue/break) — the happy-path binding stays unindented instead of
+# living inside a `match` arm. Mirrors the root crate's `manual_let_else = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit
+# root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
+# running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
+manual_let_else = "deny"

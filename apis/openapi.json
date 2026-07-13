@@ -1015,7 +1015,7 @@
     "/shutdown": {
       "post": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::shutdown"
         ],
         "summary": "`POST /shutdown` — ask the server to stop gracefully.",
         "description": "Used by the UI \"STOP\" button (and the `moadim stop` command) to kill a backgrounded server that\nhas no controlling terminal. The response is sent before the graceful shutdown completes.",

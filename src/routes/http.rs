@@ -2,12 +2,12 @@
 
 use super::health;
 use super::mcp::MoadimMcp;
+use super::shutdown;
 use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
 use axum::{
-    extract::State,
     http::{
         header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH},
         HeaderMap, StatusCode,
@@ -116,27 +116,6 @@ async fn api_not_found() -> AppError {
     AppError::NotFound
 }
 
-/// Response body for `POST /shutdown`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct ShutdownResponse {
-    /// Acknowledgement status (always `"shutting down"`).
-    pub status: String,
-}
-
-/// `POST /shutdown` — ask the server to stop gracefully.
-///
-/// Used by the UI "STOP" button (and the `moadim stop` command) to kill a backgrounded server that
-/// has no controlling terminal. The response is sent before the graceful shutdown completes.
-#[utoipa::path(post, path = "/shutdown",
-    responses((status = 200, body = ShutdownResponse)))]
-pub async fn shutdown(State(state): State<AppState>) -> Json<ShutdownResponse> {
-    log::info!("shutdown requested via API");
-    state.shutdown.notify_one();
-    Json(ShutdownResponse {
-        status: "shutting down".to_string(),
-    })
-}
-
 /// Response body for `POST /restart`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct RestartResponse {
@@ -224,7 +203,7 @@ pub(crate) fn build_app_with_shutdown(
     // client-routed web UI (e.g. `/routines` resolves to a UI page, not JSON).
     let api = Router::new()
         .route("/health", get(health::health))
-        .route("/shutdown", post(shutdown))
+        .route("/shutdown", post(shutdown::shutdown))
         .route("/restart", post(restart))
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))

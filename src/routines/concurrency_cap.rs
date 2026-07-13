@@ -23,10 +23,15 @@ const DEFAULT_MAX_CONCURRENT_RUNS: usize = 0;
 
 /// The configured global concurrency cap: how many routine agent sessions may be alive at once
 /// before a new fire is skipped instead of launched. `0` means unbounded.
+///
+/// Precedence: [`MAX_CONCURRENT_RUNS_ENV`] (ops/CI) > the UI/REST-configured override persisted in
+/// `machine.local.toml` (`crate::machine::max_concurrent_runs_override`, issue #1155) >
+/// [`DEFAULT_MAX_CONCURRENT_RUNS`].
 pub(crate) fn max_concurrent_runs() -> usize {
     std::env::var(MAX_CONCURRENT_RUNS_ENV)
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
+        .or_else(crate::machine::max_concurrent_runs_override)
         .unwrap_or(DEFAULT_MAX_CONCURRENT_RUNS)
 }
 

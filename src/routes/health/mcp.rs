@@ -11,20 +11,6 @@ impl MoadimMcp {
     /// Return server health status, uptime, build provenance, and filesystem locations.
     #[tool(description = "Get server health, uptime, build provenance, and filesystem locations")]
     pub(super) fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let loc = crate::filesystem::FsLocation::current();
-        // Same fields as `GET /health`, plus the two filesystem locations below — build on the
-        // shared logic rather than re-deriving status/uptime/dependencies/version by hand.
-        let mut val = serde_json::to_value(logic::build(self.uptime_start)).unwrap_or_default();
-        if let serde_json::Value::Object(ref mut map) = val {
-            map.insert(
-                "server_root".to_string(),
-                serde_json::json!(loc.server_root),
-            );
-            map.insert(
-                "server_exe_dir".to_string(),
-                serde_json::json!(loc.server_exe_dir),
-            );
-        }
-        Ok(ok(val))
+        Ok(ok(logic::build(self.uptime_start)))
     }
 }

@@ -37,10 +37,15 @@ pub struct HealthResponse {
     pub git_sha: String,
     /// Committer date (`YYYY-MM-DD`) of the build commit, or `"unknown"` outside a git checkout.
     pub build_date: String,
+    /// Absolute path of the server's working directory, or `None` if unresolvable.
+    pub server_root: Option<String>,
+    /// Absolute path of the directory containing the server executable, or `None` if unresolvable.
+    pub server_exe_dir: Option<String>,
 }
 
 /// Build the current health snapshot for a server that started at `uptime_start` (unix seconds).
 pub fn build(uptime_start: u64) -> HealthResponse {
+    let loc = crate::filesystem::FsLocation::current();
     HealthResponse {
         status: "ok".to_string(),
         // saturating_sub so a backward wall-clock adjustment can't underflow
@@ -55,5 +60,7 @@ pub fn build(uptime_start: u64) -> HealthResponse {
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),
         build_date: crate::build_info::BUILD_DATE.to_string(),
+        server_root: loc.server_root,
+        server_exe_dir: loc.server_exe_dir,
     }
 }

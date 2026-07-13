@@ -400,7 +400,9 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
             {
                 // Only render the triage panel when something is actually broken,
                 // so a healthy fleet stays uncluttered.
-                if !attention.is_empty() {
+                if attention.is_empty() {
+                    html! {}
+                } else {
                     html! {
                         <>
                             <div class="section-hd">
@@ -409,8 +411,6 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
                             <AttentionTable items={attention} />
                         </>
                     }
-                } else {
-                    html! {}
                 }
             }
             <div class="section-hd">

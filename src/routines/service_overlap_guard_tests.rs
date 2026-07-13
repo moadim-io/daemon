@@ -103,6 +103,20 @@ fn svc_trigger_skips_spawn_when_a_previous_run_is_still_alive() {
     let triggered = svc_trigger(&store, "trig-overlap-id").unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());
 
+    // The overlap guard never spawns a workbench, so without a `skip.log` fallback
+    // `routine_logs` would come back empty — indistinguishable from a routine that
+    // was simply never triggered (#1145). Assert the skip reason lands in both the
+    // durable log and what `svc_logs` (the `routine_logs` backend) actually returns.
+    let skip_log = std::fs::read_to_string(crate::paths::routine_skip_log_path(&slug)).unwrap();
+    assert!(skip_log.contains("overlap guard"), "skip.log: {skip_log}");
+
+    let logs = svc_logs(&store, "trig-overlap-id").unwrap();
+    assert!(
+        logs.content.contains("overlap guard"),
+        "logs: {}",
+        logs.content
+    );
+
     // SAFETY: single-threaded harness; restore the saved override.
     unsafe {
         match previous {

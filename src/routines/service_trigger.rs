@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
-use crate::routine_storage::{append_manual_trigger_log, write_routine};
+use crate::routine_storage::{append_manual_trigger_log, append_skip_log, write_routine};
 use crate::utils::lock::LockRecover;
 use crate::utils::time::now_secs;
 
@@ -201,14 +201,15 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // surfaces anywhere, so catch it here instead and skip the launch with a visible
             // warning, the same non-fatal shape as the agent-load-failure arm below.
             if let Some(len) = inline_prompt_overflow(routine, &agent) {
-                log::warn!(
-                    "trigger: composed prompt for routine {:?} is {len} bytes, over the \
-                     inline-argument limit for agent {:?}; skipping launch (would fail silently \
-                     inside tmux otherwise) — switch the agent's args to {{prompt_file}} or \
-                     shorten the routine's prompt/open flags",
-                    routine.id,
+                let reason = format!(
+                    "composed prompt is {len} bytes, over the inline-argument limit for agent \
+                     {:?}; skipping launch (would fail silently inside tmux otherwise) — switch \
+                     the agent's args to {{prompt_file}} or shorten the routine's prompt/open \
+                     flags",
                     routine.agent,
                 );
+                log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
             }
             // Overlap guard (#514): a routine has no built-in mutual exclusion between fires, so a
@@ -218,12 +219,12 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // any of them is still alive, skip this fire instead of launching a second one.
             let session_prefix = tmux_session_prefix(&slugify(&routine.title));
             if tmux_session_prefix_alive(&session_prefix) {
-                log::warn!(
-                    "trigger: routine {:?} skipped — a previous run (tmux session prefix {:?}) is \
-                     still active (overlap guard)",
-                    routine.id,
-                    session_prefix,
+                let reason = format!(
+                    "a previous run (tmux session prefix {session_prefix:?}) is still active \
+                     (overlap guard)"
                 );
+                log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
             }
             // Global concurrency cap (#335): the overlap guard above only stops one routine from
@@ -240,12 +241,13 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             let live = tmux_session_count(TMUX_SESSION_PREFIX);
             let cap = max_concurrent_runs();
             if live >= cap {
-                log::warn!(
-                    "trigger: routine {:?} skipped — {live} routine session(s) already running, \
-                     at or over the global concurrency cap of {cap} (set {MAX_CONCURRENT_RUNS_ENV} \
-                     to raise it); this fire will be retried on its next scheduled tick",
-                    routine.id,
+                let reason = format!(
+                    "{live} routine session(s) already running, at or over the global \
+                     concurrency cap of {cap} (set {MAX_CONCURRENT_RUNS_ENV} to raise it); this \
+                     fire will be retried on its next scheduled tick"
                 );
+                log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
             }
             let cmd = build_routine_command(routine, &agent, source);
@@ -258,12 +260,11 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
             crate::utils::process::spawn_and_reap(command, "routine command");
         }
-        Err(err) => log::warn!(
-            "trigger: cannot load agent {:?} ({}) for routine {:?}",
-            routine.agent,
-            err,
-            routine.id
-        ),
+        Err(err) => {
+            let reason = format!("cannot load agent {:?} ({err})", routine.agent);
+            log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+            append_skip_log(&slugify(&routine.title), now_secs(), &reason);
+        }
     }
 }
 
@@ -338,13 +339,27 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError>
         }
     }
     let Some((_, dir)) = newest else {
-        return Ok(LogWithMeta::empty());
+        return skip_log_fallback(&slug);
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
     if !log_path.exists() {
-        return Ok(LogWithMeta::empty());
+        return skip_log_fallback(&slug);
     }
     read_log_tail_with_meta(&log_path).map_err(|_| AppError::Internal)
+}
+
+/// Fall back to a routine's `skip.log` (see [`append_skip_log`]) when [`svc_logs`] finds no
+/// workbench: a trigger that got skipped before spawning (agent load failure, an oversized inline
+/// prompt, the overlap guard, or the concurrency cap) never creates a workbench, so without this
+/// `routine_logs` would come back looking identical to a routine that was simply never triggered
+/// (#1145). Returns an empty tail when `skip.log` doesn't exist either — a routine really can just
+/// have no history yet.
+fn skip_log_fallback(slug: &str) -> Result<LogWithMeta, AppError> {
+    let skip_log_path = crate::paths::routine_skip_log_path(slug);
+    if !skip_log_path.exists() {
+        return Ok(LogWithMeta::empty());
+    }
+    read_log_tail_with_meta(&skip_log_path).map_err(|_| AppError::Internal)
 }
 
 /// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status

@@ -14,9 +14,10 @@ use tower::ServiceExt;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use super::{
-    build_app, health, run_with_listener_until, serve_with_grace, shutdown_grace, AppState,
+    build_app, run_with_listener_until, serve_with_grace, shutdown_grace, AppState,
     SHUTDOWN_GRACE, SHUTDOWN_GRACE_MS_ENV,
 };
+use crate::routes::health::health;
 use crate::utils::time::now_secs;
 
 struct SucceedingCronShim {

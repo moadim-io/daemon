@@ -83,7 +83,7 @@
     "/health": {
       "get": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::health"
         ],
         "summary": "`GET /health` — health check with uptime.",
         "operationId": "health",

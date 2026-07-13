@@ -2,11 +2,10 @@
 
 use crate::routes::http::ShutdownSignal;
 use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
-use crate::utils::time::now_secs;
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
-    tool, tool_router,
+    tool, tool_handler, tool_router,
 };
 
 #[path = "mcp_types.rs"]
@@ -15,6 +14,11 @@ use mcp_types::{
     CreateFlagInput, IdInput, ListRoutinesParam, LockRoutinesInput, ResolveFlagInput,
     SetPowerSavingInput, SnoozeRoutineInput, UnlockRoutinesInput, UpdateRoutineInput,
 };
+
+/// The `health` tool, kept in `routes/health/mcp.rs` beside the `GET /health` HTTP handler it
+/// mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "health/mcp.rs"]
+mod health;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -43,7 +47,7 @@ fn err(msg: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl MoadimMcp {
     /// Create a new `MoadimMcp` handler connected to the given routine store.
     pub fn new(
@@ -58,30 +62,6 @@ impl MoadimMcp {
             uptime_start,
             shutdown,
         }
-    }
-
-    /// Return server health status, uptime, build provenance, and filesystem locations.
-    #[tool(description = "Get server health, uptime, build provenance, and filesystem locations")]
-    fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let loc = crate::filesystem::FsLocation::current();
-        // Inline FsLocation fields directly so there are no conditional branches on serialization.
-        let val = serde_json::json!({
-            "status": "ok",
-            // saturating_sub so a backward wall-clock adjustment can't underflow
-            // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
-            "uptime_secs": now_secs().saturating_sub(self.uptime_start),
-            "running": true,
-            // Resolved machine identity, mirroring `GET /health` and `GET /machine`.
-            "machine": crate::machine::current_machine(),
-            // Build provenance, mirroring `GET /health` and `--version` so the
-            // running build is identifiable consistently across all three surfaces.
-            "version": crate::build_info::VERSION,
-            "git_sha": crate::build_info::GIT_SHA,
-            "build_date": crate::build_info::BUILD_DATE,
-            "server_root": loc.server_root,
-            "server_exe_dir": loc.server_exe_dir,
-        });
-        Ok(ok(val))
     }
 
     /// Return managed routines as a JSON array sorted by creation time.
@@ -444,6 +424,11 @@ impl MoadimMcp {
         }))
     }
 }
+
+/// Combines this file's tool router with the `health` tool's (see the [`health`] module),
+/// since a `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router()))]
+impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]
 #[path = "mcp_lock_tests.rs"]

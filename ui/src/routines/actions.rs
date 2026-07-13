@@ -27,8 +27,8 @@ pub(crate) struct CrudHandlers {
 /// Builds the routines list page's CRUD/API callbacks (unlock-all, create, cleanup,
 /// trigger, toggle, save, confirm-delete) against the `/routines` API.
 pub(crate) fn install_crud_handlers(
-    state: UseReducerHandle<RState>,
-    toast: Callback<(String, ToastKind)>,
+    state: &UseReducerHandle<RState>,
+    toast: &Callback<(String, ToastKind)>,
     current_modal: RModal,
 ) -> CrudHandlers {
     let ok_toast = {

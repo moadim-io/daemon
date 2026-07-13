@@ -236,3 +236,13 @@ needless_raw_string_hashes = "deny"
 # root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
 # running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
 manual_let_else = "deny"
+# Reject a by-value function argument the body never consumes (never moves, mutates through
+# ownership, or otherwise needs to own) — it should take a reference instead, so a caller doesn't
+# have to part with (or needlessly clone) a value the callee only ever borrows internally. Mirrors
+# the root crate's `needless_pass_by_value = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. Fixes the 5 violations this surfaced in
+# `routines/actions.rs` and `routines/bulk_actions.rs`, where `install_crud_handlers` and
+# `install_bulk_handlers` only ever `.clone()`d their `state`/`toast`/`now` handles into closures
+# instead of consuming them.
+needless_pass_by_value = "deny"

@@ -35,6 +35,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+pnpm exec changeset status --since=origin/main
 ```
 
 Use `--workspace` for both clippy and test, matching the pre-push hook —
@@ -48,7 +49,12 @@ own test suite. `linecheck` keeps any single `.rs` file under `src/` or
 `ui/src/` from growing past 500 lines — a convention two independently green
 PRs can each respect yet still blow past together, since it isn't a required
 branch-protection check (see the `linecheck` job in
-[`lint.yml`](.github/workflows/lint.yml)).
+[`lint.yml`](.github/workflows/lint.yml)). The `changeset status` check only
+fails when a commit touches `src/` or `ui/` without an accompanying
+`.changeset/*.md` file, matching the CI `unreleased-entry` job (see
+[Workflow](#workflow) below) — run `pnpm install` once first so `pnpm exec`
+can find it, or set `SKIP_CHANGELOG=1` to bypass it locally the way the
+`skip-changelog` PR label does in CI.
 
 Enable the bundled git hooks once per clone:
 

@@ -25,7 +25,7 @@ pub struct FilterSortBarProps {
     /// Count after filtering / total loaded — rendered as "Showing N of M".
     pub shown: usize,
     pub total: usize,
-    /// NodeRef forwarded from the page so the `/` shortcut can focus this input.
+    /// `NodeRef` forwarded from the page so the `/` shortcut can focus this input.
     pub search_ref: NodeRef,
     pub on_query: Callback<String>,
     pub on_status: Callback<RoutineStatusFacet>,

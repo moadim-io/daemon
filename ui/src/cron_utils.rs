@@ -26,7 +26,7 @@ pub(crate) fn parse_cron(expr: &str) -> Option<Cron> {
     normalized.parse::<Cron>().ok()
 }
 
-/// Returns (is_valid, human description) for a cron expression.
+/// Returns (`is_valid`, human description) for a cron expression.
 pub(crate) fn describe_cron_live(expr: &str) -> (bool, String) {
     if expr.trim().is_empty() {
         return (false, "— enter a cron expression —".into());

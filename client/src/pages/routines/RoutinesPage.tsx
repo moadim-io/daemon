@@ -22,6 +22,7 @@ import {
   useLockStatus,
   useMachine,
   useMachines,
+  useRoutine,
   useRoutines,
   useTriggerRoutine,
   useUnlock,
@@ -355,7 +356,10 @@ export function RoutinesPage() {
     [routines, filter, now, sortCol, sortDir],
   );
 
-  const editRoutine = modal.kind === "edit" ? routines.find((r) => r.id === modal.id) : undefined;
+  // List rows omit `prompt` by default (see `include_prompts`), so the edit form fetches the
+  // full routine by id instead of reusing the cached list row.
+  const editRoutineQuery = useRoutine(modal.kind === "edit" ? modal.id : "", modal.kind === "edit");
+  const editRoutine = modal.kind === "edit" ? editRoutineQuery.data : undefined;
 
   const onSelect = (id: string) =>
     setSelected((sel) => {
@@ -529,7 +533,12 @@ export function RoutinesPage() {
         />
       )}
 
-      {modal.kind === "edit" && (
+      {modal.kind === "edit" && editRoutineQuery.isLoading && (
+        <div className="empty">
+          <div className="spinner" />
+        </div>
+      )}
+      {modal.kind === "edit" && editRoutine && (
         <RoutineForm
           mode="edit"
           initial={

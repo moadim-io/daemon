@@ -2,6 +2,7 @@
 
 use super::health;
 use super::mcp::MoadimMcp;
+use super::restart;
 use super::shutdown;
 use crate::error::AppError;
 use crate::middlewares;
@@ -15,9 +16,8 @@ use axum::{
     middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
+    Router,
 };
-use serde::Serialize;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 use tower::limit::GlobalConcurrencyLimitLayer;
@@ -116,30 +116,6 @@ async fn api_not_found() -> AppError {
     AppError::NotFound
 }
 
-/// Response body for `POST /restart`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct RestartResponse {
-    /// Acknowledgement status (always `"restarting"`).
-    pub status: String,
-    /// PID of the detached helper process performing the stop-old-then-start-new restart.
-    pub helper_pid: u32,
-}
-
-/// `POST /restart` — stop this server and start a fresh instance.
-///
-/// The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper
-/// that stops it and starts a new process, mirroring the `moadim restart` CLI command and the
-/// `restart` MCP tool. Responds with the helper's PID before the restart completes.
-#[utoipa::path(post, path = "/restart",
-    responses((status = 200, body = RestartResponse), (status = 500, description = "could not spawn the restart helper")))]
-pub async fn restart() -> Result<Json<RestartResponse>, AppError> {
-    let helper_pid = crate::cli::spawn_restart().map_err(|_| AppError::Internal)?;
-    Ok(Json(RestartResponse {
-        status: "restarting".to_string(),
-        helper_pid,
-    }))
-}
-
 #[path = "http_settings_routes.rs"]
 mod http_settings_routes;
 #[allow(
@@ -204,7 +180,7 @@ pub(crate) fn build_app_with_shutdown(
     let api = Router::new()
         .route("/health", get(health::health))
         .route("/shutdown", post(shutdown::shutdown))
-        .route("/restart", post(restart))
+        .route("/restart", post(restart::restart))
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
         .route(

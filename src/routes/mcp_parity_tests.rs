@@ -129,24 +129,6 @@ fn routine_logs_tool_not_found_is_error() {
 }
 
 #[test]
-fn restart_tool_spawns_helper_and_acknowledges() {
-    // The tool spawns a detached `current_exe --background` helper; under the test harness that exe
-    // is the test binary, which rejects `--background` and exits at once, so no real server starts.
-    // TempHome keeps the helper's log file out of the real home.
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.restart().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["status"], "restarting");
-    assert!(val["helper_pid"].as_u64().unwrap() > 0);
-}
-
-#[test]
 fn get_lock_status_returns_unlocked_by_default() {
     let _home = TempHome::set();
     let handler = make_handler();

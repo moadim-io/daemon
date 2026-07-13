@@ -12,7 +12,7 @@
     paths(
         crate::routes::health::health,
         crate::routes::shutdown::shutdown,
-        crate::routes::http::restart,
+        crate::routes::restart::restart,
         crate::routes::http::get_current_machine,
         crate::routes::http::put_machine,
         crate::routes::http::list_machines,
@@ -60,7 +60,7 @@
         crate::routes::health::HealthResponse,
         crate::routes::health::DependencyHealth,
         crate::routes::shutdown::ShutdownResponse,
-        crate::routes::http::RestartResponse,
+        crate::routes::restart::RestartResponse,
         crate::routes::http::MachineResponse,
         crate::routes::http::SetMachineRequest,
         crate::routes::http::SetUserPromptRequest,

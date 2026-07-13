@@ -14,3 +14,7 @@ impl MoadimMcp {
         Ok(ok(logic::build(self.uptime_start)))
     }
 }
+
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod mcp_tests;

@@ -64,3 +64,7 @@ pub fn build(uptime_start: u64) -> HealthResponse {
         server_exe_dir: loc.server_exe_dir,
     }
 }
+
+#[cfg(test)]
+#[path = "logic_tests.rs"]
+mod logic_tests;

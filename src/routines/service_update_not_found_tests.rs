@@ -43,6 +43,7 @@ impl Drop for TempHome {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        auto_pull: None,
         model: None,
         goal: None,
         schedule: None,

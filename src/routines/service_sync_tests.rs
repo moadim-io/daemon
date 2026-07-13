@@ -45,6 +45,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -86,6 +87,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+                auto_pull: true,
                 model: None,
                 schedule: "@daily".into(),
                 title: title.into(),
@@ -114,6 +116,7 @@ fn svc_create_rejects_goal_over_five_lines() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             schedule: "@daily".into(),
             title: "Svc Create Long Goal ZZZ".into(),
             agent: "claude".into(),
@@ -144,6 +147,7 @@ fn svc_create_trims_and_persists_goal() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+                auto_pull: true,
                 schedule: "@daily".into(),
                 title: title.into(),
                 agent: "claude".into(),
@@ -190,6 +194,7 @@ fn svc_update_clears_goal_with_empty_string() {
             &store,
             "upd-goal-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 schedule: None,
                 title: None,
                 agent: None,
@@ -223,6 +228,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
             &store,
             "upd-sync-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 model: None,
                 schedule: None,
                 title: None,

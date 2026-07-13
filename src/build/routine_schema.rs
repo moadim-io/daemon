@@ -43,7 +43,7 @@ pub fn generate(manifest_dir: &str) {
             },
             "repositories": {
                 "type": "array",
-                "description": "Git repositories listed to the agent as prompt context (not cloned by moadim).",
+                "description": "Git repositories listed to the agent as prompt context. When \"auto_pull\" is enabled (the default), the daemon also fetches + fast-forward pulls each one into a persistent local cache before every run.",
                 "items": {
                     "type": "object",
                     "required": ["repository"],
@@ -59,6 +59,11 @@ pub fn generate(manifest_dir: &str) {
                     },
                     "additionalProperties": false
                 }
+            },
+            "auto_pull": {
+                "type": "boolean",
+                "description": "Whether the daemon fetches + fast-forward pulls each of \"repositories\" into a persistent local cache before every run. Set false for a routine that manages its own checkout state.",
+                "default": true
             },
             "enabled": {
                 "type": "boolean",
@@ -118,6 +123,10 @@ pub fn generate(manifest_dir: &str) {
         "# [[repositories]]\n",
         "# repository = \"https://github.com/owner/repo\"\n",
         "# branch     = \"main\"\n",
+        "\n",
+        "# Auto-pull each repository above into a persistent local cache before every run\n",
+        "# (default: true). Set false if this routine manages its own checkout state.\n",
+        "# auto_pull = false\n",
     );
     fs::write(schema_dir.join("routine.example.toml"), example_toml)
         .expect("failed to write schemas/routine.example.toml");

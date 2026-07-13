@@ -10,3 +10,7 @@ enabled  = true
 # [[repositories]]
 # repository = "https://github.com/owner/repo"
 # branch     = "main"
+
+# Auto-pull each repository above into a persistent local cache before every run
+# (default: true). Set false if this routine manages its own checkout state.
+# auto_pull = false

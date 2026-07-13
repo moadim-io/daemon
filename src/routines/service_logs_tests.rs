@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,

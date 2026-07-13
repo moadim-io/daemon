@@ -104,6 +104,16 @@ fn routine_flags_dir_is_child_of_routine_dir() {
 }
 
 #[test]
+fn routine_repo_dir_is_child_of_repos_dir() {
+    let path = routine_repo_dir("abc", "github-com-owner-repo");
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "github-com-owner-repo"
+    );
+    assert_eq!(path.parent().unwrap(), routine_dir("abc").join("repos"));
+}
+
+#[test]
 fn agents_dir_ends_with_agents() {
     let path = agents_dir().to_string_lossy().into_owned();
     assert!(

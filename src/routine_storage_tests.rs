@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at: 5,
         updated_at: 6,
         last_manual_trigger_at: None,
@@ -429,7 +430,7 @@ fn write_routine_seeds_gitignore_with_all_required_patterns() {
         write_routine(&make_routine(id, title)).unwrap();
 
         let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        for pattern in ["*.local.*", "*.log", "run.sh"] {
+        for pattern in ["*.local.*", "*.log", "run.sh", "repos/"] {
             assert!(
                 content.lines().any(|line| line == pattern),
                 "missing required pattern {pattern:?} in {content:?}"

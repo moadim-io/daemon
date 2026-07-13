@@ -107,6 +107,9 @@ pub fn svc_update(
     if let Some(repositories) = repositories {
         routine.repositories = repositories;
     }
+    if let Some(auto_pull) = req.auto_pull {
+        routine.auto_pull = auto_pull;
+    }
     if let Some(machines) = machines {
         routine.machines = machines;
     }

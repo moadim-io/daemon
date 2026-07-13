@@ -1095,6 +1095,10 @@
             "type": "string",
             "description": "Agent registry key to launch."
           },
+          "auto_pull": {
+            "type": "boolean",
+            "description": "Whether the daemon auto-pulls `repositories` before each run (defaults to `true`)."
+          },
           "enabled": {
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
@@ -1450,6 +1454,10 @@
             "type": "string",
             "description": "Agent registry key (e.g. `\"claude\"`) resolved from `~/.config/moadim/agents/`."
           },
+          "auto_pull": {
+            "type": "boolean",
+            "description": "Whether the daemon fetches + fast-forward pulls each of [`Self::repositories`] into a\npersistent local cache before every run (#1132). `true` by default; set `false` for a\nroutine that manages its own checkout state (e.g. clones fresh into the workbench itself).\nA pull that fails (unreachable remote, diverged branch) never blocks the run — it raises an\n`auto_pull_failed` flag (see [`super::flags`]) instead of failing silently."
+          },
           "created_at": {
             "type": "integer",
             "format": "int64",
@@ -1774,6 +1782,13 @@
               "null"
             ],
             "description": "New agent key, or `None` to keep the existing value."
+          },
+          "auto_pull": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "New auto-pull setting, or `None` to keep the existing value."
           },
           "enabled": {
             "type": [

@@ -84,6 +84,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         prompt,
         goal: toml.goal,
         repositories: toml.repositories,
+        auto_pull: toml.auto_pull.unwrap_or(true),
         machines: toml.machines,
         enabled: toml.enabled.unwrap_or(true),
         source: "managed".to_string(),

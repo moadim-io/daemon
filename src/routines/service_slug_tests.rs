@@ -51,6 +51,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -76,6 +77,7 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        auto_pull: true,
         model: None,
         schedule: "@daily".into(),
         title: "Valid Title".into(),
@@ -94,6 +96,7 @@ fn valid_create_request() -> CreateRoutineRequest {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        auto_pull: None,
         model: None,
         schedule: None,
         title: None,
@@ -144,6 +147,7 @@ fn svc_create_rejects_duplicate_slug() {
         let first = svc_create(
             &store,
             CreateRoutineRequest {
+                auto_pull: true,
                 model: None,
                 schedule: "@daily".into(),
                 title: title.into(),
@@ -163,6 +167,7 @@ fn svc_create_rejects_duplicate_slug() {
         let conflict = svc_create(
             &store,
             CreateRoutineRequest {
+                auto_pull: true,
                 model: None,
                 schedule: "@daily".into(),
                 // Different casing/spacing, same slug.
@@ -220,6 +225,7 @@ fn svc_create_rejects_malformed_agent_config() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Svc Create Malformed ZZZ".into(),
@@ -254,6 +260,7 @@ fn svc_create_rejects_unreadable_agent_config() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Svc Create Unreadable ZZZ".into(),
@@ -295,6 +302,7 @@ fn svc_update_rejects_malformed_agent_config() {
         &store,
         "upd-mal-id",
         UpdateRoutineRequest {
+            auto_pull: None,
             model: None,
             schedule: None,
             title: None,
@@ -341,6 +349,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
             &store,
             "other-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 model: None,
                 schedule: None,
                 // Rename "other" into the slug already owned by "keep".

@@ -21,6 +21,7 @@ fn make_routine(id: &str) -> Routine {
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
@@ -104,6 +105,7 @@ fn routine_response_schedule_description_includes_timezone() {
 fn svc_create_invalid_cron_rejected() {
     let store = new_store();
     let req = CreateRoutineRequest {
+        auto_pull: true,
         schedule: "not-a-cron".into(),
         title: "t".into(),
         agent: "claude".into(),
@@ -126,6 +128,7 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Cov Routine".into(),
@@ -150,6 +153,7 @@ fn svc_create_update_delete_lifecycle() {
         &store,
         &id,
         UpdateRoutineRequest {
+            auto_pull: None,
             model: None,
             schedule: Some("@weekly".into()),
             title: Some("Renamed".into()),
@@ -181,6 +185,7 @@ fn svc_create_update_delete_lifecycle() {
 #[test]
 fn svc_update_not_found() {
     let req = UpdateRoutineRequest {
+        auto_pull: None,
         schedule: None,
         title: Some("x".into()),
         agent: None,
@@ -205,6 +210,7 @@ fn svc_update_invalid_cron_rejected() {
         .unwrap()
         .insert("id".into(), make_routine("id"));
     let req = UpdateRoutineRequest {
+        auto_pull: None,
         schedule: Some("bad".into()),
         title: None,
         agent: None,
@@ -274,12 +280,66 @@ fn svc_trigger_with_agent_config_spawns() {
     let triggered = svc_trigger(&store, "trig-cfg").unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());
 
+    // `spawn_routine_command` runs auto-pull synchronously before the fire-and-forget shell
+    // spawn, so by the time `svc_trigger` returns it has already attempted (and, with no
+    // `MOADIM_GIT_BIN` shim configured, failed to) sync this routine's repository — raising a
+    // visible flag (#1132) rather than failing silently.
+    let flags = crate::routines::flags::list_flags("trigger-cov-title-zzz");
+    assert!(
+        flags
+            .iter()
+            .any(|flag| flag.flag_type == "auto_pull_failed"),
+        "expected an auto_pull_failed flag, got {flags:?}"
+    );
+
     // Let the fire-and-forget shell create its workbench, then clean everything up.
     std::thread::sleep(std::time::Duration::from_millis(150));
     std::fs::remove_file(&cfg).unwrap();
     // folder is slug of title "Trigger Cov Title ZZZ"
     crate::routine_storage::remove_routine_dir("trigger-cov-title-zzz").unwrap();
     let prefix = format!("{}-", slugify(title));
+    if let Ok(entries) = std::fs::read_dir(crate::paths::workbenches_dir()) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+}
+
+#[test]
+fn svc_trigger_skips_auto_pull_when_disabled() {
+    // Agent config with a harmless command so the spawned shell exits immediately.
+    let agent_name = "trigger-cov-agent-no-pull-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"true\"\nargs = []\n").unwrap();
+
+    let store = new_store();
+    let title = "Trigger Cov No Pull Title ZZZ";
+    let mut routine = make_routine("trig-no-pull-cfg");
+    routine.title = title.into();
+    routine.agent = agent_name.into();
+    routine.auto_pull = false;
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-no-pull-cfg".into(), routine.clone());
+    crate::routine_storage::write_routine(&routine).unwrap();
+
+    svc_trigger(&store, "trig-no-pull-cfg").unwrap();
+
+    // `auto_pull: false` must skip the sync entirely — no flag, even with a repository
+    // configured and no `MOADIM_GIT_BIN` shim (which would otherwise make the sync fail).
+    let slug = slugify(title);
+    let flags = crate::routines::flags::list_flags(&slug);
+    assert!(flags.is_empty(), "expected no flags, got {flags:?}");
+
+    // Let the fire-and-forget shell create its workbench, then clean everything up.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    std::fs::remove_file(&cfg).unwrap();
+    crate::routine_storage::remove_routine_dir(&slug).unwrap();
+    let prefix = format!("{slug}-");
     if let Ok(entries) = std::fs::read_dir(crate::paths::workbenches_dir()) {
         for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().starts_with(&prefix) {

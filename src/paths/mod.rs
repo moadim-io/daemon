@@ -203,6 +203,14 @@ pub fn routine_flags_dir(id: &str) -> PathBuf {
     routine_dir(id).join("flags")
 }
 
+/// Returns the path to `{routines_dir}/{id}/repos/{repo_slug}/`, the persistent local clone
+/// auto-pull (#1132) fetches and fast-forwards into before each run, keyed by a slug of the
+/// repository's remote URL so the cache survives across runs instead of re-cloning every fire.
+#[must_use]
+pub fn routine_repo_dir(id: &str, repo_slug: &str) -> PathBuf {
+    routine_dir(id).join("repos").join(repo_slug)
+}
+
 // ─── Agent registry ──────────────────────────────────────────────────────────
 
 /// Returns the path to `{config_dir}/agents/` (default `~/.config/moadim/agents/`).

@@ -114,6 +114,13 @@ pub struct Routine {
     /// Repositories listed in the prompt as context.
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Whether the daemon fetches + fast-forward pulls each of [`Self::repositories`] into a
+    /// persistent local cache before every run (#1132). `true` by default; set `false` for a
+    /// routine that manages its own checkout state (e.g. clones fresh into the workbench itself).
+    /// A pull that fails (unreachable remote, diverged branch) never blocks the run — it raises an
+    /// `auto_pull_failed` flag (see [`super::flags`]) instead of failing silently.
+    #[serde(default = "bool_true")]
+    pub auto_pull: bool,
     /// Machines this routine runs on. Each daemon schedules a routine only when this list names its
     /// own machine identity ([`crate::machine::current_machine`]); an **empty list runs nowhere**, so
     /// a routine is dormant until explicitly assigned. Lets one shared config repo drive different
@@ -404,6 +411,9 @@ pub struct CreateRoutineRequest {
     /// Repositories to list as context (defaults to empty).
     #[serde(default)]
     pub repositories: Vec<Repository>,
+    /// Whether the daemon auto-pulls `repositories` before each run (defaults to `true`).
+    #[serde(default = "bool_true")]
+    pub auto_pull: bool,
     /// Machines to run this routine on (defaults to empty = runs nowhere until assigned).
     #[serde(default)]
     pub machines: Vec<String>,
@@ -445,6 +455,8 @@ pub struct UpdateRoutineRequest {
     pub goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub repositories: Option<Vec<Repository>>,
+    /// New auto-pull setting, or `None` to keep the existing value.
+    pub auto_pull: Option<bool>,
     /// New machines targeting list, or `None` to keep the existing value.
     pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.

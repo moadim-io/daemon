@@ -45,6 +45,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -309,6 +310,7 @@ fn svc_create_syncs_crontab_on_success() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+                auto_pull: true,
                 model: None,
                 schedule: "@daily".into(),
                 title: title.into(),
@@ -344,6 +346,7 @@ fn svc_update_syncs_crontab_on_success() {
             &store,
             "upd-sync-ok-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 model: None,
                 schedule: None,
                 title: None,

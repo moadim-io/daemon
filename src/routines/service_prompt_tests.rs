@@ -20,6 +20,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -41,6 +42,7 @@ fn svc_create_rejects_empty_prompt() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Svc Create Empty Prompt ZZZ".into(),
@@ -67,6 +69,7 @@ fn svc_create_rejects_whitespace_prompt() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Svc Create Whitespace Prompt ZZZ".into(),
@@ -103,6 +106,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
         &store,
         "empty-prompt-id",
         UpdateRoutineRequest {
+            auto_pull: None,
             model: None,
             schedule: None,
             title: None,

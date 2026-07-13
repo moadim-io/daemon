@@ -65,6 +65,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at: 1,
         updated_at: 1,
         last_manual_trigger_at: None,

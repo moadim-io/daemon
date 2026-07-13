@@ -38,6 +38,7 @@ impl Drop for TempHome {
 
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        auto_pull: true,
         model: None,
         schedule: "@daily".into(),
         title: title.into(),

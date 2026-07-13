@@ -1,8 +1,11 @@
 //! Routine data model, agent registry, command builder, service functions, and HTTP handlers.
 //!
 //! A *routine* is a scheduled AI-agent task: it launches an agent (claude code, codex, …) inside an
-//! interactive tmux session rooted in a fresh workbench. moadim never clones the routine's `repositories`; it lists
-//! them in the prompt as context and the agent clones any it needs.
+//! interactive tmux session rooted in a fresh workbench. Before each run, when a repository's
+//! routine has `auto_pull` enabled (the default), moadim fetches and fast-forward pulls it into a
+//! persistent per-routine cache (see `repo_sync`, #1132) — best-effort, raising an `auto_pull_failed`
+//! flag rather than blocking the run on failure. The agent's own workbench still starts empty; it
+//! lists the repositories in the prompt as context and clones any it needs there itself.
 //!
 //! The module is split by concern:
 //! - `model` — persisted types, API responses, and request bodies.
@@ -13,6 +16,7 @@
 //! - `cleanup` — auto-removal of finished, expired run workbenches (per-routine TTL).
 //! - `ical` — iCalendar (`.ics`) export of upcoming routine fire times.
 //! - `flags` — agent-raised gap/bug/edge-case notes attached to a routine.
+//! - `repo_sync` — auto-pull: fetch + fast-forward each repository into a persistent cache.
 //! - `handlers` — the Axum HTTP handlers.
 
 mod agents;
@@ -24,6 +28,7 @@ pub mod flags;
 mod handlers;
 mod ical;
 mod model;
+mod repo_sync;
 mod run_history;
 mod service;
 
@@ -38,6 +43,8 @@ pub use service::*;
 pub(crate) use command::*;
 // `concurrency_cap` is a crate-internal config knob for `service_trigger::spawn_routine_command`.
 pub(crate) use concurrency_cap::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};
+// `repo_sync` is invoked only from `service_trigger::spawn_routine_command`.
+pub(crate) use repo_sync::sync_repositories;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

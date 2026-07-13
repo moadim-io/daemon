@@ -64,6 +64,7 @@ fn err_helper_is_error() {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        auto_pull: true,
         model: None,
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),
@@ -156,6 +157,7 @@ fn create_get_update_trigger_delete_routine_success() {
     // `trigger_routine_tool_returns_error_when_disabled`)
     let result = handler
         .update_routine(Parameters(UpdateRoutineInput {
+            auto_pull: None,
             id: id.clone(),
             schedule: None,
             title: Some("Renamed".into()),
@@ -200,6 +202,7 @@ fn update_routine_tool_not_found_is_error() {
     let handler = make_handler();
     let result = handler
         .update_routine(Parameters(UpdateRoutineInput {
+            auto_pull: None,
             id: "no-such".into(),
             schedule: None,
             title: Some("x".into()),

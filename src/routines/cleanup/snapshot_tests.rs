@@ -22,6 +22,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
+        auto_pull: true,
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,

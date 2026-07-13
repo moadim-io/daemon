@@ -181,6 +181,7 @@ pub fn svc_create(
         prompt: req.prompt,
         goal,
         repositories,
+        auto_pull: req.auto_pull,
         machines,
         enabled: req.enabled,
         source: "managed".to_string(),

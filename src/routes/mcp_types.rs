@@ -102,6 +102,8 @@ pub(super) struct UpdateRoutineInput {
     pub(super) goal: Option<String>,
     /// New repositories list, or `None` to keep the existing value.
     pub(super) repositories: Option<Vec<crate::routines::Repository>>,
+    /// New auto-pull setting, or `None` to keep the existing value.
+    pub(super) auto_pull: Option<bool>,
     /// New machines targeting list, or `None` to keep the existing value.
     pub(super) machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.

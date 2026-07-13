@@ -20,6 +20,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         machines: vec![],
         enabled,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,

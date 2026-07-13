@@ -280,6 +280,7 @@ async fn build_app_serves_machines() {
             tags: vec![],
             enabled: true,
             source: "managed".to_string(),
+            auto_pull: true,
             created_at: 0,
             updated_at: 0,
             last_manual_trigger_at: None,

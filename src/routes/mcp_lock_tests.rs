@@ -50,6 +50,7 @@ impl Drop for TempHome {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        auto_pull: true,
         model: None,
         schedule: "@daily".into(),
         title: "Mcp Routine".into(),

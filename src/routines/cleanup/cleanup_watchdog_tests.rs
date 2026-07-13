@@ -299,6 +299,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
+        auto_pull: true,
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,

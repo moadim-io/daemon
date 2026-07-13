@@ -149,6 +149,7 @@ impl MoadimMcp {
         Parameters(input): Parameters<UpdateRoutineInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let req = UpdateRoutineRequest {
+            auto_pull: input.auto_pull,
             schedule: input.schedule,
             title: input.title,
             agent: input.agent,

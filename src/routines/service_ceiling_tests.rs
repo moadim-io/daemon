@@ -52,6 +52,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -77,6 +78,7 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        auto_pull: true,
         model: None,
         goal: None,
         schedule: "@daily".into(),
@@ -95,6 +97,7 @@ fn valid_create_request() -> CreateRoutineRequest {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        auto_pull: None,
         model: None,
         goal: None,
         schedule: None,

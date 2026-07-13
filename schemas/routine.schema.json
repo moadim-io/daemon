@@ -7,6 +7,11 @@
       "description": "Agent registry key (e.g. \"claude\") resolved from the agents config directory.",
       "type": "string"
     },
+    "auto_pull": {
+      "default": true,
+      "description": "Whether the daemon fetches + fast-forward pulls each of \"repositories\" into a persistent local cache before every run. Set false for a routine that manages its own checkout state.",
+      "type": "boolean"
+    },
     "created_at": {
       "description": "Unix timestamp (seconds) when the routine was created. Daemon-assigned.",
       "minimum": 0,
@@ -41,7 +46,7 @@
       "type": "string"
     },
     "repositories": {
-      "description": "Git repositories listed to the agent as prompt context (not cloned by moadim).",
+      "description": "Git repositories listed to the agent as prompt context. When \"auto_pull\" is enabled (the default), the daemon also fetches + fast-forward pulls each one into a persistent local cache before every run.",
       "items": {
         "additionalProperties": false,
         "properties": {

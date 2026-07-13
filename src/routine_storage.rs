@@ -51,6 +51,11 @@ struct RoutineToml {
     /// Context repositories.
     #[serde(default)]
     repositories: Vec<Repository>,
+    /// Whether the daemon auto-pulls `repositories` before each run. Absent means `true`
+    /// (`enabled` follows the same absent-means-on convention, applied at load in
+    /// [`crate::routine_storage_load::load_routine_from_base`]).
+    #[serde(default)]
+    auto_pull: Option<bool>,
     /// Machines this routine is assigned to run on (empty = nowhere). Tracked config: the
     /// targeting decision is authored once in the shared repo, not per-machine sidecar state.
     #[serde(default)]
@@ -131,10 +136,11 @@ fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> RuntimeState {
         .unwrap_or_default()
 }
 
-/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
-/// obsolete per-routine launch script. `prompts/prompt.compiled.local.md` needs no entry of its
-/// own — its `.local.` filename already matches `*.local.*` (issue #1046).
-const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh"];
+/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, the
+/// obsolete per-routine launch script, and the auto-pull repo cache (#1132) — a full local git
+/// clone that must never land in version control. `prompts/prompt.compiled.local.md` needs no
+/// entry of its own — its `.local.` filename already matches `*.local.*` (issue #1046).
+const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh", "repos/"];
 
 /// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
 /// appending whichever are missing and leaving the rest of the file (including user additions)
@@ -214,6 +220,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         prompt: None,
         goal: routine.goal.clone(),
         repositories: routine.repositories.clone(),
+        auto_pull: Some(routine.auto_pull),
         machines: routine.machines.clone(),
         enabled: Some(routine.enabled),
         created_at: Some(routine.created_at),

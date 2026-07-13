@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -60,6 +61,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
 /// Build a create request with the given title and an otherwise-valid body.
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        auto_pull: true,
         model: None,
         schedule: "@daily".into(),
         title: title.into(),
@@ -114,6 +116,7 @@ fn svc_create_rejects_unknown_agent() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Svc Create Unknown Agent ZZZ".into(),
@@ -153,6 +156,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
             &store,
             "title-guard-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 model: None,
                 schedule: None,
                 title: Some(title.into()),
@@ -189,6 +193,7 @@ fn svc_create_accepts_builtin_agent() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: title.into(),
@@ -224,6 +229,7 @@ fn svc_update_rejects_unknown_agent() {
         &store,
         "upd-agent-id",
         UpdateRoutineRequest {
+            auto_pull: None,
             model: None,
             schedule: None,
             title: None,
@@ -257,6 +263,7 @@ fn svc_create_rejects_blank_repository_url() {
         let result = svc_create(
             &store,
             CreateRoutineRequest {
+                auto_pull: true,
                 model: None,
                 schedule: "@daily".into(),
                 title: "Svc Create Blank Repo ZZZ".into(),
@@ -289,6 +296,7 @@ fn svc_create_rejects_blank_repository_branch() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: "Svc Create Blank Branch ZZZ".into(),
@@ -321,6 +329,7 @@ fn svc_create_trims_repository_entries() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            auto_pull: true,
             model: None,
             schedule: "@daily".into(),
             title: title.into(),
@@ -361,6 +370,7 @@ fn svc_update_rejects_blank_repository_url() {
         &store,
         "upd-repo-id",
         UpdateRoutineRequest {
+            auto_pull: None,
             model: None,
             schedule: None,
             title: None,

@@ -19,6 +19,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         machines: vec![],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,

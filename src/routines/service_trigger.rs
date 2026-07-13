@@ -15,10 +15,12 @@ use crate::routines::command::{
     build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix, TriggerSource,
     TMUX_SESSION_PREFIX,
 };
+use crate::routines::flags::{create_flag, FlagScope};
 use crate::routines::model::{
     CleanupResponse, FleetRunSummary, Routine, RoutineStore, RunStatus, RunSummary,
 };
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
+use crate::routines::sync_repositories;
 use crate::routines::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};
 
 use super::service_log_tail::{read_log_tail_with_meta, LogWithMeta};
@@ -249,6 +251,24 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
                 log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
                 append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
+            }
+            // Auto-pull (#1132): fetch + fast-forward pull each of `routine.repositories` into a
+            // persistent cache before the agent launches, unless the routine opted out
+            // (`auto_pull: false`). Best-effort: a failure never blocks this fire — it raises a
+            // visible `auto_pull_failed` flag (surfaced in the next run's prompt via
+            // `compose_prompt`'s "Open flags" section, and in `flag_count`/`list_flags`) instead
+            // of failing silently.
+            for err in sync_repositories(routine) {
+                log::warn!(
+                    "trigger: auto-pull failed for routine {:?}: {err}",
+                    routine.id,
+                );
+                let _ = create_flag(
+                    &slugify(&routine.title),
+                    "auto_pull_failed",
+                    &err,
+                    FlagScope::General,
+                );
             }
             let cmd = build_routine_command(routine, &agent, source);
             // `-lc` (login shell) mirrors the crontab invocation (`/bin/sh -l <run.sh>`), so a

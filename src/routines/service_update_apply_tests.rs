@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".to_string(),
+        auto_pull: true,
         created_at,
         updated_at,
         last_manual_trigger_at: None,
@@ -59,6 +60,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
 
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        auto_pull: None,
         model: None,
         schedule: None,
         title: None,
@@ -109,6 +111,7 @@ fn svc_update_sets_ttl_secs() {
             &store,
             "ttl-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 model: None,
                 schedule: None,
                 title: None,
@@ -148,6 +151,7 @@ fn svc_update_sets_max_runtime_secs() {
             &store,
             "max-runtime-id",
             UpdateRoutineRequest {
+                auto_pull: None,
                 model: None,
                 schedule: None,
                 title: None,
@@ -164,6 +168,33 @@ fn svc_update_sets_max_runtime_secs() {
         )
         .unwrap();
         assert_eq!(updated.routine.max_runtime_secs, Some(1234));
+    });
+}
+
+#[test]
+fn svc_update_sets_auto_pull() {
+    let _home = TempHome::set();
+    // Covers the `req.auto_pull` apply branch in `svc_update`.
+    let title = "Svc Update Auto Pull ZZZ";
+    let store = new_store();
+    let routine = make_routine("auto-pull-id", title, 1, 1);
+    assert!(routine.auto_pull);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("auto-pull-id".into(), routine);
+
+    // `with_empty_path` keeps the post-update crontab sync from touching the real
+    // crontab (issue #175): the update succeeds, the sync just warns.
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "auto-pull-id",
+            UpdateRoutineRequest {
+                auto_pull: Some(false),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert!(!updated.routine.auto_pull);
     });
 }
 

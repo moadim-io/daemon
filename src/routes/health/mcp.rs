@@ -16,7 +16,10 @@ impl MoadimMcp {
         // shared logic rather than re-deriving status/uptime/dependencies/version by hand.
         let mut val = serde_json::to_value(logic::build(self.uptime_start)).unwrap_or_default();
         if let serde_json::Value::Object(ref mut map) = val {
-            map.insert("server_root".to_string(), serde_json::json!(loc.server_root));
+            map.insert(
+                "server_root".to_string(),
+                serde_json::json!(loc.server_root),
+            );
             map.insert(
                 "server_exe_dir".to_string(),
                 serde_json::json!(loc.server_exe_dir),

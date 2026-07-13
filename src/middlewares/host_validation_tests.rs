@@ -218,3 +218,16 @@ fn allowed_hosts_extends_from_env_var() {
     assert!(hosts.iter().any(|host| host == "reverse-proxy.internal"));
     assert!(hosts.iter().any(|host| host == "other.host:8080"));
 }
+
+#[test]
+fn allowed_hosts_skips_port_suffixed_entries_when_bind_addr_has_no_port() {
+    // A bind address without a `:port` suffix (e.g. an operator setting `MOADIM_BIND_ADDR=0.0.0.0`
+    // and letting the port default elsewhere) means `bind.rsplit_once(':')` returns `None`, so the
+    // `localhost:<port>`/`[::1]:<port>` allowlist entries must not be added — only the bare `bind`
+    // value itself.
+    let _guard = EnvGuard::set("MOADIM_BIND_ADDR", "0.0.0.0");
+    let hosts = allowed_hosts();
+    assert!(hosts.iter().any(|host| host == "0.0.0.0"));
+    assert!(!hosts.iter().any(|host| host.starts_with("localhost:")));
+    assert!(!hosts.iter().any(|host| host.starts_with("[::1]:")));
+}

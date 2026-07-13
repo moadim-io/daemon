@@ -51,11 +51,15 @@ pub(crate) fn read_log_tail_with_meta(path: &std::path::Path) -> std::io::Result
 /// Read `path`, returning only the last [`MAX_LOG_TAIL_BYTES`] when it's larger than that.
 ///
 /// The seek point is snapped forward to the next UTF-8 character boundary so a multi-byte
-/// character split by the byte-offset seek isn't silently mangled, and a truncated read is
-/// prefixed with a marker noting how many bytes were omitted rather than starting mid-line with
-/// no indication anything is missing. [`strip_ansi_noise`] runs over the returned content so
-/// terminal escape sequences and `\r`-redraw noise from the raw `tmux pipe-pane` capture (#278)
-/// don't clutter the served log.
+/// character split by the byte-offset seek isn't silently mangled, then snapped forward again to
+/// the start of the next line (#281). A byte-offset seek lands mid-line more often than not;
+/// without the second snap, the truncated window could start mid-ANSI-escape-sequence — `strip_ansi_noise`
+/// only recognizes escapes that begin with their leading `ESC` byte, so a fragment missing that
+/// byte leaks as literal garbage — or simply mid-line with no clean boundary for a caller to
+/// render. A truncated read is prefixed with a marker noting how many bytes were omitted rather
+/// than starting with no indication anything is missing. [`strip_ansi_noise`] runs over the
+/// returned content so terminal escape sequences and `\r`-redraw noise from the raw
+/// `tmux pipe-pane` capture (#278) don't clutter the served log.
 pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
     let len = std::fs::metadata(path)?.len();
     read_log_tail_of_len(path, len)
@@ -75,11 +79,18 @@ fn read_log_tail_of_len(path: &std::path::Path, len: u64) -> std::io::Result<Str
     file.read_to_end(&mut buf)?;
     // A UTF-8 continuation byte is 10xxxxxx; skip up to 3 of them (the longest possible
     // multi-byte sequence) to land on the next real character's leading byte.
-    let start = buf
+    let utf8_start = buf
         .iter()
         .take(4)
         .position(|&byte| !(0x80..0xC0).contains(&byte))
         .unwrap_or(0);
+    // Snap forward again to the start of the next line so the window can't begin mid-line or
+    // mid-escape-sequence. Only when a newline actually exists in the retained window — an
+    // omitted single line longer than the whole cap has nowhere to snap to and is served as-is.
+    let start = buf[utf8_start..]
+        .iter()
+        .position(|&byte| byte == b'\n')
+        .map_or(utf8_start, |offset| utf8_start + offset + 1);
     let tail = String::from_utf8_lossy(&buf[start..]);
     Ok(format!(
         "... [{omitted} bytes omitted; showing the last {MAX_LOG_TAIL_BYTES} bytes] ...\n{}",

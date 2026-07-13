@@ -191,7 +191,7 @@ impl TagFacet {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RoutineFilter {
     /// Free-text needle matched across title, agent, prompt, repositories,
-    /// schedule, and schedule_description.
+    /// schedule, and `schedule_description`.
     pub query: String,
     pub status: RoutineStatusFacet,
     pub agent: AgentFacet,

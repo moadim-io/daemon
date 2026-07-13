@@ -51,7 +51,7 @@ fn now() -> DateTime<Local> {
     Local.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap()
 }
 
-/// DueSoon window matching `DUE_SOON_WINDOW_SECS`.
+/// `DueSoon` window matching `DUE_SOON_WINDOW_SECS`.
 fn window() -> Duration {
     Duration::seconds(DUE_SOON_WINDOW_SECS)
 }

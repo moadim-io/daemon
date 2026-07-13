@@ -22,7 +22,7 @@ use super::model::{api_all_runs, api_list, api_lock_status, FleetRunSummary};
 use super::sparkline::{group_recent_runs, RUN_HISTORY_FETCH_LIMIT};
 use super::state::{RAction, RModal, RState};
 
-/// Tick cadence for the live "now" handle (keeps DueSoon count fresh between fetches).
+/// Tick cadence for the live "now" handle (keeps `DueSoon` count fresh between fetches).
 const NEXT_RUN_TICK_MS: u32 = 30_000;
 
 /// Installs the keydown listener behind two routines-page shortcuts: `/` focuses

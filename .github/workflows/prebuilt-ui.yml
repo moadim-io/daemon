@@ -51,7 +51,15 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install trunk
-        run: cargo install --locked trunk
+        # Pinned: `cargo install --locked trunk` (no version) installs whatever
+        # is latest on crates.io *at run time*. Trunk's own output (minified
+        # JS, asset content-hashes) isn't guaranteed byte-stable across trunk
+        # releases, so an unpinned install makes this job fail the moment
+        # upstream trunk ships a new version — even on a PR that touches
+        # nothing but a Cargo.toml lint table. Bump this version deliberately,
+        # in the same PR that regenerates `prebuilt.html` against it. Keep in
+        # lockstep with publish.yml's pin.
+        run: cargo install --locked --version 0.21.14 trunk
 
       - name: Rebuild the UI (build.rs regenerates prebuilt.html via trunk)
         run: cargo check
@@ -61,6 +69,6 @@ jobs:
           if ! git diff --exit-code -- prebuilt.html; then
             echo ""
             echo "prebuilt.html is out of date for the current ui/ source."
-            echo "Rebuild it locally (cargo install trunk && cargo build) and commit the result."
+            echo "Rebuild it locally (cargo install --locked --version 0.21.14 trunk && cargo build) and commit the result."
             exit 1
           fi

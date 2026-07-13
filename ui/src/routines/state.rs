@@ -239,9 +239,8 @@ pub fn sort_routines(
     dir: RDir,
     now: DateTime<Local>,
 ) -> Vec<Routine> {
-    let col = match col {
-        Some(c) => c,
-        None => return routines,
+    let Some(col) = col else {
+        return routines;
     };
     routines.sort_by(|a, b| {
         let primary = match col {

@@ -353,6 +353,22 @@ stopped**. The supervisor restarts only on a *failure* exit (systemd `Restart=on
 To start the service again after a stop, use `moadim` (or your supervisor's `systemctl --user start`
 / `launchctl` controls).
 
+### Shell completions
+
+`moadim completions <shell>` prints a completion script for `bash`, `zsh`, `fish`, `powershell`, or
+`elvish` to stdout; redirect it to wherever your shell loads completions from:
+
+```sh
+# bash (adjust the path to wherever your bash-completion install looks)
+moadim completions bash > /etc/bash_completion.d/moadim
+
+# zsh (any directory on $fpath; start a new shell, or `compinit`, afterward)
+moadim completions zsh > "${fpath[1]}/_moadim"
+
+# fish
+moadim completions fish > ~/.config/fish/completions/moadim.fish
+```
+
 ### Data commands
 
 Beyond lifecycle, the CLI exposes the same routine actions the REST API and MCP tools

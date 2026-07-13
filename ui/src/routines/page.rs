@@ -31,6 +31,7 @@ use super::hooks::{
 };
 use super::logs::RoutineLogs;
 use super::model::FleetRunSummary;
+use super::saved_views::{self, SavedView, SavedViewsBar, ViewSnapshot};
 use super::state::{
     sort_routines, RAction, RCol, RGroupBy, RModal, RPage, RState, RView, RoutineHistoryQuery,
 };
@@ -45,8 +46,63 @@ pub struct RoutinesPageProps {
 
 #[function_component(RoutinesPage)]
 pub fn routines_page(props: &RoutinesPageProps) -> Html {
-    let state = use_reducer(RState::default);
+    let state = use_reducer(RState::init);
     let toast = props.on_toast.clone();
+
+    // Saved-view presets (name -> filter/sort/group-by snapshot), loaded once on mount.
+    let saved_views_list = use_state(saved_views::load_saved_views);
+
+    // Auto-persist the current filter/sort/group-by state so it survives a reload
+    // (restored by `RState::init` above).
+    {
+        let filter = state.filter.clone();
+        let sort_col = state.sort_col;
+        let sort_dir = state.sort_dir;
+        let group_by = state.group_by;
+        use_effect_with(
+            (filter, sort_col, sort_dir, group_by),
+            |(filter, sort_col, sort_dir, group_by)| {
+                let snapshot = ViewSnapshot::capture(filter, *sort_col, *sort_dir, *group_by);
+                saved_views::save_last_view(&snapshot);
+            },
+        );
+    }
+
+    let on_apply_view = {
+        let state = state.clone();
+        Callback::from(move |snapshot: ViewSnapshot| {
+            state.dispatch(RAction::ApplySnapshot(snapshot));
+        })
+    };
+    let on_save_view = {
+        let state = state.clone();
+        let saved_views_list = saved_views_list.clone();
+        Callback::from(move |name: String| {
+            let snapshot = ViewSnapshot::capture(
+                &state.filter,
+                state.sort_col,
+                state.sort_dir,
+                state.group_by,
+            );
+            let mut list = (*saved_views_list).clone();
+            if let Some(existing) = list.iter_mut().find(|v| v.name == name) {
+                existing.snapshot = snapshot;
+            } else {
+                list.push(SavedView { name, snapshot });
+            }
+            saved_views::save_saved_views(&list);
+            saved_views_list.set(list);
+        })
+    };
+    let on_delete_view = {
+        let saved_views_list = saved_views_list.clone();
+        Callback::from(move |name: String| {
+            let mut list = (*saved_views_list).clone();
+            list.retain(|v| v.name != name);
+            saved_views::save_saved_views(&list);
+            saved_views_list.set(list);
+        })
+    };
 
     // Live "now" advanced on a fixed tick so DUE SOON counts stay current.
     let now = use_state(Local::now);
@@ -327,6 +383,12 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                 on_repository={on_set_repository}
                                 on_tag={on_set_tag}
                                 on_clear={on_clear_filters.clone()}
+                            />
+                            <SavedViewsBar
+                                views={(*saved_views_list).clone()}
+                                on_apply={on_apply_view}
+                                on_save={on_save_view}
+                                on_delete={on_delete_view}
                             />
                             <RoutineBulkBar
                                 count={selected.len()}

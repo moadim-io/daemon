@@ -64,6 +64,39 @@ pub enum RCol {
     Updated,
 }
 
+impl RCol {
+    /// Stable token used when persisting the active sort column (saved views).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RCol::Title => "title",
+            RCol::NextRun => "next_run",
+            RCol::LastFire => "last_fire",
+            RCol::Agent => "agent",
+            RCol::Health => "health",
+            RCol::Enabled => "enabled",
+            RCol::Updated => "updated",
+        }
+    }
+
+    /// Parse a token back to a variant. `None` for unrecognized tokens, so a
+    /// stale/garbage persisted value falls back to "no sort" rather than
+    /// silently picking an arbitrary column.
+    #[must_use]
+    pub fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "title" => RCol::Title,
+            "next_run" => RCol::NextRun,
+            "last_fire" => RCol::LastFire,
+            "agent" => RCol::Agent,
+            "health" => RCol::Health,
+            "enabled" => RCol::Enabled,
+            "updated" => RCol::Updated,
+            _ => return None,
+        })
+    }
+}
+
 /// Sort direction for the routine table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RDir {
@@ -79,6 +112,24 @@ impl RDir {
         match self {
             RDir::Asc => RDir::Desc,
             RDir::Desc => RDir::Asc,
+        }
+    }
+
+    /// Stable token used when persisting the active sort direction (saved views).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RDir::Asc => "asc",
+            RDir::Desc => "desc",
+        }
+    }
+
+    /// Parse a token back to a direction, defaulting to `Asc` for unknown values.
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "desc" => RDir::Desc,
+            _ => RDir::Asc,
         }
     }
 }
@@ -269,6 +320,26 @@ impl Default for RState {
     }
 }
 
+impl RState {
+    /// Initial state, restoring the last-used filter/sort/group-by from
+    /// `localStorage` (see [`super::saved_views::load_last_view`]) so a reload
+    /// doesn't silently drop an operator's in-progress triage view. Falls back
+    /// to [`Default`] when nothing is stored (first visit, or storage
+    /// unavailable/private mode).
+    #[must_use]
+    pub fn init() -> Self {
+        let mut s = Self::default();
+        if let Some(snapshot) = super::saved_views::load_last_view() {
+            let (filter, sort_col, sort_dir, group_by) = super::saved_views::decode(&snapshot);
+            s.filter = filter;
+            s.sort_col = sort_col;
+            s.sort_dir = sort_dir;
+            s.group_by = group_by;
+        }
+        s
+    }
+}
+
 pub enum RAction {
     Loaded(Vec<Routine>),
     GoToNew,
@@ -296,6 +367,8 @@ pub enum RAction {
     /// Change the group-by dimension for the table view.
     SetGroupBy(RGroupBy),
     SortByCol(RCol),
+    /// Apply a saved-view snapshot: replaces filter, sort, and group-by in one shot.
+    ApplySnapshot(super::saved_views::ViewSnapshot),
     Upsert(Box<Routine>),
     Remove(String),
     /// Remove multiple routines after a confirmed bulk delete.
@@ -362,6 +435,13 @@ impl Reducible for RState {
                     s.sort_dir = RDir::Asc;
                 }
             }
+            RAction::ApplySnapshot(snapshot) => {
+                let (filter, sort_col, sort_dir, group_by) = super::saved_views::decode(&snapshot);
+                s.filter = filter;
+                s.sort_col = sort_col;
+                s.sort_dir = sort_dir;
+                s.group_by = group_by;
+            }
             RAction::Upsert(routine) => {
                 let routine = *routine;
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
@@ -395,7 +475,12 @@ impl Reducible for RState {
             }
             RAction::CurrentMachineLoaded(name) => {
                 s.current_machine = Some(name.clone());
-                s.filter.machine = RoutineMachineFacet::Machine(name);
+                // Only default the machine facet when nothing has already picked one — a
+                // restored saved view (or an operator who moved fast) should win over this
+                // fetched default instead of being clobbered by it.
+                if s.filter.machine == RoutineMachineFacet::Any {
+                    s.filter.machine = RoutineMachineFacet::Machine(name);
+                }
             }
         }
         s.into()

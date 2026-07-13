@@ -358,4 +358,3 @@ fn skip_log_fallback(slug: &str) -> Result<LogWithMeta, AppError> {
     }
     read_log_tail_with_meta(&skip_log_path).map_err(|_| AppError::Internal)
 }
-

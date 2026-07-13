@@ -10,11 +10,11 @@
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::{abstime, reltime};
 use crate::routines::{
     fmt_run_duration, run_status_class, run_status_label, FleetRunSummary, RoutineHistoryQuery,
 };
 use crate::Route;
+use crate::{abstime, reltime};
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct RecentRunsTableProps {

@@ -4,8 +4,8 @@
 use chrono::Local;
 use yew::prelude::*;
 
-use crate::{abstime, reltime};
 use crate::schedule::{fmt_until, fmt_when, next_fires};
+use crate::{abstime, reltime};
 
 use super::filter::{last_fire_at, routine_health, trigger_button_title};
 use super::form::format_ttl;

@@ -10,11 +10,11 @@
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::reltime;
 use crate::routines::{
     fmt_run_duration, run_status_class, run_status_label, FleetRunSummary, RoutineHistoryQuery,
 };
 use crate::Route;
+use crate::{abstime, reltime};
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct RecentRunsTableProps {
@@ -58,7 +58,7 @@ pub(crate) fn recent_runs_table(props: &RecentRunsTableProps) -> Html {
                                     query={Some(RoutineHistoryQuery { history: run.routine_id.clone() })}
                                 >{ &run.routine_title }</Link<Route, RoutineHistoryQuery>>
                             </td>
-                            <td><div class="cell-time">{reltime(run.started_at)}</div></td>
+                            <td><div class="cell-time" title={abstime(run.started_at)}>{reltime(run.started_at)}</div></td>
                             <td><span class="cell-meta">{ run.finished_at.map_or_else(|| "—".to_string(), |f| fmt_run_duration(run.started_at, f)) }</span></td>
                             <td><span class={run_status_class(run.status)}>{run_status_label(run.status)}</span></td>
                             <td>{ run.exit_code.map_or_else(|| "—".to_string(), |c| c.to_string()) }</td>

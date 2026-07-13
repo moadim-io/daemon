@@ -236,6 +236,13 @@ needless_raw_string_hashes = "deny"
 # root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
 # running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
 manual_let_else = "deny"
+# Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }` to
+# eliminate double-negation and reduce cognitive load when reading branches. Mirrors the root
+# crate's `if_not_else = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. Fixes the 2 violations this surfaced in `header.rs`
+# and `overview.rs`.
+if_not_else = "deny"
 # Reject a `CamelCase`/`snake_case`-looking identifier in a doc comment that isn't wrapped in
 # backticks — without them, rustdoc renders it as plain prose and a reader can't tell it's a type,
 # field, or item name rather than an English word. Mirrors the root crate's `doc_markdown = "deny"`

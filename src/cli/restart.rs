@@ -4,8 +4,8 @@
 use super::{bind_addr, paths_daemon_log, spawn_detached, stop_existing_for_restart};
 
 /// Stop a running background server (if any) and start a fresh detached instance. With `json`,
-/// emits a single machine-readable object (`{"old":N|null,"new":M}`) instead of the human-readable
-/// lines.
+/// emits a single machine-readable object (`{"old":N|null,"new":M,"address":S}`) instead of the
+/// human-readable lines.
 ///
 /// Unlike [`super::run_background`], which restarts only as a side effect of being asked to start
 /// while one is already up, this is the explicit "give me a clean process now" command: it stops

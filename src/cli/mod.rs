@@ -426,6 +426,7 @@ use cli_system::{
 };
 #[cfg(test)]
 pub(crate) use cli_system::{parse_body, parse_status_code, DAEMON_LOG_MAX_BYTES};
+pub(crate) use cli_system::{rotate_daemon_log_if_due, LOG_ROTATION_CHECK_INTERVAL};
 
 #[path = "restart.rs"]
 mod cli_restart;

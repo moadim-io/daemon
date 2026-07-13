@@ -162,7 +162,7 @@ pub(super) fn fetch_health() -> Option<HealthInfo> {
     (status == 200).then(|| parse_health(&body)).flatten()
 }
 
-/// Extract `uptime_secs` and `version` from a [`HealthResponse`](crate::routes::http::HealthResponse)
+/// Extract `uptime_secs` and `version` from a [`HealthResponse`](crate::routes::health::HealthResponse)
 /// JSON body. Returns `None` if either field is missing or the wrong type.
 pub(super) fn parse_health(body: &str) -> Option<HealthInfo> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;

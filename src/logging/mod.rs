@@ -29,10 +29,13 @@ impl LogFormat {
     }
 }
 
-/// Render a log record as a single-line JSON object: `ts` (RFC 3339), `level`, `target`, `msg`.
+/// Render a log record as a single-line JSON object: `ts` (RFC 3339 UTC, machine-parseable),
+/// `ts_local` (human-readable, this machine's local timezone), `level`, `target`, `msg`.
 fn format_json_line(record: &log::Record<'_>) -> String {
+    let now = chrono::Utc::now();
     serde_json::json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
+        "ts": now.to_rfc3339(),
+        "ts_local": crate::utils::time::format_local(now.timestamp() as u64),
         "level": record.level().to_string(),
         "target": record.target(),
         "msg": record.args().to_string(),

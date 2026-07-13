@@ -3,5 +3,8 @@
 //! Business logic lives in [`crate::routines`]. Modules here translate
 //! between protocol representations and the service-layer functions.
 
+pub mod health;
 pub mod http;
 pub mod mcp;
+pub mod restart;
+pub mod shutdown;

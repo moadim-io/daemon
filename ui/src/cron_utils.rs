@@ -3,6 +3,7 @@
 //! the line-count gate; re-exported from the crate root so existing
 //! `crate::parse_cron`-style paths keep working unchanged.
 
+use chrono::{Local, TimeZone};
 use croner::Cron;
 
 /// Parse a cron expression into a `Cron`, normalizing the 7-field
@@ -52,6 +53,18 @@ pub(crate) fn reltime(ts: u64) -> String {
     } else {
         format!("{}d ago", diff / 86_400)
     }
+}
+
+/// Absolute local (browser timezone) rendering of `ts`, e.g. `"Jun 21, 2026 12:00"`. Meant as a
+/// tooltip companion to [`reltime`]'s relative "N ago" text, so hovering reveals wall-clock time.
+pub(crate) fn abstime(ts: u64) -> String {
+    if ts == 0 {
+        return "—".into();
+    }
+    Local
+        .timestamp_opt(ts as i64, 0)
+        .single()
+        .map_or_else(|| "—".into(), |dt| dt.format("%b %d, %Y %H:%M").to_string())
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@
 # they produce only false positives.
 extend-exclude = [
   "prebuilt.html",
+  "prebuilt-client.html",
   "Cargo.lock",
   "pnpm-lock.yaml",
   "apis/openapi.json",

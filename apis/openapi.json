@@ -83,7 +83,7 @@
     "/health": {
       "get": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::health"
         ],
         "summary": "`GET /health` — health check with uptime.",
         "operationId": "health",
@@ -187,7 +187,7 @@
     "/restart": {
       "post": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::restart"
         ],
         "summary": "`POST /restart` — stop this server and start a fresh instance.",
         "description": "The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper\nthat stops it and starts a new process, mirroring the `moadim restart` CLI command and the\n`restart` MCP tool. Responds with the helper's PID before the restart completes.",
@@ -1015,7 +1015,7 @@
     "/shutdown": {
       "post": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::shutdown"
         ],
         "summary": "`POST /shutdown` — ask the server to stop gracefully.",
         "description": "Used by the UI \"STOP\" button (and the `moadim stop` command) to kill a backgrounded server that\nhas no controlling terminal. The response is sent before the graceful shutdown completes.",
@@ -1235,6 +1235,7 @@
           "routine_title",
           "workbench",
           "started_at",
+          "started_at_local",
           "status"
         ],
         "properties": {
@@ -1255,6 +1256,13 @@
             "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
             "minimum": 0
           },
+          "finished_at_local": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`finished_at` as a human-readable local timestamp, when finished."
+          },
           "routine_id": {
             "type": "string",
             "description": "The routine this run belongs to."
@@ -1268,6 +1276,10 @@
             "format": "int64",
             "description": "Unix seconds the run was triggered.",
             "minimum": 0
+          },
+          "started_at_local": {
+            "type": "string",
+            "description": "`started_at` as a human-readable local (daemon machine's timezone) timestamp."
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
@@ -1312,6 +1324,20 @@
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."
+          },
+          "server_exe_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the directory containing the server executable, or `None` if unresolvable."
+          },
+          "server_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the server's working directory, or `None` if unresolvable."
           },
           "status": {
             "type": "string",
@@ -1400,7 +1426,7 @@
       },
       "RestartResponse": {
         "type": "object",
-        "description": "Response body for `POST /restart`.",
+        "description": "Response body for `POST /restart` and the `restart` MCP tool.",
         "required": [
           "status",
           "helper_pid"
@@ -1658,6 +1684,7 @@
         "required": [
           "workbench",
           "started_at",
+          "started_at_local",
           "status"
         ],
         "properties": {
@@ -1678,6 +1705,13 @@
             "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
             "minimum": 0
           },
+          "finished_at_local": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`finished_at` as a human-readable local timestamp, when finished."
+          },
           "retention_expires_at": {
             "type": [
               "integer",
@@ -1692,6 +1726,10 @@
             "format": "int64",
             "description": "Unix seconds the run was triggered.",
             "minimum": 0
+          },
+          "started_at_local": {
+            "type": "string",
+            "description": "`started_at` as a human-readable local (daemon machine's timezone) timestamp."
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",

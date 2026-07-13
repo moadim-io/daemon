@@ -2,23 +2,20 @@
 
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
-use crate::routine_storage::{append_manual_trigger_log, write_routine};
+use crate::routine_storage::{append_manual_trigger_log, append_skip_log, write_routine};
 use crate::utils::lock::LockRecover;
 use crate::utils::time::now_secs;
 
 use crate::routines::agents::load_agent_command;
 use crate::routines::cleanup::{
-    cleanup_expired_workbenches, parse_workbench_name, run_session_alive, tmux_session_count,
+    cleanup_expired_workbenches, parse_workbench_name, tmux_session_count,
     tmux_session_prefix_alive,
 };
 use crate::routines::command::{
     build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix, TriggerSource,
     TMUX_SESSION_PREFIX,
 };
-use crate::routines::model::{
-    CleanupResponse, FleetRunSummary, Routine, RoutineStore, RunStatus, RunSummary,
-};
-use crate::routines::run_history::{read_exit_code, read_persisted_runs};
+use crate::routines::model::{CleanupResponse, Routine, RoutineStore};
 use crate::routines::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};
 
 use super::service_log_tail::{read_log_tail_with_meta, LogWithMeta};
@@ -201,14 +198,15 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // surfaces anywhere, so catch it here instead and skip the launch with a visible
             // warning, the same non-fatal shape as the agent-load-failure arm below.
             if let Some(len) = inline_prompt_overflow(routine, &agent) {
-                log::warn!(
-                    "trigger: composed prompt for routine {:?} is {len} bytes, over the \
-                     inline-argument limit for agent {:?}; skipping launch (would fail silently \
-                     inside tmux otherwise) — switch the agent's args to {{prompt_file}} or \
-                     shorten the routine's prompt/open flags",
-                    routine.id,
+                let reason = format!(
+                    "composed prompt is {len} bytes, over the inline-argument limit for agent \
+                     {:?}; skipping launch (would fail silently inside tmux otherwise) — switch \
+                     the agent's args to {{prompt_file}} or shorten the routine's prompt/open \
+                     flags",
                     routine.agent,
                 );
+                log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
             }
             // Overlap guard (#514): a routine has no built-in mutual exclusion between fires, so a
@@ -218,12 +216,12 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // any of them is still alive, skip this fire instead of launching a second one.
             let session_prefix = tmux_session_prefix(&slugify(&routine.title));
             if tmux_session_prefix_alive(&session_prefix) {
-                log::warn!(
-                    "trigger: routine {:?} skipped — a previous run (tmux session prefix {:?}) is \
-                     still active (overlap guard)",
-                    routine.id,
-                    session_prefix,
+                let reason = format!(
+                    "a previous run (tmux session prefix {session_prefix:?}) is still active \
+                     (overlap guard)"
                 );
+                log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
             }
             // Global concurrency cap (#335): the overlap guard above only stops one routine from
@@ -236,16 +234,17 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // uses, just matched against every routine's shared `moadim-` prefix instead of one
             // routine's own. Skips (rather than queues) this fire when at/over the cap: the
             // simpler, lower-risk policy, and consistent with the overlap guard's own
-            // skip-with-warning shape above.
+            // skip-with-warning shape above. A cap of `0` (the default) means unlimited, so the check is skipped entirely.
             let live = tmux_session_count(TMUX_SESSION_PREFIX);
             let cap = max_concurrent_runs();
-            if live >= cap {
-                log::warn!(
-                    "trigger: routine {:?} skipped — {live} routine session(s) already running, \
-                     at or over the global concurrency cap of {cap} (set {MAX_CONCURRENT_RUNS_ENV} \
-                     to raise it); this fire will be retried on its next scheduled tick",
-                    routine.id,
+            if cap > 0 && live >= cap {
+                let reason = format!(
+                    "{live} routine session(s) already running, at or over the global \
+                     concurrency cap of {cap} (set {MAX_CONCURRENT_RUNS_ENV} to raise it); this \
+                     fire will be retried on its next scheduled tick"
                 );
+                log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
                 return;
             }
             let cmd = build_routine_command(routine, &agent, source);
@@ -258,12 +257,11 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
             crate::utils::process::spawn_and_reap(command, "routine command");
         }
-        Err(err) => log::warn!(
-            "trigger: cannot load agent {:?} ({}) for routine {:?}",
-            routine.agent,
-            err,
-            routine.id
-        ),
+        Err(err) => {
+            let reason = format!("cannot load agent {:?} ({err})", routine.agent);
+            log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+            append_skip_log(&slugify(&routine.title), now_secs(), &reason);
+        }
     }
 }
 
@@ -338,148 +336,25 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError>
         }
     }
     let Some((_, dir)) = newest else {
-        return Ok(LogWithMeta::empty());
+        return skip_log_fallback(&slug);
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
     if !log_path.exists() {
-        return Ok(LogWithMeta::empty());
+        return skip_log_fallback(&slug);
     }
     read_log_tail_with_meta(&log_path).map_err(|_| AppError::Internal)
 }
 
-/// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status
-/// derives from the tmux session's liveness and the `exit_code` file the launch command writes on
-/// completion (see [`crate::routines::command::build_routine_command`]), merged with durable
-/// records from `runs.log` for runs whose workbench has since been TTL-reaped (see
-/// [`crate::routines::run_history`]) — so this list is the routine's *full* history, not just what
-/// current retention happens to keep.
-pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, AppError> {
-    let routine = store
-        .lock_recover()
-        .get(id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
-    let mut runs = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
-                continue;
-            };
-            if dir_slug != slug {
-                continue;
-            }
-            runs.push(run_summary(&name, ts, Some(routine.effective_ttl_secs())));
-        }
+/// Fall back to a routine's `skip.log` (see [`append_skip_log`]) when [`svc_logs`] finds no
+/// workbench: a trigger that got skipped before spawning (agent load failure, an oversized inline
+/// prompt, the overlap guard, or the concurrency cap) never creates a workbench, so without this
+/// `routine_logs` would come back looking identical to a routine that was simply never triggered
+/// (#1145). Returns an empty tail when `skip.log` doesn't exist either — a routine really can just
+/// have no history yet.
+fn skip_log_fallback(slug: &str) -> Result<LogWithMeta, AppError> {
+    let skip_log_path = crate::paths::routine_skip_log_path(slug);
+    if !skip_log_path.exists() {
+        return Ok(LogWithMeta::empty());
     }
-    for persisted in read_persisted_runs(id) {
-        runs.push(RunSummary {
-            workbench: persisted.workbench,
-            started_at: persisted.started_at,
-            finished_at: Some(persisted.finished_at),
-            status: persisted.status,
-            exit_code: persisted.exit_code,
-            // The workbench is already gone (that's why this run came from `runs.log` instead of
-            // a live directory scan), so there is nothing left to count down to.
-            retention_expires_at: None,
-        });
-    }
-    runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
-    Ok(runs)
-}
-
-/// Default cap on [`svc_list_all_runs`] results when the caller doesn't specify one.
-pub const DEFAULT_FLEET_RUNS_LIMIT: usize = 20;
-
-/// List the most recent runs across *every* routine, newest first, capped at `limit` (or
-/// [`DEFAULT_FLEET_RUNS_LIMIT`] when `None`). Backs the overview "recent runs" panel with a single
-/// workbench-directory scan, rather than one [`svc_list_runs`] call per routine. Merges in durable
-/// `runs.log` records for TTL-reaped runs (see [`crate::routines::run_history`]) alongside live
-/// workbenches.
-///
-/// A workbench whose slug matches no current routine (the routine was since deleted, or renamed
-/// without a workbench migration failure — see [`migrate_workbenches`]) is skipped: there is no
-/// routine to attribute it to.
-pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<FleetRunSummary> {
-    let limit = limit.unwrap_or(DEFAULT_FLEET_RUNS_LIMIT);
-    let routines: Vec<(String, String)> = store
-        .lock_recover()
-        .values()
-        .map(|routine| (routine.id.clone(), routine.title.clone()))
-        .collect();
-    let by_slug: std::collections::HashMap<String, (String, String)> = routines
-        .iter()
-        .map(|(id, title)| (slugify(title), (id.clone(), title.clone())))
-        .collect();
-    let mut runs = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
-                continue;
-            };
-            let Some((routine_id, routine_title)) = by_slug.get(dir_slug).cloned() else {
-                continue;
-            };
-            let run = run_summary(&name, ts, None);
-            runs.push(FleetRunSummary {
-                routine_id,
-                routine_title,
-                workbench: run.workbench,
-                started_at: run.started_at,
-                finished_at: run.finished_at,
-                status: run.status,
-                exit_code: run.exit_code,
-            });
-        }
-    }
-    for (routine_id, routine_title) in &routines {
-        for persisted in read_persisted_runs(routine_id) {
-            runs.push(FleetRunSummary {
-                routine_id: routine_id.clone(),
-                routine_title: routine_title.clone(),
-                workbench: persisted.workbench,
-                started_at: persisted.started_at,
-                finished_at: Some(persisted.finished_at),
-                status: persisted.status,
-                exit_code: persisted.exit_code,
-            });
-        }
-    }
-    runs.sort_by_key(|run| std::cmp::Reverse(run.started_at));
-    runs.truncate(limit);
-    runs
-}
-
-/// Derive a single [`RunSummary`] for workbench `dir` (named `{slug}-{started_at}`).
-///
-/// `effective_ttl_secs` is the owning routine's [`Routine::effective_ttl_secs`], used to compute
-/// `retention_expires_at`; pass `None` when the caller (e.g. the fleet-wide
-/// [`svc_list_all_runs`]) doesn't need that field.
-fn run_summary(dir: &str, started_at: u64, effective_ttl_secs: Option<u64>) -> RunSummary {
-    let path = workbenches_dir().join(dir);
-    let exit_code = read_exit_code(&path);
-    let finished_at = std::fs::metadata(path.join("exit_code"))
-        .and_then(|meta| meta.modified())
-        .ok()
-        .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|elapsed| elapsed.as_secs());
-    let session = format!("moadim-{dir}");
-    let status = match exit_code {
-        Some(0) => RunStatus::Success,
-        Some(_) => RunStatus::Failed,
-        None if run_session_alive(&session) => RunStatus::Running,
-        None => RunStatus::Unknown,
-    };
-    let retention_expires_at =
-        finished_at.and_then(|finish| effective_ttl_secs.map(|ttl| finish + ttl));
-    RunSummary {
-        workbench: dir.to_string(),
-        started_at,
-        finished_at,
-        status,
-        exit_code,
-        retention_expires_at,
-    }
+    read_log_tail_with_meta(&skip_log_path).map_err(|_| AppError::Internal)
 }

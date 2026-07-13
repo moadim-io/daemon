@@ -34,6 +34,13 @@ fn json_line_round_trips_through_a_parser() {
         "ts should be an RFC 3339 timestamp, got {:?}",
         parsed["ts"]
     );
+    assert!(
+        parsed["ts_local"]
+            .as_str()
+            .is_some_and(|ts| ts.contains('-') && ts.contains(':')),
+        "ts_local should be a human-readable local timestamp, got {:?}",
+        parsed["ts_local"]
+    );
 }
 
 #[test]

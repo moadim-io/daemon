@@ -324,9 +324,10 @@ fires its `ShutdownSignal`, whichever comes first.
   sessions (CPU/RAM exhaustion, provider API rate-limit bursts). `spawn_routine_command` counts live
   sessions sharing the `moadim-` prefix (`cleanup::tmux_session_count` — derived from actual tmux
   session liveness, not an in-memory counter that could drift after a crash) and, at or over
-  `MOADIM_MAX_CONCURRENT_RUNS` (default `4`), skips the fire with a logged reason instead of
-  launching it or queueing it — the simpler, lower-risk policy, matching the overlap guard's own
-  skip-with-warning shape rather than adding new queueing infrastructure.
+  `MOADIM_MAX_CONCURRENT_RUNS` (default `0`, meaning unbounded — same convention as
+  `MOADIM_MAX_WORKBENCH_DISK_BYTES`), skips the fire with a logged reason instead of launching it or
+  queueing it — the simpler, lower-risk policy, matching the overlap guard's own skip-with-warning
+  shape rather than adding new queueing infrastructure.
 
 ---
 

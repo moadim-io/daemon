@@ -31,7 +31,11 @@ cd daemon
 cargo build
 ```
 
-Run the checks the pre-push hook enforces before any push:
+Run the checks the pre-push hook enforces before any push. The hook's first
+gate isn't a single reusable command — it scans `src/` and `ui/src/` for
+inline `#[cfg(test)] mod foo { ... }` test blocks and rejects them in favor
+of `*_tests.rs` siblings (see [Tests](#tests) below) — everything after that
+is:
 
 ```sh
 cargo fmt --check

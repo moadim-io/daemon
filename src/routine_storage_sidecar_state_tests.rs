@@ -167,6 +167,34 @@ fn load_routine_defaults_power_saving_false_for_legacy_sidecar() {
 }
 
 #[test]
+fn write_routine_errors_when_state_sidecar_path_is_occupied_by_a_directory() {
+    // `write_runtime_state`'s `atomic_write(&path, ...)` (routine_storage.rs) is the last
+    // fallible step in `write_routine`, but nothing exercised its own error branch — only
+    // `atomic_write`'s internal rename failure is covered directly (see
+    // `utils::atomic_tests::errors_and_cleans_up_when_rename_fails`), never `write_routine`
+    // observing and propagating that failure through its own `?`. Reuse the same
+    // directory-occupies-target-path technique: a pre-existing directory at
+    // `state.local.toml`'s path makes the rename inside `atomic_write` fail, so
+    // `write_runtime_state` (reached because `power_saving = true` skips the no-op early
+    // return) surfaces an `Err` instead of silently succeeding.
+    with_override_home(|_home| {
+        let title = "Rs Sidecar Occupied Routine";
+        let slug = slugify(title);
+        let mut routine = make_routine("rs-sidecar-occupied-id", title);
+        routine.power_saving = true;
+
+        let state_path = crate::paths::routine_state_path(&slug);
+        std::fs::create_dir_all(&state_path).unwrap();
+
+        let err = write_routine(&routine).unwrap_err();
+        assert!(
+            state_path.is_dir(),
+            "the occupying directory must be left untouched: {err}"
+        );
+    });
+}
+
+#[test]
 fn write_routine_clears_stale_sidecar_when_power_saving_cleared() {
     with_override_home(|_home| {
         let title = "Rs Clear Power Saving Routine";

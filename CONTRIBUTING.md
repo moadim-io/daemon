@@ -194,7 +194,10 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 
 - New REST routes go in `src/routes/http.rs`; register them in the router
   builder there (the `.route(...)` chain). New MCP tools go in
-  `src/routes/mcp.rs`.
+  `src/routes/mcp.rs`. If a concept needs both a REST endpoint and an MCP
+  tool returning the same data, give it its own `src/routes/<name>/` folder
+  instead — see [`src/routes/CONTRIBUTING.md`](src/routes/CONTRIBUTING.md)
+  for the template (`src/routes/health/` is the reference implementation).
 - Error variants belong in `src/error.rs` (`AppError`); fallible handlers
   return `Result<_, AppError>`, which converts to the right HTTP status.
 - No `unwrap()` in handler paths — propagate errors via `AppError`.

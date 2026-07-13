@@ -14,10 +14,9 @@ use tower::ServiceExt;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use super::{
-    build_app, health, run_with_listener_until, serve_with_grace, shutdown_grace, AppState,
-    SHUTDOWN_GRACE, SHUTDOWN_GRACE_MS_ENV,
+    build_app, run_with_listener_until, serve_with_grace, shutdown_grace, SHUTDOWN_GRACE,
+    SHUTDOWN_GRACE_MS_ENV,
 };
-use crate::utils::time::now_secs;
 
 struct SucceedingCronShim {
     base: std::path::PathBuf,
@@ -336,23 +335,6 @@ async fn router_serves_per_routine_ical_feed_via_query() {
     assert!(unknown.starts_with("BEGIN:VCALENDAR"));
     assert!(unknown.ends_with("END:VCALENDAR\r\n"));
     assert_eq!(unknown.matches("BEGIN:VEVENT").count(), 0);
-}
-
-#[tokio::test]
-async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
-    // A `uptime_start` in the future models the wall clock jumping backward
-    // after the server started. The old `now_secs() - uptime_start` would
-    // underflow; saturating_sub must clamp uptime to 0 instead.
-    let state = AppState {
-        routines: crate::routines::new_store(),
-        routines_dir: crate::paths::routines_dir(),
-        uptime_start: now_secs() + 10_000,
-        shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
-    };
-    let resp = health(axum::extract::State(state)).await;
-    assert_eq!(resp.0.uptime_secs, 0);
-    assert_eq!(resp.0.status, "ok");
-    assert!(resp.0.running);
 }
 
 #[tokio::test]

@@ -1,5 +1,6 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::health;
 use super::mcp::MoadimMcp;
 use crate::error::AppError;
 use crate::middlewares;
@@ -60,40 +61,6 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
     }
 }
 
-/// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
-/// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
-/// instead of having routine runs silently no-op.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct DependencyHealth {
-    /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
-    pub tmux: bool,
-    /// Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`
-    /// step runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that
-    /// step fails silently and the routine still shows a healthy status (issue #404).
-    pub python3: bool,
-}
-
-/// Response body for `GET /health`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct HealthResponse {
-    /// Health status string (always `"ok"` when reachable).
-    pub status: String,
-    /// Seconds elapsed since the server started.
-    pub uptime_secs: u64,
-    /// Whether the server is running.
-    pub running: bool,
-    /// Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname).
-    pub machine: String,
-    /// Presence of required external binaries on the daemon's `PATH`.
-    pub dependencies: DependencyHealth,
-    /// Daemon version (from `CARGO_PKG_VERSION`).
-    pub version: String,
-    /// Short git commit SHA the daemon was built from, or `"unknown"` outside a git checkout.
-    pub git_sha: String,
-    /// Committer date (`YYYY-MM-DD`) of the build commit, or `"unknown"` outside a git checkout.
-    pub build_date: String,
-}
-
 /// The embedded SPA HTML, baked into the binary at compile time.
 const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 
@@ -147,27 +114,6 @@ pub async fn index(headers: HeaderMap) -> Response {
 /// with the handler-level 404s, while the outer SPA fallback still serves UI routes.
 async fn api_not_found() -> AppError {
     AppError::NotFound
-}
-
-/// `GET /health` — health check with uptime.
-#[utoipa::path(get, path = "/health",
-    responses((status = 200, body = HealthResponse)))]
-pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        // saturating_sub so a backward wall-clock adjustment can't underflow
-        // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
-        uptime_secs: now_secs().saturating_sub(state.uptime_start),
-        running: true,
-        machine: crate::machine::current_machine(),
-        dependencies: DependencyHealth {
-            tmux: routines::tmux_available(),
-            python3: routines::agent_command_available("python3"),
-        },
-        version: crate::build_info::VERSION.to_string(),
-        git_sha: crate::build_info::GIT_SHA.to_string(),
-        build_date: crate::build_info::BUILD_DATE.to_string(),
-    })
 }
 
 /// Response body for `POST /shutdown`.
@@ -277,7 +223,7 @@ pub(crate) fn build_app_with_shutdown(
     // All REST endpoints live under the `/api/v1` prefix so the root path space is free for the
     // client-routed web UI (e.g. `/routines` resolves to a UI page, not JSON).
     let api = Router::new()
-        .route("/health", get(health))
+        .route("/health", get(health::health))
         .route("/shutdown", post(shutdown))
         .route("/restart", post(restart))
         .route("/machine", get(get_current_machine).put(put_machine))

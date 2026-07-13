@@ -83,7 +83,7 @@
     "/health": {
       "get": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::health"
         ],
         "summary": "`GET /health` — health check with uptime.",
         "operationId": "health",
@@ -1312,6 +1312,20 @@
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."
+          },
+          "server_exe_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the directory containing the server executable, or `None` if unresolvable."
+          },
+          "server_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the server's working directory, or `None` if unresolvable."
           },
           "status": {
             "type": "string",

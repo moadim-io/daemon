@@ -10,7 +10,7 @@
     // of a hardcoded 127.0.0.1:5784 that breaks the moment the daemon isn't bound there (issue #385).
     servers((url = "/api/v1", description = "This server")),
     paths(
-        crate::routes::http::health,
+        crate::routes::health::health,
         crate::routes::http::shutdown,
         crate::routes::http::restart,
         crate::routes::http::get_current_machine,
@@ -57,8 +57,8 @@
         crate::routines::Flag,
         crate::routines::FlagScope,
         crate::routines::CreateFlagRequest,
-        crate::routes::http::HealthResponse,
-        crate::routes::http::DependencyHealth,
+        crate::routes::health::HealthResponse,
+        crate::routes::health::DependencyHealth,
         crate::routes::http::ShutdownResponse,
         crate::routes::http::RestartResponse,
         crate::routes::http::MachineResponse,

@@ -68,12 +68,22 @@ impl Drop for HomeOnly {
 ///
 /// Ignores the developer's global/system git config (`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`
 /// pointed at `/dev/null`) so these disposable fixture repos never depend on — or are broken by —
-/// host-specific settings (commit signing, custom hooks, aliases). `dir` is always an absolute
-/// tempdir path, and every call is scoped to it via `-C`, so this never touches the real repo.
+/// host-specific settings (commit signing, custom hooks, aliases).
+///
+/// Also clears `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/`GIT_COMMON_DIR`: when running under
+/// `git push`'s pre-push hook, `git` sets these to point at *this* repository for the hook's whole
+/// process tree, and they override `-C` — without clearing them, every "isolated" fixture command
+/// below silently operates on the real repo instead of `dir`, corrupting it (see the incident this
+/// comment documents: two rogue commits landed on the feature branch this test suite was written
+/// for, #1132, before this fix). `dir` is always an absolute tempdir path.
 fn git(dir: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
         .arg("-C")
         .arg(dir)
         .args(args)

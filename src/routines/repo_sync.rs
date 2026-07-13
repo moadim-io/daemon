@@ -36,13 +36,29 @@ fn git_bin() -> String {
     fallback
 }
 
-/// Run `git <args>` (in `dir`, if given), returning a one-line error naming the command and
-/// stderr on failure.
-fn run_git(dir: Option<&Path>, args: &[&str]) -> Result<(), String> {
+/// Build a `git` [`Command`], scoped to `dir` (if given) via `-C`.
+///
+/// Also clears `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/`GIT_COMMON_DIR`: when any of these is
+/// set in the environment, git uses it to locate the repository *regardless* of `-C`, silently
+/// redirecting every operation at whatever repo those variables name instead of `dir`. moadim can
+/// inherit them from its own launching process (e.g. a routine triggered from within a git hook),
+/// so clearing them here is what makes `-C dir` actually authoritative.
+fn git_command(dir: Option<&Path>) -> Command {
     let mut cmd = Command::new(git_bin());
+    cmd.env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR");
     if let Some(dir) = dir {
         cmd.arg("-C").arg(dir);
     }
+    cmd
+}
+
+/// Run `git <args>` (in `dir`, if given), returning a one-line error naming the command and
+/// stderr on failure.
+fn run_git(dir: Option<&Path>, args: &[&str]) -> Result<(), String> {
+    let mut cmd = git_command(dir);
     cmd.args(args);
     let joined = args.join(" ");
     let output = cmd.output().map_err(|err| format!("git {joined}: {err}"))?;
@@ -63,9 +79,7 @@ fn run_git(dir: Option<&Path>, args: &[&str]) -> Result<(), String> {
 /// remote-tracking ref rather than an ambiguous `FETCH_HEAD` (a plain `git fetch origin` updates
 /// every remote branch, not just one).
 fn current_branch(dir: &Path) -> Result<String, String> {
-    let output = Command::new(git_bin())
-        .arg("-C")
-        .arg(dir)
+    let output = git_command(Some(dir))
         .args(["symbolic-ref", "--short", "HEAD"])
         .output()
         .map_err(|err| format!("git symbolic-ref: {err}"))?;

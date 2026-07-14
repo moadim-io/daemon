@@ -106,7 +106,7 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
 
     let today = Local::now().date_naive();
     let first = month_start(today, *offset);
-    let grid_start = first - Duration::days(first.weekday().num_days_from_sunday() as i64);
+    let grid_start = first - Duration::days(i64::from(first.weekday().num_days_from_sunday()));
 
     // Accumulate per-cell chips in routine order: only enabled routines with a parseable schedule.
     // Each entry is (id, title, count, snoozed) so chips can dispatch the edit modal on click.

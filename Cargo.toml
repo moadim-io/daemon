@@ -233,3 +233,10 @@ needless_raw_string_hashes = "deny"
 # ever changes size; `i64::from(x)` is the same widening but fails to compile the moment it would
 # no longer be lossless. The codebase is already clean, so `deny` locks that in.
 cast_lossless = "deny"
+# Reject a function call passed directly as the fallback argument to `unwrap_or`/`ok_or`/
+# `and`/`or` and friends (e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else`
+# form (`opt.unwrap_or_else(expensive)`). The eager form always evaluates the fallback, even
+# on the common path where the value is already present — silent, needless work (or a needless
+# allocation) on every call. The lazy form only runs it when actually needed. The codebase is
+# already clean, so `deny` locks that in.
+or_fun_call = "deny"

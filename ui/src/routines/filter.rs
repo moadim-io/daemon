@@ -188,7 +188,7 @@ impl TagFacet {
 }
 
 /// Combined free-text + faceted filter applied client-side to the loaded routines.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RoutineFilter {
     /// Free-text needle matched across title, agent, prompt, repositories,
     /// schedule, and `schedule_description`.

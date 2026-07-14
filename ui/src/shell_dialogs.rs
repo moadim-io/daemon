@@ -222,7 +222,7 @@ pub fn rename_machine_dialog(props: &RenameMachineProps) -> Html {
 
 // ─── Toast stack ──────────────────────────────────────────────────────────────
 
-#[derive(Properties, PartialEq)]
+#[derive(Properties, PartialEq, Eq)]
 pub struct ToastStackProps {
     pub toasts: Vec<Toast>,
 }

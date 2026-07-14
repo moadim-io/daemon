@@ -236,6 +236,14 @@ needless_raw_string_hashes = "deny"
 # root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
 # running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
 manual_let_else = "deny"
+# Reject `#[derive(PartialEq)]` on a struct/enum whose fields all satisfy `Eq` too (reflexivity
+# holds for everything but float fields, which this crate avoids in these types) without also
+# deriving `Eq`. Deriving it costs nothing and unlocks the type as a `HashSet`/`BTreeMap` key or
+# `HashMap` value in `==`-free contexts without a later, easy-to-forget follow-up PR. Mirrors the
+# root crate's `derive_partial_eq_without_eq = "deny"` (see Cargo.toml) — the `ui` crate has its
+# own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`.
+derive_partial_eq_without_eq = "deny"
 # Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }` to
 # eliminate double-negation and reduce cognitive load when reading branches. Mirrors the root
 # crate's `if_not_else = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`

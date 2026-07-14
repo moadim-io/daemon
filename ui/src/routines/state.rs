@@ -18,12 +18,12 @@ use super::model::{LockStatus, Routine};
 
 /// Route query used to deep-link straight to a routine's HISTORY page (e.g. from the overview
 /// page's RECENT RUNS panel), instead of landing on the plain routine list.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineHistoryQuery {
     pub history: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RPage {
     #[default]
     List,
@@ -35,7 +35,7 @@ pub enum RPage {
     Clone(Box<Routine>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RModal {
     None,
     Edit(String),
@@ -44,7 +44,7 @@ pub enum RModal {
 }
 
 /// How the list page presents routines: a table, or a month calendar of upcoming fire times.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RView {
     #[default]
     Table,
@@ -278,7 +278,7 @@ pub fn sort_routines(
     routines
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RState {
     pub routines: Vec<Routine>,
     pub loading: bool,

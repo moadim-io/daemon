@@ -257,3 +257,11 @@ doc_markdown = "deny"
 # `clippy --workspace` covering it in CI. Fixes the 1 violation this surfaced in
 # `routines/calendar.rs`.
 cast_lossless = "deny"
+# Reject a function call passed directly as the fallback argument to `unwrap_or`/`ok_or`/`and`/`or`
+# and friends (e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else` form
+# (`opt.unwrap_or_else(expensive)`). The eager form always evaluates the fallback, even on the
+# common path where the value is already present. Mirrors the same lint already enabled
+# workspace-root-side in Cargo.toml — the `ui` crate has its own `[lints.clippy]` table (no
+# `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace` covering
+# it in CI. The `ui` crate is already clean, so `deny` locks that in.
+or_fun_call = "deny"

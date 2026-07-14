@@ -9,7 +9,9 @@ describe("App", () => {
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
+        <MemoryRouter
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
           <App />
         </MemoryRouter>
       </QueryClientProvider>,

@@ -70,3 +70,19 @@ fn cap_agent_log_propagates_a_non_not_found_metadata_error() {
     cap_agent_log_or_warn(&path); // must log and swallow the same error, not panic
     std::fs::remove_file(&parent).unwrap();
 }
+
+/// `path` can pass the initial `metadata()`/size check (a directory has a nonzero `len()` too) and
+/// still fail the subsequent `OpenOptions::new().read(true).write(true).open(path)` — a directory
+/// can be stat'd but not opened as a file (`IsADirectory`). Exercises that separate `open`
+/// propagation, distinct from the `metadata()` error branch covered above.
+#[test]
+fn cap_agent_log_propagates_an_open_error_for_a_directory() {
+    let path = temp_log_path("is-a-directory");
+    std::fs::create_dir(&path).unwrap();
+
+    // max_bytes = 0 guarantees a directory's nonzero `len()` is "oversized", so execution reaches
+    // the `.open(path)?` this test targets instead of returning early via the budget check.
+    assert!(cap_agent_log_to(&path, 0).is_err());
+    cap_agent_log_or_warn(&path); // must log and swallow the same error, not panic
+    std::fs::remove_dir(&path).unwrap();
+}

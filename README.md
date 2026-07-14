@@ -212,6 +212,13 @@ GET    /routines/{id}/logs    # run output
 POST   /routines/cleanup      # reap expired workbenches now
 GET    /agents                # list registered agents
 GET    /routines.ics          # subscribe to fire times as a calendar feed
+GET    /machine                # this machine's resolved identity
+PUT    /machine                # rename this machine's identity
+GET    /machines               # known machine names (union of routines' machines[] targets)
+GET    /config/user-prompt     # persistent system prompt appended to every routine
+PUT    /config/user-prompt     # replace it
+GET    /config/max-concurrent-runs # global routine concurrency cap
+PUT    /config/max-concurrent-runs # set/clear the persisted override
 ```
 
 **MCP** — the same operations are exposed as tools: `list_routines`,

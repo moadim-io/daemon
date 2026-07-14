@@ -89,6 +89,12 @@ Manage routines (alias:
 Trigger a routine by ID (invoked directly from the routine's crontab
 entry).
 .TP
+.BR "enable <routine> " [ \-\-json ]
+Turn a routine on (set enabled=true) by id or slug.
+.TP
+.BR "disable <routine> " [ \-\-json ]
+Turn a routine off (set enabled=false) by id or slug.
+.TP
 .B agents
 List available agent keys.
 .SH OPTIONS

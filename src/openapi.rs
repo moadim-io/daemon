@@ -18,6 +18,8 @@
         crate::routes::http::list_machines,
         crate::routes::http::get_user_prompt,
         crate::routes::http::put_user_prompt,
+        crate::routes::http::get_max_concurrent_runs,
+        crate::routes::http::put_max_concurrent_runs,
         crate::routines::list,
         crate::routines::list_agents,
         crate::routines::create,
@@ -64,6 +66,8 @@
         crate::routes::http::MachineResponse,
         crate::routes::http::SetMachineRequest,
         crate::routes::http::SetUserPromptRequest,
+        crate::routes::http::MaxConcurrentRunsResponse,
+        crate::routes::http::SetMaxConcurrentRunsRequest,
         crate::global_lock::LockStatus,
         crate::routines::LockRequest,
     ))

@@ -261,3 +261,9 @@ if_not_else = "deny"
 # `--workspace`. Fixes the 6 violations this surfaced across `cron_utils.rs`, `routines/banner.rs`,
 # `routines/filter.rs`, `routines/filter_bar.rs`, `routines/filter_tests.rs`, and `routines/hooks.rs`.
 doc_markdown = "deny"
+# Reject `as` casts that widen without loss (e.g. `u32 as i64`) in favour of `From`/`Into`. Mirrors
+# the same lint already enabled workspace-root-side in Cargo.toml — the `ui` crate has its own
+# `[lints.clippy]` table (no `workspace = true` inheritance) so it was silently exempt despite
+# `clippy --workspace` covering it in CI. Fixes the 1 violation this surfaced in
+# `routines/calendar.rs`.
+cast_lossless = "deny"

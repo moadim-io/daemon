@@ -1,18 +1,16 @@
 /**
- * Pure fire-time math behind the day drill-down: given a set of schedule-bearing
- * items, resolve every fire that lands on one calendar day and bucket them by
- * hour. Ported from `ui/src/day_timeline.rs`'s `fire_times` plus the bucketing
- * loop in its `DayTimeline` component (that file has no host-side Rust tests to
- * port 1:1; see `dayTimelineMath.test.ts` for the sanity coverage this logic gets
- * here instead).
+ * Bucketing for the heatmap's day drill-down: given a set of schedule-bearing
+ * items, resolve every fire that lands on one calendar day (via
+ * `lib/schedule.ts`'s `fireTimesOnDay`, shared with the routines page's own
+ * day-timeline) and group them by hour. Ported from `ui/src/day_timeline.rs`'s
+ * bucketing loop (that file has no host-side Rust tests to port 1:1; see
+ * `dayTimelineMath.test.ts` for the sanity coverage this logic gets here
+ * instead).
  */
 import type { RoutineResponse } from "../../api/hooks";
-import { dateOnly, parseSchedule, CAL_MONTHS, WEEKDAYS } from "../../lib/schedule";
+import { fireTimesOnDay, CAL_MONTHS, WEEKDAYS } from "../../lib/schedule";
 
-/** Upper bound on fire-time iterations per item for one day. An every-minute
- * schedule fires 1440 times/day; this leaves headroom while bounding cost on
- * pathological inputs. */
-const MAX_FIRES = 2_000;
+export { fireTimesOnDay } from "../../lib/schedule";
 
 // ponytail: the Rust source's TimelineItem also carries an `id` so a clicked
 // chip can jump to that routine's detail page. This client has no per-routine
@@ -35,24 +33,6 @@ export interface BucketEntry {
   label: string;
   snoozed: boolean;
   flagCount: number;
-}
-
-/** All fire times for `schedule` that fall on `day`, in chronological order. */
-export function fireTimesOnDay(schedule: string, day: Date): Date[] {
-  const dayStart = dateOnly(day);
-  // Step back one second so an occurrence exactly at midnight counts as part of the day.
-  const start = new Date(dayStart.getTime() - 1_000);
-  const cron = parseSchedule(schedule, start);
-  if (!cron) return [];
-  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-  const out: Date[] = [];
-  for (let i = 0; i < MAX_FIRES && cron.hasNext(); i++) {
-    const dt = cron.next().toDate();
-    if (dt.getTime() < dayStart.getTime()) continue;
-    if (dt.getTime() >= dayEnd.getTime()) break;
-    out.push(dt);
-  }
-  return out;
 }
 
 /** Bucket every item's fire times on `day` into 24 hour rows, each sorted

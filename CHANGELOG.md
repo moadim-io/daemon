@@ -11,6 +11,236 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-13
+
+feat(client): add a new React/TypeScript web client, served at `/client` alongside the existing `ui/`
+
+A ground-up redesign of the web dashboard in React + TypeScript + Vite, with full feature parity
+to the Yew `ui/` SPA (Overview, Routines, Heatmap, Settings). Built as a single self-contained
+`dist/index.html` via `vite-plugin-singlefile` and embedded into the binary at compile time
+(`src/build/client.rs`), mirroring `ui/`'s `prebuilt.html` pipeline. Served at `GET /client` (with
+its own `/client/*` SPA fallback) purely additively — `ui/` at `/` is unchanged and still the
+default. This is the first step of a planned rollout that will eventually retire `ui/`.
+
+chore(lint): enable clippy::doc_markdown in the ui crate
+
+Mirrors the root crate's `doc_markdown = "deny"` (see `Cargo.toml`). The `ui` crate has its
+own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. Fixed the 6 violations
+this surfaced across `cron_utils.rs`, `routines/banner.rs`, `routines/filter.rs`,
+`routines/filter_bar.rs`, `routines/filter_tests.rs`, and `routines/hooks.rs` by wrapping
+the flagged identifiers (`is_valid`, `DueSoon`, `schedule_description`, `NodeRef`) in
+backticks. No behavior change.
+
+chore(lint): enable clippy::if_not_else in the ui crate
+
+Mirrors the root crate's `if_not_else = "deny"` (see `Cargo.toml`). The `ui` crate has its
+own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. Fixed the 2 violations
+this surfaced: `ui/src/header.rs`'s version-title span and `ui/src/overview.rs`'s attention
+panel each wrote `if !x.is_empty() { A } else { B }`, rewritten as `if x.is_empty() { B }
+else { A }` to drop the double-negation. No behavior change.
+
+chore(lint): enable clippy::manual_let_else in the ui crate
+
+Mirrors the root crate's `manual_let_else = "deny"` (see `Cargo.toml`). The `ui` crate has
+its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. Fixed the 1 violation
+this surfaced in `ui/src/routines/state.rs::sort_routines`, rewriting a `match` whose only
+non-binding arm returned early into `let Some(col) = col else { return routines };`. No
+behavior change.
+
+chore(lint): enable `clippy::needless_raw_string_hashes` in the ui crate
+
+Adds `needless_raw_string_hashes = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table. Mirrors
+the root crate's lint (enabled in Cargo.toml), which never applied to `ui/src` since the `ui`
+crate has its own `[lints.clippy]` table with no inheritance from the root. The `ui` crate is
+already clean under it, so `deny` locks that in. No behavior change.
+
+chore(lint): enable `clippy::semicolon_if_nothing_returned` in the `ui` crate
+
+Adds `semicolon_if_nothing_returned = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table,
+matching the lint already denied workspace-root-side in `Cargo.toml` — the `ui` crate has its
+own `[lints]` table (no `workspace = true` inheritance) so it silently escaped this despite CI's
+`clippy` job running `--workspace`. Fixes the 10 violations this surfaced: `Callback::from`
+closures in `main.rs`, `routines/actions.rs`, and `routines/page.rs` whose body was a bare
+`spawn_local(...)`/`toast.emit(...)` call with no trailing semicolon, which read like the block
+was returning that call's value even though the callback discards it. All fixes are a mechanical
+added `;` — no behavior change. `prebuilt.html` is regenerated to match.
+
+chore(lint): enable `clippy::single_match_else` in the `ui` crate
+
+Adds `single_match_else = "deny"` to `ui/Cargo.toml`'s `[lints.clippy]` table, mirroring the
+root crate's `single_match_else = "deny"` (`Cargo.toml`). The `ui` crate has its own
+`[lints.clippy]` table with no `workspace = true` inheritance, so this lint (like several others
+before it) silently never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
+
+`single_match_else` catches a `match` whose only non-wildcard arm destructures a single pattern,
+with everything else falling to a catch-all arm — `if let ... else` says the same thing without
+the unused generality of `match`, keeping a two-way branch as readable as a plain `if`.
+
+The `ui` crate is already clean under this lint, so no code changes are needed — `deny` just
+locks that state in. No behavior change.
+
+fix(security): add missing `127.0.0.1:<port>` entry to the loopback `Host`/`Origin` allowlist
+
+`allowed_hosts()` added `localhost:<port>` and `[::1]:<port>` alongside the bare bind address
+when the daemon's bind address carries a port, but never added the equivalent
+`127.0.0.1:<port>` entry — even though the bare `127.0.0.1` (no port) was already allowed. A
+browser sending `Host: 127.0.0.1:<port>` (the common case for anyone loading the UI via the
+raw IPv4 loopback address instead of `localhost`) was silently rejected with 403 by the
+DNS-rebinding guard from issue #266, while the functionally identical `localhost:<port>` was
+let through.
+
+fix(cli): don't panic when writing a loopback HTTP request fails
+
+`http_request_core` (`src/cli/system.rs`) used `.expect(...)` on `TcpStream::write_all`, even
+though the very next line already tolerates a failed read on the same socket (a server that
+closes the connection mid-request, e.g. while `moadim restart` is killing the old process).
+Every caller (`status`, `stop`, `trigger`, `cleanup`, ...) already matches on this function's
+`io::Result` to degrade gracefully to "moadim is not running" — the write failure just needs
+to flow through the same `?` instead of panicking the CLI.
+
+fix(client): edit-routine form no longer shows a blank prompt
+
+`GET /routines` omits each routine's `prompt` by default (it's the largest field and rarely
+needed in a listing). The React client's edit modal built its initial form values straight from
+that cached list row, so the prompt textarea always opened empty and the Save button stayed
+disabled until the user retyped the whole prompt. The edit modal now fetches the single routine
+by id (`GET /routines/{id}`, which always includes the prompt) when it opens, showing a spinner
+until it loads.
+
+fix(ui): routines page stuck loading, never fetches on mount
+
+`RoutinesPage`'s mount-time fetch went through `install_routines_loader`, a helper
+that wraps `use_effect_with` and gets invoked as a bare statement in the component
+body. That effect never actually fired at runtime, leaving `state.loading` permanently
+true and the routine list empty even though the API responded fine. Inlined the effect
+directly into `page.rs`, matching the pattern the working Overview page already uses,
+and removed the now-dead `install_routines_loader` helper. Also added
+`RequestCache::NoStore` to the routines list fetch so a stale cached empty response
+can't mask this class of bug again.
+
+fix(logs): snap truncated tail reads to the next line start
+
+Prevents `--tail` reads that begin mid-line (because the read window doesn't align to
+a line boundary) from emitting a partial first line. The read now skips ahead to the
+next newline before returning output.
+
+feat(routines): show local human-readable time alongside raw timestamps
+
+Run-history API responses (`RunSummary`/`FleetRunSummary`), the daemon's structured JSON log,
+and the UI's relative-time displays now also expose an absolute, human-readable local-time form
+next to the existing raw Unix timestamp / relative "N ago" text, so timestamps are readable
+without doing epoch math.
+
+refactor(routes): move health HTTP + MCP endpoints into `routes/health`
+
+Splits `src/routes/health/` into `mod.rs` (wiring), `logic.rs` (shared `HealthResponse` /
+`DependencyHealth` types and the `build()` function), `http.rs` (the `GET /health` handler), and
+`mcp.rs` (the MCP `health` tool, declared as a child module of `routes::mcp` so it keeps access to
+`MoadimMcp`'s private state). The MCP tool now builds on the shared `logic::build()` instead of
+re-deriving status/uptime/dependencies/version by hand, so the two surfaces can't drift.
+
+No behavior change: same response fields on both `GET /health` and the MCP `health` tool.
+
+refactor(routes): move restart HTTP + MCP endpoints into `routes/restart`
+
+Follows the `routes/health/` / `routes/shutdown/` template (see
+`src/routes/CONTRIBUTING.md`): splits the `POST /restart` handler and the MCP
+`restart` tool into `src/routes/restart/` — `mod.rs` (wiring), `logic.rs`
+(the shared `RestartResponse` type and a `build()` that spawns the detached
+restart helper and builds the response), `http.rs`, and `mcp.rs` (declared as
+a child module of `routes::mcp` so it keeps access to `MoadimMcp`'s private
+state). Both surfaces now call the same `logic::build()` instead of each
+spawning the helper and building the response separately.
+
+No behavior change: same response fields, same log messages on each surface.
+
+refactor(routes): move shutdown HTTP + MCP endpoints into `routes/shutdown`
+
+Follows the `routes/health/` template (see `src/routes/CONTRIBUTING.md`):
+splits the `POST /shutdown` handler and the MCP `shutdown` tool into
+`src/routes/shutdown/` — `mod.rs` (wiring), `logic.rs` (the shared
+`ShutdownResponse` type and a `build()` that fires the signal and builds the
+response), `http.rs`, and `mcp.rs` (declared as a child module of
+`routes::mcp` so it keeps access to `MoadimMcp`'s private state). Both
+surfaces now call the same `logic::build()` instead of each notifying the
+signal and building the response separately.
+
+No behavior change: same response fields, same log messages on each surface.
+
+fix(build): regenerate stale `prebuilt.html`
+
+The committed `prebuilt.html` (last regenerated at #1092) no longer matches
+the compiled `ui/` sources — every subsequent merge to `ui/src` recompiles
+the embedded JS/WASM bytes, so the `prebuilt-html-fresh` CI job now fails on
+any PR touching `ui/` even when that PR itself makes no visual change (see
+#1119, #1120, #1113). Rebuilding via `cargo check` (which runs `build.rs` /
+`trunk`) and committing the result restores a clean baseline so those and
+future `ui/` PRs can pass the freshness check again. No source change.
+
+docs(cli): document the `address` field in `moadim restart --json`'s output shape
+
+`restart_json` (`src/cli/restart.rs`) has emitted `{"old":…,"new":…,"address":…}` since the
+`address` field was added, but both the function's own doc comment and the README's `restart`
+row still documented the older two-field shape (`{"old":N|null,"new":M}`), which the function's
+own test (`restart_json_reports_old_new_pid_and_address`) already contradicted. Updated both to
+match the real output. No behavior change.
+
+fix(cli): rotate daemon.log on a daily tick, not just at spawn
+
+`rotate_daemon_log_if_oversized` only rotated at detached-spawn time or on size, so a
+long-lived daemon that stayed under the size cap and never restarted never rotated its log.
+Renamed to `rotate_daemon_log_if_due` and added a 24h age-based trigger alongside the size
+check, re-evaluated hourly via a new periodic task in `run_with_listener_until`.
+
+docs(routes): add a template for logic/http/mcp endpoint folders
+
+Adds `src/routes/CONTRIBUTING.md`, documenting the `mod.rs`/`logic.rs`/
+`http.rs`/`mcp.rs` (+ `*_tests.rs` siblings) layout introduced by the
+`routes/health/` refactor, so the next endpoint needing both a REST route
+and an MCP tool over the same data has a copy-pasteable template — including
+the `#[tool_router]`-splitting boilerplate (`vis = "pub(super)"`, the
+parenthesized `Self::tool_router() + Self::<name>_tool_router()` router
+combination, and the `__path_<name>` re-export utoipa needs) that isn't
+obvious from reading `health/` alone. Root `CONTRIBUTING.md` now links to it
+from the "Code conventions" section.
+
+Docs only, no code change.
+
+feat(routines): `MOADIM_MAX_CONCURRENT_RUNS` now defaults to unlimited (`0`)
+
+The global routine concurrency cap (#335) previously defaulted to `4` and rejected `0` as an
+"off" value, always falling back to the default instead. That was inconsistent with
+`MOADIM_MAX_WORKBENCH_DISK_BYTES`'s "0 means unbounded" convention elsewhere in the daemon.
+`0` (or unset) now means no cap is enforced; set `MOADIM_MAX_CONCURRENT_RUNS` to a positive
+number to opt into bounding how many routine agent sessions may run at once.
+
+Add a test for `write_routine` returning an error when `state.local.toml`'s path is occupied by a directory, closing the last untested error branch in `write_runtime_state` (`routine_storage.rs`). No behavior change — test-only.
+
+feat(ui): saved views for the Routines page
+
+Lets users save a named combination of filters/sort on the Routines page and switch back to it later.
+
+Fix a manual `trigger_routine` that gets skipped (agent load failure, an oversized inline
+prompt, the overlap guard, or the global concurrency cap) surfacing no reason anywhere a caller
+could see (#1145). `spawn_routine_command`'s skip branches now also append the reason to a new
+per-routine `skip.log`, and `svc_logs` (the `routine_logs` backend) falls back to it when no
+workbench was spawned, instead of coming back indistinguishable from "never triggered".
+
+test(middlewares): cover `allowed_hosts` when `MOADIM_BIND_ADDR` has no port
+
+`allowed_hosts()` splits the configured bind address on `:` to derive a port and add
+`localhost:<port>`/`[::1]:<port>` entries to the `Host`/`Origin` allowlist. The branch where
+`MOADIM_BIND_ADDR` has no port (e.g. an operator setting it to a bare `0.0.0.0`) was never
+exercised by a test — one of several gaps keeping the repo's 100%-line-coverage gate (`cargo
+llvm-cov --fail-under-lines 100`, run in the pre-push hook) below 100% on `main`. Adds a test
+asserting the port-suffixed entries are skipped in that case, bringing this file to 100%. No
+behavior change.
+
+Add a test for `PUT /config/user-prompt` returning 500 when the write itself fails (target path is a directory), closing the last untested error branch in that handler. No behavior change — test-only.
+
 ## [1.1.0] - 2026-07-12
 
 chore(deps): bump `rmcp`/`rmcp-macros` to 2.2.0
@@ -3348,7 +3578,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/moadim-io/daemon/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/moadim-io/daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/moadim-io/daemon/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/moadim-io/daemon/compare/v0.27.0...v1.0.0

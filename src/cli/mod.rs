@@ -73,6 +73,10 @@ pub enum Command {
         interactive: bool,
     },
     /// Ask a running background server to stop. `json` requests machine-readable output.
+    ///
+    /// Stops the daemon process only: any routine agent already running in a detached tmux
+    /// session (issue #320) is left alive and keeps acting until it finishes on its own or the
+    /// daemon is restarted and its watchdog/cleanup sweep reaps it.
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
@@ -253,6 +257,9 @@ pub fn help_text() -> String {
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
          can branch on $? without parsing stdout.\n\
          \n\
+         `stop` only stops the daemon process; a routine agent already running in its own detached\n\
+         tmux session keeps running until it finishes or a later daemon start reaps it.\n\
+         \n\
          Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
     )
@@ -369,6 +376,12 @@ fn foreground_already_running_message(pid: Option<u32>) -> String {
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
+///
+/// This only stops the daemon's HTTP/MCP server; a routine agent already running in a detached
+/// tmux session (started via `tmux new-session -d`) is independent of the daemon process and is
+/// **not** killed by this call. It keeps running — and can keep opening PRs, filing issues, etc. —
+/// until it finishes on its own or a future daemon start's watchdog/cleanup sweep reaps it
+/// (issue #320).
 pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
     // Read the PID before asking the server to stop: a graceful shutdown clears the pid file, so
     // the only reliable moment to capture which process we stopped is *before* the request.

@@ -42,6 +42,10 @@ Stop a running background server.
 /
 .B \-\-quiet
 suppresses the human-readable status line.
+Only stops the daemon process: a routine agent already running in its own
+detached tmux session keeps running until it finishes on its own or a later
+.B moadim
+start reaps it.
 .TP
 .BR "status " [ \-\-json "] [" "\-\-wait" [ = SECS ]]
 Show whether a server is running.

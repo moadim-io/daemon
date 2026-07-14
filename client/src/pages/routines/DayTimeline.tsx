@@ -1,43 +1,10 @@
-import { parseExpression } from "cron-parser";
 import { useEffect, useRef, useState } from "react";
-import { normalizeCron } from "../../lib/cronUtils";
-import { CAL_MONTHS, WEEKDAYS } from "../../lib/schedule";
-
-/** Upper bound on fire-time iterations per item for one day. */
-const MAX_FIRES = 2_000;
+import { CAL_MONTHS, WEEKDAYS, dateOnly, fireTimesOnDay } from "../../lib/schedule";
 
 /** Pixel height of one hour row per zoom level; index 0 is the compact, chip-wrapping layout. */
 const ZOOM_LEVELS = [40, 140, 300, 600];
 
 const MONTHS_SHORT = CAL_MONTHS.map((m) => m.slice(0, 3));
-
-function dateOnly(d: Date): Date {
-  const out = new Date(d);
-  out.setHours(0, 0, 0, 0);
-  return out;
-}
-
-/** All fire times for `schedule` that fall on `day`, in chronological order. */
-function firesOnDay(schedule: string, day: Date): Date[] {
-  const s = normalizeCron(schedule);
-  if (s === "") return [];
-  const dayStart = dateOnly(day);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-  let cron;
-  try {
-    cron = parseExpression(s, { currentDate: new Date(dayStart.getTime() - 1_000) });
-  } catch {
-    return [];
-  }
-  const out: Date[] = [];
-  for (let i = 0; i < MAX_FIRES && cron.hasNext(); i++) {
-    const dt = cron.next().toDate();
-    if (dt >= dayEnd) break;
-    if (dt >= dayStart) out.push(dt);
-  }
-  return out;
-}
 
 export interface TimelineItem {
   id?: string;
@@ -90,7 +57,7 @@ export function DayTimeline({ items, loading, onClick }: DayTimelineProps) {
   const buckets: BucketEntry[][] = Array.from({ length: 24 }, () => []);
   let total = 0;
   for (const it of items) {
-    for (const t of firesOnDay(it.schedule, day)) {
+    for (const t of fireTimesOnDay(it.schedule, day)) {
       buckets[t.getHours()]?.push({ time: t, label: it.label, id: it.id, snoozed: it.snoozed, flagCount: it.flagCount });
       total++;
     }

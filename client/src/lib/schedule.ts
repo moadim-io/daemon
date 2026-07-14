@@ -117,6 +117,30 @@ export function monthStart(today: Date, offsetMonths: number): Date {
   return new Date(year, month, 1);
 }
 
+/** Upper bound on fire-time iterations per schedule for one day. An every-minute schedule fires
+ * 1440 times/day; this leaves headroom while bounding cost on pathological inputs. */
+const MAX_FIRES_PER_DAY = 2_000;
+
+/** All fire times for `schedule` that fall on `day`, in chronological order. Shared by the
+ * heatmap and routines day-timeline views so they resolve "what fires today" identically instead
+ * of maintaining separate cron-parsing copies that can drift apart. */
+export function fireTimesOnDay(schedule: string, day: Date): Date[] {
+  const dayStart = dateOnly(day);
+  // Step back one second so an occurrence exactly at midnight counts as part of the day.
+  const start = new Date(dayStart.getTime() - 1_000);
+  const cron = parseSchedule(schedule, start);
+  if (!cron) return [];
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const out: Date[] = [];
+  for (let i = 0; i < MAX_FIRES_PER_DAY && cron.hasNext(); i++) {
+    const dt = cron.next().toDate();
+    if (dt.getTime() < dayStart.getTime()) continue;
+    if (dt.getTime() >= dayEnd.getTime()) break;
+    out.push(dt);
+  }
+  return out;
+}
+
 /** Fire counts per grid cell for `schedule` over `[gridStart, gridStart + 42 days)`. */
 export function occurrencesPerDay(schedule: string, gridStart: Date): number[] | undefined {
   const start = new Date(gridStart.getTime() - 1000);

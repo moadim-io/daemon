@@ -1,7 +1,7 @@
 .\" Man page for moadim.
 .\" Mirrors the built-in `moadim --help` output (src/cli.rs::print_help).
 .\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
-.TH MOADIM 1 "2026-07-07" "moadim 1.1.0" "Moadim Manual"
+.TH MOADIM 1 "2026-07-07" "moadim 1.2.0" "Moadim Manual"
 .SH NAME
 moadim \- routine scheduler with an MCP/REST API and a web control panel
 .SH SYNOPSIS
@@ -88,6 +88,12 @@ Manage routines (alias:
 .B schedule trigger <id>
 Trigger a routine by ID (invoked directly from the routine's crontab
 entry).
+.TP
+.BR "enable <routine> " [ \-\-json ]
+Turn a routine on (set enabled=true) by id or slug.
+.TP
+.BR "disable <routine> " [ \-\-json ]
+Turn a routine off (set enabled=false) by id or slug.
 .TP
 .B agents
 List available agent keys.

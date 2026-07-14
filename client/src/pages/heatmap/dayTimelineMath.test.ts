@@ -2,36 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   bucketDayFires,
   dayTimelineLabel,
-  fireTimesOnDay,
   timelineItemsOf,
   type TimelineItem,
 } from "./dayTimelineMath";
 import type { RoutineResponse } from "../../api/hooks";
 
+// `fireTimesOnDay`'s own behavior (midnight boundary, adjacent-day exclusion, invalid schedules)
+// is covered by `lib/schedule.test.ts` — this file only covers the bucketing built on top of it.
 const day = () => new Date(2026, 5, 21); // Sun 2026-06-21
-
-describe("fireTimesOnDay", () => {
-  it("returns every fire that lands on the day, in order", () => {
-    const times = fireTimesOnDay("0 */6 * * *", day());
-    expect(times.map((t) => t.getHours())).toEqual([0, 6, 12, 18]);
-    expect(times.every((t) => t.getDate() === 21)).toBe(true);
-  });
-
-  it("counts a fire exactly at midnight as part of the day", () => {
-    const times = fireTimesOnDay("0 0 * * *", day());
-    expect(times.length).toBe(1);
-    expect(times[0]?.getHours()).toBe(0);
-  });
-
-  it("excludes fires on adjacent days", () => {
-    const times = fireTimesOnDay("0 12 22 6 *", day()); // fires the next day
-    expect(times).toEqual([]);
-  });
-
-  it("is empty for an invalid schedule", () => {
-    expect(fireTimesOnDay("not a cron", day())).toEqual([]);
-  });
-});
 
 describe("bucketDayFires", () => {
   it("buckets each item's fires by hour and sorts within the bucket", () => {

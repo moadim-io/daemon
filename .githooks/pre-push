@@ -83,15 +83,7 @@ echo "Running coverage (100% line coverage required, excluding main.rs)..."
 # runs above, via the workspace-wide `cargo test`.
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
-# ── 6. Changelog ────────────────────────────────────────────────────────────────
-# Mirror the CI `Changelog` workflow (.github/workflows/changelog.yml) locally so
-# pushes that would fail the `changeset status` check are caught before they hit
-# CI. If the commits being pushed touch `src/` or `ui/`, a new `.changeset/*.md`
-# file must be present in the same range. Set SKIP_CHANGELOG=1 to bypass (the
-# local equivalent of the `skip-changelog` PR label) for deliberately
-# undocumented src/ui changes.
-
-# ── 7. Line-count gate ────────────────────────────────────────────────────────
+# ── 6. Line-count gate ────────────────────────────────────────────────────────
 # Requires: cargo install linecheck
 if ! command -v linecheck >/dev/null 2>&1; then
   echo ""
@@ -105,7 +97,7 @@ echo "Checking .rs files do not exceed 500 lines..."
 linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 echo "Line-count check passed."
 
-# ── 8. Client (React) checks ────────────────────────────────────────────────────
+# ── 7. Client (React) checks ────────────────────────────────────────────────────
 # `client/` isn't a Cargo workspace member, so none of the cargo-based gates
 # above ever touch it. Mirror them here the same way this hook already mirrors
 # CI for `src/`/`ui/` — matching the CI jobs added in `.github/workflows/lint.yml`
@@ -122,6 +114,13 @@ pnpm --filter client lint
 pnpm --filter client test
 echo "Client checks passed."
 
+# ── 8. Changelog ────────────────────────────────────────────────────────────────
+# Mirror the CI `Changelog` workflow (.github/workflows/changelog.yml) locally so
+# pushes that would fail the `changeset status` check are caught before they hit
+# CI. If the commits being pushed touch `src/` or `ui/`, a new `.changeset/*.md`
+# file must be present in the same range. Set SKIP_CHANGELOG=1 to bypass (the
+# local equivalent of the `skip-changelog` PR label) for deliberately
+# undocumented src/ui changes.
 if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
   echo "Checking for a changeset covering src/, ui/, or client/ changes..."
   # Range being pushed: everything on HEAD not yet on the upstream main branch,

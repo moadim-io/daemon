@@ -104,6 +104,57 @@ pub async fn put_user_prompt(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Response body for `GET /config/max-concurrent-runs` and `PUT /config/max-concurrent-runs`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct MaxConcurrentRunsResponse {
+    /// Effective cap: the `MOADIM_MAX_CONCURRENT_RUNS` env var if set, else the persisted
+    /// UI/REST override, else the built-in default. `0` means unbounded.
+    pub value: usize,
+    /// The persisted UI/REST override on its own, independent of the env var — `None` if never
+    /// set. The UI should populate its input from this field (not `value`), so an env-var
+    /// override in effect doesn't get echoed back as though it were a saved setting.
+    pub override_value: Option<usize>,
+}
+
+/// `GET /config/max-concurrent-runs` — the global routine concurrency cap (issue #1155).
+#[utoipa::path(get, path = "/config/max-concurrent-runs",
+    responses((status = 200, body = MaxConcurrentRunsResponse)))]
+pub async fn get_max_concurrent_runs() -> Json<MaxConcurrentRunsResponse> {
+    Json(MaxConcurrentRunsResponse {
+        value: routines::max_concurrent_runs(),
+        override_value: crate::machine::max_concurrent_runs_override(),
+    })
+}
+
+/// Request body for `PUT /config/max-concurrent-runs`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct SetMaxConcurrentRunsRequest {
+    /// New override value, or `null`/omitted to clear it and fall back to the env var/default.
+    pub value: Option<usize>,
+}
+
+/// `PUT /config/max-concurrent-runs` — set or clear the persisted concurrency-cap override.
+///
+/// Writes to `machine.local.toml`. The `MOADIM_MAX_CONCURRENT_RUNS` env var still takes
+/// precedence at runtime when set; this only takes effect while the env var is unset. Takes
+/// effect on the next trigger check (read live from disk, like the env var today) — no restart
+/// required. Returns `500` if the write fails.
+#[utoipa::path(put, path = "/config/max-concurrent-runs",
+    request_body = SetMaxConcurrentRunsRequest,
+    responses(
+        (status = 200, body = MaxConcurrentRunsResponse),
+        (status = 500, description = "Write failed"),
+    ))]
+pub async fn put_max_concurrent_runs(
+    Json(body): Json<SetMaxConcurrentRunsRequest>,
+) -> Result<Json<MaxConcurrentRunsResponse>, AppError> {
+    crate::machine::set_max_concurrent_runs_override(body.value).map_err(|_| AppError::Internal)?;
+    Ok(Json(MaxConcurrentRunsResponse {
+        value: routines::max_concurrent_runs(),
+        override_value: body.value,
+    }))
+}
+
 /// `GET /machines` — distinct machine names this daemon knows about.
 ///
 /// There is no central machine registry, so the "known" set is the union of every `machines`

@@ -167,11 +167,18 @@ git-trackable:
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |
 | `goal`         | string | no       | A very short (≤5 lines) statement of the routine's goal — the "why" behind the prompt. Rendered into `prompt.md` as a `## Goal` preamble. |
 | `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
-| `machines`     | list   | no       | Machine identities this routine runs on (matched against `machine.local.toml`). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
+| `machines`     | list   | no       | Machine identities this routine runs on (matched against this install's resolved machine name — see below). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
+
+**Machine identity:** used to filter which of a routine's `machines` entries apply to *this*
+install when several daemons share one `~/.config/moadim` config repo (a laptop, a work box, a
+server). Resolved in priority order: the `MOADIM_MACHINE` env var (trimmed, non-empty), then the
+`name` field in the gitignored `~/.config/moadim/machine.local.toml`, then the system hostname
+(auto-generated into that file on first run). Inspect or change it with `moadim machine show` /
+`moadim machine set <name>` (see "Misc" below).
 
 **Workbenches and cleanup:** each run executes in a workbench under
 `~/.moadim/workbenches/`. Finished, expired workbenches are reaped on a
@@ -195,7 +202,10 @@ to cap how many routine agent sessions may be alive at once. Unset or `0`
 skipped — logging the reason — rather than launched, and is picked up again
 on its next scheduled tick. The count is derived from actual live tmux
 sessions, not an in-memory counter, so it stays correct across a daemon
-crash/restart.
+crash/restart. The cap can also be set per-machine (persisted in
+`machine.local.toml`, editable from the UI/REST settings) without touching
+the environment; `MOADIM_MAX_CONCURRENT_RUNS` takes precedence over that
+override when both are set.
 
 **REST** — under the `/api/v1` prefix:
 
@@ -400,6 +410,9 @@ moadim disable <routine>      # set enabled = false  (--json for a {routine,enab
 
 # Misc
 moadim agents                 # list available agent keys
+moadim machine show           # print this install's resolved machine name + where it came from
+moadim machine set <name>     # persist a machine name to machine.local.toml
+moadim machine list           # list distinct machine names referenced by any routine's `machines`
 ```
 
 Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.

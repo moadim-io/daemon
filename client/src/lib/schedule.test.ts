@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fireTimesOnDay,
   firesWithin,
   fmtUntil,
   fmtWhen,
@@ -102,6 +103,31 @@ describe("occurrencesPerDay", () => {
     const counts = occurrencesPerDay("0 12 * * *", new Date(2024, 5, 1));
     expect(counts).toBeDefined();
     expect(counts!.every((c) => c === 1)).toBe(true);
+  });
+});
+
+describe("fireTimesOnDay", () => {
+  const day = () => new Date(2026, 5, 21); // Sun 2026-06-21
+
+  it("returns every fire that lands on the day, in order", () => {
+    const times = fireTimesOnDay("0 */6 * * *", day());
+    expect(times.map((t) => t.getHours())).toEqual([0, 6, 12, 18]);
+    expect(times.every((t) => t.getDate() === 21)).toBe(true);
+  });
+
+  it("counts a fire exactly at midnight as part of the day", () => {
+    const times = fireTimesOnDay("0 0 * * *", day());
+    expect(times.length).toBe(1);
+    expect(times[0]?.getHours()).toBe(0);
+  });
+
+  it("excludes fires on adjacent days", () => {
+    const times = fireTimesOnDay("0 12 22 6 *", day()); // fires the next day
+    expect(times).toEqual([]);
+  });
+
+  it("is empty for an invalid schedule", () => {
+    expect(fireTimesOnDay("not a cron", day())).toEqual([]);
   });
 });
 

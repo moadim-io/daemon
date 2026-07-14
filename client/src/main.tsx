@@ -15,7 +15,10 @@ if (!rootEl) throw new Error("#root element missing");
 createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/client">
+      <BrowserRouter
+        basename="/client"
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <App />
       </BrowserRouter>
     </QueryClientProvider>

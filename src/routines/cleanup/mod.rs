@@ -28,6 +28,7 @@ use super::model::{RoutineStore, RunStatus};
 use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
 mod disk_cap;
+mod log_cap;
 mod runtime;
 mod session;
 mod snapshot;
@@ -167,6 +168,10 @@ fn kill_if_hung(
 /// cadence, so a sub-hour `max_runtime_secs` is enforced near its bound instead of waiting for the
 /// hourly [`reap_dir`] sweep. Returns the number of sessions killed. The injected `max_runtime_for`,
 /// `is_alive`, and `kill` keep the decision logic unit-testable without a clock or a live tmux.
+///
+/// Also caps each workbench's `agent.log` to [`log_cap::MAX_AGENT_LOG_BYTES`] on this same tick
+/// (#268): the raw `tmux pipe-pane` capture is unbounded and append-only, so a long or chatty run
+/// could otherwise grow its log without limit between TTL sweeps.
 fn watchdog_dir(
     dir: &Path,
     now: u64,
@@ -190,6 +195,7 @@ fn watchdog_dir(
         let Some((slug, ts)) = parse_workbench_name(&name) else {
             continue;
         };
+        log_cap::cap_agent_log_or_warn(&entry.path().join("agent.log"));
         let session = format!("moadim-{name}");
         kill_if_hung(
             &entry.path(),

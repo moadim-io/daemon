@@ -267,3 +267,7 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
         </div>
     }
 }
+
+#[cfg(test)]
+#[path = "day_timeline_tests.rs"]
+mod day_timeline_tests;

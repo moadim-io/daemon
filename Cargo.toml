@@ -228,3 +228,8 @@ mem_forget = "deny"
 # pure noise once nothing inside requires them. The codebase is already clean, so `deny` locks
 # that in.
 needless_raw_string_hashes = "deny"
+# Reject `as` casts that widen without loss (e.g. `u32 as i64`) in favour of `From`/`Into`. An
+# `as` cast silently stays legal (and silently starts truncating) if the source or target type
+# ever changes size; `i64::from(x)` is the same widening but fails to compile the moment it would
+# no longer be lossless. The codebase is already clean, so `deny` locks that in.
+cast_lossless = "deny"

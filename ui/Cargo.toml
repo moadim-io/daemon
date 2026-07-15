@@ -265,6 +265,12 @@ doc_markdown = "deny"
 # `clippy --workspace` covering it in CI. Fixes the 1 violation this surfaced in
 # `routines/calendar.rs`.
 cast_lossless = "deny"
+# Reject spelling out a type's own name in an impl block where `Self` says the same thing
+# without repeating it — if the type gets renamed, `Self` doesn't need a matching edit.
+# Mirrors the root crate's `use_self = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`.
+use_self = "deny"
 # Reject a function call passed directly as the fallback argument to `unwrap_or`/`ok_or`/`and`/`or`
 # and friends (e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else` form
 # (`opt.unwrap_or_else(expensive)`). The eager form always evaluates the fallback, even on the

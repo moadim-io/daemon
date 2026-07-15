@@ -40,28 +40,28 @@ impl RoutineStatusFacet {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            RoutineStatusFacet::All => "all",
-            RoutineStatusFacet::Enabled => "enabled",
-            RoutineStatusFacet::Disabled => "disabled",
-            RoutineStatusFacet::Dormant => "dormant",
-            RoutineStatusFacet::DueSoon => "due",
-            RoutineStatusFacet::Snoozed => "snoozed",
-            RoutineStatusFacet::HasFlags => "flagged",
-            RoutineStatusFacet::AgentUnregistered => "agent-unreg",
+            Self::All => "all",
+            Self::Enabled => "enabled",
+            Self::Disabled => "disabled",
+            Self::Dormant => "dormant",
+            Self::DueSoon => "due",
+            Self::Snoozed => "snoozed",
+            Self::HasFlags => "flagged",
+            Self::AgentUnregistered => "agent-unreg",
         }
     }
 
     #[must_use]
     pub fn from_str(s: &str) -> Self {
         match s {
-            "enabled" => RoutineStatusFacet::Enabled,
-            "disabled" => RoutineStatusFacet::Disabled,
-            "dormant" => RoutineStatusFacet::Dormant,
-            "due" => RoutineStatusFacet::DueSoon,
-            "snoozed" => RoutineStatusFacet::Snoozed,
-            "flagged" => RoutineStatusFacet::HasFlags,
-            "agent-unreg" => RoutineStatusFacet::AgentUnregistered,
-            _ => RoutineStatusFacet::All,
+            "enabled" => Self::Enabled,
+            "disabled" => Self::Disabled,
+            "dormant" => Self::Dormant,
+            "due" => Self::DueSoon,
+            "snoozed" => Self::Snoozed,
+            "flagged" => Self::HasFlags,
+            "agent-unreg" => Self::AgentUnregistered,
+            _ => Self::All,
         }
     }
 }
@@ -84,18 +84,18 @@ impl RoutineMachineFacet {
     #[must_use]
     pub fn as_value(&self) -> String {
         match self {
-            RoutineMachineFacet::Any => RMACHINE_ANY.to_string(),
-            RoutineMachineFacet::Unassigned => RMACHINE_UNASSIGNED.to_string(),
-            RoutineMachineFacet::Machine(m) => m.clone(),
+            Self::Any => RMACHINE_ANY.to_string(),
+            Self::Unassigned => RMACHINE_UNASSIGNED.to_string(),
+            Self::Machine(m) => m.clone(),
         }
     }
 
     #[must_use]
     pub fn from_value(v: &str) -> Self {
         match v {
-            RMACHINE_ANY => RoutineMachineFacet::Any,
-            RMACHINE_UNASSIGNED => RoutineMachineFacet::Unassigned,
-            other => RoutineMachineFacet::Machine(other.to_string()),
+            RMACHINE_ANY => Self::Any,
+            RMACHINE_UNASSIGNED => Self::Unassigned,
+            other => Self::Machine(other.to_string()),
         }
     }
 }
@@ -114,17 +114,17 @@ impl AgentFacet {
     #[must_use]
     pub fn as_value(&self) -> String {
         match self {
-            AgentFacet::All => Self::AGENT_ALL.to_string(),
-            AgentFacet::Named(a) => a.clone(),
+            Self::All => Self::AGENT_ALL.to_string(),
+            Self::Named(a) => a.clone(),
         }
     }
 
     #[must_use]
     pub fn from_value(v: &str) -> Self {
         if v == Self::AGENT_ALL {
-            AgentFacet::All
+            Self::All
         } else {
-            AgentFacet::Named(v.to_string())
+            Self::Named(v.to_string())
         }
     }
 }
@@ -143,17 +143,17 @@ impl RepositoryFacet {
     #[must_use]
     pub fn as_value(&self) -> String {
         match self {
-            RepositoryFacet::All => Self::REPOSITORY_ALL.to_string(),
-            RepositoryFacet::Named(r) => r.clone(),
+            Self::All => Self::REPOSITORY_ALL.to_string(),
+            Self::Named(r) => r.clone(),
         }
     }
 
     #[must_use]
     pub fn from_value(v: &str) -> Self {
         if v == Self::REPOSITORY_ALL {
-            RepositoryFacet::All
+            Self::All
         } else {
-            RepositoryFacet::Named(v.to_string())
+            Self::Named(v.to_string())
         }
     }
 }
@@ -172,17 +172,17 @@ impl TagFacet {
     #[must_use]
     pub fn as_value(&self) -> String {
         match self {
-            TagFacet::All => Self::TAG_ALL.to_string(),
-            TagFacet::Named(t) => t.clone(),
+            Self::All => Self::TAG_ALL.to_string(),
+            Self::Named(t) => t.clone(),
         }
     }
 
     #[must_use]
     pub fn from_value(v: &str) -> Self {
         if v == Self::TAG_ALL {
-            TagFacet::All
+            Self::All
         } else {
-            TagFacet::Named(v.to_string())
+            Self::Named(v.to_string())
         }
     }
 }
@@ -327,39 +327,39 @@ impl RoutineHealth {
     /// Lower number = more urgent. Ascending sort puts broken rows first.
     pub(crate) fn priority(self) -> u8 {
         match self {
-            RoutineHealth::Dormant => 0,
-            RoutineHealth::DeadSchedule => 1,
-            RoutineHealth::AgentMissing => 2,
-            RoutineHealth::Disabled => 3,
-            RoutineHealth::PowerSaving => 4,
-            RoutineHealth::Snoozed => 5,
-            RoutineHealth::Healthy => 6,
+            Self::Dormant => 0,
+            Self::DeadSchedule => 1,
+            Self::AgentMissing => 2,
+            Self::Disabled => 3,
+            Self::PowerSaving => 4,
+            Self::Snoozed => 5,
+            Self::Healthy => 6,
         }
     }
 
     /// Short uppercase label shown in the badge.
     pub(crate) fn badge(self) -> &'static str {
         match self {
-            RoutineHealth::Dormant => "DORMANT",
-            RoutineHealth::DeadSchedule => "DEAD SCHEDULE",
-            RoutineHealth::AgentMissing => "AGENT MISSING",
-            RoutineHealth::Disabled => "DISABLED",
-            RoutineHealth::PowerSaving => "POWER SAVING",
-            RoutineHealth::Snoozed => "SNOOZED",
-            RoutineHealth::Healthy => "HEALTHY",
+            Self::Dormant => "DORMANT",
+            Self::DeadSchedule => "DEAD SCHEDULE",
+            Self::AgentMissing => "AGENT MISSING",
+            Self::Disabled => "DISABLED",
+            Self::PowerSaving => "POWER SAVING",
+            Self::Snoozed => "SNOOZED",
+            Self::Healthy => "HEALTHY",
         }
     }
 
     /// CSS class string for the badge `<span>`.
     pub(crate) fn badge_class(self) -> &'static str {
         match self {
-            RoutineHealth::Dormant => "health-badge dormant",
-            RoutineHealth::DeadSchedule => "health-badge dead",
-            RoutineHealth::AgentMissing => "health-badge agent-missing",
-            RoutineHealth::Disabled => "health-badge disabled",
-            RoutineHealth::PowerSaving => "health-badge power-saving",
-            RoutineHealth::Snoozed => "health-badge snoozed",
-            RoutineHealth::Healthy => "health-badge healthy",
+            Self::Dormant => "health-badge dormant",
+            Self::DeadSchedule => "health-badge dead",
+            Self::AgentMissing => "health-badge agent-missing",
+            Self::Disabled => "health-badge disabled",
+            Self::PowerSaving => "health-badge power-saving",
+            Self::Snoozed => "health-badge snoozed",
+            Self::Healthy => "health-badge healthy",
         }
     }
 }

@@ -25,6 +25,16 @@ web-sys = { version = "0.3", features = ["Clipboard", "Document", "DomTokenList"
 log = "0.4"
 console_log = "1"
 
+[lints.rust]
+# Require a doc comment on every public item (crate root, and every public
+# struct/enum/field/variant/fn reachable from it). Denied root-side in
+# Cargo.toml's own `[lints.rust]` table since the project's early days, but
+# the `ui` crate has its own `[lints]` table (no `workspace = true`
+# inheritance) so it never applied to `ui/src` despite CI's `clippy`/`doc`
+# jobs running `--workspace`. The `ui` crate is now doc-complete, so `deny`
+# locks that in.
+missing_docs = "deny"
+
 [lints.clippy]
 all = "deny"
 # Reject a `&self` method that never reads `self` — it should be an associated function instead, so

@@ -25,9 +25,9 @@ pub(crate) struct BulkHandlers {
 /// Builds the bulk-selection action bar's callbacks (select/select-all/clear,
 /// and bulk enable/disable/delete against the `/routines` API).
 pub(crate) fn install_bulk_handlers(
-    state: UseReducerHandle<RState>,
-    toast: Callback<(String, ToastKind)>,
-    now: UseStateHandle<DateTime<Local>>,
+    state: &UseReducerHandle<RState>,
+    toast: &Callback<(String, ToastKind)>,
+    now: &UseStateHandle<DateTime<Local>>,
 ) -> BulkHandlers {
     let on_select = {
         let state = state.clone();

@@ -267,7 +267,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         on_toggle,
         on_save,
         on_confirm_delete,
-    } = install_crud_handlers(state.clone(), toast.clone(), state.modal.clone());
+    } = install_crud_handlers(&state, &toast, state.modal.clone());
 
     // ── Bulk selection ────────────────────────────────────────────────────────
     let BulkHandlers {
@@ -278,7 +278,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         on_bulk_disable,
         on_bulk_delete,
         on_confirm_bulk_delete,
-    } = install_bulk_handlers(state.clone(), toast.clone(), now.clone());
+    } = install_bulk_handlers(&state, &toast, &now);
 
     let routines = state.routines.clone();
     let loading = state.loading;

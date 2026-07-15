@@ -245,3 +245,8 @@ or_fun_call = "deny"
 # `_` isn't quietly discarding something meaningful. The codebase is already clean, so `deny` locks
 # that in.
 ignored_unit_patterns = "deny"
+# Reject `"literal".as_bytes()` in favour of a `b"literal"` byte-string literal — the byte string
+# is the same bytes without the runtime call, and states "this is bytes" at the point of
+# declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
+# `deny` locks that in.
+string_lit_as_bytes = "deny"

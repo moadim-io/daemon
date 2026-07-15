@@ -233,7 +233,8 @@ pub fn help_text() -> String {
          COMMANDS:\n\
          \x20   restart [--json] [-q] [-i] stop a running server (if any) and start a fresh one\n\
          \x20                          (-q/--quiet: rotation line only; -i/--interactive: foreground)\n\
-         \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
+         \x20   stop [--json] [-q]     stop a running background server, also killing any\n\
+         \x20                          in-flight routine tmux sessions (-q/--quiet: no stdout)\n\
          \x20   status [--json] [--wait[=SECS]] show whether a server is running (--wait: poll until\n\
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\

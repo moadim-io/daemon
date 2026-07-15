@@ -404,6 +404,83 @@ fn kill_sessions_for_deleted_routine_kills_the_live_workbench_session() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+#[test]
+fn kill_matching_sessions_with_an_always_true_predicate_kills_every_live_session() {
+    // #320: the shutdown drain has no single slug to filter on — it must kill every live routine
+    // session regardless of which routine spawned it.
+    let base = std::env::temp_dir().join("moadim-cleanup-kill-all-test");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+
+    touch_dir(&base, "alpha-100"); // live -> killed
+    touch_dir(&base, "beta-200"); // live, different slug -> killed too
+    touch_dir(&base, "gamma-300"); // already dead -> left alone
+    touch_dir(&base, "notawb"); // no timestamp, ignored
+    std::fs::write(base.join("stray-file"), b"x").unwrap(); // a file, not a dir -> ignored
+
+    let alive = |session: &str| session == "moadim-alpha-100" || session == "moadim-beta-200";
+    let killed = std::cell::RefCell::new(Vec::new());
+    let kill = |session: &str| killed.borrow_mut().push(session.to_string());
+
+    let count = kill_matching_sessions(&base, &|_slug| true, &alive, &kill);
+
+    assert_eq!(count, 2);
+    let mut names = killed.into_inner();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "moadim-alpha-100".to_string(),
+            "moadim-beta-200".to_string()
+        ]
+    );
+
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn kill_all_routine_sessions_kills_every_live_session_regardless_of_slug() {
+    // #320: `moadim stop` must drain every in-flight routine session, not just one routine's.
+    let home = std::env::temp_dir().join(format!(
+        "moadim-cleanup-kill-all-routine-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let prev_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
+    unsafe {
+        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
+        std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/true");
+    }
+
+    let workbenches = crate::paths::workbenches_dir();
+    std::fs::create_dir_all(&workbenches).unwrap();
+    std::fs::create_dir_all(workbenches.join("routine-one-1")).unwrap();
+    std::fs::create_dir_all(workbenches.join("routine-two-1")).unwrap();
+
+    let killed = kill_all_routine_sessions();
+    assert_eq!(
+        killed, 2,
+        "every live routine session is killed, not just one slug's"
+    );
+    // Workbench directories are left in place; only the sessions are force-killed.
+    assert!(workbenches.join("routine-one-1").exists());
+    assert!(workbenches.join("routine-two-1").exists());
+
+    // SAFETY: single-threaded harness; restore the saved overrides.
+    unsafe {
+        match prev_home {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+        match prev_tmux {
+            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
+            None => std::env::remove_var("MOADIM_TMUX_BIN"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 // Run-history persistence coverage (`cleanup_expired_workbenches` + `runs.log`) lives in
 // `cleanup_run_history_tests.rs`.
 

@@ -240,3 +240,8 @@ cast_lossless = "deny"
 # allocation) on every call. The lazy form only runs it when actually needed. The codebase is
 # already clean, so `deny` locks that in.
 or_fun_call = "deny"
+# Reject `_` as a `match`/`tokio::select!` arm pattern when the matched value's type is `()` —
+# spelling out `()` states the value's type explicitly instead of leaving the reader to check that
+# `_` isn't quietly discarding something meaningful. The codebase is already clean, so `deny` locks
+# that in.
+ignored_unit_patterns = "deny"

@@ -26,10 +26,10 @@ Once running, manage it from the web client (the STOP button) or with
 .B (default)
 Start the server in the background and exit.
 .TP
-.BR \-i ", " \-\-interactive
+.BR \-i ", " \-\-interactive ", " \-f ", " \-\-foreground
 Run in the foreground, attached to the terminal (Ctrl-C to stop).
 .TP
-.BR \-b ", " \-\-background
+.BR \-b ", " \-\-background ", " \-d ", " \-\-detach ", " \-\-daemon
 Start the server detached in the background (the explicit default).
 .SH COMMANDS
 .TP
@@ -72,6 +72,12 @@ Remove the OS service registration and the managed crontab block.
 .B machine <show|set|list>
 Show or set this machine's identity, or list the machines referenced by
 routines.
+.TP
+.B "completions <shell>"
+Print a completion script for
+.BR bash ", " zsh ", " fish ", " powershell ", or " elvish
+(e.g.
+.BR "moadim completions zsh > _moadim" ).
 .TP
 .BR "help" ", " \-h ", " \-\-help
 Show usage help.

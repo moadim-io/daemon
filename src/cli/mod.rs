@@ -29,6 +29,44 @@ pub fn bind_addr_is_loopback(addr: &str) -> bool {
         .is_ok_and(|socket| socket.ip().is_loopback())
 }
 
+/// Environment variable that opts into binding [`bind_addr`] to a non-loopback address. Must be
+/// set to exactly `"1"`; anything else (unset, `"true"`, `"yes"`, …) is treated as not opted in,
+/// so a typo fails closed instead of silently exposing the unauthenticated API (issue #253).
+const ALLOW_REMOTE_ENV: &str = "MOADIM_ALLOW_REMOTE";
+
+/// Returns `true` if the operator has explicitly opted into a non-loopback bind via
+/// [`ALLOW_REMOTE_ENV`].
+pub fn remote_bind_allowed() -> bool {
+    std::env::var(ALLOW_REMOTE_ENV).as_deref() == Ok("1")
+}
+
+/// The outcome of checking a resolved bind address against the loopback/opt-in policy, decided by
+/// [`classify_bind`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum BindDecision {
+    /// `addr` is loopback-only; no warning needed, start normally.
+    Loopback,
+    /// `addr` is not loopback, but [`ALLOW_REMOTE_ENV`] is set; start, but the caller should log a
+    /// prominent warning first.
+    RemoteAllowed,
+    /// `addr` is not loopback and [`ALLOW_REMOTE_ENV`] is not set; the caller must refuse to
+    /// start rather than silently exposing the unauthenticated API.
+    RemoteRefused,
+}
+
+/// Pure decision function for the startup bind-address gate (issue #253): the unauthenticated
+/// REST/MCP API must never end up reachable off-host by accident, so a non-loopback bind requires
+/// an explicit opt-in (`allow_remote`, sourced from [`remote_bind_allowed`]) or startup is refused.
+pub fn classify_bind(addr: &str, allow_remote: bool) -> BindDecision {
+    if bind_addr_is_loopback(addr) {
+        BindDecision::Loopback
+    } else if allow_remote {
+        BindDecision::RemoteAllowed
+    } else {
+        BindDecision::RemoteRefused
+    }
+}
+
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 

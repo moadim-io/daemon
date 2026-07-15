@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+fix(security): refuse to start on a non-loopback `MOADIM_BIND_ADDR` unless `MOADIM_ALLOW_REMOTE=1` is explicitly set (#253)
+
 ## [1.3.0] - 2026-07-15
 
 chore(deps): bump `openapi-fetch` from 0.13.8 to 0.17.0 (npm group) and regenerate `prebuilt-client.html` to match. No behavior change.

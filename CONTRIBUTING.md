@@ -31,11 +31,12 @@ cd daemon
 cargo build
 ```
 
-Run the checks the pre-push hook enforces before any push. The hook's first
-gate isn't a single reusable command — it scans `src/` and `ui/src/` for
-inline `#[cfg(test)] mod foo { ... }` test blocks and rejects them in favor
-of `*_tests.rs` siblings (see [Tests](#tests) below) — everything after that
-is:
+Run the checks the pre-push hook enforces before any push. Two of the hook's
+gates aren't single reusable commands. The first scans `src/` and `ui/src/`
+for inline `#[cfg(test)] mod foo { ... }` test blocks and rejects them in
+favor of `*_tests.rs` siblings (see [Tests](#tests) below). The last — the
+changelog gate — is a bash diff check described below the block, not the
+`pnpm exec changeset status` command CI runs. Everything else is:
 
 ```sh
 cargo fmt --check
@@ -46,7 +47,6 @@ linecheck --max-lines 500 $(find src ui/src -name '*.rs')
 pnpm --filter client typecheck
 pnpm --filter client lint
 pnpm --filter client test
-pnpm exec changeset status --since=origin/main
 ```
 
 Use `--workspace` for both clippy and test, matching the pre-push hook —
@@ -63,12 +63,18 @@ branch-protection check (see the `linecheck` job in
 [`lint.yml`](.github/workflows/lint.yml)). `client/` isn't a Cargo workspace
 member, so none of the cargo-based commands above touch it — the three `pnpm
 --filter client` commands mirror them for the React client, matching the
-`client-lint`/`client-test` CI jobs. The `changeset status` check only fails
-when a commit touches `src/`, `ui/`, or `client/` without an accompanying
-`.changeset/*.md` file, matching the CI `unreleased-entry` job (see
-[Workflow](#workflow) below) — run `pnpm install` once first so `pnpm exec`
-can find it, or set `SKIP_CHANGELOG=1` to bypass it locally the way the
-`skip-changelog` PR label does in CI.
+`client-lint`/`client-test` CI jobs. The changelog gate, unlike the rest of
+this list, isn't reproduced by a command above: the pre-push hook diffs the
+range being pushed against `origin/main` and fails if `src/`, `ui/`, or
+`client/` changed without an accompanying `.changeset/*.md` file in that same
+range (see the "Changelog" step in `.githooks/pre-push`). This mirrors —
+but is not the same command as — the CI `unreleased-entry` job (see
+[Workflow](#workflow) below), which instead runs `pnpm exec changeset status
+--since=origin/main`; that command reports on pending changesets generally
+and can fail even with no `src/`/`ui/`/`client/` diff, so it isn't a
+drop-in local reproduction of the hook's step. Set `SKIP_CHANGELOG=1` to
+bypass the local hook's check the way the `skip-changelog` PR label bypasses
+CI's.
 
 Enable the bundled git hooks once per clone:
 

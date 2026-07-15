@@ -250,3 +250,8 @@ ignored_unit_patterns = "deny"
 # declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
 # `deny` locks that in.
 string_lit_as_bytes = "deny"
+# Reject a `&Option<T>` parameter in favour of `Option<&T>` — the former forces every caller to
+# already own (or clone into) an `Option`, while the latter accepts a plain `&T` wrapped in `Some`
+# just as easily and is the idiomatic way to say "an optional borrow". The codebase is already
+# clean, so `deny` locks that in.
+ref_option = "deny"

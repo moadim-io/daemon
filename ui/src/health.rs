@@ -6,13 +6,13 @@
 use serde::Deserialize;
 use yew::AttrValue;
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
 pub struct HealthDeps {
     pub tmux: bool,
     pub python3: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
 pub struct Health {
     pub status: String,
     pub uptime_secs: Option<u64>,
@@ -24,13 +24,13 @@ pub struct Health {
     pub dependencies: Option<HealthDeps>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToastKind {
     Ok,
     Err,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Toast {
     pub id: u32,
     pub msg: AttrValue,

@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -240,3 +240,13 @@ cast_lossless = "deny"
 # allocation) on every call. The lazy form only runs it when actually needed. The codebase is
 # already clean, so `deny` locks that in.
 or_fun_call = "deny"
+# Reject `_` as a `match`/`tokio::select!` arm pattern when the matched value's type is `()` —
+# spelling out `()` states the value's type explicitly instead of leaving the reader to check that
+# `_` isn't quietly discarding something meaningful. The codebase is already clean, so `deny` locks
+# that in.
+ignored_unit_patterns = "deny"
+# Reject `"literal".as_bytes()` in favour of a `b"literal"` byte-string literal — the byte string
+# is the same bytes without the runtime call, and states "this is bytes" at the point of
+# declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
+# `deny` locks that in.
+string_lit_as_bytes = "deny"

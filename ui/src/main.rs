@@ -79,7 +79,7 @@ pub(crate) fn apply_theme(light: bool) {
 /// `/heatmap`. The REST API is namespaced under `/api/v1`, so these UI paths never collide with it.
 /// The server returns the same self-contained HTML for any unmatched path (SPA fallback), letting
 /// these deep links and refreshes load the app so the router can resolve the path.
-#[derive(Clone, Routable, PartialEq)]
+#[derive(Clone, Routable, PartialEq, Eq)]
 pub enum Route {
     #[at("/")]
     Home,
@@ -96,7 +96,7 @@ pub enum Route {
 
 // ─── Shell state (health, toasts, shutdown) ───────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ShellState {
     pub health: Health,
     pub health_ok: bool,

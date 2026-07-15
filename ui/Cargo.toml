@@ -246,6 +246,14 @@ manual_let_else = "deny"
 # `install_bulk_handlers` only ever `.clone()`d their `state`/`toast`/`now` handles into closures
 # instead of consuming them.
 needless_pass_by_value = "deny"
+# Reject `#[derive(PartialEq)]` on a struct/enum whose fields all satisfy `Eq` too (reflexivity
+# holds for everything but float fields, which this crate avoids in these types) without also
+# deriving `Eq`. Deriving it costs nothing and unlocks the type as a `HashSet`/`BTreeMap` key or
+# `HashMap` value in `==`-free contexts without a later, easy-to-forget follow-up PR. Mirrors the
+# root crate's `derive_partial_eq_without_eq = "deny"` (see Cargo.toml) — the `ui` crate has its
+# own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`.
+derive_partial_eq_without_eq = "deny"
 # Reject `if !condition { A } else { B }` in favour of `if condition { B } else { A }` to
 # eliminate double-negation and reduce cognitive load when reading branches. Mirrors the root
 # crate's `if_not_else = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
@@ -267,3 +275,18 @@ doc_markdown = "deny"
 # `clippy --workspace` covering it in CI. Fixes the 1 violation this surfaced in
 # `routines/calendar.rs`.
 cast_lossless = "deny"
+# Reject a function call passed directly as the fallback argument to `unwrap_or`/`ok_or`/`and`/`or`
+# and friends (e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else` form
+# (`opt.unwrap_or_else(expensive)`). The eager form always evaluates the fallback, even on the
+# common path where the value is already present. Mirrors the same lint already enabled
+# workspace-root-side in Cargo.toml — the `ui` crate has its own `[lints.clippy]` table (no
+# `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace` covering
+# it in CI. The `ui` crate is already clean, so `deny` locks that in.
+or_fun_call = "deny"
+# Reject `"literal".as_bytes()` in favour of a `b"literal"` byte-string literal — the byte string
+# is the same bytes without the runtime call, and states "this is bytes" at the point of
+# declaration instead of at a conversion tacked on afterward. Mirrors the same lint already
+# enabled workspace-root-side in Cargo.toml — the `ui` crate has its own `[lints.clippy]` table
+# (no `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
+# covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
+string_lit_as_bytes = "deny"

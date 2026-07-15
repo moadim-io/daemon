@@ -11,6 +11,121 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-15
+
+chore(deps): bump `openapi-fetch` from 0.13.8 to 0.17.0 (npm group) and regenerate `prebuilt-client.html` to match. No behavior change.
+
+fix(routines): cap each workbench's `agent.log` to 32 MiB on the watchdog tick
+
+`tmux pipe-pane -o` streams a session's raw pane output — every ANSI redraw
+frame of a full-screen TUI agent included — into `agent.log` via an
+unbounded, append-only `cat >>`. The `svc_logs`/`svc_run_log` read path
+already bounds a single response to a 2 MiB tail (#280), but nothing bounded
+the file's on-disk growth between TTL sweeps: a long-running or chatty
+session could otherwise fill the disk before it was ever reaped (#268).
+
+Adds `routines::cleanup::log_cap`, which truncates an oversized `agent.log`
+in place to its last 32 MiB (prefixed with a marker noting how many bytes
+were dropped) on the existing 30s watchdog tick, alongside the hung-session
+kill check it already runs per workbench. Best-effort: an I/O failure for
+one workbench is logged and does not abort the sweep for the rest.
+
+Add a unit test for the client's `formatTtl` (workbench-retention duration formatter), the last pure-logic module in `client/src` without a matching `*.test.ts`. No behavior change — test-only.
+
+Add a test for `cap_agent_log_to` propagating the `OpenOptions::open` error when the target path is a directory, closing an untested error branch in the watchdog's `agent.log` size cap. No behavior change — test-only.
+
+Add host-side unit tests for the day timeline's `fire_times` (`ui/src/day_timeline.rs`), covering multi-fire schedules, the midnight-boundary seed, adjacent-day filtering, unparseable schedules, and the `MAX_FIRES` cap. This logic previously had no test module, unlike every other pure-logic file in the `ui` crate. No behavior change.
+
+Dedupe the client's day-timeline fire-time math: `pages/routines/DayTimeline.tsx` had its own untested copy of the cron-to-fire-times logic (including the midnight-boundary seed trick) instead of the already-tested `fireTimesOnDay` used by the heatmap's day drill-down. Moved `fireTimesOnDay` into `lib/schedule.ts` as the single shared implementation (heatmap's `dayTimelineMath.ts` now re-exports it), pointed the routines page at it, and moved its tests to `schedule.test.ts`. No behavior change.
+
+docs(cli): document that `moadim stop` does not kill in-flight routine sessions
+
+`moadim stop` (and the UI STOP button / `POST /shutdown`) only stops the
+daemon's own HTTP/MCP server. Routine agents run in a **detached** tmux
+session (`tmux new-session -d`), independent of the daemon process, so an
+in-flight run is never touched by a stop request — it keeps running (and can
+keep opening PRs, filing issues, pushing commits, etc.) until it finishes on
+its own or a later daemon start's watchdog/cleanup sweep reaps it (#320).
+
+This behavior was previously undocumented, so `moadim stop` reporting
+success could read as "everything stopped" when a routine agent was still
+acting. Documents it in `moadim --help`, the `Command::Stop`/`stop()` doc
+comments, `README.md`, `Architecture.md`, and `docs/moadim.1` — no behavior
+change.
+
+chore(lint): enable clippy::cast_lossless in the workspace
+
+Adds `cast_lossless = "deny"` to both the root crate's and the `ui` crate's
+`[lints.clippy]` tables, rejecting `as` casts that widen without loss (e.g.
+`u32 as i64`) in favour of `From`/`Into`. An `as` cast stays silently legal
+(and silently starts truncating) if the source or target type ever changes
+size; `i64::from(x)` is the same widening but fails to compile the moment it
+would no longer be lossless.
+
+Fixed the single violation this surfaced, in `ui/src/routines/calendar.rs`'s
+week-grid start calculation, replacing `... as i64` with
+`i64::from(...)`. No behavior change.
+
+chore(lint): enable clippy::derive_partial_eq_without_eq in the ui crate
+
+Mirrors the root crate's `derive_partial_eq_without_eq = "deny"` (see `Cargo.toml`). The
+`ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list,
+so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Fixed the
+15 violations this surfaced by adding `Eq` alongside `PartialEq` on the affected structs and
+enums, all of which are already field-for-field `Eq`-safe (no float fields).
+
+chore(lint): enable clippy::or_fun_call in the ui crate
+
+Mirrors the root crate's `or_fun_call = "deny"` (see `Cargo.toml`). The `ui` crate has its own
+`[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+`ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean under
+it (zero violations), so `deny` locks that in. No behavior change.
+
+chore(lint): enable clippy::or_fun_call in the root crate
+
+Adds `or_fun_call = "deny"` to the root crate's `[lints.clippy]` table. It rejects a function
+call passed directly as the fallback argument to `unwrap_or`/`ok_or`/`and`/`or`-style methods
+(e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else` form
+(`opt.unwrap_or_else(expensive)`) — the eager form always evaluates the fallback, even on the
+common path where the value is already present, doing needless work (or a needless allocation)
+on every call.
+
+The codebase is already clean under it (zero violations), so `deny` locks that in. No behavior
+change.
+
+feat(routines): expose the global concurrency cap through the UI/REST
+
+`MOADIM_MAX_CONCURRENT_RUNS` was previously only configurable via the environment variable. A
+new `GET`/`PUT /config/max-concurrent-runs` REST endpoint and a settings-page card now let the
+cap be viewed and changed at runtime, persisted to `~/.config/moadim/machine.local.toml`
+(gitignored, machine-local, same tier as the existing machine-name override). Precedence:
+`MOADIM_MAX_CONCURRENT_RUNS` env var (ops/CI) > the persisted UI/REST override > unbounded.
+Takes effect on the next trigger check — no restart required.
+
+Opt the client's `BrowserRouter` (and the `MemoryRouter` used in `App.test.tsx`) into React Router's `v7_startTransition` and `v7_relativeSplatPath` future flags, silencing the two v7-upgrade warnings React Router logs on every render and test run. No behavior change.
+
+fix(build): regenerate stale `prebuilt.html`
+
+`prebuilt.html` last regenerated at #1122 no longer matches the compiled
+`ui/` sources — merges since then (e.g. #1129, #1136) drifted the committed
+bundle again, so `main` currently fails its own `prebuilt-html-fresh` CI
+check and every open PR touching `ui/` inherits that failure regardless of
+its own diff. Rebuilt via `cargo check` (trunk 0.21.14, matching the
+workflow's pin) and committed the result. No source change.
+
+Add a test for `svc_set_power_saving` returning 500/Internal when `write_routine` fails (read-only config dir), closing the last untested error branch in that handler. No behavior change — test-only.
+
+test(ui): cover the UI's `humanize_bytes` byte-formatting helper
+
+`routines::model::humanize_bytes` (used by the cleanup toast) mirrors the CLI's own
+`humanize_bytes` (`src/cli/query.rs`, tested by `src/cli/cleanup_bytes_tests.rs`) byte-for-byte,
+but had zero unit tests of its own — the `ui` crate isn't held to the root package's 100%
+line-coverage floor, so this pure, deterministic function silently had no regression net despite
+its CLI twin being fully covered. Adds the same edge cases the CLI test already exercises (sub-KB,
+each unit boundary, MB-range rounding, and the u64::MAX TB cap) so a future edit that de-syncs the
+two implementations' output fails a test instead of only showing up as a visual mismatch between
+`moadim cleanup`'s CLI output and the UI's cleanup toast. No behavior change.
+
 ## [1.2.0] - 2026-07-13
 
 feat(client): add a new React/TypeScript web client, served at `/client` alongside the existing `ui/`
@@ -3578,7 +3693,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/moadim-io/daemon/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/moadim-io/daemon/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/moadim-io/daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/moadim-io/daemon/compare/v1.0.0...v1.0.1

@@ -118,7 +118,7 @@ async fn user_prompt_empty_when_unset() {
     let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
         .await
         .unwrap();
-    assert_eq!(bytes, "".as_bytes());
+    assert_eq!(bytes, &b""[..]);
     let _ = std::fs::remove_dir_all(&dir);
     std::env::remove_var("MOADIM_HOME_OVERRIDE");
 }
@@ -177,7 +177,7 @@ async fn user_prompt_put_then_get_round_trips() {
     let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
         .await
         .unwrap();
-    assert_eq!(bytes, "always be terse".as_bytes());
+    assert_eq!(bytes, &b"always be terse"[..]);
     let _ = std::fs::remove_dir_all(&dir);
     std::env::remove_var("MOADIM_HOME_OVERRIDE");
 }

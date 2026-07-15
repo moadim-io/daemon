@@ -312,7 +312,7 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| load());
+        use_effect_with((), move |()| load());
     }
 
     // Auto-refresh loop, re-armed when the interval changes.
@@ -349,7 +349,7 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     // Advance "now" so countdowns re-render between fetches.
     {
         let now = now.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 loop {
                     TimeoutFuture::new(TICK_MS).await;

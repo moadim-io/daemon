@@ -184,7 +184,7 @@ pub fn shell() -> Html {
     // Apply the initial theme class from persisted preference.
     {
         let light = state.show_theme_light;
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             apply_theme(light);
         });
     }
@@ -192,7 +192,7 @@ pub fn shell() -> Html {
     // Initial health poll + machine name fetch on mount.
     {
         let state = state.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             let state2 = state.clone();
             spawn_local(async move { poll_health(state).await });
             spawn_local(async move {
@@ -206,7 +206,7 @@ pub fn shell() -> Html {
     // Health poll loop every 30 s.
     {
         let state = state.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 loop {
                     TimeoutFuture::new(30_000).await;
@@ -221,7 +221,7 @@ pub fn shell() -> Html {
     // Registered once on mount and torn down on unmount.
     {
         let state = state.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             let on_key =
                 Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
                     if (event.meta_key() || event.ctrl_key())
@@ -262,7 +262,7 @@ pub fn shell() -> Html {
 
     let on_close_palette = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::ClosePalette))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::ClosePalette))
     };
 
     let on_open_palette = {
@@ -274,18 +274,18 @@ pub fn shell() -> Html {
     // take the `()` payload the palette emits.
     let on_palette_refresh = {
         let state = state.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |(): ()| {
             let state = state.clone();
             spawn_local(async move { poll_health(state).await });
         })
     };
     let on_palette_stop = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::OpenShutdown))
     };
     let on_palette_toggle_theme = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::ToggleTheme))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::ToggleTheme))
     };
 
     let on_refresh = {
@@ -304,12 +304,12 @@ pub fn shell() -> Html {
 
     let on_close_shutdown = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::CloseShutdown))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::CloseShutdown))
     };
 
     let on_confirm_shutdown = {
         let state = state.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |(): ()| {
             let state = state.clone();
             state.dispatch(ShellAction::CloseShutdown);
             spawn_local(async move {
@@ -370,7 +370,7 @@ pub fn shell() -> Html {
     };
     let on_close_rename_machine = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::CloseRenameMachine))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::CloseRenameMachine))
     };
     let on_confirm_rename_machine = {
         let state = state.clone();

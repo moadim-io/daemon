@@ -273,3 +273,11 @@ cast_lossless = "deny"
 # `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace` covering
 # it in CI. The `ui` crate is already clean, so `deny` locks that in.
 or_fun_call = "deny"
+# Reject `"literal".as_bytes()` in favour of a `b"literal"` byte-string literal — the byte string
+# is the same bytes without the runtime call, and states "this is bytes" at the point of
+# declaration instead of at a conversion tacked on afterward. Mirrors the root crate's
+# `string_lit_as_bytes = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so `deny` locks that
+# in.
+string_lit_as_bytes = "deny"

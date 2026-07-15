@@ -38,7 +38,7 @@ pub(crate) fn install_bulk_handlers(
     let on_select_all = {
         let state = state.clone();
         let now = now.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |(): ()| {
             let window = Duration::seconds(DUE_SOON_WINDOW_SECS);
             let visible = filter_routines(&state.routines, &state.filter, *now, window);
             let all_visible_selected =
@@ -55,7 +55,7 @@ pub(crate) fn install_bulk_handlers(
 
     let on_clear_selection = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::ClearSelection))
+        Callback::from(move |(): ()| state.dispatch(RAction::ClearSelection))
     };
 
     // Bulk enable/disable: PATCH each selected routine, surface one summary toast.
@@ -97,22 +97,22 @@ pub(crate) fn install_bulk_handlers(
 
     let on_bulk_enable = {
         let f = bulk_set_enabled.clone();
-        Callback::from(move |_: ()| f(true))
+        Callback::from(move |(): ()| f(true))
     };
     let on_bulk_disable = {
         let f = bulk_set_enabled.clone();
-        Callback::from(move |_: ()| f(false))
+        Callback::from(move |(): ()| f(false))
     };
 
     let on_bulk_delete = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::OpenConfirmBulkDelete))
+        Callback::from(move |(): ()| state.dispatch(RAction::OpenConfirmBulkDelete))
     };
 
     let on_confirm_bulk_delete = {
         let state = state.clone();
         let toast = toast.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |(): ()| {
             let state = state.clone();
             let toast = toast.clone();
             let ids: Vec<String> = state.selected.iter().cloned().collect();

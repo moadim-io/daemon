@@ -97,7 +97,7 @@ pub fn settings_page(props: &SettingsPageProps) -> Html {
         let content = content.clone();
         let loaded_content = loaded_content.clone();
         let loading = loading.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local_load(content, loaded_content, loading);
         });
     }
@@ -106,7 +106,7 @@ pub fn settings_page(props: &SettingsPageProps) -> Html {
         let cap_input = cap_input.clone();
         let loaded_cap = loaded_cap.clone();
         let cap_loading = cap_loading.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local_load_cap(cap_input, loaded_cap, cap_loading);
         });
     }

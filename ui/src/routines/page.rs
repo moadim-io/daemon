@@ -151,7 +151,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     {
         let state = state.clone();
         let location = use_location();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             if let Some(id) = location
                 .and_then(|loc| loc.query::<RoutineHistoryQuery>().ok())
                 .map(|q| q.history)
@@ -177,11 +177,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
     let on_cancel = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::GoToList))
+        Callback::from(move |(): ()| state.dispatch(RAction::GoToList))
     };
     let on_close = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::CloseModal))
+        Callback::from(move |(): ()| state.dispatch(RAction::CloseModal))
     };
     let on_logs = {
         let state = state.clone();
@@ -197,7 +197,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
     let on_back = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::GoToList))
+        Callback::from(move |(): ()| state.dispatch(RAction::GoToList))
     };
     let on_edit = {
         let state = state.clone();
@@ -247,7 +247,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
     let on_clear_filters = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::ClearFilters))
+        Callback::from(move |(): ()| state.dispatch(RAction::ClearFilters))
     };
 
     let search_ref = use_node_ref();

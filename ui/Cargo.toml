@@ -296,3 +296,10 @@ or_fun_call = "deny"
 # (no `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
 # covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
 string_lit_as_bytes = "deny"
+# Reject `_` as a `match`/`tokio::select!`/closure-parameter pattern when the matched value's type
+# is `()` — spelling out `()` states the value's type explicitly instead of leaving the reader to
+# check that `_` isn't quietly discarding something meaningful. Mirrors the root crate's
+# `ignored_unit_patterns = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`.
+ignored_unit_patterns = "deny"

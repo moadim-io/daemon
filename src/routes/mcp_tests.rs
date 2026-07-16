@@ -119,12 +119,7 @@ fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
 
     // create
     let result = handler
@@ -174,9 +169,7 @@ fn create_get_update_trigger_delete_routine_success() {
     assert!(!result.is_error.unwrap_or(false));
 
     // delete
-    let result = handler
-        .delete_routine(Parameters(IdInput { id: id.clone() }))
-        .unwrap();
+    let result = handler.delete_routine(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
 }
 

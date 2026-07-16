@@ -86,12 +86,7 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
@@ -103,9 +98,7 @@ fn routine_logs_tool_returns_logs_for_existing_routine() {
         .as_str()
         .unwrap()
         .to_string();
-    let result = handler
-        .routine_logs(Parameters(IdInput { id: id.clone() }))
-        .unwrap();
+    let result = handler.routine_logs(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
         rmcp::model::ContentBlock::Text(block) => block.text.clone(),

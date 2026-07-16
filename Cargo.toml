@@ -268,3 +268,11 @@ similar_names = "deny"
 # easy to get wrong as arms are added or reordered. The codebase is already clean, so `deny` locks
 # that in.
 unnested_or_patterns = "deny"
+# Reject a `.clone()` whose result is immediately moved with no other use of the original value
+# still pending — the clone buys nothing over moving the original directly, so it's pure wasted
+# allocation (and, for a `Callback`/`UseStateHandle`, an extra `Rc` refcount bump) on every call.
+# This surfaced 31 violations, all in test/UI code: intermediate `let x = x.clone();` shadows built
+# for a `move` closure that turned out to be the value's last use, and a couple of `field.clone()`
+# reads passed straight into a constructor that never touched the original again. Fixed by moving
+# the original instead. The codebase is otherwise already clean, so `deny` locks that in.
+redundant_clone = "deny"

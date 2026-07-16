@@ -124,7 +124,6 @@ pub fn settings_page(props: &SettingsPageProps) -> Html {
 
     let on_save_cap = {
         let cap_input = cap_input.clone();
-        let loaded_cap = loaded_cap.clone();
         let cap_saving = cap_saving.clone();
         let on_toast = props.on_toast.clone();
         Callback::from(move |_: MouseEvent| {
@@ -159,7 +158,6 @@ pub fn settings_page(props: &SettingsPageProps) -> Html {
 
     let on_save = {
         let content = content.clone();
-        let loaded_content = loaded_content.clone();
         let saving = saving.clone();
         let on_toast = props.on_toast.clone();
         Callback::from(move |_: MouseEvent| {

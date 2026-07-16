@@ -88,7 +88,6 @@ pub fn heatmap_page() -> Html {
     {
         use std::cell::Cell;
         use std::rc::Rc;
-        let load = load.clone();
         use_effect_with(*interval, move |interval| {
             let cancelled = Rc::new(Cell::new(false));
             if let Some(period_ms) = interval.as_millis() {

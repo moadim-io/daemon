@@ -28,12 +28,7 @@ fn snooze_routine_tool_both_modes_set_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
 
     let result = handler
         .create_routine(Parameters(make_create_routine_req()))
@@ -112,12 +107,7 @@ fn trigger_routine_tool_returns_error_when_disabled() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
 
     let result = handler
         .create_routine(Parameters(crate::routines::CreateRoutineRequest {
@@ -208,12 +198,7 @@ fn list_routine_runs_tool_returns_empty_list_for_existing_routine() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();

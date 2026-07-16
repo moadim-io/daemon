@@ -118,6 +118,10 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
 ///
 /// `{prompt}` expands to a shell command substitution that reads `prompt.md` from the agent's
 /// cwd (the workbench), so the full prompt is passed as a single argument to the agent process.
+#[allow(
+    clippy::literal_string_with_formatting_args,
+    reason = "these are literal `String::replace` placeholder tokens, not `format!`-family arguments — there is no formatting macro here to move them into"
+)]
 pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> String {
     template
         .replace("{workbench}", workbench)

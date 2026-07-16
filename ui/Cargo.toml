@@ -326,3 +326,9 @@ many_single_char_names = "deny"
 # applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 redundant_clone = "deny"
+# Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
+# directly into a `String` buffer. Mirrors the root crate's `format_collect = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+format_collect = "deny"

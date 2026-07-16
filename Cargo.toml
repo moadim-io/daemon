@@ -250,3 +250,9 @@ ignored_unit_patterns = "deny"
 # declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
 # `deny` locks that in.
 string_lit_as_bytes = "deny"
+# Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
+# directly into a `String` buffer. Like `format_push_string` above, each `format!` call allocates a
+# throwaway `String` only to have `collect` immediately copy its contents into the result and drop
+# it — pure overhead a fold avoids by writing straight into the accumulator. The codebase is
+# already clean, so `deny` locks that in.
+format_collect = "deny"

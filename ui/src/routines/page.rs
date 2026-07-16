@@ -463,7 +463,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             {
                 match &modal {
                     RModal::Edit(_) => html! {
-                        <RoutineForm editing={edit_routine} on_cancel={on_close.clone()} on_save={on_save} />
+                        <RoutineForm editing={edit_routine} on_cancel={on_close} on_save={on_save} />
                     },
                     RModal::ConfirmDelete { id, title } => html! {
                         <ConfirmDelete

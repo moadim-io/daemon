@@ -165,7 +165,30 @@ pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 /// silently drop every scheduled routine's cron line (the incident that motivated it). A store that
 /// loaded fine but holds only disabled/unmanaged routines is *not* empty, so legitimately clearing
 /// the last routine still works.
+///
+/// Every caller is a REST/MCP async request handler running on the multi-thread runtime
+/// (`#[tokio::main]`'s default flavor), but the work below — `crontab -l` / `crontab -` subprocess
+/// round trips — is blocking (#360). Run inline, it occupies a worker thread for the whole
+/// round-trip; a hung `crontab` binary can tie up enough workers to stall unrelated in-flight
+/// requests, including `/health`. [`tokio::task::block_in_place`] tells the runtime this thread is
+/// about to block so it can hand its other scheduled tasks to a spare worker. It's only valid (and
+/// only needed) on a multi-thread runtime — it panics on `current_thread`, which `#[tokio::test]`
+/// defaults to — and only inside a runtime at all (plain `#[test]`s call this function directly
+/// with none running), so both are checked first; either falls back to running inline exactly as
+/// before.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
+    let on_multi_thread_runtime = tokio::runtime::Handle::try_current()
+        .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    if on_multi_thread_runtime {
+        tokio::task::block_in_place(|| sync_routines_to_crontab_blocking(store))
+    } else {
+        sync_routines_to_crontab_blocking(store)
+    }
+}
+
+/// Blocking body of [`sync_routines_to_crontab`], split out so the wrapper can choose whether to
+/// run it via [`tokio::task::block_in_place`].
+fn sync_routines_to_crontab_blocking(store: &RoutineStore) -> Result<(), SyncError> {
     let _crontab_guard = crontab_sync_lock().lock_recover();
     let current = read_crontab()?;
     if store.lock_recover().is_empty() && current.contains(ROUTINE_LINE_MARKER) {

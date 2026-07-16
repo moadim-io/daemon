@@ -417,3 +417,32 @@ fn sync_routines_to_crontab_serializes_concurrent_calls() {
     drop(shim);
     std::fs::remove_file(&cfg).unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sync_routines_to_crontab_runs_via_block_in_place_on_multi_thread_runtime() {
+    // Regression test for #360: on a multi-thread runtime `sync_routines_to_crontab` must opt
+    // into `tokio::task::block_in_place` (not just run the same blocking body inline) so a slow
+    // `crontab` subprocess can't tie up a worker thread other tasks are scheduled on. Called
+    // directly from `async fn` (not via `spawn_blocking`), mirroring how a real async handler
+    // (`routines::handlers::lock`/`unlock`, etc.) calls this synchronous function. `block_in_place`
+    // panics outright on a `current_thread` runtime, so a bare pass here — under
+    // `#[tokio::test(flavor = "multi_thread")]` — already shows the flavor check took the
+    // block-in-place branch instead of skipping it.
+    let agent_name = "test-sync-agent-multi-thread";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    let cfg = crate::paths::agent_toml_path(agent_name);
+    std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();
+
+    let shim = CronShim::new("# BEGIN MOADIM-ROUTINES\n# END MOADIM-ROUTINES\n");
+    let store = new_store();
+    store.lock().unwrap().insert(
+        "mt".into(),
+        make_routine("mt", "Multi Thread Sync Routine", agent_name),
+    );
+
+    sync_routines_to_crontab(&store).unwrap();
+    assert!(shim.store_contents().contains("# moadim-routine:mt"));
+
+    drop(shim);
+    std::fs::remove_file(&cfg).unwrap();
+}

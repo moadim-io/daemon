@@ -336,3 +336,10 @@ many_single_char_names = "deny"
 # applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 redundant_clone = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. Mirrors the root crate's `large_stack_arrays = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. A wasm32 stack is also fixed-size and comparatively small, so the same
+# stack-overflow risk applies here too. The `ui` crate is already clean, so `deny` locks that in.
+large_stack_arrays = "deny"

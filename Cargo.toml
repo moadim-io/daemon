@@ -255,3 +255,21 @@ string_lit_as_bytes = "deny"
 # just as easily and is the idiomatic way to say "an optional borrow". The codebase is already
 # clean, so `deny` locks that in.
 ref_option = "deny"
+# Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
+# directly into a `String` buffer. Like `format_push_string` above, each `format!` call allocates a
+# throwaway `String` only to have `collect` immediately copy its contents into the result and drop
+# it — pure overhead a fold avoids by writing straight into the accumulator. The codebase is
+# already clean, so `deny` locks that in.
+format_collect = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next to
+# `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple of
+# characters. Fixed the four violations this surfaced: a `ContentBlock::Text(txt) => txt.text.clone()`
+# match arm repeated across the MCP route tests, shadowing an existing local also named `text`;
+# renamed the binding to `block`. No behavior change.
+similar_names = "deny"
+# Reject an or-pattern repeated across multiple match arms/parameters (e.g. `Foo::A | Foo::B =>
+# ..., Foo::C | Foo::D => ...` written as separate arms with duplicated bodies) in favour of
+# merging into one arm with a single nested or-pattern. Keeping the duplicates in sync by hand is
+# easy to get wrong as arms are added or reordered. The codebase is already clean, so `deny` locks
+# that in.
+unnested_or_patterns = "deny"

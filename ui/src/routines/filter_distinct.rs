@@ -16,12 +16,19 @@ pub fn distinct_agents(routines: &[Routine]) -> Vec<String> {
 }
 
 /// Distinct machine ids across all routines, sorted.
+///
+/// A blank/whitespace-only entry is skipped: `validate_machines` rejects these on create/update
+/// (#600), but routines written before that guard existed can still carry one, and `routine_health`
+/// already treats such an entry as "no real machine assigned" (dormant). Surfacing it here would
+/// add a blank, meaningless option to the Machine filter dropdown.
 #[must_use]
 pub fn distinct_machines_r(routines: &[Routine]) -> Vec<String> {
     let mut set: BTreeSet<String> = BTreeSet::new();
     for r in routines {
         for m in &r.machines {
-            set.insert(m.clone());
+            if !m.trim().is_empty() {
+                set.insert(m.clone());
+            }
         }
     }
     set.into_iter().collect()

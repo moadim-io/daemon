@@ -1395,6 +1395,8 @@
     }
     .day-fire-time { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 12px; min-width: 42px; }
     .day-fire-title { flex: 1; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .day-fire-row.snoozed { opacity: 0.6; }
+    .day-fire-row.snoozed .day-fire-time { color: var(--amber); }
 
     /* ── Day timeline ── */
     .day-wrap {

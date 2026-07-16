@@ -250,6 +250,11 @@ ignored_unit_patterns = "deny"
 # declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
 # `deny` locks that in.
 string_lit_as_bytes = "deny"
+# Reject a `&Option<T>` parameter in favour of `Option<&T>` — the former forces every caller to
+# already own (or clone into) an `Option`, while the latter accepts a plain `&T` wrapped in `Some`
+# just as easily and is the idiomatic way to say "an optional borrow". The codebase is already
+# clean, so `deny` locks that in.
+ref_option = "deny"
 # Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
 # directly into a `String` buffer. Like `format_push_string` above, each `format!` call allocates a
 # throwaway `String` only to have `collect` immediately copy its contents into the result and drop
@@ -268,6 +273,12 @@ similar_names = "deny"
 # easy to get wrong as arms are added or reordered. The codebase is already clean, so `deny` locks
 # that in.
 unnested_or_patterns = "deny"
+# Reject a scope with 4+ single-character bindings in play at once — past the first couple, a
+# reader has to hold each letter's meaning in their head instead of reading a name. One violation:
+# `ui/src/routines/filter_tests.rs`'s `is_active_detects_each_facet` test had six (`q`, `s`, `a`,
+# `m`, `r`, `t`), one per `RoutineFilter` facet under test; renamed to `query_filter`,
+# `status_filter`, `agent_filter`, `machine_filter`, `repo_filter`, `tag_filter`. No behavior change.
+many_single_char_names = "deny"
 # Reject a `.clone()` whose result is immediately moved with no other use of the original value
 # still pending — the clone buys nothing over moving the original directly, so it's pure wasted
 # allocation (and, for a `Callback`/`UseStateHandle`, an extra `Rc` refcount bump) on every call.
@@ -282,3 +293,9 @@ redundant_clone = "deny"
 # `routines/command.rs::substitute`, both intentional `String::replace` placeholder tokens (not
 # formatting-macro arguments), which are now annotated with a scoped `#[allow]` explaining why.
 literal_string_with_formatting_args = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. A daemon process runs long-lived worker threads with a fixed,
+# comparatively small stack, so an oversized stack array is a latent stack-overflow risk that only
+# surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
+# already clean, so `deny` locks that in.
+large_stack_arrays = "deny"

@@ -65,11 +65,11 @@ fn default_filter_is_inactive() {
 
 #[test]
 fn is_active_detects_each_facet() {
-    let q = RoutineFilter {
+    let query_filter = RoutineFilter {
         query: "  x ".into(),
         ..Default::default()
     };
-    assert!(q.is_active());
+    assert!(query_filter.is_active());
     // Whitespace-only query is not active.
     let blank = RoutineFilter {
         query: "   ".into(),
@@ -77,11 +77,11 @@ fn is_active_detects_each_facet() {
     };
     assert!(!blank.is_active());
 
-    let s = RoutineFilter {
+    let status_filter = RoutineFilter {
         status: RoutineStatusFacet::Enabled,
         ..Default::default()
     };
-    assert!(s.is_active());
+    assert!(status_filter.is_active());
 
     let due = RoutineFilter {
         status: RoutineStatusFacet::DueSoon,
@@ -89,29 +89,29 @@ fn is_active_detects_each_facet() {
     };
     assert!(due.is_active());
 
-    let a = RoutineFilter {
+    let agent_filter = RoutineFilter {
         agent: AgentFacet::Named("claude".into()),
         ..Default::default()
     };
-    assert!(a.is_active());
+    assert!(agent_filter.is_active());
 
-    let m = RoutineFilter {
+    let machine_filter = RoutineFilter {
         machine: RoutineMachineFacet::Unassigned,
         ..Default::default()
     };
-    assert!(m.is_active());
+    assert!(machine_filter.is_active());
 
-    let r = RoutineFilter {
+    let repo_filter = RoutineFilter {
         repository: RepositoryFacet::Named("github.com/org/repo".into()),
         ..Default::default()
     };
-    assert!(r.is_active());
+    assert!(repo_filter.is_active());
 
-    let t = RoutineFilter {
+    let tag_filter = RoutineFilter {
         tag: TagFacet::Named("nightly".into()),
         ..Default::default()
     };
-    assert!(t.is_active());
+    assert!(tag_filter.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────

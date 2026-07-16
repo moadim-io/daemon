@@ -303,3 +303,17 @@ string_lit_as_bytes = "deny"
 # table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
 # CI's `clippy` job running `--workspace`.
 ignored_unit_patterns = "deny"
+# Reject a scope with 4+ single-character bindings in play at once — one violation:
+# `filter_tests.rs`'s `is_active_detects_each_facet` had six (`q`, `s`, `a`, `m`, `r`, `t`), one per
+# `RoutineFilter` facet under test; renamed to `query_filter`, `status_filter`, `agent_filter`,
+# `machine_filter`, `repo_filter`, `tag_filter`. Mirrors the same lint added workspace-root-side in
+# Cargo.toml — the `ui` crate has its own `[lints.clippy]` table (no `workspace = true`
+# inheritance) so it needs its own entry too. No behavior change.
+many_single_char_names = "deny"
+# Reject a `.clone()` whose result is never mutated and whose source is never used again after
+# the clone — the clone is pure overhead, since the original could have been moved or borrowed
+# instead. Mirrors the root crate's `redundant_clone = "deny"` (see Cargo.toml) — the `ui` crate
+# has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+# applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
+# clean, so `deny` locks that in.
+redundant_clone = "deny"

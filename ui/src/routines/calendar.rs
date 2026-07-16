@@ -1,6 +1,6 @@
 //! Month-calendar view of upcoming routine fire times.
 
-use chrono::{Datelike, Duration, Local, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -29,19 +29,24 @@ pub struct CalendarProps {
     pub on_trigger: Option<Callback<String>>,
 }
 
-/// Every enabled routine's fire times on `date`, as `(routine id, title, "HH:MM")`,
-/// sorted chronologically. Pure and host-testable — see `calendar_tests.rs`.
+/// Every enabled routine's fire times on `date`, as `(routine id, title, "HH:MM", snoozed)`,
+/// sorted chronologically. `snoozed` mirrors [`is_routine_snoozed`] so the popover can flag a
+/// row whose scheduled fire will actually be silently skipped (`snoozed_until`/`skip_runs`) —
+/// the same signal the month grid's chips already dim, which this list previously dropped.
+/// Pure and host-testable — see `calendar_tests.rs`.
 pub(crate) fn day_fire_rows(
     routines: &[Routine],
     date: NaiveDate,
-) -> Vec<(String, String, String)> {
-    let mut rows: Vec<(String, String, String)> = routines
+    now: DateTime<Local>,
+) -> Vec<(String, String, String, bool)> {
+    let mut rows: Vec<(String, String, String, bool)> = routines
         .iter()
         .filter(|r| r.enabled)
         .flat_map(|r| {
+            let snoozed = is_routine_snoozed(r, now);
             fires_on_day(&r.schedule, date)
                 .into_iter()
-                .map(move |hm| (r.id.clone(), r.title.clone(), hm))
+                .map(move |hm| (r.id.clone(), r.title.clone(), hm, snoozed))
         })
         .collect();
     rows.sort_by(|a, b| a.2.cmp(&b.2));
@@ -188,7 +193,7 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     };
 
     let day_popover = if let Some(day) = *selected_day {
-        let rows = day_fire_rows(&props.routines, day);
+        let rows = day_fire_rows(&props.routines, day, cal_now);
         let on_close = {
             let selected_day = selected_day.clone();
             Callback::from(move |_: MouseEvent| selected_day.set(None))
@@ -204,16 +209,21 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
                         if rows.is_empty() {
                             <div class="empty-sub">{"Nothing scheduled this day"}</div>
                         } else {
-                            { for rows.iter().map(|(id, title, hm)| {
+                            { for rows.iter().map(|(id, title, hm, snoozed)| {
                                 let on_run = props.on_trigger.as_ref().map(|cb| {
                                     let cb = cb.clone();
                                     let id = id.clone();
                                     Callback::from(move |_: MouseEvent| cb.emit(id.clone()))
                                 });
+                                let mut row_cls = String::from("day-fire-row");
+                                if *snoozed { row_cls.push_str(" snoozed"); }
                                 html! {
-                                    <div class="day-fire-row">
+                                    <div class={row_cls}>
                                         <span class="day-fire-time">{hm}</span>
                                         <span class="day-fire-title">{title}</span>
+                                        if *snoozed {
+                                            <span class="health-badge snoozed" title="This fire will be silently skipped while the routine is snoozed">{"SNOOZED"}</span>
+                                        }
                                         if let Some(on_run) = on_run {
                                             <button class="btn btn-ghost btn-sm" title="Run now" onclick={on_run}>{"▶ RUN"}</button>
                                         }

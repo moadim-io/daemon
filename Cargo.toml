@@ -282,3 +282,9 @@ redundant_clone = "deny"
 # `routines/command.rs::substitute`, both intentional `String::replace` placeholder tokens (not
 # formatting-macro arguments), which are now annotated with a scoped `#[allow]` explaining why.
 literal_string_with_formatting_args = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. A daemon process runs long-lived worker threads with a fixed,
+# comparatively small stack, so an oversized stack array is a latent stack-overflow risk that only
+# surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
+# already clean, so `deny` locks that in.
+large_stack_arrays = "deny"

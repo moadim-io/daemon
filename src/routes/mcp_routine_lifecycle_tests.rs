@@ -39,7 +39,7 @@ fn snooze_routine_tool_both_modes_set_is_error() {
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -73,7 +73,7 @@ fn snooze_routine_tool_sets_and_clears_snooze() {
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -126,7 +126,7 @@ fn trigger_routine_tool_returns_error_when_disabled() {
         }))
         .unwrap();
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -167,7 +167,7 @@ fn set_power_saving_tool_blocks_trigger_without_touching_enabled() {
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -218,7 +218,7 @@ fn list_routine_runs_tool_returns_empty_list_for_existing_routine() {
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
     let text = match &created.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -230,7 +230,7 @@ fn list_routine_runs_tool_returns_empty_list_for_existing_routine() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();

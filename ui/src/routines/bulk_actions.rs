@@ -99,10 +99,7 @@ pub(crate) fn install_bulk_handlers(
         let f = bulk_set_enabled.clone();
         Callback::from(move |(): ()| f(true))
     };
-    let on_bulk_disable = {
-        let f = bulk_set_enabled.clone();
-        Callback::from(move |(): ()| f(false))
-    };
+    let on_bulk_disable = { Callback::from(move |(): ()| bulk_set_enabled(false)) };
 
     let on_bulk_delete = {
         let state = state.clone();

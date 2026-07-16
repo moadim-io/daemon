@@ -20,7 +20,7 @@ fn shutdown_tool_acknowledges() {
     let result = handler.shutdown().unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();

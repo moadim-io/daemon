@@ -268,6 +268,12 @@ similar_names = "deny"
 # easy to get wrong as arms are added or reordered. The codebase is already clean, so `deny` locks
 # that in.
 unnested_or_patterns = "deny"
+# Reject a scope with 4+ single-character bindings in play at once — past the first couple, a
+# reader has to hold each letter's meaning in their head instead of reading a name. One violation:
+# `ui/src/routines/filter_tests.rs`'s `is_active_detects_each_facet` test had six (`q`, `s`, `a`,
+# `m`, `r`, `t`), one per `RoutineFilter` facet under test; renamed to `query_filter`,
+# `status_filter`, `agent_filter`, `machine_filter`, `repo_filter`, `tag_filter`. No behavior change.
+many_single_char_names = "deny"
 # Reject a `.clone()` whose result is immediately moved with no other use of the original value
 # still pending — the clone buys nothing over moving the original directly, so it's pure wasted
 # allocation (and, for a `Callback`/`UseStateHandle`, an extra `Rc` refcount bump) on every call.

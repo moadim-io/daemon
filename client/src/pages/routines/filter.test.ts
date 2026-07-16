@@ -144,6 +144,15 @@ describe("filter", () => {
     expect(matchesFilter(f, disabledNoMachine, now(), window)).toBe(false);
   });
 
+  it("status dormant matches a blank machine entry like routineHealth does", () => {
+    // A machines list holding only whitespace is "no real machine assigned", same as an empty
+    // list — matching routineHealth's definition so the status facet and the health badge/KPI
+    // never disagree about the same routine.
+    const f: RoutineFilter = { ...defaultFilter(), status: "dormant" };
+    const blankMachine = routine("a", "t", "claude", "0 * * * *", ["   "], [], true);
+    expect(matchesFilter(f, blankMachine, now(), window)).toBe(true);
+  });
+
   it("status due soon matches enabled routines firing within window", () => {
     const f: RoutineFilter = { ...defaultFilter(), status: "due" };
     const imminent = routine("a", "t", "claude", "* * * * *", ["m1"], [], true);

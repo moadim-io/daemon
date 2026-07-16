@@ -388,12 +388,7 @@ fn create_list_resolve_flag_lifecycle() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
 
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
@@ -440,12 +435,7 @@ fn create_flag_invalid_scope_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();

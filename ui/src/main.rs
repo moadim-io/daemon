@@ -341,7 +341,6 @@ pub fn shell() -> Html {
     };
 
     let switch = {
-        let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
             Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
@@ -373,7 +372,6 @@ pub fn shell() -> Html {
         Callback::from(move |(): ()| state.dispatch(ShellAction::CloseRenameMachine))
     };
     let on_confirm_rename_machine = {
-        let state = state.clone();
         Callback::from(
             move |(name, on_done): (String, Callback<Result<(), String>>)| {
                 let state = state.clone();

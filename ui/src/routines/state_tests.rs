@@ -163,7 +163,7 @@ fn sort_routines_none_col_preserves_insertion_order() {
         routine_sort("z", "Zebra", "claude", true, 10),
         routine_sort("a", "Alpha", "codex", true, 5),
     ];
-    let sorted = sort_routines(rs.clone(), None, RDir::Asc, now());
+    let sorted = sort_routines(rs, None, RDir::Asc, now());
     assert_eq!(sorted[0].id, "z");
     assert_eq!(sorted[1].id, "a");
 }

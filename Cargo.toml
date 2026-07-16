@@ -274,3 +274,17 @@ unnested_or_patterns = "deny"
 # `m`, `r`, `t`), one per `RoutineFilter` facet under test; renamed to `query_filter`,
 # `status_filter`, `agent_filter`, `machine_filter`, `repo_filter`, `tag_filter`. No behavior change.
 many_single_char_names = "deny"
+# Reject a `.clone()` whose result is immediately moved with no other use of the original value
+# still pending — the clone buys nothing over moving the original directly, so it's pure wasted
+# allocation (and, for a `Callback`/`UseStateHandle`, an extra `Rc` refcount bump) on every call.
+# This surfaced 31 violations, all in test/UI code: intermediate `let x = x.clone();` shadows built
+# for a `move` closure that turned out to be the value's last use, and a couple of `field.clone()`
+# reads passed straight into a constructor that never touched the original again. Fixed by moving
+# the original instead. The codebase is otherwise already clean, so `deny` locks that in.
+redundant_clone = "deny"
+# Reject a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
+# outside a formatting macro — usually a leftover `format!`/`println!` arg that got moved into a
+# plain string and silently stopped interpolating. Fixes the 2 violations this surfaced in
+# `routines/command.rs::substitute`, both intentional `String::replace` placeholder tokens (not
+# formatting-macro arguments), which are now annotated with a scoped `#[allow]` explaining why.
+literal_string_with_formatting_args = "deny"

@@ -140,7 +140,6 @@ pub fn refresh_control(props: &RefreshControlProps) -> Html {
     // fresh value; the label is recomputed from `updated_at_ms` below.
     let tick = use_state(|| 0.0_f64);
     {
-        let tick = tick.clone();
         use_effect_with((), move |()| {
             spawn_local(async move {
                 loop {

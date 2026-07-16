@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRoutineRuns, useRunLog } from "../../api/hooks";
 import { fmtFreshness } from "../../components/RefreshControl";
-import { reltime } from "../../lib/cronUtils";
+import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { LogViewer } from "./LogViewer";
 
@@ -77,7 +77,7 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
                 return (
                   <tr key={run.workbench} className={isSelected ? "row-selected" : ""}>
                     <td>
-                      <div className="cell-time" title={run.workbench}>
+                      <div className="cell-time" title={`${run.workbench} · ${abstime(run.started_at)}`}>
                         {reltime(run.started_at)}
                       </div>
                     </td>

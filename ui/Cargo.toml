@@ -310,3 +310,10 @@ ignored_unit_patterns = "deny"
 # Cargo.toml — the `ui` crate has its own `[lints.clippy]` table (no `workspace = true`
 # inheritance) so it needs its own entry too. No behavior change.
 many_single_char_names = "deny"
+# Reject a `.clone()` whose result is never mutated and whose source is never used again after
+# the clone — the clone is pure overhead, since the original could have been moved or borrowed
+# instead. Mirrors the root crate's `redundant_clone = "deny"` (see Cargo.toml) — the `ui` crate
+# has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+# applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
+# clean, so `deny` locks that in.
+redundant_clone = "deny"

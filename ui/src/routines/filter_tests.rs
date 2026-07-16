@@ -161,6 +161,19 @@ fn status_dormant_requires_enabled_and_no_machines() {
 }
 
 #[test]
+fn status_dormant_matches_a_blank_machine_entry_like_routine_health_does() {
+    // A machines list holding only whitespace is "no real machine assigned", same as an empty
+    // list — matching `routine_health`'s definition (see filter_health_tests.rs) so the status
+    // facet and the health badge/KPI never disagree about the same routine.
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::Dormant,
+        ..Default::default()
+    };
+    let blank_machine = routine("a", "t", "claude", "0 * * * *", &["   "], &[], true);
+    assert!(f.matches(&blank_machine, now(), window()));
+}
+
+#[test]
 fn status_due_soon_matches_enabled_routines_firing_within_window() {
     let f = RoutineFilter {
         status: RoutineStatusFacet::DueSoon,

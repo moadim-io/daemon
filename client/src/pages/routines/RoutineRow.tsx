@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FleetRunSummary, RoutineResponse } from "../../api/hooks";
-import { reltime } from "../../lib/cronUtils";
+import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtUntil, fmtWhen, nextFireAfter, nextFires } from "../../lib/schedule";
 import {
   DUE_SOON_WINDOW_MS,
@@ -178,7 +178,9 @@ export function RoutineRow({
         </label>
       </td>
       <td>
-        <div className="cell-time">{updated}</div>
+        <div className="cell-time" title={abstime(r.updated_at)}>
+          {updated}
+        </div>
       </td>
       <td>
         <div className="row-actions">

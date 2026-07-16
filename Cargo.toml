@@ -256,3 +256,9 @@ string_lit_as_bytes = "deny"
 # it — pure overhead a fold avoids by writing straight into the accumulator. The codebase is
 # already clean, so `deny` locks that in.
 format_collect = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next to
+# `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple of
+# characters. Fixed the four violations this surfaced: a `ContentBlock::Text(txt) => txt.text.clone()`
+# match arm repeated across the MCP route tests, shadowing an existing local also named `text`;
+# renamed the binding to `block`. No behavior change.
+similar_names = "deny"

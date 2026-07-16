@@ -336,3 +336,10 @@ many_single_char_names = "deny"
 # applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
 # clean, so `deny` locks that in.
 redundant_clone = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next
+# to `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple
+# of characters. Mirrors the root crate's `similar_names = "deny"` (see Cargo.toml) — the `ui`
+# crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this
+# never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+similar_names = "deny"

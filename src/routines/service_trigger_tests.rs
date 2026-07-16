@@ -398,9 +398,11 @@ fn trigger_under_concurrency_cap(unique: &str, live_sessions: u32, cap_env: Opti
     let dir = std::env::temp_dir().join(format!("moadim-svc-cap-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let stub = dir.join("tmux");
-    let sessions: String = (0..live_sessions)
-        .map(|i| format!("moadim-other-173000000{i}_1\n"))
-        .collect();
+    let sessions: String = (0..live_sessions).fold(String::new(), |mut acc, i| {
+        use std::fmt::Write as _;
+        let _ = writeln!(acc, "moadim-other-173000000{i}_1");
+        acc
+    });
     std::fs::write(&stub, format!("#!/bin/sh\nprintf '{sessions}'\nexit 0\n")).unwrap();
     #[cfg(unix)]
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();

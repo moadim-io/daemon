@@ -95,7 +95,6 @@ pub fn command_palette(props: &PaletteProps) -> Html {
     let sel = clamp_selection(*selected, order.len());
 
     let launch = {
-        let navigator = navigator.clone();
         let on_close = props.on_close.clone();
         let on_refresh = props.on_refresh.clone();
         let on_stop = props.on_stop.clone();

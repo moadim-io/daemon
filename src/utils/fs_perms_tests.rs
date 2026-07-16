@@ -14,7 +14,7 @@ fn create_private_dir_all_makes_every_component_owner_only() {
     let nested = base.join("a").join("b");
     create_private_dir_all(&nested).unwrap();
 
-    for dir in [base.clone(), base.join("a"), nested.clone()] {
+    for dir in [base.clone(), base.join("a"), nested] {
         let mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "{dir:?} should be 0700, got {mode:o}");
     }

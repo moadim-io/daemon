@@ -41,6 +41,8 @@ changelog gate — is a bash diff check described below the block, not the
 ```sh
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy -p ui --target wasm32-unknown-unknown --all-targets -- -D warnings
+cargo build -p ui --target wasm32-unknown-unknown
 cargo test --workspace
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 linecheck --max-lines 500 $(find src ui/src -name '*.rs')
@@ -52,8 +54,16 @@ pnpm --filter client test
 Use `--workspace` for both clippy and test, matching the pre-push hook —
 bare `cargo clippy`/`cargo test` skip the `ui` member crate entirely (this is
 a non-virtual workspace), so they can pass locally yet miss a real `ui`
-regression. `cargo llvm-cov` runs the test suite with instrumentation and
-enforces 100% line coverage (excluding `main.rs`), but is deliberately scoped
+regression. That host-target clippy run alone isn't enough for `ui`, though:
+it only ever ships compiled for `wasm32-unknown-unknown` (via `trunk build`),
+and clippy's lint set — and even whether it compiles at all — can differ
+between the host target and wasm32 (cfg-gated code paths, wasm-bindgen/web-sys
+API surface, etc.), so the `-p ui --target wasm32-unknown-unknown` clippy and
+build commands above mirror CI's `clippy-ui-wasm` job (see
+[`lint.yml`](.github/workflows/lint.yml)) — the pre-push hook itself doesn't
+run them, so they're worth running by hand before a `ui/**` push. `cargo
+llvm-cov` runs the test suite with instrumentation and enforces 100% line
+coverage (excluding `main.rs`), but is deliberately scoped
 to the root package only — the `ui` crate is a Yew/WASM UI that isn't held to
 that floor, so `cargo test --workspace` above is what actually exercises its
 own test suite. `linecheck` keeps any single `.rs` file under `src/` or

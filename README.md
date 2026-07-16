@@ -210,6 +210,9 @@ override when both are set.
 **REST** — under the `/api/v1` prefix:
 
 ```
+GET    /health                 # liveness + uptime/version, used by status/--wait and the UI health badge
+POST   /shutdown               # graceful stop, used by `moadim stop` and the UI STOP button
+POST   /restart                # stop this server and start a fresh instance, used by `moadim restart`
 GET    /routines              # list (filter by ?repository=, sort by ?sort=/&order=)
 POST   /routines              # create
 GET    /routines/{id}         # fetch one
@@ -218,8 +221,18 @@ PATCH  /routines/{id}         # update fields
 DELETE /routines/{id}         # delete
 POST   /routines/{id}/trigger # run now, outside the schedule
 GET    /routines/{id}/prompt-preview # composed prompt body a run would receive, no run
-GET    /routines/{id}/logs    # run output
+GET    /routines/{id}/logs    # newest workbench's agent.log as plain text
 POST   /routines/cleanup      # reap expired workbenches now
+GET    /routines/runs          # most recent runs across every routine, newest first (?limit=)
+GET    /routines/{id}/runs     # every run workbench for one routine, newest first
+GET    /routines/{id}/runs/{workbench}/log     # one specific run's agent.log
+GET    /routines/{id}/runs/{workbench}/summary # one specific run's agent-authored summary.md
+GET    /routines/{id}/flags    # list open flags raised against a routine
+POST   /routines/{id}/flags    # raise a new flag
+DELETE /routines/{id}/flags/{filename} # resolve (delete) a flag
+GET    /routines/lock          # current global lock status
+POST   /routines/lock          # create a lock sentinel, halting all scheduling/triggers
+DELETE /routines/lock          # remove lock sentinel(s), restoring scheduling
 GET    /agents                # list registered agents
 GET    /routines.ics          # subscribe to fire times as a calendar feed
 GET    /machine                # this machine's resolved identity
@@ -233,8 +246,11 @@ PUT    /config/max-concurrent-runs # set/clear the persisted override
 
 **MCP** — the same operations are exposed as tools: `list_routines`,
 `get_routine`, `preview_routine_prompt`, `create_routine`, `update_routine`,
-`delete_routine`, `trigger_routine`, `routine_logs`, `list_agents`, and
-`cleanup_workbenches`.
+`delete_routine`, `trigger_routine`, `snooze_routine`, `set_power_saving`,
+`routine_logs`, `list_routine_runs`, `create_flag`, `list_flags`,
+`resolve_flag`, `list_agents`, `cleanup_workbenches`, `get_lock_status`,
+`lock_routines`, `unlock_routines`, plus server-control tools `health`,
+`shutdown`, and `restart`.
 
 **Agents:** the `agent` field resolves to a config at
 `~/.config/moadim/agents/<agent>.toml`. API responses include

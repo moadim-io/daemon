@@ -33,3 +33,32 @@ export function reltime(ts: number): string {
   if (diff < 86_400) return `${Math.floor(diff / 3_600)}h ago`;
   return `${Math.floor(diff / 86_400)}d ago`;
 }
+
+const MONTHS_ABBR = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * Absolute local (browser timezone) rendering of a unix-seconds timestamp, e.g.
+ * "Jun 21, 2026 12:00". Meant as a tooltip companion to `reltime`'s relative "N ago" text, so
+ * hovering reveals wall-clock time. Matches `ui/src/cron_utils.rs`'s `abstime`.
+ */
+export function abstime(ts: number): string {
+  if (ts === 0) return "—";
+  const d = new Date(ts * 1000);
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = String(d.getDate()).padStart(2, "0");
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${MONTHS_ABBR[d.getMonth()]} ${day}, ${d.getFullYear()} ${hm}`;
+}

@@ -144,6 +144,15 @@ describe("filter", () => {
     expect(matchesFilter(f, disabledNoMachine, now(), window)).toBe(false);
   });
 
+  it("status dormant matches a blank machine entry like routineHealth does", () => {
+    // A machines list holding only whitespace is "no real machine assigned", same as an empty
+    // list — matching routineHealth's definition so the status facet and the health badge/KPI
+    // never disagree about the same routine.
+    const f: RoutineFilter = { ...defaultFilter(), status: "dormant" };
+    const blankMachine = routine("a", "t", "claude", "0 * * * *", ["   "], [], true);
+    expect(matchesFilter(f, blankMachine, now(), window)).toBe(true);
+  });
+
   it("status due soon matches enabled routines firing within window", () => {
     const f: RoutineFilter = { ...defaultFilter(), status: "due" };
     const imminent = routine("a", "t", "claude", "* * * * *", ["m1"], [], true);
@@ -356,6 +365,14 @@ describe("filter", () => {
       routine("b", "t", "claude", "0 * * * *", ["m1", "m3"], [], true),
     ];
     expect(distinctMachines(routines)).toEqual(["m1", "m2", "m3"]);
+  });
+
+  it("distinct_machines omits blank machine entries", () => {
+    const routines = [
+      routine("a", "t", "claude", "0 * * * *", ["", "m1"], [], true),
+      routine("b", "t", "claude", "0 * * * *", ["  "], [], true),
+    ];
+    expect(distinctMachines(routines)).toEqual(["m1"]);
   });
 
   it("distinct_repositories returns sorted unique repositories", () => {

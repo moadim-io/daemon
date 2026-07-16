@@ -25,6 +25,16 @@ fn distinct_machines_r_returns_sorted_unique_machines() {
 }
 
 #[test]
+fn distinct_machines_r_omits_blank_machine_entries() {
+    let routines = vec![
+        routine("a", "t", "claude", "0 * * * *", &["", "m1"], &[], true),
+        routine("b", "t", "claude", "0 * * * *", &["  "], &[], true),
+    ];
+    let machines = distinct_machines_r(&routines);
+    assert_eq!(machines, vec!["m1"]);
+}
+
+#[test]
 fn distinct_repositories_returns_sorted_unique_repositories() {
     let routines = vec![
         routine(

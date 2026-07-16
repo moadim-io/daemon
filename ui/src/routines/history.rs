@@ -118,10 +118,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
         let cb = props.on_back.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
-    let on_refresh = {
-        let load = load.clone();
-        Callback::from(move |_: MouseEvent| load())
-    };
+    let on_refresh = Callback::from(move |_: MouseEvent| load());
 
     {
         let id = props.id.clone();

@@ -367,6 +367,14 @@ describe("filter", () => {
     expect(distinctMachines(routines)).toEqual(["m1", "m2", "m3"]);
   });
 
+  it("distinct_machines omits blank machine entries", () => {
+    const routines = [
+      routine("a", "t", "claude", "0 * * * *", ["", "m1"], [], true),
+      routine("b", "t", "claude", "0 * * * *", ["  "], [], true),
+    ];
+    expect(distinctMachines(routines)).toEqual(["m1"]);
+  });
+
   it("distinct_repositories returns sorted unique repositories", () => {
     const routines = [
       routine("a", "t", "claude", "0 * * * *", [], ["repo-b", "repo-a"], true),

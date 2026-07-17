@@ -343,3 +343,11 @@ redundant_clone = "deny"
 # `--workspace`. A wasm32 stack is also fixed-size and comparatively small, so the same
 # stack-overflow risk applies here too. The `ui` crate is already clean, so `deny` locks that in.
 large_stack_arrays = "deny"
+# Reject a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
+# outside a formatting macro — usually a leftover `format!`/`println!` arg that got moved into a
+# plain string and silently stopped interpolating. Mirrors the root crate's
+# `literal_string_with_formatting_args = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+literal_string_with_formatting_args = "deny"

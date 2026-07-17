@@ -13,6 +13,8 @@
 //! The file and env override exist because hostnames are not always meaningful or stable; the file
 //! is `*.local.*` (gitignored) so a name set on one host never travels in the shared repo.
 
+use std::sync::{Mutex, OnceLock};
+
 use serde::{Deserialize, Serialize};
 
 use crate::paths::machine_config_path;
@@ -140,6 +142,20 @@ fn read_machine_file() -> Option<String> {
     read_machine_toml().name
 }
 
+/// Process-wide lock serializing the `machine.local.toml` read-modify-write sequence.
+///
+/// [`set_machine`] and [`set_max_concurrent_runs_override`] each read the whole file, mutate one
+/// field, and write the whole struct back — an unsynchronized `PUT /machine` and
+/// `PUT /config/max-concurrent-runs` (`src/routes/http_settings_routes.rs`) can run concurrently on
+/// the multi-thread runtime, so two overlapping round trips can interleave and the later write wins
+/// outright, silently dropping whichever field the other request had just persisted. Same hazard
+/// class as the crontab read-modify-write race (issue #365, see `crontab_sync_lock` in
+/// `src/sync/routines.rs`), fixed the same way: hold this lock across the whole read-then-write span.
+fn machine_toml_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Write `toml` to `machine.local.toml`, creating the config dir if needed.
 fn write_machine_toml(toml: &MachineToml) -> std::io::Result<()> {
     let path = machine_config_path();
@@ -163,6 +179,7 @@ pub fn set_machine(name: &str) -> std::io::Result<()> {
             "machine name must not be empty",
         ));
     }
+    let _guard = machine_toml_lock().lock_recover();
     let mut toml = read_machine_toml();
     toml.name = Some(name.to_string());
     write_machine_toml(&toml)
@@ -179,6 +196,7 @@ pub fn max_concurrent_runs_override() -> Option<usize> {
 /// `machine.local.toml`. `None` clears the override. Preserves any other field already persisted
 /// in the file (e.g. the machine name).
 pub fn set_max_concurrent_runs_override(value: Option<usize>) -> std::io::Result<()> {
+    let _guard = machine_toml_lock().lock_recover();
     let mut toml = read_machine_toml();
     toml.max_concurrent_runs = value;
     write_machine_toml(&toml)

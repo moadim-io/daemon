@@ -360,3 +360,38 @@ fn trigger_reports_not_running_when_no_server() {
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
     assert_eq!(trigger("some-id").unwrap(), EXIT_NOT_RUNNING);
 }
+
+#[test]
+fn logs_prints_the_response_body_when_server_responds() {
+    let server = FakeServer::start(200, "line one\nline two\n".to_string());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(logs("some-id").unwrap(), 0);
+}
+
+#[test]
+fn logs_succeeds_on_an_empty_body() {
+    // No run yet: `svc_logs` returns an empty string, which is a normal, successful outcome.
+    let server = FakeServer::start(200, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert_eq!(logs("some-id").unwrap(), 0);
+}
+
+#[test]
+fn logs_reports_unknown_routine_on_404() {
+    let server = FakeServer::start(404, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(logs("missing").is_err());
+}
+
+#[test]
+fn logs_errors_on_unexpected_status() {
+    let server = FakeServer::start(500, String::new());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, &server.addr);
+    assert!(logs("some-id").is_err());
+}
+
+#[test]
+fn logs_reports_not_running_when_no_server() {
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    assert_eq!(logs("some-id").unwrap(), EXIT_NOT_RUNNING);
+}

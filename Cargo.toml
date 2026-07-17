@@ -299,3 +299,13 @@ literal_string_with_formatting_args = "deny"
 # surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
 # already clean, so `deny` locks that in.
 large_stack_arrays = "deny"
+# Reject the `unreachable!()` macro. A daemon process that hits an `unreachable!()` panics
+# the whole server instead of returning a structured error, and a match arm that looks
+# provably impossible today can become reachable after an innocuous refactor elsewhere —
+# the panic then only surfaces at runtime, in production. Fixed the one violation this
+# surfaced: `build/ui.rs::base64_encode`'s length-3 `match` had a `_ => unreachable!()`
+# catch-all for chunk lengths other than 1/2/3 (impossible from `chunks(3)`); rewritten
+# without a `match` by indexing the guaranteed-present first byte directly and reading the
+# optional second/third bytes via `.get()`, so there is no catch-all arm to guard. The rest
+# of the codebase is already clean, so `deny` locks that in.
+unreachable = "deny"

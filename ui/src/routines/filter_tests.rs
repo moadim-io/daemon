@@ -276,8 +276,10 @@ fn machine_unassigned_matches_only_empty_machines() {
     };
     let with = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    let blank = routine("c", "t", "claude", "0 * * * *", &[""], &[], true);
     assert!(!f.matches(&with, now(), window()));
     assert!(f.matches(&without, now(), window()));
+    assert!(f.matches(&blank, now(), window()));
 }
 
 #[test]

@@ -405,6 +405,48 @@ fn set_max_concurrent_runs_override_preserves_existing_machine_name() {
 }
 
 #[test]
+fn concurrent_set_machine_and_set_cap_override_do_not_clobber_each_other() {
+    // Regression test for the machine.local.toml read-modify-write race: two threads racing
+    // `set_machine` and `set_max_concurrent_runs_override` each read the whole file, mutate one
+    // field, and write the whole struct back. Without `machine_toml_lock()` serializing that
+    // span, both threads can read the same (empty) snapshot before either writes, and whichever
+    // write lands second silently drops the other thread's field. A `Barrier` forces both
+    // threads to start their read-modify-write span at (as close to) the same instant, so an
+    // unsynchronized version of this test flakes/fails; with the lock in place, both fields
+    // always survive regardless of which thread wins the race.
+    let home = temp_home("concurrent-rmw");
+    // Set once on the parent thread before either child spawns; both children only read it
+    // (via `machine_config_path()`), so there is no concurrent env-var mutation to race on.
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let b1 = std::sync::Arc::clone(&barrier);
+    let t1 = std::thread::spawn(move || {
+        b1.wait();
+        set_machine("racer-box").expect("set_machine");
+    });
+    let b2 = std::sync::Arc::clone(&barrier);
+    let t2 = std::thread::spawn(move || {
+        b2.wait();
+        set_max_concurrent_runs_override(Some(9)).expect("set_max_concurrent_runs_override");
+    });
+    t1.join().unwrap();
+    t2.join().unwrap();
+
+    assert_eq!(
+        read_machine_file(),
+        Some("racer-box".to_string()),
+        "concurrent cap-override write must not drop the machine name"
+    );
+    assert_eq!(
+        max_concurrent_runs_override(),
+        Some(9),
+        "concurrent machine-name write must not drop the cap override"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn set_max_concurrent_runs_override_returns_err_on_write_failure() {
     let home = temp_home("cap-write-fail");
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());

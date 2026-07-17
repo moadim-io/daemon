@@ -1,7 +1,7 @@
 .\" Man page for moadim.
 .\" Mirrors the built-in `moadim --help` output (src/cli.rs::print_help).
 .\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
-.TH MOADIM 1 "2026-07-07" "moadim 1.2.0" "Moadim Manual"
+.TH MOADIM 1 "2026-07-17" "moadim 1.3.1" "Moadim Manual"
 .SH NAME
 moadim \- routine scheduler with an MCP/REST API and a web control panel
 .SH SYNOPSIS
@@ -26,10 +26,10 @@ Once running, manage it from the web client (the STOP button) or with
 .B (default)
 Start the server in the background and exit.
 .TP
-.BR \-i ", " \-\-interactive
+.BR \-i ", " \-\-interactive ", " \-f ", " \-\-foreground
 Run in the foreground, attached to the terminal (Ctrl-C to stop).
 .TP
-.BR \-b ", " \-\-background
+.BR \-b ", " \-\-background ", " \-d ", " \-\-detach ", " \-\-daemon
 Start the server detached in the background (the explicit default).
 .SH COMMANDS
 .TP
@@ -72,6 +72,12 @@ Remove the OS service registration and the managed crontab block.
 .B machine <show|set|list>
 Show or set this machine's identity, or list the machines referenced by
 routines.
+.TP
+.B "completions <shell>"
+Print a completion script for
+.BR bash ", " zsh ", " fish ", " powershell ", or " elvish
+(e.g.
+.BR "moadim completions zsh > _moadim" ).
 .TP
 .BR "help" ", " \-h ", " \-\-help
 Show usage help.

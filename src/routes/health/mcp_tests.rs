@@ -27,7 +27,7 @@ fn health_content_contains_status() {
     let result = handler.health().unwrap();
     let text = &result.content[0];
     let json_str = match &text {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();

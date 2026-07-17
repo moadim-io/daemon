@@ -29,6 +29,44 @@ pub fn bind_addr_is_loopback(addr: &str) -> bool {
         .is_ok_and(|socket| socket.ip().is_loopback())
 }
 
+/// Environment variable that opts into binding [`bind_addr`] to a non-loopback address. Must be
+/// set to exactly `"1"`; anything else (unset, `"true"`, `"yes"`, …) is treated as not opted in,
+/// so a typo fails closed instead of silently exposing the unauthenticated API (issue #253).
+const ALLOW_REMOTE_ENV: &str = "MOADIM_ALLOW_REMOTE";
+
+/// Returns `true` if the operator has explicitly opted into a non-loopback bind via
+/// [`ALLOW_REMOTE_ENV`].
+pub fn remote_bind_allowed() -> bool {
+    std::env::var(ALLOW_REMOTE_ENV).as_deref() == Ok("1")
+}
+
+/// The outcome of checking a resolved bind address against the loopback/opt-in policy, decided by
+/// [`classify_bind`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum BindDecision {
+    /// `addr` is loopback-only; no warning needed, start normally.
+    Loopback,
+    /// `addr` is not loopback, but [`ALLOW_REMOTE_ENV`] is set; start, but the caller should log a
+    /// prominent warning first.
+    RemoteAllowed,
+    /// `addr` is not loopback and [`ALLOW_REMOTE_ENV`] is not set; the caller must refuse to
+    /// start rather than silently exposing the unauthenticated API.
+    RemoteRefused,
+}
+
+/// Pure decision function for the startup bind-address gate (issue #253): the unauthenticated
+/// REST/MCP API must never end up reachable off-host by accident, so a non-loopback bind requires
+/// an explicit opt-in (`allow_remote`, sourced from [`remote_bind_allowed`]) or startup is refused.
+pub fn classify_bind(addr: &str, allow_remote: bool) -> BindDecision {
+    if bind_addr_is_loopback(addr) {
+        BindDecision::Loopback
+    } else if allow_remote {
+        BindDecision::RemoteAllowed
+    } else {
+        BindDecision::RemoteRefused
+    }
+}
+
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
@@ -103,6 +141,13 @@ pub enum Command {
         /// UUID of the routine to trigger.
         id: String,
     },
+    /// Print a routine's newest run log (`agent.log`) to stdout, by UUID. A top-level shorthand
+    /// for `moadim routines logs <id>`, mirroring the `trigger`/`routines trigger` duality
+    /// (issue #332).
+    Logs {
+        /// UUID of the routine whose log to print.
+        id: String,
+    },
     /// Register the daemon as an OS service (launchd on macOS, systemd user on Linux).
     Install,
     /// Remove the OS service registration created by [`Command::Install`].
@@ -165,6 +210,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         // behavior). `run` is kept as a hidden back-compat alias of the original subcommand name.
         Some("trigger" | "run") => match args.get(1) {
             Some(id) => Command::Trigger { id: id.clone() },
+            None => Command::Help,
+        },
+        // `logs <id>` mirrors `trigger <id>`: without an id there is nothing to print, so fall
+        // back to help rather than silently no-op.
+        Some("logs") => match args.get(1) {
+            Some(id) => Command::Logs { id: id.clone() },
             None => Command::Help,
         },
         Some("install") => Command::Install,
@@ -238,6 +289,7 @@ pub fn help_text() -> String {
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
+         \x20   logs <id>              print a routine's newest run log (agent.log) to stdout\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
@@ -423,7 +475,7 @@ fn stop_json(running: bool, pid: Option<u32>) -> String {
 
 #[path = "query.rs"]
 mod cli_query;
-pub use cli_query::{cleanup, status, trigger};
+pub use cli_query::{cleanup, logs, status, trigger};
 #[cfg(test)]
 use cli_query::{
     cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, HealthInfo,

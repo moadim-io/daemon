@@ -25,6 +25,16 @@ web-sys = { version = "0.3", features = ["Clipboard", "Document", "DomTokenList"
 log = "0.4"
 console_log = "1"
 
+[lints.rust]
+# Require a doc comment on every public item (crate root, and every public
+# struct/enum/field/variant/fn reachable from it). Denied root-side in
+# Cargo.toml's own `[lints.rust]` table since the project's early days, but
+# the `ui` crate has its own `[lints]` table (no `workspace = true`
+# inheritance) so it never applied to `ui/src` despite CI's `clippy`/`doc`
+# jobs running `--workspace`. The `ui` crate is now doc-complete, so `deny`
+# locks that in.
+missing_docs = "deny"
+
 [lints.clippy]
 all = "deny"
 # Reject a `&self` method that never reads `self` — it should be an associated function instead, so
@@ -236,6 +246,16 @@ needless_raw_string_hashes = "deny"
 # root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job
 # running `--workspace`. Fixes the 1 violation this surfaced in `routines/state.rs`.
 manual_let_else = "deny"
+# Reject a by-value function argument the body never consumes (never moves, mutates through
+# ownership, or otherwise needs to own) — it should take a reference instead, so a caller doesn't
+# have to part with (or needlessly clone) a value the callee only ever borrows internally. Mirrors
+# the root crate's `needless_pass_by_value = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. Fixes the 5 violations this surfaced in
+# `routines/actions.rs` and `routines/bulk_actions.rs`, where `install_crud_handlers` and
+# `install_bulk_handlers` only ever `.clone()`d their `state`/`toast`/`now` handles into closures
+# instead of consuming them.
+needless_pass_by_value = "deny"
 # Reject `#[derive(PartialEq)]` on a struct/enum whose fields all satisfy `Eq` too (reflexivity
 # holds for everything but float fields, which this crate avoids in these types) without also
 # deriving `Eq`. Deriving it costs nothing and unlocks the type as a `HashSet`/`BTreeMap` key or
@@ -265,6 +285,12 @@ doc_markdown = "deny"
 # `clippy --workspace` covering it in CI. Fixes the 1 violation this surfaced in
 # `routines/calendar.rs`.
 cast_lossless = "deny"
+# Reject spelling out a type's own name in an impl block where `Self` says the same thing
+# without repeating it — if the type gets renamed, `Self` doesn't need a matching edit.
+# Mirrors the root crate's `use_self = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+# to `ui/src` despite CI's `clippy` job running `--workspace`.
+use_self = "deny"
 # Reject a function call passed directly as the fallback argument to `unwrap_or`/`ok_or`/`and`/`or`
 # and friends (e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else` form
 # (`opt.unwrap_or_else(expensive)`). The eager form always evaluates the fallback, even on the
@@ -273,3 +299,75 @@ cast_lossless = "deny"
 # `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace` covering
 # it in CI. The `ui` crate is already clean, so `deny` locks that in.
 or_fun_call = "deny"
+# Reject `"literal".as_bytes()` in favour of a `b"literal"` byte-string literal — the byte string
+# is the same bytes without the runtime call, and states "this is bytes" at the point of
+# declaration instead of at a conversion tacked on afterward. Mirrors the same lint already
+# enabled workspace-root-side in Cargo.toml — the `ui` crate has its own `[lints.clippy]` table
+# (no `workspace = true` inheritance) so it was silently exempt despite `clippy --workspace`
+# covering it in CI. The `ui` crate is already clean, so `deny` locks that in.
+string_lit_as_bytes = "deny"
+# Reject `_` as a `match`/`tokio::select!`/closure-parameter pattern when the matched value's type
+# is `()` — spelling out `()` states the value's type explicitly instead of leaving the reader to
+# check that `_` isn't quietly discarding something meaningful. Mirrors the root crate's
+# `ignored_unit_patterns = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`.
+ignored_unit_patterns = "deny"
+# Reject a `&Option<T>` parameter in favour of `Option<&T>` — the former forces every caller to
+# already own (or clone into) an `Option`, while the latter accepts a plain `&T` wrapped in `Some`
+# just as easily and is the idiomatic way to say "an optional borrow". Mirrors the root crate's
+# `ref_option = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and
+# doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite CI's
+# `clippy` job running `--workspace`. Fixes the 1 violation this surfaced in
+# `command_palette_match.rs`, where `schedule_label` took `&Option<String>` only to immediately
+# match on it by reference.
+ref_option = "deny"
+# Reject a scope with 4+ single-character bindings in play at once — one violation:
+# `filter_tests.rs`'s `is_active_detects_each_facet` had six (`q`, `s`, `a`, `m`, `r`, `t`), one per
+# `RoutineFilter` facet under test; renamed to `query_filter`, `status_filter`, `agent_filter`,
+# `machine_filter`, `repo_filter`, `tag_filter`. Mirrors the same lint added workspace-root-side in
+# Cargo.toml — the `ui` crate has its own `[lints.clippy]` table (no `workspace = true`
+# inheritance) so it needs its own entry too. No behavior change.
+many_single_char_names = "deny"
+# Reject a `.clone()` whose result is never mutated and whose source is never used again after
+# the clone — the clone is pure overhead, since the original could have been moved or borrowed
+# instead. Mirrors the root crate's `redundant_clone = "deny"` (see Cargo.toml) — the `ui` crate
+# has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+# applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already
+# clean, so `deny` locks that in.
+redundant_clone = "deny"
+# Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
+# directly into a `String` buffer. Mirrors the root crate's `format_collect = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+format_collect = "deny"
+# Reject an or-pattern repeated across multiple match arms/parameters (e.g. `Foo::A | Foo::B =>
+# ..., Foo::C | Foo::D => ...` written as separate arms with duplicated bodies) in favour of
+# merging into one arm with a single nested or-pattern. Mirrors the root crate's
+# `unnested_or_patterns = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+unnested_or_patterns = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. Mirrors the root crate's `large_stack_arrays = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. A wasm32 stack is also fixed-size and comparatively small, so the same
+# stack-overflow risk applies here too. The `ui` crate is already clean, so `deny` locks that in.
+large_stack_arrays = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next
+# to `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple
+# of characters. Mirrors the root crate's `similar_names = "deny"` (see Cargo.toml) — the `ui`
+# crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this
+# never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+similar_names = "deny"
+# Reject a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
+# outside a formatting macro — usually a leftover `format!`/`println!` arg that got moved into a
+# plain string and silently stopped interpolating. Mirrors the root crate's
+# `literal_string_with_formatting_args = "deny"` (see Cargo.toml) — the `ui` crate has its own
+# `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+# `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
+# `deny` locks that in.
+literal_string_with_formatting_args = "deny"

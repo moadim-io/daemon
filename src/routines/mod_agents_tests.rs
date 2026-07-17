@@ -141,7 +141,7 @@ fn svc_create_update_delete_lifecycle() {
         },
     )
     .unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
     // folder is slug of the title, not the UUID
     assert!(crate::paths::routine_toml_path("cov-routine").exists());
     assert!(crate::paths::routine_compiled_prompt_path("cov-routine").exists());

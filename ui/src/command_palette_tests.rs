@@ -184,17 +184,17 @@ fn build_lists_pages_then_routines() {
 #[test]
 fn schedule_label_prefers_human_then_raw_then_dash() {
     assert_eq!(
-        schedule_label(&Some("At noon".into()), "0 12 * * *"),
+        schedule_label(Some(&"At noon".to_string()), "0 12 * * *"),
         "At noon"
     );
     // Empty human description falls through to the raw expression.
     assert_eq!(
-        schedule_label(&Some(String::new()), "0 12 * * *"),
+        schedule_label(Some(&String::new()), "0 12 * * *"),
         "0 12 * * *"
     );
-    assert_eq!(schedule_label(&None, "0 12 * * *"), "0 12 * * *");
+    assert_eq!(schedule_label(None, "0 12 * * *"), "0 12 * * *");
     // Neither present → a dash, never an empty string.
-    assert_eq!(schedule_label(&None, "   "), "—");
+    assert_eq!(schedule_label(None, "   "), "—");
 }
 
 // ─── routine_subtitle ────────────────────────────────────────────────────────

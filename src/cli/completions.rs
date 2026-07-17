@@ -65,6 +65,7 @@ pub(super) fn build_cli() -> ClapCommand {
         )
         .subcommand(ClapCommand::new("cleanup").arg(json_flag()))
         .subcommand(ClapCommand::new("trigger").alias("run").arg(Arg::new("id")))
+        .subcommand(ClapCommand::new("logs").arg(Arg::new("id")))
         .subcommand(ClapCommand::new("install"))
         .subcommand(ClapCommand::new("uninstall"))
         .subcommand(

@@ -224,7 +224,7 @@ pub(crate) fn build_commands(routines: &[Routine]) -> Vec<Command> {
 /// Subtitle for a routine command: schedule label optionally suffixed with
 /// comma-separated status tags so health issues are visible in search results.
 pub(crate) fn routine_subtitle(routine: &Routine) -> String {
-    let sched = schedule_label(&routine.schedule_description, &routine.schedule);
+    let sched = schedule_label(routine.schedule_description.as_ref(), &routine.schedule);
     let mut tags: Vec<&str> = Vec::new();
     if !routine.enabled {
         tags.push("DISABLED");
@@ -245,7 +245,7 @@ pub(crate) fn routine_subtitle(routine: &Routine) -> String {
 
 /// The human schedule description when present, else the raw expression, else a
 /// dash so a row never renders an empty subtitle.
-pub(crate) fn schedule_label(human: &Option<String>, raw: &str) -> String {
+pub(crate) fn schedule_label(human: Option<&String>, raw: &str) -> String {
     match human {
         Some(text) if !text.is_empty() => text.clone(),
         _ if !raw.trim().is_empty() => raw.to_string(),

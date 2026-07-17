@@ -81,8 +81,9 @@ src/
 │
 └── build/               build-script modules (compiled by build.rs, not the binary)
     ├── mod.rs
-    ├── openapi.rs       writes apis/openapi.json
-    └── ui.rs            runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
+    ├── routine_schema.rs  writes schemas/routine.schema.json + routine.example.toml
+    ├── ui.rs              runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
+    └── client.rs          builds the React client/ app → prebuilt-client.html / $OUT_DIR/client.html
 
 ui/                      Yew workspace member (separate Cargo.toml)
 ```
@@ -197,8 +198,12 @@ interval from piling up concurrent agent sessions against the same target (dupli
 racing pushes); see `routines::service_trigger::spawn_routine_command`.
 
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
-times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
-instants so external calendars can subscribe without an embedded `VTIMEZONE`. The optional
+times (next 30 days, capped per routine), evaluated in the host local timezone. When that zone can
+be named, each event's `DTSTART` is `TZID`-qualified with the local wall-clock time against an
+embedded `VTIMEZONE` (pinned to the feed's current UTC offset, no DST transition rules), so a
+subscriber whose calendar defaults to a different zone still sees the routine's actual configured
+local time instead of the same instant reinterpreted in their own zone; when the zone can't be
+named, the feed falls back to a bare UTC-instant `DTSTART` with no `VTIMEZONE`. The optional
 `?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
 an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
@@ -273,8 +278,9 @@ Implements `IntoResponse` → `{"error": "<message>"}` JSON body with matching s
 
 | Step | Output |
 |---|---|
-| `openapi::generate` | `apis/openapi.json` — hand-authored OpenAPI 3.0 spec |
+| `routine_schema::generate` | `schemas/routine.schema.json` + `schemas/routine.example.toml` |
 | `ui::build` | `$OUT_DIR/index.html` — Yew UI inlined as single file |
+| `client::build` | `$OUT_DIR/client.html` — React `client/` app, copied as-is (already self-contained via `vite-plugin-singlefile`) |
 
 ### UI inlining strategy
 

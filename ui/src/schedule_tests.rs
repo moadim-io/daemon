@@ -129,6 +129,38 @@ fn occurrences_per_day_daily_fills_one_per_day() {
     assert!(counts.iter().all(|&c| c == 1));
 }
 
+// ─── Day detail ────────────────────────────────────────────────────────────────
+
+#[test]
+fn fires_on_day_lists_every_fire_that_day_ascending() {
+    let day = NaiveDate::from_ymd_opt(2026, 6, 21).unwrap();
+    assert_eq!(
+        fires_on_day("0 9,14 * * *", day),
+        vec!["09:00".to_string(), "14:00".to_string()]
+    );
+}
+
+#[test]
+fn fires_on_day_excludes_other_days() {
+    let day = NaiveDate::from_ymd_opt(2026, 6, 21).unwrap();
+    // Daily at noon: exactly one fire on `day`, none bleeding in from neighbors.
+    assert_eq!(fires_on_day("0 12 * * *", day), vec!["12:00".to_string()]);
+}
+
+#[test]
+fn fires_on_day_empty_for_invalid_schedule() {
+    let day = NaiveDate::from_ymd_opt(2026, 6, 21).unwrap();
+    assert!(fires_on_day("not a cron", day).is_empty());
+    assert!(fires_on_day("", day).is_empty());
+}
+
+#[test]
+fn fires_on_day_empty_when_schedule_never_fires_that_day() {
+    let day = NaiveDate::from_ymd_opt(2026, 6, 21).unwrap();
+    // Fires only on the 1st of the month.
+    assert!(fires_on_day("0 12 1 * *", day).is_empty());
+}
+
 // ─── Next fires ───────────────────────────────────────────────────────────────
 
 #[test]

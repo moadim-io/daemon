@@ -223,8 +223,10 @@ describe("filter", () => {
     const f: RoutineFilter = { ...defaultFilter(), machine: { kind: "unassigned" } };
     const withM = routine("a", "t", "claude", "0 * * * *", ["m1"], [], true);
     const without = routine("b", "t", "claude", "0 * * * *", [], [], true);
+    const blank = routine("c", "t", "claude", "0 * * * *", [""], [], true);
     expect(matchesFilter(f, withM, now(), window)).toBe(false);
     expect(matchesFilter(f, without, now(), window)).toBe(true);
+    expect(matchesFilter(f, blank, now(), window)).toBe(true);
   });
 
   it("machine specific matches only that machine", () => {

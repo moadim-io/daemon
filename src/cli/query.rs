@@ -3,8 +3,9 @@
 //! lifecycle (start/stop/restart), which remain in `cli/mod.rs`.
 
 use super::{
-    bind_addr, http_request, http_request_with_body, is_running, liveness_exit_code,
-    parse_freed_bytes, parse_removed_count, read_pid_file, wait_until, Duration,
+    bind_addr, http_request, http_request_json, http_request_with_body, is_running,
+    liveness_exit_code, parse_freed_bytes, parse_removed_count, read_pid_file, wait_until,
+    Duration,
 };
 
 /// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
@@ -81,6 +82,32 @@ pub fn trigger(id: &str) -> anyhow::Result<i32> {
             anyhow::bail!("no routine with id {id}");
         }
         Ok(status) => {
+            anyhow::bail!("unexpected response from server: HTTP {status}");
+        }
+        Err(_) => {
+            println!("moadim is not running");
+            Ok(liveness_exit_code(false))
+        }
+    }
+}
+
+/// Print a routine's newest run log (`agent.log`) to stdout via `GET /api/v1/routines/{id}/logs`
+/// — the same route `moadim routines logs <id>` already drives, exposed here as a shorter
+/// top-level alias (issue #332). An empty log (no run yet) prints nothing and exits `0`, matching
+/// `svc_logs` returning an empty string. Uses the generous data-op timeout (like other data-plane
+/// commands) rather than the liveness-probe one, since reading a large log is real work.
+pub fn logs(id: &str) -> anyhow::Result<i32> {
+    match http_request_json("GET", &format!("/api/v1/routines/{id}/logs"), None) {
+        Ok((200, body)) => {
+            if !body.is_empty() {
+                println!("{body}");
+            }
+            Ok(liveness_exit_code(true))
+        }
+        Ok((404, _)) => {
+            anyhow::bail!("no routine with id {id}");
+        }
+        Ok((status, _)) => {
             anyhow::bail!("unexpected response from server: HTTP {status}");
         }
         Err(_) => {

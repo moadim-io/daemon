@@ -99,7 +99,13 @@ export function RoutinesPage() {
   const initialSnapshot = useMemo(() => loadLastView(), []);
   const initialDecoded = initialSnapshot ? decodeSnapshot(initialSnapshot) : undefined;
 
-  const [page, setPage] = useState<RPage>({ kind: "list" });
+  // Deep link: `/routines?history=<id>` (e.g. from the Overview page's recent-runs
+  // panel) picks the initial page via a lazy initializer rather than an
+  // effect + setState, since it only ever matters for the very first render.
+  const [page, setPage] = useState<RPage>((): RPage => {
+    const id = searchParams.get("history");
+    return id ? { kind: "history", id } : { kind: "list" };
+  });
   const [modal, setModal] = useState<RModal>({ kind: "none" });
   const [view, setView] = useState<RView>("table");
   const [filter, setFilter] = useState<RoutineFilter>(initialDecoded?.filter ?? defaultRoutineFilter());
@@ -112,11 +118,10 @@ export function RoutinesPage() {
   const [now, setNow] = useState(() => new Date());
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Deep link: `/routines?history=<id>` (e.g. from the Overview page's recent-runs panel).
+  // Strip the `history` param from the URL once consumed above, so a reload or
+  // share link doesn't re-trigger the deep link.
   useEffect(() => {
-    const id = searchParams.get("history");
-    if (id) {
-      setPage({ kind: "history", id });
+    if (searchParams.get("history")) {
       const next = new URLSearchParams(searchParams);
       next.delete("history");
       setSearchParams(next, { replace: true });
@@ -181,14 +186,18 @@ export function RoutinesPage() {
     setFilter((f) => (f.machine.kind === "any" ? { ...f, machine: { kind: "machine", value: name } } : f));
   }, [currentMachineQuery.data]);
 
-  // Drop selections for routines that no longer exist after a reload.
-  useEffect(() => {
+  // Drop selections for routines that no longer exist after a reload. Adjusted
+  // during render (guarded on the `routines` reference changing) rather than in
+  // an effect — see the `seededFrom` comment in SettingsPage.tsx for the pattern.
+  const [prevRoutines, setPrevRoutines] = useState(routines);
+  if (routines !== prevRoutines) {
+    setPrevRoutines(routines);
     const ids = new Set(routines.map((r) => r.id));
     setSelected((sel) => {
       const next = new Set([...sel].filter((id) => ids.has(id)));
       return next.size === sel.size ? sel : next;
     });
-  }, [routines]);
+  }
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const createRoutine = useCreateRoutine();

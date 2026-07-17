@@ -5,12 +5,13 @@ use crate::utils::lock::LockRecover;
 // Re-exported (as `super::routines_dir`) for `routine_storage_migrations`; not called directly
 // in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
 use crate::paths::routines_dir;
+use std::sync::{Mutex, OnceLock};
 // Only referenced by the `#[cfg(test)]` sibling test modules via `use super::*;` (they build a
 // `RoutineStore` map by hand); not used directly in this file's own (non-test) code.
 #[cfg(test)]
 use std::collections::HashMap;
 #[cfg(test)]
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -163,6 +164,30 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(path, &content)
 }
 
+/// Process-wide lock serializing [`write_routine`]'s whole check-then-write span.
+///
+/// `write_routine` reads the target slug's on-disk `routine.toml` for a collision check (see the
+/// doc comment below, and issue #188) and then writes `routine.toml`, the two prompt sidecars, and
+/// `state.local.toml`, with no synchronization against another overlapping call — including one for
+/// a *different* routine that slugifies to the same folder name. `POST /routines` and `PATCH
+/// /routines/{id}` (which both eventually call `write_routine`) can run concurrently on the
+/// multi-thread Tokio runtime, so two calls whose titles collide (e.g. `"Update deps!"` and
+/// `"Update deps?"`, both `update-deps`) can each pass the collision check — reading "no existing
+/// file" or "existing file, but it's mine" — before either has written anything, then both proceed
+/// to write into the *same* directory. Because each call writes four separate files sequentially,
+/// an interleaving there does not just mean "last write wins": the surviving directory can end up
+/// with files from *both* routines mixed together (e.g. `routine.toml` from one, `state.local.toml`
+/// from the other), silently corrupting both — exactly the outcome the collision check's own doc
+/// comment says it exists to prevent, but cannot on its own because the check and the writes are not
+/// atomic together. Same hazard class as the `machine.local.toml` read-modify-write race (see
+/// `machine_toml_lock` in `src/machine/mod.rs`) and the others it documents; fixed the same way:
+/// hold this lock across the whole span, so a losing call's collision check always observes the
+/// winning call's fully-written result and cleanly errors out instead of writing at all.
+fn routine_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Write `routine` to disk: `routine.toml` (tracked config), the `prompts/prompt.pure.md` (raw) and
 /// `prompts/prompt.compiled.local.md` (composed) sidecars, the gitignored `state.local.toml` runtime
 /// sidecar, and `.gitignore` (created or reconciled — see [`ensure_routine_gitignore`]).
@@ -180,6 +205,7 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
 /// silently overwriting another routine's files (#188): refuse to write when the target slug's
 /// `routine.toml` already exists and belongs to a different `id`.
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
+    let _guard = routine_write_lock().lock_recover();
     let slug = slugify(&routine.title);
     let dir = routine_dir(&slug);
     if let Some(existing_id) =

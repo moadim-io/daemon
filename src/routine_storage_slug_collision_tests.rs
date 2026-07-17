@@ -78,6 +78,62 @@ fn write_routine_rejects_slug_collision_with_a_different_id() {
 }
 
 #[test]
+fn concurrent_write_routine_calls_for_colliding_slugs_never_corrupt_the_directory() {
+    // Regression test for the write_routine check-then-write race: `write_routine` reads the
+    // target slug's on-disk routine.toml for a collision check, then writes four separate files
+    // (routine.toml, two prompt sidecars, state.local.toml) with no synchronization against
+    // another overlapping call. Two titles that slugify to the same folder name (#188) racing
+    // each other could both pass the collision check before either had written anything, then
+    // interleave their writes into the same directory — potentially leaving a mix of both
+    // routines' files. A `Barrier` forces both threads to start their check-then-write span at
+    // (as close to) the same instant, so an unsynchronized version of this test can produce a
+    // corrupted directory (files from both ids) or two `Ok` results; with `routine_write_lock()`
+    // serializing the whole span, exactly one call must succeed and the other must cleanly error
+    // with `AlreadyExists`, leaving the directory fully consistent for the winner.
+    with_override_home(|_home| {
+        let title = "Update deps!";
+        let other_title = "Update deps?";
+        assert_eq!(slugify(title), slugify(other_title));
+        let slug = slugify(title);
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let b1 = std::sync::Arc::clone(&barrier);
+        let t1 = std::thread::spawn(move || {
+            b1.wait();
+            write_routine(&make_routine("rs-race-a", title))
+        });
+        let b2 = std::sync::Arc::clone(&barrier);
+        let t2 = std::thread::spawn(move || {
+            b2.wait();
+            write_routine(&make_routine("rs-race-b", other_title))
+        });
+        let result_a = t1.join().unwrap();
+        let result_b = t2.join().unwrap();
+
+        // Exactly one call wins; the other must cleanly refuse rather than corrupt the directory.
+        let winner_id = match (result_a, result_b) {
+            (Ok(()), Err(err)) => {
+                assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+                "rs-race-a"
+            }
+            (Err(err), Ok(())) => {
+                assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+                "rs-race-b"
+            }
+            other => panic!(
+                "exactly one racing write_routine call must succeed and the other must fail \
+                 with AlreadyExists, got {other:?}"
+            ),
+        };
+
+        // The on-disk directory must consistently reflect only the winner — no mixed files from
+        // the loser leaking in from an interleaved write.
+        let loaded = load_routine_from_dir(&slug).unwrap();
+        assert_eq!(loaded.id, winner_id);
+    });
+}
+
+#[test]
 fn write_routine_allows_rewriting_its_own_slug() {
     // The same routine (same id) writing to its own slug again — e.g. an update that doesn't
     // change the title — must not trip the collision guard.

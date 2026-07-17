@@ -24,6 +24,8 @@ mod overview_recent_runs;
 mod overview_stats;
 mod overview_upcoming;
 mod refresh;
+mod reliability;
+mod reliability_stats;
 mod routines;
 mod schedule;
 mod schedule_heatmap;
@@ -36,6 +38,7 @@ pub(crate) use cron_utils::{abstime, describe_cron_live, parse_cron, reltime};
 use header::Header;
 pub(crate) use health::{Health, Toast, ToastKind};
 use overview::OverviewPage;
+use reliability::ReliabilityPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
 use settings::SettingsPage;
@@ -97,6 +100,9 @@ pub enum Route {
     /// The calendar heatmap page.
     #[at("/heatmap")]
     Heatmap,
+    /// The reliability ranking page.
+    #[at("/reliability")]
+    Reliability,
     /// The settings page.
     #[at("/settings")]
     Settings,
@@ -291,6 +297,7 @@ pub fn shell() -> Html {
             Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
             Route::Heatmap => html! { <HeatmapPage /> },
+            Route::Reliability => html! { <ReliabilityPage /> },
             Route::Settings => html! { <SettingsPage on_toast={on_toast.clone()} /> },
             Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
@@ -415,6 +422,9 @@ pub fn nav() -> Html {
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Heatmap))} to={Route::Heatmap}>
                 { "HEATMAP" }
+            </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Reliability))} to={Route::Reliability}>
+                { "RELIABILITY" }
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Settings))} to={Route::Settings}>
                 { "SETTINGS" }

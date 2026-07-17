@@ -20,7 +20,8 @@ use super::model::Routine;
 pub(crate) const DUE_SOON_WINDOW_SECS: i64 = 3_600;
 
 /// Enabled / disabled / dormant / due-soon status facet for routines.
-/// `Dormant` means enabled but with an empty machines list — it will never fire.
+/// `Dormant` means enabled but with no real machine assigned (an empty list, or one holding only
+/// blank/whitespace entries) — it will never fire. Matches [`routine_health`]'s definition.
 /// `DueSoon` means enabled with a next fire within [`DUE_SOON_WINDOW_SECS`].
 /// `HasFlags` means the routine has one or more open flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -219,7 +220,11 @@ impl RoutineFilter {
         match self.status {
             RoutineStatusFacet::Enabled if !r.enabled => return false,
             RoutineStatusFacet::Disabled if r.enabled => return false,
-            RoutineStatusFacet::Dormant if !(r.enabled && r.machines.is_empty()) => return false,
+            RoutineStatusFacet::Dormant
+                if !(r.enabled && r.machines.iter().all(|m| m.trim().is_empty())) =>
+            {
+                return false
+            }
             RoutineStatusFacet::DueSoon
                 if !(r.enabled && fires_within(&r.schedule, now, window)) =>
             {

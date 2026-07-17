@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "1.3.0"
+version = "1.3.1"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -250,3 +250,52 @@ ignored_unit_patterns = "deny"
 # declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
 # `deny` locks that in.
 string_lit_as_bytes = "deny"
+# Reject a `&Option<T>` parameter in favour of `Option<&T>` — the former forces every caller to
+# already own (or clone into) an `Option`, while the latter accepts a plain `&T` wrapped in `Some`
+# just as easily and is the idiomatic way to say "an optional borrow". The codebase is already
+# clean, so `deny` locks that in.
+ref_option = "deny"
+# Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
+# directly into a `String` buffer. Like `format_push_string` above, each `format!` call allocates a
+# throwaway `String` only to have `collect` immediately copy its contents into the result and drop
+# it — pure overhead a fold avoids by writing straight into the accumulator. The codebase is
+# already clean, so `deny` locks that in.
+format_collect = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next to
+# `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple of
+# characters. Fixed the four violations this surfaced: a `ContentBlock::Text(txt) => txt.text.clone()`
+# match arm repeated across the MCP route tests, shadowing an existing local also named `text`;
+# renamed the binding to `block`. No behavior change.
+similar_names = "deny"
+# Reject an or-pattern repeated across multiple match arms/parameters (e.g. `Foo::A | Foo::B =>
+# ..., Foo::C | Foo::D => ...` written as separate arms with duplicated bodies) in favour of
+# merging into one arm with a single nested or-pattern. Keeping the duplicates in sync by hand is
+# easy to get wrong as arms are added or reordered. The codebase is already clean, so `deny` locks
+# that in.
+unnested_or_patterns = "deny"
+# Reject a scope with 4+ single-character bindings in play at once — past the first couple, a
+# reader has to hold each letter's meaning in their head instead of reading a name. One violation:
+# `ui/src/routines/filter_tests.rs`'s `is_active_detects_each_facet` test had six (`q`, `s`, `a`,
+# `m`, `r`, `t`), one per `RoutineFilter` facet under test; renamed to `query_filter`,
+# `status_filter`, `agent_filter`, `machine_filter`, `repo_filter`, `tag_filter`. No behavior change.
+many_single_char_names = "deny"
+# Reject a `.clone()` whose result is immediately moved with no other use of the original value
+# still pending — the clone buys nothing over moving the original directly, so it's pure wasted
+# allocation (and, for a `Callback`/`UseStateHandle`, an extra `Rc` refcount bump) on every call.
+# This surfaced 31 violations, all in test/UI code: intermediate `let x = x.clone();` shadows built
+# for a `move` closure that turned out to be the value's last use, and a couple of `field.clone()`
+# reads passed straight into a constructor that never touched the original again. Fixed by moving
+# the original instead. The codebase is otherwise already clean, so `deny` locks that in.
+redundant_clone = "deny"
+# Reject a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
+# outside a formatting macro — usually a leftover `format!`/`println!` arg that got moved into a
+# plain string and silently stopped interpolating. Fixes the 2 violations this surfaced in
+# `routines/command.rs::substitute`, both intentional `String::replace` placeholder tokens (not
+# formatting-macro arguments), which are now annotated with a scoped `#[allow]` explaining why.
+literal_string_with_formatting_args = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. A daemon process runs long-lived worker threads with a fixed,
+# comparatively small stack, so an oversized stack array is a latent stack-overflow risk that only
+# surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
+# already clean, so `deny` locks that in.
+large_stack_arrays = "deny"

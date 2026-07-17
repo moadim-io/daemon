@@ -1,3 +1,8 @@
+//! The `moadim` dashboard: a Yew/WASM single-page app served by the daemon's HTTP server. Renders
+//! the routines table, calendar heatmap, and settings pages against the `/api/v1` REST API, and
+//! hosts the shell chrome (nav, health indicator, toasts, command palette) shared across all of
+//! them.
+
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
@@ -25,6 +30,7 @@ mod schedule_heatmap;
 mod schedule_heatmap_grid;
 mod settings;
 mod shell_dialogs;
+mod shell_state;
 use command_palette::CommandPalette;
 pub(crate) use cron_utils::{abstime, describe_cron_live, parse_cron, reltime};
 use header::Header;
@@ -37,6 +43,7 @@ use shell_dialogs::{
     api_get_machine, api_put_machine, api_shutdown, poll_health, RenameMachineDialog,
     ShutdownDialog, ToastStack,
 };
+pub(crate) use shell_state::{ShellAction, ShellState};
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -81,88 +88,27 @@ pub(crate) fn apply_theme(light: bool) {
 /// these deep links and refreshes load the app so the router can resolve the path.
 #[derive(Clone, Routable, PartialEq, Eq)]
 pub enum Route {
+    /// The overview page (recent runs, upcoming runs, at-a-glance stats).
     #[at("/")]
     Home,
+    /// The routines table page.
     #[at("/routines")]
     Routines,
+    /// The calendar heatmap page.
     #[at("/heatmap")]
     Heatmap,
+    /// The settings page.
     #[at("/settings")]
     Settings,
+    /// Fallback for any path that doesn't match a route above.
     #[not_found]
     #[at("/404")]
     NotFound,
 }
 
-// ─── Shell state (health, toasts, shutdown) ───────────────────────────────────
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ShellState {
-    pub health: Health,
-    pub health_ok: bool,
-    pub toasts: Vec<Toast>,
-    pub next_toast: u32,
-    pub show_shutdown: bool,
-    pub show_palette: bool,
-    /// `true` when the light theme is active; persisted to localStorage.
-    pub show_theme_light: bool,
-    /// Resolved name of this machine, fetched from `GET /api/v1/machine` on mount.
-    pub machine_name: Option<String>,
-    /// Whether the rename-machine dialog is open.
-    pub show_rename_machine: bool,
-}
-
-pub enum ShellAction {
-    HealthLoaded { health: Health, ok: bool },
-    AddToast { msg: String, kind: ToastKind },
-    OpenShutdown,
-    CloseShutdown,
-    TogglePalette,
-    ClosePalette,
-    ToggleTheme,
-    MachineName { name: String },
-    OpenRenameMachine,
-    CloseRenameMachine,
-}
-
-impl Reducible for ShellState {
-    type Action = ShellAction;
-
-    fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
-        let mut s = (*self).clone();
-        match action {
-            ShellAction::HealthLoaded { health, ok } => {
-                s.health = health;
-                s.health_ok = ok;
-            }
-            ShellAction::AddToast { msg, kind } => {
-                let id = s.next_toast;
-                s.next_toast += 1;
-                s.toasts.push(Toast {
-                    id,
-                    msg: AttrValue::from(msg),
-                    kind,
-                });
-            }
-            ShellAction::OpenShutdown => s.show_shutdown = true,
-            ShellAction::CloseShutdown => s.show_shutdown = false,
-            ShellAction::TogglePalette => s.show_palette = !s.show_palette,
-            ShellAction::ClosePalette => s.show_palette = false,
-            ShellAction::ToggleTheme => {
-                s.show_theme_light = !s.show_theme_light;
-                save_theme_light(s.show_theme_light);
-                apply_theme(s.show_theme_light);
-            }
-            ShellAction::MachineName { name } => s.machine_name = Some(name),
-            ShellAction::OpenRenameMachine => s.show_rename_machine = true,
-            ShellAction::CloseRenameMachine => s.show_rename_machine = false,
-        }
-        s.into()
-    }
-}
-
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
+/// The app root: sets up the router and mounts [`Shell`] as its only route-independent child.
 #[function_component(App)]
 pub fn app() -> Html {
     html! {
@@ -341,7 +287,6 @@ pub fn shell() -> Html {
     };
 
     let switch = {
-        let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
             Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
@@ -373,7 +318,6 @@ pub fn shell() -> Html {
         Callback::from(move |(): ()| state.dispatch(ShellAction::CloseRenameMachine))
     };
     let on_confirm_rename_machine = {
-        let state = state.clone();
         Callback::from(
             move |(name, on_done): (String, Callback<Result<(), String>>)| {
                 let state = state.clone();
@@ -450,6 +394,7 @@ pub fn shell() -> Html {
 
 // ─── Nav ──────────────────────────────────────────────────────────────────────
 
+/// The top-level tab bar, highlighting the tab matching the current route.
 #[function_component(Nav)]
 pub fn nav() -> Html {
     let route = use_route::<Route>().unwrap_or(Route::Home);

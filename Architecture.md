@@ -81,8 +81,9 @@ src/
 │
 └── build/               build-script modules (compiled by build.rs, not the binary)
     ├── mod.rs
-    ├── openapi.rs       writes apis/openapi.json
-    └── ui.rs            runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
+    ├── routine_schema.rs  writes schemas/routine.schema.json + routine.example.toml
+    ├── ui.rs              runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
+    └── client.rs          builds the React client/ app → prebuilt-client.html / $OUT_DIR/client.html
 
 ui/                      Yew workspace member (separate Cargo.toml)
 ```
@@ -273,8 +274,9 @@ Implements `IntoResponse` → `{"error": "<message>"}` JSON body with matching s
 
 | Step | Output |
 |---|---|
-| `openapi::generate` | `apis/openapi.json` — hand-authored OpenAPI 3.0 spec |
+| `routine_schema::generate` | `schemas/routine.schema.json` + `schemas/routine.example.toml` |
 | `ui::build` | `$OUT_DIR/index.html` — Yew UI inlined as single file |
+| `client::build` | `$OUT_DIR/client.html` — React `client/` app, copied as-is (already self-contained via `vite-plugin-singlefile`) |
 
 ### UI inlining strategy
 

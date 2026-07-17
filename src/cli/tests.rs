@@ -279,6 +279,22 @@ fn trigger_without_an_id_falls_back_to_help() {
 }
 
 #[test]
+fn logs_command_carries_the_routine_id() {
+    assert_eq!(
+        parse(argv(&["logs", "abc-123"])),
+        Command::Logs {
+            id: "abc-123".to_string()
+        }
+    );
+}
+
+#[test]
+fn logs_without_an_id_falls_back_to_help() {
+    // Nothing to print without an id, so it shows usage rather than silently no-op'ing.
+    assert_eq!(parse(argv(&["logs"])), Command::Help);
+}
+
+#[test]
 fn restart_rotation_line_shows_old_and_new_pid() {
     assert_eq!(
         restart_rotation_line(Some(123), 456),

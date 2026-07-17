@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeCronLive, normalizeCron, reltime } from "./cronUtils";
+import { abstime, describeCronLive, normalizeCron, reltime } from "./cronUtils";
 
 describe("normalizeCron", () => {
   it("passes through empty/blank", () => {
@@ -62,5 +62,22 @@ describe("reltime", () => {
     expect(reltime(now - 5 * 60)).toBe("5m ago");
     expect(reltime(now - 3 * 3_600)).toBe("3h ago");
     expect(reltime(now - 2 * 86_400)).toBe("2d ago");
+  });
+});
+
+describe("abstime", () => {
+  it("returns a dash for 0", () => {
+    expect(abstime(0)).toBe("—");
+  });
+
+  it("formats a known instant in local time, zero-padded", () => {
+    // Built via the local `Date` constructor so the expected string matches regardless of the
+    // host's timezone, mirroring `abstime_formats_a_known_instant` in `ui/src/cron_utils_tests.rs`.
+    const d = new Date(2026, 5, 21, 12, 0, 30); // June (0-indexed) 21, 2026, 12:00:30
+    expect(abstime(Math.floor(d.getTime() / 1000))).toBe("Jun 21, 2026 12:00");
+  });
+
+  it("falls back to a dash for an out-of-range instant", () => {
+    expect(abstime(Number.MAX_SAFE_INTEGER)).toBe("—");
   });
 });

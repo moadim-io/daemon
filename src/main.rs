@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(&id)?),
+        cli::Command::Logs { id } => std::process::exit(cli::logs(&id)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart {
             json,

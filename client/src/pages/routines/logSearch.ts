@@ -39,15 +39,21 @@ export function matchCount(content: string, query: string): [number, number] {
 /**
  * Splits `text` into alternating `(isMatch, slice)` segments for case-insensitive highlighting of
  * `query` occurrences. Walks per-code-point (via `Array.from`) rather than reusing byte/UTF-16
- * offsets from a lowercased copy, so a locale's one-to-many lowercase expansions (e.g. German
- * "ẞ" → "ss") can't misalign a highlighted slice against the original text.
+ * offsets from a lowercased copy, so a locale's one-to-many lowercase expansions (e.g. Turkish
+ * "İ" → "i" + a combining dot above) can't misalign a highlighted slice against the original text.
  */
 export function highlightSegments(text: string, query: string): [boolean, string][] {
   const needle = query.trim().toLowerCase();
   if (needle === "") return [[false, text]];
 
   const chars = Array.from(text);
-  const lower = chars.map((c) => c.toLowerCase());
+  // One lowercase code point per entry in `chars`, mirroring the Rust port's
+  // `c.to_lowercase().next().unwrap_or(c)` (ui/src/log_viewer.rs). `String.prototype.toLowerCase()`
+  // on a single code point can itself expand to more than one (e.g. Turkish `İ` → `i` + a combining
+  // dot above, 2 code points) — keeping the raw multi-char result here would break the 1:1
+  // correspondence with `chars` that the sliding-window match below depends on, silently dropping
+  // matches that start at or span an expanding character.
+  const lower = chars.map((c) => c.toLowerCase()[0] ?? c);
   const needleChars = Array.from(needle);
   const n = needleChars.length;
 

@@ -18,12 +18,12 @@ use super::model::{LockStatus, Routine};
 
 /// Route query used to deep-link straight to a routine's HISTORY page (e.g. from the overview
 /// page's RECENT RUNS panel), instead of landing on the plain routine list.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineHistoryQuery {
     pub history: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RPage {
     #[default]
     List,
@@ -35,7 +35,7 @@ pub enum RPage {
     Clone(Box<Routine>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RModal {
     None,
     Edit(String),
@@ -44,7 +44,7 @@ pub enum RModal {
 }
 
 /// How the list page presents routines: a table, or a month calendar of upcoming fire times.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RView {
     #[default]
     Table,
@@ -69,13 +69,13 @@ impl RCol {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            RCol::Title => "title",
-            RCol::NextRun => "next_run",
-            RCol::LastFire => "last_fire",
-            RCol::Agent => "agent",
-            RCol::Health => "health",
-            RCol::Enabled => "enabled",
-            RCol::Updated => "updated",
+            Self::Title => "title",
+            Self::NextRun => "next_run",
+            Self::LastFire => "last_fire",
+            Self::Agent => "agent",
+            Self::Health => "health",
+            Self::Enabled => "enabled",
+            Self::Updated => "updated",
         }
     }
 
@@ -85,13 +85,13 @@ impl RCol {
     #[must_use]
     pub fn from_str(s: &str) -> Option<Self> {
         Some(match s {
-            "title" => RCol::Title,
-            "next_run" => RCol::NextRun,
-            "last_fire" => RCol::LastFire,
-            "agent" => RCol::Agent,
-            "health" => RCol::Health,
-            "enabled" => RCol::Enabled,
-            "updated" => RCol::Updated,
+            "title" => Self::Title,
+            "next_run" => Self::NextRun,
+            "last_fire" => Self::LastFire,
+            "agent" => Self::Agent,
+            "health" => Self::Health,
+            "enabled" => Self::Enabled,
+            "updated" => Self::Updated,
             _ => return None,
         })
     }
@@ -110,8 +110,8 @@ impl RDir {
     #[must_use]
     pub fn flip(self) -> Self {
         match self {
-            RDir::Asc => RDir::Desc,
-            RDir::Desc => RDir::Asc,
+            Self::Asc => Self::Desc,
+            Self::Desc => Self::Asc,
         }
     }
 
@@ -119,8 +119,8 @@ impl RDir {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            RDir::Asc => "asc",
-            RDir::Desc => "desc",
+            Self::Asc => "asc",
+            Self::Desc => "desc",
         }
     }
 
@@ -128,8 +128,8 @@ impl RDir {
     #[must_use]
     pub fn from_str(s: &str) -> Self {
         match s {
-            "desc" => RDir::Desc,
-            _ => RDir::Asc,
+            "desc" => Self::Desc,
+            _ => Self::Asc,
         }
     }
 }
@@ -157,11 +157,11 @@ impl RGroupBy {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            RGroupBy::None => "none",
-            RGroupBy::Agent => "agent",
-            RGroupBy::Machine => "machine",
-            RGroupBy::Status => "status",
-            RGroupBy::Health => "health",
+            Self::None => "none",
+            Self::Agent => "agent",
+            Self::Machine => "machine",
+            Self::Status => "status",
+            Self::Health => "health",
         }
     }
 
@@ -169,11 +169,11 @@ impl RGroupBy {
     #[must_use]
     pub fn from_str(s: &str) -> Self {
         match s {
-            "agent" => RGroupBy::Agent,
-            "machine" => RGroupBy::Machine,
-            "status" => RGroupBy::Status,
-            "health" => RGroupBy::Health,
-            _ => RGroupBy::None,
+            "agent" => Self::Agent,
+            "machine" => Self::Machine,
+            "status" => Self::Status,
+            "health" => Self::Health,
+            _ => Self::None,
         }
     }
 
@@ -181,11 +181,11 @@ impl RGroupBy {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            RGroupBy::None => "None",
-            RGroupBy::Agent => "Agent",
-            RGroupBy::Machine => "Machine",
-            RGroupBy::Status => "Status",
-            RGroupBy::Health => "Health",
+            Self::None => "None",
+            Self::Agent => "Agent",
+            Self::Machine => "Machine",
+            Self::Status => "Status",
+            Self::Health => "Health",
         }
     }
 }
@@ -278,7 +278,7 @@ pub fn sort_routines(
     routines
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RState {
     pub routines: Vec<Routine>,
     pub loading: bool,

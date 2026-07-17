@@ -35,16 +35,16 @@ impl HeatFilter {
     /// Whether a source of `kind` is counted under this filter.
     pub(crate) fn accepts(self, kind: Kind) -> bool {
         match self {
-            HeatFilter::All => true,
-            HeatFilter::Routine => kind == Kind::Routine,
+            Self::All => true,
+            Self::Routine => kind == Kind::Routine,
         }
     }
 
     /// Short uppercase label for the toggle button.
     pub(crate) fn label(self) -> &'static str {
         match self {
-            HeatFilter::All => "ALL",
-            HeatFilter::Routine => "ROUTINES",
+            Self::All => "ALL",
+            Self::Routine => "ROUTINES",
         }
     }
 }

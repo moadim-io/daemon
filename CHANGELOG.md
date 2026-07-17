@@ -11,6 +11,332 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+fix(security): refuse to start on a non-loopback `MOADIM_BIND_ADDR` unless `MOADIM_ALLOW_REMOTE=1` is explicitly set (#253)
+
+## [1.3.1] - 2026-07-17
+
+fix(sync): keep a slow crontab sync from stalling the async runtime
+
+`sync_routines_to_crontab` shells out to `crontab -l`/`crontab -` synchronously from async REST/MCP
+request handlers. Run inline on the multi-thread runtime, a slow or hung `crontab` binary could tie
+up a worker thread and stall unrelated in-flight requests, including `/health` (#360). It now runs
+via `tokio::task::block_in_place` whenever a multi-thread runtime is present, so the runtime can hand
+off that thread's other scheduled work first; unit tests (which call the function directly with no
+runtime, or under `#[tokio::test]`'s single-thread default) are unaffected and continue to run inline.
+
+Bump `clap` (4.6.1 → 4.6.2) and `uuid` (1.23.5 → 1.24.0) to their latest compatible patch releases. No behavior change.
+
+Bump `tokio` (1.52.3 → 1.52.4) and `console_log` (1.0.0 → 1.1.0) to their latest compatible releases. No behavior change.
+
+feat(cli): add `moadim logs <id>` as a top-level shortcut for `moadim routines logs <id>`
+
+The daemon has served a routine's newest run log over `GET /api/v1/routines/{id}/logs` since
+`svc_logs()` landed, reachable from the CLI only via `moadim routines logs <id>`. `trigger`
+already gets a bare top-level shortcut alongside its `routines trigger` form; `logs` did not
+(issue #332). `moadim logs <id>` now mirrors that duality: same route, same exit-code
+conventions (`0` on success including an empty not-yet-run log, non-zero on an unknown routine,
+`3` when no daemon is reachable), documented in `--help` and shell completions.
+
+Fix the React client (`client/`) silently dropping the absolute-timestamp hover tooltip that the
+original Yew UI (`ui/`) shows next to every relative "N ago" time. `ui/src/cron_utils.rs`'s
+`abstime` had no TypeScript port at all, so the "STARTED"/"UPDATED" cells in
+`RecentRunsTable.tsx`/`RoutineRow.tsx` rendered no `title`, `RoutineHistory.tsx`'s run-row title
+carried only the workbench name, and `RunHistorySparkline.tsx`'s per-tick tooltip omitted the
+absolute time — all despite each file being documented as a "direct port" of its Rust
+counterpart. Adds `abstime` to `client/src/lib/cronUtils.ts` (mirroring the Rust formatting and
+its zero/out-of-range fallbacks) and wires it into the four call sites so hovering a relative time
+in the React client shows the same wall-clock timestamp the Yew UI has always shown.
+
+test(client): add Vitest coverage reporting (`pnpm --filter client test:coverage`). The `src/` and `ui/` crates already have a 100%-line-coverage CI gate, but `client/` (the newer React/TypeScript dashboard) had no coverage instrumentation at all. This adds a non-gating `v8` coverage report so gaps are visible; no threshold is enforced yet.
+
+fix(ui): flag snoozed routines in the routines calendar's day-detail popover
+
+The month grid already dims a routine's chip (amber, reduced opacity) when it is snoozed
+(`snoozed_until` in the future, or `skip_runs` still pending), since that fire will be
+silently skipped rather than actually run. The day-detail popover added alongside it listed
+every enabled routine's fire time the same way regardless of snooze state, so a user opening
+the popover lost that signal and could believe a snoozed routine's listed time will fire.
+`day_fire_rows` now also reports each row's snoozed status (reusing the existing
+`is_routine_snoozed` helper) and the popover renders a "SNOOZED" badge on those rows, matching
+the styling and wording already used elsewhere (the routines table's health badge).
+
+chore(lint): enable `clippy::format_collect` workspace-wide
+
+Mirrors the existing `format_push_string = "deny"` lint (root `Cargo.toml`), which rejects
+`.push_str(&format!(...))` in favor of writing straight into the buffer with `write!`. This
+adds its sibling for the `.map(|x| format!(...)).collect::<String>()` shape, which has the same
+throwaway-allocation problem but wasn't yet covered. Surfaced one violation in
+`src/routines/service_trigger_tests.rs`, rewritten to fold a `writeln!` directly into the
+accumulator instead of collecting a `Vec` of one-off `format!` strings. No behavior change.
+
+chore(lint): enable `clippy::ignored_unit_patterns` in the `ui` crate
+
+The `ui` crate has its own `[lints.clippy]` table and doesn't inherit the root crate's extended
+deny-list, so `ignored_unit_patterns` (already `deny`d root-side, #1200) never applied to
+`ui/src` despite CI's `clippy` job running `--workspace`. Enabling it surfaced 35 violations
+across `main.rs`, `routines/page.rs`, `routines/hooks.rs`, `routines/bulk_actions.rs`,
+`schedule_heatmap.rs`, `overview.rs`, `settings.rs`, `refresh.rs`, `machines.rs`, and
+`routines/form.rs`: `use_effect_with((), move |_| ...)` hooks and `Callback::from(move |_: ()|
+...)` handlers all matched the `()`-typed argument with `_`, discarding its type instead of
+stating it explicitly. Applied via `cargo clippy --fix`, rewriting each `_`/`_: ()` to `()`. No
+behavior change.
+
+chore(lint): enable `clippy::large_stack_arrays` workspace-wide
+
+Denies a local array literal over 512000 bytes — a value that size belongs on the heap
+(`Vec`/`Box`), not the stack. A daemon process runs long-lived worker threads with a fixed,
+comparatively small stack, so an oversized stack array is a latent stack-overflow risk that only
+surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase was
+already clean, so this surfaced 0 violations. No behavior change.
+
+chore(lint): enable `clippy::literal_string_with_formatting_args` workspace-wide
+
+Denies a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
+outside a formatting macro — usually a leftover `format!`/`println!` argument that got moved
+into a plain string and silently stopped interpolating. Surfaced 2 violations in
+`routines/command.rs::substitute`, both intentional `String::replace` placeholder tokens rather
+than formatting-macro arguments; annotated with a scoped `#[allow(reason = ...)]` explaining why.
+No behavior change.
+
+chore(lint): enable `clippy::many_single_char_names` workspace-wide
+
+Rejects a scope with 4+ single-character bindings in play at once. Surfaced one violation:
+`ui/src/routines/filter_tests.rs`'s `is_active_detects_each_facet` test had six (`q`, `s`, `a`,
+`m`, `r`, `t`), one per `RoutineFilter` facet under test. Renamed to `query_filter`,
+`status_filter`, `agent_filter`, `machine_filter`, `repo_filter`, `tag_filter`. No behavior change.
+
+chore(lint): enable `clippy::needless_pass_by_value` in the `ui` crate
+
+The `ui` crate has its own `[lints.clippy]` table and doesn't inherit the root crate's extended
+deny-list, so `needless_pass_by_value` (already `deny`d root-side) never applied to `ui/src`
+despite CI's `clippy` job running `--workspace`. Enabling it surfaced 5 violations in
+`routines/actions.rs` and `routines/bulk_actions.rs`: `install_crud_handlers` and
+`install_bulk_handlers` took their `state`/`toast`/`now` Yew handles by value but only ever
+`.clone()`d them into closures, never consuming the outer parameter itself. Changed the
+parameters to references (and updated the single call site in `routines/page.rs` to pass
+borrows instead of pre-cloning), removing the needless ownership transfer. No behavior change.
+
+chore(lint): enable `clippy::redundant_clone` in the `ui` crate
+
+Mirrors the root crate's `redundant_clone = "deny"` (root `Cargo.toml`) — the `ui` crate has
+its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate was already
+clean, so this surfaced 0 violations. No behavior change.
+
+chore(lint): enable `clippy::redundant_clone` workspace-wide. Fixes 31 violations across the `ui`
+crate and the root crate's test suite: intermediate `let x = x.clone();` shadows built for a `move`
+closure that turned out to be `x`'s last use, and a few `field.clone()` reads passed straight into
+a constructor that never touched the original value again. Each is replaced with a direct move of
+the original. No behavior change.
+
+chore(lint): enable `clippy::ref_option` workspace-wide
+
+Reject a `&Option<T>` parameter in favour of `Option<&T>` — the former forces every caller to
+already own (or clone into) an `Option`, while the latter accepts a plain `&T` wrapped in `Some`
+just as easily and is the idiomatic way to say "an optional borrow". Enabling it surfaced 1
+violation in `ui/src/command_palette_match.rs`: `schedule_label` took `human: &Option<String>`
+only to immediately match on it by reference. Changed the signature to `Option<&String>` and
+updated its one call site and tests accordingly. No behavior change. The root `moadim` crate was
+already clean, so `deny` there just locks it in.
+
+chore(lint): enable `clippy::similar_names` workspace-wide
+
+Rejects a binding whose name is a near-miss of another binding already in scope. Surfaced four
+violations: `rmcp::model::ContentBlock::Text(txt) => txt.text.clone()`, repeated across the MCP
+route tests, shadowed an existing local also named `text`. Renamed the match binding to `block`
+in each spot. No behavior change.
+
+chore(lint): enable `clippy::string_lit_as_bytes` in the `ui` crate. Mirrors the same lint
+already enabled workspace-root-side (#1202) — the `ui` crate has its own `[lints.clippy]` table
+with no `workspace = true` inheritance, so it was silently exempt despite `clippy --workspace`
+covering it in CI. The `ui` crate was already clean, so no source changes were needed. No
+behavior change.
+
+chore(lint): enable `clippy::string_lit_as_bytes` in the root crate. Rewrites the two
+`"...".as_bytes()` comparisons in `src/routes/http_settings_routes_tests.rs` to byte-string
+literal slices (`&b"..."[..]`), stating "this is bytes" at the literal instead of via a runtime
+conversion call. No behavior change.
+
+chore(lint): enable `clippy::unnested_or_patterns` workspace-wide
+
+Rejects an or-pattern repeated across multiple match arms/parameters instead of merged into a
+single nested or-pattern, so duplicated arm bodies can't drift out of sync as arms are added or
+reordered. The codebase was already clean, so no source changes were needed — `deny` just locks
+that in.
+
+chore(lint): enable clippy::use_self in the ui crate
+
+Mirrors the root crate's `use_self = "deny"` (see `Cargo.toml`). The `ui` crate has its own
+`[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied
+to `ui/src` despite CI's `clippy` job running `--workspace`. Fixed the 135 violations this
+surfaced across `refresh.rs`, `routines/state.rs`, `routines/filter.rs`,
+`overview_attention.rs`, and `schedule_heatmap_grid.rs` via `cargo clippy --fix`, replacing
+enum/type name repetition (e.g. `RGroupBy::Status`) with `Self::Status` inside their own impl
+blocks. No behavior change.
+
+chore(lint): enable `clippy::ignored_unit_patterns` in the root crate. Rewrites the four
+`tokio::select!` arms in `src/routes/http_listener.rs` that matched a `()`-typed future with `_`
+to match `()` explicitly instead, so the pattern states its type rather than leaving the reader to
+confirm `_` isn't silently discarding something meaningful. No behavior change.
+
+chore(lint): enable `missing_docs` in the `ui` crate
+
+The `ui` crate has its own `[lints]` table (no `workspace = true` inheritance), so root's
+`missing_docs = "deny"` (in force since the project's early `[lints.rust]` table) never applied to
+`ui/src` despite CI's `clippy`/`doc` jobs running `--workspace`. Enabling it surfaced 34 undocumented
+public items in `main.rs`: the crate root doc, the `Route` enum and its variants, `ShellState` and
+its fields, `ShellAction` and its variants/fields, and the `App`/`Nav` function components. Added
+doc comments for each, and split `ShellState`/`ShellAction`/their `Reducible` impl out into a new
+`shell_state.rs` module so `main.rs` stays under the workspace's 500-line-per-file convention. No
+behavior change.
+
+fix(ui,client): align the Routines "Dormant" status filter with the health badge/KPI definition of dormant. Both treated an empty `machines` list as dormant, but only the health badge/KPI (not the filter facet) also treated a list holding only blank/whitespace entries as dormant — so a routine could show a "DORMANT" badge and count toward the dormant KPI while filtering by `Status: Dormant` hid it. The filter now uses the same "no real machine assigned" check as the health/KPI logic in both the Yew UI and the React client.
+
+Fix `highlightSegments` (`client/src/pages/routines/logSearch.ts`) silently dropping a log-search
+match when it starts on or spans a character whose `toLowerCase()` expands to more than one code
+point (e.g. Turkish `İ` → `i` + a combining dot above). The per-character lowercase array lost its
+1:1 correspondence with the original text in that case, misaligning every subsequent window in the
+sliding-window match. Now truncates each mapped entry to its first code point, mirroring the Rust
+port's `c.to_lowercase().next().unwrap_or(c)` in `ui/src/log_viewer.rs`. No behavior change for
+plain-ASCII queries.
+
+fix(ui,client): omit blank machine entries from the Machine filter dropdown
+
+`distinct_machines_r` (Yew UI) and `distinctMachines` (React client) collected every raw
+`machines` string into the Machine facet's dropdown options, including blank/whitespace-only
+entries. The API already rejects such entries on create/update (`validate_machines`, #600),
+but routines written before that guard existed can still carry one, and `routineHealth`/
+`routine_health` already treat it as "no real machine assigned" (dormant). Left unfiltered, a
+legacy blank entry surfaced as a stray, unlabeled blank option in the dropdown, distinct from
+"Any" and "Unassigned". Both helpers now skip blank/whitespace-only entries, matching the
+health check's existing tolerance for this legacy data shape.
+
+test(middlewares): cover the empty `x-request-id` header case in `logger`. The handler already falls back to a generated id when an inbound `x-request-id` is empty (`.filter(|header| !header.is_empty())`), but no test exercised that branch — a future edit removing the filter would silently start echoing back an empty correlation id. Test-only change, no behavior change.
+
+feat(ui): day-detail popover on the routines calendar
+
+Clicking a day number in the routines calendar month view now opens a popover listing that
+day's fire times (`HH:MM`) per routine, sorted chronologically, each with a "▶ RUN" button
+that triggers the routine immediately via the existing `POST /api/v1/routines/{id}/trigger`
+endpoint. Closes the TODO.md item asking for this. Frontend-only: new pure `fires_on_day`
+(`ui/src/schedule.rs`) and `day_fire_rows` (`ui/src/routines/calendar.rs`) helpers, both
+host-tested; no backend or API changes.
+
+## [1.3.0] - 2026-07-15
+
+chore(deps): bump `openapi-fetch` from 0.13.8 to 0.17.0 (npm group) and regenerate `prebuilt-client.html` to match. No behavior change.
+
+fix(routines): cap each workbench's `agent.log` to 32 MiB on the watchdog tick
+
+`tmux pipe-pane -o` streams a session's raw pane output — every ANSI redraw
+frame of a full-screen TUI agent included — into `agent.log` via an
+unbounded, append-only `cat >>`. The `svc_logs`/`svc_run_log` read path
+already bounds a single response to a 2 MiB tail (#280), but nothing bounded
+the file's on-disk growth between TTL sweeps: a long-running or chatty
+session could otherwise fill the disk before it was ever reaped (#268).
+
+Adds `routines::cleanup::log_cap`, which truncates an oversized `agent.log`
+in place to its last 32 MiB (prefixed with a marker noting how many bytes
+were dropped) on the existing 30s watchdog tick, alongside the hung-session
+kill check it already runs per workbench. Best-effort: an I/O failure for
+one workbench is logged and does not abort the sweep for the rest.
+
+Add a unit test for the client's `formatTtl` (workbench-retention duration formatter), the last pure-logic module in `client/src` without a matching `*.test.ts`. No behavior change — test-only.
+
+Add a test for `cap_agent_log_to` propagating the `OpenOptions::open` error when the target path is a directory, closing an untested error branch in the watchdog's `agent.log` size cap. No behavior change — test-only.
+
+Add host-side unit tests for the day timeline's `fire_times` (`ui/src/day_timeline.rs`), covering multi-fire schedules, the midnight-boundary seed, adjacent-day filtering, unparseable schedules, and the `MAX_FIRES` cap. This logic previously had no test module, unlike every other pure-logic file in the `ui` crate. No behavior change.
+
+Dedupe the client's day-timeline fire-time math: `pages/routines/DayTimeline.tsx` had its own untested copy of the cron-to-fire-times logic (including the midnight-boundary seed trick) instead of the already-tested `fireTimesOnDay` used by the heatmap's day drill-down. Moved `fireTimesOnDay` into `lib/schedule.ts` as the single shared implementation (heatmap's `dayTimelineMath.ts` now re-exports it), pointed the routines page at it, and moved its tests to `schedule.test.ts`. No behavior change.
+
+docs(cli): document that `moadim stop` does not kill in-flight routine sessions
+
+`moadim stop` (and the UI STOP button / `POST /shutdown`) only stops the
+daemon's own HTTP/MCP server. Routine agents run in a **detached** tmux
+session (`tmux new-session -d`), independent of the daemon process, so an
+in-flight run is never touched by a stop request — it keeps running (and can
+keep opening PRs, filing issues, pushing commits, etc.) until it finishes on
+its own or a later daemon start's watchdog/cleanup sweep reaps it (#320).
+
+This behavior was previously undocumented, so `moadim stop` reporting
+success could read as "everything stopped" when a routine agent was still
+acting. Documents it in `moadim --help`, the `Command::Stop`/`stop()` doc
+comments, `README.md`, `Architecture.md`, and `docs/moadim.1` — no behavior
+change.
+
+chore(lint): enable clippy::cast_lossless in the workspace
+
+Adds `cast_lossless = "deny"` to both the root crate's and the `ui` crate's
+`[lints.clippy]` tables, rejecting `as` casts that widen without loss (e.g.
+`u32 as i64`) in favour of `From`/`Into`. An `as` cast stays silently legal
+(and silently starts truncating) if the source or target type ever changes
+size; `i64::from(x)` is the same widening but fails to compile the moment it
+would no longer be lossless.
+
+Fixed the single violation this surfaced, in `ui/src/routines/calendar.rs`'s
+week-grid start calculation, replacing `... as i64` with
+`i64::from(...)`. No behavior change.
+
+chore(lint): enable clippy::derive_partial_eq_without_eq in the ui crate
+
+Mirrors the root crate's `derive_partial_eq_without_eq = "deny"` (see `Cargo.toml`). The
+`ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list,
+so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Fixed the
+15 violations this surfaced by adding `Eq` alongside `PartialEq` on the affected structs and
+enums, all of which are already field-for-field `Eq`-safe (no float fields).
+
+chore(lint): enable clippy::or_fun_call in the ui crate
+
+Mirrors the root crate's `or_fun_call = "deny"` (see `Cargo.toml`). The `ui` crate has its own
+`[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+`ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean under
+it (zero violations), so `deny` locks that in. No behavior change.
+
+chore(lint): enable clippy::or_fun_call in the root crate
+
+Adds `or_fun_call = "deny"` to the root crate's `[lints.clippy]` table. It rejects a function
+call passed directly as the fallback argument to `unwrap_or`/`ok_or`/`and`/`or`-style methods
+(e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else` form
+(`opt.unwrap_or_else(expensive)`) — the eager form always evaluates the fallback, even on the
+common path where the value is already present, doing needless work (or a needless allocation)
+on every call.
+
+The codebase is already clean under it (zero violations), so `deny` locks that in. No behavior
+change.
+
+feat(routines): expose the global concurrency cap through the UI/REST
+
+`MOADIM_MAX_CONCURRENT_RUNS` was previously only configurable via the environment variable. A
+new `GET`/`PUT /config/max-concurrent-runs` REST endpoint and a settings-page card now let the
+cap be viewed and changed at runtime, persisted to `~/.config/moadim/machine.local.toml`
+(gitignored, machine-local, same tier as the existing machine-name override). Precedence:
+`MOADIM_MAX_CONCURRENT_RUNS` env var (ops/CI) > the persisted UI/REST override > unbounded.
+Takes effect on the next trigger check — no restart required.
+
+Opt the client's `BrowserRouter` (and the `MemoryRouter` used in `App.test.tsx`) into React Router's `v7_startTransition` and `v7_relativeSplatPath` future flags, silencing the two v7-upgrade warnings React Router logs on every render and test run. No behavior change.
+
+fix(build): regenerate stale `prebuilt.html`
+
+`prebuilt.html` last regenerated at #1122 no longer matches the compiled
+`ui/` sources — merges since then (e.g. #1129, #1136) drifted the committed
+bundle again, so `main` currently fails its own `prebuilt-html-fresh` CI
+check and every open PR touching `ui/` inherits that failure regardless of
+its own diff. Rebuilt via `cargo check` (trunk 0.21.14, matching the
+workflow's pin) and committed the result. No source change.
+
+Add a test for `svc_set_power_saving` returning 500/Internal when `write_routine` fails (read-only config dir), closing the last untested error branch in that handler. No behavior change — test-only.
+
+test(ui): cover the UI's `humanize_bytes` byte-formatting helper
+
+`routines::model::humanize_bytes` (used by the cleanup toast) mirrors the CLI's own
+`humanize_bytes` (`src/cli/query.rs`, tested by `src/cli/cleanup_bytes_tests.rs`) byte-for-byte,
+but had zero unit tests of its own — the `ui` crate isn't held to the root package's 100%
+line-coverage floor, so this pure, deterministic function silently had no regression net despite
+its CLI twin being fully covered. Adds the same edge cases the CLI test already exercises (sub-KB,
+each unit boundary, MB-range rounding, and the u64::MAX TB cap) so a future edit that de-syncs the
+two implementations' output fails a test instead of only showing up as a visual mismatch between
+`moadim cleanup`'s CLI output and the UI's cleanup toast. No behavior change.
+
 ## [1.2.0] - 2026-07-13
 
 feat(client): add a new React/TypeScript web client, served at `/client` alongside the existing `ui/`
@@ -3578,7 +3904,9 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/moadim-io/daemon/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/moadim-io/daemon/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/moadim-io/daemon/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/moadim-io/daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/moadim-io/daemon/compare/v1.0.0...v1.0.1

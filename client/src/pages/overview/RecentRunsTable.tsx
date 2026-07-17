@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { FleetRunSummary } from "../../api/hooks";
-import { reltime } from "../../lib/cronUtils";
+import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 
 /**
@@ -49,7 +49,9 @@ export function RecentRunsTable({ runs, loading }: { runs: FleetRunSummary[]; lo
                 <Link to={`/routines?history=${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
               </td>
               <td>
-                <div className="cell-time">{reltime(run.started_at)}</div>
+                <div className="cell-time" title={abstime(run.started_at)}>
+                  {reltime(run.started_at)}
+                </div>
               </td>
               <td>
                 <span className="cell-meta">

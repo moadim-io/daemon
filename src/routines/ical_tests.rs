@@ -85,7 +85,7 @@ fn enabled_daily_routine_yields_events_within_horizon() {
     assert!(ics.contains("DESCRIPTION:do the thing (agent: claude)\r\n"));
     assert!(ics.contains("UID:r1-"));
     assert!(ics.contains("@moadim\r\n"));
-    assert!(ics.contains("DTSTART:"));
+    assert!(ics.contains("DTSTART"));
     assert!(ics.contains("DTSTAMP:"));
     // Fire times are momentary triggers, not busy blocks: every event is
     // TRANSPARENT so subscribers aren't marked BUSY (one per VEVENT).
@@ -150,7 +150,9 @@ fn snoozed_routine_skips_fires_before_the_deadline() {
     let now = fixed_now();
     let deadline = now + Duration::minutes(3);
     routine.snoozed_until = Some(u64::try_from(deadline.timestamp()).unwrap());
-    let ics = build_ical_with_cap(&[routine], now, 5);
+    // Force the plain-UTC fallback so this test only exercises the snooze-filtering logic, not
+    // the TZID-formatting choice (covered separately below).
+    let ics = build_ical_with_tz(&[routine], now, 5, None);
     // The first two per-minute fires (00:01, 00:02) fall before the deadline and are
     // dropped; the feed starts at the deadline itself (00:03).
     assert!(ics.contains(&format!(
@@ -173,7 +175,9 @@ fn skip_runs_drops_the_next_n_fires() {
     let mut routine = routine_with("r1", "* * * * *", true);
     routine.skip_runs = Some(2);
     let now = fixed_now();
-    let ics = build_ical_with_cap(&[routine], now, 3);
+    // Force the plain-UTC fallback so this test only exercises the skip-count logic, not the
+    // TZID-formatting choice (covered separately below).
+    let ics = build_ical_with_tz(&[routine], now, 3, None);
     let first_kept = now + Duration::minutes(3);
     let first_dropped = now + Duration::minutes(1);
     assert!(ics.contains(&format!(
@@ -494,5 +498,93 @@ fn at_cap_with_more_fires_still_in_horizon_adds_truncation_marker() {
     assert!(
         ics.contains("-truncated@moadim"),
         "truncation marker expected"
+    );
+}
+
+// ── VTIMEZONE / TZID-qualified DTSTART (issue #387) ──────────────────────────
+
+#[test]
+fn known_host_zone_emits_vtimezone_and_tzid_dtstart() {
+    let offset = chrono::FixedOffset::east_opt(3 * 3600).unwrap(); // e.g. Asia/Jerusalem in winter
+    let now = fixed_now();
+    let ics = build_ical_with_tz(
+        &[routine_with("r1", "@daily", true)],
+        now,
+        MAX_EVENTS_PER_ROUTINE,
+        Some(("Asia/Jerusalem".to_string(), offset)),
+    );
+    assert!(ics.contains("BEGIN:VTIMEZONE\r\n"));
+    assert!(ics.contains("TZID:Asia/Jerusalem\r\n"));
+    assert!(ics.contains("BEGIN:STANDARD\r\n"));
+    assert!(ics.contains("TZOFFSETFROM:+0300\r\n"));
+    assert!(ics.contains("TZOFFSETTO:+0300\r\n"));
+    assert!(ics.contains("END:STANDARD\r\n"));
+    assert!(ics.contains("END:VTIMEZONE\r\n"));
+    // Every DTSTART references the VTIMEZONE's TZID with a local (non-`Z`-suffixed) wall-clock
+    // time instead of the bare UTC-instant form.
+    let events = count(&ics, "BEGIN:VEVENT");
+    assert!(events > 0);
+    assert_eq!(count(&ics, "DTSTART;TZID=Asia/Jerusalem:"), events);
+    // The only bare `DTSTART:` left is the `VTIMEZONE`'s own `STANDARD` sub-component
+    // (RFC 5545 requires it there, unrelated to any `VEVENT`'s `DTSTART`).
+    assert_eq!(count(&ics, "DTSTART:"), 1);
+    // DTSTAMP still stays UTC (RFC 5545 requires it), regardless of the host zone.
+    assert!(ics.contains("DTSTAMP:") && ics.contains('Z'));
+}
+
+#[test]
+fn unresolvable_host_zone_falls_back_to_bare_utc_dtstart() {
+    let now = fixed_now();
+    let ics = build_ical_with_tz(
+        &[routine_with("r1", "@daily", true)],
+        now,
+        MAX_EVENTS_PER_ROUTINE,
+        None,
+    );
+    assert!(!ics.contains("VTIMEZONE"));
+    assert!(!ics.contains("TZID"));
+    let events = count(&ics, "BEGIN:VEVENT");
+    assert!(events > 0);
+    assert_eq!(count(&ics, "DTSTART:"), events);
+}
+
+#[test]
+fn truncation_marker_also_uses_tzid_dtstart_when_host_zone_known() {
+    let offset = chrono::FixedOffset::west_opt(5 * 3600).unwrap(); // e.g. America/New_York in winter
+    let now = fixed_now();
+    let ics = build_ical_with_tz(
+        &[routine_with("r1", "* * * * *", true)],
+        now,
+        2,
+        Some(("America/New_York".to_string(), offset)),
+    );
+    assert!(ics.contains("-truncated@moadim"));
+    // 2 real events + 1 truncation marker, all TZID-qualified.
+    assert_eq!(count(&ics, "BEGIN:VEVENT"), 3);
+    assert_eq!(count(&ics, "DTSTART;TZID=America/New_York:"), 3);
+}
+
+#[test]
+fn utc_offset_formats_per_rfc5545() {
+    assert_eq!(
+        format_utc_offset(chrono::FixedOffset::east_opt(0).unwrap()),
+        "+0000"
+    );
+    assert_eq!(
+        format_utc_offset(chrono::FixedOffset::east_opt(3 * 3600).unwrap()),
+        "+0300"
+    );
+    assert_eq!(
+        format_utc_offset(chrono::FixedOffset::west_opt(5 * 3600).unwrap()),
+        "-0500"
+    );
+    assert_eq!(
+        format_utc_offset(chrono::FixedOffset::east_opt(5 * 3600 + 30 * 60).unwrap()),
+        "+0530"
+    );
+    // A non-zero seconds component (some pre-1900 zones) appends a third HH:MM:SS group.
+    assert_eq!(
+        format_utc_offset(chrono::FixedOffset::east_opt(3 * 3600 + 25).unwrap()),
+        "+030025"
     );
 }

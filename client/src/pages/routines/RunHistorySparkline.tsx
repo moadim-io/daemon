@@ -1,5 +1,5 @@
 import type { FleetRunSummary } from "../../api/hooks";
-import { reltime } from "../../lib/cronUtils";
+import { abstime, reltime } from "../../lib/cronUtils";
 import { runStatusLabel } from "../../lib/runDisplay";
 
 const TICK_W = 6;
@@ -44,7 +44,7 @@ export function RunHistorySparkline({ runs }: RunHistorySparklineProps) {
           fill={FILL[run.status]}
           className={`spark-tick ${run.status}`}
         >
-          <title>{`${runStatusLabel(run.status)} · ${reltime(run.started_at)}`}</title>
+          <title>{`${runStatusLabel(run.status)} · ${reltime(run.started_at)} (${abstime(run.started_at)})`}</title>
         </rect>
       ))}
     </svg>

@@ -72,12 +72,12 @@ pub(super) async fn serve_with_grace(
     // Phase 1: serve normally until it returns on its own or a shutdown is requested.
     tokio::select! {
         res = &mut serve => return res,
-        _ = shutdown_started => {}
+        () = shutdown_started => {}
     }
     // Phase 2: shutdown requested — give open connections a bounded window to drain, then force exit.
     tokio::select! {
         res = &mut serve => res,
-        _ = tokio::time::sleep(grace) => {
+        () = tokio::time::sleep(grace) => {
             log::warn!(
                 "graceful shutdown exceeded {grace:?}; forcing exit with connections still open"
             );
@@ -170,8 +170,8 @@ pub async fn run_with_listener_until(
     // the `/shutdown` route fires `signal` (the UI "STOP" button / `moadim stop`).
     let combined = async move {
         tokio::select! {
-            _ = shutdown => {}
-            _ = signal.notified() => {}
+            () = shutdown => {}
+            () = signal.notified() => {}
         }
         started.notify_one();
     };

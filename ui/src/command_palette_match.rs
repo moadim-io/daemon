@@ -100,8 +100,8 @@ pub(crate) fn fuzzy_score(text: &str, query: &str) -> Option<i32> {
     }
     let hay: Vec<char> = text.to_lowercase().chars().collect();
     let pins: Vec<char> = needle.to_lowercase().chars().collect();
-    let mut score = 0i32;
-    let mut cursor = 0usize;
+    let mut score = 0_i32;
+    let mut cursor = 0_usize;
     let mut prev: Option<usize> = None;
     for &needle_ch in &pins {
         let mut hit = None;

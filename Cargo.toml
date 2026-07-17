@@ -299,3 +299,9 @@ literal_string_with_formatting_args = "deny"
 # surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
 # already clean, so `deny` locks that in.
 large_stack_arrays = "deny"
+# Require an underscore between a numeric literal and its type suffix (e.g. `500_u64`, not
+# `500u64`) — without it, the suffix reads as part of the digits at a glance, and a reviewer has
+# to look twice to see where the number ends and the type begins. Fixed the 27 violations this
+# surfaced (all `0u8`/`0u64`/`Nu64`-style literals in test code and one production site in
+# `routines/cleanup/disk_cap.rs`) via `cargo clippy --fix`. No behavior change.
+unseparated_literal_suffix = "deny"

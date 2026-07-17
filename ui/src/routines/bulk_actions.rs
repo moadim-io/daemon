@@ -70,8 +70,8 @@ pub(crate) fn install_bulk_handlers(
                 return;
             }
             spawn_local(async move {
-                let mut ok = 0usize;
-                let mut failed = 0usize;
+                let mut ok = 0_usize;
+                let mut failed = 0_usize;
                 for id in ids {
                     let req = UpdateRoutineRequest {
                         enabled: Some(enabled),
@@ -114,8 +114,8 @@ pub(crate) fn install_bulk_handlers(
             let toast = toast.clone();
             let ids: Vec<String> = state.selected.iter().cloned().collect();
             spawn_local(async move {
-                let mut ok = 0usize;
-                let mut failed = 0usize;
+                let mut ok = 0_usize;
+                let mut failed = 0_usize;
                 let mut deleted: Vec<String> = Vec::new();
                 for id in ids {
                     match api_delete(&id).await {

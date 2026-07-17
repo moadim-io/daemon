@@ -151,7 +151,7 @@ pub(crate) fn occurrences_per_day(
         .from_local_datetime(&start_naive)
         .earliest()?
         .checked_sub_signed(Duration::seconds(1))?;
-    let mut counts = [0u32; GRID_CELLS];
+    let mut counts = [0_u32; GRID_CELLS];
     for dt in cron.iter_after(start).take(MAX_OCCURRENCES) {
         let day = (dt.date_naive() - grid_start).num_days();
         if day < 0 {

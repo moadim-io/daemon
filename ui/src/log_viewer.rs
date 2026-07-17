@@ -182,8 +182,8 @@ fn highlight_segments<'a>(text: &'a str, query: &str) -> Vec<(bool, &'a str)> {
         .collect();
 
     let mut segments = Vec::new();
-    let mut cursor = 0usize; // char index into `chars`/`lower`
-    let mut last_byte = 0usize; // byte offset in `text` already emitted
+    let mut cursor = 0_usize; // char index into `chars`/`lower`
+    let mut last_byte = 0_usize; // byte offset in `text` already emitted
     while cursor + needle.len() <= lower.len() {
         if lower[cursor..cursor + needle.len()] == needle[..] {
             let match_start = chars[cursor].0;

@@ -351,7 +351,7 @@ fn heat_legend() -> Html {
     html! {
         <div class="hm-legend">
             <span class="hm-legend-label">{"LESS"}</span>
-            { for (0..=4u8).map(|level| html! {
+            { for (0..=4_u8).map(|level| html! {
                 <span class={format!("hm-cell lvl-{level} hm-legend-swatch")}></span>
             }) }
             <span class="hm-legend-label">{"MORE"}</span>

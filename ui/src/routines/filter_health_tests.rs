@@ -344,3 +344,42 @@ fn health_priority_order_dormant_most_urgent() {
     assert!(RoutineHealth::PowerSaving.priority() < RoutineHealth::Snoozed.priority());
     assert!(RoutineHealth::Snoozed.priority() < RoutineHealth::Healthy.priority());
 }
+
+/// `badge()`/`badge_class()` were the only `RoutineHealth` methods without a test (`priority()`
+/// is covered above) — assert the exact rendered strings for every variant, and that both stay
+/// unique across variants, so a copy-paste badge/class collision (two variants rendering the same
+/// label or CSS class) is caught here instead of silently in the UI.
+#[test]
+fn health_badge_and_badge_class_cover_all_variants() {
+    let cases = [
+        (RoutineHealth::Dormant, "DORMANT", "health-badge dormant"),
+        (
+            RoutineHealth::DeadSchedule,
+            "DEAD SCHEDULE",
+            "health-badge dead",
+        ),
+        (
+            RoutineHealth::AgentMissing,
+            "AGENT MISSING",
+            "health-badge agent-missing",
+        ),
+        (RoutineHealth::Disabled, "DISABLED", "health-badge disabled"),
+        (
+            RoutineHealth::PowerSaving,
+            "POWER SAVING",
+            "health-badge power-saving",
+        ),
+        (RoutineHealth::Snoozed, "SNOOZED", "health-badge snoozed"),
+        (RoutineHealth::Healthy, "HEALTHY", "health-badge healthy"),
+    ];
+    for (health, badge, badge_class) in cases {
+        assert_eq!(health.badge(), badge);
+        assert_eq!(health.badge_class(), badge_class);
+    }
+    let badges: Vec<&str> = cases.iter().map(|(h, _, _)| h.badge()).collect();
+    let classes: Vec<&str> = cases.iter().map(|(h, _, _)| h.badge_class()).collect();
+    let unique_badges: std::collections::HashSet<&&str> = badges.iter().collect();
+    let unique_classes: std::collections::HashSet<&&str> = classes.iter().collect();
+    assert_eq!(unique_badges.len(), badges.len(), "duplicate badge label");
+    assert_eq!(unique_classes.len(), classes.len(), "duplicate badge class");
+}

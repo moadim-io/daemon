@@ -9,6 +9,8 @@ import {
   distinctRepositories,
   distinctTags,
   filterRoutines,
+  healthBadge,
+  healthBadgeClass,
   healthPriority,
   isFilterActive,
   isRoutineSnoozed,
@@ -24,6 +26,7 @@ import {
   triggerButtonTitle,
   type NamedFacet,
   type RoutineFilter,
+  type RoutineHealth,
 } from "./filter";
 
 function routine(
@@ -220,8 +223,10 @@ describe("filter", () => {
     const f: RoutineFilter = { ...defaultFilter(), machine: { kind: "unassigned" } };
     const withM = routine("a", "t", "claude", "0 * * * *", ["m1"], [], true);
     const without = routine("b", "t", "claude", "0 * * * *", [], [], true);
+    const blank = routine("c", "t", "claude", "0 * * * *", [""], [], true);
     expect(matchesFilter(f, withM, now(), window)).toBe(false);
     expect(matchesFilter(f, without, now(), window)).toBe(true);
+    expect(matchesFilter(f, blank, now(), window)).toBe(true);
   });
 
   it("machine specific matches only that machine", () => {
@@ -667,5 +672,30 @@ describe("filter", () => {
     expect(healthPriority("disabled")).toBeLessThan(healthPriority("power-saving"));
     expect(healthPriority("power-saving")).toBeLessThan(healthPriority("snoozed"));
     expect(healthPriority("snoozed")).toBeLessThan(healthPriority("healthy"));
+  });
+
+  // `healthBadge`/`healthBadgeClass` were the only exported `filter.ts` functions with no test
+  // (mirrors ui/src/routines/filter_health_tests.rs's `health_badge_and_badge_class_cover_all_variants`,
+  // added alongside this test) — assert the exact rendered strings for every variant, and that
+  // both stay unique, so a copy-paste badge/class collision is caught here instead of silently in
+  // the UI.
+  it("health badge and badge class cover all variants", () => {
+    const cases: Array<[RoutineHealth, string, string]> = [
+      ["dormant", "DORMANT", "health-badge dormant"],
+      ["dead-schedule", "DEAD SCHEDULE", "health-badge dead"],
+      ["agent-missing", "AGENT MISSING", "health-badge agent-missing"],
+      ["disabled", "DISABLED", "health-badge disabled"],
+      ["power-saving", "POWER SAVING", "health-badge power-saving"],
+      ["snoozed", "SNOOZED", "health-badge snoozed"],
+      ["healthy", "HEALTHY", "health-badge healthy"],
+    ];
+    for (const [health, badge, badgeClass] of cases) {
+      expect(healthBadge(health)).toBe(badge);
+      expect(healthBadgeClass(health)).toBe(badgeClass);
+    }
+    const badges = cases.map(([health]) => healthBadge(health));
+    const classes = cases.map(([health]) => healthBadgeClass(health));
+    expect(new Set(badges).size).toBe(badges.length);
+    expect(new Set(classes).size).toBe(classes.length);
   });
 });

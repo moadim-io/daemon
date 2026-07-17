@@ -342,6 +342,27 @@ redundant_clone = "deny"
 # extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
 # `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
 format_collect = "deny"
+# Reject an or-pattern repeated across multiple match arms/parameters (e.g. `Foo::A | Foo::B =>
+# ..., Foo::C | Foo::D => ...` written as separate arms with duplicated bodies) in favour of
+# merging into one arm with a single nested or-pattern. Mirrors the root crate's
+# `unnested_or_patterns = "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]`
+# table and doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite
+# CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+unnested_or_patterns = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. Mirrors the root crate's `large_stack_arrays = "deny"` (see
+# Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's
+# extended deny-list, so this never applied to `ui/src` despite CI's `clippy` job running
+# `--workspace`. A wasm32 stack is also fixed-size and comparatively small, so the same
+# stack-overflow risk applies here too. The `ui` crate is already clean, so `deny` locks that in.
+large_stack_arrays = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next
+# to `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple
+# of characters. Mirrors the root crate's `similar_names = "deny"` (see Cargo.toml) — the `ui`
+# crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this
+# never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is
+# already clean, so `deny` locks that in.
+similar_names = "deny"
 # Reject a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
 # outside a formatting macro — usually a leftover `format!`/`println!` arg that got moved into a
 # plain string and silently stopped interpolating. Mirrors the root crate's

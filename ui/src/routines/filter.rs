@@ -240,7 +240,9 @@ impl RoutineFilter {
             _ => {}
         }
         match &self.machine {
-            RoutineMachineFacet::Unassigned if !r.machines.is_empty() => return false,
+            RoutineMachineFacet::Unassigned if !r.machines.iter().all(|m| m.trim().is_empty()) => {
+                return false
+            }
             RoutineMachineFacet::Machine(m) if !r.machines.iter().any(|x| x == m) => return false,
             _ => {}
         }

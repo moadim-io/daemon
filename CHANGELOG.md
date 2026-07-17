@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+fix(security): refuse to start on a non-loopback `MOADIM_BIND_ADDR` unless `MOADIM_ALLOW_REMOTE=1` is explicitly set (#253)
+
 ## [1.3.1] - 2026-07-17
 
 fix(sync): keep a slow crontab sync from stalling the async runtime

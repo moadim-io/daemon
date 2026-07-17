@@ -514,6 +514,27 @@ MOADIM_BIND_ADDR=127.0.0.1:7000 moadim status
 > authenticating reverse proxy (or a firewall / VPN / SSH tunnel) instead of widening
 > `MOADIM_BIND_ADDR`.
 
+Because that risk is easy to hit by accident (a copy-pasted `0.0.0.0` to "just get it
+working" on a container/VM), the daemon **refuses to start** if `MOADIM_BIND_ADDR` resolves
+to a non-loopback address, unless you explicitly opt in:
+
+```sh
+# Refused at startup — 0.0.0.0 is not loopback and MOADIM_ALLOW_REMOTE isn't set:
+MOADIM_BIND_ADDR=0.0.0.0:5784 moadim
+# moadim: refusing to bind to 0.0.0.0:5784: it is not loopback-only, and the REST/MCP API
+# has no authentication — ... Set MOADIM_ALLOW_REMOTE=1 to start anyway if you understand
+# and accept that risk.
+
+# Starts, but logs a prominent warning every time, because you opted in:
+MOADIM_ALLOW_REMOTE=1 MOADIM_BIND_ADDR=0.0.0.0:5784 moadim
+```
+
+`MOADIM_ALLOW_REMOTE` must be exactly `1` — any other value (unset, `true`, `yes`, …) is
+treated as not opted in, so a typo fails closed rather than silently exposing the API. This
+is a startup gate only, not authentication: once opted in, the API is exactly as open as
+described above, so still prefer a reverse proxy / firewall / VPN / SSH tunnel over setting
+this. See issue #253.
+
 Because the override changes both the bind and the probe target, a client started without it
 keeps looking at the default `127.0.0.1:5784` and will report the relocated server as not running.
 Export the variable in your shell profile to make the change stick across commands. All the

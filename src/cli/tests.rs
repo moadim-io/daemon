@@ -28,6 +28,68 @@ fn bind_addr_is_loopback_false_for_non_loopback_or_unparsable() {
 }
 
 #[test]
+fn classify_bind_allows_loopback_regardless_of_opt_in() {
+    for allow_remote in [false, true] {
+        assert_eq!(
+            classify_bind("127.0.0.1:5784", allow_remote),
+            BindDecision::Loopback
+        );
+        assert_eq!(
+            classify_bind("[::1]:5784", allow_remote),
+            BindDecision::Loopback
+        );
+    }
+}
+
+#[test]
+fn classify_bind_refuses_non_loopback_without_opt_in() {
+    for addr in ["0.0.0.0:5784", "192.168.1.10:5784", "not-an-address"] {
+        assert_eq!(
+            classify_bind(addr, false),
+            BindDecision::RemoteRefused,
+            "addr {addr}"
+        );
+    }
+}
+
+#[test]
+fn classify_bind_allows_non_loopback_with_opt_in() {
+    for addr in ["0.0.0.0:5784", "192.168.1.10:5784"] {
+        assert_eq!(
+            classify_bind(addr, true),
+            BindDecision::RemoteAllowed,
+            "addr {addr}"
+        );
+    }
+}
+
+#[test]
+fn remote_bind_allowed_requires_exact_value_one() {
+    let _guard = EnvGuard::set("MOADIM_ALLOW_REMOTE", "1");
+    assert!(remote_bind_allowed());
+}
+
+#[test]
+fn remote_bind_allowed_false_for_unset_or_other_values() {
+    let previous = std::env::var_os("MOADIM_ALLOW_REMOTE");
+    // SAFETY: tests in this crate run single-threaded per binary.
+    unsafe {
+        std::env::remove_var("MOADIM_ALLOW_REMOTE");
+    }
+    assert!(!remote_bind_allowed());
+    for bogus in ["true", "yes", "0", ""] {
+        let _guard = EnvGuard::set("MOADIM_ALLOW_REMOTE", bogus);
+        assert!(!remote_bind_allowed(), "value {bogus}");
+    }
+    if let Some(previous) = previous {
+        // SAFETY: tests in this crate run single-threaded per binary.
+        unsafe {
+            std::env::set_var("MOADIM_ALLOW_REMOTE", previous);
+        }
+    }
+}
+
+#[test]
 fn interactive_flags_select_foreground() {
     for flag in ["-i", "--interactive", "-f", "--foreground"] {
         assert_eq!(parse(argv(&[flag])), Command::Foreground, "flag {flag}");

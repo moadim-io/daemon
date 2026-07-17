@@ -73,7 +73,6 @@ pub fn routine_logs(props: &LogsProps) -> Html {
             let cancelled = Rc::new(Cell::new(false));
             if let Some(period_ms) = interval.as_millis() {
                 let cancelled = cancelled.clone();
-                let load = load.clone();
                 spawn_local(async move {
                     loop {
                         TimeoutFuture::new(period_ms).await;
@@ -99,10 +98,7 @@ pub fn routine_logs(props: &LogsProps) -> Html {
         let cb = props.on_back.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
-    let on_refresh = {
-        let load = load.clone();
-        Callback::from(move |_: MouseEvent| load())
-    };
+    let on_refresh = Callback::from(move |_: MouseEvent| load());
 
     html! {
         <main class="logs-page">

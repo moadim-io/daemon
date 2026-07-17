@@ -1370,11 +1370,33 @@
     .cal-event.clickable { cursor: pointer; }
     .cal-chip.clickable:hover,
     .cal-event.clickable:hover { background: var(--bg-hi, var(--bg-3)); filter: brightness(1.12); }
+    .cal-daynum.clickable {
+      cursor: pointer;
+      align-self: flex-start;
+      padding: 0 3px;
+      border-radius: 3px;
+    }
+    .cal-daynum.clickable:hover { background: var(--bg-hi, var(--bg-3)); color: var(--accent); }
 
     @media (max-width: 640px) {
       .cal-day { min-height: 64px; }
       .cal-chip { font-size: 8px; }
     }
+
+    /* ── Day-detail popover (calendar) ── */
+    .day-fires { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+    .day-fire-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      background: var(--bg-3);
+      border-radius: 4px;
+    }
+    .day-fire-time { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 12px; min-width: 42px; }
+    .day-fire-title { flex: 1; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .day-fire-row.snoozed { opacity: 0.6; }
+    .day-fire-row.snoozed .day-fire-time { color: var(--amber); }
 
     /* ── Day timeline ── */
     .day-wrap {

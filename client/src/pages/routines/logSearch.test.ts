@@ -121,4 +121,15 @@ describe("logViewer — highlightSegments", () => {
       [true, "zz"],
     ]);
   });
+
+  it("regression: a match starting on an expanding character is still found", () => {
+    // Unlike the previous case, the match here *starts on* `İ` itself, so a lowercased copy
+    // that isn't truncated back to one code point per original character throws off every
+    // window position for the rest of the match — the whole "istanbul" span was silently
+    // left unmatched before this was fixed.
+    expect(highlightSegments("İstanbul job failed", "istanbul")).toEqual([
+      [true, "İstanbul"],
+      [false, " job failed"],
+    ]);
+  });
 });

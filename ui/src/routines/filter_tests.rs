@@ -65,11 +65,11 @@ fn default_filter_is_inactive() {
 
 #[test]
 fn is_active_detects_each_facet() {
-    let q = RoutineFilter {
+    let query_filter = RoutineFilter {
         query: "  x ".into(),
         ..Default::default()
     };
-    assert!(q.is_active());
+    assert!(query_filter.is_active());
     // Whitespace-only query is not active.
     let blank = RoutineFilter {
         query: "   ".into(),
@@ -77,11 +77,11 @@ fn is_active_detects_each_facet() {
     };
     assert!(!blank.is_active());
 
-    let s = RoutineFilter {
+    let status_filter = RoutineFilter {
         status: RoutineStatusFacet::Enabled,
         ..Default::default()
     };
-    assert!(s.is_active());
+    assert!(status_filter.is_active());
 
     let due = RoutineFilter {
         status: RoutineStatusFacet::DueSoon,
@@ -89,29 +89,29 @@ fn is_active_detects_each_facet() {
     };
     assert!(due.is_active());
 
-    let a = RoutineFilter {
+    let agent_filter = RoutineFilter {
         agent: AgentFacet::Named("claude".into()),
         ..Default::default()
     };
-    assert!(a.is_active());
+    assert!(agent_filter.is_active());
 
-    let m = RoutineFilter {
+    let machine_filter = RoutineFilter {
         machine: RoutineMachineFacet::Unassigned,
         ..Default::default()
     };
-    assert!(m.is_active());
+    assert!(machine_filter.is_active());
 
-    let r = RoutineFilter {
+    let repo_filter = RoutineFilter {
         repository: RepositoryFacet::Named("github.com/org/repo".into()),
         ..Default::default()
     };
-    assert!(r.is_active());
+    assert!(repo_filter.is_active());
 
-    let t = RoutineFilter {
+    let tag_filter = RoutineFilter {
         tag: TagFacet::Named("nightly".into()),
         ..Default::default()
     };
-    assert!(t.is_active());
+    assert!(tag_filter.is_active());
 }
 
 // ── Status facet matching ─────────────────────────────────────────────────────
@@ -158,6 +158,19 @@ fn status_dormant_requires_enabled_and_no_machines() {
     // Disabled, no machines → also not dormant (disabled, not "waiting for machines").
     let disabled_no_machine = routine("c", "t", "claude", "0 * * * *", &[], &[], false);
     assert!(!f.matches(&disabled_no_machine, now(), window()));
+}
+
+#[test]
+fn status_dormant_matches_a_blank_machine_entry_like_routine_health_does() {
+    // A machines list holding only whitespace is "no real machine assigned", same as an empty
+    // list — matching `routine_health`'s definition (see filter_health_tests.rs) so the status
+    // facet and the health badge/KPI never disagree about the same routine.
+    let f = RoutineFilter {
+        status: RoutineStatusFacet::Dormant,
+        ..Default::default()
+    };
+    let blank_machine = routine("a", "t", "claude", "0 * * * *", &["   "], &[], true);
+    assert!(f.matches(&blank_machine, now(), window()));
 }
 
 #[test]
@@ -263,8 +276,10 @@ fn machine_unassigned_matches_only_empty_machines() {
     };
     let with = routine("a", "t", "claude", "0 * * * *", &["m1"], &[], true);
     let without = routine("b", "t", "claude", "0 * * * *", &[], &[], true);
+    let blank = routine("c", "t", "claude", "0 * * * *", &[""], &[], true);
     assert!(!f.matches(&with, now(), window()));
     assert!(f.matches(&without, now(), window()));
+    assert!(f.matches(&blank, now(), window()));
 }
 
 #[test]

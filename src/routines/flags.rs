@@ -10,11 +10,14 @@
 //! There is no status field: an "open" flag is simply a file that exists. Resolving a flag means
 //! deleting it ([`resolve_flag`]).
 
+use std::sync::{Mutex, OnceLock};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::paths::routine_flags_dir;
 use crate::utils::atomic::atomic_write;
+use crate::utils::lock::LockRecover;
 use crate::utils::time::now_secs;
 
 use super::command::slugify;
@@ -87,6 +90,19 @@ fn parse_filename(filename: &str) -> Option<(u64, FlagScope)> {
     Some((created_at, scope))
 }
 
+/// Process-wide lock serializing the collision-check-then-write span in [`create_flag`].
+///
+/// The free-filename loop reads (`dir.join(&candidate).exists()`) and the subsequent
+/// `atomic_write` are not otherwise synchronized, so two concurrent calls for the same routine
+/// (reachable via the HTTP and MCP flag-creation handlers, both async on the multi-thread Tokio
+/// runtime) can both observe the same candidate as free before either writes, and the second
+/// write silently clobbers the first — the same read-modify-write hazard fixed the same way for
+/// `machine.local.toml` (see `machine_toml_lock` in `src/machine/mod.rs`).
+fn flags_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Create a new flag under the routine identified by `slug`, returning the persisted record.
 ///
 /// `flag_type` and `description` are trimmed; callers are expected to have already rejected blank
@@ -103,6 +119,8 @@ pub fn create_flag(
     let description = description.trim();
     let dir = routine_flags_dir(slug);
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
+
+    let _guard = flags_lock().lock_recover();
 
     let type_slug = slugify(flag_type);
     let mut created_at = now_secs();

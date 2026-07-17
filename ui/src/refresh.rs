@@ -39,56 +39,50 @@ pub enum RefreshInterval {
 
 impl RefreshInterval {
     /// Every variant in selector order, for rendering the dropdown.
-    pub const ALL: [RefreshInterval; 5] = [
-        RefreshInterval::Off,
-        RefreshInterval::S5,
-        RefreshInterval::S15,
-        RefreshInterval::S30,
-        RefreshInterval::S60,
-    ];
+    pub const ALL: [Self; 5] = [Self::Off, Self::S5, Self::S15, Self::S30, Self::S60];
 
     /// The cadence in milliseconds, or `None` for `Off` (no auto-refresh).
     pub fn as_millis(self) -> Option<u32> {
         match self {
-            RefreshInterval::Off => None,
-            RefreshInterval::S5 => Some(5_000),
-            RefreshInterval::S15 => Some(15_000),
-            RefreshInterval::S30 => Some(30_000),
-            RefreshInterval::S60 => Some(60_000),
+            Self::Off => None,
+            Self::S5 => Some(5_000),
+            Self::S15 => Some(15_000),
+            Self::S30 => Some(30_000),
+            Self::S60 => Some(60_000),
         }
     }
 
     /// Short human label shown in the dropdown.
     pub fn label(self) -> &'static str {
         match self {
-            RefreshInterval::Off => "Off",
-            RefreshInterval::S5 => "5s",
-            RefreshInterval::S15 => "15s",
-            RefreshInterval::S30 => "30s",
-            RefreshInterval::S60 => "60s",
+            Self::Off => "Off",
+            Self::S5 => "5s",
+            Self::S15 => "15s",
+            Self::S30 => "30s",
+            Self::S60 => "60s",
         }
     }
 
     /// Stable token used as the `<option>` value and the persisted form.
     pub fn to_token(self) -> &'static str {
         match self {
-            RefreshInterval::Off => "off",
-            RefreshInterval::S5 => "5",
-            RefreshInterval::S15 => "15",
-            RefreshInterval::S30 => "30",
-            RefreshInterval::S60 => "60",
+            Self::Off => "off",
+            Self::S5 => "5",
+            Self::S15 => "15",
+            Self::S30 => "30",
+            Self::S60 => "60",
         }
     }
 
     /// Parse a token back into an interval, defaulting to `Off` for anything
     /// unrecognized (older/garbage `localStorage` values fall back safely).
-    pub fn from_token(token: &str) -> RefreshInterval {
+    pub fn from_token(token: &str) -> Self {
         match token {
-            "5" => RefreshInterval::S5,
-            "15" => RefreshInterval::S15,
-            "30" => RefreshInterval::S30,
-            "60" => RefreshInterval::S60,
-            _ => RefreshInterval::Off,
+            "5" => Self::S5,
+            "15" => Self::S15,
+            "30" => Self::S30,
+            "60" => Self::S60,
+            _ => Self::Off,
         }
     }
 }
@@ -146,8 +140,7 @@ pub fn refresh_control(props: &RefreshControlProps) -> Html {
     // fresh value; the label is recomputed from `updated_at_ms` below.
     let tick = use_state(|| 0.0_f64);
     {
-        let tick = tick.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 loop {
                     TimeoutFuture::new(1_000).await;

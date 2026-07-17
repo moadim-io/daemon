@@ -97,6 +97,41 @@ fn create_flag_bumps_timestamp_on_collision() {
 }
 
 #[test]
+fn concurrent_create_flag_calls_do_not_clobber_each_other() {
+    // Regression test for the flags/ collision-check-then-write race: two threads racing
+    // `create_flag` for the same routine and type each read the directory for a free filename,
+    // then write. Without `flags_lock()` serializing that span, both threads can observe the
+    // same candidate filename as free before either writes, and whichever write lands second
+    // silently clobbers the first. A `Barrier` forces both threads to start their
+    // check-then-write span at (as close to) the same instant, so an unsynchronized version of
+    // this test flakes/fails; with the lock in place, both flags always survive.
+    let _home = TempHome::set();
+
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let b1 = std::sync::Arc::clone(&barrier);
+    let t1 = std::thread::spawn(move || {
+        b1.wait();
+        create_flag("r1", "bug", "first", FlagScope::General).unwrap()
+    });
+    let b2 = std::sync::Arc::clone(&barrier);
+    let t2 = std::thread::spawn(move || {
+        b2.wait();
+        create_flag("r1", "bug", "second", FlagScope::General).unwrap()
+    });
+    let flag1 = t1.join().unwrap();
+    let flag2 = t2.join().unwrap();
+
+    assert_ne!(
+        flag1.filename, flag2.filename,
+        "concurrent create_flag calls must not resolve to the same filename"
+    );
+    let created = list_flags("r1");
+    assert_eq!(created.len(), 2, "both flags must survive on disk");
+    assert!(created.iter().any(|flag| flag.description == "first"));
+    assert!(created.iter().any(|flag| flag.description == "second"));
+}
+
+#[test]
 fn create_flag_propagates_write_failure() {
     use std::os::unix::fs::PermissionsExt as _;
 

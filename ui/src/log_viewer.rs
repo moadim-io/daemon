@@ -49,7 +49,7 @@ pub fn match_count(content: &str, query: &str) -> (usize, usize) {
 
 // ─── Yew component ────────────────────────────────────────────────────────────
 
-#[derive(Properties, PartialEq)]
+#[derive(Properties, PartialEq, Eq)]
 pub struct LogViewerProps {
     /// Raw log text, or `None` while the fetch is in flight.
     pub content: Option<String>,

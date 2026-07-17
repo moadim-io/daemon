@@ -51,7 +51,7 @@ pub fn machines_picker(props: &MachinesPickerProps) -> Html {
     let known = use_state(Vec::<String>::new);
     {
         let known = known.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 if let Ok(list) = api_machines().await {
                     known.set(list);

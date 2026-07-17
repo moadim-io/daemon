@@ -32,30 +32,30 @@ impl AttentionReason {
     /// Triage priority; lower sorts first.
     pub(crate) fn rank(self) -> u8 {
         match self {
-            AttentionReason::Dormant => 0,
-            AttentionReason::DeadSchedule => 1,
-            AttentionReason::AgentUnregistered => 2,
-            AttentionReason::HasOpenFlags => 3,
+            Self::Dormant => 0,
+            Self::DeadSchedule => 1,
+            Self::AgentUnregistered => 2,
+            Self::HasOpenFlags => 3,
         }
     }
 
     /// Short uppercase badge label for the ISSUE column.
     pub(crate) fn badge(self) -> &'static str {
         match self {
-            AttentionReason::Dormant => "DORMANT",
-            AttentionReason::DeadSchedule => "DEAD SCHEDULE",
-            AttentionReason::AgentUnregistered => "AGENT MISSING",
-            AttentionReason::HasOpenFlags => "OPEN FLAGS",
+            Self::Dormant => "DORMANT",
+            Self::DeadSchedule => "DEAD SCHEDULE",
+            Self::AgentUnregistered => "AGENT MISSING",
+            Self::HasOpenFlags => "OPEN FLAGS",
         }
     }
 
     /// Human explanation of the operational consequence.
     pub(crate) fn detail(self) -> &'static str {
         match self {
-            AttentionReason::Dormant => "assigned to no machine — fires nowhere",
-            AttentionReason::DeadSchedule => "schedule has no future fire — never runs again",
-            AttentionReason::AgentUnregistered => "agent not registered — every run errors",
-            AttentionReason::HasOpenFlags => "agent raised flags during a run — needs review",
+            Self::Dormant => "assigned to no machine — fires nowhere",
+            Self::DeadSchedule => "schedule has no future fire — never runs again",
+            Self::AgentUnregistered => "agent not registered — every run errors",
+            Self::HasOpenFlags => "agent raised flags during a run — needs review",
         }
     }
 }

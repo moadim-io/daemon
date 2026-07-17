@@ -151,7 +151,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     {
         let state = state.clone();
         let location = use_location();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             if let Some(id) = location
                 .and_then(|loc| loc.query::<RoutineHistoryQuery>().ok())
                 .map(|q| q.history)
@@ -177,11 +177,11 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
     let on_cancel = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::GoToList))
+        Callback::from(move |(): ()| state.dispatch(RAction::GoToList))
     };
     let on_close = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::CloseModal))
+        Callback::from(move |(): ()| state.dispatch(RAction::CloseModal))
     };
     let on_logs = {
         let state = state.clone();
@@ -197,7 +197,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
     let on_back = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::GoToList))
+        Callback::from(move |(): ()| state.dispatch(RAction::GoToList))
     };
     let on_edit = {
         let state = state.clone();
@@ -247,7 +247,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
     };
     let on_clear_filters = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(RAction::ClearFilters))
+        Callback::from(move |(): ()| state.dispatch(RAction::ClearFilters))
     };
 
     let search_ref = use_node_ref();
@@ -267,7 +267,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         on_toggle,
         on_save,
         on_confirm_delete,
-    } = install_crud_handlers(state.clone(), toast.clone(), state.modal.clone());
+    } = install_crud_handlers(&state, &toast, state.modal.clone());
 
     // ── Bulk selection ────────────────────────────────────────────────────────
     let BulkHandlers {
@@ -278,7 +278,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
         on_bulk_disable,
         on_bulk_delete,
         on_confirm_bulk_delete,
-    } = install_bulk_handlers(state.clone(), toast.clone(), now.clone());
+    } = install_bulk_handlers(&state, &toast, &now);
 
     let routines = state.routines.clone();
     let loading = state.loading;
@@ -442,7 +442,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
                                         />
                                     },
                                     RView::Calendar => html! {
-                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} on_toast={Some(toast.clone())} />
+                                        <RoutineCalendar routines={visible} loading={loading} on_edit={Some(on_edit)} on_toast={Some(toast.clone())} on_trigger={Some(on_trigger)} />
                                     },
                                     RView::Day => {
                                         let items = visible.iter().filter(|r| r.enabled).map(|r| TimelineItem {
@@ -463,7 +463,7 @@ pub fn routines_page(props: &RoutinesPageProps) -> Html {
             {
                 match &modal {
                     RModal::Edit(_) => html! {
-                        <RoutineForm editing={edit_routine} on_cancel={on_close.clone()} on_save={on_save} />
+                        <RoutineForm editing={edit_routine} on_cancel={on_close} on_save={on_save} />
                     },
                     RModal::ConfirmDelete { id, title } => html! {
                         <ConfirmDelete

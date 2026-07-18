@@ -34,19 +34,28 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Re-fetch routines and reset query/selection/focus each time the palette opens.
+  // Re-fetch routines each time the palette opens.
   const { data: routines } = useQuery({
     queryKey: ["command-palette", "routines"],
     queryFn: async () => unwrap(await api.GET("/routines")),
     enabled: open,
   });
 
-  useEffect(() => {
+  // Reset query/selection during render (guarded on `open` actually changing)
+  // rather than in an effect — see the `seededFrom` comment in SettingsPage.tsx
+  // for the pattern. Focusing the input is a genuine side effect on an external
+  // system (the DOM), so it stays in its own effect below.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setQuery("");
       setSelected(0);
-      inputRef.current?.focus();
     }
+  }
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
   }, [open]);
 
   if (!open) return null;

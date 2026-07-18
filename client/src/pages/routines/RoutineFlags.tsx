@@ -1,6 +1,7 @@
 import { useFlags, useResolveFlag } from "../../api/hooks";
 import { fmtFreshness } from "../../components/RefreshControl";
 import { reltime } from "../../lib/cronUtils";
+import { useNow } from "../../lib/useNow";
 
 export interface RoutineFlagsProps {
   id: string;
@@ -12,6 +13,7 @@ export interface RoutineFlagsProps {
 export function RoutineFlags({ id, title, onBack }: RoutineFlagsProps) {
   const flagsQuery = useFlags(id);
   const resolveFlag = useResolveFlag();
+  const now = useNow();
 
   const flags = flagsQuery.data ?? [];
 
@@ -24,7 +26,7 @@ export function RoutineFlags({ id, title, onBack }: RoutineFlagsProps) {
         <div className="page-title">FLAGS / {title}</div>
         {flagsQuery.dataUpdatedAt > 0 && (
           <span className="page-freshness">
-            {fmtFreshness(Math.max(0, (Date.now() - flagsQuery.dataUpdatedAt) / 1000))}
+            {fmtFreshness(Math.max(0, (now - flagsQuery.dataUpdatedAt) / 1000))}
           </span>
         )}
         <button

@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-07-18
+
+chore(lint): enable clippy::exit workspace-wide, forbidding `std::process::exit`/`std::process::abort` outside `fn main`. Prevents a `Drop`-skipping process termination (leaked lock guards, file handles, in-flight routine cleanup) from a long-running daemon code path other than the CLI's top-level dispatch. Codebase was already clean; no fixes needed.
+
 ## [1.4.0] - 2026-07-18
 
 fix(security): refuse to start on a non-loopback `MOADIM_BIND_ADDR` unless `MOADIM_ALLOW_REMOTE=1` is explicitly set (#253)
@@ -4080,7 +4084,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/moadim-io/daemon/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/moadim-io/daemon/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/moadim-io/daemon/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/moadim-io/daemon/compare/v1.2.0...v1.3.0

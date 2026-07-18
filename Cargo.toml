@@ -299,3 +299,11 @@ literal_string_with_formatting_args = "deny"
 # surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
 # already clean, so `deny` locks that in.
 large_stack_arrays = "deny"
+# Reject `std::process::exit`/`std::process::abort` outside of `fn main` (the lint already
+# exempts `main` itself, where `src/main.rs`'s CLI dispatch legitimately calls `process::exit`
+# to set the process's exit code). Calling either from anywhere else terminates the process
+# immediately, skipping unwinding — so any `Drop` impl further up the call stack (an in-flight
+# routine's cleanup, a lock guard, a file handle) never runs. In a long-running daemon that's the
+# same "silent leak on the way out" risk `mem_forget` above already guards against. The codebase
+# is already clean outside `main`, so `deny` locks that in.
+exit = "deny"

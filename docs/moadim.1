@@ -33,8 +33,18 @@ Run in the foreground, attached to the terminal (Ctrl-C to stop).
 Start the server detached in the background (the explicit default).
 .SH COMMANDS
 .TP
-.B restart
-Stop a running server (if any) and start a fresh background one.
+.BR "restart " [ \-\-json "] [" \-q "] [" \-i ]
+Stop a running server (if any) and start a fresh one.
+.B \-q
+/
+.B \-\-quiet
+prints only the
+.B "restarted: pid <old> -> <new>"
+rotation line, suppressing the preamble and the reach/manage hint block.
+.B \-i
+/
+.B \-\-interactive
+brings the fresh instance up in the foreground instead of detached.
 .TP
 .BR "stop " [ \-\-json "] [" \-q ]
 Stop a running background server.
@@ -51,7 +61,7 @@ start reaps it.
 Show whether a server is running.
 .B \-\-wait
 polls
-.B GET /health
+.B GET /api/v1/health
 until the server answers or
 .I SECS
 elapses (default 30) instead of checking once, so scripts can block on
@@ -62,6 +72,11 @@ Reap finished, expired routine workbenches now.
 .TP
 .B "trigger <id>"
 Trigger a routine to run now, outside its schedule.
+.TP
+.B "logs <id>"
+Print a routine's newest run log
+.RI ( agent.log )
+to stdout.
 .TP
 .B install
 Register moadim as an OS service (launchd / systemd user).
@@ -111,13 +126,15 @@ List available agent keys.
 .TP
 .B \-\-json
 Pass to
-.BR stop ", " status ", or " cleanup
+.BR restart ", " stop ", " status ", or " cleanup
 for a single-line, machine-readable object on stdout.
 .TP
 .BR \-q ", " \-\-quiet
 Pass to
 .B stop
-to suppress its human-readable status line.
+to suppress its human-readable status line, or to
+.B restart
+to print only the rotation line.
 .TP
 .BR "\-\-wait" [ = SECS ]
 Pass to

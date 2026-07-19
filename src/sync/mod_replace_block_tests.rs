@@ -82,3 +82,62 @@ fn replace_block_with_appends_trailing_newline_to_unterminated_rest() {
         "trailing newline not appended: {result:?}"
     );
 }
+
+// ─── marker collision guard (issue #324) ─────────────────────────────────────
+
+#[test]
+fn replace_block_does_not_match_a_marker_as_a_prefix_of_another() {
+    // A crontab holding only a block whose begin marker is a longer string that
+    // has TEST_BEGIN as a prefix. A substring `find` would incorrectly match
+    // inside it; whole-line matching must leave it untouched and append instead.
+    let crontab = "# BEGIN TEST-LONGER\nunrelated # tag:rid\n# END TEST-LONGER\n";
+    let block = "# BEGIN TEST\n# hdr\n30 9 * * * /cmd # tag:uid\n# END TEST";
+    let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
+
+    assert!(
+        result.contains("# tag:rid"),
+        "unrelated block was wiped: {result}"
+    );
+    assert!(
+        result.contains("# BEGIN TEST-LONGER"),
+        "unrelated begin marker lost: {result}"
+    );
+    assert!(
+        result.contains("30 9 * * * /cmd # tag:uid"),
+        "new block not appended: {result}"
+    );
+}
+
+#[test]
+fn replace_block_targets_exact_marker_among_similarly_named_blocks() {
+    // Both a TEST block and a longer-named lookalike are present. Replacing the
+    // TEST block must edit only it and leave the other block byte-for-byte intact.
+    let crontab = "# BEGIN TEST\nold # tag:old\n# END TEST\n\
+                   # BEGIN TEST-LONGER\nunrelated # tag:rid\n# END TEST-LONGER\n";
+    let block = "# BEGIN TEST\nnew # tag:new\n# END TEST";
+    let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
+
+    assert!(result.contains("new # tag:new"), "not replaced: {result}");
+    assert!(
+        !result.contains("old # tag:old"),
+        "stale line kept: {result}"
+    );
+    assert!(
+        result.contains("unrelated # tag:rid"),
+        "lookalike block disturbed: {result}"
+    );
+    assert!(
+        result.contains("# END TEST-LONGER"),
+        "lookalike end marker lost: {result}"
+    );
+}
+
+#[test]
+fn find_marker_line_ignores_surrounding_whitespace() {
+    // A marker indented with leading/trailing whitespace still matches by line,
+    // and the reported offsets bracket the marker text exactly.
+    let crontab = "noise\n  # END TEST  \n";
+    let (start, end) = find_marker_line(crontab, "# END TEST").expect("marker found");
+    assert_eq!(&crontab[start..end], "  # END TEST");
+    assert!(find_marker_line(crontab, "# BEGIN TEST").is_none());
+}

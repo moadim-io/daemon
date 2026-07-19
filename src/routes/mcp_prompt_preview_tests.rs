@@ -84,6 +84,7 @@ fn preview_routine_prompt_success_contains_prompt() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         }))
         .unwrap();
     assert!(!create_result.is_error.unwrap_or(false));

@@ -267,6 +267,7 @@ fn referenced_machines_unions_routines() {
         power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
 
@@ -339,6 +340,7 @@ fn run_list_with_referenced_machine() {
         power_saving: false,
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
     assert_eq!(run(&["list".to_string()]), 0);

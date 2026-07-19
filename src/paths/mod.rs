@@ -128,6 +128,18 @@ pub fn routine_state_path(id: &str) -> PathBuf {
     routine_dir(id).join("state.local.toml")
 }
 
+/// Returns the path to `{routines_dir}/{id}/routine.local.toml`, the gitignored sidecar a human
+/// (not the daemon) edits directly to layer secret or machine-local environment variable
+/// overrides on top of `routine.toml`'s tracked `[env]` table — see
+/// [`crate::routines::command::build_routine_command`] and issue #408.
+///
+/// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore` (see
+/// [`routine_gitignore_path`]), so it is never accidentally committed.
+#[must_use]
+pub fn routine_local_toml_path(id: &str) -> PathBuf {
+    routine_dir(id).join("routine.local.toml")
+}
+
 /// Returns the path to `{routines_dir}/{id}/scheduled.log`, the gitignored append-only log that
 /// records every scheduled (cron) firing as one Unix-timestamp line.
 ///

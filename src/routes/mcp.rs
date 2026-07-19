@@ -183,6 +183,7 @@ impl MoadimMcp {
             ttl_secs: input.ttl_secs,
             max_runtime_secs: input.max_runtime_secs,
             tags: input.tags,
+            env: input.env,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),

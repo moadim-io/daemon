@@ -269,6 +269,7 @@ async fn build_app_serves_machines() {
             power_saving: false,
             ttl_secs: None,
             max_runtime_secs: None,
+            env: std::collections::HashMap::new(),
         },
     );
     let resp = build_app(routines)

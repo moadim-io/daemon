@@ -54,6 +54,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -72,6 +73,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -126,6 +128,7 @@ fn svc_create_rejects_unknown_agent() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -165,6 +168,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 ttl_secs: None,
                 max_runtime_secs: None,
                 tags: None,
+                env: None,
             },
         );
         assert!(
@@ -201,6 +205,7 @@ fn svc_create_accepts_builtin_agent() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         },
     )
     .unwrap();
@@ -236,6 +241,7 @@ fn svc_update_rejects_unknown_agent() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: None,
+            env: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -272,6 +278,7 @@ fn svc_create_rejects_blank_repository_url() {
                 ttl_secs: None,
                 max_runtime_secs: None,
                 tags: vec![],
+                env: std::collections::HashMap::new(),
             },
         );
         assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -304,6 +311,7 @@ fn svc_create_rejects_blank_repository_branch() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -336,6 +344,7 @@ fn svc_create_trims_repository_entries() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         },
     )
     .unwrap();
@@ -376,6 +385,7 @@ fn svc_update_rejects_blank_repository_url() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: None,
+            env: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -387,4 +397,68 @@ fn svc_update_rejects_blank_repository_url() {
         .unwrap()
         .repositories
         .is_empty());
+}
+
+#[test]
+fn svc_create_rejects_invalid_env_key() {
+    let _home = TempHome::set();
+    // Covers `validate_env`'s key-shape reject branch via `svc_create` (#408): a key that isn't a
+    // POSIX shell identifier must 400 before anything is persisted or the crontab is touched.
+    let store = new_store();
+    let mut req = create_req_with_title("Svc Create Invalid Env Key");
+    req.env = std::collections::HashMap::from([("not-valid".to_string(), "x".to_string())]);
+    let result = svc_create(&store, req);
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_env_value_with_newline() {
+    let _home = TempHome::set();
+    // Covers `validate_env`'s newline-injection reject branch (#408): a value carrying a newline
+    // could otherwise inject an extra statement into the single-line, `;`-joined launch command.
+    let store = new_store();
+    let mut req = create_req_with_title("Svc Create Env Newline Value");
+    req.env = std::collections::HashMap::from([("KEY".to_string(), "a\nb".to_string())]);
+    let result = svc_create(&store, req);
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_persists_valid_env_and_redacts_it_from_the_json_response() {
+    let _home = TempHome::set();
+    // A valid `[env]` map is accepted, persisted on the in-memory `Routine`, and reachable via
+    // `RoutineResponse::env_keys` (names only) — but the values must never survive a JSON
+    // serialization of the response (#408: "secret values never appear in API responses").
+    let store = new_store();
+    let mut req = create_req_with_title("Svc Create Env Redaction");
+    req.env =
+        std::collections::HashMap::from([("MY_TOKEN".to_string(), "super-secret".to_string())]);
+    let created = svc_create(&store, req).unwrap();
+
+    assert_eq!(
+        created.routine.env.get("MY_TOKEN").map(String::as_str),
+        Some("super-secret"),
+        "the resolved value must still be available in-process for command building"
+    );
+    assert_eq!(created.env_keys, vec!["MY_TOKEN".to_string()]);
+
+    let json = serde_json::to_value(&created).unwrap();
+    let rendered = json.to_string();
+    assert!(
+        !rendered.contains("super-secret"),
+        "the secret value must never appear in the serialized API response: {rendered}"
+    );
+    assert!(
+        json.get("env").is_none(),
+        "the raw env map must be entirely absent from the serialized response, got: {rendered}"
+    );
+    assert_eq!(
+        json["env_keys"],
+        serde_json::json!(["MY_TOKEN"]),
+        "the key name alone must still be surfaced: {rendered}"
+    );
+
+    svc_delete(&store, &created.routine.id).unwrap();
 }

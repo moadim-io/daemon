@@ -106,7 +106,8 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 ~/.config/moadim/
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
-│       ├── routine.toml       # tracked — schedule, agent, repositories
+│       ├── routine.toml       # tracked — schedule, agent, repositories, [env]
+│       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
 │       ├── prompts/
 │       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
 │       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
@@ -152,7 +153,8 @@ git-trackable:
 ```
 ~/.config/moadim/routines/
 └── nightly-triage/
-    ├── routine.toml   # tracked — schedule, agent, repositories
+    ├── routine.toml       # tracked — schedule, agent, repositories, [env]
+    ├── routine.local.toml # gitignored, optional — secret/local env var overrides
     ├── prompts/
     │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
     │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
@@ -172,6 +174,51 @@ git-trackable:
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
+| `env`          | map    | no       | Environment variables injected into the agent's shell session at launch (see [Environment variables](#environment-variables) below). Defaults to empty. |
+
+### Environment variables
+
+By default every routine's agent inherits the daemon operator's entire login-shell environment
+(`~/.profile` is sourced before launch), so all routines on a host share one `GH_TOKEN` and one set
+of credentials. The `env` field lets a routine declare its own scoped variables instead:
+
+- **`routine.toml`'s `env` table** — a plain `string → string` map, tracked and git-committed.
+  Use it for non-secret config (a model override the agent reads, a base URL, a feature flag) —
+  anything you're fine with landing in the config repo's history.
+
+  ```toml
+  [env]
+  GITHUB_ORG = "my-other-org"
+  FEATURE_FLAG = "beta"
+  ```
+
+- **`routine.local.toml`** — an untracked sibling file next to `routine.toml`, gitignored by the
+  same `*.local.*` pattern that already covers `state.local.toml` and
+  `prompt.compiled.local.md`. Use it for secrets (a scoped `GH_TOKEN`, an API key) that must never
+  be committed. Same `[env]` table shape; its keys **win** over `routine.toml`'s when both set the
+  same name.
+
+  ```toml
+  # ~/.config/moadim/routines/nightly-triage/routine.local.toml — never committed
+  [env]
+  GH_TOKEN = "ghp_..."
+  ```
+
+Both sources are merged (local wins on conflict) and emitted as `export KEY=value` statements right
+after the curated `PATH` export and before the agent launches, so they override any
+profile-inherited value for that run only — the daemon's own environment, and every other routine's,
+are untouched.
+
+**Validation:** keys must be POSIX-portable shell identifiers (`[A-Za-z_][A-Za-z0-9_]*`); values
+must not contain newlines. `routine.toml`'s `env` table is validated on create/update (REST/MCP) and
+rejected outright if invalid — nothing bad reaches the crontab. `routine.local.toml` is a file you
+edit by hand, so it isn't validated over the API; a malformed entry there is simply skipped (with a
+warning in the daemon log) rather than breaking the launch.
+
+**Redaction:** env var *values* — from either source — never appear in a `GET`/`POST` routine
+response, the UI, or any log line. A routine response instead carries `env_keys`: the sorted, deduplicated
+list of every configured key name (from both `routine.toml` and `routine.local.toml`), so a client
+can show *what's* set without ever seeing a value.
 
 **Machine identity:** used to filter which of a routine's `machines` entries apply to *this*
 install when several daemons share one `~/.config/moadim` config repo (a laptop, a work box, a

@@ -50,6 +50,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     }
 }
 

@@ -30,6 +30,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 

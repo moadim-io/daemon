@@ -76,6 +76,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -164,6 +165,7 @@ fn create_get_update_trigger_delete_routine_success() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: None,
+            env: None,
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
@@ -192,6 +194,7 @@ fn update_routine_tool_not_found_is_error() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: None,
+            env: None,
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));

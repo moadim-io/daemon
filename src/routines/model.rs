@@ -188,6 +188,19 @@ pub struct Routine {
     /// Defaults to empty; each entry is trimmed and must be non-blank.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Non-secret environment variables injected into the agent's shell session at launch,
+    /// tracked in `routine.toml`'s `[env]` table (see [`crate::routines::command::build_routine_command`]).
+    ///
+    /// **Never serialized to JSON** (`skip_serializing`): this field can hold values a routine
+    /// author committed to the tracked `routine.toml`, and a gitignored `routine.local.toml`
+    /// sidecar can layer secret overrides on top at launch time (never held here at all — see
+    /// [`crate::routine_storage::read_local_env`]). Neither belongs in an API response, the UI, or
+    /// a log line: [`RoutineResponse::env_keys`] surfaces the *names* only, so a client can show
+    /// what's set without ever seeing a value. Keys must match `[A-Za-z_][A-Za-z0-9_]*` and
+    /// values must not contain newlines (enforced at create/update time — see
+    /// `service_validate::validate_env`).
+    #[serde(default, skip_serializing)]
+    pub env: std::collections::HashMap<String, String>,
 }
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
@@ -231,6 +244,11 @@ pub struct RoutineResponse {
     /// persisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing
     /// best-effort "no tmux, nothing running" stance. See issue #438.
     pub is_running: bool,
+    /// Names (never values) of every environment variable set for this routine, merging the
+    /// tracked `routine.toml` `[env]` table with the untracked `routine.local.toml` sidecar
+    /// (secrets), deduplicated and sorted. Lets a client show *what* is configured without ever
+    /// exposing a secret value over the API (issue #408).
+    pub env_keys: Vec<String>,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -287,6 +305,13 @@ impl RoutineResponse {
         let flag_count = list_flags(&slug).len();
         let next_run_at = next_run_at(&routine.schedule, routine.enabled);
         let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
+        // Key names only — never values. `local_env_keys` reads `routine.local.toml` (if any) and
+        // drops the values immediately, so a secret override never survives past this call. See
+        // `Routine::env`'s doc comment for why the values themselves are never serialized.
+        let mut env_keys: Vec<String> = routine.env.keys().cloned().collect();
+        env_keys.extend(crate::routine_storage::local_env_keys(&slug));
+        env_keys.sort();
+        env_keys.dedup();
         Self {
             routine,
             agent_registered,
@@ -297,6 +322,7 @@ impl RoutineResponse {
             flag_count,
             next_run_at,
             is_running,
+            env_keys,
         }
     }
 }
@@ -432,6 +458,13 @@ pub struct CreateRoutineRequest {
     /// and must be non-blank.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Non-secret environment variables to inject into the agent's shell session at launch,
+    /// written to `routine.toml`'s `[env]` table (defaults to empty). Keys must match
+    /// `[A-Za-z_][A-Za-z0-9_]*`; values must not contain newlines (#408). For secrets, edit the
+    /// gitignored `routine.local.toml` sidecar directly on disk instead — it is never accepted
+    /// over the API.
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -465,6 +498,10 @@ pub struct UpdateRoutineRequest {
     pub max_runtime_secs: Option<u64>,
     /// New tags list, or `None` to keep the existing value.
     pub tags: Option<Vec<String>>,
+    /// New tracked `[env]` map, or `None` to keep the existing value. Replaces the whole map (not
+    /// merged); send the full desired set. See [`CreateRoutineRequest::env`] for validation rules
+    /// and the `routine.local.toml` secrets sidecar.
+    pub env: Option<std::collections::HashMap<String, String>>,
 }
 
 #[cfg(test)]

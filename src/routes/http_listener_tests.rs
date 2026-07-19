@@ -206,6 +206,7 @@ async fn router_serves_routines_ical_feed() {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     })
     .unwrap();
     let resp = build_app(crate::routines::new_store())
@@ -260,6 +261,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     };
     crate::routine_storage::write_routine(&mk("a", "Routine A")).unwrap();
     crate::routine_storage::write_routine(&mk("b", "Routine B")).unwrap();

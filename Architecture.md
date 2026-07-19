@@ -24,7 +24,8 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                                │ read+write on every mutation
                                ▼
                ~/.config/moadim/routines/
-               ├── <uuid>/routine.toml                  (tracked)
+               ├── <uuid>/routine.toml                  (tracked; [env] = non-secret vars)
+               ├── <uuid>/routine.local.toml             (gitignored, optional; secret env overrides)
                ├── <uuid>/prompts/prompt.pure.md         (tracked)
                ├── <uuid>/prompts/prompt.compiled.local.md (gitignored)
                └── <uuid>/.gitignore                    (generated)

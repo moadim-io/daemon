@@ -54,6 +54,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -71,6 +72,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: None,
+        env: None,
     }
 }
 
@@ -121,6 +123,7 @@ fn svc_update_sets_ttl_secs() {
                 ttl_secs: Some(1800),
                 max_runtime_secs: None,
                 tags: None,
+                env: None,
             },
         )
         .unwrap();
@@ -160,6 +163,7 @@ fn svc_update_sets_max_runtime_secs() {
                 ttl_secs: None,
                 max_runtime_secs: Some(1234),
                 tags: None,
+                env: None,
             },
         )
         .unwrap();

@@ -56,8 +56,7 @@ fn prune_project_at(claude_json: Option<PathBuf>, workbench: &Path) -> io::Resul
 /// file when it changed. Split out of `prune_project` so the lock is held for exactly this section.
 fn prune_locked(claude_json: &Path, workbench: &Path) -> io::Result<bool> {
     let raw = fs::read_to_string(claude_json)?;
-    let mut document: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    let mut document: serde_json::Value = serde_json::from_str(&raw).map_err(invalid_data_error)?;
 
     let key = workbench.to_string_lossy().into_owned();
     let removed = document
@@ -69,12 +68,26 @@ fn prune_locked(claude_json: &Path, workbench: &Path) -> io::Result<bool> {
         // `document` was just parsed from valid JSON and only had a key removed, so this
         // realistically cannot fail — but propagate via `?` rather than `.expect()` since the
         // function already has an `io::Result` to carry the error through.
-        let bytes = serde_json::to_vec(&document)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+        let bytes = serialize_document(&document)?;
         atomic_write(claude_json, &bytes)?;
     }
 
     Ok(removed)
+}
+
+/// Convert serde JSON failures into the `InvalidData` I/O kind the caller already handles.
+fn invalid_data_error(err: serde_json::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, err)
+}
+
+/// Serialize the pruned JSON document, with a test-only escape hatch for the error path.
+fn serialize_document(document: &serde_json::Value) -> io::Result<Vec<u8>> {
+    #[cfg(test)]
+    if std::env::var_os("MOADIM_TEST_FORCE_CLAUDE_JSON_SERIALIZE_ERROR").is_some() {
+        return Err(io::Error::other("forced test failure"));
+    }
+
+    serde_json::to_vec(document).map_err(invalid_data_error)
 }
 
 /// Path to the sibling lock file guarding `claude_json` (`~/.claude.json.lock`), matching the
@@ -89,6 +102,11 @@ fn lock_path_for(claude_json: &Path) -> PathBuf {
 #[cfg(unix)]
 fn lock_exclusive(file: &File) -> io::Result<()> {
     use std::os::fd::AsRawFd;
+
+    #[cfg(test)]
+    if std::env::var_os("MOADIM_TEST_FORCE_CLAUDE_JSON_LOCK_ERROR").is_some() {
+        return Err(io::Error::other("forced test failure"));
+    }
 
     // SAFETY: `file` owns a valid, open file descriptor for the duration of this call.
     let outcome = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };

@@ -145,3 +145,40 @@ fn http_request_core_rejects_an_unparsable_bind_override() {
         "unexpected message: {err}"
     );
 }
+
+#[test]
+fn ensure_readme_returns_early_when_the_path_has_no_parent() {
+    ensure_readme(
+        std::path::Path::new("this-file-should-not-exist"),
+        "ignored",
+    );
+}
+
+#[test]
+fn write_pid_file_at_rejects_paths_without_a_parent_directory() {
+    let err = write_pid_file_at(std::path::Path::new("/")).unwrap_err();
+    assert!(err
+        .to_string()
+        .contains("pid file path / has no parent directory"));
+}
+
+#[test]
+fn resolve_current_exe_can_fail_for_coverage() {
+    let previous = std::env::var_os("MOADIM_TEST_FORCE_CURRENT_EXE_ERROR");
+    // SAFETY: test harness only; we restore the variable below before returning.
+    unsafe {
+        std::env::set_var("MOADIM_TEST_FORCE_CURRENT_EXE_ERROR", "1");
+    }
+
+    let err = spawn_detached_with(|_| {}).unwrap_err();
+
+    // SAFETY: restore the prior value for subsequent tests.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_TEST_FORCE_CURRENT_EXE_ERROR", value),
+            None => std::env::remove_var("MOADIM_TEST_FORCE_CURRENT_EXE_ERROR"),
+        }
+    }
+
+    assert!(err.to_string().contains("forced test failure"));
+}

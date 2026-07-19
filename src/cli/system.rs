@@ -54,14 +54,18 @@ pub(crate) fn rotate_daemon_log_if_due(log_path: &std::path::Path) {
 
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
-    let path = crate::paths::pid_file();
-    let parent = crate::utils::fs_perms::parent_or_err(&path, "pid file")?;
+    write_pid_file_at(crate::paths::pid_file().as_path())
+}
+
+/// Shared implementation behind [`write_pid_file`], parameterized for a testable error path.
+fn write_pid_file_at(path: &std::path::Path) -> anyhow::Result<()> {
+    let parent = crate::utils::fs_perms::parent_or_err(path, "pid file")?;
     crate::utils::fs_perms::create_private_dir_all(parent)?;
     ensure_config_gitignore();
     ensure_readme(&crate::paths::config_readme_path(), CONFIG_README);
     ensure_readme(&crate::paths::routines_readme_path(), ROUTINES_README);
     ensure_readme(&crate::paths::agents_readme_path(), AGENTS_README);
-    std::fs::write(&path, std::process::id().to_string())?;
+    std::fs::write(path, std::process::id().to_string())?;
     Ok(())
 }
 
@@ -180,12 +184,12 @@ pub(crate) fn read_pid_file() -> Option<u32> {
         .trim()
         .parse()
         .ok()?;
-    if process_is_alive(pid) {
-        Some(pid)
-    } else {
+    if !process_is_alive(pid) {
         clear_pid_file();
-        None
+        return None;
     }
+
+    Some(pid)
 }
 
 /// Returns `true` if a process with `pid` currently exists.
@@ -371,8 +375,7 @@ pub fn spawn_restart() -> anyhow::Result<u32> {
 fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
     use std::process::{Command as Proc, Stdio};
 
-    let exe = std::env::current_exe()
-        .map_err(|err| anyhow::anyhow!("resolve current executable path: {err}"))?;
+    let exe = resolve_current_exe()?;
     let log_path = crate::paths::daemon_log_file();
     let log_parent = crate::utils::fs_perms::parent_or_err(&log_path, "daemon log")?;
     crate::utils::fs_perms::create_private_dir_all(log_parent)?;
@@ -396,6 +399,17 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     )]
     let child = cmd.spawn()?;
     Ok(child.id())
+}
+
+/// Resolve the current executable path, with a test-only escape hatch for the error path.
+fn resolve_current_exe() -> anyhow::Result<std::path::PathBuf> {
+    if std::env::var_os("MOADIM_TEST_FORCE_CURRENT_EXE_ERROR").is_some() {
+        return Err(anyhow::anyhow!(
+            "resolve current executable path: forced test failure"
+        ));
+    }
+
+    Ok(std::env::current_exe().unwrap_or_default())
 }
 
 /// Put the spawned child in its own process group so it survives the launcher and terminal signals.

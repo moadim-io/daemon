@@ -150,7 +150,7 @@ fn ensure_config_gitignore() {
     if missing.is_empty() {
         return;
     }
-    let mut content = existing.clone();
+    let mut content = existing;
     if !content.is_empty() && !content.ends_with('\n') {
         content.push('\n');
     }

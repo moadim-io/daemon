@@ -62,7 +62,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
     let navigator = use_navigator();
     let records = use_state(Records::default);
     let query = use_state(String::new);
-    let selected = use_state(|| 0usize);
+    let selected = use_state(|| 0_usize);
     let input_ref = use_node_ref();
 
     // On each open: re-fetch the records (so a job created elsewhere shows up),

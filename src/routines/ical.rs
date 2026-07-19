@@ -264,7 +264,7 @@ fn build_ical_core_with_tz(
             .take_while(|dt| *dt <= horizon)
             .filter(move |dt| snoozed_until.is_none_or(|until| dt.timestamp() as u64 >= until))
             .skip(skip_runs);
-        let mut emitted = 0usize;
+        let mut emitted = 0_usize;
         for fire in fires.by_ref().take(max_events) {
             let stamp = format_utc(fire.with_timezone(&Utc));
             lines.push("BEGIN:VEVENT".to_string());

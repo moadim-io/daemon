@@ -80,7 +80,7 @@ impl FakeServer {
             while !stop_loop.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
-                        let mut buf = [0u8; 2048];
+                        let mut buf = [0_u8; 2048];
                         let _ = stream.read(&mut buf);
                         let _ = stream.write_all(response.as_bytes());
                     }

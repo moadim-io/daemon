@@ -108,7 +108,7 @@ async fn run_with_listener_serves_over_tcp() {
         .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0_u8; 512];
     let n = stream.read(&mut buf).await.unwrap();
     let response = String::from_utf8_lossy(&buf[..n]);
     assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
@@ -139,7 +139,7 @@ async fn shutdown_route_stops_the_serving_loop() {
         )
         .await
         .unwrap();
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0_u8; 512];
     let n = stream.read(&mut buf).await.unwrap();
     assert!(
         String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200"),

@@ -371,6 +371,13 @@ similar_names = "deny"
 # `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
 # `deny` locks that in.
 literal_string_with_formatting_args = "deny"
+# Require an underscore between a numeric literal and its type suffix (e.g. `500_u64`, not
+# `500u64`). Mirrors the root crate's `unseparated_literal_suffix = "deny"` (see Cargo.toml) — the
+# `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so
+# this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. Fixes the 21
+# violations this surfaced (all `0usize`/`0i32`/`Nu32`-style literals) via `cargo clippy --fix`.
+# No behavior change.
+unseparated_literal_suffix = "deny"
 # Reject the `unreachable!()` macro. A panic in the running Yew app tears it down for the user
 # with no graceful recovery, and a match arm that looks provably impossible today can become
 # reachable after an innocuous refactor elsewhere. Mirrors the root crate's `unreachable =

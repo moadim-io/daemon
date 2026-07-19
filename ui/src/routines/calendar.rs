@@ -70,7 +70,7 @@ fn ics_feed_url(origin: &str) -> String {
 
 #[function_component(RoutineCalendar)]
 pub fn routine_calendar(props: &CalendarProps) -> Html {
-    let offset = use_state(|| 0i32);
+    let offset = use_state(|| 0_i32);
     let selected_day = use_state(|| None::<NaiveDate>);
 
     let on_prev = {
@@ -117,7 +117,7 @@ pub fn routine_calendar(props: &CalendarProps) -> Html {
     // Each entry is (id, title, count, snoozed) so chips can dispatch the edit modal on click.
     let cal_now = Local::now();
     let mut cells: Vec<Vec<(String, String, u32, bool)>> = vec![Vec::new(); GRID_CELLS];
-    let mut scheduled = 0usize;
+    let mut scheduled = 0_usize;
     for r in props.routines.iter().filter(|r| r.enabled) {
         if let Some(counts) = occurrences_per_day(&r.schedule, grid_start) {
             scheduled += 1;

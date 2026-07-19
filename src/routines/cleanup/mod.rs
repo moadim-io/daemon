@@ -182,7 +182,7 @@ fn watchdog_dir(
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
-    let killed = std::cell::Cell::new(0usize);
+    let killed = std::cell::Cell::new(0_usize);
     let counting_kill = |session: &str| {
         killed.set(killed.get() + 1);
         kill(session);

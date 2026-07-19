@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -60,5 +63,90 @@ fn into_response_conflict_is_409() {
     assert_eq!(
         AppError::Conflict("x".into()).into_response().status(),
         StatusCode::CONFLICT
+    );
+}
+
+#[test]
+fn display_locked() {
+    assert_eq!(
+        AppError::Locked("routines are globally locked".into()).to_string(),
+        "locked: routines are globally locked"
+    );
+}
+
+#[test]
+fn into_response_locked_is_423() {
+    assert_eq!(
+        AppError::Locked("x".into()).into_response().status(),
+        StatusCode::LOCKED
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_locked_message() {
+    assert_eq!(
+        response_error_field(AppError::Locked("paused".into())).await,
+        "locked: paused"
+    );
+}
+
+/// Decode an [`AppError`] response body into its `{"error": ...}` JSON.
+async fn response_error_field(err: AppError) -> String {
+    let body = err.into_response().into_body();
+    let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    json["error"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn into_response_body_carries_bad_request_message() {
+    assert_eq!(
+        response_error_field(AppError::BadRequest("oops".into())).await,
+        "bad request: oops"
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_conflict_message() {
+    assert_eq!(
+        response_error_field(AppError::Conflict("duplicate".into())).await,
+        "conflict: duplicate"
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_not_found_message() {
+    assert_eq!(response_error_field(AppError::NotFound).await, "not found");
+}
+
+#[tokio::test]
+async fn into_response_body_carries_internal_message() {
+    assert_eq!(
+        response_error_field(AppError::Internal).await,
+        "internal server error"
+    );
+}
+
+#[test]
+fn display_forbidden() {
+    assert_eq!(
+        AppError::Forbidden("host not allowed".into()).to_string(),
+        "forbidden: host not allowed"
+    );
+}
+
+#[test]
+fn into_response_forbidden_is_403() {
+    assert_eq!(
+        AppError::Forbidden("x".into()).into_response().status(),
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn into_response_body_carries_forbidden_message() {
+    assert_eq!(
+        response_error_field(AppError::Forbidden("nope".into())).await,
+        "forbidden: nope"
     );
 }

@@ -238,12 +238,11 @@ fn base64_encode(bytes: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
-        let n = match chunk.len() {
-            3 => (chunk[0] as usize) << 16 | (chunk[1] as usize) << 8 | chunk[2] as usize,
-            2 => (chunk[0] as usize) << 16 | (chunk[1] as usize) << 8,
-            1 => (chunk[0] as usize) << 16,
-            _ => unreachable!(),
-        };
+        // `chunks(3)` never yields an empty slice, so `chunk[0]` is always in bounds; the
+        // second and third bytes are only present in a full 3-byte chunk, hence `.get()`.
+        let n = (chunk[0] as usize) << 16
+            | chunk.get(1).map_or(0, |&byte| (byte as usize) << 8)
+            | chunk.get(2).map_or(0, |&byte| byte as usize);
         out.push(TABLE[(n >> 18) & 63] as char);
         out.push(TABLE[(n >> 12) & 63] as char);
         out.push(if chunk.len() > 1 {

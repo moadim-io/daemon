@@ -371,3 +371,10 @@ similar_names = "deny"
 # `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate is already clean, so
 # `deny` locks that in.
 literal_string_with_formatting_args = "deny"
+# Reject the `unreachable!()` macro. A panic in the running Yew app tears it down for the user
+# with no graceful recovery, and a match arm that looks provably impossible today can become
+# reachable after an innocuous refactor elsewhere. Mirrors the root crate's `unreachable =
+# "deny"` (see Cargo.toml) — the `ui` crate has its own `[lints.clippy]` table and doesn't
+# inherit root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy`
+# job running `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+unreachable = "deny"

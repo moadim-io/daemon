@@ -1,12 +1,3 @@
-[workspace]
-members = ["ui"]
-
-# Profiles must live at the workspace root; a `[profile.*]` in a member crate
-# (ui/Cargo.toml) is silently ignored by Cargo. Scope the size optimization to
-# the `ui` (wasm) crate so the server binary keeps its default release profile.
-[profile.release.package.ui]
-opt-level = "z"
-
 [package]
 name = "moadim"
 version = "1.4.1"

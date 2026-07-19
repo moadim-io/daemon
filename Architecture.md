@@ -4,7 +4,7 @@
 >
 > _No moadim in the loop when it counts — the OS does the heavy lifting._
 
-Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes them over two protocols simultaneously — REST and MCP — on a single port (`127.0.0.1:5784`). It also serves an embedded browser UI compiled from a Yew/WASM workspace member.
+Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes them over two protocols simultaneously — REST and MCP — on a single port (`127.0.0.1:5784`). It also serves an embedded browser UI: a React/TypeScript app, inlined into the binary at build time.
 
 ---
 
@@ -14,7 +14,7 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                 ┌─────────────────────────────────────────┐
                 │           Axum HTTP server :5784         │
                 │                                          │
-  Browser ──────┤  GET /            (inlined HTML+WASM)   │
+  Browser ──────┤  GET /            (inlined HTML+JS)     │
   curl/SDK ─────┤  REST /routines   (JSON)                │
   AI agent ─────┤  /mcp             (MCP streamable-HTTP) │
                 │                                          │
@@ -82,10 +82,7 @@ src/
 └── build/               build-script modules (compiled by build.rs, not the binary)
     ├── mod.rs
     ├── routine_schema.rs  writes schemas/routine.schema.json + routine.example.toml
-    ├── ui.rs              runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
-    └── client.rs          builds the React client/ app → prebuilt-client.html / $OUT_DIR/client.html
-
-ui/                      Yew workspace member (separate Cargo.toml)
+    └── client.rs          builds the React client/ app → prebuilt.html / $OUT_DIR/index.html
 ```
 
 ### Filesystem permissions
@@ -279,21 +276,17 @@ Implements `IntoResponse` → `{"error": "<message>"}` JSON body with matching s
 | Step | Output |
 |---|---|
 | `routine_schema::generate` | `schemas/routine.schema.json` + `schemas/routine.example.toml` |
-| `ui::build` | `$OUT_DIR/index.html` — Yew UI inlined as single file |
-| `client::build` | `$OUT_DIR/client.html` — React `client/` app, copied as-is (already self-contained via `vite-plugin-singlefile`) |
+| `client::build` | `$OUT_DIR/index.html` — React `client/` app, copied as-is (already self-contained via `vite-plugin-singlefile`) |
 
-### UI inlining strategy
+### UI build strategy
 
-`ui::build` runs `trunk build --release` in the `ui/` workspace member. Trunk emits a `.js` glue file and a `.wasm` binary. The build script then:
-1. Base64-encodes the WASM bytes
-2. Patches `globalThis.fetch` at runtime so any `*.wasm` request resolves to the inline bytes (avoids touching wasm-bindgen internals)
-3. Inlines the JS module and the patched fetch shim into a single `<script type="module">` block
-4. Writes the self-contained HTML to `$OUT_DIR/index.html`
-5. Copies it to `prebuilt.html` at the package root so `cargo publish` ships it
+`client::build` runs `pnpm --filter client build` in `client/`. `vite-plugin-singlefile` already inlines the compiled JS and CSS into `client/dist/index.html`, so the build script just:
+1. Copies `client/dist/index.html` to `$OUT_DIR/index.html`
+2. Copies it to `prebuilt.html` at the package root so `cargo publish` ships it
 
-If `trunk` is not installed, `prebuilt.html` is used instead. If neither exists, a placeholder page is shown with install instructions.
+If `pnpm` is not installed, `prebuilt.html` is used instead. If neither exists, a placeholder page is shown with install instructions.
 
-The prebuilt is stored at the package root — not under `ui/` — because `ui/` is a separate workspace member and `cargo publish` would strip it from the tarball.
+The prebuilt is stored at the package root — not under `client/` — because `client/` isn't a Cargo workspace member and `cargo publish` would strip it from the tarball otherwise.
 
 ---
 

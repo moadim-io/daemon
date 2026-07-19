@@ -208,9 +208,9 @@ async fn build_app_serves_root_when_if_none_match_stale() {
 #[tokio::test]
 async fn build_app_sets_security_headers_on_ui_and_api() {
     // The whole router carries the security headers (issue #406, hardened further in #551):
-    // assert on a representative UI response (the SPA at `/`), the React client (`/client`), and
-    // a representative API response (`/api/v1/health`).
-    for uri in ["/", "/client", "/api/v1/health"] {
+    // assert on a representative UI response (the SPA at `/`) and a representative API response
+    // (`/api/v1/health`).
+    for uri in ["/", "/api/v1/health"] {
         let resp = build_app(crate::routines::new_store())
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
@@ -227,7 +227,7 @@ async fn build_app_sets_security_headers_on_ui_and_api() {
         assert_eq!(
             resp.headers().get("content-security-policy").unwrap(),
             "default-src 'self'; \
-             script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; \
+             script-src 'self' 'unsafe-inline'; \
              style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
              font-src 'self' https://fonts.gstatic.com; \
              img-src 'self' data:; \
@@ -322,7 +322,7 @@ async fn build_app_redirects_ui_to_root() {
 #[tokio::test]
 async fn build_app_spa_fallback_serves_ui_on_client_routes() {
     // `/routines` (and other client-routed paths) are NOT API endpoints — the API lives under
-    // `/api/v1`. Unmatched GETs fall back to the app HTML so the Yew router can resolve the path.
+    // `/api/v1`. Unmatched GETs fall back to the app HTML so React Router can resolve the path.
     let app = build_app(crate::routines::new_store());
     let resp = app
         .oneshot(
@@ -382,7 +382,3 @@ async fn router_unknown_api_path_non_get_returns_404() {
 #[cfg(test)]
 #[path = "http_settings_routes_tests.rs"]
 mod http_settings_routes_tests;
-
-#[cfg(test)]
-#[path = "http_client_tests.rs"]
-mod http_client_tests;

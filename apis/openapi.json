@@ -287,10 +287,10 @@
     "/routines": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_routines"
         ],
         "summary": "`GET /routines` — list routines, optionally filtered and sorted by repository.",
-        "operationId": "list",
+        "operationId": "list_routines",
         "parameters": [
           {
             "name": "repository",

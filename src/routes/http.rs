@@ -4,6 +4,7 @@ use super::cleanup_workbenches;
 use super::get_lock_status;
 use super::health;
 use super::list_agents;
+use super::list_routines;
 use super::mcp::MoadimMcp;
 use super::metrics;
 use super::restart;
@@ -207,7 +208,10 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route("/agents", get(list_agents::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
-        .route("/routines", get(routines::list).post(routines::create))
+        .route(
+            "/routines",
+            get(list_routines::list_routines).post(routines::create),
+        )
         .route(
             "/routines/cleanup",
             post(cleanup_workbenches::cleanup_workbenches),

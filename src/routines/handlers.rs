@@ -14,13 +14,11 @@ use crate::global_lock::{LockScope, LockStatus};
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    FleetRunSummary, IcalFeedQuery, Routine, RoutineResponse, RoutineStore, RunSummary,
-    UpdateRoutineRequest,
+    FleetRunSummary, IcalFeedQuery, Routine, RoutineResponse, RoutineStore, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_list_runs,
-    svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled,
-    svc_update,
+    svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
+    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -272,17 +270,6 @@ pub async fn get_logs(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_logs(&store, &id).map(|logs| logs.content)
-}
-
-/// `GET /routines/{id}/runs` — list every run workbench for the routine, newest first.
-#[utoipa::path(get, path = "/routines/{id}/runs",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = [RunSummary]), (status = 404, description = "Not found")))]
-pub async fn get_runs(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<Vec<RunSummary>>, AppError> {
-    svc_list_runs(&store, &id).map(Json)
 }
 
 /// Query parameters for `GET /routines/runs`.

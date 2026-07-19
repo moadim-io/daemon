@@ -906,10 +906,10 @@
     "/routines/{id}/runs": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_routine_runs"
         ],
         "summary": "`GET /routines/{id}/runs` — list every run workbench for the routine, newest first.",
-        "operationId": "get_runs",
+        "operationId": "list_routine_runs",
         "parameters": [
           {
             "name": "id",

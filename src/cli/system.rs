@@ -55,9 +55,7 @@ pub(crate) fn rotate_daemon_log_if_due(log_path: &std::path::Path) {
 /// Write the current process PID into the pid file so `stop`/`status` and signals can find it.
 pub fn write_pid_file() -> anyhow::Result<()> {
     let path = crate::paths::pid_file();
-    let parent = path.parent().ok_or_else(|| {
-        anyhow::anyhow!("pid file path {} has no parent directory", path.display())
-    })?;
+    let parent = crate::utils::fs_perms::parent_or_err(&path, "pid file")?;
     crate::utils::fs_perms::create_private_dir_all(parent)?;
     ensure_config_gitignore();
     ensure_readme(&crate::paths::config_readme_path(), CONFIG_README);
@@ -127,9 +125,8 @@ fn ensure_readme(path: &std::path::Path, content: &str) {
     if path.exists() {
         return;
     }
-    let Some(parent) = path.parent() else {
-        return;
-    };
+    let parent = crate::utils::fs_perms::parent_or_err(path, "readme");
+    let Some(parent) = parent.ok() else { return };
     if crate::utils::fs_perms::create_private_dir_all(parent).is_err() {
         return;
     }
@@ -377,12 +374,7 @@ fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> an
     let exe = std::env::current_exe()
         .map_err(|err| anyhow::anyhow!("resolve current executable path: {err}"))?;
     let log_path = crate::paths::daemon_log_file();
-    let log_parent = log_path.parent().ok_or_else(|| {
-        anyhow::anyhow!(
-            "daemon log path {} has no parent directory",
-            log_path.display()
-        )
-    })?;
+    let log_parent = crate::utils::fs_perms::parent_or_err(&log_path, "daemon log")?;
     crate::utils::fs_perms::create_private_dir_all(log_parent)?;
     rotate_daemon_log_if_due(&log_path);
     let out = std::fs::OpenOptions::new()

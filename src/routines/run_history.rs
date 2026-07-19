@@ -80,11 +80,8 @@ pub(crate) fn append_persisted_run(id: &str, run: &PersistedRun) {
     };
     let path = routine_run_history_path(id);
     rotate_run_history_if_oversized(&path);
-    let Some(parent) = path.parent() else {
-        log::warn!("run history: path for routine {id:?} has no parent directory");
-        return;
-    };
-    let result = crate::utils::fs_perms::create_private_dir_all(parent)
+    let result = crate::utils::fs_perms::parent_or_err(&path, "run history")
+        .and_then(crate::utils::fs_perms::create_private_dir_all)
         .and_then(|()| open_history_append(&path).and_then(|mut file| writeln!(file, "{line}")));
     if let Err(err) = result {
         log::warn!("run history: failed to append for routine {id:?}: {err}");

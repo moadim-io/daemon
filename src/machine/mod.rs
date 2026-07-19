@@ -160,11 +160,14 @@ fn machine_toml_lock() -> &'static Mutex<()> {
 fn write_machine_toml(toml: &MachineToml) -> std::io::Result<()> {
     let path = machine_config_path();
     // The machine-config path is always `<config dir>/machine.local.toml`, so it always has a parent.
-    crate::utils::fs_perms::create_private_dir_all(
-        path.parent().expect("machine config path has a parent dir"),
-    )?;
-    let text = toml::to_string_pretty(toml)
-        .expect("MachineToml serialization cannot fail for a struct of Option fields");
+    let Some(parent) = path.parent() else {
+        return Err(std::io::Error::other(format!(
+            "machine config path {} has no parent directory",
+            path.display()
+        )));
+    };
+    crate::utils::fs_perms::create_private_dir_all(parent)?;
+    let text = toml::to_string_pretty(toml).map_err(std::io::Error::other)?;
     atomic_write(&path, text.as_bytes())
 }
 

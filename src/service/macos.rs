@@ -146,7 +146,7 @@ fn report_installed(plist: &Path, log: &Path) {
 
 /// Write the `LaunchAgent` plist for the running binary and load it with launchd.
 pub fn install() -> anyhow::Result<()> {
-    let exe = moadim_exe().expect("current executable path is always available");
+    let exe = moadim_exe()?;
     let log = daemon_log();
     // Propagate an undeterminable home directory with `?` instead of `.expect()`-ing it into a
     // panic. Mirrors the Linux backend's `install()`, which propagates `unit_path()` the same way.
@@ -154,6 +154,11 @@ pub fn install() -> anyhow::Result<()> {
     let plist = plist_path_from_home(home.clone())?;
     // The `?` above already returned if `home` were `None` (see `plist_path_from_home`), so this
     // can never panic.
+    #[allow(
+        clippy::expect_used,
+        reason = "the `?` above already returned if `home` were `None` (see \
+                  `plist_path_from_home`), so this is a proven invariant, not a real failure path"
+    )]
     let home = home.expect("plist_path_from_home errors before this point when home is None");
     write_plist(&plist, &exe, &log, &home)?;
     reload_agent(&plist)?;

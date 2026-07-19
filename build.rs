@@ -1,4 +1,11 @@
 //! Build script: generates the embedded UI HTML.
+#![allow(
+    clippy::expect_used,
+    reason = "this crate root is the build script, not the daemon binary — a `.expect()` panic \
+              here just aborts `cargo build` with a message, the normal and desired failure mode \
+              for a build script, not the graceful-shutdown risk `expect_used` guards against in \
+              the long-running server"
+)]
 
 #[path = "src/build/mod.rs"]
 mod build;

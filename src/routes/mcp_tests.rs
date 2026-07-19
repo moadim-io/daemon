@@ -173,18 +173,6 @@ fn update_routine_tool_not_found_is_error() {
 }
 
 #[test]
-fn delete_routine_tool_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .delete_routine(Parameters(IdInput {
-            id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn trigger_routine_tool_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();

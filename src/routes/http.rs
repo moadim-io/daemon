@@ -1,6 +1,7 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::cleanup_workbenches;
+use super::delete_routine;
 use super::get_lock_status;
 use super::get_routine;
 use super::health;
@@ -229,7 +230,7 @@ pub(crate) fn build_app_with_shutdown(
             get(get_routine::get_routine)
                 .put(routines::replace)
                 .patch(routines::update)
-                .delete(routines::delete),
+                .delete(delete_routine::delete_routine),
         )
         .route("/routines/{id}/trigger", post(routines::trigger))
         .route(

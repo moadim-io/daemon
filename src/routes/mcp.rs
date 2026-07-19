@@ -57,6 +57,12 @@ mod list_routines;
 #[path = "get_routine/mcp.rs"]
 mod get_routine;
 
+/// The `delete_routine` tool, kept in `routes/delete_routine/mcp.rs` beside the
+/// `DELETE /routines/{id}` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "delete_routine/mcp.rs"]
+mod delete_routine;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -155,18 +161,6 @@ impl MoadimMcp {
             tags: input.tags,
         };
         Ok(match routines::svc_update(&self.routines, &input.id, req) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
-    }
-
-    /// Remove the routine with the given UUID from the store.
-    #[tool(description = "Delete a routine by ID")]
-    fn delete_routine(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_delete(&self.routines, &id) {
             Ok(resp) => ok(resp),
             Err(error) => err(error),
         })
@@ -370,7 +364,7 @@ impl MoadimMcp {
 /// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
 /// [`list_routines`], and [`get_routine`] modules), since a `#[tool_router]` block only collects
 /// the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

@@ -251,6 +251,7 @@ fn install_errors_when_write_plist_fails() {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
     }
     let result = install();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_home {
             Some(val) => std::env::set_var("HOME", val),
@@ -287,6 +288,7 @@ fn install_errors_when_reload_agent_fails() {
         std::env::set_var("MOADIM_LAUNCHCTL_BIN", &shim);
     }
     let result = install();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_home {
             Some(val) => std::env::set_var("HOME", val),
@@ -335,6 +337,7 @@ fn uninstall_errors_when_remove_plist_fails() {
     let result = uninstall();
     // Restore write permission so the directory can be cleaned up.
     let _ = std::fs::set_permissions(&launch_agents, std::fs::Permissions::from_mode(0o755));
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_home {
             Some(val) => std::env::set_var("HOME", val),

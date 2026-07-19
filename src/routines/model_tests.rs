@@ -44,6 +44,7 @@ fn with_path(value: &std::path::Path, body: impl FnOnce()) {
         std::env::set_var("PATH", value);
     }
     body();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("PATH", prev),

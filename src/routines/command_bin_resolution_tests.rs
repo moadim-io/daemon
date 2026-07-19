@@ -16,6 +16,7 @@ fn with_path(value: &std::path::Path, body: impl FnOnce()) {
         std::env::set_var("PATH", value);
     }
     body();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("PATH", prev),
@@ -83,6 +84,7 @@ fn tmux_available_false_when_path_unset() {
         std::env::remove_var("PATH");
     }
     assert!(!tmux_available());
+    // SAFETY: single-threaded test execution.
     unsafe {
         if let Some(prev) = saved {
             std::env::set_var("PATH", prev);
@@ -230,6 +232,7 @@ fn agent_command_available_false_when_path_unset() {
         std::env::remove_var("PATH");
     }
     assert!(!agent_command_available("definitely-not-a-real-binary-xyz"));
+    // SAFETY: single-threaded test execution.
     unsafe {
         if let Some(prev) = saved {
             std::env::set_var("PATH", prev);
@@ -251,6 +254,7 @@ fn resolve_tmux_bin_falls_back_to_root_home_when_home_unset() {
 
     let _ = resolve_tmux_bin();
 
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("HOME", prev),
@@ -268,6 +272,7 @@ fn bin_dir_returns_none_when_path_unset() {
         std::env::remove_var("PATH");
     }
     assert!(bin_dir("definitely-not-a-real-binary-xyz").is_none());
+    // SAFETY: single-threaded test execution.
     unsafe {
         if let Some(prev) = saved {
             std::env::set_var("PATH", prev);

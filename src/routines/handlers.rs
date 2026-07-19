@@ -18,9 +18,9 @@ use super::model::{
     RunSummary, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_create, svc_create_flag, svc_delete, svc_get_prompt_preview, svc_list_all_runs,
-    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary,
-    svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_create, svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags,
+    svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger,
+    svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -173,21 +173,6 @@ pub async fn replace(
     body: Json<UpdateRoutineRequest>,
 ) -> Result<Json<RoutineResponse>, AppError> {
     update(state, path, body).await
-}
-
-/// `DELETE /routines/{id}` — delete a routine by UUID.
-#[utoipa::path(delete, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
-pub async fn delete(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    // See `create` above: `svc_delete` syncs the crontab (#360).
-    let resp = tokio::task::spawn_blocking(move || svc_delete(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.

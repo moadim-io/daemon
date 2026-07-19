@@ -648,10 +648,10 @@
       },
       "delete": {
         "tags": [
-          "crate::routines"
+          "crate::routes::delete_routine"
         ],
         "summary": "`DELETE /routines/{id}` — delete a routine by UUID.",
-        "operationId": "delete",
+        "operationId": "delete_routine",
         "parameters": [
           {
             "name": "id",

@@ -108,6 +108,7 @@ fn spawn_detached_rotates_oversized_daemon_log() {
     );
     // The detached child is a real process; kill it so the test doesn't leak one.
     #[cfg(unix)]
+    // SAFETY: `pid` is this test's own detached child process; sending it SIGKILL is safe cleanup.
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGKILL);
     }

@@ -374,11 +374,13 @@ fn shutdown_grace_honors_env_override_then_falls_back() {
     }
     assert_eq!(shutdown_grace(), Duration::from_millis(42));
     // An unparseable value falls back to the compiled default.
+    // SAFETY: single-threaded test execution.
     unsafe {
         std::env::set_var(SHUTDOWN_GRACE_MS_ENV, "not-a-number");
     }
     assert_eq!(shutdown_grace(), SHUTDOWN_GRACE);
     // An unset value also falls back.
+    // SAFETY: single-threaded test execution.
     unsafe {
         std::env::remove_var(SHUTDOWN_GRACE_MS_ENV);
     }

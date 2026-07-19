@@ -107,6 +107,7 @@ fn install_errors_when_write_unit_fails() {
         std::env::set_var("XDG_CONFIG_HOME", &base);
     }
     let result = install();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_xdg {
             Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),
@@ -137,6 +138,7 @@ fn install_errors_when_enable_unit_fails() {
         std::env::set_var("MOADIM_SYSTEMCTL_BIN", &shim);
     }
     let result = install();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_xdg {
             Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),
@@ -178,6 +180,7 @@ fn uninstall_errors_when_remove_unit_fails() {
     let result = uninstall();
     // Restore write permission so the directory can be cleaned up.
     let _ = std::fs::set_permissions(&unit_dir, std::fs::Permissions::from_mode(0o755));
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_xdg {
             Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),

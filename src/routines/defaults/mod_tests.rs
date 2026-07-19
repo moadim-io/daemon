@@ -213,6 +213,7 @@ fn with_redirected_home(body: impl FnOnce(&std::path::Path)) {
         std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));
     }
     body(&home);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match previous_home {
             Some(value) => std::env::set_var("HOME", value),

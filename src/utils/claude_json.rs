@@ -68,13 +68,34 @@ fn prune_locked(claude_json: &Path, workbench: &Path) -> io::Result<bool> {
     if removed {
         // `document` was just parsed from valid JSON and only had a key removed, so this
         // realistically cannot fail — but propagate via `?` rather than `.expect()` since the
-        // function already has an `io::Result` to carry the error through.
-        let bytes = serde_json::to_vec(&document)
+        // function already has an `io::Result` to carry the error through. See
+        // [`SERIALIZE_FAIL_ENV`] for the test-only seam that exercises this branch.
+        let bytes = serialize_document(&document)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
         atomic_write(claude_json, &bytes)?;
     }
 
     Ok(removed)
+}
+
+/// Test-only env var: when set, [`serialize_document`] returns an error instead of serializing.
+/// `serde_json::to_vec` failing on a [`serde_json::Value`] parsed from valid JSON text is otherwise
+/// unreachable in a test — the only failure mode is a non-finite (NaN/Infinity) float, and JSON's
+/// grammar has no way to express one — so this seam exists purely to exercise that error branch,
+/// mirroring `current_exe`'s seam in `utils::process`.
+#[cfg(test)]
+const SERIALIZE_FAIL_ENV: &str = "MOADIM_CLAUDE_JSON_SERIALIZE_FAIL_FOR_TEST";
+
+/// Serialize `document` back to bytes; see `SERIALIZE_FAIL_ENV` for the test-only failure seam.
+fn serialize_document(document: &serde_json::Value) -> Result<Vec<u8>, serde_json::Error> {
+    #[cfg(test)]
+    if std::env::var_os(SERIALIZE_FAIL_ENV).is_some() {
+        use serde::ser::Error as _;
+        return Err(serde_json::Error::custom(
+            "forced serialize failure for test",
+        ));
+    }
+    serde_json::to_vec(document)
 }
 
 /// Path to the sibling lock file guarding `claude_json` (`~/.claude.json.lock`), matching the

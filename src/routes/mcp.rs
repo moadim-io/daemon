@@ -30,6 +30,12 @@ mod shutdown;
 #[path = "restart/mcp.rs"]
 mod restart;
 
+/// The `get_lock_status` tool, kept in `routes/get_lock_status/mcp.rs` beside the
+/// `GET /routines/lock` HTTP handler it mirrors. Its own `#[tool_router]` block is combined with
+/// this file's below.
+#[path = "get_lock_status/mcp.rs"]
+mod get_lock_status;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -337,17 +343,6 @@ impl MoadimMcp {
     }
 
     /// Return whether the global routine lock is active and which sentinels are present.
-    #[tool(
-        description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
-    )]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(crate::global_lock::lock_status()))
-    }
-
     /// Create a global lock sentinel that halts all routine scheduling and manual triggers without
     /// touching individual routine `enabled` states.
     #[tool(
@@ -410,9 +405,9 @@ impl MoadimMcp {
 }
 
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
-/// and [`restart`] modules), since a `#[tool_router]` block only collects the `#[tool]` methods in
-/// its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router()))]
+/// [`restart`], and [`get_lock_status`] modules), since a `#[tool_router]` block only collects the
+/// `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

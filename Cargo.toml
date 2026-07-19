@@ -305,6 +305,16 @@ large_stack_arrays = "deny"
 # surfaced (all `0u8`/`0u64`/`Nu64`-style literals in test code and one production site in
 # `routines/cleanup/disk_cap.rs`) via `cargo clippy --fix`. No behavior change.
 unseparated_literal_suffix = "deny"
+# Reject the `unreachable!()` macro. A daemon process that hits an `unreachable!()` panics
+# the whole server instead of returning a structured error, and a match arm that looks
+# provably impossible today can become reachable after an innocuous refactor elsewhere —
+# the panic then only surfaces at runtime, in production. Fixed the one violation this
+# surfaced: `build/ui.rs::base64_encode`'s length-3 `match` had a `_ => unreachable!()`
+# catch-all for chunk lengths other than 1/2/3 (impossible from `chunks(3)`); rewritten
+# without a `match` by indexing the guaranteed-present first byte directly and reading the
+# optional second/third bytes via `.get()`, so there is no catch-all arm to guard. The rest
+# of the codebase is already clean, so `deny` locks that in.
+unreachable = "deny"
 # Reject `std::process::exit`/`std::process::abort` outside of `fn main` (the lint already
 # exempts `main` itself, where `src/main.rs`'s CLI dispatch legitimately calls `process::exit`
 # to set the process's exit code). Calling either from anywhere else terminates the process
@@ -313,3 +323,31 @@ unseparated_literal_suffix = "deny"
 # same "silent leak on the way out" risk `mem_forget` above already guards against. The codebase
 # is already clean outside `main`, so `deny` locks that in.
 exit = "deny"
+# Forbid `.expect()` in production code, same rationale as `unwrap_used` above: a panic in a
+# long-running daemon process kills the server without a graceful shutdown, and `.expect()` panics
+# exactly like `.unwrap()` does — it only adds a custom message to the same abrupt failure mode.
+# Denying `unwrap_used` alone left this an unguarded back door: swap `.unwrap()` for
+# `.expect("message")` and the panic-safety guarantee silently stops applying. Test code keeps
+# using `.expect()` freely (`allow-expect-in-tests = true` in clippy.toml, mirroring
+# `allow-unwrap-in-tests`) since panicking is the desired failure mode there.
+#
+# Fixed the 25 violations this surfaced across `src/`. Most (a missing parent dir, a
+# `toml`/`serde_json` re-serialization, a loopback socket address, the process's own executable
+# path, a piped file handle) were converted to proper `Result` propagation — `?`, `ok_or_else`, or
+# a `let else` early return for a `()`-returning best-effort function — matching this crate's
+# existing `unwrap_used`-driven error-handling style. A handful are genuinely provable "can't
+# happen" invariants (an id checked to exist earlier in the same function with the lock held
+# continuously since; `Stdio::piped()` set a few lines above the matching `.take()`; a `?` a line
+# above that already returns on `None`) and are kept as `.expect()` behind a scoped, reasoned
+# `#[allow]`, the same pattern this file already uses for `mem_forget`/`clippy::zombie_processes`.
+# `build.rs` (and the `src/build/` modules it pulls in) carries its own crate-level
+# `#![allow(clippy::expect_used, reason = "...")]`: it's a build script, not the daemon binary, so
+# a `.expect()` panic there just aborts `cargo build` with a message — the intended failure mode,
+# same class of exemption as tests. The rest of the codebase is already clean, so `deny` locks
+# that in.
+expect_used = "deny"
+# Forbid `panic!()` in production code: same rationale as `unwrap_used`/`expect_used`
+# above — an unhandled panic kills this long-running daemon process outright instead of
+# returning a structured error. The codebase is already clean, so `deny` locks that in.
+# Test code is exempt via `allow-panic-in-tests` in clippy.toml, same as the other two.
+panic = "deny"

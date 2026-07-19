@@ -64,13 +64,19 @@ pub fn svc_update(
     // Reject ttl/max-runtime above the cron-derived ceiling for the *effective* schedule (the new
     // one if supplied, else the routine's current schedule) — before any mutation, so a rejected
     // update leaves the in-memory store untouched (#468).
-    let effective_schedule = match req.schedule.as_deref() {
-        Some(schedule) => normalize_schedule(schedule),
-        None => lock
+    let effective_schedule = if let Some(schedule) = req.schedule.as_deref() {
+        normalize_schedule(schedule)
+    } else {
+        #[allow(
+            clippy::expect_used,
+            reason = "id existence was checked via `ok_or(AppError::NotFound)` above, and \
+                      `lock` has been held continuously since — a miss here is a logic bug, \
+                      not a recoverable runtime error"
+        )]
+        let routine = lock
             .get(id)
-            .expect("id existence checked above, and the lock has been held continuously since")
-            .schedule
-            .clone(),
+            .expect("id existence checked above, and the lock has been held continuously since");
+        routine.schedule.clone()
     };
     reject_over_ceiling(
         "ttl_secs",
@@ -82,6 +88,12 @@ pub fn svc_update(
         req.max_runtime_secs,
         max_runtime_ceiling_secs(&effective_schedule),
     )?;
+    #[allow(
+        clippy::expect_used,
+        reason = "id existence was checked via `ok_or(AppError::NotFound)` above, and `lock` has \
+                  been held continuously since — a miss here is a logic bug, not a recoverable \
+                  runtime error"
+    )]
     let routine = lock
         .get_mut(id)
         .expect("id existence checked above, and the lock has been held continuously since");

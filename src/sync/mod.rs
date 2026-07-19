@@ -129,6 +129,12 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
     // propagated as `SyncError::Io` instead of panicking: every caller of
     // crontab sync already treats a `SyncError` as warn-and-continue (see the
     // module docs), and a panic here would defeat that graceful degradation.
+    #[allow(
+        clippy::expect_used,
+        reason = "`.stdin(Stdio::piped())` is set on this same `Command` a few lines above, so \
+                  `take()` returning `None` here would mean the stdlib itself broke that \
+                  contract, not a real runtime error"
+    )]
     let write_result = child
         .stdin
         .take()

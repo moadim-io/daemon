@@ -225,9 +225,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         max_runtime_secs: routine.max_runtime_secs,
         tags: routine.tags.clone(),
     };
-    let text = toml::to_string_pretty(&toml_routine).expect(
-        "RoutineToml serialization cannot fail for a struct with only primitive and Option fields",
-    );
+    let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:
     // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
@@ -262,8 +260,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         skip_runs: routine.skip_runs,
         power_saving: routine.power_saving,
     };
-    let text = toml::to_string_pretty(&state)
-        .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
+    let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
     atomic_write(&path, text.as_bytes())?;
     Ok(())
 }

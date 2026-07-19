@@ -98,7 +98,7 @@ pub async fn put_user_prompt(
     Json(body): Json<SetUserPromptRequest>,
 ) -> Result<StatusCode, AppError> {
     let path = crate::paths::user_prompt_path();
-    let parent = path.parent().expect("user prompt path has a parent dir");
+    let parent = path.parent().ok_or(AppError::Internal)?;
     crate::utils::fs_perms::create_private_dir_all(parent).map_err(|_| AppError::Internal)?;
     std::fs::write(&path, &body.content).map_err(|_| AppError::Internal)?;
     Ok(StatusCode::NO_CONTENT)

@@ -416,7 +416,7 @@
     "/routines/lock": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::get_lock_status"
         ],
         "summary": "`GET /routines/lock` — return the current global lock status.",
         "operationId": "get_lock_status",

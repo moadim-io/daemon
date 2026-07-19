@@ -1,5 +1,6 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::get_lock_status;
 use super::health;
 use super::mcp::MoadimMcp;
 use super::restart;
@@ -228,7 +229,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/routines/runs", get(routines::get_all_runs))
         .route(
             "/routines/lock",
-            get(routines::get_lock_status)
+            get(get_lock_status::get_lock_status)
                 .post(routines::lock)
                 .delete(routines::unlock),
         )

@@ -36,7 +36,7 @@
         crate::routines::lock,
         crate::routines::unlock,
         crate::routines::get_logs,
-        crate::routines::get_runs,
+        crate::routes::list_routine_runs::list_routine_runs,
         crate::routines::get_run_log,
         crate::routines::get_run_summary,
         crate::routines::get_all_runs,

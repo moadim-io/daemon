@@ -14,13 +14,13 @@ use crate::global_lock::{LockScope, LockStatus};
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine, RoutineResponse, RoutineStore,
-    RunSummary, UpdateRoutineRequest,
+    FleetRunSummary, IcalFeedQuery, Routine, RoutineResponse, RoutineStore, RunSummary,
+    UpdateRoutineRequest,
 };
 use super::service::{
-    svc_create, svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags,
-    svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger,
-    svc_trigger_scheduled, svc_update,
+    svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_list_runs,
+    svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled,
+    svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -110,22 +110,6 @@ fn parse_lock_scope(scope: &str) -> Result<LockScope, AppError> {
             "unknown scope {other:?}; use \"shared\" or \"local\""
         ))),
     }
-}
-
-/// `POST /routines` — create a new routine.
-#[utoipa::path(post, path = "/routines",
-    request_body = CreateRoutineRequest,
-    responses((status = 201, body = RoutineResponse), (status = 400, description = "Invalid cron expression")))]
-pub async fn create(
-    State(store): State<RoutineStore>,
-    Json(body): Json<CreateRoutineRequest>,
-) -> Result<(StatusCode, Json<RoutineResponse>), AppError> {
-    // `svc_create` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that
-    // off the async worker thread.
-    let resp = tokio::task::spawn_blocking(move || svc_create(&store, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed

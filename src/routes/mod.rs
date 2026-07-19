@@ -4,6 +4,7 @@
 //! between protocol representations and the service-layer functions.
 
 pub mod cleanup_workbenches;
+pub mod create_routine;
 pub mod delete_routine;
 pub mod get_lock_status;
 pub mod get_routine;

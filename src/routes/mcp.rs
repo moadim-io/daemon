@@ -1,7 +1,7 @@
 //! MCP server handler exposing routine tools over the Model Context Protocol.
 
 use crate::routes::http::ShutdownSignal;
-use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
+use crate::routines::{self, RoutineStore, UpdateRoutineRequest};
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
@@ -63,6 +63,11 @@ mod get_routine;
 #[path = "delete_routine/mcp.rs"]
 mod delete_routine;
 
+/// The `create_routine` tool, kept in `routes/create_routine/mcp.rs` beside the `POST /routines`
+/// HTTP handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "create_routine/mcp.rs"]
+mod create_routine;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -122,20 +127,6 @@ impl MoadimMcp {
                 Err(error) => err(error),
             },
         )
-    }
-
-    /// Validate and persist a new routine, returning the created record.
-    #[tool(
-        description = "Create a new routine (agent-driven job). The `schedule` cron expression is interpreted in the local system timezone of the host running the daemon, NOT UTC. The response includes a `timezone` field and a `schedule_description` annotated with that timezone — verify them to confirm the firing time."
-    )]
-    fn create_routine(
-        &self,
-        Parameters(req): Parameters<CreateRoutineRequest>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_create(&self.routines, req) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
     }
 
     /// Apply provided fields to an existing routine, returning the updated record.
@@ -364,7 +355,7 @@ impl MoadimMcp {
 /// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
 /// [`list_routines`], and [`get_routine`] modules), since a `#[tool_router]` block only collects
 /// the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

@@ -14,13 +14,13 @@ use crate::global_lock::{LockScope, LockStatus};
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    CleanupResponse, CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine,
-    RoutineListQuery, RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
+    CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine, RoutineListQuery,
+    RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview,
-    svc_list, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag,
-    svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview, svc_list,
+    svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log,
+    svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -274,23 +274,6 @@ pub async fn ical_feed(
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
         body,
     )
-}
-
-/// `POST /routines/cleanup` — reap finished, expired run workbenches on demand.
-#[utoipa::path(post, path = "/routines/cleanup",
-    responses((status = 200, body = CleanupResponse, description = "Workbenches removed and bytes freed")))]
-pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse> {
-    // `svc_cleanup` does blocking fs scans and shells out to `tmux`(1) to kill hung sessions
-    // (#360) — the background hourly sweep (`http_listener::cleanup_task`) already runs this on
-    // `spawn_blocking`; this on-demand endpoint should not run it inline on the worker thread
-    // either.
-    tokio::task::spawn_blocking(move || svc_cleanup(&store))
-        .await
-        .unwrap_or(CleanupResponse {
-            removed: 0,
-            freed_bytes: 0,
-        })
-        .into()
 }
 
 /// `POST /routines/{id}/flags` — raise a new flag against a routine.

@@ -395,10 +395,10 @@
     "/routines/cleanup": {
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::cleanup_workbenches"
         ],
         "summary": "`POST /routines/cleanup` — reap finished, expired run workbenches on demand.",
-        "operationId": "cleanup",
+        "operationId": "cleanup_workbenches",
         "responses": {
           "200": {
             "description": "Workbenches removed and bytes freed",

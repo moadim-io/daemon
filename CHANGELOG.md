@@ -11,7 +11,187 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-07-18
+
+chore(lint): enable clippy::exit workspace-wide, forbidding `std::process::exit`/`std::process::abort` outside `fn main`. Prevents a `Drop`-skipping process termination (leaked lock guards, file handles, in-flight routine cleanup) from a long-running daemon code path other than the CLI's top-level dispatch. Codebase was already clean; no fixes needed.
+
+## [1.4.0] - 2026-07-18
+
 fix(security): refuse to start on a non-loopback `MOADIM_BIND_ADDR` unless `MOADIM_ALLOW_REMOTE=1` is explicitly set (#253)
+
+chore(deps): bump cron-parser from 4.9.0 to 5.6.2
+
+chore(deps-dev): bump eslint-plugin-react-hooks from 5.2.0 to 7.1.1
+
+chore(deps): bump react-dom and @types/react-dom
+
+chore(deps): bump react-router-dom from 6.30.4 to 7.18.1
+
+chore(deps-dev): bump @vitejs/plugin-react from 4.7.0 to 6.0.3
+
+fix(routines): serialize the default-routine tombstone file's writes to close a lost-update race
+
+`record_removed_default` and `clear_removed_default` each read the whole `removed_defaults.local.toml`
+tombstone file, mutate the slug set, and write it back in full, with no synchronization between the
+two. `DELETE /routines/{id}` and `POST /routines` (which call them from `svc_delete`/`svc_create`
+respectively) can be handled concurrently on the multi-thread Tokio runtime, so two overlapping
+read-modify-write round trips could interleave and the later write would silently drop whichever
+change the other request had just persisted — e.g. deleting two different built-in default routines
+back to back could lose one tombstone, resurrecting a routine the user explicitly removed on the
+next daemon startup (the same hazard class as the crontab read-modify-write race fixed in issue
+#365, and the `machine.local.toml` race fixed in #1240). Both functions now serialize through a
+single `Mutex`, mirroring the existing `crontab_sync_lock`/`machine_toml_lock` pattern, so concurrent
+tombstone writes can no longer clobber each other.
+
+chore(lint): enable `clippy::format_collect` in the `ui` crate
+
+Mirrors the root crate's `format_collect = "deny"` (root `Cargo.toml`) — the `ui` crate has its
+own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never applied to
+`ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate was already clean, so this
+surfaced 0 violations. No behavior change.
+
+chore(lint): enable `clippy::large_stack_arrays` in the `ui` crate
+
+Mirrors the root crate's `large_stack_arrays = "deny"` (root `Cargo.toml`) — the `ui` crate has
+its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate was already
+clean, so this surfaced 0 violations. No behavior change.
+
+chore(lint): enable `clippy::literal_string_with_formatting_args` in the `ui` crate
+
+Mirrors the root crate's `literal_string_with_formatting_args = "deny"` (root `Cargo.toml`) —
+the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended deny-list,
+so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate
+was already clean, so this surfaced 0 violations. No behavior change.
+
+chore(lint): enable `clippy::similar_names` in the `ui` crate
+
+Mirrors the root crate's `similar_names = "deny"` (root `Cargo.toml`) — the `ui` crate has
+its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate was already
+clean, so this surfaced 0 violations. No behavior change.
+
+chore(lint): enable `clippy::unnested_or_patterns` in the `ui` crate
+
+Mirrors the root crate's `unnested_or_patterns = "deny"` (root `Cargo.toml`) — the `ui` crate has
+its own `[lints.clippy]` table and doesn't inherit root's extended deny-list, so this never
+applied to `ui/src` despite CI's `clippy` job running `--workspace`. The `ui` crate was already
+clean, so this surfaced 0 violations. No behavior change.
+
+fix(client): restore a working `client/` TypeScript build
+
+`typescript` was bumped to `^7.0.2` (a pre-release/native-compiler major), but `openapi-typescript`
+(which `generate:api` runs before every `typecheck`/`lint`/`test`/`build` script) declares a peer
+dependency of `typescript: "^5.x"` and crashes immediately (`ts.factory` is `undefined`) under 7.x.
+That single crash was tripping `pretypecheck`/`prelint`/`pretest` before those scripts ever ran,
+so every PR's `client (typecheck + lint)` and `client (vitest)` CI jobs have been red since the
+bump landed. `typescript` is pinned back to `^5.9.3`, the last version compatible with
+`openapi-typescript`'s peer range.
+
+With `generate:api` unblocked, `tsc --noEmit` surfaced two more breaks from unrelated dependency
+bumps that had been landing behind the same crash: `cron-parser`'s v5 major dropped the
+`parseExpression` named export in favor of the `CronExpressionParser.parse()` static method, and
+`react-router-dom`'s v7 major removed the `future` prop entirely (its `v7_startTransition`/
+`v7_relativeSplatPath` flags are now always-on defaults). Both call sites are updated to match.
+
+`tsc --noEmit` is clean again. Out of scope for this patch (separate, pre-existing dependency-bump
+regressions, unrelated to anything touched here): `eslint-plugin-react-hooks`'s new major flags
+`react-hooks/set-state-in-effect` at several existing call sites, and `@vitejs/plugin-react`'s
+6.x major wants `vite@^8` while the workspace still pins `vite@^6`, which crashes `vitest`'s config
+load before any test runs.
+
+fix(routines): serialize flag-creation's collision-check-then-write span to close a lost-update race
+
+`create_flag` reads the routine's `flags/` directory to find a free `{type}-{timestamp}.md`
+filename, then writes to it, with no synchronization between the check and the write. The HTTP and
+MCP flag-creation handlers can be invoked concurrently on the multi-thread Tokio runtime, so two
+overlapping calls for the same routine and flag type could both observe the same candidate filename
+as free before either writes, and whichever write lands second would silently clobber the first —
+directly contradicting `create_flag`'s own doc comment that "a flag never silently overwrites
+another" (the same hazard class as the crontab, `machine.local.toml`, and default-tombstone
+read-modify-write races fixed in issues #365, #1240, and #1243). `create_flag` now serializes
+through a single `Mutex`, mirroring the existing `crontab_sync_lock`/`machine_toml_lock` pattern, so
+concurrent flag creation can no longer clobber another in-flight flag.
+
+fix: refuse to start on an unauthenticated non-loopback bind (`MOADIM_BIND_ADDR`) unless `MOADIM_ALLOW_REMOTE=1` is explicitly set. Closes #253.
+
+test(ui,client): cover `healthBadge`/`healthBadgeClass` (and their Rust `RoutineHealth` counterparts) for every variant
+
+`RoutineHealth::badge()`/`badge_class()` in `ui/src/routines/filter.rs` and their 1:1 TypeScript
+port `healthBadge`/`healthBadgeClass` in `client/src/pages/routines/filter.ts` were the only
+exported health-rendering functions with no test on either side — `priority()`/`healthPriority`
+already had one, but the badge label and CSS class returned for each of the 7 `RoutineHealth`
+variants were unverified. A typo or copy-paste duplicate (e.g. two variants sharing a CSS class,
+or a mismatched label) would have shipped silently to the ROUTINES table's health badge. Both
+sides now assert the exact rendered string per variant and that labels/classes stay unique across
+variants, mirroring the existing `health_priority_order_dormant_most_urgent`/`healthPriority`
+tests. No behavior change.
+
+fix(routines): TZID-qualify the `.ics` feed's `DTSTART` against an embedded `VTIMEZONE`
+
+`build_ical` (`GET /routines.ics`) emitted every `VEVENT` as a bare UTC instant with no embedded
+`VTIMEZONE`, per issue #387. The fire times themselves were correct (evaluated in the host's local
+zone, matching crontab semantics), but with no timezone identity in the feed, a subscribing
+calendar rendered each event in *its own* default zone rather than the host's — a routine scheduled
+`0 9 * * *` on a `UTC+3` host displayed at 06:00 to a subscriber whose calendar defaults to UTC.
+
+When the host's zone can be named (`iana_time_zone`/`local_timezone`), the feed now emits one
+`VTIMEZONE` component (a `STANDARD` sub-component pinned to the feed's current UTC offset) and
+qualifies each `DTSTART` as `DTSTART;TZID=<zone>:<local-wall-clock>`, so a subscriber sees the
+routine's actual configured local time regardless of their calendar's own default zone. `DTSTAMP`
+stays UTC as RFC 5545 requires. When the zone can't be named, the feed falls back to the original
+bare UTC-instant `DTSTART` with no `VTIMEZONE`, exactly as before.
+
+Scope: this does not model DST transition rules (a full `STANDARD`/`DAYLIGHT` pair with recurrence
+rules would need a timezone-database dependency the daemon doesn't have). A routine in a
+DST-observing zone may display shifted by the DST delta once the host crosses a transition after
+the feed was generated — tracked as a follow-up on issue #387, which also covers the full
+DST-aware acceptance criteria.
+
+fix(ui,client): "Unassigned" Machine filter facet now matches blank machine entries
+
+The Machine filter's "Unassigned" option checked `machines.is_empty()` (Rust UI) /
+`machines.length > 0` (React client) against the raw machine array, so a legacy routine created
+before the `validate_machines` guard (#600) — one still carrying a blank/whitespace-only entry
+like `[""]` — would never match "Unassigned", even though the Dormant status facet and the
+Machine filter dropdown (#1221, #1223) already treat that same shape as "no real machine
+assigned". Both sides now check `machines.iter().all(|m| m.trim().is_empty())` /
+`machines.every((m) => m.trim() === "")`, matching the established convention.
+
+fix(machine): serialize `machine.local.toml` writes to close a lost-update race
+
+`set_machine` and `set_max_concurrent_runs_override` each read the whole `machine.local.toml`,
+mutate one field, and write the whole struct back, with no synchronization between the two. `PUT
+/machine` and `PUT /config/max-concurrent-runs` can be handled concurrently on the multi-thread
+Tokio runtime, so two overlapping read-modify-write round trips could interleave and the later
+write would silently drop whichever field the other request had just persisted (the same hazard
+class as the crontab read-modify-write race fixed in issue #365). Both functions now serialize
+through a single `Mutex`, mirroring the existing `crontab_sync_lock` pattern, so a concurrent
+machine-name rename and concurrency-cap update can no longer clobber each other.
+
+Split `src/cli/mod.rs`, `src/cli/tests.rs`, and `src/routines/ical_tests.rs` — all three had
+grown past the 500-line `linecheck` gate (issue #974), which was failing on `main`. Extracted
+the bind-address/loopback-policy logic into `src/cli/bind.rs` (with its tests in
+`src/cli/bind_tests.rs`), and the `svc_ical`/`svc_ical_routine`/`build_ical` service-layer tests
+into `src/routines/ical_service_tests.rs`. No behavior change.
+
+test(client): cover `StatsBar`'s KPI tile counts and status-facet toggle
+
+`client/src/pages/routines/StatsBar.tsx` — the KPI tile row above the routines table — had 0%
+test coverage despite deriving eight non-trivial counts (total/enabled/disabled, due-soon,
+snoozed, dormant, flagged, unregistered-agent) from the loaded routine list. Adds a test file
+covering the derived counts, the `has-dormant`/`has-flags` conditional classes, the toggle-on/
+toggle-off click behavior, and `aria-pressed` state. No production code changes.
+
+feat(ui): add a RELIABILITY page ranking routines by success rate, active failure streaks, and
+flakiness
+
+Adds a new `/reliability` tab to the dashboard that ranks every routine by its most recent 20
+finished runs (issue #1256): success rate, active pass/fail streak, and a flakiness signal
+(≥40% adjacent-run status flips) distinct from steadily-failing routines. Ranked worst-first — an
+active failure streak outranks a merely-low historical success rate. Reads the existing fleet-wide
+`GET /api/v1/routines/runs` endpoint (already used by the Routines table's sparkline column); no
+backend change.
 
 ## [1.3.1] - 2026-07-17
 
@@ -3904,7 +4084,9 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/moadim-io/daemon/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/moadim-io/daemon/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/moadim-io/daemon/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/moadim-io/daemon/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/moadim-io/daemon/compare/v1.1.0...v1.2.0

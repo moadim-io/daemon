@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "1.3.1"
+version = "1.4.1"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -309,3 +309,11 @@ large_stack_arrays = "deny"
 # optional second/third bytes via `.get()`, so there is no catch-all arm to guard. The rest
 # of the codebase is already clean, so `deny` locks that in.
 unreachable = "deny"
+# Reject `std::process::exit`/`std::process::abort` outside of `fn main` (the lint already
+# exempts `main` itself, where `src/main.rs`'s CLI dispatch legitimately calls `process::exit`
+# to set the process's exit code). Calling either from anywhere else terminates the process
+# immediately, skipping unwinding — so any `Drop` impl further up the call stack (an in-flight
+# routine's cleanup, a lock guard, a file handle) never runs. In a long-running daemon that's the
+# same "silent leak on the way out" risk `mem_forget` above already guards against. The codebase
+# is already clean outside `main`, so `deny` locks that in.
+exit = "deny"

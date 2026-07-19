@@ -118,7 +118,10 @@ fn replace_block_targets_exact_marker_among_similarly_named_blocks() {
     let result = replace_block_with(crontab, block, TEST_BEGIN, TEST_END);
 
     assert!(result.contains("new # tag:new"), "not replaced: {result}");
-    assert!(!result.contains("old # tag:old"), "stale line kept: {result}");
+    assert!(
+        !result.contains("old # tag:old"),
+        "stale line kept: {result}"
+    );
     assert!(
         result.contains("unrelated # tag:rid"),
         "lookalike block disturbed: {result}"

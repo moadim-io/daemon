@@ -145,3 +145,11 @@ fn http_request_core_rejects_an_unparsable_bind_override() {
         "unexpected message: {err}"
     );
 }
+
+#[test]
+fn ensure_readme_returns_early_when_the_path_has_no_parent() {
+    ensure_readme(
+        std::path::Path::new("this-file-should-not-exist"),
+        "ignored",
+    );
+}

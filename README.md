@@ -106,7 +106,8 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 ~/.config/moadim/
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
-│       ├── routine.toml       # tracked — schedule, agent, repositories
+│       ├── routine.toml       # tracked — metadata (agent, repositories, …)
+│       ├── schedule.cron      # tracked — one cron entry
 │       ├── prompts/
 │       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
 │       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
@@ -144,7 +145,8 @@ Moadim owns a single block inside your crontab for routines. Everything outside 
 
 A **routine** is a scheduled AI-agent task: it fires a prompt at a coding
 agent (e.g. Claude) on a cron schedule, each run inside its own throwaway
-workbench.
+workbench. The schedule lives in a sibling `schedule.cron` file; the rest of
+the routine metadata stays in `routine.toml`.
 
 Routines are stored as folders under `~/.config/moadim/routines/<id>/`,
 git-trackable:
@@ -152,7 +154,8 @@ git-trackable:
 ```
 ~/.config/moadim/routines/
 └── nightly-triage/
-    ├── routine.toml   # tracked — schedule, agent, repositories
+    ├── routine.toml   # tracked — metadata (agent, repositories, …)
+    ├── schedule.cron  # tracked — one cron entry
     ├── prompts/
     │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
     │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
@@ -161,7 +164,7 @@ git-trackable:
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
-| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. |
+| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), stored in `schedule.cron` and evaluated in the host's local timezone — **not** UTC. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |
@@ -280,7 +283,7 @@ built-in `claude` agent.
 Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
 `<name>` is the registry key a routine's `agent` field references (the filename
 stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
-defaults (`claude`, `codex`, `hermes`) into this directory **only if the file is
+defaults (`claude`, `codex`, `hermes`, `pi`) into this directory **only if the file is
 absent** — your edits are never overwritten — so you can both tweak a default and
 register a brand-new agent by dropping in another `<name>.toml`.
 
@@ -305,7 +308,7 @@ scope, so it can prepare per-run state before the agent starts:
 - `$WB` — absolute workbench path.
 - `$SESS` — the tmux session name for the run.
 
-Examples — the headless `codex`/`hermes` form, and the interactive `claude` form
+Examples — the headless `codex`/`hermes`/`pi` form, and the interactive `claude` form
 (the real default's `setup` step also pre-seeds `~/.claude.json`; see the
 prerequisites above):
 
@@ -320,6 +323,12 @@ args = ["exec", "{prompt_file}"]
 command = "claude"
 args = ["--permission-mode", "auto", "{prompt}"]
 # setup = '''...optional pre-launch shell command, runs with $WB and $SESS in scope...'''
+```
+
+```toml
+# ~/.config/moadim/agents/pi.toml
+command = "pi"
+args = ["--approve", "-p", "@{prompt_file}"]
 ```
 
 A routine whose `agent` names a file that is missing or whose TOML is malformed

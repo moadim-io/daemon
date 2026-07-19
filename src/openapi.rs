@@ -11,6 +11,7 @@
     servers((url = "/api/v1", description = "This server")),
     paths(
         crate::routes::health::health,
+        crate::routes::metrics::metrics,
         crate::routes::shutdown::shutdown,
         crate::routes::restart::restart,
         crate::routes::http::get_current_machine,

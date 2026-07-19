@@ -16,25 +16,9 @@ pub(super) fn run(program: &str, args: &[&str]) -> anyhow::Result<()> {
 
 /// Absolute path to the currently running `moadim` binary, supervised by the service manager.
 pub(super) fn moadim_exe() -> anyhow::Result<PathBuf> {
-    current_exe_path(std::env::current_exe)
+    crate::utils::process::current_exe()
+        .map_err(|err| anyhow::anyhow!("failed to resolve current executable path: {err}"))
 }
-
-/// Resolve `current_exe` through a small seam so the error mapping stays testable.
-fn current_exe_path(
-    current_exe: impl FnOnce() -> Result<PathBuf, std::io::Error>,
-) -> anyhow::Result<PathBuf> {
-    current_exe().map_err(|err| current_exe_error(&err))
-}
-
-/// Format the `current_exe` failure into the error message the callers already log.
-fn current_exe_error(err: &std::io::Error) -> anyhow::Error {
-    let message = err.to_string();
-    anyhow::anyhow!("failed to resolve current executable path: {message}")
-}
-
-#[cfg(test)]
-#[path = "common_tests.rs"]
-mod common_tests;
 
 /// Absolute path to the daemon log file the service manager redirects stdout/stderr to.
 #[cfg(target_os = "macos")]

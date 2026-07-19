@@ -1,0 +1,63 @@
+name: "CodeQL Advanced"
+
+# Advanced-setup CodeQL analysis, replacing the repo's prior Default-setup configuration so the
+# `javascript-typescript` scan can exclude generated/vendored build artifacts via `paths-ignore`.
+#
+# `prebuilt.html` is the self-contained React `client/` bundle `build.rs` embeds into the binary
+# (see `src/build/client.rs`, `Architecture.md`) — a single minified file inlining every
+# third-party dependency's compiled output (react, react-router-dom, etc.), already marked
+# `linguist-generated` in `.gitattributes` and excluded from spell-check in `typos.toml`. Scanning
+# it as if it were hand-written application source produces noise, not signal: any finding inside
+# it is necessarily inside a dependency's own bundled code, not something this repo can fix by
+# editing the generated output, and the file's *entire* byte content changes on every `client/`
+# rebuild (dependency bump, or even just a new build), so an unrelated dependency bump can make an
+# already-shipped, pre-existing pattern look "newly introduced" in a PR diff purely from files
+# shifting. Excluding it here scopes analysis to the actual hand-written source (`src/`, `client/src/`).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '30 1 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@45580472a5bb82c4681c4ac726cfdb60060c2ee1 # v3.32.4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config: |
+            paths-ignore:
+              - 'prebuilt.html'
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@45580472a5bb82c4681c4ac726cfdb60060c2ee1 # v3.32.4
+        with:
+          category: "/language:${{ matrix.language }}"

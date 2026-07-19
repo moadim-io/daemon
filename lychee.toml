@@ -23,12 +23,6 @@ exclude_loopback = true
 # resolve to a real host.
 exclude = [
   '^https?://(.*\.)?example\.(com|org|net)',
-  # trunkrs.dev (linked from CONTRIBUTING.md's Prerequisites) sits behind a
-  # bot wall that 403s automated/CI requests (including a real browser UA
-  # from this network) regardless of reachability — a known false positive,
-  # not a dead link. Verified manually before adding; revisit if the site
-  # changes its bot-protection setup.
-  '^https?://(www\.)?trunkrs\.dev',
   # CHANGELOG.md's version-diff footer links
   # (`.../compare/vX...vY`, `.../compare/vLATEST...HEAD`) point at the tag
   # being cut, which only exists *after* this release PR merges and the

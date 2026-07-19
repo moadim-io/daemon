@@ -27,6 +27,7 @@ use crate::utils::time::now_secs;
 use super::model::{RoutineStore, RunStatus};
 use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
+mod counters;
 mod disk_cap;
 mod log_cap;
 mod runtime;
@@ -36,11 +37,19 @@ mod ttl;
 
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
+pub(crate) use counters::totals as cleanup_sweep_totals;
 pub(crate) use runtime::max_runtime_ceiling_secs;
 pub(crate) use session::tmux_session_alive as run_session_alive;
 pub(crate) use session::tmux_session_count;
 pub(crate) use session::tmux_session_prefix_alive;
 pub(crate) use ttl::ttl_ceiling_secs;
+
+/// Total size in bytes of the whole `~/.moadim/workbenches/` tree, live and reaped-but-not-yet
+/// -swept alike. Backs the `moadim_workbench_bytes` metric (`crate::routes::metrics`); a thin
+/// wrapper so that route doesn't need to know this module's private [`dir_size`] walker exists.
+pub(crate) fn workbenches_total_bytes() -> u64 {
+    dir_size(&workbenches_dir())
+}
 
 /// How often the background task scans for expired workbenches.
 ///
@@ -367,10 +376,15 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
         &tmux_session_alive,
         &agent_log_finish_time,
     );
-    ReapStats {
+    let stats = ReapStats {
         removed: ttl_stats.removed + cap_stats.removed,
         freed_bytes: ttl_stats.freed_bytes + cap_stats.freed_bytes,
-    }
+    };
+    // Record this sweep for `moadim_cleanup_removed_total`/`moadim_cleanup_freed_bytes_total`
+    // (see `counters`) — both the periodic background task and the on-demand `svc_cleanup` route
+    // call this one function, so recording here covers both triggers.
+    counters::record_sweep(stats.removed as u64, stats.freed_bytes);
+    stats
 }
 
 /// Force-kill hung run sessions under `~/.moadim/workbenches/` that have exceeded their routine's

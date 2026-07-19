@@ -5,6 +5,7 @@ use super::get_lock_status;
 use super::health;
 use super::list_agents;
 use super::mcp::MoadimMcp;
+use super::metrics;
 use super::restart;
 use super::shutdown;
 use crate::error::AppError;
@@ -212,6 +213,7 @@ pub(crate) fn build_app_with_shutdown(
     // client-routed web UI (e.g. `/routines` resolves to a UI page, not JSON).
     let api = Router::new()
         .route("/health", get(health::health))
+        .route("/metrics", get(metrics::metrics))
         .route("/shutdown", post(shutdown::shutdown))
         .route("/restart", post(restart::restart))
         .route("/machine", get(get_current_machine).put(put_machine))

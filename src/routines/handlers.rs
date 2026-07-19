@@ -18,7 +18,7 @@ use super::model::{
     RunSummary, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview, svc_list_all_runs,
+    svc_create, svc_create_flag, svc_delete, svc_get_prompt_preview, svc_list_all_runs,
     svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary,
     svc_trigger, svc_trigger_scheduled, svc_update,
 };
@@ -126,17 +126,6 @@ pub async fn create(
         .await
         .map_err(|_| AppError::Internal)??;
     Ok((StatusCode::CREATED, Json(resp)))
-}
-
-/// `GET /routines/{id}` — retrieve a single routine by UUID.
-#[utoipa::path(get, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
-pub async fn get(
-    State(state): State<crate::routes::http::AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_get(&state.routines, &state.routines_dir, &id)?))
 }
 
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed

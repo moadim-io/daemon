@@ -2,6 +2,7 @@
 
 use super::cleanup_workbenches;
 use super::get_lock_status;
+use super::get_routine;
 use super::health;
 use super::list_agents;
 use super::list_routines;
@@ -225,7 +226,7 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route(
             "/routines/{id}",
-            get(routines::get)
+            get(get_routine::get_routine)
                 .put(routines::replace)
                 .patch(routines::update)
                 .delete(routines::delete),

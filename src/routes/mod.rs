@@ -5,6 +5,7 @@
 
 pub mod cleanup_workbenches;
 pub mod get_lock_status;
+pub mod get_routine;
 pub mod health;
 pub mod http;
 pub mod list_agents;

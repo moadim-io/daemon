@@ -83,10 +83,16 @@ pub fn routines_readme_path() -> PathBuf {
     routines_dir().join("README.md")
 }
 
-/// Returns the path to `{routines_dir}/{id}/routine.toml`.
+/// Returns the path to `{routines_dir}/{id}/routine.toml`, the tracked routine metadata.
 #[must_use]
 pub fn routine_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.toml")
+}
+
+/// Returns the path to `{routines_dir}/{id}/schedule.cron`, the routine's tracked cron entry.
+#[must_use]
+pub fn routine_cron_path(id: &str) -> PathBuf {
+    routine_dir(id).join("schedule.cron")
 }
 
 /// Returns the path to `{routines_dir}/{id}/prompts/`.

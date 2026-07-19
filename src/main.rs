@@ -164,9 +164,10 @@ async fn run_server() -> anyhow::Result<()> {
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // Re-persist so every routine has its routine.toml + prompts/ sidecars in the slug dir (and any
-    // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
-    // command's `cp prompt.compiled.local.md` fails and the agent launches with an empty prompt).
+    // Re-persist so every routine has its routine.toml + schedule.cron + prompts/ sidecars in the
+    // slug dir (and any stale legacy run.sh is removed), healing dirs left without a prompt or
+    // cron file (otherwise the launch command's `cp prompt.compiled.local.md` fails and the agent
+    // launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next

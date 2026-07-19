@@ -93,7 +93,8 @@ const ROUTINES_README: &str = "\
 
 Each subdirectory here is one routine (a prompt + schedule + agent, run on a cron schedule).
 
-- `<id>/routine.toml` — the schedule, agent, and repositories.
+- `<id>/routine.toml` — the tracked metadata: agent, repositories, and other routine fields.
+- `<id>/schedule.cron` — the routine's tracked cron entry, one line per routine.
 - `<id>/prompts/prompt.pure.md` — the prompt you wrote.
 - `<id>/prompts/prompt.compiled.local.md` — the composed prompt (repositories preamble +
   pure prompt) copied into each run's workbench. Gitignored (`.local.` matches the

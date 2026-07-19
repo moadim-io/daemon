@@ -381,6 +381,10 @@ pub(crate) use routine_storage_migrations::{
 mod routine_storage_tests;
 
 #[cfg(test)]
+#[path = "routine_storage_more_tests.rs"]
+mod routine_storage_more_tests;
+
+#[cfg(test)]
 #[path = "routine_storage_prompt_sidecar_tests.rs"]
 mod routine_storage_prompt_sidecar_tests;
 

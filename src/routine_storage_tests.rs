@@ -333,22 +333,6 @@ fn torn_routine_toml_loads_as_none() {
 }
 
 #[test]
-fn write_routine_leaves_no_tmp_residue() {
-    with_override_home(|_home| {
-        let id = "rs-no-residue-id";
-        let title = "Rs No Residue Routine";
-        let slug = slugify(title);
-        write_routine(&make_routine(id, title)).unwrap();
-        let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
-            .count();
-        assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
-    });
-}
-
-#[test]
 fn load_store_includes_written_routine() {
     with_override_home(|_home| {
         let id = "rs-loadstore-id";

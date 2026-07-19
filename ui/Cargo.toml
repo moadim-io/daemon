@@ -391,3 +391,9 @@ unreachable = "deny"
 # deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
 # The `ui` crate is already clean, so `deny` locks that in.
 redundant_type_annotations = "deny"
+# Reject a `#[test]` function declared outside a `#[cfg(test)]` module. Mirrors the root crate's
+# `tests_outside_test_module = "deny"` (see Cargo.toml), which formalizes this repo's existing
+# `*_tests.rs` convention at the AST level. The `ui` crate has its own `[lints.clippy]` table and
+# doesn't inherit root's extended deny-list, so this never applied to `ui/src` despite CI's
+# `clippy` job running `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
+tests_outside_test_module = "deny"

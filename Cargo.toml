@@ -362,3 +362,10 @@ redundant_type_annotations = "deny"
 # clippy.toml, same as `panic` above (an inverted `assert!` in a test reads the same either way).
 # The codebase is already clean, so `deny` locks that in.
 manual_assert = "deny"
+# Reject a `#[test]` function declared outside a `#[cfg(test)]` module. This is the compiler-
+# enforced half of this repo's existing `*_tests.rs` convention: `.githooks/pre-push` step 1
+# already greps for tests living outside a `#[cfg(test)] mod foo_tests;` sibling, but that check is
+# text-pattern-based and only runs locally pre-push. This lint checks the same invariant from the
+# AST instead, so it also runs in `cargo clippy` (CI's `lint.yml` job) and can't be skipped by a
+# contributor who bypasses git hooks. The codebase is already clean, so `deny` locks that in.
+tests_outside_test_module = "deny"

@@ -30,7 +30,7 @@
         crate::routines::delete,
         crate::routines::trigger,
         crate::routines::scheduled_trigger,
-        crate::routines::cleanup,
+        crate::routes::cleanup_workbenches::cleanup_workbenches,
         crate::routes::get_lock_status::get_lock_status,
         crate::routines::lock,
         crate::routines::unlock,

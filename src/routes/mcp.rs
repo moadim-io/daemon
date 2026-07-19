@@ -41,6 +41,12 @@ mod get_lock_status;
 #[path = "list_agents/mcp.rs"]
 mod list_agents;
 
+/// The `cleanup_workbenches` tool, kept in `routes/cleanup_workbenches/mcp.rs` beside the
+/// `POST /routines/cleanup` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "cleanup_workbenches/mcp.rs"]
+mod cleanup_workbenches;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -247,15 +253,6 @@ impl MoadimMcp {
         )
     }
 
-    /// Reap finished, expired run workbenches immediately, returning how many were removed and the
-    /// bytes freed.
-    #[tool(
-        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed and the total disk space freed in bytes."
-    )]
-    fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_cleanup(&self.routines)))
-    }
-
     /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
     /// "Open flags" section includes it.
     #[tool(
@@ -400,9 +397,9 @@ impl MoadimMcp {
 }
 
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
-/// [`restart`], [`get_lock_status`], and [`list_agents`] modules), since a `#[tool_router]` block
-/// only collects the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router()))]
+/// [`restart`], [`get_lock_status`], [`list_agents`], and [`cleanup_workbenches`] modules), since
+/// a `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

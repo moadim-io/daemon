@@ -1,5 +1,6 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::cleanup_workbenches;
 use super::get_lock_status;
 use super::health;
 use super::list_agents;
@@ -226,7 +227,10 @@ pub(crate) fn build_app_with_shutdown(
         .route("/agents", get(list_agents::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
-        .route("/routines/cleanup", post(routines::cleanup))
+        .route(
+            "/routines/cleanup",
+            post(cleanup_workbenches::cleanup_workbenches),
+        )
         .route("/routines/runs", get(routines::get_all_runs))
         .route(
             "/routines/lock",

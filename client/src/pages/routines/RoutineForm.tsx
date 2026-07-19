@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useAgents } from "../../api/hooks";
 import type { components } from "../../api/schema.gen";
@@ -80,7 +80,7 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
   const agentsQuery = useAgents();
   const agents = agentsQuery.data && agentsQuery.data.length > 0 ? agentsQuery.data : FALLBACK_AGENTS;
 
-  const { register, watch, setValue, handleSubmit, reset } = useForm<FormValues>({
+  const { register, control, setValue, handleSubmit, reset } = useForm<FormValues>({
     defaultValues: draftToValues(initial),
   });
 
@@ -90,16 +90,20 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
 
-  const values = watch();
+  const title = useWatch({ control, name: "title" });
+  const schedule = useWatch({ control, name: "schedule" });
+  const agent = useWatch({ control, name: "agent" });
+  const prompt = useWatch({ control, name: "prompt" });
+  const machines = useWatch({ control, name: "machines" });
   const canSave =
-    nonBlank.safeParse(values.title).success &&
-    nonBlank.safeParse(values.schedule).success &&
-    nonBlank.safeParse(values.agent).success &&
-    nonBlank.safeParse(values.prompt).success;
+    nonBlank.safeParse(title).success &&
+    nonBlank.safeParse(schedule).success &&
+    nonBlank.safeParse(agent).success &&
+    nonBlank.safeParse(prompt).success;
 
-  const [cronOk, cronText] = describeCronLive(values.schedule);
+  const [cronOk, cronText] = describeCronLive(schedule);
   const previewClass =
-    values.schedule.trim() === "" ? "cron-preview" : cronOk ? "cron-preview ok" : "cron-preview bad";
+    schedule.trim() === "" ? "cron-preview" : cronOk ? "cron-preview ok" : "cron-preview bad";
 
   const submit = handleSubmit((v) => {
     onSave({
@@ -207,7 +211,7 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
         />
       </div>
 
-      <MachinesPicker value={values.machines} onChange={(m) => setValue("machines", m)} />
+      <MachinesPicker value={machines} onChange={(m) => setValue("machines", m)} />
 
       <div className="form-group">
         <label className="form-label">

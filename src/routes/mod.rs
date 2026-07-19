@@ -17,3 +17,4 @@ pub mod mcp;
 pub mod metrics;
 pub mod restart;
 pub mod shutdown;
+pub mod update_routine;

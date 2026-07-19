@@ -122,22 +122,6 @@ fn routine_logs_tool_not_found_is_error() {
 }
 
 #[test]
-fn get_lock_status_returns_unlocked_by_default() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.get_lock_status().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], false);
-    assert_eq!(val["shared"], false);
-    assert_eq!(val["local"], false);
-}
-
-#[test]
 fn lock_routines_shared_creates_sentinel_and_returns_status() {
     let _home = TempHome::set();
     let handler = make_handler();

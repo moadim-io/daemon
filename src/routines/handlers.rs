@@ -50,13 +50,6 @@ pub struct UnlockQuery {
     pub scope: String,
 }
 
-/// `GET /routines/lock` — return the current global lock status.
-#[utoipa::path(get, path = "/routines/lock",
-    responses((status = 200, body = LockStatus)))]
-pub async fn get_lock_status() -> Json<LockStatus> {
-    Json(crate::global_lock::lock_status())
-}
-
 /// `POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.
 #[utoipa::path(post, path = "/routines/lock",
     request_body = LockRequest,

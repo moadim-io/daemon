@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and where does moadim get in the way today?
+      placeholder: "There's no way to read a routine's latest run output without sshing in and finding the workbench."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should moadim do? A CLI command, REST/MCP endpoint, config field, UI affordance, …
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, or current workarounds.
+    validations:
+      required: false

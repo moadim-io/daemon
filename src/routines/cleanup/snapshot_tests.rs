@@ -1,4 +1,7 @@
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
 
 use super::super::super::command::slugify;
 use super::super::super::model::{new_store, Routine};
@@ -8,17 +11,25 @@ use super::*;
 
 fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
     Routine {
+        model: None,
         id: "id".into(),
         schedule: schedule.into(),
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),
+        goal: None,
         repositories: vec![],
+        machines: vec![crate::machine::current_machine()],
         enabled: true,
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,
         last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
+        tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
     }
@@ -46,7 +57,7 @@ fn snapshot_ttls_empty_store_is_empty() {
 #[test]
 fn ttl_for_returns_snapshot_value_when_present() {
     let mut snapshot = HashMap::new();
-    snapshot.insert("known".to_string(), 42u64);
+    snapshot.insert("known".to_string(), 42_u64);
     assert_eq!(ttl_for(&snapshot, "known"), 42);
 }
 
@@ -78,7 +89,7 @@ fn snapshot_max_runtimes_empty_store_is_empty() {
 #[test]
 fn max_runtime_for_returns_snapshot_value_when_present() {
     let mut snapshot = HashMap::new();
-    snapshot.insert("known".to_string(), 99u64);
+    snapshot.insert("known".to_string(), 99_u64);
     assert_eq!(max_runtime_for(&snapshot, "known"), 99);
 }
 

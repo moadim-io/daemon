@@ -1,0 +1,12 @@
+#:schema ./routine.schema.json
+
+schedule = "30 9 * * 1-5"
+title    = "My routine"
+agent    = "claude"
+prompt   = "Describe the task for the agent here."
+enabled  = true
+
+# Repositories listed to the agent as prompt context (optional).
+# [[repositories]]
+# repository = "https://github.com/owner/repo"
+# branch     = "main"

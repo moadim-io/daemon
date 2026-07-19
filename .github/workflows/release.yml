@@ -1,30 +1,80 @@
 name: GitHub Release
 
-# Cut a GitHub Release whenever a `v*` tag is pushed (same trigger that drives
-# the crates.io publish in publish.yml). Release notes are extracted from the
-# matching version section in CHANGELOG.md so the published notes stay in sync
-# with the changelog. Runs independently of publish.yml — neither blocks the
-# other.
+# Cut a GitHub Release for a version. Triggered two ways:
+#   * `workflow_call` from auto-release.yml, right after it pushes the tag on a
+#     version bump (the automated path — see auto-release.yml). That commit
+#     already passed lint/test before landing on main (via cut-release.yml's
+#     `needs: [version, lint, test]` gate and/or PR branch protection), so
+#     re-running here would be redundant — skipped below.
+#   * a manual `v*` tag push (escape hatch for hotfixes cut by hand). Unlike
+#     the automated path, this can tag *any* commit, verified or not, so this
+#     is where the gap was (see #260): a release could be cut without ever
+#     checking cargo test/fmt/clippy. Fixed by calling lint.yml/test.yml
+#     (already workflow_call-callable) and gating `release` on them via
+#     `needs:`.
+# Release notes are extracted from the matching version section in CHANGELOG.md
+# so the published notes stay in sync with the changelog. Runs independently of
+# publish.yml — neither blocks the other.
+#
+# The `lint`/`test` skip below keys off `inputs.tag`, not `github.event_name`:
+# a *nested* `workflow_call` (this workflow, called from auto-release.yml,
+# itself triggered by a `push` to main) inherits `github.event_name` from the
+# chain's originating event — it reads `push` here too, not `workflow_call` —
+# so `github.event_name == 'push'` was always true and never actually skipped
+# anything. That silently ran this workflow's own `test.yml` call alongside
+# publish.yml's identical call *and* the plain push-triggered `test.yml`, all
+# three racing for the same `test-${{ github.ref }}` concurrency group with
+# `cancel-in-progress: true` — auto-release.yml's `publish`/`release` jobs
+# routinely lost that race. `inputs` is only populated on the `workflow_call`
+# path (`required: true` there), so `inputs.tag == ''` reliably means "not
+# called with a tag" — i.e. the direct tag-push escape hatch — regardless of
+# what `github.event_name` reports.
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to release (e.g. v0.14.0)
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  # Gate for the manual `push: tags` escape hatch only — see #260. Skipped
+  # entirely on the `workflow_call` path since that commit is already verified
+  # (see header comment above).
+  lint:
+    name: Lint tagged commit
+    if: inputs.tag == ''
+    uses: ./.github/workflows/lint.yml
+
+  test:
+    name: Test tagged commit
+    if: inputs.tag == ''
+    uses: ./.github/workflows/test.yml
+
   release:
     name: Create GitHub Release
+    needs: [lint, test]
+    # Run if lint/test passed (push path) or were skipped (workflow_call path).
+    # Do NOT use the default `success()` here: a skipped need would otherwise
+    # make this job skip too.
+    if: always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped') && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Extract changelog section for this tag
         id: notes
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          VERSION=${TAG#v}
           # Pull lines between '## [VERSION]' and the next '## [' heading.
           awk -v ver="$VERSION" '
             $0 ~ "^## \\[" ver "\\]" { capture=1; next }
@@ -39,7 +89,8 @@ jobs:
           cat release-notes.md
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
           body_path: release-notes.md

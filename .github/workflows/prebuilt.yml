@@ -1,17 +1,16 @@
-name: Prebuilt Client
+name: Prebuilt UI
 
-# Guard against a stale (or silently broken) `prebuilt-client.html` — the
-# self-contained React client bundle `build.rs` copies at compile time (via
+# Guard against a stale (or silently broken) `prebuilt.html` — the
+# self-contained React UI bundle `build.rs` copies at compile time (via
 # `src/build/client.rs`), and falls back to verbatim whenever `pnpm` isn't
 # installed (e.g. `cargo install moadim` from a git checkout, or a Docker
 # build that never installs pnpm). It ships to those builds exactly as
 # committed, so it has to stay in lockstep with `client/src` by hand — this
-# job verifies that in CI, mirroring `prebuilt-ui.yml`'s freshness check for
-# the Yew `ui/` bundle.
+# job verifies that in CI.
 #
-# This job rebuilds the client with pnpm (same as publish.yml does at release
-# time) and fails if the freshly built `prebuilt-client.html` doesn't match
-# what's committed, so a PR that changes `client/` can't merge without also
+# This job rebuilds the UI with pnpm (same as publish.yml does at release
+# time) and fails if the freshly built `prebuilt.html` doesn't match what's
+# committed, so a PR that changes `client/` can't merge without also
 # regenerating the fallback bundle.
 
 permissions:
@@ -22,12 +21,12 @@ on:
     paths:
       - 'client/**'
       - 'src/build/client.rs'
-      - 'prebuilt-client.html'
+      - 'prebuilt.html'
       - 'pnpm-workspace.yaml'
 
 jobs:
   freshness:
-    name: prebuilt-client-html-fresh
+    name: prebuilt-html-fresh
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -58,14 +57,14 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Rebuild the client (build.rs regenerates prebuilt-client.html via pnpm)
+      - name: Rebuild the UI (build.rs regenerates prebuilt.html via pnpm)
         run: cargo check
 
-      - name: Fail if the committed prebuilt-client.html is stale
+      - name: Fail if the committed prebuilt.html is stale
         run: |
-          if ! git diff --exit-code -- prebuilt-client.html; then
+          if ! git diff --exit-code -- prebuilt.html; then
             echo ""
-            echo "prebuilt-client.html is out of date for the current client/ source."
+            echo "prebuilt.html is out of date for the current client/ source."
             echo "Rebuild it locally (pnpm install && cargo build) and commit the result."
             exit 1
           fi

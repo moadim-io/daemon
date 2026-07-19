@@ -34,6 +34,40 @@ fn prune_project_at_returns_false_when_claude_json_is_missing() {
 }
 
 #[test]
+fn prune_locked_errors_when_serialization_fails() {
+    // The `serialize_document` `?` arm: re-serializing a just-parsed, just-mutated `Value` is
+    // otherwise unreachable in a test (see `SERIALIZE_FAIL_ENV`'s doc comment), so this exercises
+    // it via that seam.
+    let dir = temp_dir("serialize-fails");
+    let claude_json = dir.join(".claude.json");
+    let workbench = "/home/u/.moadim/workbenches/serialize-fail-1700000000";
+    fs::write(
+        &claude_json,
+        format!(r#"{{"projects":{{"{workbench}":{{}}}}}}"#),
+    )
+    .unwrap();
+
+    let prev = std::env::var_os(SERIALIZE_FAIL_ENV);
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); the var is restored below.
+    unsafe {
+        std::env::set_var(SERIALIZE_FAIL_ENV, "1");
+    }
+
+    let result = prune_locked(&claude_json, Path::new(workbench));
+
+    // SAFETY: single-threaded harness; restore the saved value before any assertion can unwind.
+    unsafe {
+        match prev {
+            Some(value) => std::env::set_var(SERIALIZE_FAIL_ENV, value),
+            None => std::env::remove_var(SERIALIZE_FAIL_ENV),
+        }
+    }
+
+    assert!(result.is_err());
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn prune_project_at_removes_the_matching_entry_and_rewrites_the_file() {
     let dir = temp_dir("removes-match");
     let claude_json = dir.join(".claude.json");

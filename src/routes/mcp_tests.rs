@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use mcp_types::UpdateRoutineInput;
 
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
@@ -136,30 +137,6 @@ fn create_get_update_trigger_delete_routine_success() {
     // delete
     let result = handler.delete_routine(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn update_routine_tool_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .update_routine(Parameters(UpdateRoutineInput {
-            id: "no-such".into(),
-            schedule: None,
-            title: Some("x".into()),
-            agent: None,
-            model: None,
-            prompt: None,
-            goal: None,
-            repositories: None,
-            machines: None,
-            enabled: None,
-            ttl_secs: None,
-            max_runtime_secs: None,
-            tags: None,
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
 }
 
 #[test]

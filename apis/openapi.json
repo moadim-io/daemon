@@ -601,7 +601,7 @@
       },
       "put": {
         "tags": [
-          "crate::routines"
+          "crate::routes::update_routine"
         ],
         "summary": "`PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.",
         "description": "Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.\nA client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to\ndefault) should not rely on this route for that; use `PATCH` and set every field explicitly.",
@@ -681,10 +681,10 @@
       },
       "patch": {
         "tags": [
-          "crate::routines"
+          "crate::routes::update_routine"
         ],
         "summary": "`PATCH /routines/{id}` — partially update a routine.",
-        "operationId": "update",
+        "operationId": "update_routine",
         "parameters": [
           {
             "name": "id",

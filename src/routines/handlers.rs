@@ -13,12 +13,10 @@ use crate::global_lock::{LockScope, LockStatus};
 
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
-use super::model::{
-    FleetRunSummary, IcalFeedQuery, Routine, RoutineResponse, RoutineStore, UpdateRoutineRequest,
-};
+use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
     svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -121,40 +119,6 @@ pub async fn get_prompt_preview(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_get_prompt_preview(&store, &id)
-}
-
-/// `PATCH /routines/{id}` — partially update a routine.
-#[utoipa::path(patch, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = UpdateRoutineRequest,
-    responses((status = 200, body = RoutineResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
-pub async fn update(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-    Json(body): Json<UpdateRoutineRequest>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    // See `create` above: `svc_update` syncs the crontab (#360).
-    let resp = tokio::task::spawn_blocking(move || svc_update(&store, &id, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
-}
-
-/// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
-///
-/// Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.
-/// A client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to
-/// default) should not rely on this route for that; use `PATCH` and set every field explicitly.
-#[utoipa::path(put, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = UpdateRoutineRequest,
-    responses((status = 200, body = RoutineResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
-pub async fn replace(
-    state: State<RoutineStore>,
-    path: Path<String>,
-    body: Json<UpdateRoutineRequest>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    update(state, path, body).await
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.

@@ -34,6 +34,20 @@ pub fn create_private_dir_all(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Returns `path`'s parent directory, or an [`io::Error`] naming `what` (e.g. `"pid file"`) if
+/// `path` has no parent (i.e. `path` is `/` or empty) — a condition none of this crate's
+/// generated config/log/history paths hit in practice, but every writer needs an error arm for
+/// it rather than a panic. Centralized here so that arm is tested once instead of once per
+/// call site.
+pub fn parent_or_err<'a>(path: &'a Path, what: &str) -> io::Result<&'a Path> {
+    path.parent().ok_or_else(|| {
+        io::Error::other(format!(
+            "{what} path {} has no parent directory",
+            path.display()
+        ))
+    })
+}
+
 #[cfg(test)]
 #[path = "fs_perms_tests.rs"]
 mod fs_perms_tests;

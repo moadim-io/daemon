@@ -1,12 +1,17 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::cleanup_workbenches;
+use super::get_lock_status;
+use super::health;
+use super::list_agents;
 use super::mcp::MoadimMcp;
+use super::restart;
+use super::shutdown;
 use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
 use crate::utils::time::now_secs;
 use axum::{
-    extract::State,
     http::{
         header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH},
         HeaderMap, StatusCode,
@@ -14,9 +19,8 @@ use axum::{
     middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
+    Router,
 };
-use serde::Serialize;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 use tower::limit::GlobalConcurrencyLimitLayer;
@@ -60,41 +64,7 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
     }
 }
 
-/// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
-/// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
-/// instead of having routine runs silently no-op.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct DependencyHealth {
-    /// Whether `tmux` (used to launch every routine agent) resolves on the daemon's `PATH`.
-    pub tmux: bool,
-    /// Whether `python3` resolves on the daemon's `PATH`. The built-in `claude` agent's `setup`
-    /// step runs a `python3` snippet to pre-seed workspace-trust state; when it is missing that
-    /// step fails silently and the routine still shows a healthy status (issue #404).
-    pub python3: bool,
-}
-
-/// Response body for `GET /health`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct HealthResponse {
-    /// Health status string (always `"ok"` when reachable).
-    pub status: String,
-    /// Seconds elapsed since the server started.
-    pub uptime_secs: u64,
-    /// Whether the server is running.
-    pub running: bool,
-    /// Resolved name of this machine (from `MOADIM_MACHINE`, `~/.config/moadim/machine.local.toml`, or hostname).
-    pub machine: String,
-    /// Presence of required external binaries on the daemon's `PATH`.
-    pub dependencies: DependencyHealth,
-    /// Daemon version (from `CARGO_PKG_VERSION`).
-    pub version: String,
-    /// Short git commit SHA the daemon was built from, or `"unknown"` outside a git checkout.
-    pub git_sha: String,
-    /// Committer date (`YYYY-MM-DD`) of the build commit, or `"unknown"` outside a git checkout.
-    pub build_date: String,
-}
-
-/// The embedded SPA HTML, baked into the binary at compile time.
+/// The embedded Yew SPA HTML (served at `/`), baked into the binary at compile time.
 const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 
 /// Strong `ETag` for [`INDEX_HTML`], computed once from its content.
@@ -103,26 +73,30 @@ const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 /// deterministic across restarts of the same binary and only changes when a new build embeds
 /// different bytes. It isn't cryptographic — an `ETag` just needs to change when the content
 /// does, not resist tampering.
-static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    INDEX_HTML.hash(&mut hasher);
-    format!("\"{:016x}\"", hasher.finish())
-});
+static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| etag_for(INDEX_HTML));
 
-/// `GET /` — serve the web client (single-page UI).
-///
-/// Sends a strong `ETag` for the ~1.1 MB embedded SPA and honors `If-None-Match` with a bodyless
-/// `304 Not Modified`, so a client that already has the current build only pays for the request
+/// The embedded React `client/` SPA HTML (served at `/client`), baked into the binary at compile
+/// time by `src/build/client.rs`. A second, independent bundle from [`INDEX_HTML`] — see
+/// `Architecture.md`'s "UI inlining strategy" for why both exist side by side during the
+/// `ui/` → `client/` rollout.
+const CLIENT_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/client.html"));
+
+/// Strong `ETag` for [`CLIENT_HTML`], mirroring [`INDEX_ETAG`].
+static CLIENT_ETAG: LazyLock<String> = LazyLock::new(|| etag_for(CLIENT_HTML));
+
+/// Strong `ETag` for an embedded SPA HTML body, deterministic across restarts of the same binary.
+fn etag_for(html: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    html.hash(&mut hasher);
+    format!("\"{:016x}\"", hasher.finish())
+}
+
+/// Serves an embedded SPA's HTML with a strong `ETag`, honoring `If-None-Match` with a bodyless
+/// `304 Not Modified` so a client that already has the current build only pays for the request
 /// round-trip on reload, not a re-download of the full body (issue #401). `Cache-Control:
 /// no-cache` forces that revalidation on every load rather than trusting a local TTL, since the
-/// content can change on any daemon upgrade.
-#[utoipa::path(get, path = "/",
-    responses(
-        (status = 200, description = "Web client HTML", body = str),
-        (status = 304, description = "Client's cached copy is still current"),
-    ))]
-pub async fn index(headers: HeaderMap) -> Response {
-    let etag = INDEX_ETAG.as_str();
+/// content can change on any daemon upgrade. Shared by [`index`] and [`client_index`].
+fn serve_spa(html: &'static str, etag: &'static str, headers: &HeaderMap) -> Response {
     let not_modified = headers
         .get(IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok())
@@ -132,9 +106,32 @@ pub async fn index(headers: HeaderMap) -> Response {
     }
     (
         [(ETAG, etag), (CACHE_CONTROL, "no-cache")],
-        axum::response::Html(INDEX_HTML),
+        axum::response::Html(html),
     )
         .into_response()
+}
+
+/// `GET /` — serve the web client (single-page UI).
+#[utoipa::path(get, path = "/",
+    responses(
+        (status = 200, description = "Web client HTML", body = str),
+        (status = 304, description = "Client's cached copy is still current"),
+    ))]
+pub async fn index(headers: HeaderMap) -> Response {
+    serve_spa(INDEX_HTML, INDEX_ETAG.as_str(), &headers)
+}
+
+/// `GET /client` (and any `/client/*` deep link) — serve the React client SPA. The nested
+/// router's own `.fallback` (see [`build_app_with_shutdown`]) routes every `/client/*` path here
+/// too, so React Router's client-side routes resolve on a hard refresh or a direct deep link,
+/// exactly like [`index`] does for the Yew `ui/` SPA at `/`.
+#[utoipa::path(get, path = "/client",
+    responses(
+        (status = 200, description = "React client HTML", body = str),
+        (status = 304, description = "Client's cached copy is still current"),
+    ))]
+pub async fn client_index(headers: HeaderMap) -> Response {
+    serve_spa(CLIENT_HTML, CLIENT_ETAG.as_str(), &headers)
 }
 
 /// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
@@ -149,72 +146,6 @@ async fn api_not_found() -> AppError {
     AppError::NotFound
 }
 
-/// `GET /health` — health check with uptime.
-#[utoipa::path(get, path = "/health",
-    responses((status = 200, body = HealthResponse)))]
-pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        // saturating_sub so a backward wall-clock adjustment can't underflow
-        // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
-        uptime_secs: now_secs().saturating_sub(state.uptime_start),
-        running: true,
-        machine: crate::machine::current_machine(),
-        dependencies: DependencyHealth {
-            tmux: routines::tmux_available(),
-            python3: routines::agent_command_available("python3"),
-        },
-        version: crate::build_info::VERSION.to_string(),
-        git_sha: crate::build_info::GIT_SHA.to_string(),
-        build_date: crate::build_info::BUILD_DATE.to_string(),
-    })
-}
-
-/// Response body for `POST /shutdown`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct ShutdownResponse {
-    /// Acknowledgement status (always `"shutting down"`).
-    pub status: String,
-}
-
-/// `POST /shutdown` — ask the server to stop gracefully.
-///
-/// Used by the UI "STOP" button (and the `moadim stop` command) to kill a backgrounded server that
-/// has no controlling terminal. The response is sent before the graceful shutdown completes.
-#[utoipa::path(post, path = "/shutdown",
-    responses((status = 200, body = ShutdownResponse)))]
-pub async fn shutdown(State(state): State<AppState>) -> Json<ShutdownResponse> {
-    log::info!("shutdown requested via API");
-    state.shutdown.notify_one();
-    Json(ShutdownResponse {
-        status: "shutting down".to_string(),
-    })
-}
-
-/// Response body for `POST /restart`.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct RestartResponse {
-    /// Acknowledgement status (always `"restarting"`).
-    pub status: String,
-    /// PID of the detached helper process performing the stop-old-then-start-new restart.
-    pub helper_pid: u32,
-}
-
-/// `POST /restart` — stop this server and start a fresh instance.
-///
-/// The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper
-/// that stops it and starts a new process, mirroring the `moadim restart` CLI command and the
-/// `restart` MCP tool. Responds with the helper's PID before the restart completes.
-#[utoipa::path(post, path = "/restart",
-    responses((status = 200, body = RestartResponse), (status = 500, description = "could not spawn the restart helper")))]
-pub async fn restart() -> Result<Json<RestartResponse>, AppError> {
-    let helper_pid = crate::cli::spawn_restart().map_err(|_| AppError::Internal)?;
-    Ok(Json(RestartResponse {
-        status: "restarting".to_string(),
-        helper_pid,
-    }))
-}
-
 #[path = "http_settings_routes.rs"]
 mod http_settings_routes;
 #[allow(
@@ -222,9 +153,12 @@ mod http_settings_routes;
     reason = "utoipa's OpenApi derive resolves these hidden __path_* types via crate::routes::http::__path_*, generated by #[utoipa::path] on the re-exported handlers below"
 )]
 pub use http_settings_routes::{
-    __path_get_current_machine, __path_get_user_prompt, __path_list_machines, __path_put_machine,
-    __path_put_user_prompt, get_current_machine, get_user_prompt, list_machines, put_machine,
-    put_user_prompt, MachineResponse, SetMachineRequest, SetUserPromptRequest,
+    __path_get_current_machine, __path_get_max_concurrent_runs, __path_get_user_prompt,
+    __path_list_machines, __path_put_machine, __path_put_max_concurrent_runs,
+    __path_put_user_prompt, get_current_machine, get_max_concurrent_runs, get_user_prompt,
+    list_machines, put_machine, put_max_concurrent_runs, put_user_prompt, MachineResponse,
+    MaxConcurrentRunsResponse, SetMachineRequest, SetMaxConcurrentRunsRequest,
+    SetUserPromptRequest,
 };
 
 /// Build the Axum router with all routes, middleware, and state wired up.
@@ -277,23 +211,30 @@ pub(crate) fn build_app_with_shutdown(
     // All REST endpoints live under the `/api/v1` prefix so the root path space is free for the
     // client-routed web UI (e.g. `/routines` resolves to a UI page, not JSON).
     let api = Router::new()
-        .route("/health", get(health))
-        .route("/shutdown", post(shutdown))
-        .route("/restart", post(restart))
+        .route("/health", get(health::health))
+        .route("/shutdown", post(shutdown::shutdown))
+        .route("/restart", post(restart::restart))
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
         .route(
             "/config/user-prompt",
             get(get_user_prompt).put(put_user_prompt),
         )
-        .route("/agents", get(routines::list_agents))
+        .route(
+            "/config/max-concurrent-runs",
+            get(get_max_concurrent_runs).put(put_max_concurrent_runs),
+        )
+        .route("/agents", get(list_agents::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
-        .route("/routines/cleanup", post(routines::cleanup))
+        .route(
+            "/routines/cleanup",
+            post(cleanup_workbenches::cleanup_workbenches),
+        )
         .route("/routines/runs", get(routines::get_all_runs))
         .route(
             "/routines/lock",
-            get(routines::get_lock_status)
+            get(get_lock_status::get_lock_status)
                 .post(routines::lock)
                 .delete(routines::unlock),
         )
@@ -340,6 +281,15 @@ pub(crate) fn build_app_with_shutdown(
             middlewares::timeout::API_REQUEST_TIMEOUT,
         )));
 
+    // The React client, served alongside `ui/` at `/client` during the rollout (see
+    // `CLIENT_HTML`'s doc comment). Its own `.fallback` scopes the SPA-routing trick to the
+    // `/client` prefix only, the same technique the `/api/v1` nest above uses for
+    // `api_not_found` — so `/client/routines` etc. resolve without touching the outer
+    // `.fallback(get(index))` that still serves `ui/` for everything else.
+    let client_router = Router::new()
+        .route("/", get(client_index))
+        .fallback(client_index);
+
     Router::new()
         .route("/", get(index))
         // Back-compat: the UI used to live at `/ui`; redirect old links to the root.
@@ -348,6 +298,7 @@ pub(crate) fn build_app_with_shutdown(
             get(|| async { axum::response::Redirect::permanent("/") }),
         )
         .nest("/api/v1", api)
+        .nest("/client", client_router)
         .nest_service("/mcp", mcp_service)
         .merge({
             use utoipa::OpenApi as _;

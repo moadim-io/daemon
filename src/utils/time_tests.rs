@@ -37,3 +37,18 @@ fn now_secs_is_non_decreasing() {
     let t2 = now_secs();
     assert!(t2 >= t1);
 }
+
+#[test]
+fn format_local_renders_a_known_instant() {
+    // 2020-01-01T00:00:00Z; local rendering varies by timezone but must include the date and
+    // a colon-separated time.
+    let text = format_local(1_577_836_800);
+    assert!(text.contains("2020") || text.contains("2019"), "got {text}");
+    assert!(text.contains(':'), "got {text}");
+}
+
+#[test]
+fn format_local_falls_back_to_dash_for_an_out_of_range_instant() {
+    // Far beyond chrono's supported date range (~year 262,143), so `timestamp_opt` returns `None`.
+    assert_eq!(format_local(i64::MAX as u64), "—");
+}

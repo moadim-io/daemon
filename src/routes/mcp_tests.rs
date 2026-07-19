@@ -60,36 +60,6 @@ fn err_helper_is_error() {
     assert!(result.is_error.unwrap_or(false));
 }
 
-#[test]
-fn health_returns_success() {
-    let handler = make_handler();
-    let result = handler.health().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn health_content_contains_status() {
-    let handler = make_handler();
-    let result = handler.health().unwrap();
-    let text = &result.content[0];
-    let json_str = match &text {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    assert_eq!(val["status"], "ok");
-    assert_eq!(val["running"], true);
-    // Build provenance is surfaced for parity with `GET /health` and `--version`.
-    assert_eq!(val["version"], crate::build_info::VERSION);
-    assert_eq!(val["git_sha"], crate::build_info::GIT_SHA);
-    assert_eq!(val["build_date"], crate::build_info::BUILD_DATE);
-    // Resolved machine identity, for parity with `GET /health`.
-    assert!(
-        val["machine"].is_string() && !val["machine"].as_str().unwrap().is_empty(),
-        "mcp health should carry a non-empty machine name, got: {val}"
-    );
-}
-
 // ── routine tools ──────────────────────────────────────────────────────────────
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
@@ -149,12 +119,7 @@ fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
 
     // create
     let result = handler
@@ -162,7 +127,7 @@ fn create_get_update_trigger_delete_routine_success() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -204,24 +169,8 @@ fn create_get_update_trigger_delete_routine_success() {
     assert!(!result.is_error.unwrap_or(false));
 
     // delete
-    let result = handler
-        .delete_routine(Parameters(IdInput { id: id.clone() }))
-        .unwrap();
+    let result = handler.delete_routine(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn cleanup_workbenches_tool_returns_removed_count() {
-    let handler = make_handler();
-    let result = handler.cleanup_workbenches().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let json_str = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    assert!(val["removed"].is_u64());
-    assert!(val["freed_bytes"].is_u64());
 }
 
 #[test]

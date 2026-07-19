@@ -3,5 +3,11 @@
 //! Business logic lives in [`crate::routines`]. Modules here translate
 //! between protocol representations and the service-layer functions.
 
+pub mod cleanup_workbenches;
+pub mod get_lock_status;
+pub mod health;
 pub mod http;
+pub mod list_agents;
 pub mod mcp;
+pub mod restart;
+pub mod shutdown;

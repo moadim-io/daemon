@@ -1,7 +1,7 @@
 .\" Man page for moadim.
 .\" Mirrors the built-in `moadim --help` output (src/cli.rs::print_help).
 .\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
-.TH MOADIM 1 "2026-07-07" "moadim 1.0.1" "Moadim Manual"
+.TH MOADIM 1 "2026-07-18" "moadim 1.4.1" "Moadim Manual"
 .SH NAME
 moadim \- routine scheduler with an MCP/REST API and a web control panel
 .SH SYNOPSIS
@@ -26,15 +26,25 @@ Once running, manage it from the web client (the STOP button) or with
 .B (default)
 Start the server in the background and exit.
 .TP
-.BR \-i ", " \-\-interactive
+.BR \-i ", " \-\-interactive ", " \-f ", " \-\-foreground
 Run in the foreground, attached to the terminal (Ctrl-C to stop).
 .TP
-.BR \-b ", " \-\-background
+.BR \-b ", " \-\-background ", " \-d ", " \-\-detach ", " \-\-daemon
 Start the server detached in the background (the explicit default).
 .SH COMMANDS
 .TP
-.B restart
-Stop a running server (if any) and start a fresh background one.
+.BR "restart " [ \-\-json "] [" \-q "] [" \-i ]
+Stop a running server (if any) and start a fresh one.
+.B \-q
+/
+.B \-\-quiet
+prints only the
+.B "restarted: pid <old> -> <new>"
+rotation line, suppressing the preamble and the reach/manage hint block.
+.B \-i
+/
+.B \-\-interactive
+brings the fresh instance up in the foreground instead of detached.
 .TP
 .BR "stop " [ \-\-json "] [" \-q ]
 Stop a running background server.
@@ -42,12 +52,16 @@ Stop a running background server.
 /
 .B \-\-quiet
 suppresses the human-readable status line.
+Only stops the daemon process: a routine agent already running in its own
+detached tmux session keeps running until it finishes on its own or a later
+.B moadim
+start reaps it.
 .TP
 .BR "status " [ \-\-json "] [" "\-\-wait" [ = SECS ]]
 Show whether a server is running.
 .B \-\-wait
 polls
-.B GET /health
+.B GET /api/v1/health
 until the server answers or
 .I SECS
 elapses (default 30) instead of checking once, so scripts can block on
@@ -59,6 +73,11 @@ Reap finished, expired routine workbenches now.
 .B "trigger <id>"
 Trigger a routine to run now, outside its schedule.
 .TP
+.B "logs <id>"
+Print a routine's newest run log
+.RI ( agent.log )
+to stdout.
+.TP
 .B install
 Register moadim as an OS service (launchd / systemd user).
 .TP
@@ -68,6 +87,12 @@ Remove the OS service registration and the managed crontab block.
 .B machine <show|set|list>
 Show or set this machine's identity, or list the machines referenced by
 routines.
+.TP
+.B "completions <shell>"
+Print a completion script for
+.BR bash ", " zsh ", " fish ", " powershell ", or " elvish
+(e.g.
+.BR "moadim completions zsh > _moadim" ).
 .TP
 .BR "help" ", " \-h ", " \-\-help
 Show usage help.
@@ -89,19 +114,27 @@ Manage routines (alias:
 Trigger a routine by ID (invoked directly from the routine's crontab
 entry).
 .TP
+.BR "enable <routine> " [ \-\-json ]
+Turn a routine on (set enabled=true) by id or slug.
+.TP
+.BR "disable <routine> " [ \-\-json ]
+Turn a routine off (set enabled=false) by id or slug.
+.TP
 .B agents
 List available agent keys.
 .SH OPTIONS
 .TP
 .B \-\-json
 Pass to
-.BR stop ", " status ", or " cleanup
+.BR restart ", " stop ", " status ", or " cleanup
 for a single-line, machine-readable object on stdout.
 .TP
 .BR \-q ", " \-\-quiet
 Pass to
 .B stop
-to suppress its human-readable status line.
+to suppress its human-readable status line, or to
+.B restart
+to print only the rotation line.
 .TP
 .BR "\-\-wait" [ = SECS ]
 Pass to

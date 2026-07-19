@@ -2,11 +2,10 @@
 
 use crate::routes::http::ShutdownSignal;
 use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
-use crate::utils::time::now_secs;
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
-    tool, tool_router,
+    tool, tool_handler, tool_router,
 };
 
 #[path = "mcp_types.rs"]
@@ -15,6 +14,38 @@ use mcp_types::{
     CreateFlagInput, IdInput, ListRoutinesParam, LockRoutinesInput, ResolveFlagInput,
     SetPowerSavingInput, SnoozeRoutineInput, UnlockRoutinesInput, UpdateRoutineInput,
 };
+
+/// The `health` tool, kept in `routes/health/mcp.rs` beside the `GET /health` HTTP handler it
+/// mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "health/mcp.rs"]
+mod health;
+
+/// The `shutdown` tool, kept in `routes/shutdown/mcp.rs` beside the `POST /shutdown` HTTP handler
+/// it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "shutdown/mcp.rs"]
+mod shutdown;
+
+/// The `restart` tool, kept in `routes/restart/mcp.rs` beside the `POST /restart` HTTP handler it
+/// mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "restart/mcp.rs"]
+mod restart;
+
+/// The `get_lock_status` tool, kept in `routes/get_lock_status/mcp.rs` beside the
+/// `GET /routines/lock` HTTP handler it mirrors. Its own `#[tool_router]` block is combined with
+/// this file's below.
+#[path = "get_lock_status/mcp.rs"]
+mod get_lock_status;
+
+/// The `list_agents` tool, kept in `routes/list_agents/mcp.rs` beside the `GET /agents` HTTP
+/// handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "list_agents/mcp.rs"]
+mod list_agents;
+
+/// The `cleanup_workbenches` tool, kept in `routes/cleanup_workbenches/mcp.rs` beside the
+/// `POST /routines/cleanup` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "cleanup_workbenches/mcp.rs"]
+mod cleanup_workbenches;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -43,7 +74,7 @@ fn err(msg: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl MoadimMcp {
     /// Create a new `MoadimMcp` handler connected to the given routine store.
     pub fn new(
@@ -58,30 +89,6 @@ impl MoadimMcp {
             uptime_start,
             shutdown,
         }
-    }
-
-    /// Return server health status, uptime, build provenance, and filesystem locations.
-    #[tool(description = "Get server health, uptime, build provenance, and filesystem locations")]
-    fn health(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let loc = crate::filesystem::FsLocation::current();
-        // Inline FsLocation fields directly so there are no conditional branches on serialization.
-        let val = serde_json::json!({
-            "status": "ok",
-            // saturating_sub so a backward wall-clock adjustment can't underflow
-            // (panic in debug, wrap to a huge value in release) — clamp to 0 instead.
-            "uptime_secs": now_secs().saturating_sub(self.uptime_start),
-            "running": true,
-            // Resolved machine identity, mirroring `GET /health` and `GET /machine`.
-            "machine": crate::machine::current_machine(),
-            // Build provenance, mirroring `GET /health` and `--version` so the
-            // running build is identifiable consistently across all three surfaces.
-            "version": crate::build_info::VERSION,
-            "git_sha": crate::build_info::GIT_SHA,
-            "build_date": crate::build_info::BUILD_DATE,
-            "server_root": loc.server_root,
-            "server_exe_dir": loc.server_exe_dir,
-        });
-        Ok(ok(val))
     }
 
     /// Return managed routines as a JSON array sorted by creation time.
@@ -246,25 +253,6 @@ impl MoadimMcp {
         )
     }
 
-    /// Reap finished, expired run workbenches immediately, returning how many were removed and the
-    /// bytes freed.
-    #[tool(
-        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed and the total disk space freed in bytes."
-    )]
-    fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_cleanup(&self.routines)))
-    }
-
-    /// List the available agent registry keys a routine can launch.
-    #[tool(description = "List the available agent registry keys a routine can launch")]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::available_agents()))
-    }
-
     /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
     /// "Open flags" section includes it.
     #[tool(
@@ -347,17 +335,6 @@ impl MoadimMcp {
     }
 
     /// Return whether the global routine lock is active and which sentinels are present.
-    #[tool(
-        description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
-    )]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(crate::global_lock::lock_status()))
-    }
-
     /// Create a global lock sentinel that halts all routine scheduling and manual triggers without
     /// touching individual routine `enabled` states.
     #[tool(
@@ -417,33 +394,13 @@ impl MoadimMcp {
         }
         Ok(ok(crate::global_lock::lock_status()))
     }
-
-    /// Ask the server to stop gracefully, mirroring `POST /api/v1/shutdown` and `moadim stop`.
-    #[tool(
-        description = "Stop the running server gracefully. Mirrors the POST /api/v1/shutdown route and `moadim stop`."
-    )]
-    fn shutdown(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        log::info!("shutdown requested via MCP");
-        self.shutdown.notify_one();
-        Ok(ok(serde_json::json!({ "status": "shutting down" })))
-    }
-
-    /// Stop this server and start a fresh instance, mirroring `POST /api/v1/restart` and
-    /// `moadim restart`. Delegates to a detached helper process that performs the swap.
-    #[tool(
-        description = "Restart the server: stop it and start a fresh instance. Mirrors the POST /api/v1/restart route and `moadim restart`."
-    )]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn restart(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        log::info!("restart requested via MCP");
-        Ok(crate::cli::spawn_restart().map_or_else(err, |helper_pid| {
-            ok(serde_json::json!({ "status": "restarting", "helper_pid": helper_pid }))
-        }))
-    }
 }
+
+/// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
+/// [`restart`], [`get_lock_status`], [`list_agents`], and [`cleanup_workbenches`] modules), since
+/// a `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router()))]
+impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]
 #[path = "mcp_lock_tests.rs"]

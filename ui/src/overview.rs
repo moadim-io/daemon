@@ -16,6 +16,7 @@ use chrono::{DateTime, Duration, Local};
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::RequestCache;
 use yew::prelude::*;
 
 use crate::overview_attention::{attention_items, AttentionTable};
@@ -233,7 +234,10 @@ async fn api_trigger_routine(id: &str) -> Result<(), String> {
 }
 
 pub(crate) async fn fetch_routines() -> Result<Vec<Routine>, String> {
+    // RequestCache::NoStore: see api_list in routines/model.rs — same endpoint, same stale-cache
+    // failure mode otherwise.
     Request::get("/api/v1/routines")
+        .cache(RequestCache::NoStore)
         .send()
         .await
         .map_err(|e| e.to_string())?
@@ -308,14 +312,13 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     // Load on mount.
     {
         let load = load.clone();
-        use_effect_with((), move |_| load());
+        use_effect_with((), move |()| load());
     }
 
     // Auto-refresh loop, re-armed when the interval changes.
     {
         use std::cell::Cell;
         use std::rc::Rc;
-        let load = load.clone();
         use_effect_with(*interval, move |interval| {
             let cancelled = Rc::new(Cell::new(false));
             if let Some(period_ms) = interval.as_millis() {
@@ -345,7 +348,7 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
     // Advance "now" so countdowns re-render between fetches.
     {
         let now = now.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 loop {
                     TimeoutFuture::new(TICK_MS).await;
@@ -400,7 +403,9 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
             {
                 // Only render the triage panel when something is actually broken,
                 // so a healthy fleet stays uncluttered.
-                if !attention.is_empty() {
+                if attention.is_empty() {
+                    html! {}
+                } else {
                     html! {
                         <>
                             <div class="section-hd">
@@ -409,8 +414,6 @@ pub fn overview_page(props: &OverviewPageProps) -> Html {
                             <AttentionTable items={attention} />
                         </>
                     }
-                } else {
-                    html! {}
                 }
             }
             <div class="section-hd">

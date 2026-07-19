@@ -13,22 +13,25 @@
 //! session name begins with) before launching, and skips the fire — logging a warning — rather than
 //! queueing it, the same non-fatal skip shape the overlap guard above already uses.
 
-/// Env var naming the global concurrency cap. Unset, empty, unparsable, or `0` falls back to
-/// [`DEFAULT_MAX_CONCURRENT_RUNS`] — unlike `MOADIM_MAX_WORKBENCH_DISK_BYTES`'s "0 means unbounded"
-/// convention, an unbounded fan-out is exactly the bug this cap exists to prevent, so there is no
-/// "off" setting here.
+/// Env var naming the global concurrency cap. Unset or unparsable falls back to
+/// [`DEFAULT_MAX_CONCURRENT_RUNS`]. `0` (unset or explicit) means unbounded — the same convention
+/// `MOADIM_MAX_WORKBENCH_DISK_BYTES` uses.
 pub(crate) const MAX_CONCURRENT_RUNS_ENV: &str = "MOADIM_MAX_CONCURRENT_RUNS";
 
-/// Sane default cap applied when [`MAX_CONCURRENT_RUNS_ENV`] is unset/unparsable/zero.
-const DEFAULT_MAX_CONCURRENT_RUNS: usize = 4;
+/// Default cap applied when [`MAX_CONCURRENT_RUNS_ENV`] is unset/unparsable: `0`, i.e. no limit.
+const DEFAULT_MAX_CONCURRENT_RUNS: usize = 0;
 
 /// The configured global concurrency cap: how many routine agent sessions may be alive at once
-/// before a new fire is skipped instead of launched.
+/// before a new fire is skipped instead of launched. `0` means unbounded.
+///
+/// Precedence: [`MAX_CONCURRENT_RUNS_ENV`] (ops/CI) > the UI/REST-configured override persisted in
+/// `machine.local.toml` (`crate::machine::max_concurrent_runs_override`, issue #1155) >
+/// [`DEFAULT_MAX_CONCURRENT_RUNS`].
 pub(crate) fn max_concurrent_runs() -> usize {
     std::env::var(MAX_CONCURRENT_RUNS_ENV)
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
-        .filter(|&cap| cap > 0)
+        .or_else(crate::machine::max_concurrent_runs_override)
         .unwrap_or(DEFAULT_MAX_CONCURRENT_RUNS)
 }
 

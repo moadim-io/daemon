@@ -18,12 +18,12 @@ use super::model::{LockStatus, Routine};
 
 /// Route query used to deep-link straight to a routine's HISTORY page (e.g. from the overview
 /// page's RECENT RUNS panel), instead of landing on the plain routine list.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineHistoryQuery {
     pub history: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RPage {
     #[default]
     List,
@@ -35,7 +35,7 @@ pub enum RPage {
     Clone(Box<Routine>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RModal {
     None,
     Edit(String),
@@ -44,7 +44,7 @@ pub enum RModal {
 }
 
 /// How the list page presents routines: a table, or a month calendar of upcoming fire times.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RView {
     #[default]
     Table,
@@ -64,6 +64,39 @@ pub enum RCol {
     Updated,
 }
 
+impl RCol {
+    /// Stable token used when persisting the active sort column (saved views).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Title => "title",
+            Self::NextRun => "next_run",
+            Self::LastFire => "last_fire",
+            Self::Agent => "agent",
+            Self::Health => "health",
+            Self::Enabled => "enabled",
+            Self::Updated => "updated",
+        }
+    }
+
+    /// Parse a token back to a variant. `None` for unrecognized tokens, so a
+    /// stale/garbage persisted value falls back to "no sort" rather than
+    /// silently picking an arbitrary column.
+    #[must_use]
+    pub fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "title" => Self::Title,
+            "next_run" => Self::NextRun,
+            "last_fire" => Self::LastFire,
+            "agent" => Self::Agent,
+            "health" => Self::Health,
+            "enabled" => Self::Enabled,
+            "updated" => Self::Updated,
+            _ => return None,
+        })
+    }
+}
+
 /// Sort direction for the routine table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RDir {
@@ -77,8 +110,26 @@ impl RDir {
     #[must_use]
     pub fn flip(self) -> Self {
         match self {
-            RDir::Asc => RDir::Desc,
-            RDir::Desc => RDir::Asc,
+            Self::Asc => Self::Desc,
+            Self::Desc => Self::Asc,
+        }
+    }
+
+    /// Stable token used when persisting the active sort direction (saved views).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Asc => "asc",
+            Self::Desc => "desc",
+        }
+    }
+
+    /// Parse a token back to a direction, defaulting to `Asc` for unknown values.
+    #[must_use]
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "desc" => Self::Desc,
+            _ => Self::Asc,
         }
     }
 }
@@ -106,11 +157,11 @@ impl RGroupBy {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            RGroupBy::None => "none",
-            RGroupBy::Agent => "agent",
-            RGroupBy::Machine => "machine",
-            RGroupBy::Status => "status",
-            RGroupBy::Health => "health",
+            Self::None => "none",
+            Self::Agent => "agent",
+            Self::Machine => "machine",
+            Self::Status => "status",
+            Self::Health => "health",
         }
     }
 
@@ -118,11 +169,11 @@ impl RGroupBy {
     #[must_use]
     pub fn from_str(s: &str) -> Self {
         match s {
-            "agent" => RGroupBy::Agent,
-            "machine" => RGroupBy::Machine,
-            "status" => RGroupBy::Status,
-            "health" => RGroupBy::Health,
-            _ => RGroupBy::None,
+            "agent" => Self::Agent,
+            "machine" => Self::Machine,
+            "status" => Self::Status,
+            "health" => Self::Health,
+            _ => Self::None,
         }
     }
 
@@ -130,11 +181,11 @@ impl RGroupBy {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            RGroupBy::None => "None",
-            RGroupBy::Agent => "Agent",
-            RGroupBy::Machine => "Machine",
-            RGroupBy::Status => "Status",
-            RGroupBy::Health => "Health",
+            Self::None => "None",
+            Self::Agent => "Agent",
+            Self::Machine => "Machine",
+            Self::Status => "Status",
+            Self::Health => "Health",
         }
     }
 }
@@ -188,9 +239,8 @@ pub fn sort_routines(
     dir: RDir,
     now: DateTime<Local>,
 ) -> Vec<Routine> {
-    let col = match col {
-        Some(c) => c,
-        None => return routines,
+    let Some(col) = col else {
+        return routines;
     };
     routines.sort_by(|a, b| {
         let primary = match col {
@@ -228,7 +278,7 @@ pub fn sort_routines(
     routines
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RState {
     pub routines: Vec<Routine>,
     pub loading: bool,
@@ -270,6 +320,26 @@ impl Default for RState {
     }
 }
 
+impl RState {
+    /// Initial state, restoring the last-used filter/sort/group-by from
+    /// `localStorage` (see [`super::saved_views::load_last_view`]) so a reload
+    /// doesn't silently drop an operator's in-progress triage view. Falls back
+    /// to [`Default`] when nothing is stored (first visit, or storage
+    /// unavailable/private mode).
+    #[must_use]
+    pub fn init() -> Self {
+        let mut s = Self::default();
+        if let Some(snapshot) = super::saved_views::load_last_view() {
+            let (filter, sort_col, sort_dir, group_by) = super::saved_views::decode(&snapshot);
+            s.filter = filter;
+            s.sort_col = sort_col;
+            s.sort_dir = sort_dir;
+            s.group_by = group_by;
+        }
+        s
+    }
+}
+
 pub enum RAction {
     Loaded(Vec<Routine>),
     GoToNew,
@@ -297,6 +367,8 @@ pub enum RAction {
     /// Change the group-by dimension for the table view.
     SetGroupBy(RGroupBy),
     SortByCol(RCol),
+    /// Apply a saved-view snapshot: replaces filter, sort, and group-by in one shot.
+    ApplySnapshot(super::saved_views::ViewSnapshot),
     Upsert(Box<Routine>),
     Remove(String),
     /// Remove multiple routines after a confirmed bulk delete.
@@ -363,6 +435,13 @@ impl Reducible for RState {
                     s.sort_dir = RDir::Asc;
                 }
             }
+            RAction::ApplySnapshot(snapshot) => {
+                let (filter, sort_col, sort_dir, group_by) = super::saved_views::decode(&snapshot);
+                s.filter = filter;
+                s.sort_col = sort_col;
+                s.sort_dir = sort_dir;
+                s.group_by = group_by;
+            }
             RAction::Upsert(routine) => {
                 let routine = *routine;
                 if let Some(i) = s.routines.iter().position(|x| x.id == routine.id) {
@@ -396,7 +475,12 @@ impl Reducible for RState {
             }
             RAction::CurrentMachineLoaded(name) => {
                 s.current_machine = Some(name.clone());
-                s.filter.machine = RoutineMachineFacet::Machine(name);
+                // Only default the machine facet when nothing has already picked one — a
+                // restored saved view (or an operator who moved fast) should win over this
+                // fetched default instead of being clobbered by it.
+                if s.filter.machine == RoutineMachineFacet::Any {
+                    s.filter.machine = RoutineMachineFacet::Machine(name);
+                }
             }
         }
         s.into()

@@ -65,50 +65,29 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     }
 }
 
-// ── parity tools: agents / logs / shutdown ──────────────────────────────────────
-
-#[test]
-fn list_agents_tool_returns_array() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.list_agents().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert!(val.is_array());
-}
+// ── parity tools: logs / shutdown ──────────────────────────────────────
 
 #[test]
 fn routine_logs_tool_returns_logs_for_existing_routine() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(
-        routines.clone(),
-        crate::paths::routines_dir(),
-        0,
-        test_shutdown(),
-    );
+    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
     let created = handler
         .create_routine(Parameters(make_create_routine_req()))
         .unwrap();
     let text = match &created.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
         .as_str()
         .unwrap()
         .to_string();
-    let result = handler
-        .routine_logs(Parameters(IdInput { id: id.clone() }))
-        .unwrap();
+    let result = handler.routine_logs(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -129,53 +108,6 @@ fn routine_logs_tool_not_found_is_error() {
 }
 
 #[test]
-fn shutdown_tool_acknowledges() {
-    let handler = make_handler();
-    let result = handler.shutdown().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["status"], "shutting down");
-}
-
-#[test]
-fn restart_tool_spawns_helper_and_acknowledges() {
-    // The tool spawns a detached `current_exe --background` helper; under the test harness that exe
-    // is the test binary, which rejects `--background` and exits at once, so no real server starts.
-    // TempHome keeps the helper's log file out of the real home.
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.restart().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["status"], "restarting");
-    assert!(val["helper_pid"].as_u64().unwrap() > 0);
-}
-
-#[test]
-fn get_lock_status_returns_unlocked_by_default() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.get_lock_status().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], false);
-    assert_eq!(val["shared"], false);
-    assert_eq!(val["local"], false);
-}
-
-#[test]
 fn lock_routines_shared_creates_sentinel_and_returns_status() {
     let _home = TempHome::set();
     let handler = make_handler();
@@ -186,7 +118,7 @@ fn lock_routines_shared_creates_sentinel_and_returns_status() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -207,7 +139,7 @@ fn lock_routines_local_creates_sentinel_and_returns_status() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let val: serde_json::Value = serde_json::from_str(&text).unwrap();

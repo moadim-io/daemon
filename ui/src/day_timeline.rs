@@ -27,7 +27,7 @@ const MONTHS: [&str; 12] = [
 const ZOOM_LEVELS: [i32; 4] = [40, 140, 300, 600];
 
 /// One schedulable thing on the timeline: a display label and its cron schedule.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TimelineItem {
     /// Optional entity ID emitted by `on_click` when a chip is clicked.
     pub id: Option<String>,
@@ -90,9 +90,9 @@ pub struct DayTimelineProps {
 #[function_component(DayTimeline)]
 pub fn day_timeline(props: &DayTimelineProps) -> Html {
     // Day offset from today; negative = past, positive = future.
-    let offset = use_state(|| 0i64);
+    let offset = use_state(|| 0_i64);
     // Zoom level index into ZOOM_LEVELS; 0 = compact, higher = deeper into the hour.
-    let zoom = use_state(|| 0usize);
+    let zoom = use_state(|| 0_usize);
     // Ref on the "now" hour row so we can scroll it into view when viewing today.
     let now_ref = use_node_ref();
 
@@ -144,8 +144,8 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
 
     // Bucket every item's fire times into the hour rows.
     let mut buckets: Vec<Vec<BucketEntry>> = (0..24).map(|_| Vec::new()).collect();
-    let mut total = 0usize;
-    for it in props.items.iter() {
+    let mut total = 0_usize;
+    for it in &props.items {
         for t in fire_times(&it.schedule, day) {
             buckets[t.hour() as usize].push(BucketEntry {
                 time: t,
@@ -157,7 +157,7 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
             total += 1;
         }
     }
-    for b in buckets.iter_mut() {
+    for b in &mut buckets {
         b.sort_by_key(|e| e.time);
     }
 
@@ -189,7 +189,7 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
         };
         html! {
             <div class={scroll_cls} style={format!("--dh:{hour_px}px")}>
-                { for (0..24usize).map(|h| {
+                { for (0..24_usize).map(|h| {
                     let slot = &buckets[h];
                     let mut cls = String::from("day-hour");
                     if h == now_hour {
@@ -267,3 +267,7 @@ pub fn day_timeline(props: &DayTimelineProps) -> Html {
         </div>
     }
 }
+
+#[cfg(test)]
+#[path = "day_timeline_tests.rs"]
+mod day_timeline_tests;

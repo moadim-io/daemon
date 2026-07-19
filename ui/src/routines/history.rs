@@ -118,10 +118,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
         let cb = props.on_back.clone();
         Callback::from(move |_: MouseEvent| cb.emit(()))
     };
-    let on_refresh = {
-        let load = load.clone();
-        Callback::from(move |_: MouseEvent| load())
-    };
+    let on_refresh = Callback::from(move |_: MouseEvent| load());
 
     {
         let id = props.id.clone();
@@ -155,6 +152,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
     let now_secs = (js_sys::Date::now() / 1000.0) as u64;
     let rows = runs.iter().map(|run| {
         let started = crate::reltime(run.started_at);
+        let started_title = format!("{} · {}", run.workbench, crate::abstime(run.started_at));
         let duration = run.finished_at.map(|f| fmt_run_duration(run.started_at, f));
         let exit_code = run
             .exit_code
@@ -177,7 +175,7 @@ pub fn routine_history(props: &HistoryProps) -> Html {
         };
         html! {
             <tr key={workbench.clone()} class={if is_selected { "row-selected" } else { "" }}>
-                <td><div class="cell-time" title={workbench.clone()}>{started}</div></td>
+                <td><div class="cell-time" title={started_title}>{started}</div></td>
                 <td><span class={run_status_class(run.status)}>{run_status_label(run.status)}</span></td>
                 <td>{duration.unwrap_or_else(|| "—".to_string())}</td>
                 <td>{exit_code}</td>

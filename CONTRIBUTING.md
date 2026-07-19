@@ -8,16 +8,20 @@ By participating in this project you agree to abide by our
 | Tool | Purpose |
 | --- | --- |
 | [Rust stable](https://rustup.rs/) | Build the daemon |
-| [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install trunk`) |
+| [Trunk](https://trunkrs.dev/) | Build the Yew UI (`cargo install --locked --version 0.21.14 trunk` — pinned to match CI, see [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml)) |
 | `wasm32-unknown-unknown` target | UI target (`rustup target add wasm32-unknown-unknown`) |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
 | [`linecheck`](https://crates.io/crates/linecheck) | 500-line-per-file gate over `src/` and `ui/src/`, enforced by the pre-push hook and CI's `linecheck` job (`cargo install linecheck`) |
 | [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
-| [pnpm](https://pnpm.io/installation) | Runs [Changesets](https://github.com/changesets/changesets) (`pnpm install` once, then `pnpm changeset`) — see [Workflow](#workflow) below |
+| [pnpm](https://pnpm.io/installation) | Builds the React client (`client/`, `pnpm install` once at the repo root) and runs [Changesets](https://github.com/changesets/changesets) (`pnpm changeset`) — see [Workflow](#workflow) below |
 
 The `wasm32` target and Trunk are only needed when working on the browser UI
-(`ui/`). The daemon itself is a native binary and builds without them.
+(`ui/`); pnpm is only needed when working on the React client (`client/`,
+served at `/client` alongside `ui/` during its rollout) or cutting a
+changeset. The daemon itself is a native binary and builds without any of
+them — `cargo build` falls back to the committed `prebuilt.html`/
+`prebuilt-client.html` when `trunk`/`pnpm` aren't installed.
 
 ## Setup
 
@@ -27,28 +31,60 @@ cd daemon
 cargo build
 ```
 
-Run the checks the pre-push hook enforces before any push:
+Run the checks the pre-push hook enforces before any push. Two of the hook's
+gates aren't single reusable commands. The first scans `src/` and `ui/src/`
+for inline `#[cfg(test)] mod foo { ... }` test blocks and rejects them in
+favor of `*_tests.rs` siblings (see [Tests](#tests) below). The last — the
+changelog gate — is a bash diff check described below the block, not the
+`pnpm exec changeset status` command CI runs. Everything else is:
 
 ```sh
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy -p ui --target wasm32-unknown-unknown --all-targets -- -D warnings
+cargo build -p ui --target wasm32-unknown-unknown
 cargo test --workspace
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+pnpm --filter client typecheck
+pnpm --filter client lint
+pnpm --filter client test
 ```
 
 Use `--workspace` for both clippy and test, matching the pre-push hook —
 bare `cargo clippy`/`cargo test` skip the `ui` member crate entirely (this is
 a non-virtual workspace), so they can pass locally yet miss a real `ui`
-regression. `cargo llvm-cov` runs the test suite with instrumentation and
-enforces 100% line coverage (excluding `main.rs`), but is deliberately scoped
+regression. That host-target clippy run alone isn't enough for `ui`, though:
+it only ever ships compiled for `wasm32-unknown-unknown` (via `trunk build`),
+and clippy's lint set — and even whether it compiles at all — can differ
+between the host target and wasm32 (cfg-gated code paths, wasm-bindgen/web-sys
+API surface, etc.), so the `-p ui --target wasm32-unknown-unknown` clippy and
+build commands above mirror CI's `clippy-ui-wasm` job (see
+[`lint.yml`](.github/workflows/lint.yml)) — the pre-push hook itself doesn't
+run them, so they're worth running by hand before a `ui/**` push. `cargo
+llvm-cov` runs the test suite with instrumentation and enforces 100% line
+coverage (excluding `main.rs`), but is deliberately scoped
 to the root package only — the `ui` crate is a Yew/WASM UI that isn't held to
 that floor, so `cargo test --workspace` above is what actually exercises its
 own test suite. `linecheck` keeps any single `.rs` file under `src/` or
 `ui/src/` from growing past 500 lines — a convention two independently green
 PRs can each respect yet still blow past together, since it isn't a required
 branch-protection check (see the `linecheck` job in
-[`lint.yml`](.github/workflows/lint.yml)).
+[`lint.yml`](.github/workflows/lint.yml)). `client/` isn't a Cargo workspace
+member, so none of the cargo-based commands above touch it — the three `pnpm
+--filter client` commands mirror them for the React client, matching the
+`client-lint`/`client-test` CI jobs. The changelog gate, unlike the rest of
+this list, isn't reproduced by a command above: the pre-push hook diffs the
+range being pushed against `origin/main` and fails if `src/`, `ui/`, or
+`client/` changed without an accompanying `.changeset/*.md` file in that same
+range (see the "Changelog" step in `.githooks/pre-push`). This mirrors —
+but is not the same command as — the CI `unreleased-entry` job (see
+[Workflow](#workflow) below), which instead runs `pnpm exec changeset status
+--since=origin/main`; that command reports on pending changesets generally
+and can fail even with no `src/`/`ui/`/`client/` diff, so it isn't a
+drop-in local reproduction of the hook's step. Set `SKIP_CHANGELOG=1` to
+bypass the local hook's check the way the `skip-changelog` PR label bypasses
+CI's.
 
 Enable the bundled git hooks once per clone:
 
@@ -67,9 +103,10 @@ make spell
 `make spell` installs `typos-cli` if it's missing, then runs `typos` against
 the repo root — you don't need to know the crate/binary name to run it.
 
-Generated and vendored files (`prebuilt.html`, lockfiles, `apis/openapi.json`,
-`schemas/`) are excluded in `typos.toml`. To accept a real word that `typos`
-flags, add it to `[default.extend-words]` there.
+Generated and vendored files (`prebuilt.html`, `prebuilt-client.html`,
+lockfiles, `apis/openapi.json`, `schemas/`) are excluded in `typos.toml`. To
+accept a real word that `typos` flags, add it to `[default.extend-words]`
+there.
 
 Lint the workflow files under `.github/workflows/` (YAML syntax, `${{ }}`
 expressions, the `needs`/`if`/matrix job graph, action input names, and,
@@ -99,7 +136,10 @@ exposes the same routine (agent-scheduling) functionality over three interfaces 
 
 - **REST** — handlers in `src/routes/http.rs`
 - **MCP** — handlers in `src/routes/mcp.rs`
-- **UI** — a separate Yew/WASM crate in `ui/`, embedded at build time
+- **UI** — a separate Yew/WASM crate in `ui/`, served at `/`, embedded at build time
+- **Client** — a React/TypeScript app in `client/`, served at `/client`
+  alongside `ui/` during its rollout, also embedded at build time (see
+  `src/build/client.rs`)
 
 Routines are persisted to the OS crontab so they run on schedule. See
 [`Architecture.md`](Architecture.md) for the full picture.
@@ -188,7 +228,10 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 
 - New REST routes go in `src/routes/http.rs`; register them in the router
   builder there (the `.route(...)` chain). New MCP tools go in
-  `src/routes/mcp.rs`.
+  `src/routes/mcp.rs`. If a concept needs both a REST endpoint and an MCP
+  tool returning the same data, give it its own `src/routes/<name>/` folder
+  instead — see [`src/routes/CONTRIBUTING.md`](src/routes/CONTRIBUTING.md)
+  for the template (`src/routes/health/` is the reference implementation).
 - Error variants belong in `src/error.rs` (`AppError`); fallible handlers
   return `Result<_, AppError>`, which converts to the right HTTP status.
 - No `unwrap()` in handler paths — propagate errors via `AppError`.
@@ -196,10 +239,20 @@ changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 - `prebuilt.html` is a generated, committed artifact: `build.rs` inlines the
   compiled Yew UI (`ui/`) into it via `trunk build --release`, and it's the
   fallback used whenever `trunk` isn't installed (notably the `cargo install
-  moadim` path). Regenerate it after any `ui/` change — `cargo install trunk
-  && cargo build` rebuilds and overwrites it — and commit the result.
-  [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml) fails a PR that
-  changes `ui/**` without a matching `prebuilt.html` update.
+  moadim` path). Regenerate it after any `ui/` change with the pinned trunk
+  version above (`cargo build` rebuilds and overwrites it) and commit the
+  result. [`prebuilt-ui.yml`](.github/workflows/prebuilt-ui.yml) fails a PR
+  that changes `ui/**` without a matching `prebuilt.html` update — including
+  one regenerated with an unpinned, newer trunk than CI's.
+- `prebuilt-client.html` is the same idea for the React client (`client/`,
+  served at `/client` alongside `ui/` during its rollout): `build.rs` copies
+  `client/dist/index.html` (already a single self-contained file, built by
+  `pnpm --filter client build` via `vite-plugin-singlefile` — see
+  `src/build/client.rs`) to the package root, and it's the fallback used
+  whenever `pnpm` isn't installed. Regenerate it after any `client/` change
+  with `pnpm install && cargo build` and commit the result.
+  [`prebuilt-client.yml`](.github/workflows/prebuilt-client.yml) fails a PR
+  that changes `client/**` without a matching `prebuilt-client.html` update.
 
 ## Commit messages
 

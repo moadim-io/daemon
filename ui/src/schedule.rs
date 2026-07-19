@@ -120,6 +120,26 @@ pub(crate) fn month_start(today: NaiveDate, offset: i32) -> NaiveDate {
     NaiveDate::from_ymd_opt(year, month0 + 1, 1).unwrap_or(today)
 }
 
+/// Fire times of `schedule` that land on `date` (the caller's local calendar
+/// day), formatted `"HH:MM"` in ascending order. Empty for an empty/invalid
+/// schedule or a day with no fires.
+pub(crate) fn fires_on_day(schedule: &str, date: NaiveDate) -> Vec<String> {
+    let Some(cron) = parse_cron(schedule) else {
+        return vec![];
+    };
+    let Some(start_naive) = date.and_hms_opt(0, 0, 0) else {
+        return vec![];
+    };
+    let Some(start) = Local.from_local_datetime(&start_naive).earliest() else {
+        return vec![];
+    };
+    let start = start - Duration::seconds(1);
+    cron.iter_after(start)
+        .take_while(|dt| dt.date_naive() == date)
+        .map(|dt| dt.format("%H:%M").to_string())
+        .collect()
+}
+
 /// Fire counts per grid cell for `schedule` over `[grid_start, grid_start + 42 days)`.
 pub(crate) fn occurrences_per_day(
     schedule: &str,
@@ -131,7 +151,7 @@ pub(crate) fn occurrences_per_day(
         .from_local_datetime(&start_naive)
         .earliest()?
         .checked_sub_signed(Duration::seconds(1))?;
-    let mut counts = [0u32; GRID_CELLS];
+    let mut counts = [0_u32; GRID_CELLS];
     for dt in cron.iter_after(start).take(MAX_OCCURRENCES) {
         let day = (dt.date_naive() - grid_start).num_days();
         if day < 0 {

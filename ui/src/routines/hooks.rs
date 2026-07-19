@@ -22,7 +22,7 @@ use super::model::{api_all_runs, api_list, api_lock_status, FleetRunSummary};
 use super::sparkline::{group_recent_runs, RUN_HISTORY_FETCH_LIMIT};
 use super::state::{RAction, RModal, RState};
 
-/// Tick cadence for the live "now" handle (keeps DueSoon count fresh between fetches).
+/// Tick cadence for the live "now" handle (keeps `DueSoon` count fresh between fetches).
 const NEXT_RUN_TICK_MS: u32 = 30_000;
 
 /// Installs the keydown listener behind two routines-page shortcuts: `/` focuses
@@ -30,7 +30,7 @@ const NEXT_RUN_TICK_MS: u32 = 30_000;
 /// GitHub/Slack convention and complementing the ⌘K palette; Escape dismisses
 /// whichever routine modal/dialog is currently open. Torn down on unmount.
 pub(crate) fn install_search_hotkey(search_ref: NodeRef, state: UseReducerHandle<RState>) {
-    use_effect_with((), move |_| {
+    use_effect_with((), move |()| {
         let on_key =
             Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
                 if event.key() == "Escape" {
@@ -75,7 +75,7 @@ pub(crate) fn install_search_hotkey(search_ref: NodeRef, state: UseReducerHandle
 
 /// Advances `now` on a fixed tick so DUE SOON counts stay current between fetches.
 pub(crate) fn install_now_ticker(now: UseStateHandle<DateTime<Local>>) {
-    use_effect_with((), move |_| {
+    use_effect_with((), move |()| {
         spawn_local(async move {
             loop {
                 TimeoutFuture::new(NEXT_RUN_TICK_MS).await;
@@ -85,28 +85,9 @@ pub(crate) fn install_now_ticker(now: UseStateHandle<DateTime<Local>>) {
     });
 }
 
-/// Loads the routine list once on mount.
-pub(crate) fn install_routines_loader(
-    state: UseReducerHandle<RState>,
-    toast: Callback<(String, ToastKind)>,
-    updated_at: UseStateHandle<f64>,
-) {
-    use_effect_with((), move |_| {
-        spawn_local(async move {
-            match api_list().await {
-                Ok(r) => {
-                    state.dispatch(RAction::Loaded(r));
-                    updated_at.set(js_sys::Date::now());
-                }
-                Err(e) => toast.emit((format!("Failed to load routines: {e}"), ToastKind::Err)),
-            }
-        });
-    });
-}
-
 /// Fetches and applies the current machine as the default machine filter.
 pub(crate) fn install_current_machine_loader(state: UseReducerHandle<RState>) {
-    use_effect_with((), move |_| {
+    use_effect_with((), move |()| {
         spawn_local(async move {
             if let Ok(name) = api_current_machine().await {
                 state.dispatch(RAction::CurrentMachineLoaded(name));
@@ -117,7 +98,7 @@ pub(crate) fn install_current_machine_loader(state: UseReducerHandle<RState>) {
 
 /// Fetches the global lock status once on mount.
 pub(crate) fn install_lock_status_loader(state: UseReducerHandle<RState>) {
-    use_effect_with((), move |_| {
+    use_effect_with((), move |()| {
         spawn_local(async move {
             if let Ok(status) = api_lock_status().await {
                 state.dispatch(RAction::LockStatusLoaded(status));

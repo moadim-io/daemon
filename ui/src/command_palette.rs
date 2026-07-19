@@ -62,7 +62,7 @@ pub fn command_palette(props: &PaletteProps) -> Html {
     let navigator = use_navigator();
     let records = use_state(Records::default);
     let query = use_state(String::new);
-    let selected = use_state(|| 0usize);
+    let selected = use_state(|| 0_usize);
     let input_ref = use_node_ref();
 
     // On each open: re-fetch the records (so a job created elsewhere shows up),
@@ -95,7 +95,6 @@ pub fn command_palette(props: &PaletteProps) -> Html {
     let sel = clamp_selection(*selected, order.len());
 
     let launch = {
-        let navigator = navigator.clone();
         let on_close = props.on_close.clone();
         let on_refresh = props.on_refresh.clone();
         let on_stop = props.on_stop.clone();

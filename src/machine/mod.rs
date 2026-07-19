@@ -13,6 +13,8 @@
 //! The file and env override exist because hostnames are not always meaningful or stable; the file
 //! is `*.local.*` (gitignored) so a name set on one host never travels in the shared repo.
 
+use std::sync::{Mutex, OnceLock};
+
 use serde::{Deserialize, Serialize};
 
 use crate::paths::machine_config_path;
@@ -24,6 +26,9 @@ use crate::utils::lock::LockRecover;
 struct MachineToml {
     /// This machine's identity name, matched against routine/job `machines` lists.
     name: Option<String>,
+    /// UI/REST-configured override for the global routine concurrency cap (issue #1155).
+    /// `MAX_CONCURRENT_RUNS_ENV` takes precedence over this when set; `None` means no override.
+    max_concurrent_runs: Option<usize>,
 }
 
 /// Where a resolved machine identity came from, for `moadim machine show` to report.
@@ -122,15 +127,48 @@ fn hostname() -> String {
     gethostname::gethostname().to_string_lossy().into_owned()
 }
 
+/// Read the full parsed contents of `machine.local.toml`, or the all-`None` default when the file
+/// is absent or unparsable.
+fn read_machine_toml() -> MachineToml {
+    std::fs::read_to_string(machine_config_path())
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
 /// Read the `name` field from `machine.local.toml`, or `None` when the file is absent, unparsable,
 /// or has no `name` set.
 fn read_machine_file() -> Option<String> {
-    let text = std::fs::read_to_string(machine_config_path()).ok()?;
-    toml::from_str::<MachineToml>(&text).ok()?.name
+    read_machine_toml().name
+}
+
+/// Process-wide lock serializing the `machine.local.toml` read-modify-write sequence.
+///
+/// [`set_machine`] and [`set_max_concurrent_runs_override`] each read the whole file, mutate one
+/// field, and write the whole struct back — an unsynchronized `PUT /machine` and
+/// `PUT /config/max-concurrent-runs` (`src/routes/http_settings_routes.rs`) can run concurrently on
+/// the multi-thread runtime, so two overlapping round trips can interleave and the later write wins
+/// outright, silently dropping whichever field the other request had just persisted. Same hazard
+/// class as the crontab read-modify-write race (issue #365, see `crontab_sync_lock` in
+/// `src/sync/routines.rs`), fixed the same way: hold this lock across the whole read-then-write span.
+fn machine_toml_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Write `toml` to `machine.local.toml`, creating the config dir if needed.
+fn write_machine_toml(toml: &MachineToml) -> std::io::Result<()> {
+    let path = machine_config_path();
+    // The machine-config path is always `<config dir>/machine.local.toml`, so it always has a parent.
+    let parent = crate::utils::fs_perms::parent_or_err(&path, "machine config")?;
+    crate::utils::fs_perms::create_private_dir_all(parent)?;
+    let text = toml::to_string_pretty(toml).map_err(std::io::Error::other)?;
+    atomic_write(&path, text.as_bytes())
 }
 
 /// Persist `name` as this machine's identity to `machine.local.toml`, creating the config dir if
-/// needed. The name is trimmed; an empty name is rejected.
+/// needed. The name is trimmed; an empty name is rejected. Preserves any other field already
+/// persisted in the file (e.g. the concurrency-cap override, see [`max_concurrent_runs_override`]).
 pub fn set_machine(name: &str) -> std::io::Result<()> {
     let name = name.trim();
     if name.is_empty() {
@@ -139,17 +177,27 @@ pub fn set_machine(name: &str) -> std::io::Result<()> {
             "machine name must not be empty",
         ));
     }
-    let path = machine_config_path();
-    // The machine-config path is always `<config dir>/machine.local.toml`, so it always has a parent.
-    crate::utils::fs_perms::create_private_dir_all(
-        path.parent().expect("machine config path has a parent dir"),
-    )?;
-    let toml = MachineToml {
-        name: Some(name.to_string()),
-    };
-    let text = toml::to_string_pretty(&toml)
-        .expect("MachineToml serialization cannot fail for a struct with an Option<String> field");
-    atomic_write(&path, text.as_bytes())
+    let _guard = machine_toml_lock().lock_recover();
+    let mut toml = read_machine_toml();
+    toml.name = Some(name.to_string());
+    write_machine_toml(&toml)
+}
+
+/// UI/REST-configured override for the global routine concurrency cap, read from
+/// `machine.local.toml`. `None` when unset or the file is absent/unparsable — callers fall back to
+/// the `MOADIM_MAX_CONCURRENT_RUNS` env var, then the built-in default.
+pub fn max_concurrent_runs_override() -> Option<usize> {
+    read_machine_toml().max_concurrent_runs
+}
+
+/// Persist a UI/REST-configured override for the global routine concurrency cap to
+/// `machine.local.toml`. `None` clears the override. Preserves any other field already persisted
+/// in the file (e.g. the machine name).
+pub fn set_max_concurrent_runs_override(value: Option<usize>) -> std::io::Result<()> {
+    let _guard = machine_toml_lock().lock_recover();
+    let mut toml = read_machine_toml();
+    toml.max_concurrent_runs = value;
+    write_machine_toml(&toml)
 }
 
 /// Distinct machine names referenced across all on-disk routines.

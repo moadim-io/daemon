@@ -1,10 +1,18 @@
 //! Build script: generates the embedded UI HTML.
+#![allow(
+    clippy::expect_used,
+    reason = "this crate root is the build script, not the daemon binary — a `.expect()` panic \
+              here just aborts `cargo build` with a message, the normal and desired failure mode \
+              for a build script, not the graceful-shutdown risk `expect_used` guards against in \
+              the long-running server"
+)]
 
 #[path = "src/build/mod.rs"]
 mod build;
 
 fn main() {
     println!("cargo:rerun-if-changed=ui/index.html");
+    println!("cargo:rerun-if-changed=client/index.html");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=schemas/routine.schema.json");
     // Re-stamp the embedded git provenance whenever HEAD moves (new commit or

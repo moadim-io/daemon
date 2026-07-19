@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths::{
     routine_compiled_prompt_path, routine_dir, routine_gitignore_path, routine_manual_log_path,
-    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_state_path,
-    routine_toml_path,
+    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_skip_log_path,
+    routine_state_path, routine_toml_path,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -225,9 +225,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         max_runtime_secs: routine.max_runtime_secs,
         tags: routine.tags.clone(),
     };
-    let text = toml::to_string_pretty(&toml_routine).expect(
-        "RoutineToml serialization cannot fail for a struct with only primitive and Option fields",
-    );
+    let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:
     // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
@@ -262,8 +260,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         skip_runs: routine.skip_runs,
         power_saving: routine.power_saving,
     };
-    let text = toml::to_string_pretty(&state)
-        .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
+    let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
     atomic_write(&path, text.as_bytes())?;
     Ok(())
 }
@@ -286,6 +283,28 @@ pub fn append_manual_trigger_log(slug: &str, ts: u64) {
             "append_manual_trigger_log: failed to write {}: {err}",
             path.display()
         );
+    }
+}
+
+/// Append a `{ts}\t{reason}` entry to a routine's `skip.log`, recording why a trigger did not
+/// spawn a workbench.
+///
+/// Called by `spawn_routine_command` from every branch that returns without launching (agent load
+/// failure, an oversized inline prompt, the overlap guard, or the global concurrency cap), so
+/// `routine_logs` has something to show instead of coming back empty when the newest — or only —
+/// signal for a skipped trigger previously lived solely in the daemon's own process log (#1145).
+/// Best-effort, like [`append_manual_trigger_log`]: a log-write failure is warned but never
+/// surfaced, so a disk hiccup can't turn a skip into a harder failure.
+pub fn append_skip_log(slug: &str, ts: u64, reason: &str) {
+    let path = routine_skip_log_path(slug);
+    let line = format!("{ts}\t{reason}\n");
+    if let Err(err) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()))
+    {
+        log::warn!("append_skip_log: failed to write {}: {err}", path.display());
     }
 }
 

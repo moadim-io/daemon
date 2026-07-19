@@ -75,7 +75,7 @@ impl FakeServer {
             while !stop_loop.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
-                        let mut buf = [0u8; 1024];
+                        let mut buf = [0_u8; 1024];
                         let _ = stream.read(&mut buf);
                         if alive_loop.load(Ordering::SeqCst) {
                             let _ = stream.write_all(response.as_bytes());
@@ -251,6 +251,15 @@ fn restart_json_skips_human_text_when_none_running() {
     let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
     let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
     restart(true, false).unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn restart_quiet_skips_endpoint_hints_when_none_running() {
+    let home = temp_home("restart-fresh-quiet");
+    let _home = EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let _addr = EnvGuard::set(BIND_ADDR_ENV, UNREACHABLE_ADDR);
+    restart(false, true).unwrap();
     let _ = std::fs::remove_dir_all(&home);
 }
 

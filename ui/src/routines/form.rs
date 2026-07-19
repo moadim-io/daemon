@@ -133,7 +133,7 @@ pub fn routine_form(props: &FormProps) -> Html {
     });
     {
         let agents = agents.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 if let Ok(list) = api_agents().await {
                     if !list.is_empty() {

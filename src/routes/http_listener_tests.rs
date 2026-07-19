@@ -14,10 +14,9 @@ use tower::ServiceExt;
 use tower_http::catch_panic::CatchPanicLayer;
 
 use super::{
-    build_app, health, run_with_listener_until, serve_with_grace, shutdown_grace, AppState,
-    SHUTDOWN_GRACE, SHUTDOWN_GRACE_MS_ENV,
+    build_app, run_with_listener_until, serve_with_grace, shutdown_grace, SHUTDOWN_GRACE,
+    SHUTDOWN_GRACE_MS_ENV,
 };
-use crate::utils::time::now_secs;
 
 struct SucceedingCronShim {
     base: std::path::PathBuf,
@@ -109,59 +108,12 @@ async fn run_with_listener_serves_over_tcp() {
         .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0_u8; 512];
     let n = stream.read(&mut buf).await.unwrap();
     let response = String::from_utf8_lossy(&buf[..n]);
     assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
 
     handle.abort();
-}
-
-#[tokio::test]
-async fn build_app_shutdown_route_acknowledges() {
-    let app = build_app(crate::routines::new_store());
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/shutdown")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["status"], "shutting down");
-}
-
-#[tokio::test]
-async fn build_app_restart_route_acknowledges() {
-    // The route spawns a detached `current_exe --background` helper; under the test harness that exe
-    // is the test binary, which rejects `--background` and exits at once, so no real server starts.
-    // TempHome keeps the helper's log file out of the real home.
-    let _home = TempHome::set();
-    let app = build_app(crate::routines::new_store());
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/restart")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["status"], "restarting");
-    assert!(json["helper_pid"].as_u64().unwrap() > 0);
 }
 
 #[tokio::test]
@@ -187,7 +139,7 @@ async fn shutdown_route_stops_the_serving_loop() {
         )
         .await
         .unwrap();
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0_u8; 512];
     let n = stream.read(&mut buf).await.unwrap();
     assert!(
         String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200"),
@@ -336,62 +288,6 @@ async fn router_serves_per_routine_ical_feed_via_query() {
     assert!(unknown.starts_with("BEGIN:VCALENDAR"));
     assert!(unknown.ends_with("END:VCALENDAR\r\n"));
     assert_eq!(unknown.matches("BEGIN:VEVENT").count(), 0);
-}
-
-#[tokio::test]
-async fn health_uptime_clamps_to_zero_on_backward_clock_skew() {
-    // A `uptime_start` in the future models the wall clock jumping backward
-    // after the server started. The old `now_secs() - uptime_start` would
-    // underflow; saturating_sub must clamp uptime to 0 instead.
-    let state = AppState {
-        routines: crate::routines::new_store(),
-        routines_dir: crate::paths::routines_dir(),
-        uptime_start: now_secs() + 10_000,
-        shutdown: std::sync::Arc::new(tokio::sync::Notify::new()),
-    };
-    let resp = health(axum::extract::State(state)).await;
-    assert_eq!(resp.0.uptime_secs, 0);
-    assert_eq!(resp.0.status, "ok");
-    assert!(resp.0.running);
-}
-
-#[tokio::test]
-async fn build_app_restart_route_returns_500_when_spawn_fails() {
-    // Cover the `map_err(|_| AppError::Internal)?` branch in the restart handler (http.rs L139):
-    // make spawn_restart() fail by placing a regular file at the `.config` component of the
-    // home path so create_dir_all() for the daemon log directory errors out.
-    let dir = std::env::temp_dir().join(format!("moadim-restart-fail-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    // A regular file at `.config` blocks create_dir_all(".config/moadim") inside spawn_detached_with.
-    std::fs::write(dir.join(".config"), b"blocker").unwrap();
-    // SAFETY: single-threaded test execution.
-    unsafe {
-        std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
-    }
-
-    let app = build_app(crate::routines::new_store());
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/restart")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // SAFETY: cleanup before asserting so the env var is always removed.
-    unsafe {
-        std::env::remove_var("MOADIM_HOME_OVERRIDE");
-    }
-    let _ = std::fs::remove_dir_all(&dir);
-
-    assert_eq!(
-        resp.status(),
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "restart route should return 500 when spawn_restart fails"
-    );
 }
 
 /// `CatchPanicLayer` is what stands between a panicking handler and a reset connection with no

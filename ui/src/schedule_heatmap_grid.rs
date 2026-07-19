@@ -35,16 +35,16 @@ impl HeatFilter {
     /// Whether a source of `kind` is counted under this filter.
     pub(crate) fn accepts(self, kind: Kind) -> bool {
         match self {
-            HeatFilter::All => true,
-            HeatFilter::Routine => kind == Kind::Routine,
+            Self::All => true,
+            Self::Routine => kind == Kind::Routine,
         }
     }
 
     /// Short uppercase label for the toggle button.
     pub(crate) fn label(self) -> &'static str {
         match self {
-            HeatFilter::All => "ALL",
-            HeatFilter::Routine => "ROUTINES",
+            Self::All => "ALL",
+            Self::Routine => "ROUTINES",
         }
     }
 }
@@ -87,8 +87,8 @@ pub(crate) fn compute_heatmap(
 ) -> Heatmap {
     let today = now.date_naive();
     let end_date = today + Duration::days(HEAT_DAYS as i64);
-    let mut grid = vec![vec![0u32; HEAT_HOURS]; HEAT_DAYS];
-    let mut sources_counted = 0u32;
+    let mut grid = vec![vec![0_u32; HEAT_HOURS]; HEAT_DAYS];
+    let mut sources_counted = 0_u32;
 
     for source in sources
         .iter()
@@ -116,8 +116,8 @@ pub(crate) fn compute_heatmap(
         }
     }
 
-    let mut total = 0u32;
-    let mut max_cell = 0u32;
+    let mut total = 0_u32;
+    let mut max_cell = 0_u32;
     let mut peak = None;
     for (day, hours) in grid.iter().enumerate() {
         for (hour, &count) in hours.iter().enumerate() {

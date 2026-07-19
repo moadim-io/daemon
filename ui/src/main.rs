@@ -1,3 +1,8 @@
+//! The `moadim` dashboard: a Yew/WASM single-page app served by the daemon's HTTP server. Renders
+//! the routines table, calendar heatmap, and settings pages against the `/api/v1` REST API, and
+//! hosts the shell chrome (nav, health indicator, toasts, command palette) shared across all of
+//! them.
+
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
@@ -19,17 +24,21 @@ mod overview_recent_runs;
 mod overview_stats;
 mod overview_upcoming;
 mod refresh;
+mod reliability;
+mod reliability_stats;
 mod routines;
 mod schedule;
 mod schedule_heatmap;
 mod schedule_heatmap_grid;
 mod settings;
 mod shell_dialogs;
+mod shell_state;
 use command_palette::CommandPalette;
-pub(crate) use cron_utils::{describe_cron_live, parse_cron, reltime};
+pub(crate) use cron_utils::{abstime, describe_cron_live, parse_cron, reltime};
 use header::Header;
 pub(crate) use health::{Health, Toast, ToastKind};
 use overview::OverviewPage;
+use reliability::ReliabilityPage;
 use routines::RoutinesPage;
 use schedule_heatmap::HeatmapPage;
 use settings::SettingsPage;
@@ -37,6 +46,7 @@ use shell_dialogs::{
     api_get_machine, api_put_machine, api_shutdown, poll_health, RenameMachineDialog,
     ShutdownDialog, ToastStack,
 };
+pub(crate) use shell_state::{ShellAction, ShellState};
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -79,90 +89,32 @@ pub(crate) fn apply_theme(light: bool) {
 /// `/heatmap`. The REST API is namespaced under `/api/v1`, so these UI paths never collide with it.
 /// The server returns the same self-contained HTML for any unmatched path (SPA fallback), letting
 /// these deep links and refreshes load the app so the router can resolve the path.
-#[derive(Clone, Routable, PartialEq)]
+#[derive(Clone, Routable, PartialEq, Eq)]
 pub enum Route {
+    /// The overview page (recent runs, upcoming runs, at-a-glance stats).
     #[at("/")]
     Home,
+    /// The routines table page.
     #[at("/routines")]
     Routines,
+    /// The calendar heatmap page.
     #[at("/heatmap")]
     Heatmap,
+    /// The reliability ranking page.
+    #[at("/reliability")]
+    Reliability,
+    /// The settings page.
     #[at("/settings")]
     Settings,
+    /// Fallback for any path that doesn't match a route above.
     #[not_found]
     #[at("/404")]
     NotFound,
 }
 
-// ─── Shell state (health, toasts, shutdown) ───────────────────────────────────
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ShellState {
-    pub health: Health,
-    pub health_ok: bool,
-    pub toasts: Vec<Toast>,
-    pub next_toast: u32,
-    pub show_shutdown: bool,
-    pub show_palette: bool,
-    /// `true` when the light theme is active; persisted to localStorage.
-    pub show_theme_light: bool,
-    /// Resolved name of this machine, fetched from `GET /api/v1/machine` on mount.
-    pub machine_name: Option<String>,
-    /// Whether the rename-machine dialog is open.
-    pub show_rename_machine: bool,
-}
-
-pub enum ShellAction {
-    HealthLoaded { health: Health, ok: bool },
-    AddToast { msg: String, kind: ToastKind },
-    OpenShutdown,
-    CloseShutdown,
-    TogglePalette,
-    ClosePalette,
-    ToggleTheme,
-    MachineName { name: String },
-    OpenRenameMachine,
-    CloseRenameMachine,
-}
-
-impl Reducible for ShellState {
-    type Action = ShellAction;
-
-    fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
-        let mut s = (*self).clone();
-        match action {
-            ShellAction::HealthLoaded { health, ok } => {
-                s.health = health;
-                s.health_ok = ok;
-            }
-            ShellAction::AddToast { msg, kind } => {
-                let id = s.next_toast;
-                s.next_toast += 1;
-                s.toasts.push(Toast {
-                    id,
-                    msg: AttrValue::from(msg),
-                    kind,
-                });
-            }
-            ShellAction::OpenShutdown => s.show_shutdown = true,
-            ShellAction::CloseShutdown => s.show_shutdown = false,
-            ShellAction::TogglePalette => s.show_palette = !s.show_palette,
-            ShellAction::ClosePalette => s.show_palette = false,
-            ShellAction::ToggleTheme => {
-                s.show_theme_light = !s.show_theme_light;
-                save_theme_light(s.show_theme_light);
-                apply_theme(s.show_theme_light);
-            }
-            ShellAction::MachineName { name } => s.machine_name = Some(name),
-            ShellAction::OpenRenameMachine => s.show_rename_machine = true,
-            ShellAction::CloseRenameMachine => s.show_rename_machine = false,
-        }
-        s.into()
-    }
-}
-
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
+/// The app root: sets up the router and mounts [`Shell`] as its only route-independent child.
 #[function_component(App)]
 pub fn app() -> Html {
     html! {
@@ -184,7 +136,7 @@ pub fn shell() -> Html {
     // Apply the initial theme class from persisted preference.
     {
         let light = state.show_theme_light;
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             apply_theme(light);
         });
     }
@@ -192,7 +144,7 @@ pub fn shell() -> Html {
     // Initial health poll + machine name fetch on mount.
     {
         let state = state.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             let state2 = state.clone();
             spawn_local(async move { poll_health(state).await });
             spawn_local(async move {
@@ -206,7 +158,7 @@ pub fn shell() -> Html {
     // Health poll loop every 30 s.
     {
         let state = state.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             spawn_local(async move {
                 loop {
                     TimeoutFuture::new(30_000).await;
@@ -221,7 +173,7 @@ pub fn shell() -> Html {
     // Registered once on mount and torn down on unmount.
     {
         let state = state.clone();
-        use_effect_with((), move |_| {
+        use_effect_with((), move |()| {
             let on_key =
                 Closure::<dyn Fn(KeyboardEvent)>::wrap(Box::new(move |event: KeyboardEvent| {
                     if (event.meta_key() || event.ctrl_key())
@@ -256,13 +208,13 @@ pub fn shell() -> Html {
     let on_toast = {
         let state = state.clone();
         Callback::from(move |(msg, kind): (String, ToastKind)| {
-            state.dispatch(ShellAction::AddToast { msg, kind })
+            state.dispatch(ShellAction::AddToast { msg, kind });
         })
     };
 
     let on_close_palette = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::ClosePalette))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::ClosePalette))
     };
 
     let on_open_palette = {
@@ -274,18 +226,18 @@ pub fn shell() -> Html {
     // take the `()` payload the palette emits.
     let on_palette_refresh = {
         let state = state.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |(): ()| {
             let state = state.clone();
             spawn_local(async move { poll_health(state).await });
         })
     };
     let on_palette_stop = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::OpenShutdown))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::OpenShutdown))
     };
     let on_palette_toggle_theme = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::ToggleTheme))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::ToggleTheme))
     };
 
     let on_refresh = {
@@ -304,12 +256,12 @@ pub fn shell() -> Html {
 
     let on_close_shutdown = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::CloseShutdown))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::CloseShutdown))
     };
 
     let on_confirm_shutdown = {
         let state = state.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |(): ()| {
             let state = state.clone();
             state.dispatch(ShellAction::CloseShutdown);
             spawn_local(async move {
@@ -341,11 +293,11 @@ pub fn shell() -> Html {
     };
 
     let switch = {
-        let on_toast = on_toast.clone();
         Callback::from(move |route: Route| match route {
             Route::Home => html! { <OverviewPage on_toast={on_toast.clone()} /> },
             Route::Routines => html! { <RoutinesPage on_toast={on_toast.clone()} /> },
             Route::Heatmap => html! { <HeatmapPage /> },
+            Route::Reliability => html! { <ReliabilityPage /> },
             Route::Settings => html! { <SettingsPage on_toast={on_toast.clone()} /> },
             Route::NotFound => html! { <Redirect<Route> to={Route::Home} /> },
         })
@@ -370,10 +322,9 @@ pub fn shell() -> Html {
     };
     let on_close_rename_machine = {
         let state = state.clone();
-        Callback::from(move |_: ()| state.dispatch(ShellAction::CloseRenameMachine))
+        Callback::from(move |(): ()| state.dispatch(ShellAction::CloseRenameMachine))
     };
     let on_confirm_rename_machine = {
-        let state = state.clone();
         Callback::from(
             move |(name, on_done): (String, Callback<Result<(), String>>)| {
                 let state = state.clone();
@@ -450,6 +401,7 @@ pub fn shell() -> Html {
 
 // ─── Nav ──────────────────────────────────────────────────────────────────────
 
+/// The top-level tab bar, highlighting the tab matching the current route.
 #[function_component(Nav)]
 pub fn nav() -> Html {
     let route = use_route::<Route>().unwrap_or(Route::Home);
@@ -470,6 +422,9 @@ pub fn nav() -> Html {
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Heatmap))} to={Route::Heatmap}>
                 { "HEATMAP" }
+            </Link<Route>>
+            <Link<Route> classes={classes!(cls(&Route::Reliability))} to={Route::Reliability}>
+                { "RELIABILITY" }
             </Link<Route>>
             <Link<Route> classes={classes!(cls(&Route::Settings))} to={Route::Settings}>
                 { "SETTINGS" }

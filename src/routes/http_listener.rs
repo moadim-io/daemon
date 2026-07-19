@@ -72,12 +72,12 @@ pub(super) async fn serve_with_grace(
     // Phase 1: serve normally until it returns on its own or a shutdown is requested.
     tokio::select! {
         res = &mut serve => return res,
-        _ = shutdown_started => {}
+        () = shutdown_started => {}
     }
     // Phase 2: shutdown requested — give open connections a bounded window to drain, then force exit.
     tokio::select! {
         res = &mut serve => res,
-        _ = tokio::time::sleep(grace) => {
+        () = tokio::time::sleep(grace) => {
             log::warn!(
                 "graceful shutdown exceeded {grace:?}; forcing exit with connections still open"
             );
@@ -92,10 +92,7 @@ pub async fn run_with_listener_until(
     listener: tokio::net::TcpListener,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
-    let addr = listener
-        .local_addr()
-        .expect("TCP listener always has a local address")
-        .to_string();
+    let addr = listener.local_addr()?.to_string();
     write_openapi_spec(std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/apis/openapi.json"
@@ -147,6 +144,19 @@ pub async fn run_with_listener_until(
             .await;
         }
     });
+    // Periodically rotate `daemon.log` if it has grown past its size cap or aged past its daily
+    // floor. The spawn-time check in `cli::system` only fires when the daemon restarts, so a
+    // long-lived process needs this tick to ever roll its own log over (#1157).
+    let log_rotation_task = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(crate::cli::LOG_ROTATION_CHECK_INTERVAL);
+        loop {
+            tick.tick().await;
+            let _ = tokio::task::spawn_blocking(|| {
+                crate::cli::rotate_daemon_log_if_due(&crate::paths::daemon_log_file());
+            })
+            .await;
+        }
+    });
     let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Fires the instant a shutdown is requested, so the grace watchdog below can start its clock
@@ -157,8 +167,8 @@ pub async fn run_with_listener_until(
     // the `/shutdown` route fires `signal` (the UI "STOP" button / `moadim stop`).
     let combined = async move {
         tokio::select! {
-            _ = shutdown => {}
-            _ = signal.notified() => {}
+            () = shutdown => {}
+            () = signal.notified() => {}
         }
         started.notify_one();
     };
@@ -169,5 +179,6 @@ pub async fn run_with_listener_until(
     cleanup_task.abort();
     watchdog_task.abort();
     version_task.abort();
+    log_rotation_task.abort();
     Ok(())
 }

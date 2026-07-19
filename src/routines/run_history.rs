@@ -66,19 +66,22 @@ fn rotate_run_history_if_oversized(path: &Path) {
 ///
 /// Rotates the log first if it's grown past [`RUN_HISTORY_MAX_BYTES`] (see
 /// [`rotate_run_history_if_oversized`]), then the append itself is best-effort: a write failure
-/// (creating the routine's directory, opening the log, or the write itself — collapsed into a
-/// single chain so there is one failure path to reason about, not three) is logged and swallowed
-/// rather than blocking the reap sweep that triggered it — losing one history entry is far
-/// cheaper than a stuck cleanup loop.
+/// (serializing `run`, creating the routine's directory, opening the log, or the write itself —
+/// collapsed into a single chain so there is one failure path to reason about, not four) is
+/// logged and swallowed rather than blocking the reap sweep that triggered it — losing one
+/// history entry is far cheaper than a stuck cleanup loop.
 pub(crate) fn append_persisted_run(id: &str, run: &PersistedRun) {
-    let line = serde_json::to_string(run).expect("PersistedRun always serializes");
     let path = routine_run_history_path(id);
     rotate_run_history_if_oversized(&path);
-    let parent = path
-        .parent()
-        .expect("routine run-history path has a parent dir");
-    let result = crate::utils::fs_perms::create_private_dir_all(parent)
-        .and_then(|()| open_history_append(&path).and_then(|mut file| writeln!(file, "{line}")));
+    let result = serde_json::to_string(run)
+        .map_err(std::io::Error::other)
+        .and_then(|line| {
+            crate::utils::fs_perms::parent_or_err(&path, "run history")
+                .and_then(crate::utils::fs_perms::create_private_dir_all)
+                .and_then(|()| {
+                    open_history_append(&path).and_then(|mut file| writeln!(file, "{line}"))
+                })
+        });
     if let Err(err) = result {
         log::warn!("run history: failed to append for routine {id:?}: {err}");
     }

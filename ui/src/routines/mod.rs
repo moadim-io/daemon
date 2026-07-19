@@ -17,6 +17,8 @@
 //!   trigger, toggle, save, confirm-delete).
 //! - `banner`, `filter_bar`, `calendar`, `table`, `row`, `form`, `bulk`, `logs`,
 //!   `flags_panel`, `sparkline` — the list page's sub-components.
+//! - `saved_views` — persisted "saved views": capture/restore the filter, sort, and
+//!   group-by state, auto-restored on load and savable under a name.
 
 mod actions;
 mod banner;
@@ -34,6 +36,7 @@ mod logs;
 mod model;
 mod page;
 mod row;
+mod saved_views;
 mod sparkline;
 mod state;
 mod table;

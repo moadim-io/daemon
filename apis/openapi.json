@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "1.0.1"
+    "version": "1.4.1"
   },
   "servers": [
     {
@@ -19,7 +19,7 @@
     "/agents": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_agents"
         ],
         "summary": "`GET /agents` — list the agent registry keys a routine may target.",
         "operationId": "list_agents",
@@ -36,6 +36,60 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/config/max-concurrent-runs": {
+      "get": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`GET /config/max-concurrent-runs` — the global routine concurrency cap (issue #1155).",
+        "operationId": "get_max_concurrent_runs",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaxConcurrentRunsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "crate::routes::http"
+        ],
+        "summary": "`PUT /config/max-concurrent-runs` — set or clear the persisted concurrency-cap override.",
+        "description": "Writes to `machine.local.toml`. The `MOADIM_MAX_CONCURRENT_RUNS` env var still takes\nprecedence at runtime when set; this only takes effect while the env var is unset. Takes\neffect on the next trigger check (read live from disk, like the env var today) — no restart\nrequired. Returns `500` if the write fails.",
+        "operationId": "put_max_concurrent_runs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMaxConcurrentRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaxConcurrentRunsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Write failed"
           }
         }
       }
@@ -83,7 +137,7 @@
     "/health": {
       "get": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::health"
         ],
         "summary": "`GET /health` — health check with uptime.",
         "operationId": "health",
@@ -187,7 +241,7 @@
     "/restart": {
       "post": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::restart"
         ],
         "summary": "`POST /restart` — stop this server and start a fresh instance.",
         "description": "The running server cannot rebind its own port, so it spawns a detached `moadim restart` helper\nthat stops it and starts a new process, mirroring the `moadim restart` CLI command and the\n`restart` MCP tool. Responds with the helper's PID before the restart completes.",
@@ -341,10 +395,10 @@
     "/routines/cleanup": {
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::cleanup_workbenches"
         ],
         "summary": "`POST /routines/cleanup` — reap finished, expired run workbenches on demand.",
-        "operationId": "cleanup",
+        "operationId": "cleanup_workbenches",
         "responses": {
           "200": {
             "description": "Workbenches removed and bytes freed",
@@ -362,7 +416,7 @@
     "/routines/lock": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::get_lock_status"
         ],
         "summary": "`GET /routines/lock` — return the current global lock status.",
         "operationId": "get_lock_status",
@@ -1015,7 +1069,7 @@
     "/shutdown": {
       "post": {
         "tags": [
-          "crate::routes::http"
+          "crate::routes::shutdown"
         ],
         "summary": "`POST /shutdown` — ask the server to stop gracefully.",
         "description": "Used by the UI \"STOP\" button (and the `moadim stop` command) to kill a backgrounded server that\nhas no controlling terminal. The response is sent before the graceful shutdown completes.",
@@ -1235,6 +1289,7 @@
           "routine_title",
           "workbench",
           "started_at",
+          "started_at_local",
           "status"
         ],
         "properties": {
@@ -1255,6 +1310,13 @@
             "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
             "minimum": 0
           },
+          "finished_at_local": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`finished_at` as a human-readable local timestamp, when finished."
+          },
           "routine_id": {
             "type": "string",
             "description": "The routine this run belongs to."
@@ -1268,6 +1330,10 @@
             "format": "int64",
             "description": "Unix seconds the run was triggered.",
             "minimum": 0
+          },
+          "started_at_local": {
+            "type": "string",
+            "description": "`started_at` as a human-readable local (daemon machine's timezone) timestamp."
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
@@ -1312,6 +1378,20 @@
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."
+          },
+          "server_exe_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the directory containing the server executable, or `None` if unresolvable."
+          },
+          "server_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the server's working directory, or `None` if unresolvable."
           },
           "status": {
             "type": "string",
@@ -1378,6 +1458,28 @@
           }
         }
       },
+      "MaxConcurrentRunsResponse": {
+        "type": "object",
+        "description": "Response body for `GET /config/max-concurrent-runs` and `PUT /config/max-concurrent-runs`.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "override_value": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The persisted UI/REST override on its own, independent of the env var — `None` if never\nset. The UI should populate its input from this field (not `value`), so an env-var\noverride in effect doesn't get echoed back as though it were a saved setting.",
+            "minimum": 0
+          },
+          "value": {
+            "type": "integer",
+            "description": "Effective cap: the `MOADIM_MAX_CONCURRENT_RUNS` env var if set, else the persisted\nUI/REST override, else the built-in default. `0` means unbounded.",
+            "minimum": 0
+          }
+        }
+      },
       "Repository": {
         "type": "object",
         "description": "A git repository made available to a routine's agent as prompt context (not cloned by moadim).",
@@ -1400,7 +1502,7 @@
       },
       "RestartResponse": {
         "type": "object",
-        "description": "Response body for `POST /restart`.",
+        "description": "Response body for `POST /restart` and the `restart` MCP tool.",
         "required": [
           "status",
           "helper_pid"
@@ -1658,6 +1760,7 @@
         "required": [
           "workbench",
           "started_at",
+          "started_at_local",
           "status"
         ],
         "properties": {
@@ -1678,6 +1781,13 @@
             "description": "Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.",
             "minimum": 0
           },
+          "finished_at_local": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`finished_at` as a human-readable local timestamp, when finished."
+          },
           "retention_expires_at": {
             "type": [
               "integer",
@@ -1692,6 +1802,10 @@
             "format": "int64",
             "description": "Unix seconds the run was triggered.",
             "minimum": 0
+          },
+          "started_at_local": {
+            "type": "string",
+            "description": "`started_at` as a human-readable local (daemon machine's timezone) timestamp."
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
@@ -1713,6 +1827,20 @@
           "name": {
             "type": "string",
             "description": "New machine name. Trimmed; must be non-empty."
+          }
+        }
+      },
+      "SetMaxConcurrentRunsRequest": {
+        "type": "object",
+        "description": "Request body for `PUT /config/max-concurrent-runs`.",
+        "properties": {
+          "value": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "New override value, or `null`/omitted to clear it and fall back to the env var/default.",
+            "minimum": 0
           }
         }
       },

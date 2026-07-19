@@ -7,28 +7,6 @@
 
 use std::time::Duration;
 
-/// Address the server binds to and that the client talks to.
-pub const BIND_ADDR: &str = "127.0.0.1:5784";
-
-/// Environment variable overriding [`BIND_ADDR`] (test seam): lets tests run the server and probe
-/// it on an ephemeral port instead of the fixed default, so they never collide with a real daemon.
-const BIND_ADDR_ENV: &str = "MOADIM_BIND_ADDR";
-
-/// The socket address to bind/probe, honoring the [`BIND_ADDR_ENV`] override when set.
-pub fn bind_addr() -> String {
-    std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
-}
-
-/// Returns `true` if `addr` (as returned by [`bind_addr`]) resolves to a loopback interface.
-///
-/// The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
-/// exposes unauthenticated routine CRUD to the network. An address this can't parse is treated
-/// as non-loopback so callers warn rather than stay silent.
-pub fn bind_addr_is_loopback(addr: &str) -> bool {
-    addr.parse::<std::net::SocketAddr>()
-        .is_ok_and(|socket| socket.ip().is_loopback())
-}
-
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
@@ -73,6 +51,10 @@ pub enum Command {
         interactive: bool,
     },
     /// Ask a running background server to stop. `json` requests machine-readable output.
+    ///
+    /// Stops the daemon process only: any routine agent already running in a detached tmux
+    /// session (issue #320) is left alive and keeps acting until it finishes on its own or the
+    /// daemon is restarted and its watchdog/cleanup sweep reaps it.
     Stop {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
@@ -99,6 +81,13 @@ pub enum Command {
         /// UUID of the routine to trigger.
         id: String,
     },
+    /// Print a routine's newest run log (`agent.log`) to stdout, by UUID. A top-level shorthand
+    /// for `moadim routines logs <id>`, mirroring the `trigger`/`routines trigger` duality
+    /// (issue #332).
+    Logs {
+        /// UUID of the routine whose log to print.
+        id: String,
+    },
     /// Register the daemon as an OS service (launchd on macOS, systemd user on Linux).
     Install,
     /// Remove the OS service registration created by [`Command::Install`].
@@ -112,6 +101,10 @@ pub enum Command {
     Usage(String),
     /// Print the binary version.
     Version,
+    /// Print a shell-completion script for `shell` (bash/zsh/fish/powershell/elvish) to stdout,
+    /// or (when `shell` is missing or unrecognized) a usage error to stderr. See
+    /// [`crate::cli::completions`].
+    Completions(Option<String>),
     /// A data-plane subcommand (`routines`, `agents`) handled by the clap-based
     /// [`crate::commands`] dispatcher, which talks to the running server over HTTP. Carries the raw
     /// argv (including the subcommand keyword) for clap to parse.
@@ -159,8 +152,15 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
             Some(id) => Command::Trigger { id: id.clone() },
             None => Command::Help,
         },
+        // `logs <id>` mirrors `trigger <id>`: without an id there is nothing to print, so fall
+        // back to help rather than silently no-op.
+        Some("logs") => match args.get(1) {
+            Some(id) => Command::Logs { id: id.clone() },
+            None => Command::Help,
+        },
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
+        Some("completions") => Command::Completions(args.get(1).cloned()),
         Some("-h" | "--help" | "help") => Command::Help,
         Some("-V" | "--version" | "version") => Command::Version,
         Some("-i" | "--interactive" | "-f" | "--foreground") => Command::Foreground,
@@ -229,9 +229,12 @@ pub fn help_text() -> String {
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
+         \x20   logs <id>              print a routine's newest run log (agent.log) to stdout\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
+         \x20   completions <shell>    print a completion script for bash/zsh/fish/powershell/elvish\n\
+         \x20                          (e.g. `moadim completions zsh > _moadim`)\n\
          \x20   help, -h, --help       show this help\n\
          \x20   version, -V, --version show the version\n\
          \n\
@@ -245,6 +248,9 @@ pub fn help_text() -> String {
          Pass --json to `restart`/`stop`/`status`/`cleanup` for a single-line machine-readable object.\n\
          `status`/`cleanup`/`stop` exit 0 when a server is running and 3 when none is, so scripts\n\
          can branch on $? without parsing stdout.\n\
+         \n\
+         `stop` only stops the daemon process; a routine agent already running in its own detached\n\
+         tmux session keeps running until it finishes or a later daemon start reaps it.\n\
          \n\
          Once running, manage the server from the web client at http://{bind_addr}\n\
          (the STOP button) or with `moadim stop`."
@@ -362,6 +368,12 @@ fn foreground_already_running_message(pid: Option<u32>) -> String {
 /// Returns the process exit code to surface, mirroring the `status`/`cleanup` contract: `0` when a
 /// running server was asked to shut down, and [`EXIT_NOT_RUNNING`] when none was reachable, so
 /// scripts can branch on `$?` without parsing stdout.
+///
+/// This only stops the daemon's HTTP/MCP server; a routine agent already running in a detached
+/// tmux session (started via `tmux new-session -d`) is independent of the daemon process and is
+/// **not** killed by this call. It keeps running — and can keep opening PRs, filing issues, etc. —
+/// until it finishes on its own or a future daemon start's watchdog/cleanup sweep reaps it
+/// (issue #320).
 pub fn stop(json: bool, quiet: bool) -> anyhow::Result<i32> {
     // Read the PID before asking the server to stop: a graceful shutdown clears the pid file, so
     // the only reliable moment to capture which process we stopped is *before* the request.
@@ -401,9 +413,15 @@ fn stop_json(running: bool, pid: Option<u32>) -> String {
     .to_string()
 }
 
+#[path = "bind.rs"]
+mod cli_bind;
+pub use cli_bind::{bind_addr, classify_bind, remote_bind_allowed, BindDecision, BIND_ADDR};
+#[cfg(test)]
+pub(crate) use cli_bind::{bind_addr_is_loopback, BIND_ADDR_ENV};
+
 #[path = "query.rs"]
 mod cli_query;
-pub use cli_query::{cleanup, status, trigger};
+pub use cli_query::{cleanup, logs, status, trigger};
 #[cfg(test)]
 use cli_query::{
     cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, HealthInfo,
@@ -419,6 +437,7 @@ use cli_system::{
 };
 #[cfg(test)]
 pub(crate) use cli_system::{parse_body, parse_status_code, DAEMON_LOG_MAX_BYTES};
+pub(crate) use cli_system::{rotate_daemon_log_if_due, LOG_ROTATION_CHECK_INTERVAL};
 
 #[path = "restart.rs"]
 mod cli_restart;
@@ -427,9 +446,19 @@ use cli_restart::start_detached_and_report;
 #[cfg(test)]
 use cli_restart::{restart_json, restart_rotation_line};
 
+#[path = "completions.rs"]
+mod cli_completions;
+pub use cli_completions::completions;
+#[cfg(test)]
+use cli_completions::{build_cli, write_completions};
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod cli_tests;
+
+#[cfg(test)]
+#[path = "completions_tests.rs"]
+mod cli_completions_tests;
 
 #[cfg(test)]
 #[path = "cleanup_bytes_tests.rs"]

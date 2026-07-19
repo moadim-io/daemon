@@ -9,7 +9,7 @@ opt-level = "z"
 
 [package]
 name = "moadim"
-version = "1.0.1"
+version = "1.4.1"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -28,6 +28,7 @@ anyhow = "1"
 axum = "0.8"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 croner = "3"
 dirs = "6"
 env_logger = "0.11"
@@ -214,3 +215,150 @@ unreadable_literal = "deny"
 # filesystems treat the two names as the same file, so the check's pass/fail result can disagree
 # with what's actually on disk. The codebase is already clean, so `deny` locks that in.
 case_sensitive_file_extension_comparisons = "deny"
+# Reject `std::mem::forget` in favour of `drop` or letting the value go out of scope. In a
+# long-running daemon, a forgotten value's `Drop` impl never runs — for file handles, locks, and
+# other RAII guards that means leaked descriptors/locks that accumulate over the process's
+# lifetime instead of a single one-off leak in a short-lived program. The one legitimate use in
+# this codebase (a test that manually closes a fd and must stop `File::drop` from closing it
+# again) is exempted with a documented `#[allow]`. The rest of the codebase is already clean, so
+# `deny` locks that in.
+mem_forget = "deny"
+# Reject a raw string literal (`r#"..."#`) whose `#` delimiters aren't needed because the string
+# body contains no unescaped `"` that would otherwise terminate it early. The extra hashes are
+# pure noise once nothing inside requires them. The codebase is already clean, so `deny` locks
+# that in.
+needless_raw_string_hashes = "deny"
+# Reject `as` casts that widen without loss (e.g. `u32 as i64`) in favour of `From`/`Into`. An
+# `as` cast silently stays legal (and silently starts truncating) if the source or target type
+# ever changes size; `i64::from(x)` is the same widening but fails to compile the moment it would
+# no longer be lossless. The codebase is already clean, so `deny` locks that in.
+cast_lossless = "deny"
+# Reject a function call passed directly as the fallback argument to `unwrap_or`/`ok_or`/
+# `and`/`or` and friends (e.g. `opt.unwrap_or(expensive())`) in favour of the lazy `_else`
+# form (`opt.unwrap_or_else(expensive)`). The eager form always evaluates the fallback, even
+# on the common path where the value is already present — silent, needless work (or a needless
+# allocation) on every call. The lazy form only runs it when actually needed. The codebase is
+# already clean, so `deny` locks that in.
+or_fun_call = "deny"
+# Reject `_` as a `match`/`tokio::select!` arm pattern when the matched value's type is `()` —
+# spelling out `()` states the value's type explicitly instead of leaving the reader to check that
+# `_` isn't quietly discarding something meaningful. The codebase is already clean, so `deny` locks
+# that in.
+ignored_unit_patterns = "deny"
+# Reject `"literal".as_bytes()` in favour of a `b"literal"` byte-string literal — the byte string
+# is the same bytes without the runtime call, and states "this is bytes" at the point of
+# declaration instead of at a conversion tacked on afterward. The codebase is already clean, so
+# `deny` locks that in.
+string_lit_as_bytes = "deny"
+# Reject a `&Option<T>` parameter in favour of `Option<&T>` — the former forces every caller to
+# already own (or clone into) an `Option`, while the latter accepts a plain `&T` wrapped in `Some`
+# just as easily and is the idiomatic way to say "an optional borrow". The codebase is already
+# clean, so `deny` locks that in.
+ref_option = "deny"
+# Reject `.map(|x| format!(...)).collect::<String>()` in favour of folding a `write!`/`writeln!`
+# directly into a `String` buffer. Like `format_push_string` above, each `format!` call allocates a
+# throwaway `String` only to have `collect` immediately copy its contents into the result and drop
+# it — pure overhead a fold avoids by writing straight into the accumulator. The codebase is
+# already clean, so `deny` locks that in.
+format_collect = "deny"
+# Reject a binding whose name is a near-miss of another binding already in scope (e.g. `txt` next to
+# `text`) — a reader (or a future edit) can mix the two up since they differ by only a couple of
+# characters. Fixed the four violations this surfaced: a `ContentBlock::Text(txt) => txt.text.clone()`
+# match arm repeated across the MCP route tests, shadowing an existing local also named `text`;
+# renamed the binding to `block`. No behavior change.
+similar_names = "deny"
+# Reject an or-pattern repeated across multiple match arms/parameters (e.g. `Foo::A | Foo::B =>
+# ..., Foo::C | Foo::D => ...` written as separate arms with duplicated bodies) in favour of
+# merging into one arm with a single nested or-pattern. Keeping the duplicates in sync by hand is
+# easy to get wrong as arms are added or reordered. The codebase is already clean, so `deny` locks
+# that in.
+unnested_or_patterns = "deny"
+# Reject a scope with 4+ single-character bindings in play at once — past the first couple, a
+# reader has to hold each letter's meaning in their head instead of reading a name. One violation:
+# `ui/src/routines/filter_tests.rs`'s `is_active_detects_each_facet` test had six (`q`, `s`, `a`,
+# `m`, `r`, `t`), one per `RoutineFilter` facet under test; renamed to `query_filter`,
+# `status_filter`, `agent_filter`, `machine_filter`, `repo_filter`, `tag_filter`. No behavior change.
+many_single_char_names = "deny"
+# Reject a `.clone()` whose result is immediately moved with no other use of the original value
+# still pending — the clone buys nothing over moving the original directly, so it's pure wasted
+# allocation (and, for a `Callback`/`UseStateHandle`, an extra `Rc` refcount bump) on every call.
+# This surfaced 31 violations, all in test/UI code: intermediate `let x = x.clone();` shadows built
+# for a `move` closure that turned out to be the value's last use, and a couple of `field.clone()`
+# reads passed straight into a constructor that never touched the original again. Fixed by moving
+# the original instead. The codebase is otherwise already clean, so `deny` locks that in.
+redundant_clone = "deny"
+# Reject a string literal that looks like a `format!`-family placeholder (`"{name}"`) sitting
+# outside a formatting macro — usually a leftover `format!`/`println!` arg that got moved into a
+# plain string and silently stopped interpolating. Fixes the 2 violations this surfaced in
+# `routines/command.rs::substitute`, both intentional `String::replace` placeholder tokens (not
+# formatting-macro arguments), which are now annotated with a scoped `#[allow]` explaining why.
+literal_string_with_formatting_args = "deny"
+# Reject a local array literal over 512000 bytes — a value that size belongs on the heap
+# (`Vec`/`Box`), not the stack. A daemon process runs long-lived worker threads with a fixed,
+# comparatively small stack, so an oversized stack array is a latent stack-overflow risk that only
+# surfaces under the right call depth, unlike a heap allocation which fails safely. The codebase is
+# already clean, so `deny` locks that in.
+large_stack_arrays = "deny"
+# Require an underscore between a numeric literal and its type suffix (e.g. `500_u64`, not
+# `500u64`) — without it, the suffix reads as part of the digits at a glance, and a reviewer has
+# to look twice to see where the number ends and the type begins. Fixed the 27 violations this
+# surfaced (all `0u8`/`0u64`/`Nu64`-style literals in test code and one production site in
+# `routines/cleanup/disk_cap.rs`) via `cargo clippy --fix`. No behavior change.
+unseparated_literal_suffix = "deny"
+# Reject the `unreachable!()` macro. A daemon process that hits an `unreachable!()` panics
+# the whole server instead of returning a structured error, and a match arm that looks
+# provably impossible today can become reachable after an innocuous refactor elsewhere —
+# the panic then only surfaces at runtime, in production. Fixed the one violation this
+# surfaced: `build/ui.rs::base64_encode`'s length-3 `match` had a `_ => unreachable!()`
+# catch-all for chunk lengths other than 1/2/3 (impossible from `chunks(3)`); rewritten
+# without a `match` by indexing the guaranteed-present first byte directly and reading the
+# optional second/third bytes via `.get()`, so there is no catch-all arm to guard. The rest
+# of the codebase is already clean, so `deny` locks that in.
+unreachable = "deny"
+# Reject `std::process::exit`/`std::process::abort` outside of `fn main` (the lint already
+# exempts `main` itself, where `src/main.rs`'s CLI dispatch legitimately calls `process::exit`
+# to set the process's exit code). Calling either from anywhere else terminates the process
+# immediately, skipping unwinding — so any `Drop` impl further up the call stack (an in-flight
+# routine's cleanup, a lock guard, a file handle) never runs. In a long-running daemon that's the
+# same "silent leak on the way out" risk `mem_forget` above already guards against. The codebase
+# is already clean outside `main`, so `deny` locks that in.
+exit = "deny"
+# Forbid `.expect()` in production code, same rationale as `unwrap_used` above: a panic in a
+# long-running daemon process kills the server without a graceful shutdown, and `.expect()` panics
+# exactly like `.unwrap()` does — it only adds a custom message to the same abrupt failure mode.
+# Denying `unwrap_used` alone left this an unguarded back door: swap `.unwrap()` for
+# `.expect("message")` and the panic-safety guarantee silently stops applying. Test code keeps
+# using `.expect()` freely (`allow-expect-in-tests = true` in clippy.toml, mirroring
+# `allow-unwrap-in-tests`) since panicking is the desired failure mode there.
+#
+# Fixed the 25 violations this surfaced across `src/`. Most (a missing parent dir, a
+# `toml`/`serde_json` re-serialization, a loopback socket address, the process's own executable
+# path, a piped file handle) were converted to proper `Result` propagation — `?`, `ok_or_else`, or
+# a `let else` early return for a `()`-returning best-effort function — matching this crate's
+# existing `unwrap_used`-driven error-handling style. A handful are genuinely provable "can't
+# happen" invariants (an id checked to exist earlier in the same function with the lock held
+# continuously since; `Stdio::piped()` set a few lines above the matching `.take()`; a `?` a line
+# above that already returns on `None`) and are kept as `.expect()` behind a scoped, reasoned
+# `#[allow]`, the same pattern this file already uses for `mem_forget`/`clippy::zombie_processes`.
+# `build.rs` (and the `src/build/` modules it pulls in) carries its own crate-level
+# `#![allow(clippy::expect_used, reason = "...")]`: it's a build script, not the daemon binary, so
+# a `.expect()` panic there just aborts `cargo build` with a message — the intended failure mode,
+# same class of exemption as tests. The rest of the codebase is already clean, so `deny` locks
+# that in.
+expect_used = "deny"
+# Forbid `panic!()` in production code: same rationale as `unwrap_used`/`expect_used`
+# above — an unhandled panic kills this long-running daemon process outright instead of
+# returning a structured error. The codebase is already clean, so `deny` locks that in.
+# Test code is exempt via `allow-panic-in-tests` in clippy.toml, same as the other two.
+panic = "deny"
+# Reject a `let` binding whose explicit type annotation exactly matches what the compiler
+# would already infer — the annotation adds nothing beyond what the initializer already states,
+# so it's noise a reader has to cross-check against the inferred type instead of trusting. The
+# codebase is already clean, so `deny` locks that in.
+redundant_type_annotations = "deny"
+# Reject `if !cond { panic!("msg") }` in favour of `assert!(cond, "msg")` — the assert form states
+# the invariant being checked directly instead of making the reader invert the condition to find
+# it, and collapses two lines into one. Test code is exempt via `allow-panic-in-tests` in
+# clippy.toml, same as `panic` above (an inverted `assert!` in a test reads the same either way).
+# The codebase is already clean, so `deny` locks that in.
+manual_assert = "deny"

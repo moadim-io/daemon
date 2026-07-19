@@ -23,7 +23,8 @@ fn available_agents_in_falls_back_when_dir_has_no_toml() {
         vec![
             "claude".to_string(),
             "codex".to_string(),
-            "hermes".to_string()
+            "hermes".to_string(),
+            "pi".to_string()
         ]
     );
 
@@ -188,15 +189,25 @@ fn ensure_default_agents_in_logs_and_continues_on_write_failure() {
 
 #[test]
 fn builtin_configs_declare_expected_instructions_file() {
-    // Both built-in agents now read their project instructions from AGENTS.md, unifying the
-    // moadim-managed system prompt and routine-origin disclosure onto a single file. Claude Code
-    // loads AGENTS.md as a memory/context file, and AGENTS.md is the file Codex reads, so the
-    // disclosure lands in the file each agent actually reads.
+    // Claude Code loads AGENTS.md as a memory/context file, and AGENTS.md is the file Codex
+    // reads, so the disclosure lands in the file each agent actually reads.
     let claude: AgentCommand = toml::from_str(claude_code::CONFIG).unwrap();
     assert_eq!(claude.instructions_file, "AGENTS.md");
 
     let codex: AgentCommand = toml::from_str(codex::CONFIG).unwrap();
     assert_eq!(codex.instructions_file, "AGENTS.md");
+}
+
+#[test]
+fn pi_default_config_parses_and_uses_prompt_file() {
+    // Pi runs one-shot in print mode here, with the composed prompt file attached and project
+    // trust approved so unattended routines do not stall on a prompt.
+    let pi: AgentCommand = toml::from_str(super::pi::CONFIG).unwrap();
+    assert_eq!(pi.command, "pi");
+    assert!(pi.args.contains(&"--approve".to_string()));
+    assert!(pi.args.contains(&"-p".to_string()));
+    assert!(pi.args.contains(&"@{prompt_file}".to_string()));
+    assert_eq!(pi.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
 }
 
 #[test]

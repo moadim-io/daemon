@@ -11,7 +11,6 @@
 mod build;
 
 fn main() {
-    println!("cargo:rerun-if-changed=ui/index.html");
     println!("cargo:rerun-if-changed=client/index.html");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=schemas/routine.schema.json");

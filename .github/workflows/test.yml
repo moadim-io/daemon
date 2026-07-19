@@ -8,13 +8,13 @@ name: Test
 # green.
 #
 # This relies on the committed `prebuilt.html` (build.rs falls back to it when
-# trunk is absent), so no trunk or wasm target is needed to build and test the
-# server crate. Both commands mirror CONTRIBUTING.md's documented pre-push
-# gate — keep the hook, CONTRIBUTING.md, and this workflow in lockstep.
+# pnpm is absent), so no pnpm step is needed to build and test the server
+# crate. Both commands mirror CONTRIBUTING.md's documented pre-push gate —
+# keep the hook, CONTRIBUTING.md, and this workflow in lockstep.
 #
-# `client/` isn't a Cargo workspace member, so `cargo test --workspace` never
-# runs its Vitest suite. The `client-test` job below mirrors the pre-push
-# hook's `pnpm --filter client test` step in CI.
+# `client/` isn't a Cargo workspace member, so `cargo test` never runs its
+# Vitest suite. The `client-test` job below mirrors the pre-push hook's
+# `pnpm --filter client test` step in CI.
 
 # Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
 # read repository contents to check out and run the test suite.
@@ -68,13 +68,7 @@ jobs:
           shared-key: test
 
       - name: Run tests
-        # Match the local pre-push hook and the `clippy` job in lint.yml:
-        # this is a non-virtual workspace (the root Cargo.toml declares both
-        # a [package] and a [workspace]), so a bare `cargo test` only runs
-        # the root `moadim` package's ~985 tests and silently skips the `ui`
-        # member crate's ~274 tests. Without `--workspace`, a PR could break
-        # every test in `ui/` and this job would still go green.
-        run: cargo test --workspace
+        run: cargo test
 
   coverage:
     name: cargo llvm-cov (100% line floor)

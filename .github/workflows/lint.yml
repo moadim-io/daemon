@@ -8,29 +8,15 @@ name: Lint
 #
 # fmt and clippy run as separate jobs so a formatting failure and a lint failure
 # are reported independently. The build relies on the committed `prebuilt.html`
-# (build.rs falls back to it when trunk is absent), so no trunk step is needed
-# just to type-check and lint. The clippy job runs `--workspace` so the `ui`
-# member crate is linted too; `ui`'s deps (yew/gloo/web-sys) build fine on the
-# host target for clippy's purposes.
+# (build.rs falls back to it when pnpm is absent), so no pnpm step is needed
+# just to type-check and lint the server crate.
 #
-# That host-target run alone is not enough, though (see #412): `ui` is a
-# Yew/WASM crate that only ever actually ships compiled for
-# `wasm32-unknown-unknown` (via `trunk build` in publish.yml), and clippy's
-# lint set — and even plain compilability — can differ between the host
-# target and wasm32 (cfg-gated code paths, wasm-bindgen/web-sys API surface,
-# etc.). Before this, nothing on a PR ever built or linted `ui` against the
-# target it's actually shipped to; a wasm32-only compile error or clippy
-# violation would sail through every PR green and only surface when cutting a
-# release. The `clippy-ui-wasm` job below closes that gap by installing the
-# wasm32 target and running clippy and a compile check against it directly,
-# scoped to the `ui` package.
-#
-# The pre-push hook's file-size gate (`linecheck --max-lines 500` over
-# `src/` and `ui/src/`) has no CI equivalent, so it's a no-op for any
-# contributor who hasn't opted into `git config core.hooksPath .githooks`
-# (see CONTRIBUTING.md) — a PR could silently blow past the 500-line
-# convention and still go fully green. The `linecheck` job below closes
-# that gap the same way this file already does for fmt/clippy.
+# The pre-push hook's file-size gate (`linecheck --max-lines 500` over `src/`)
+# has no CI equivalent, so it's a no-op for any contributor who hasn't opted
+# into `git config core.hooksPath .githooks` (see CONTRIBUTING.md) — a PR
+# could silently blow past the 500-line convention and still go fully green.
+# The `linecheck` job below closes that gap the same way this file already
+# does for fmt/clippy.
 #
 # `make readme-check` (scripts/check-readme-blocks.sh) validates every
 # ```json fence in README.md with `jq` but isn't run by any git hook either,
@@ -117,51 +103,7 @@ jobs:
           shared-key: clippy
 
       - name: Run clippy
-        # Match the local pre-push hook exactly: this is a non-virtual
-        # workspace (the root Cargo.toml declares both a [package] and a
-        # [workspace]), so a bare `cargo clippy` only checks the root
-        # `moadim` package and silently skips the `ui` member crate. Without
-        # `--workspace`, `ui/Cargo.toml`'s `[lints.clippy] all = "deny"` was
-        # never enforced here, so a PR could lint-regress the dashboard and
-        # still go fully green.
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  clippy-ui-wasm:
-    name: clippy (ui, wasm32)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ inputs.ref }}
-
-      - name: Install Rust (with clippy, wasm32 target)
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable
-          components: clippy
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and target/
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          # Own cache entry: this job's target/ holds wasm32 artifacts only,
-          # distinct from the host-target artifacts the `clippy` and `test`
-          # jobs cache under their own shared-keys.
-          shared-key: clippy-ui-wasm
-
-      - name: Run clippy (ui, wasm32-unknown-unknown)
-        # See #412: `ui`'s own `[lints.clippy] all = "deny"` (ui/Cargo.toml)
-        # is otherwise never enforced against the target it actually ships
-        # for. Scoped to `-p ui` (not `--workspace`) since the root `moadim`
-        # package doesn't build for wasm32 at all.
-        run: cargo clippy -p ui --target wasm32-unknown-unknown --all-targets -- -D warnings
-
-      - name: Build ui for wasm32-unknown-unknown
-        # Belt-and-suspenders compile check alongside the clippy run above:
-        # a plain `cargo build` catches the case where `--all-targets` clippy
-        # (which also covers tests/benches) diverges from what actually needs
-        # to compile for the shipped artifact.
-        run: cargo build -p ui --target wasm32-unknown-unknown
+        run: cargo clippy --all-targets -- -D warnings
 
   linecheck:
     name: linecheck
@@ -188,7 +130,7 @@ jobs:
         # Match the local pre-push hook exactly (same paths, same limit).
         run: |
           # shellcheck disable=SC2046
-          linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+          linecheck --max-lines 500 $(find src -name '*.rs')
 
   readme-check:
     name: readme-check

@@ -5,9 +5,6 @@ set -e
 # Tests must live in *_tests.rs files, not inline #[cfg(test)] blocks.
 # A colocated reference is fine: `#[cfg(test)] mod foo_tests;` (semicolon).
 # Inline blocks have the form `#[cfg(test)] mod foo {` (opening brace).
-# Scans `ui/src` too (same reason as the clippy/test/linecheck steps below):
-# this is a non-virtual workspace and `ui` has its own ~250 tests, so limiting
-# this scan to `src` let an inline test block in `ui/src` slip past silently.
 echo "Checking test-file convention (tests must be in *_tests.rs files)..."
 fail=0
 
@@ -34,7 +31,7 @@ check_file() {
   return 0
 }
 
-for f in $(find src ui/src -name '*.rs' | grep -v '_tests\.rs$'); do
+for f in $(find src -name '*.rs' | grep -v '_tests\.rs$'); do
   if ! check_file "$f"; then
     fail=1
   fi
@@ -51,20 +48,13 @@ cargo fmt --check
 
 # ── 3. Lint ───────────────────────────────────────────────────────────────────
 # Match the CI clippy gate (.github/workflows/lint.yml) exactly: lint every
-# target (tests, examples, benches) across the whole workspace (including the
-# `ui` member crate), and treat warnings as errors. Bare `cargo clippy` skips
-# test code and only lints the root package, so it can pass here yet fail CI —
-# keep the two in lockstep so a green local push stays green in CI.
-cargo clippy --workspace --all-targets -- -D warnings
+# target (tests, examples, benches), and treat warnings as errors. Bare
+# `cargo clippy` skips test code, so it can pass here yet fail CI — keep the
+# two in lockstep so a green local push stays green in CI.
+cargo clippy --all-targets -- -D warnings
 
-# ── 4. Test (workspace) ────────────────────────────────────────────────────────
-# `--workspace`, same reason as the clippy step above: this is a non-virtual
-# workspace (root Cargo.toml declares both a [package] and a [workspace]), so
-# a bare `cargo test` only runs the root `moadim` package's tests and
-# silently skips the `ui` member crate's ~250 tests. The coverage step below
-# also only instruments the root package (see its comment), so without this
-# step a broken `ui` unit test could pass the hook entirely.
-cargo test --workspace
+# ── 4. Test ───────────────────────────────────────────────────────────────────
+cargo test
 
 # ── 5. Coverage ───────────────────────────────────────────────────────────────
 # Requires: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview
@@ -77,10 +67,6 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
 fi
 
 echo "Running coverage (100% line coverage required, excluding main.rs)..."
-# Deliberately scoped to the root package (no --workspace): the `ui` crate is
-# a Yew/WASM UI, and much of it is only meaningfully exercisable through a
-# browser, so it isn't held to this 100% line floor. Its own test suite still
-# runs above, via the workspace-wide `cargo test`.
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
 
 # ── 6. Line-count gate ────────────────────────────────────────────────────────
@@ -94,13 +80,13 @@ fi
 
 echo "Checking .rs files do not exceed 500 lines..."
 # shellcheck disable=SC2046
-linecheck --max-lines 500 $(find src ui/src -name '*.rs')
+linecheck --max-lines 500 $(find src -name '*.rs')
 echo "Line-count check passed."
 
 # ── 7. Client (React) checks ────────────────────────────────────────────────────
 # `client/` isn't a Cargo workspace member, so none of the cargo-based gates
 # above ever touch it. Mirror them here the same way this hook already mirrors
-# CI for `src/`/`ui/` — matching the CI jobs added in `.github/workflows/lint.yml`
+# CI for `src/` — matching the CI jobs added in `.github/workflows/lint.yml`
 # and `test.yml`.
 if ! command -v pnpm >/dev/null 2>&1; then
   echo ""
@@ -117,12 +103,12 @@ echo "Client checks passed."
 # ── 8. Changelog ────────────────────────────────────────────────────────────────
 # Mirror the CI `Changelog` workflow (.github/workflows/changelog.yml) locally so
 # pushes that would fail the `changeset status` check are caught before they hit
-# CI. If the commits being pushed touch `src/` or `ui/`, a new `.changeset/*.md`
-# file must be present in the same range. Set SKIP_CHANGELOG=1 to bypass (the
-# local equivalent of the `skip-changelog` PR label) for deliberately
-# undocumented src/ui changes.
+# CI. If the commits being pushed touch `src/` or `client/`, a new
+# `.changeset/*.md` file must be present in the same range. Set
+# SKIP_CHANGELOG=1 to bypass (the local equivalent of the `skip-changelog` PR
+# label) for deliberately undocumented changes.
 if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
-  echo "Checking for a changeset covering src/, ui/, or client/ changes..."
+  echo "Checking for a changeset covering src/ or client/ changes..."
   # Range being pushed: everything on HEAD not yet on the upstream main branch,
   # via the merge-base with origin/main.
   base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
@@ -134,7 +120,7 @@ if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
     changeset_added=0
     for path in $changed; do
       case "$path" in
-        src/*|ui/*|client/*) code_changed=1 ;;
+        src/*|client/*) code_changed=1 ;;
         .changeset/*.md)
           [ "$(basename "$path")" != "README.md" ] && changeset_added=1
           ;;
@@ -142,7 +128,7 @@ if [ "${SKIP_CHANGELOG:-0}" != "1" ]; then
     done
     if [ "$code_changed" = "1" ] && [ "$changeset_added" = "0" ]; then
       echo ""
-      echo "  FAIL: changes under src/, ui/, or client/ but no changeset was added."
+      echo "  FAIL: changes under src/ or client/ but no changeset was added."
       echo "  Run 'pnpm changeset', or set SKIP_CHANGELOG=1 to bypass (the local"
       echo "  equivalent of the 'skip-changelog' PR label)."
       exit 1

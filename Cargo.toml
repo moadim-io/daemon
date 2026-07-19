@@ -307,3 +307,8 @@ large_stack_arrays = "deny"
 # same "silent leak on the way out" risk `mem_forget` above already guards against. The codebase
 # is already clean outside `main`, so `deny` locks that in.
 exit = "deny"
+# Forbid `panic!()` in production code: same rationale as `unwrap_used`/`expect_used`
+# above — an unhandled panic kills this long-running daemon process outright instead of
+# returning a structured error. The codebase is already clean, so `deny` locks that in.
+# Test code is exempt via `allow-panic-in-tests` in clippy.toml, same as the other two.
+panic = "deny"

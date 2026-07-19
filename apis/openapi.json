@@ -356,10 +356,10 @@
       },
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::create_routine"
         ],
         "summary": "`POST /routines` — create a new routine.",
-        "operationId": "create",
+        "operationId": "create_routine",
         "requestBody": {
           "content": {
             "application/json": {

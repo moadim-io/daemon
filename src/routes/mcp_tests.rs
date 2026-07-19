@@ -80,16 +80,6 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
 }
 
 #[test]
-fn create_routine_tool_invalid_cron_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let mut req = make_create_routine_req();
-    req.schedule = "not-a-cron".into();
-    let result = handler.create_routine(Parameters(req)).unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();

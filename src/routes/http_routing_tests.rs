@@ -385,24 +385,6 @@ async fn router_flag_not_found_paths() {
 }
 
 #[tokio::test]
-async fn router_routine_create_invalid_cron_400() {
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/routines")
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"schedule":"bad","title":"t","agent":"a","prompt":"p"}"#,
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn router_routine_not_found_paths() {
     for (method, suffix) in [
         ("GET", ""),

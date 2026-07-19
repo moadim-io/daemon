@@ -19,7 +19,7 @@
     "/agents": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_agents"
         ],
         "summary": "`GET /agents` — list the agent registry keys a routine may target.",
         "operationId": "list_agents",

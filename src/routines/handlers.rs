@@ -139,13 +139,6 @@ pub async fn list(
     Json(svc_list(&state.routines, &state.routines_dir, &query))
 }
 
-/// `GET /agents` — list the agent registry keys a routine may target.
-#[utoipa::path(get, path = "/agents",
-    responses((status = 200, body = Vec<String>, description = "Available agent names")))]
-pub async fn list_agents() -> Json<Vec<String>> {
-    Json(super::available_agents())
-}
-
 /// `GET /routines/{id}` — retrieve a single routine by UUID.
 #[utoipa::path(get, path = "/routines/{id}",
     params(("id" = String, Path, description = "Routine UUID")),

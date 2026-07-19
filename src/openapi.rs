@@ -24,7 +24,7 @@
         crate::routes::list_routines::list_routines,
         crate::routes::list_agents::list_agents,
         crate::routines::create,
-        crate::routines::get,
+        crate::routes::get_routine::get_routine,
         crate::routines::get_prompt_preview,
         crate::routines::replace,
         crate::routines::update,

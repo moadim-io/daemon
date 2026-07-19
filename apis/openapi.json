@@ -568,10 +568,10 @@
     "/routines/{id}": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::get_routine"
         ],
         "summary": "`GET /routines/{id}` — retrieve a single routine by UUID.",
-        "operationId": "get",
+        "operationId": "get_routine",
         "parameters": [
           {
             "name": "id",

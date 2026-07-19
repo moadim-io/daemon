@@ -80,18 +80,6 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
 }
 
 #[test]
-fn get_routine_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .get_routine(Parameters(IdInput {
-            id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn create_routine_tool_invalid_cron_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();

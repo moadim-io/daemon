@@ -36,6 +36,11 @@ mod restart;
 #[path = "get_lock_status/mcp.rs"]
 mod get_lock_status;
 
+/// The `list_agents` tool, kept in `routes/list_agents/mcp.rs` beside the `GET /agents` HTTP
+/// handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "list_agents/mcp.rs"]
+mod list_agents;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -251,16 +256,6 @@ impl MoadimMcp {
         Ok(ok(routines::svc_cleanup(&self.routines)))
     }
 
-    /// List the available agent registry keys a routine can launch.
-    #[tool(description = "List the available agent registry keys a routine can launch")]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::available_agents()))
-    }
-
     /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
     /// "Open flags" section includes it.
     #[tool(
@@ -405,9 +400,9 @@ impl MoadimMcp {
 }
 
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
-/// [`restart`], and [`get_lock_status`] modules), since a `#[tool_router]` block only collects the
-/// `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router()))]
+/// [`restart`], [`get_lock_status`], and [`list_agents`] modules), since a `#[tool_router]` block
+/// only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

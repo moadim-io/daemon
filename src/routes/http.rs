@@ -2,6 +2,7 @@
 
 use super::get_lock_status;
 use super::health;
+use super::list_agents;
 use super::mcp::MoadimMcp;
 use super::restart;
 use super::shutdown;
@@ -222,7 +223,7 @@ pub(crate) fn build_app_with_shutdown(
             "/config/max-concurrent-runs",
             get(get_max_concurrent_runs).put(put_max_concurrent_runs),
         )
-        .route("/agents", get(routines::list_agents))
+        .route("/agents", get(list_agents::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
         .route("/routines", get(routines::list).post(routines::create))
         .route("/routines/cleanup", post(routines::cleanup))

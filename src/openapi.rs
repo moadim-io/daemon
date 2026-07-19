@@ -21,7 +21,7 @@
         crate::routes::http::get_max_concurrent_runs,
         crate::routes::http::put_max_concurrent_runs,
         crate::routines::list,
-        crate::routines::list_agents,
+        crate::routes::list_agents::list_agents,
         crate::routines::create,
         crate::routines::get,
         crate::routines::get_prompt_preview,

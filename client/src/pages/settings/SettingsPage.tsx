@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSetUserPrompt, useUserPrompt } from "../../api/hooks";
 import { useToasts } from "../../shell/toasts";
 
@@ -10,13 +10,16 @@ export function SettingsPage() {
   const [content, setContent] = useState("");
   const [loadedContent, setLoadedContent] = useState("");
 
-  // Seed the editable draft once the initial fetch resolves.
-  useEffect(() => {
-    if (userPrompt.data !== undefined) {
-      setContent(userPrompt.data);
-      setLoadedContent(userPrompt.data);
-    }
-  }, [userPrompt.data]);
+  // Seed the editable draft once the initial fetch resolves. Adjusting state during
+  // render (rather than in an effect) on a tracked "previous prop" per
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  // avoids the extra render pass `react-hooks/set-state-in-effect` warns about.
+  const [seededFrom, setSeededFrom] = useState<string | undefined>(undefined);
+  if (userPrompt.data !== undefined && userPrompt.data !== seededFrom) {
+    setSeededFrom(userPrompt.data);
+    setContent(userPrompt.data);
+    setLoadedContent(userPrompt.data);
+  }
 
   const dirty = content !== loadedContent;
 

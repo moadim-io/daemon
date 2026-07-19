@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useNow } from "../lib/useNow";
 
 /**
  * Live auto-refresh control for a data table's action row: a Grafana/Datadog
@@ -67,15 +67,11 @@ export interface RefreshControlProps {
 
 /** Interval dropdown + live freshness label for a data table's action row. */
 export function RefreshControl({ token, updatedAtMs, onChange }: RefreshControlProps) {
-  // A local 1s tick re-renders just this widget so "updated Ns ago" stays live
+  // A local 1s clock re-renders just this widget so "updated Ns ago" stays live
   // without forcing the parent table to re-render every second.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1_000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
 
-  const freshness = updatedAtMs > 0 ? fmtFreshness(Math.max(0, Math.floor((Date.now() - updatedAtMs) / 1000))) : undefined;
+  const freshness = updatedAtMs > 0 ? fmtFreshness(Math.max(0, Math.floor((now - updatedAtMs) / 1000))) : undefined;
 
   return (
     <div className="refresh-control">

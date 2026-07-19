@@ -356,3 +356,9 @@ panic = "deny"
 # so it's noise a reader has to cross-check against the inferred type instead of trusting. The
 # codebase is already clean, so `deny` locks that in.
 redundant_type_annotations = "deny"
+# Reject `if !cond { panic!("msg") }` in favour of `assert!(cond, "msg")` — the assert form states
+# the invariant being checked directly instead of making the reader invert the condition to find
+# it, and collapses two lines into one. Test code is exempt via `allow-panic-in-tests` in
+# clippy.toml, same as `panic` above (an inverted `assert!` in a test reads the same either way).
+# The codebase is already clean, so `deny` locks that in.
+manual_assert = "deny"

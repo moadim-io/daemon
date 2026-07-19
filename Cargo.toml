@@ -351,3 +351,8 @@ expect_used = "deny"
 # returning a structured error. The codebase is already clean, so `deny` locks that in.
 # Test code is exempt via `allow-panic-in-tests` in clippy.toml, same as the other two.
 panic = "deny"
+# Reject a `let` binding whose explicit type annotation exactly matches what the compiler
+# would already infer — the annotation adds nothing beyond what the initializer already states,
+# so it's noise a reader has to cross-check against the inferred type instead of trusting. The
+# codebase is already clean, so `deny` locks that in.
+redundant_type_annotations = "deny"

@@ -385,3 +385,9 @@ unseparated_literal_suffix = "deny"
 # inherit root's extended deny-list, so this never applied to `ui/src` despite CI's `clippy`
 # job running `--workspace`. The `ui` crate is already clean, so `deny` locks that in.
 unreachable = "deny"
+# Reject a `let` binding whose explicit type annotation exactly matches what the compiler would
+# already infer. Mirrors the root crate's `redundant_type_annotations = "deny"` (see Cargo.toml)
+# — the `ui` crate has its own `[lints.clippy]` table and doesn't inherit root's extended
+# deny-list, so this never applied to `ui/src` despite CI's `clippy` job running `--workspace`.
+# The `ui` crate is already clean, so `deny` locks that in.
+redundant_type_annotations = "deny"

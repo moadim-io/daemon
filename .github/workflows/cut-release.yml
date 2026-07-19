@@ -1,0 +1,122 @@
+name: Cut Release
+
+# Manually triggered release cut: run `pnpm version-packages` (bump
+# package.json/Cargo.toml/Cargo.lock/CHANGELOG.md and consume pending
+# .changeset/*.md files — the same script that always ran, just no longer
+# behind a PR), verify the result via the same lint/test gates a PR would
+# give it (workflow_call into lint.yml/test.yml, see PR #853), then fast-
+# forward that verified commit straight onto `main`. No PR is opened.
+#
+# Why no PR: this org has "Allow GitHub Actions to create and approve pull
+# requests" disabled, and changesets/action (the previous approach, see the
+# old changeset-release.yml) is fundamentally PR-only with no direct-commit
+# mode — so that workflow never actually succeeded, ever, since changesets
+# was introduced (see issue #849's investigation). Skipping the PR entirely
+# sidesteps that org policy for good and needs nothing beyond the default
+# GITHUB_TOKEN's `contents: write`, already granted below — no PAT, no
+# GitHub App, no org-admin access required, now or in the future.
+#
+# Run this whenever the currently-pending changesets are ready to ship:
+# `gh workflow run cut-release.yml`, or the Actions tab's "Run workflow".
+# Nothing releases until someone does — changesets keep accumulating
+# silently on every merge in the meantime (still gated per-PR by
+# changelog.yml), same batching this repo already had via the old standing
+# PR. auto-release.yml picks up the resulting Cargo.toml bump automatically
+# — tags, publishes to crates.io, and cuts the GitHub Release, unchanged.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Version bump
+    runs-on: ubuntu-latest
+    outputs:
+      bump-sha: ${{ steps.bump.outputs.sha }}
+      bump-branch: ${{ steps.bump.outputs.branch }}
+      had-changes: ${{ steps.bump.outputs.had-changes }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bump version and sync Cargo/CHANGELOG
+        run: pnpm version-packages
+
+      - name: Commit and push bump to a throwaway branch
+        id: bump
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No pending changesets — nothing to release."
+            echo "had-changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          branch="ci/version-bump-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): version packages"
+          git push origin "HEAD:refs/heads/$branch"
+
+          {
+            echo "had-changes=true"
+            echo "sha=$(git rev-parse HEAD)"
+            echo "branch=$branch"
+          } >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: Lint version bump
+    needs: version
+    if: needs.version.outputs.had-changes == 'true'
+    uses: ./.github/workflows/lint.yml
+    with:
+      ref: ${{ needs.version.outputs.bump-branch }}
+
+  test:
+    name: Test version bump
+    needs: version
+    if: needs.version.outputs.had-changes == 'true'
+    uses: ./.github/workflows/test.yml
+    with:
+      ref: ${{ needs.version.outputs.bump-branch }}
+
+  land:
+    name: Land on main
+    needs: [version, lint, test]
+    if: needs.version.outputs.had-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Fast-forward main to the verified bump commit
+        run: |
+          git fetch origin "${{ needs.version.outputs.bump-branch }}"
+          git push origin "${{ needs.version.outputs.bump-sha }}:main"
+
+      - name: Delete throwaway branch
+        run: git push origin --delete "${{ needs.version.outputs.bump-branch }}"

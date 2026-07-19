@@ -1,0 +1,56 @@
+name: Link check
+
+# Gate every PR (and pushes to main) on the `lychee` Markdown link checker so
+# broken internal anchors/relative paths and dead external URLs in README.md,
+# Architecture.md, CONTRIBUTING.md, CHANGELOG.md, TODO.md, etc. don't rot
+# undetected (moadim-io/daemon#431). Scope is limited to `**/*.md` — this is a
+# docs gate, not a general crawler.
+#
+# Known-flaky/placeholder hosts (localhost, example.com) and transient
+# failures (rate limits, timeouts) are handled by lychee.toml so the gate is
+# signal, not noise; see that file for the documented ignore mechanism.
+#
+# The action is pinned to a full commit SHA (not a tag or `@v2`), consistent
+# with spellcheck.yml's pinning of crate-ci/typos, so a new lychee release
+# can't turn a green PR red without a visible SHA bump here.
+#
+# The weekly scheduled run exercises the gate against `main` on its own
+# cadence, so external-link rot (a URL going dead months after the PR that
+# added it) surfaces even without a docs-touching PR — mirroring
+# spellcheck.yml's Monday cron.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays at 07:00 UTC — after spellcheck.yml's 06:00 slot, so scheduled
+    # doc gates don't all contend for runners at once.
+    - cron: "0 7 * * 1"
+
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded link-check runs don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lychee:
+    name: lychee
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Check Markdown links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        env:
+          # Authenticated GitHub API requests get a much higher rate limit,
+          # avoiding false-positive failures on github.com links.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --config lychee.toml --no-progress './**/*.md'
+          fail: true
+          jobSummary: true

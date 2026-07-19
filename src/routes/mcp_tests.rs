@@ -80,19 +80,6 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
 }
 
 #[test]
-fn list_routines_empty() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .list_routines(Parameters(ListRoutinesParam {
-            local_only: None,
-            include_prompts: None,
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn get_routine_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();

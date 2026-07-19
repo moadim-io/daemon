@@ -8,6 +8,7 @@ pub mod get_lock_status;
 pub mod health;
 pub mod http;
 pub mod list_agents;
+pub mod list_routines;
 pub mod mcp;
 pub mod metrics;
 pub mod restart;

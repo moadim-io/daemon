@@ -11,8 +11,8 @@ use rmcp::{
 #[path = "mcp_types.rs"]
 mod mcp_types;
 use mcp_types::{
-    CreateFlagInput, IdInput, ListRoutinesParam, LockRoutinesInput, ResolveFlagInput,
-    SetPowerSavingInput, SnoozeRoutineInput, UnlockRoutinesInput, UpdateRoutineInput,
+    CreateFlagInput, IdInput, LockRoutinesInput, ResolveFlagInput, SetPowerSavingInput,
+    SnoozeRoutineInput, UnlockRoutinesInput, UpdateRoutineInput,
 };
 
 /// The `health` tool, kept in `routes/health/mcp.rs` beside the `GET /health` HTTP handler it
@@ -46,6 +46,11 @@ mod list_agents;
 /// with this file's below.
 #[path = "cleanup_workbenches/mcp.rs"]
 mod cleanup_workbenches;
+
+/// The `list_routines` tool, kept in `routes/list_routines/mcp.rs` beside the `GET /routines`
+/// HTTP handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "list_routines/mcp.rs"]
+mod list_routines;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -89,32 +94,6 @@ impl MoadimMcp {
             uptime_start,
             shutdown,
         }
-    }
-
-    /// Return managed routines as a JSON array sorted by creation time.
-    ///
-    /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
-    /// current machine are returned. Pass `false` to see all routines regardless of machine.
-    ///
-    /// Prompts are omitted by default to keep the listing compact; pass `include_prompts=true`
-    /// to include each routine's prompt.
-    #[tool(
-        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines. Prompts are omitted by default; pass include_prompts=true to include them."
-    )]
-    fn list_routines(
-        &self,
-        Parameters(params): Parameters<ListRoutinesParam>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let query = routines::RoutineListQuery {
-            local_only: Some(params.local_only.unwrap_or(true)),
-            include_prompts: Some(params.include_prompts.unwrap_or(false)),
-            ..Default::default()
-        };
-        Ok(ok(routines::svc_list(
-            &self.routines,
-            &self.routines_dir,
-            &query,
-        )))
     }
 
     /// Return the routine matching the given UUID.
@@ -397,9 +376,10 @@ impl MoadimMcp {
 }
 
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
-/// [`restart`], [`get_lock_status`], [`list_agents`], and [`cleanup_workbenches`] modules), since
-/// a `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router()))]
+/// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`], and
+/// [`list_routines`] modules), since a `#[tool_router]` block only collects the `#[tool]` methods
+/// in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

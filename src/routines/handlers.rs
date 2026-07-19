@@ -14,13 +14,13 @@ use crate::global_lock::{LockScope, LockStatus};
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{
-    CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine, RoutineListQuery,
-    RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
+    CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine, RoutineResponse, RoutineStore,
+    RunSummary, UpdateRoutineRequest,
 };
 use super::service::{
-    svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview, svc_list,
-    svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log,
-    svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview, svc_list_all_runs,
+    svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log, svc_run_summary,
+    svc_trigger, svc_trigger_scheduled, svc_update,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -126,17 +126,6 @@ pub async fn create(
         .await
         .map_err(|_| AppError::Internal)??;
     Ok((StatusCode::CREATED, Json(resp)))
-}
-
-/// `GET /routines` — list routines, optionally filtered and sorted by repository.
-#[utoipa::path(get, path = "/routines",
-    params(RoutineListQuery),
-    responses((status = 200, body = Vec<RoutineResponse>)))]
-pub async fn list(
-    State(state): State<crate::routes::http::AppState>,
-    Query(query): Query<RoutineListQuery>,
-) -> Json<Vec<RoutineResponse>> {
-    Json(svc_list(&state.routines, &state.routines_dir, &query))
 }
 
 /// `GET /routines/{id}` — retrieve a single routine by UUID.

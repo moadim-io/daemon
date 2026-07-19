@@ -71,12 +71,19 @@ fn rotate_run_history_if_oversized(path: &Path) {
 /// rather than blocking the reap sweep that triggered it — losing one history entry is far
 /// cheaper than a stuck cleanup loop.
 pub(crate) fn append_persisted_run(id: &str, run: &PersistedRun) {
-    let line = serde_json::to_string(run).expect("PersistedRun always serializes");
+    let line = match serde_json::to_string(run) {
+        Ok(line) => line,
+        Err(err) => {
+            log::warn!("run history: failed to serialize run for routine {id:?}: {err}");
+            return;
+        }
+    };
     let path = routine_run_history_path(id);
     rotate_run_history_if_oversized(&path);
-    let parent = path
-        .parent()
-        .expect("routine run-history path has a parent dir");
+    let Some(parent) = path.parent() else {
+        log::warn!("run history: path for routine {id:?} has no parent directory");
+        return;
+    };
     let result = crate::utils::fs_perms::create_private_dir_all(parent)
         .and_then(|()| open_history_append(&path).and_then(|mut file| writeln!(file, "{line}")));
     if let Err(err) = result {

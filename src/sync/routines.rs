@@ -58,6 +58,13 @@ const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux session
 pub(crate) fn format_routine_line(routine: &Routine) -> String {
     // The daemon is already running from this binary, so resolving its own path cannot realistically
     // fail; a failure here means the process has no executable path at all, which is unrecoverable.
+    #[allow(
+        clippy::expect_used,
+        reason = "the daemon is already running from this binary, so resolving its own path \
+                  cannot realistically fail; a failure here means the process has no executable \
+                  path at all, which is unrecoverable, and this fn has no `Result` to propagate \
+                  through short of reshaping every crontab-formatting caller"
+    )]
     let exe = std::env::current_exe().expect("daemon executable path is resolvable");
     let schedule = to_os_schedule(&routine.schedule);
     format!(

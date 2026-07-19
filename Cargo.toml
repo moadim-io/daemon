@@ -307,3 +307,26 @@ large_stack_arrays = "deny"
 # same "silent leak on the way out" risk `mem_forget` above already guards against. The codebase
 # is already clean outside `main`, so `deny` locks that in.
 exit = "deny"
+# Forbid `.expect()` in production code, same rationale as `unwrap_used` above: a panic in a
+# long-running daemon process kills the server without a graceful shutdown, and `.expect()` panics
+# exactly like `.unwrap()` does — it only adds a custom message to the same abrupt failure mode.
+# Denying `unwrap_used` alone left this an unguarded back door: swap `.unwrap()` for
+# `.expect("message")` and the panic-safety guarantee silently stops applying. Test code keeps
+# using `.expect()` freely (`allow-expect-in-tests = true` in clippy.toml, mirroring
+# `allow-unwrap-in-tests`) since panicking is the desired failure mode there.
+#
+# Fixed the 25 violations this surfaced across `src/`. Most (a missing parent dir, a
+# `toml`/`serde_json` re-serialization, a loopback socket address, the process's own executable
+# path, a piped file handle) were converted to proper `Result` propagation — `?`, `ok_or_else`, or
+# a `let else` early return for a `()`-returning best-effort function — matching this crate's
+# existing `unwrap_used`-driven error-handling style. A handful are genuinely provable "can't
+# happen" invariants (an id checked to exist earlier in the same function with the lock held
+# continuously since; `Stdio::piped()` set a few lines above the matching `.take()`; a `?` a line
+# above that already returns on `None`) and are kept as `.expect()` behind a scoped, reasoned
+# `#[allow]`, the same pattern this file already uses for `mem_forget`/`clippy::zombie_processes`.
+# `build.rs` (and the `src/build/` modules it pulls in) carries its own crate-level
+# `#![allow(clippy::expect_used, reason = "...")]`: it's a build script, not the daemon binary, so
+# a `.expect()` panic there just aborts `cargo build` with a message — the intended failure mode,
+# same class of exemption as tests. The rest of the codebase is already clean, so `deny` locks
+# that in.
+expect_used = "deny"

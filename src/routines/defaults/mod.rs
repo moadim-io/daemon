@@ -225,14 +225,17 @@ fn read_removed_defaults() -> BTreeSet<String> {
 /// Persist `slugs` to the tombstone file, creating its parent directory if needed.
 fn write_removed_defaults(slugs: &BTreeSet<String>) -> std::io::Result<()> {
     let path = removed_default_routines_path();
-    let parent = path
-        .parent()
-        .expect("removed-defaults tombstone path has a parent dir");
+    let Some(parent) = path.parent() else {
+        return Err(std::io::Error::other(format!(
+            "removed-defaults tombstone path {} has no parent directory",
+            path.display()
+        )));
+    };
     std::fs::create_dir_all(parent)?;
     let body = RemovedDefaults {
         slugs: slugs.clone(),
     };
-    let toml = toml::to_string_pretty(&body).expect("a set of strings always serializes");
+    let toml = toml::to_string_pretty(&body).map_err(std::io::Error::other)?;
     std::fs::write(path, toml)
 }
 

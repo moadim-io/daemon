@@ -258,6 +258,7 @@ override when both are set.
 
 ```
 GET    /health                 # liveness + uptime/version, used by status/--wait and the UI health badge
+GET    /metrics                # Prometheus text-exposition metrics: run counts/failures/durations, active sessions, workbench disk usage
 POST   /shutdown               # graceful stop, used by `moadim stop` and the UI STOP button
 POST   /restart                # stop this server and start a fresh instance, used by `moadim restart`
 GET    /routines              # list (filter by ?repository=, sort by ?sort=/&order=)

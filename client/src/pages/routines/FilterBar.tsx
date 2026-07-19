@@ -31,7 +31,7 @@ export interface FilterBarProps {
   tags: string[];
   shown: number;
   total: number;
-  searchRef: RefObject<HTMLInputElement>;
+  searchRef: RefObject<HTMLInputElement | null>;
   onQuery: (q: string) => void;
   onStatus: (s: RoutineStatusFacet) => void;
   onAgent: (a: NamedFacet) => void;

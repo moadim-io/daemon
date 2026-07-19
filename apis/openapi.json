@@ -238,6 +238,27 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "crate::routes::metrics"
+        ],
+        "summary": "`GET /api/v1/metrics` — Prometheus text-exposition metrics. See the module doc for how each\nseries is derived; `/health` remains the cheap liveness probe, this is the richer surface.",
+        "operationId": "metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format (version 0.0.4)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/restart": {
       "post": {
         "tags": [

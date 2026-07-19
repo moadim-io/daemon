@@ -371,7 +371,7 @@ pub fn spawn_restart() -> anyhow::Result<u32> {
 fn spawn_detached_with(configure: impl FnOnce(&mut std::process::Command)) -> anyhow::Result<u32> {
     use std::process::{Command as Proc, Stdio};
 
-    let exe = std::env::current_exe()
+    let exe = crate::utils::process::current_exe()
         .map_err(|err| anyhow::anyhow!("resolve current executable path: {err}"))?;
     let log_path = crate::paths::daemon_log_file();
     let log_parent = crate::utils::fs_perms::parent_or_err(&log_path, "daemon log")?;

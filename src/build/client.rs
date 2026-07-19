@@ -2,21 +2,19 @@ use std::path::Path;
 
 /// Build the React `client/` app and write its self-contained `index.html` to `$OUT_DIR`.
 ///
-/// Runs on every `cargo build`, alongside [`super::ui::build`]. If `pnpm` is absent the build
-/// falls back to a committed prebuilt copy, then a placeholder. Install pnpm from
-/// <https://pnpm.io/installation> and run `pnpm install` at the repo root.
+/// Runs on every `cargo build`. If `pnpm` is absent the build falls back to a committed prebuilt
+/// copy, then a placeholder. Install pnpm from <https://pnpm.io/installation> and run
+/// `pnpm install` at the repo root.
 ///
-/// Unlike the Yew `ui/` crate (which needs `src/build/ui.rs` to hand-inline WASM/JS/CSS into one
-/// file), `vite-plugin-singlefile` already makes `client/dist/index.html` fully self-contained —
-/// this just needs to copy it, no inlining step.
+/// `vite-plugin-singlefile` already makes `client/dist/index.html` fully self-contained — this
+/// just needs to copy it, no inlining step.
 pub fn build(manifest_dir: &str) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
-    let output = Path::new(&out_dir).join("client.html");
-    // Prebuilt lives at the package root — NOT under `client/` — for the same reason
-    // `prebuilt.html` does (see `ui.rs`): `client/` has its own `package.json` but is not a
-    // Cargo workspace member, and keeping the fallback at the root package's path keeps it
-    // included in `cargo package`/`cargo publish` regardless.
-    let prebuilt = Path::new(manifest_dir).join("prebuilt-client.html");
+    let output = Path::new(&out_dir).join("index.html");
+    // Prebuilt lives at the package root — NOT under `client/` — because `client/` has its own
+    // `package.json` but is not a Cargo workspace member, and keeping the fallback at the root
+    // package's path keeps it included in `cargo package`/`cargo publish` regardless.
+    let prebuilt = Path::new(manifest_dir).join("prebuilt.html");
     let client_dir = Path::new(manifest_dir).join("client");
 
     if client_dir.exists() {
@@ -26,7 +24,7 @@ pub fn build(manifest_dir: &str) {
             if dist_index.exists() {
                 std::fs::copy(&dist_index, &output).expect("failed to copy client dist/index.html");
                 // Write to the package root so CI can commit it and `cargo install` (no pnpm
-                // available) still ships a working `/client` route.
+                // available) still ships a working UI.
                 std::fs::copy(&output, &prebuilt).ok();
                 return;
             }
@@ -39,7 +37,7 @@ pub fn build(manifest_dir: &str) {
         return;
     }
 
-    println!("cargo:warning=pnpm not found and no prebuilt client UI; showing placeholder");
+    println!("cargo:warning=pnpm not found and no prebuilt UI; showing placeholder");
     std::fs::write(&output, PLACEHOLDER_HTML).expect("failed to write placeholder client HTML");
 }
 
@@ -90,7 +88,7 @@ fn run_pnpm_build(manifest_dir: &str) -> bool {
     }
 }
 
-/// Minimal HTML page shown when the React client has not been built.
+/// Minimal HTML page shown when the React UI has not been built.
 const PLACEHOLDER_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>MOADIM</title></head>

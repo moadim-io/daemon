@@ -9,5 +9,6 @@ pub mod health;
 pub mod http;
 pub mod list_agents;
 pub mod mcp;
+pub mod metrics;
 pub mod restart;
 pub mod shutdown;

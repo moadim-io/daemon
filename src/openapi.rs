@@ -28,7 +28,7 @@
         crate::routines::get_prompt_preview,
         crate::routines::replace,
         crate::routines::update,
-        crate::routines::delete,
+        crate::routes::delete_routine::delete_routine,
         crate::routines::trigger,
         crate::routines::scheduled_trigger,
         crate::routes::cleanup_workbenches::cleanup_workbenches,

@@ -1,0 +1,385 @@
+use super::super::model::Repository;
+use super::*;
+use chrono::TimeZone;
+
+/// Build a routine with the fields the filter reads; the rest are inert.
+fn routine(
+    id: &str,
+    title: &str,
+    agent: &str,
+    schedule: &str,
+    machines: &[&str],
+    repos: &[&str],
+    enabled: bool,
+) -> Routine {
+    Routine {
+        id: id.into(),
+        title: title.into(),
+        agent: agent.into(),
+        model: None,
+        schedule: schedule.into(),
+        prompt: String::new(),
+        repositories: repos
+            .iter()
+            .map(|r| Repository {
+                repository: (*r).to_string(),
+                branch: None,
+            })
+            .collect(),
+        machines: machines.iter().map(|m| (*m).to_string()).collect(),
+        enabled,
+        source: String::new(),
+        created_at: 0,
+        updated_at: 0,
+        last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
+        ttl_secs: None,
+        tags: vec![],
+        agent_registered: false,
+        file_path: String::new(),
+        schedule_description: None,
+        goal: None,
+        flag_count: 0,
+    }
+}
+
+/// Fixed deterministic "now" for tests (2026-01-01 12:00:00 local).
+fn now() -> DateTime<Local> {
+    Local.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap()
+}
+
+// ── last_fire_at ──────────────────────────────────────────────────────────────
+
+fn routine_with_triggers(last_manual: Option<u64>, last_scheduled: Option<u64>) -> Routine {
+    Routine {
+        last_manual_trigger_at: last_manual,
+        last_scheduled_trigger_at: last_scheduled,
+        ..routine("id", "My Routine", "claude", "0 * * * *", &[], &[], true)
+    }
+}
+
+#[test]
+fn last_fire_at_none_when_never_triggered() {
+    let r = routine_with_triggers(None, None);
+    assert_eq!(last_fire_at(&r), None);
+}
+
+#[test]
+fn last_fire_at_manual_only() {
+    let r = routine_with_triggers(Some(100), None);
+    assert_eq!(last_fire_at(&r), Some(100));
+}
+
+#[test]
+fn last_fire_at_scheduled_only() {
+    let r = routine_with_triggers(None, Some(200));
+    assert_eq!(last_fire_at(&r), Some(200));
+}
+
+#[test]
+fn last_fire_at_returns_max_when_manual_is_later() {
+    let r = routine_with_triggers(Some(300), Some(100));
+    assert_eq!(last_fire_at(&r), Some(300));
+}
+
+#[test]
+fn last_fire_at_returns_max_when_scheduled_is_later() {
+    let r = routine_with_triggers(Some(100), Some(300));
+    assert_eq!(last_fire_at(&r), Some(300));
+}
+
+#[test]
+fn last_fire_at_equal_timestamps_returns_that_value() {
+    let r = routine_with_triggers(Some(500), Some(500));
+    assert_eq!(last_fire_at(&r), Some(500));
+}
+
+// ── routine_health ────────────────────────────────────────────────────────────
+
+#[test]
+fn health_disabled_routine_is_disabled() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn health_power_saving_routine_is_power_saving() {
+    let r = Routine {
+        power_saving: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::PowerSaving);
+}
+
+#[test]
+fn health_disabled_outranks_power_saving() {
+    // `enabled: false` is checked first: a disabled routine is still `Disabled`, not
+    // `PowerSaving`, even if power_saving is also set.
+    let r = Routine {
+        power_saving: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Disabled);
+}
+
+#[test]
+fn trigger_button_title_names_the_pause_reason() {
+    let disabled = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], false);
+    assert_eq!(trigger_button_title(&disabled), "Routine is disabled");
+
+    let power_saving = Routine {
+        power_saving: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(
+        trigger_button_title(&power_saving),
+        "Routine is in power-saving mode"
+    );
+
+    let healthy = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true);
+    assert_eq!(trigger_button_title(&healthy), "Run now");
+}
+
+#[test]
+fn health_enabled_no_machines_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &[], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_enabled_blank_machine_entry_is_dormant() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["   "], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Dormant);
+}
+
+#[test]
+fn health_dead_schedule_is_dead() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine(
+            "a",
+            "A",
+            "claude",
+            "not-a-valid-cron",
+            &["machine1"],
+            &[],
+            true,
+        )
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::DeadSchedule);
+}
+
+#[test]
+fn health_missing_agent_is_agent_missing() {
+    // agent_registered defaults to false in routine()
+    let r = routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true);
+    assert_eq!(routine_health(&r, now()), RoutineHealth::AgentMissing);
+}
+
+#[test]
+fn health_fully_configured_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+// ─── snooze_detail ────────────────────────────────────────────────────────────
+
+#[test]
+fn snooze_detail_empty_when_not_snoozed() {
+    let r = routine("a", "A", "claude", "0 * * * *", &["m"], &[], true);
+    assert_eq!(snooze_detail(&r, now()), "");
+}
+
+#[test]
+fn snooze_detail_shows_minutes_left_for_short_snooze() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::minutes(45)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "45m left");
+}
+
+#[test]
+fn snooze_detail_shows_hours_left() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::hours(3)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "3h left");
+}
+
+#[test]
+fn snooze_detail_shows_days_left() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::days(2)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "2d left");
+}
+
+#[test]
+fn snooze_detail_shows_skip_runs() {
+    let r = Routine {
+        skip_runs: Some(5),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "5 runs skipped");
+}
+
+#[test]
+fn snooze_detail_skip_runs_singular() {
+    let r = Routine {
+        skip_runs: Some(1),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "1 run skipped");
+}
+
+#[test]
+fn snooze_detail_empty_when_deadline_past() {
+    let r = Routine {
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["m"], &[], true)
+    };
+    assert_eq!(snooze_detail(&r, now()), "");
+}
+
+#[test]
+fn is_routine_snoozed_true_when_deadline_in_future() {
+    let r = Routine {
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn is_routine_snoozed_false_when_deadline_past() {
+    let r = Routine {
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(!is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn is_routine_snoozed_true_when_skip_runs_nonzero() {
+    let r = Routine {
+        skip_runs: Some(3),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn is_routine_snoozed_false_when_skip_runs_zero() {
+    let r = Routine {
+        skip_runs: Some(0),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert!(!is_routine_snoozed(&r, now()));
+}
+
+#[test]
+fn health_snoozed_until_future_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() + Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_snoozed_until_past_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        snoozed_until: Some((now() - Duration::hours(1)).timestamp() as u64),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_skip_runs_above_zero_is_snoozed() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(2),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Snoozed);
+}
+
+#[test]
+fn health_skip_runs_zero_is_healthy() {
+    let r = Routine {
+        agent_registered: true,
+        skip_runs: Some(0),
+        ..routine("a", "A", "claude", "0 * * * *", &["machine1"], &[], true)
+    };
+    assert_eq!(routine_health(&r, now()), RoutineHealth::Healthy);
+}
+
+#[test]
+fn health_priority_order_dormant_most_urgent() {
+    assert!(
+        RoutineHealth::Dormant.priority() < RoutineHealth::DeadSchedule.priority(),
+        "Dormant must outrank DeadSchedule"
+    );
+    assert!(RoutineHealth::DeadSchedule.priority() < RoutineHealth::AgentMissing.priority());
+    assert!(RoutineHealth::AgentMissing.priority() < RoutineHealth::Disabled.priority());
+    assert!(RoutineHealth::Disabled.priority() < RoutineHealth::PowerSaving.priority());
+    assert!(RoutineHealth::PowerSaving.priority() < RoutineHealth::Snoozed.priority());
+    assert!(RoutineHealth::Snoozed.priority() < RoutineHealth::Healthy.priority());
+}
+
+/// `badge()`/`badge_class()` were the only `RoutineHealth` methods without a test (`priority()`
+/// is covered above) — assert the exact rendered strings for every variant, and that both stay
+/// unique across variants, so a copy-paste badge/class collision (two variants rendering the same
+/// label or CSS class) is caught here instead of silently in the UI.
+#[test]
+fn health_badge_and_badge_class_cover_all_variants() {
+    let cases = [
+        (RoutineHealth::Dormant, "DORMANT", "health-badge dormant"),
+        (
+            RoutineHealth::DeadSchedule,
+            "DEAD SCHEDULE",
+            "health-badge dead",
+        ),
+        (
+            RoutineHealth::AgentMissing,
+            "AGENT MISSING",
+            "health-badge agent-missing",
+        ),
+        (RoutineHealth::Disabled, "DISABLED", "health-badge disabled"),
+        (
+            RoutineHealth::PowerSaving,
+            "POWER SAVING",
+            "health-badge power-saving",
+        ),
+        (RoutineHealth::Snoozed, "SNOOZED", "health-badge snoozed"),
+        (RoutineHealth::Healthy, "HEALTHY", "health-badge healthy"),
+    ];
+    for (health, badge, badge_class) in cases {
+        assert_eq!(health.badge(), badge);
+        assert_eq!(health.badge_class(), badge_class);
+    }
+    let badges: Vec<&str> = cases.iter().map(|(h, _, _)| h.badge()).collect();
+    let classes: Vec<&str> = cases.iter().map(|(h, _, _)| h.badge_class()).collect();
+    let unique_badges: std::collections::HashSet<&&str> = badges.iter().collect();
+    let unique_classes: std::collections::HashSet<&&str> = classes.iter().collect();
+    assert_eq!(unique_badges.len(), badges.len(), "duplicate badge label");
+    assert_eq!(unique_classes.len(), classes.len(), "duplicate badge class");
+}

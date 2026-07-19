@@ -6,6 +6,7 @@
 # they produce only false positives.
 extend-exclude = [
   "prebuilt.html",
+  "prebuilt-client.html",
   "Cargo.lock",
   "pnpm-lock.yaml",
   "apis/openapi.json",
@@ -15,3 +16,11 @@ extend-exclude = [
 [default.extend-words]
 # Intentional spelling used in the codebase; keep it as-is.
 unparseable = "unparseable"
+# Countdown shorthand ("Nm left" / "Nh left" / "Nd left"), not the word "And".
+Nd = "Nd"
+# Deliberate misspelling used as the usage-error example (`moadim staus`), not a typo to fix.
+staus = "staus"
+
+[default.extend-identifiers]
+# Maintainer's GitHub handle, used as a contact/mention target in docs.
+tupe12334 = "tupe12334"

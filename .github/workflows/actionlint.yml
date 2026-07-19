@@ -1,0 +1,46 @@
+name: Actionlint
+
+# Gate every PR (and pushes to main) on `actionlint` so the workflow YAML
+# under .github/workflows/ and the shell embedded in its `run:` blocks are
+# validated statically instead of failing for the first time when they
+# actually execute on `main` or, worse, on a release tag. actionlint checks
+# workflow syntax, `${{ }}` expressions, the job/step graph (`needs`, `if`),
+# event triggers, action input names, and matrix correctness; with
+# shellcheck enabled (the action's default) it also lints every `run:`
+# block for quoting/word-splitting/`set -e` bugs.
+#
+# Uses raven-actions/actionlint, pinned to a full commit SHA (mirroring the
+# crate-ci/typos and dtolnay/rust-toolchain pinning convention used
+# elsewhere in this repo — see spellcheck.yml and lint.yml) rather than a
+# floating tag, so a new actionlint/shellcheck release can't turn a green
+# PR red without a visible version bump here.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded actionlint runs don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run actionlint (with shellcheck)
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          # shellcheck is on by default; called out explicitly so this gate
+          # keeps linting embedded `run:` shell even if the action's default
+          # ever changes.
+          shellcheck: true
+          fail-on-error: true

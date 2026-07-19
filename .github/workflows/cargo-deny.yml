@@ -1,0 +1,52 @@
+name: Cargo deny
+
+# Gate every PR (and pushes to main) on `cargo-deny`, checking the dependency
+# tree for known RustSec advisories, disallowed/duplicate licenses, banned
+# crates, and untrusted registry sources (issue #339). Without this, a
+# vulnerable or incompatibly-licensed dependency only surfaces via Dependabot
+# after it's already merged, not before.
+#
+# The action is pinned to a tagged release (not `@main`) so the gate is
+# reproducible, matching this repo's other workflows. The weekly scheduled
+# run keeps the gate exercised against `main` so newly published advisories
+# surface on their own cadence, not inside an unrelated PR.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays at 06:00 UTC — keep the advisory-database gate current against main.
+    - cron: "0 6 * * 1"
+
+# Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
+# check out the repo and read the dependency tree.
+permissions:
+  contents: read
+
+# Cancel a stale run when a PR gets a new push, matching lint.yml's behavior
+# so superseded cargo-deny runs don't pile up and burn CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+    # Prevent a new advisory alone from failing an in-flight PR that made no
+    # dependency change — only the scheduled run and pushes to main hard-fail
+    # on advisories; PRs still see the result annotated on the job.
+    continue-on-error: ${{ matrix.checks == 'advisories' && github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: cargo-deny ${{ matrix.checks }}
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check ${{ matrix.checks }}

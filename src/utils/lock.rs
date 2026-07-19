@@ -1,32 +1,22 @@
-//! Poison-resistant locking for the process-wide in-memory stores.
+//! Poison-tolerant locking for the in-memory stores.
 //!
-//! The shared `CronStore` / `RoutineStore` are `Arc<Mutex<..>>` singletons. A
-//! [`std::sync::Mutex`] becomes *poisoned* the instant any thread panics while
-//! holding its guard, after which every later `.lock().unwrap()` panics too.
-//! Because the stores are process-wide, a single stray panic under any held lock
-//! would otherwise permanently brick the daemon — list/get/create/update/delete
-//! /trigger, the iCal feed, crontab sync and the cleanup sweep all panic on their
-//! next acquisition (#363).
-//!
-//! Recovering the guard via [`PoisonError::into_inner`] keeps the daemon serving:
-//! the data behind the lock is still structurally valid (a `HashMap`), so the worst
-//! case after a poisoning panic is a partially-applied mutation, not a dead daemon.
+//! Every store is an `Arc<Mutex<HashMap<..>>>` guarding plain data. A poisoned lock
+//! only means some earlier thread panicked while holding the guard — the map itself is
+//! still structurally valid — so recovering the guard keeps the daemon serving instead
+//! of cascading the original panic through every later request.
 
 use std::sync::{Mutex, MutexGuard};
 
-/// Acquire a [`Mutex`] guard, recovering the inner guard if the lock was poisoned.
-pub trait LockRecover<T> {
-    /// Lock the mutex, returning the guard even when the lock is poisoned.
-    ///
-    /// Equivalent to `self.lock().unwrap_or_else(|e| e.into_inner())`, but named so
-    /// the poison-recovery intent is explicit at every call site and a plain
-    /// `.lock().unwrap()` stands out in review.
-    fn lock_recover(&self) -> MutexGuard<'_, T>;
+/// Extension trait that locks a [`Mutex`] without panicking on poisoning.
+pub trait LockRecover<Inner> {
+    /// Lock the mutex, recovering the guard if a previous holder panicked while holding it.
+    fn lock_recover(&self) -> MutexGuard<'_, Inner>;
 }
 
-impl<T> LockRecover<T> for Mutex<T> {
-    fn lock_recover(&self) -> MutexGuard<'_, T> {
-        self.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+impl<Inner> LockRecover<Inner> for Mutex<Inner> {
+    fn lock_recover(&self) -> MutexGuard<'_, Inner> {
+        self.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 

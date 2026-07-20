@@ -52,7 +52,12 @@ mod tests {
         std::env::temp_dir().join(format!("moadim-walk-{}", uuid::Uuid::new_v4()))
     }
 
-    fn with_home(body: impl FnOnce()) {
+    // `body` is a `&dyn Fn()` rather than a generic `impl FnOnce()` so every call site shares one
+    // non-generic function body (and one set of coverage counters) instead of each closure
+    // monomorphizing its own copy of `with_home` — with per-call-site copies, this function's
+    // `Some`/`None` restore branches (below) could each be satisfied by a *different* copy and
+    // still leave individual copies under 100% line coverage.
+    fn with_home(body: &dyn Fn()) {
         let home = scratch_home();
         std::fs::create_dir_all(&home).unwrap();
         let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
@@ -100,7 +105,7 @@ mod tests {
 
     #[test]
     fn walk_routines_recurses_into_nested_dirs() {
-        with_home(|| {
+        with_home(&|| {
             write_routine(&make_routine("walk-nested-id", "team/ops/nightly triage")).unwrap();
             let mut routines = HashMap::new();
             walk_routines(
@@ -116,8 +121,21 @@ mod tests {
     }
 
     #[test]
+    fn with_home_restores_a_pre_existing_home_override() {
+        // `with_home` is nested here so the inner call's `previous` capture is
+        // `Some(outer_home)`, exercising the restore-a-prior-value branch that
+        // no other test reaches (every other caller starts from an unset
+        // MOADIM_HOME_OVERRIDE, so only the `None` branch ever ran).
+        with_home(&|| {
+            let outer_home = std::env::var_os("MOADIM_HOME_OVERRIDE").unwrap();
+            with_home(&|| {});
+            assert_eq!(std::env::var_os("MOADIM_HOME_OVERRIDE"), Some(outer_home));
+        });
+    }
+
+    #[test]
     fn walk_routines_skips_plain_dirs_without_routine_toml() {
-        with_home(|| {
+        with_home(&|| {
             std::fs::create_dir_all(crate::paths::routines_dir().join("archive/old")).unwrap();
             write_routine(&make_routine("walk-flat-id", "flat routine")).unwrap();
             let mut routines = HashMap::new();

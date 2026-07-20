@@ -111,7 +111,7 @@ groups off a literal string per file instead.
 
 **The version-bump script had a silent, permanent gap: `docs/moadim.1` was
 never synced.** A test (`man_page_version_matches_cargo_pkg_version` in
-`src/cli_tests.rs`) asserts the hand-maintained man page's `.TH` header
+`src/cli/spawn_tests.rs`) asserts the hand-maintained man page's `.TH` header
 matches `Cargo.toml`'s version — it was always fixed by a human noticing
 post-hoc (see #848, a standalone "sync moadim.1" PR). Once the bump was
 actually running in CI instead of by hand, this became a hard failure on

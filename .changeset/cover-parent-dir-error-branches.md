@@ -1,5 +1,0 @@
----
-"moadim": patch
----
-
-test: cover the "path has no parent directory" error branches that `cargo llvm-cov`'s 100% line floor was failing on. Five call sites (`write_pid_file`, `ensure_readme`, `spawn_detached_with` in `cli/system.rs`, `write_machine_toml` in `machine/mod.rs`, `write_removed_defaults` in `routines/defaults/mod.rs`, and `append_persisted_run` in `routines/run_history.rs`) each duplicated their own `path.parent().ok_or_else(...)`/`let Some(parent) = ... else { ... }` guard for a case none of this crate's real config/log/history paths ever hit. Extracted the shared guard into `utils::fs_perms::parent_or_err`, tested directly, so the duplicate unreachable branches at each call site disappear instead of each needing its own contrived test. Also adds a test for the sibling "unparsable bind address" branch in `http_request_core`. Cuts the coverage gate's missed-line count from 32 to 6; the remainder is an effectively unreachable `serde_json::to_string` failure branch in `run_history.rs` and two unrelated single-line gaps, left for a follow-up.

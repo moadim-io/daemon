@@ -116,6 +116,26 @@ mod tests {
     }
 
     #[test]
+    fn with_home_restores_a_previously_set_override() {
+        // Covers the `Some(value)` restore arm: a caller nested inside another
+        // `MOADIM_HOME_OVERRIDE` scope gets that outer value back, not an unset var.
+        let outer = scratch_home();
+        // SAFETY: test harness is single-threaded.
+        unsafe {
+            std::env::set_var("MOADIM_HOME_OVERRIDE", &outer);
+        }
+        with_home(|| {});
+        assert_eq!(
+            std::env::var_os("MOADIM_HOME_OVERRIDE").as_deref(),
+            Some(outer.as_os_str())
+        );
+        // SAFETY: test harness is single-threaded.
+        unsafe {
+            std::env::remove_var("MOADIM_HOME_OVERRIDE");
+        }
+    }
+
+    #[test]
     fn walk_routines_skips_plain_dirs_without_routine_toml() {
         with_home(|| {
             std::fs::create_dir_all(crate::paths::routines_dir().join("archive/old")).unwrap();

@@ -35,6 +35,7 @@ function routine(id: string, enabled: boolean, overrides: Partial<RoutineRespons
     schedule_description: null,
     goal: null,
     flag_count: 0,
+    env_keys: [],
     ...overrides,
   };
 }

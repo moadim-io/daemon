@@ -89,6 +89,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: Vec::new(),
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -99,7 +100,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
 /// already matches and no write is needed. The user-owned [`Routine::enabled`] toggle is always
 /// carried over from `cur` — so a default the user turned off stays off — as are its `id`,
 /// `created_at`, `last_manual_trigger_at`, `last_scheduled_trigger_at`, `snoozed_until`,
-/// `skip_runs`, and `tags`.
+/// `skip_runs`, `tags`, and `env`.
 ///
 /// Special case: if `cur.machines` is empty the routine is dormant and can never run. This is the
 /// legacy state for defaults seeded before machine-awareness was added. To repair it, an empty
@@ -153,6 +154,8 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         max_runtime_secs: cur.max_runtime_secs,
         // Tags are user-owned, like `enabled`: never overridden by the spec.
         tags: cur.tags.clone(),
+        // Env vars are user-owned, like `tags`: never overridden by the spec.
+        env: cur.env.clone(),
     })
 }
 

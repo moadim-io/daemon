@@ -54,6 +54,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -71,6 +72,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: None,
+        env: None,
     }
 }
 
@@ -121,6 +123,7 @@ fn svc_update_sets_ttl_secs() {
                 ttl_secs: Some(1800),
                 max_runtime_secs: None,
                 tags: None,
+                env: None,
             },
         )
         .unwrap();
@@ -160,10 +163,45 @@ fn svc_update_sets_max_runtime_secs() {
                 ttl_secs: None,
                 max_runtime_secs: Some(1234),
                 tags: None,
+                env: None,
             },
         )
         .unwrap();
         assert_eq!(updated.routine.max_runtime_secs, Some(1234));
+    });
+}
+
+#[test]
+fn svc_update_sets_env() {
+    let _home = TempHome::set();
+    // Covers the `req.env` validate + apply branches in `svc_update` (#408).
+    let title = "Svc Update Env ZZZ";
+    let store = new_store();
+    let routine = make_routine("env-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("env-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "env-id",
+            UpdateRoutineRequest {
+                env: Some(std::collections::HashMap::from([(
+                    "MODEL_OVERRIDE".to_string(),
+                    "gpt-x".to_string(),
+                )])),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            updated
+                .routine
+                .env
+                .get("MODEL_OVERRIDE")
+                .map(String::as_str),
+            Some("gpt-x")
+        );
     });
 }
 

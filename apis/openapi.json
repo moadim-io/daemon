@@ -1174,6 +1174,16 @@
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
           },
+          "env": {
+            "type": "object",
+            "description": "Non-secret environment variables to inject into the agent's shell session at launch,\nwritten to `routine.toml`'s `[env]` table (defaults to empty). Keys must match\n`[A-Za-z_][A-Za-z0-9_]*`; values must not contain newlines (#408). For secrets, edit the\ngitignored `routine.local.toml` sidecar directly on disk instead — it is never accepted\nover the API.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "goal": {
             "type": [
               "string",
@@ -1703,7 +1713,8 @@
               "agent_command_available",
               "file_path",
               "flag_count",
-              "is_running"
+              "is_running",
+              "env_keys"
             ],
             "properties": {
               "agent_command_available": {
@@ -1713,6 +1724,13 @@
               "agent_registered": {
                 "type": "boolean",
                 "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses\nsuccessfully. A present-but-malformed config is silently dropped at crontab-sync time, so\nit reports `false` here too — file existence alone is not \"registered\"."
+              },
+              "env_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Names (never values) of every environment variable set for this routine, merging the\ntracked `routine.toml` `[env]` table with the untracked `routine.local.toml` sidecar\n(secrets), deduplicated and sorted. Lets a client show *what* is configured without ever\nexposing a secret value over the API (issue #408)."
               },
               "file_path": {
                 "type": "string",
@@ -1916,6 +1934,19 @@
               "null"
             ],
             "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "env": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "New tracked `[env]` map, or `None` to keep the existing value. Replaces the whole map (not\nmerged); send the full desired set. See [`CreateRoutineRequest::env`] for validation rules\nand the `routine.local.toml` secrets sidecar.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "goal": {
             "type": [

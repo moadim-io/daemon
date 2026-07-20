@@ -339,7 +339,7 @@ register a brand-new agent by dropping in another `<name>.toml`.
 | --------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `command` | string         | yes      | Executable to run (resolved on `PATH`), e.g. `"claude"`.                                                                       |
 | `args`    | array<string>  | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.                                            |
-| `instructions_file` | string | no    | Filename, relative to the workbench, that this agent reads its project instructions from — where the moadim-managed system prompt and routine-origin disclosure are written. Defaults to `CLAUDE.md` (Claude Code's convention); the built-in `codex` agent sets it to `AGENTS.md`. |
+| `instructions_file` | string | no    | Filename, relative to the workbench, that this agent reads its project instructions from — where the moadim-managed system prompt is written. Defaults to `CLAUDE.md` (Claude Code's convention); the built-in `codex` agent sets it to `AGENTS.md`. |
 | `setup`   | string         | no       | Shell command run in the workbench **before** the agent launches, inserted verbatim into the cron line. See the variables below. |
 
 **Placeholders** (substituted in each `args` entry at launch):

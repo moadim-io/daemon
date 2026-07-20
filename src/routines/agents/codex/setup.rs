@@ -12,7 +12,7 @@ pub const NAME: &str = "codex";
 /// needs" baseline the `claude` default already gets.
 ///
 /// Codex reads its project instructions from `AGENTS.md`, not Claude Code's `CLAUDE.md`, so the
-/// daemon must write the moadim system prompt + routine-origin disclosure there for it to be seen.
+/// daemon must write the moadim system prompt there for it to be seen.
 pub const CONFIG: &str = r#"command = "codex"
 # `codex exec` runs unattended, but its default workspace-write sandbox blocks the
 # network, so a routine could not clone the repo or push / open a PR. Pin the sandbox

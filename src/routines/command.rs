@@ -57,11 +57,8 @@ pub(crate) fn tmux_session_prefix(slug: &str) -> String {
     format!("{TMUX_SESSION_PREFIX}{slug}-")
 }
 
-/// Compose the `prompt.compiled.local.md` body: a repositories-as-context preamble, an optional `## Goal`
-/// section, the prompt, and — when the routine has any — an "Open flags" section listing
-/// gaps/bugs/edge cases the agent raised on a previous run (see [`super::flags`]) that no one has
-/// resolved yet.
-///
+/// Compose the `prompt.compiled.local.md` body: a repositories-as-context preamble, an optional
+/// `## Goal` section, a routine-origin disclosure block, the prompt, and an "Open flags" section.
 /// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
 /// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
 /// repo list with nothing under it.
@@ -99,6 +96,9 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
         body.push_str(goal);
         body.push('\n');
     }
+    body.push_str("\n## Routine origin disclosure\n\n");
+    body.push_str("You act on behalf of the moadim routine named below. In every external, outward-facing communication you produce — GitHub issues, pull requests and comments; Slack messages; emails; any channel a human or third-party system receives — you MUST disclose that the action originates from this moadim routine, naming it.\n\n");
+    let _ = writeln!(body, "Routine name: {}", routine.title);
     body.push_str("\n---\n");
     body.push_str(&routine.prompt);
     body.push('\n');

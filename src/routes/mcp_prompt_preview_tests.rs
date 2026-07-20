@@ -84,11 +84,12 @@ fn preview_routine_prompt_success_contains_prompt() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         }))
         .unwrap();
     assert!(!create_result.is_error.unwrap_or(false));
     let text = match &create_result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
@@ -101,7 +102,7 @@ fn preview_routine_prompt_success_contains_prompt() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
     let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(txt) => txt.text.clone(),
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
         _ => panic!("expected text content"),
     };
     let preview: serde_json::Value = serde_json::from_str(&text).unwrap();

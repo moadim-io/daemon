@@ -1,7 +1,7 @@
 //! MCP server handler exposing routine tools over the Model Context Protocol.
 
 use crate::routes::http::ShutdownSignal;
-use crate::routines::{self, CreateRoutineRequest, RoutineStore, UpdateRoutineRequest};
+use crate::routines::{self, RoutineStore};
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
@@ -11,8 +11,8 @@ use rmcp::{
 #[path = "mcp_types.rs"]
 mod mcp_types;
 use mcp_types::{
-    CreateFlagInput, IdInput, ListRoutinesParam, LockRoutinesInput, ResolveFlagInput,
-    SetPowerSavingInput, SnoozeRoutineInput, UnlockRoutinesInput, UpdateRoutineInput,
+    CreateFlagInput, IdInput, LockRoutinesInput, ResolveFlagInput, SetPowerSavingInput,
+    SnoozeRoutineInput, UnlockRoutinesInput,
 };
 
 /// The `health` tool, kept in `routes/health/mcp.rs` beside the `GET /health` HTTP handler it
@@ -29,6 +29,62 @@ mod shutdown;
 /// mirrors. Its own `#[tool_router]` block is combined with this file's below.
 #[path = "restart/mcp.rs"]
 mod restart;
+
+/// The `get_lock_status` tool, kept in `routes/get_lock_status/mcp.rs` beside the
+/// `GET /routines/lock` HTTP handler it mirrors. Its own `#[tool_router]` block is combined with
+/// this file's below.
+#[path = "get_lock_status/mcp.rs"]
+mod get_lock_status;
+
+/// The `list_agents` tool, kept in `routes/list_agents/mcp.rs` beside the `GET /agents` HTTP
+/// handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "list_agents/mcp.rs"]
+mod list_agents;
+
+/// The `cleanup_workbenches` tool, kept in `routes/cleanup_workbenches/mcp.rs` beside the
+/// `POST /routines/cleanup` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "cleanup_workbenches/mcp.rs"]
+mod cleanup_workbenches;
+
+/// The `list_routines` tool, kept in `routes/list_routines/mcp.rs` beside the `GET /routines`
+/// HTTP handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "list_routines/mcp.rs"]
+mod list_routines;
+
+/// The `get_routine` tool, kept in `routes/get_routine/mcp.rs` beside the `GET /routines/{id}`
+/// HTTP handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "get_routine/mcp.rs"]
+mod get_routine;
+
+/// The `delete_routine` tool, kept in `routes/delete_routine/mcp.rs` beside the
+/// `DELETE /routines/{id}` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "delete_routine/mcp.rs"]
+mod delete_routine;
+
+/// The `create_routine` tool, kept in `routes/create_routine/mcp.rs` beside the `POST /routines`
+/// HTTP handler it mirrors. Its own `#[tool_router]` block is combined with this file's below.
+#[path = "create_routine/mcp.rs"]
+mod create_routine;
+
+/// The `list_routine_runs` tool, kept in `routes/list_routine_runs/mcp.rs` beside the
+/// `GET /routines/{id}/runs` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "list_routine_runs/mcp.rs"]
+mod list_routine_runs;
+
+/// The `update_routine` tool, kept in `routes/update_routine/mcp.rs` beside the
+/// `PATCH /routines/{id}` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "update_routine/mcp.rs"]
+mod update_routine;
+
+/// The `trigger_routine` tool, kept in `routes/trigger_routine/mcp.rs` beside the
+/// `POST /routines/{id}/trigger` HTTP handler it mirrors. Its own `#[tool_router]` block is
+/// combined with this file's below.
+#[path = "trigger_routine/mcp.rs"]
+mod trigger_routine;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -74,46 +130,6 @@ impl MoadimMcp {
         }
     }
 
-    /// Return managed routines as a JSON array sorted by creation time.
-    ///
-    /// When `local_only` is `true` (the default), only routines whose `machines` list includes the
-    /// current machine are returned. Pass `false` to see all routines regardless of machine.
-    ///
-    /// Prompts are omitted by default to keep the listing compact; pass `include_prompts=true`
-    /// to include each routine's prompt.
-    #[tool(
-        description = "List managed routines (agent-driven jobs). Defaults to routines targeting the current machine only; pass local_only=false to see all machines. Prompts are omitted by default; pass include_prompts=true to include them."
-    )]
-    fn list_routines(
-        &self,
-        Parameters(params): Parameters<ListRoutinesParam>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let query = routines::RoutineListQuery {
-            local_only: Some(params.local_only.unwrap_or(true)),
-            include_prompts: Some(params.include_prompts.unwrap_or(false)),
-            ..Default::default()
-        };
-        Ok(ok(routines::svc_list(
-            &self.routines,
-            &self.routines_dir,
-            &query,
-        )))
-    }
-
-    /// Return the routine matching the given UUID.
-    #[tool(description = "Get a routine by ID")]
-    fn get_routine(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(
-            match routines::svc_get(&self.routines, &self.routines_dir, &id) {
-                Ok(resp) => ok(resp),
-                Err(error) => err(error),
-            },
-        )
-    }
-
     /// Return the exact prompt body a routine's run would receive, without creating a workbench
     /// or launching an agent.
     #[tool(
@@ -129,74 +145,6 @@ impl MoadimMcp {
                 Err(error) => err(error),
             },
         )
-    }
-
-    /// Validate and persist a new routine, returning the created record.
-    #[tool(
-        description = "Create a new routine (agent-driven job). The `schedule` cron expression is interpreted in the local system timezone of the host running the daemon, NOT UTC. The response includes a `timezone` field and a `schedule_description` annotated with that timezone — verify them to confirm the firing time."
-    )]
-    fn create_routine(
-        &self,
-        Parameters(req): Parameters<CreateRoutineRequest>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_create(&self.routines, req) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
-    }
-
-    /// Apply provided fields to an existing routine, returning the updated record.
-    #[tool(
-        description = "Update fields of an existing routine. The `schedule` cron expression is interpreted in the local system timezone of the host running the daemon, NOT UTC. The response includes a `timezone` field and a `schedule_description` annotated with that timezone — verify them to confirm the firing time."
-    )]
-    fn update_routine(
-        &self,
-        Parameters(input): Parameters<UpdateRoutineInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let req = UpdateRoutineRequest {
-            schedule: input.schedule,
-            title: input.title,
-            agent: input.agent,
-            model: input.model,
-            prompt: input.prompt,
-            goal: input.goal,
-            repositories: input.repositories,
-            machines: input.machines,
-            enabled: input.enabled,
-            ttl_secs: input.ttl_secs,
-            max_runtime_secs: input.max_runtime_secs,
-            tags: input.tags,
-        };
-        Ok(match routines::svc_update(&self.routines, &input.id, req) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
-    }
-
-    /// Remove the routine with the given UUID from the store.
-    #[tool(description = "Delete a routine by ID")]
-    fn delete_routine(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_delete(&self.routines, &id) {
-            Ok(resp) => ok(resp),
-            Err(error) => err(error),
-        })
-    }
-
-    /// Manually trigger a routine immediately, recording the trigger time.
-    #[tool(
-        description = "Manually trigger a routine outside its schedule, recording last_manual_trigger_at"
-    )]
-    fn trigger_routine(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_trigger(&self.routines, &id) {
-            Ok(routine) => ok(routine),
-            Err(error) => err(error),
-        })
     }
 
     /// Snooze a routine's scheduled fires without disabling it or touching manual triggers.
@@ -234,25 +182,6 @@ impl MoadimMcp {
                 Err(error) => err(error),
             },
         )
-    }
-
-    /// Reap finished, expired run workbenches immediately, returning how many were removed and the
-    /// bytes freed.
-    #[tool(
-        description = "Trigger cleanup of finished, expired routine run workbenches now instead of waiting for the hourly sweep. Returns the number of workbenches removed and the total disk space freed in bytes."
-    )]
-    fn cleanup_workbenches(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::svc_cleanup(&self.routines)))
-    }
-
-    /// List the available agent registry keys a routine can launch.
-    #[tool(description = "List the available agent registry keys a routine can launch")]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn list_agents(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(routines::available_agents()))
     }
 
     /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
@@ -322,32 +251,7 @@ impl MoadimMcp {
         })
     }
 
-    /// List a routine's runs (live workbenches plus durable history), newest first.
-    #[tool(
-        description = "List a routine's runs, newest first — each run's workbench id (pass to the REST endpoints GET /routines/{id}/runs/{workbench}/log for its log or GET /routines/{id}/runs/{workbench}/summary for the agent's work summary), start/finish time, status, and exit code"
-    )]
-    fn list_routine_runs(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_list_runs(&self.routines, &id) {
-            Ok(runs) => ok(runs),
-            Err(error) => err(error),
-        })
-    }
-
     /// Return whether the global routine lock is active and which sentinels are present.
-    #[tool(
-        description = "Get the global routine lock status. Returns `shared` (committed .lock file), `local` (gitignored .local.lock), and `locked` (either is present)."
-    )]
-    #[allow(
-        clippy::unused_self,
-        reason = "tool_router dispatches every handler through self.method(...) uniformly"
-    )]
-    fn get_lock_status(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(ok(crate::global_lock::lock_status()))
-    }
-
     /// Create a global lock sentinel that halts all routine scheduling and manual triggers without
     /// touching individual routine `enabled` states.
     #[tool(
@@ -410,9 +314,11 @@ impl MoadimMcp {
 }
 
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
-/// and [`restart`] modules), since a `#[tool_router]` block only collects the `#[tool]` methods in
-/// its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router()))]
+/// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
+/// [`list_routines`], [`get_routine`], [`delete_routine`], [`create_routine`],
+/// [`list_routine_runs`], [`update_routine`], and [`trigger_routine`] modules), since a
+/// `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

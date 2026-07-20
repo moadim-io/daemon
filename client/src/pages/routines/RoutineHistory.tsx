@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useRoutineRuns, useRunLog } from "../../api/hooks";
 import { fmtFreshness } from "../../components/RefreshControl";
-import { reltime } from "../../lib/cronUtils";
+import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
+import { useNow } from "../../lib/useNow";
 import { LogViewer } from "./LogViewer";
 
 export interface RoutineHistoryProps {
@@ -18,7 +19,8 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
   const logQuery = useRunLog(id, selected ?? "", selected !== undefined);
 
   const runs = runsQuery.data ?? [];
-  const nowSecs = Math.floor(Date.now() / 1000);
+  const now = useNow();
+  const nowSecs = Math.floor(now / 1000);
 
   return (
     <main className="logs-page">
@@ -29,7 +31,7 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
         <div className="page-title">HISTORY / {title}</div>
         {runsQuery.dataUpdatedAt > 0 && (
           <span className="page-freshness">
-            {fmtFreshness(Math.max(0, (Date.now() - runsQuery.dataUpdatedAt) / 1000))}
+            {fmtFreshness(Math.max(0, (now - runsQuery.dataUpdatedAt) / 1000))}
           </span>
         )}
         <button
@@ -77,7 +79,7 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
                 return (
                   <tr key={run.workbench} className={isSelected ? "row-selected" : ""}>
                     <td>
-                      <div className="cell-time" title={run.workbench}>
+                      <div className="cell-time" title={`${run.workbench} · ${abstime(run.started_at)}`}>
                         {reltime(run.started_at)}
                       </div>
                     </td>

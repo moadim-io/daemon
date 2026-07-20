@@ -3,7 +3,7 @@ name: Changelog
 # Require a changeset on any PR that touches `src/`, `ui/`, or `client/`, so
 # user-facing or behavioral changes are documented as they land ("Today's
 # TODO, tomorrow's changelog"). Docs-, CI-, and test-only PRs are exempt — the
-# gate only fires when product code under src/, ui/, or client/ changes. Add
+# gate only fires when product code under src/ or client/ changes. Add
 # the `skip-changelog` label to a PR to bypass the check for deliberately
 # undocumented changes.
 # Dependabot PRs are exempt — dependency bumps don't need a hand-written
@@ -34,14 +34,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect src/, ui/, or client/ changes
+      - name: Detect src/ or client/ changes
         id: filter
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           filters: |
             code:
               - 'src/**'
-              - 'ui/**'
               - 'client/**'
 
       - name: Install pnpm
@@ -59,10 +58,10 @@ jobs:
         if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
         run: pnpm install --frozen-lockfile
 
-      - name: Require a changeset when src/, ui/, or client/ changed
+      - name: Require a changeset when src/ or client/ changed
         if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
         run: |
           pnpm exec changeset status --since=origin/main || {
-            echo "::error::PR changes src/, ui/, or client/ but no changeset was added. Run 'pnpm changeset', or apply the 'skip-changelog' label."
+            echo "::error::PR changes src/ or client/ but no changeset was added. Run 'pnpm changeset', or apply the 'skip-changelog' label."
             exit 1
           }

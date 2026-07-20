@@ -114,4 +114,8 @@ pub(super) struct UpdateRoutineInput {
     pub(super) max_runtime_secs: Option<u64>,
     /// New tags list, or `None` to keep the existing value.
     pub(super) tags: Option<Vec<String>>,
+    /// New tracked `[env]` map (replaces the whole map), or `None` to keep the existing value.
+    /// Non-secret only — keys must match `[A-Za-z_][A-Za-z0-9_]*` and values must not contain
+    /// newlines. For secrets, edit the gitignored `routine.local.toml` sidecar on disk instead.
+    pub(super) env: Option<std::collections::HashMap<String, String>>,
 }

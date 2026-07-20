@@ -4,7 +4,7 @@
 >
 > _No moadim in the loop when it counts — the OS does the heavy lifting._
 
-Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes them over two protocols simultaneously — REST and MCP — on a single port (`127.0.0.1:5784`). It also serves an embedded browser UI compiled from a Yew/WASM workspace member.
+Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes them over two protocols simultaneously — REST and MCP — on a single port (`127.0.0.1:5784`). It also serves an embedded browser UI: a React/TypeScript app, inlined into the binary at build time.
 
 ---
 
@@ -14,7 +14,7 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                 ┌─────────────────────────────────────────┐
                 │           Axum HTTP server :5784         │
                 │                                          │
-  Browser ──────┤  GET /            (inlined HTML+WASM)   │
+  Browser ──────┤  GET /            (inlined HTML+JS)     │
   curl/SDK ─────┤  REST /routines   (JSON)                │
   AI agent ─────┤  /mcp             (MCP streamable-HTTP) │
                 │                                          │
@@ -24,7 +24,8 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                                │ read+write on every mutation
                                ▼
                ~/.config/moadim/routines/
-               ├── <uuid>/routine.toml                  (tracked)
+               ├── <uuid>/routine.toml                  (tracked; [env] = non-secret vars)
+               ├── <uuid>/routine.local.toml             (gitignored, optional; secret env overrides)
                ├── <uuid>/prompts/prompt.pure.md         (tracked)
                ├── <uuid>/prompts/prompt.compiled.local.md (gitignored)
                └── <uuid>/.gitignore                    (generated)
@@ -53,8 +54,21 @@ src/
 ├── routine_storage.rs   routine.toml + prompts/ (pure/compiled) persistence
 │
 ├── routes/
-│   ├── http.rs          Axum router assembly + run_with_listener_until
-│   └── mcp.rs           MoadimMcp — rmcp tool_router
+│   ├── http.rs                  Axum router assembly, re-exports run_with_listener_until
+│   ├── mcp.rs                   MoadimMcp — rmcp tool_router, composes each endpoint's mcp.rs
+│   ├── http_listener.rs         listener bind + graceful shutdown + run_with_listener_until
+│   ├── http_settings_routes.rs  machine identity + persistent user-prompt settings routes
+│   ├── metrics.rs               GET /api/v1/metrics — Prometheus-format process/routine metrics
+│   ├── CONTRIBUTING.md          when/how to give an endpoint its own <name>/ folder
+│   └── <name>/                  one folder per endpoint with both a REST route and an MCP tool
+│       ├── mod.rs                   wiring only: declares submodules, re-exports the public surface
+│       ├── logic.rs                 response type(s) + the pure function that builds them (no framework code)
+│       ├── http.rs                  thin Axum handler: extracts state, calls logic, wraps in Json
+│       └── mcp.rs                   thin MCP tool: calls logic, wraps in the MCP result type
+│           (e.g. health/, create_routine/, list_routines/, get_routine/, delete_routine/,
+│            list_routine_runs/, list_agents/, get_lock_status/, cleanup_workbenches/,
+│            restart/, shutdown/ — see src/routes/CONTRIBUTING.md. Not every endpoint is
+│            split out yet; e.g. update_routine, MCP-only, is still inline in mcp.rs)
 │
 ├── middlewares/
 │   ├── host_validation.rs    guards against DNS-rebinding / cross-origin abuse of the loopback API
@@ -81,10 +95,8 @@ src/
 │
 └── build/               build-script modules (compiled by build.rs, not the binary)
     ├── mod.rs
-    ├── openapi.rs       writes apis/openapi.json
-    └── ui.rs            runs trunk, inlines WASM → prebuilt.html / $OUT_DIR/index.html
-
-ui/                      Yew workspace member (separate Cargo.toml)
+    ├── routine_schema.rs  writes schemas/routine.schema.json + routine.example.toml
+    └── client.rs          builds the React client/ app → prebuilt.html / $OUT_DIR/index.html
 ```
 
 ### Filesystem permissions
@@ -197,8 +209,12 @@ interval from piling up concurrent agent sessions against the same target (dupli
 racing pushes); see `routines::service_trigger::spawn_routine_command`.
 
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
-times (next 30 days, capped per routine), evaluated in the host local timezone and emitted as UTC
-instants so external calendars can subscribe without an embedded `VTIMEZONE`. The optional
+times (next 30 days, capped per routine), evaluated in the host local timezone. When that zone can
+be named, each event's `DTSTART` is `TZID`-qualified with the local wall-clock time against an
+embedded `VTIMEZONE` (pinned to the feed's current UTC offset, no DST transition rules), so a
+subscriber whose calendar defaults to a different zone still sees the routine's actual configured
+local time instead of the same instant reinterpreted in their own zone; when the zone can't be
+named, the feed falls back to a bare UTC-instant `DTSTART` with no `VTIMEZONE`. The optional
 `?routine=<id>` query param scopes the feed to a single routine (named after it via `X-WR-CALNAME`);
 an unknown or disabled id yields a well-formed empty calendar. See `src/routines/ical.rs`.
 
@@ -278,21 +294,18 @@ Implements `IntoResponse` → `{"error": "<message>"}` JSON body with matching s
 
 | Step | Output |
 |---|---|
-| `openapi::generate` | `apis/openapi.json` — hand-authored OpenAPI 3.0 spec |
-| `ui::build` | `$OUT_DIR/index.html` — Yew UI inlined as single file |
+| `routine_schema::generate` | `schemas/routine.schema.json` + `schemas/routine.example.toml` |
+| `client::build` | `$OUT_DIR/index.html` — React `client/` app, copied as-is (already self-contained via `vite-plugin-singlefile`) |
 
-### UI inlining strategy
+### UI build strategy
 
-`ui::build` runs `trunk build --release` in the `ui/` workspace member. Trunk emits a `.js` glue file and a `.wasm` binary. The build script then:
-1. Base64-encodes the WASM bytes
-2. Patches `globalThis.fetch` at runtime so any `*.wasm` request resolves to the inline bytes (avoids touching wasm-bindgen internals)
-3. Inlines the JS module and the patched fetch shim into a single `<script type="module">` block
-4. Writes the self-contained HTML to `$OUT_DIR/index.html`
-5. Copies it to `prebuilt.html` at the package root so `cargo publish` ships it
+`client::build` runs `pnpm --filter client build` in `client/`. `vite-plugin-singlefile` already inlines the compiled JS and CSS into `client/dist/index.html`, so the build script just:
+1. Copies `client/dist/index.html` to `$OUT_DIR/index.html`
+2. Copies it to `prebuilt.html` at the package root so `cargo publish` ships it
 
-If `trunk` is not installed, `prebuilt.html` is used instead. If neither exists, a placeholder page is shown with install instructions.
+If `pnpm` is not installed, `prebuilt.html` is used instead. If neither exists, a placeholder page is shown with install instructions.
 
-The prebuilt is stored at the package root — not under `ui/` — because `ui/` is a separate workspace member and `cargo publish` would strip it from the tarball.
+The prebuilt is stored at the package root — not under `client/` — because `client/` isn't a Cargo workspace member and `cargo publish` would strip it from the tarball otherwise.
 
 ---
 

@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(&id)?),
+        cli::Command::Logs { id } => std::process::exit(cli::logs(&id)?),
         cli::Command::Background => cli::run_background(),
         cli::Command::Restart {
             json,
@@ -163,9 +164,10 @@ async fn run_server() -> anyhow::Result<()> {
     // fresh install ships with them, and a default deleted while stopped is restored. Existing
     // routines are never overwritten. Must run before the crontab sync so the defaults schedule.
     routines::ensure_default_routines(&routines);
-    // Re-persist so every routine has its routine.toml + prompts/ sidecars in the slug dir (and any
-    // stale legacy run.sh is removed), healing dirs left without a prompt (otherwise the launch
-    // command's `cp prompt.compiled.local.md` fails and the agent launches with an empty prompt).
+    // Re-persist so every routine has its routine.toml + schedule.cron + prompts/ sidecars in the
+    // slug dir (and any stale legacy run.sh is removed), healing dirs left without a prompt or
+    // cron file (otherwise the launch command's `cp prompt.compiled.local.md` fails and the agent
+    // launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
     // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
     // by an earlier run before agent configs existed) would never be regenerated until the next
@@ -174,15 +176,32 @@ async fn run_server() -> anyhow::Result<()> {
         log::warn!("startup crontab sync failed: {err}");
     }
     // The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
-    // exposes unauthenticated routine CRUD to anyone who can reach it. Warn loudly at startup,
-    // same as the tmux/python3 checks above, rather than letting this go unnoticed.
+    // exposes unauthenticated routine CRUD to anyone who can reach it. That must never happen
+    // by accident (issue #253), so a non-loopback bind is refused unless the operator explicitly
+    // opts in with MOADIM_ALLOW_REMOTE=1 — and even then we warn loudly at startup, same as the
+    // tmux/python3 checks above, rather than letting this go unnoticed.
     let bind_addr = cli::bind_addr();
-    if !cli::bind_addr_is_loopback(&bind_addr) {
-        log::warn!(
-            "moadim is binding to {bind_addr}, which is not loopback-only; the REST/MCP API has \
-             no authentication, so anyone who can reach this address can create, modify, or \
-             delete routines. Restrict network access to this port (see issue #504)."
-        );
+    match cli::classify_bind(&bind_addr, cli::remote_bind_allowed()) {
+        cli::BindDecision::Loopback => {}
+        cli::BindDecision::RemoteAllowed => {
+            log::warn!(
+                "moadim is binding to {bind_addr}, which is not loopback-only; the REST/MCP API \
+                 has no authentication, so anyone who can reach this address can create, modify, \
+                 or delete routines, trigger one to run an agent with your credentials, or shut \
+                 the daemon down. Continuing because MOADIM_ALLOW_REMOTE=1 is set (see #253) — \
+                 restrict network access to this port (firewall/VPN/reverse proxy) if you don't \
+                 fully trust that network."
+            );
+        }
+        cli::BindDecision::RemoteRefused => {
+            anyhow::bail!(
+                "refusing to bind to {bind_addr}: it is not loopback-only, and the REST/MCP API \
+                 has no authentication — anyone who can reach this address could create, modify, \
+                 or delete routines, trigger one to run an agent with your credentials, or shut \
+                 the daemon down. Set MOADIM_ALLOW_REMOTE=1 to start anyway if you understand and \
+                 accept that risk (see the README's Bind address section and issue #253)."
+            );
+        }
     }
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     cli::write_pid_file()?;

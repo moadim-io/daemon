@@ -1,4 +1,4 @@
-import { parseExpression } from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 import { normalizeCron } from "./cronUtils";
 
 const MONTHS = [
@@ -23,7 +23,7 @@ export function parseSchedule(schedule: string, currentDate: Date) {
   const s = normalizeCron(schedule);
   if (s === "") return undefined;
   try {
-    return parseExpression(s, { currentDate });
+    return CronExpressionParser.parse(s, { currentDate });
   } catch {
     return undefined;
   }

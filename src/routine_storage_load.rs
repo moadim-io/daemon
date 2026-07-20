@@ -11,7 +11,7 @@ use crate::paths::routines_dir;
 use crate::routines::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
 
-use super::{read_routine_toml, read_runtime_state};
+use super::{read_routine_cron, read_routine_toml, read_runtime_state};
 
 /// Read the last Unix-timestamp line from an append-only trigger log (e.g. `scheduled.log` or
 /// `manual.log`), returning `None` when the file is absent or contains no parsable timestamp.
@@ -56,8 +56,9 @@ pub(super) fn load_routine_from_dir(dir_name: &str) -> Option<Routine> {
     load_routine_from_base(&routines_dir(), dir_name)
 }
 
-/// Load a routine from `{base}/{dir_name}/routine.toml`, reading every sidecar (`state.local.toml`,
-/// `manual.log`, `scheduled.log`, `prompts/prompt.pure.md`) from the same `{base}`.
+/// Load a routine from `{base}/{dir_name}/routine.toml`, reading every sidecar (`schedule.cron`,
+/// `state.local.toml`, `manual.log`, `scheduled.log`, `prompts/prompt.pure.md`) from the same
+/// `{base}`.
 ///
 /// This is the directory-coherent variant of [`load_routine_from_dir`]: every file is resolved
 /// relative to `base` rather than the global [`routines_dir`], so a reload against a tempdir (tests)
@@ -68,6 +69,10 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
     let runtime_state = read_runtime_state(base, dir_name);
+    // Prefer the tracked cron file; fall back to legacy routine.toml, then routines that predate
+    // the split keep loading until repersisted.
+    let schedule =
+        read_routine_cron(&base.join(dir_name).join("schedule.cron")).or(toml.schedule)?;
     // Prefer the log file; fall back to legacy state.local.toml field then routine.toml field for
     // routines that predate the log-file migration.
     let last_manual_trigger_at = read_manual_state(base, dir_name)
@@ -77,7 +82,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
     let prompt = read_pure_prompt(base, dir_name, toml.prompt);
     Some(Routine {
         id,
-        schedule: toml.schedule?,
+        schedule,
         title,
         agent: toml.agent?,
         model: toml.model,
@@ -97,6 +102,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         tags: toml.tags,
+        env: toml.env,
     })
 }
 
@@ -107,10 +113,10 @@ pub fn load_store() -> RoutineStore {
 
 /// Scan `dir` and load all valid routines into a new store.
 ///
-/// Every per-routine file (the tracked `routine.toml`, the `state.local.toml` sidecar, the
-/// `manual.log`/`scheduled.log` trigger logs, and the `prompts/prompt.pure.md` sidecar) is read
-/// relative to `dir`, so the scan is fully coherent for any directory — not only the global
-/// [`routines_dir`].
+/// Every per-routine file (the tracked `routine.toml`, the tracked `schedule.cron`, the
+/// `state.local.toml` sidecar, the `manual.log`/`scheduled.log` trigger logs, and the
+/// `prompts/prompt.pure.md` sidecar) is read relative to `dir`, so the scan is fully coherent for
+/// any directory — not only the global [`routines_dir`].
 pub(crate) fn load_store_from_dir(dir: &std::path::Path) -> RoutineStore {
     Arc::new(Mutex::new(scan_routines(dir)))
 }

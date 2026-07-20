@@ -3,9 +3,10 @@
 use super::{
     map_write_routine_err, max_runtime_ceiling_secs, migrate_workbenches, normalize_model,
     normalize_schedule, now_secs, reject_blank, reject_over_ceiling, reject_zero_secs,
-    remove_routine_dir, slugify, ttl_ceiling_secs, validate_agent, validate_cron, validate_goal,
-    validate_machines, validate_prompt, validate_repositories, validate_tags, validate_title,
-    write_routine, AppError, LockRecover, RoutineResponse, RoutineStore, UpdateRoutineRequest,
+    remove_routine_dir, slugify, ttl_ceiling_secs, validate_agent, validate_cron, validate_env,
+    validate_goal, validate_machines, validate_prompt, validate_repositories, validate_tags,
+    validate_title, write_routine, AppError, LockRecover, RoutineResponse, RoutineStore,
+    UpdateRoutineRequest,
 };
 
 /// Apply non-`None` fields from `req` to the routine identified by `id`.
@@ -46,6 +47,9 @@ pub fn svc_update(
         Some(ref machines) => Some(validate_machines(machines)?),
         None => None,
     };
+    if let Some(ref env) = req.env {
+        validate_env(env)?;
+    }
     let mut lock = store.lock_recover();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
@@ -64,13 +68,19 @@ pub fn svc_update(
     // Reject ttl/max-runtime above the cron-derived ceiling for the *effective* schedule (the new
     // one if supplied, else the routine's current schedule) — before any mutation, so a rejected
     // update leaves the in-memory store untouched (#468).
-    let effective_schedule = match req.schedule.as_deref() {
-        Some(schedule) => normalize_schedule(schedule),
-        None => lock
+    let effective_schedule = if let Some(schedule) = req.schedule.as_deref() {
+        normalize_schedule(schedule)
+    } else {
+        #[allow(
+            clippy::expect_used,
+            reason = "id existence was checked via `ok_or(AppError::NotFound)` above, and \
+                      `lock` has been held continuously since — a miss here is a logic bug, \
+                      not a recoverable runtime error"
+        )]
+        let routine = lock
             .get(id)
-            .expect("id existence checked above, and the lock has been held continuously since")
-            .schedule
-            .clone(),
+            .expect("id existence checked above, and the lock has been held continuously since");
+        routine.schedule.clone()
     };
     reject_over_ceiling(
         "ttl_secs",
@@ -82,6 +92,12 @@ pub fn svc_update(
         req.max_runtime_secs,
         max_runtime_ceiling_secs(&effective_schedule),
     )?;
+    #[allow(
+        clippy::expect_used,
+        reason = "id existence was checked via `ok_or(AppError::NotFound)` above, and `lock` has \
+                  been held continuously since — a miss here is a logic bug, not a recoverable \
+                  runtime error"
+    )]
     let routine = lock
         .get_mut(id)
         .expect("id existence checked above, and the lock has been held continuously since");
@@ -121,6 +137,9 @@ pub fn svc_update(
     }
     if let Some(tags) = tags {
         routine.tags = tags;
+    }
+    if let Some(env) = req.env {
+        routine.env = env;
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();

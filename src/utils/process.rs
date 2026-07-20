@@ -1,5 +1,25 @@
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::thread::{self, JoinHandle};
+
+/// Test-only env var: when set, [`current_exe`] returns an error instead of resolving the real
+/// path. `std::env::current_exe()` failing is otherwise unreachable from a test — the OS syscall
+/// only errors if the running binary's own file was deleted mid-execution or under unusual
+/// sandboxing — so this seam exists purely to exercise that error branch in its callers, mirroring
+/// the `MOADIM_CRONTAB_BIN`/`MOADIM_LAUNCHCTL_BIN` test seams for external-binary resolution.
+#[cfg(test)]
+pub const CURRENT_EXE_FAIL_ENV: &str = "MOADIM_CURRENT_EXE_FAIL_FOR_TEST";
+
+/// Resolve the path to the currently running executable.
+///
+/// Wraps [`std::env::current_exe`]; see `CURRENT_EXE_FAIL_ENV` for the test-only failure seam.
+pub fn current_exe() -> std::io::Result<PathBuf> {
+    #[cfg(test)]
+    if std::env::var_os(CURRENT_EXE_FAIL_ENV).is_some() {
+        return Err(std::io::Error::other("forced current_exe failure for test"));
+    }
+    std::env::current_exe()
+}
 
 /// Spawn `command`, then hand the resulting child off to a detached reaper thread.
 ///

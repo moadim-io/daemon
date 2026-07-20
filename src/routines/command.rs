@@ -1,8 +1,10 @@
 //! Prompt composition, slug/shell helpers, and the single-line tmux launch command builder.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use crate::paths::{routine_compiled_prompt_path, routine_scheduled_log_path};
+use crate::routine_storage::read_local_env;
 
 use super::agents::AgentCommand;
 use super::flags::{list_flags, FlagScope};
@@ -118,6 +120,10 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
 ///
 /// `{prompt}` expands to a shell command substitution that reads `prompt.md` from the agent's
 /// cwd (the workbench), so the full prompt is passed as a single argument to the agent process.
+#[allow(
+    clippy::literal_string_with_formatting_args,
+    reason = "these are literal `String::replace` placeholder tokens, not `format!`-family arguments — there is no formatting macro here to move them into"
+)]
 pub(crate) fn substitute(template: &str, workbench: &str, prompt_file: &str) -> String {
     template
         .replace("{workbench}", workbench)
@@ -238,6 +244,49 @@ pub(crate) fn shell_quote(text: &str) -> String {
 mod command_system_prompt;
 pub(crate) use command_system_prompt::system_prompt_stmts;
 
+/// `true` when `key` is a POSIX-portable shell identifier: `[A-Za-z_][A-Za-z0-9_]*`.
+///
+/// Shared by `service_validate::validate_env` (the API create/update path, tracked `[env]`) and
+/// [`env_export_stmts`] below (defense in depth against a hand-edited, never-API-validated
+/// `routine.local.toml`) — see issue #408.
+pub(crate) fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+/// Build the `export KEY=<shell-quoted value>` statements for `routine`'s resolved environment:
+/// the tracked `routine.toml` `[env]` table, overlaid with the untracked `routine.local.toml`
+/// sidecar (secrets) — whose keys win on conflict (#408).
+///
+/// A `BTreeMap` merge keeps the emitted statements in a deterministic, sorted-by-key order (stable
+/// test assertions, stable output for anyone reading `launch.log`). Every entry — from either
+/// source — is re-checked with [`is_valid_env_key`] and scanned for newlines: `routine.toml` was
+/// already validated at create/update time (`service_validate::validate_env`), but
+/// `routine.local.toml` is a file a human edits directly on disk and never passes through that
+/// check, so a malformed entry there is dropped (with a warning) rather than corrupting the
+/// single-line, `;`-joined launch command.
+fn env_export_stmts(routine: &Routine) -> Vec<String> {
+    let slug = slugify(&routine.title);
+    let local_env = read_local_env(&slug);
+    let mut merged: BTreeMap<String, String> = BTreeMap::new();
+    for (key, value) in routine.env.iter().chain(local_env.iter()) {
+        if is_valid_env_key(key) && !value.contains('\n') && !value.contains('\r') {
+            merged.insert(key.clone(), value.clone());
+        } else {
+            log::warn!(
+                "routine {:?}: skipping invalid env var {key:?} (from routine.toml or \
+                 routine.local.toml — invalid key or a newline in the value)",
+                routine.id
+            );
+        }
+    }
+    merged
+        .into_iter()
+        .map(|(key, value)| format!("export {key}={}", shell_quote(&value)))
+        .collect()
+}
+
 /// Who is launching the routine command — which decides whether the run records a *scheduled*
 /// firing.
 ///
@@ -325,8 +374,14 @@ pub(crate) fn build_routine_command(
             "export PATH=$PATH:{}",
             shell_quote(&cron_path(&agent.command))
         ),
-        r#"TS="$(date +%s)""#.to_string(),
     ];
+    // Per-routine env vars (issue #408): the tracked `routine.toml` `[env]` table, overlaid with
+    // the untracked `routine.local.toml` sidecar (secrets — its keys win). Emitted right after the
+    // curated PATH export and before anything else runs, so they override any profile-inherited
+    // value (e.g. a shared `GH_TOKEN`) for this run only, without touching the operator's actual
+    // shell environment.
+    stmts.extend(env_export_stmts(routine));
+    stmts.push(r#"TS="$(date +%s)""#.to_string());
     if source == TriggerSource::Scheduled {
         // Record this scheduled firing. Appends the Unix timestamp as one line to the routine's
         // gitignored `scheduled.log`; the daemon reads the last line back as

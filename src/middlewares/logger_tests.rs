@@ -114,6 +114,35 @@ async fn logger_reuses_an_inbound_request_id() {
 }
 
 #[tokio::test]
+async fn logger_generates_an_id_when_inbound_request_id_is_empty() {
+    // An empty `x-request-id` (e.g. a proxy that sends the header with no
+    // value) must not be echoed back verbatim — it should be treated the same
+    // as a missing header and get a freshly generated id instead.
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(logger));
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header("x-request-id", "")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let id = resp
+        .headers()
+        .get("x-request-id")
+        .expect("x-request-id header set")
+        .to_str()
+        .unwrap();
+    assert_eq!(id.len(), 8, "generated id is an 8-hex-digit counter value");
+}
+
+#[tokio::test]
 async fn logger_gives_concurrent_requests_distinct_generated_ids() {
     let app = Router::new()
         .route("/", get(|| async { "ok" }))

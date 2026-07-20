@@ -7,28 +7,6 @@
 
 use std::time::Duration;
 
-/// Address the server binds to and that the client talks to.
-pub const BIND_ADDR: &str = "127.0.0.1:5784";
-
-/// Environment variable overriding [`BIND_ADDR`] (test seam): lets tests run the server and probe
-/// it on an ephemeral port instead of the fixed default, so they never collide with a real daemon.
-const BIND_ADDR_ENV: &str = "MOADIM_BIND_ADDR";
-
-/// The socket address to bind/probe, honoring the [`BIND_ADDR_ENV`] override when set.
-pub fn bind_addr() -> String {
-    std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
-}
-
-/// Returns `true` if `addr` (as returned by [`bind_addr`]) resolves to a loopback interface.
-///
-/// The REST/MCP API has no authentication (issue #504): binding to a non-loopback address
-/// exposes unauthenticated routine CRUD to the network. An address this can't parse is treated
-/// as non-loopback so callers warn rather than stay silent.
-pub fn bind_addr_is_loopback(addr: &str) -> bool {
-    addr.parse::<std::net::SocketAddr>()
-        .is_ok_and(|socket| socket.ip().is_loopback())
-}
-
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
 
@@ -103,6 +81,13 @@ pub enum Command {
         /// UUID of the routine to trigger.
         id: String,
     },
+    /// Print a routine's newest run log (`agent.log`) to stdout, by UUID. A top-level shorthand
+    /// for `moadim routines logs <id>`, mirroring the `trigger`/`routines trigger` duality
+    /// (issue #332).
+    Logs {
+        /// UUID of the routine whose log to print.
+        id: String,
+    },
     /// Register the daemon as an OS service (launchd on macOS, systemd user on Linux).
     Install,
     /// Remove the OS service registration created by [`Command::Install`].
@@ -165,6 +150,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         // behavior). `run` is kept as a hidden back-compat alias of the original subcommand name.
         Some("trigger" | "run") => match args.get(1) {
             Some(id) => Command::Trigger { id: id.clone() },
+            None => Command::Help,
+        },
+        // `logs <id>` mirrors `trigger <id>`: without an id there is nothing to print, so fall
+        // back to help rather than silently no-op.
+        Some("logs") => match args.get(1) {
+            Some(id) => Command::Logs { id: id.clone() },
             None => Command::Help,
         },
         Some("install") => Command::Install,
@@ -239,6 +230,7 @@ pub fn help_text() -> String {
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
+         \x20   logs <id>              print a routine's newest run log (agent.log) to stdout\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\
          \x20   uninstall              remove the OS service registration and the managed crontab block\n\
          \x20   machine <show|set|list> show/set this machine's identity, or list machines referenced\n\
@@ -422,9 +414,15 @@ fn stop_json(running: bool, pid: Option<u32>) -> String {
     .to_string()
 }
 
+#[path = "bind.rs"]
+mod cli_bind;
+pub use cli_bind::{bind_addr, classify_bind, remote_bind_allowed, BindDecision, BIND_ADDR};
+#[cfg(test)]
+pub(crate) use cli_bind::{bind_addr_is_loopback, BIND_ADDR_ENV};
+
 #[path = "query.rs"]
 mod cli_query;
-pub use cli_query::{cleanup, status, trigger};
+pub use cli_query::{cleanup, logs, status, trigger};
 #[cfg(test)]
 use cli_query::{
     cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, HealthInfo,

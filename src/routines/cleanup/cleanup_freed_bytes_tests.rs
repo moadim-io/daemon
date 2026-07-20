@@ -76,7 +76,7 @@ fn reap_dir_reports_freed_bytes_for_removed_workbenches() {
     std::fs::write(base.join("expired-100").join("agent.log"), vec![b'x'; 42]).unwrap();
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 500u64;
+    let ttl_for = |_slug: &str| 500_u64;
     let dead = |_session: &str| false;
 
     let stats = reap_dir(

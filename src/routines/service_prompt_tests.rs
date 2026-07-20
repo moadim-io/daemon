@@ -30,6 +30,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -53,6 +54,7 @@ fn svc_create_rejects_empty_prompt() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            env: std::collections::HashMap::new(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -79,6 +81,7 @@ fn svc_create_rejects_whitespace_prompt() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            env: std::collections::HashMap::new(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -115,6 +118,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            env: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

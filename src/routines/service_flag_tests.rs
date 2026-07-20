@@ -50,6 +50,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -68,7 +69,7 @@ fn svc_create_flag_rejects_blank_type_and_description() {
     let _home = TempHome::set();
     let store = new_store();
     let created = svc_create(&store, create_req_with_title("Svc Flag Blank ZZZ")).unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
 
     assert!(matches!(
         svc_create_flag(&store, &id, "  ", "desc", "general"),
@@ -85,7 +86,7 @@ fn svc_create_flag_rejects_unknown_scope() {
     let _home = TempHome::set();
     let store = new_store();
     let created = svc_create(&store, create_req_with_title("Svc Flag Scope ZZZ")).unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
 
     assert!(matches!(
         svc_create_flag(&store, &id, "bug", "desc", "nowhere"),
@@ -99,7 +100,7 @@ fn svc_create_flag_persists_and_refreshes_prompt() {
     let store = new_store();
     let title = "Svc Flag Create ZZZ";
     let created = svc_create(&store, create_req_with_title(title)).unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
 
     let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
     assert_eq!(flag.flag_type, "bug");
@@ -177,7 +178,7 @@ fn svc_list_flags_returns_created_flags() {
     let _home = TempHome::set();
     let store = new_store();
     let created = svc_create(&store, create_req_with_title("Svc Flag List ZZZ")).unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
     svc_create_flag(&store, &id, "bug", "d1", "general").unwrap();
     svc_create_flag(&store, &id, "gap", "d2", "local").unwrap();
 
@@ -200,7 +201,7 @@ fn svc_resolve_flag_not_found_flag() {
     let _home = TempHome::set();
     let store = new_store();
     let created = svc_create(&store, create_req_with_title("Svc Flag Resolve Miss ZZZ")).unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
     assert!(matches!(
         svc_resolve_flag(&store, &id, "no-such-flag.md"),
         Err(AppError::NotFound)
@@ -213,7 +214,7 @@ fn svc_resolve_flag_deletes_and_refreshes_prompt() {
     let store = new_store();
     let title = "Svc Flag Resolve ZZZ";
     let created = svc_create(&store, create_req_with_title(title)).unwrap();
-    let id = created.routine.id.clone();
+    let id = created.routine.id;
     let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
 
     svc_resolve_flag(&store, &id, &flag.filename).unwrap();
@@ -286,6 +287,7 @@ fn sh_bin_never_resolves_to_real_sh_in_test_builds() {
         std::env::remove_var("MOADIM_SH_BIN");
     }
     let bin = sh_bin();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
@@ -307,6 +309,7 @@ fn sh_bin_honors_override() {
         std::env::set_var("MOADIM_SH_BIN", "/custom/shim/sh");
     }
     let bin = sh_bin();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(value) => std::env::set_var("MOADIM_SH_BIN", value),

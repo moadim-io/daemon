@@ -2,7 +2,7 @@
 
 use crate::error::AppError;
 use crate::routines::agents::{available_agents, load_agent_command, AgentLoadError};
-use crate::routines::command::validate_placeholders;
+use crate::routines::command::{is_valid_env_key, validate_placeholders};
 use crate::routines::model::Repository;
 
 /// Map a [`crate::routine_storage::write_routine`] failure to an [`AppError`], turning the
@@ -211,6 +211,35 @@ pub(super) fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
         }
     }
     Ok(normalized)
+}
+
+/// Reject an `env` map with an invalid key or a value that could inject an extra shell statement.
+///
+/// Keys must be POSIX-portable shell identifiers ([`is_valid_env_key`]) —
+/// [`crate::routines::command::build_routine_command`]
+/// emits each entry as a literal `export KEY=<shell-quoted value>` statement, so a key outside that
+/// shape (e.g. containing `=`, whitespace, or `;`) would either fail to export or, unquoted as it
+/// must be for `export NAME=...` syntax to work, let a crafted key break out of the statement.
+/// Values are shell-quoted ([`crate::routines::command::shell_quote`]) so most characters are safe,
+/// but a value containing a newline still splits the single-line, `;`-joined launch command into
+/// two shell statements — an injection distinct from anything quoting can neutralize — so newlines
+/// are rejected outright (#408).
+pub(super) fn validate_env(
+    env: &std::collections::HashMap<String, String>,
+) -> Result<(), AppError> {
+    for (key, value) in env {
+        if !is_valid_env_key(key) {
+            return Err(AppError::BadRequest(format!(
+                "env key {key:?} is invalid; keys must match [A-Za-z_][A-Za-z0-9_]*"
+            )));
+        }
+        if value.contains('\n') || value.contains('\r') {
+            return Err(AppError::BadRequest(format!(
+                "env value for key {key:?} must not contain newline characters"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Reject blank (empty/whitespace-only) `machines` entries and return a normalized copy with each

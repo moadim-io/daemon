@@ -69,6 +69,24 @@ fn spawn_detached_errors_when_log_file_path_is_directory() {
 }
 
 #[test]
+fn spawn_detached_errors_when_current_exe_resolution_fails() {
+    // The `map_err` arm ahead of any filesystem work: `current_exe()` failing is otherwise
+    // unreachable in a test, so this exercises it via the `MOADIM_CURRENT_EXE_FAIL_FOR_TEST` seam
+    // (utils::process). `spawn_detached_with`'s `configure` closure is monomorphized per caller, so
+    // `spawn_restart`'s instantiation of this same branch needs its own test below.
+    let _fail = EnvGuard::set(crate::utils::process::CURRENT_EXE_FAIL_ENV, "1");
+    assert!(spawn_detached().is_err());
+}
+
+#[test]
+fn spawn_restart_errors_when_current_exe_resolution_fails() {
+    // Same branch as above, but through `spawn_restart`'s distinct monomorphization of
+    // `spawn_detached_with`.
+    let _fail = EnvGuard::set(crate::utils::process::CURRENT_EXE_FAIL_ENV, "1");
+    assert!(spawn_restart().is_err());
+}
+
+#[test]
 fn spawn_detached_rotates_oversized_daemon_log() {
     // An existing daemon.log past the size cap is rotated to daemon.log.1 before the
     // detached child is spawned, instead of being appended to forever (#316).
@@ -90,6 +108,7 @@ fn spawn_detached_rotates_oversized_daemon_log() {
     );
     // The detached child is a real process; kill it so the test doesn't leak one.
     #[cfg(unix)]
+    // SAFETY: `pid` is this test's own detached child process; sending it SIGKILL is safe cleanup.
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGKILL);
     }

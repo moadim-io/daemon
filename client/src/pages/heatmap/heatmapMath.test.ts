@@ -201,6 +201,7 @@ function routine(schedule: string, enabled: boolean): RoutineResponse {
     is_running: false,
     file_path: "",
     flag_count: 0,
+    env_keys: [],
   };
 }
 

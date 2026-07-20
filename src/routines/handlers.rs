@@ -13,14 +13,10 @@ use crate::global_lock::{LockScope, LockStatus};
 
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
-use super::model::{
-    CleanupResponse, CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine,
-    RoutineListQuery, RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
-};
+use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
-    svc_cleanup, svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview,
-    svc_list, svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag,
-    svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
+    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger_scheduled,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -48,13 +44,6 @@ pub struct LockRequest {
 pub struct UnlockQuery {
     /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"`.
     pub scope: String,
-}
-
-/// `GET /routines/lock` — return the current global lock status.
-#[utoipa::path(get, path = "/routines/lock",
-    responses((status = 200, body = LockStatus)))]
-pub async fn get_lock_status() -> Json<LockStatus> {
-    Json(crate::global_lock::lock_status())
 }
 
 /// `POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.
@@ -119,51 +108,6 @@ fn parse_lock_scope(scope: &str) -> Result<LockScope, AppError> {
     }
 }
 
-/// `POST /routines` — create a new routine.
-#[utoipa::path(post, path = "/routines",
-    request_body = CreateRoutineRequest,
-    responses((status = 201, body = RoutineResponse), (status = 400, description = "Invalid cron expression")))]
-pub async fn create(
-    State(store): State<RoutineStore>,
-    Json(body): Json<CreateRoutineRequest>,
-) -> Result<(StatusCode, Json<RoutineResponse>), AppError> {
-    // `svc_create` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that
-    // off the async worker thread.
-    let resp = tokio::task::spawn_blocking(move || svc_create(&store, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok((StatusCode::CREATED, Json(resp)))
-}
-
-/// `GET /routines` — list routines, optionally filtered and sorted by repository.
-#[utoipa::path(get, path = "/routines",
-    params(RoutineListQuery),
-    responses((status = 200, body = Vec<RoutineResponse>)))]
-pub async fn list(
-    State(state): State<crate::routes::http::AppState>,
-    Query(query): Query<RoutineListQuery>,
-) -> Json<Vec<RoutineResponse>> {
-    Json(svc_list(&state.routines, &state.routines_dir, &query))
-}
-
-/// `GET /agents` — list the agent registry keys a routine may target.
-#[utoipa::path(get, path = "/agents",
-    responses((status = 200, body = Vec<String>, description = "Available agent names")))]
-pub async fn list_agents() -> Json<Vec<String>> {
-    Json(super::available_agents())
-}
-
-/// `GET /routines/{id}` — retrieve a single routine by UUID.
-#[utoipa::path(get, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
-pub async fn get(
-    State(state): State<crate::routes::http::AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_get(&state.routines, &state.routines_dir, &id)?))
-}
-
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed
 /// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include
 /// the routine-origin disclosure written separately to `CLAUDE.md` at trigger time.
@@ -177,80 +121,12 @@ pub async fn get_prompt_preview(
     svc_get_prompt_preview(&store, &id)
 }
 
-/// `PATCH /routines/{id}` — partially update a routine.
-#[utoipa::path(patch, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = UpdateRoutineRequest,
-    responses((status = 200, body = RoutineResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
-pub async fn update(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-    Json(body): Json<UpdateRoutineRequest>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    // See `create` above: `svc_update` syncs the crontab (#360).
-    let resp = tokio::task::spawn_blocking(move || svc_update(&store, &id, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
-}
-
-/// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
-///
-/// Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.
-/// A client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to
-/// default) should not rely on this route for that; use `PATCH` and set every field explicitly.
-#[utoipa::path(put, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = UpdateRoutineRequest,
-    responses((status = 200, body = RoutineResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
-pub async fn replace(
-    state: State<RoutineStore>,
-    path: Path<String>,
-    body: Json<UpdateRoutineRequest>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    update(state, path, body).await
-}
-
-/// `DELETE /routines/{id}` — delete a routine by UUID.
-#[utoipa::path(delete, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
-pub async fn delete(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    // See `create` above: `svc_delete` syncs the crontab (#360).
-    let resp = tokio::task::spawn_blocking(move || svc_delete(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
-}
-
-/// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
-///
-/// Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See
-/// [`svc_trigger`].
-#[utoipa::path(post, path = "/routines/{id}/trigger",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
-pub async fn trigger(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<Routine>, AppError> {
-    // `svc_trigger` shells out to `tmux`(1) (overlap guard, concurrency cap, session spawn) and
-    // does blocking fs I/O — keep that off the async worker thread (#360), same as create/update/
-    // delete above.
-    let resp = tokio::task::spawn_blocking(move || svc_trigger(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
-}
-
 /// `POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.
 ///
 /// The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).
-/// Unlike [`trigger`] it does not record a manual trigger; the spawned command records the scheduled
-/// timestamp itself. See [`svc_trigger_scheduled`].
+/// Unlike [`crate::routes::trigger_routine::trigger_routine`] it does not record a manual
+/// trigger; the spawned command records the scheduled timestamp itself. See
+/// [`svc_trigger_scheduled`].
 #[utoipa::path(post, path = "/routines/{id}/scheduled-trigger",
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
@@ -258,9 +134,9 @@ pub async fn scheduled_trigger(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
 ) -> Result<Json<Routine>, AppError> {
-    // See `trigger` above: `svc_trigger_scheduled` shells out to `tmux`(1) too (#360). This is
-    // the endpoint the generated crontab line invokes, so a `*/N` herd of scheduled fires is
-    // exactly the thundering-herd case #360 is about.
+    // See `crate::routes::trigger_routine::trigger_routine`: `svc_trigger_scheduled` shells
+    // out to `tmux`(1) too (#360). This is the endpoint the generated crontab line invokes, so
+    // a `*/N` herd of scheduled fires is exactly the thundering-herd case #360 is about.
     let resp = tokio::task::spawn_blocking(move || svc_trigger_scheduled(&store, &id))
         .await
         .map_err(|_| AppError::Internal)??;
@@ -288,23 +164,6 @@ pub async fn ical_feed(
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
         body,
     )
-}
-
-/// `POST /routines/cleanup` — reap finished, expired run workbenches on demand.
-#[utoipa::path(post, path = "/routines/cleanup",
-    responses((status = 200, body = CleanupResponse, description = "Workbenches removed and bytes freed")))]
-pub async fn cleanup(State(store): State<RoutineStore>) -> Json<CleanupResponse> {
-    // `svc_cleanup` does blocking fs scans and shells out to `tmux`(1) to kill hung sessions
-    // (#360) — the background hourly sweep (`http_listener::cleanup_task`) already runs this on
-    // `spawn_blocking`; this on-demand endpoint should not run it inline on the worker thread
-    // either.
-    tokio::task::spawn_blocking(move || svc_cleanup(&store))
-        .await
-        .unwrap_or(CleanupResponse {
-            removed: 0,
-            freed_bytes: 0,
-        })
-        .into()
 }
 
 /// `POST /routines/{id}/flags` — raise a new flag against a routine.
@@ -356,17 +215,6 @@ pub async fn get_logs(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_logs(&store, &id).map(|logs| logs.content)
-}
-
-/// `GET /routines/{id}/runs` — list every run workbench for the routine, newest first.
-#[utoipa::path(get, path = "/routines/{id}/runs",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = [RunSummary]), (status = 404, description = "Not found")))]
-pub async fn get_runs(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<Vec<RunSummary>>, AppError> {
-    svc_list_runs(&store, &id).map(Json)
 }
 
 /// Query parameters for `GET /routines/runs`.

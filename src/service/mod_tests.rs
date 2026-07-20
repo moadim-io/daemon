@@ -113,6 +113,31 @@ fn run_errors_when_program_is_missing() {
     assert!(super::common::run("moadim-no-such-binary-zzzqq", &[]).is_err());
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn moadim_exe_errors_when_current_exe_resolution_fails() {
+    // The `map_err` arm: `std::env::current_exe()` failing is otherwise unreachable in a test, so
+    // this exercises it via the `MOADIM_CURRENT_EXE_FAIL_FOR_TEST` seam (utils::process).
+    let env = crate::utils::process::CURRENT_EXE_FAIL_ENV;
+    let prev = std::env::var_os(env);
+    // SAFETY: tests run single-threaded (RUST_TEST_THREADS=1); the var is restored below.
+    unsafe {
+        std::env::set_var(env, "1");
+    }
+
+    let result = super::common::moadim_exe();
+
+    // SAFETY: single-threaded harness; restore the saved value before any assertion can unwind.
+    unsafe {
+        match prev {
+            Some(value) => std::env::set_var(env, value),
+            None => std::env::remove_var(env),
+        }
+    }
+
+    assert!(result.is_err());
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn launchctl_bin_never_resolves_to_real_launchctl_in_test_builds() {
@@ -226,6 +251,7 @@ fn install_errors_when_write_plist_fails() {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &base);
     }
     let result = install();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_home {
             Some(val) => std::env::set_var("HOME", val),
@@ -262,6 +288,7 @@ fn install_errors_when_reload_agent_fails() {
         std::env::set_var("MOADIM_LAUNCHCTL_BIN", &shim);
     }
     let result = install();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_home {
             Some(val) => std::env::set_var("HOME", val),
@@ -310,6 +337,7 @@ fn uninstall_errors_when_remove_plist_fails() {
     let result = uninstall();
     // Restore write permission so the directory can be cleaned up.
     let _ = std::fs::set_permissions(&launch_agents, std::fs::Permissions::from_mode(0o755));
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev_home {
             Some(val) => std::env::set_var("HOME", val),

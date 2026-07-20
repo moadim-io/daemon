@@ -49,6 +49,7 @@ function routine(
     schedule_description: null,
     goal: null,
     flag_count: 0,
+    env_keys: [],
     ...overrides,
   };
 }

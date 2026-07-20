@@ -55,6 +55,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -321,6 +322,7 @@ fn svc_create_syncs_crontab_on_success() {
                 ttl_secs: None,
                 max_runtime_secs: None,
                 tags: vec![],
+                env: std::collections::HashMap::new(),
             },
         )
         .unwrap();
@@ -356,6 +358,7 @@ fn svc_update_syncs_crontab_on_success() {
                 ttl_secs: None,
                 max_runtime_secs: None,
                 tags: None,
+                env: None,
             },
         )
         .unwrap();
@@ -398,9 +401,11 @@ fn trigger_under_concurrency_cap(unique: &str, live_sessions: u32, cap_env: Opti
     let dir = std::env::temp_dir().join(format!("moadim-svc-cap-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let stub = dir.join("tmux");
-    let sessions: String = (0..live_sessions)
-        .map(|i| format!("moadim-other-173000000{i}_1\n"))
-        .collect();
+    let sessions: String = (0..live_sessions).fold(String::new(), |mut acc, i| {
+        use std::fmt::Write as _;
+        let _ = writeln!(acc, "moadim-other-173000000{i}_1");
+        acc
+    });
     std::fs::write(&stub, format!("#!/bin/sh\nprintf '{sessions}'\nexit 0\n")).unwrap();
     #[cfg(unix)]
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();

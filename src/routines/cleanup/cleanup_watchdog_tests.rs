@@ -47,7 +47,7 @@ fn watchdog_dir_kills_hung_session_without_reaping() {
     std::fs::write(base.join("stray-50"), b"x").unwrap(); // a file, not a dir -> ignored
 
     let now = 1000;
-    let max_runtime_for = |_slug: &str| 300u64; // age 900 (hung/gone) > 300, age 100 (fresh) <= 300
+    let max_runtime_for = |_slug: &str| 300_u64; // age 900 (hung/gone) > 300, age 100 (fresh) <= 300
     let alive = |session: &str| session != "moadim-gone-100";
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
@@ -72,7 +72,7 @@ fn watchdog_dir_returns_zero_when_dir_unreadable() {
     let missing =
         std::env::temp_dir().join(format!("moadim-watchdog-missing-{}", uuid::Uuid::new_v4()));
     assert!(!missing.exists());
-    let max_runtime_for = |_slug: &str| 0u64;
+    let max_runtime_for = |_slug: &str| 0_u64;
     let alive = |_session: &str| true;
     assert_eq!(
         watchdog_dir(&missing, 1000, &max_runtime_for, &alive, &noop_kill),
@@ -121,7 +121,7 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
     let missing =
         std::env::temp_dir().join(format!("moadim-cleanup-missing-{}", uuid::Uuid::new_v4()));
     assert!(!missing.exists());
-    let ttl_for = |_slug: &str| 0u64;
+    let ttl_for = |_slug: &str| 0_u64;
     let dead = |_session: &str| false;
     assert_eq!(
         reap_dir(
@@ -160,7 +160,7 @@ fn reap_dir_counts_zero_when_remove_fails() {
     std::fs::set_permissions(&base, perms).unwrap();
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> expired
+    let ttl_for = |_slug: &str| 500_u64; // age 900 > 500 -> expired
     let dead = |_session: &str| false;
     let stats = reap_dir(
         &base,
@@ -309,6 +309,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 

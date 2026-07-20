@@ -82,7 +82,7 @@ pub(super) fn enforce(
     let Ok(entries) = std::fs::read_dir(dir) else {
         return ReapStats::default();
     };
-    let mut total_bytes = 0u64;
+    let mut total_bytes = 0_u64;
     let mut candidates = Vec::new();
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {

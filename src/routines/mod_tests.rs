@@ -31,6 +31,7 @@ fn make_routine(id: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -411,6 +412,14 @@ fn ensure_default_agents_writes_parsable_configs() {
     assert_eq!(hermes.command, "hermes");
     assert!(hermes.args.contains(&"{prompt_file}".to_string()));
 
+    // pi default parses and runs print mode against the composed prompt file
+    let pi: AgentCommand =
+        toml::from_str(&std::fs::read_to_string(dir.join("pi.toml")).unwrap()).unwrap();
+    assert_eq!(pi.command, "pi");
+    assert!(pi.args.contains(&"--approve".to_string()));
+    assert!(pi.args.contains(&"-p".to_string()));
+    assert!(pi.args.contains(&"@{prompt_file}".to_string()));
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -423,12 +432,13 @@ fn ensure_default_agents_does_not_overwrite_existing() {
 
     ensure_default_agents_in(&dir);
 
-    // user file untouched, codex default still seeded
+    // user file untouched, built-in defaults still seeded
     assert_eq!(
         std::fs::read_to_string(dir.join("claude.toml")).unwrap(),
         "command = \"mine\"\nargs = []\n"
     );
     assert!(dir.join("codex.toml").exists());
+    assert!(dir.join("pi.toml").exists());
 
     let _ = std::fs::remove_dir_all(&dir);
 }

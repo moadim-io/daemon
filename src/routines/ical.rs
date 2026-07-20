@@ -57,6 +57,49 @@ fn format_utc(dt: DateTime<Utc>) -> String {
     dt.format("%Y%m%dT%H%M%SZ").to_string()
 }
 
+/// Format a local wall-clock instant as an iCalendar local date-time (`YYYYMMDDTHHMMSS`, no
+/// trailing `Z`), for use with a `TZID`-qualified `DTSTART` (RFC 5545 §3.3.5).
+fn format_local(dt: DateTime<Local>) -> String {
+    dt.format("%Y%m%dT%H%M%S").to_string()
+}
+
+/// Format a UTC offset as an RFC 5545 §3.3.14 `utc-offset` (`+HHMM`, or `+HHMMSS` when the
+/// offset carries seconds — some pre-1900 zones do).
+fn format_utc_offset(offset: chrono::FixedOffset) -> String {
+    let total = offset.local_minus_utc();
+    let sign = if total < 0 { '-' } else { '+' };
+    let total = total.unsigned_abs();
+    let (hours, minutes, seconds) = (total / 3600, (total % 3600) / 60, total % 60);
+    if seconds == 0 {
+        format!("{sign}{hours:02}{minutes:02}")
+    } else {
+        format!("{sign}{hours:02}{minutes:02}{seconds:02}")
+    }
+}
+
+/// Build the `VTIMEZONE` component lines identifying the host's local zone.
+///
+/// Emits a single `STANDARD` sub-component pinned to the feed's current UTC offset rather than a
+/// full `STANDARD`/`DAYLIGHT` pair with DST transition rules — the daemon has no timezone-database
+/// dependency to derive those from. A routine whose zone observes DST may therefore display
+/// shifted by the DST delta in a subscriber's calendar once the host crosses a transition after the
+/// feed was generated. This still fixes the common complaint (issue #387): a subscriber whose
+/// calendar defaults to a *different* zone than the host now sees the routine's actual configured
+/// local time instead of the UTC instant reinterpreted in their own zone.
+fn vtimezone_lines(tzid: &str, offset: chrono::FixedOffset) -> Vec<String> {
+    let offset_str = format_utc_offset(offset);
+    vec![
+        "BEGIN:VTIMEZONE".to_string(),
+        format!("TZID:{}", escape_text(tzid)),
+        "BEGIN:STANDARD".to_string(),
+        "DTSTART:19700101T000000".to_string(),
+        format!("TZOFFSETFROM:{offset_str}"),
+        format!("TZOFFSETTO:{offset_str}"),
+        "END:STANDARD".to_string(),
+        "END:VTIMEZONE".to_string(),
+    ]
+}
+
 /// Maximum characters of a routine prompt shown in a `DESCRIPTION` before truncation.
 const DESCRIPTION_PROMPT_MAX: usize = 120;
 
@@ -112,8 +155,12 @@ fn fold_line(line: &str) -> String {
 ///
 /// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
 /// `(now, now + HORIZON_DAYS]`, capped at [`MAX_EVENTS_PER_ROUTINE`]. Fire times are evaluated in
-/// the host's local timezone (matching crontab semantics) and emitted as UTC instants so the feed
-/// needs no embedded `VTIMEZONE`. Disabled, power-saving, and unparseable-schedule (e.g. `@reboot`)
+/// the host's local timezone (matching crontab semantics). When that zone can be named (see
+/// [`super::model::local_timezone`]), each `DTSTART` is `TZID`-qualified with the local wall-clock
+/// time, backed by one `VTIMEZONE` component (issue #387) — so a subscriber whose calendar
+/// defaults to a different zone still sees the routine's actual configured local time. When the
+/// zone can't be resolved, the feed falls back to a bare UTC-instant `DTSTART` with no
+/// `VTIMEZONE`, exactly as before. Disabled, power-saving, and unparseable-schedule (e.g. `@reboot`)
 /// routines contribute nothing. A snoozed routine (`snoozed_until` in the future, or `skip_runs`
 /// above zero) has its would-be-skipped fires filtered out too, mirroring the skip that
 /// `svc_trigger_scheduled` actually performs at fire time, so the feed never advertises a run that
@@ -139,11 +186,31 @@ fn build_ical_named(routines: &[Routine], now: DateTime<Local>, cal_name: &str) 
 
 /// Core iCalendar builder parameterised by `max_events` so tests can exercise the truncation paths
 /// with a small cap without needing a schedule that fires exactly [`MAX_EVENTS_PER_ROUTINE`] times.
+///
+/// Resolves the host's `VTIMEZONE` info itself (see [`build_ical_core_with_tz`] for the
+/// test-only seam that overrides it).
 fn build_ical_core(
     routines: &[Routine],
     now: DateTime<Local>,
     cal_name: &str,
     max_events: usize,
+) -> String {
+    // `None` when the host zone can't be named, in which case every DTSTART falls back to the
+    // original bare UTC-instant form (see `vtimezone_lines`'s doc comment for the scope of what a
+    // `Some` here does and doesn't model).
+    let host_tz = super::model::local_timezone().map(|tzid| (tzid, *now.offset()));
+    build_ical_core_with_tz(routines, now, cal_name, max_events, host_tz.as_ref())
+}
+
+/// Like [`build_ical_core`] but with the host `VTIMEZONE` info (`(TZID, UTC offset)`) passed in
+/// explicitly, so tests can exercise both the `TZID`-qualified and UTC-fallback `DTSTART` forms
+/// deterministically instead of depending on the test machine's own resolvable timezone.
+fn build_ical_core_with_tz(
+    routines: &[Routine],
+    now: DateTime<Local>,
+    cal_name: &str,
+    max_events: usize,
+    host_tz: Option<&(String, chrono::FixedOffset)>,
 ) -> String {
     let dtstamp = format_utc(now.with_timezone(&Utc));
     let horizon = now + Duration::days(HORIZON_DAYS);
@@ -159,6 +226,15 @@ fn build_ical_core(
         format!("REFRESH-INTERVAL;VALUE=DURATION:{REFRESH_DURATION}"),
         format!("X-PUBLISHED-TTL:{REFRESH_DURATION}"),
     ];
+    if let Some((tzid, offset)) = &host_tz {
+        lines.extend(vtimezone_lines(tzid, *offset));
+    }
+    // `TZID` param-values never need quoting here: IANA zone names (e.g. `Asia/Jerusalem`) never
+    // contain the `:`/`;`/`,` characters RFC 5545 §3.2 would require escaping.
+    let dtstart_line = |local: DateTime<Local>, utc_stamp: &str| match &host_tz {
+        Some((tzid, _)) => format!("DTSTART;TZID={tzid}:{}", format_local(local)),
+        None => format!("DTSTART:{utc_stamp}"),
+    };
     let globally_locked = crate::global_lock::is_globally_locked();
     for routine in routines {
         if !routine.enabled || globally_locked || routine.power_saving {
@@ -188,13 +264,13 @@ fn build_ical_core(
             .take_while(|dt| *dt <= horizon)
             .filter(move |dt| snoozed_until.is_none_or(|until| dt.timestamp() as u64 >= until))
             .skip(skip_runs);
-        let mut emitted = 0usize;
+        let mut emitted = 0_usize;
         for fire in fires.by_ref().take(max_events) {
             let stamp = format_utc(fire.with_timezone(&Utc));
             lines.push("BEGIN:VEVENT".to_string());
             lines.push(format!("UID:{}-{}@moadim", routine.id, stamp));
             lines.push(format!("DTSTAMP:{dtstamp}"));
-            lines.push(format!("DTSTART:{stamp}"));
+            lines.push(dtstart_line(fire, &stamp));
             lines.push(format!("DURATION:{EVENT_DURATION}"));
             // The feed is purely informational ("when will my loops fire?"), so a
             // fire must not consume the subscriber's free/busy time. RFC 5545
@@ -224,7 +300,7 @@ fn build_ical_core(
                 lines.push("BEGIN:VEVENT".to_string());
                 lines.push(format!("UID:{}-truncated@moadim", routine.id));
                 lines.push(format!("DTSTAMP:{dtstamp}"));
-                lines.push(format!("DTSTART:{stamp}"));
+                lines.push(dtstart_line(next, &stamp));
                 // Mirror the regular fire VEVENT's DURATION/TRANSP/BUSYSTATUS (see the comments
                 // on EVENT_DURATION and on the regular-fire VEVENT above): without a DURATION
                 // this marker is a zero-length instant, which most calendar UIs render as an
@@ -261,6 +337,31 @@ pub(crate) fn build_ical_with_cap(
     max_events: usize,
 ) -> String {
     build_ical_core(routines, now, DEFAULT_CAL_NAME, max_events)
+}
+
+/// Test-only entry point: build the iCalendar feed with an explicit per-routine event cap *and*
+/// an explicit host `VTIMEZONE` override (`(TZID, UTC offset)`, or `None` for the
+/// no-resolvable-zone fallback), so both the truncation-marker path and the choice between a
+/// `TZID`-qualified and a bare-UTC `DTSTART` can be tested deterministically instead of depending
+/// on whichever timezone the test machine itself resolves to.
+#[cfg(test)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "owned Option reads cleanest at test call sites; internally borrowed once"
+)]
+pub(crate) fn build_ical_with_tz(
+    routines: &[Routine],
+    now: DateTime<Local>,
+    max_events: usize,
+    host_tz: Option<(String, chrono::FixedOffset)>,
+) -> String {
+    build_ical_core_with_tz(
+        routines,
+        now,
+        DEFAULT_CAL_NAME,
+        max_events,
+        host_tz.as_ref(),
+    )
 }
 
 /// Build the iCalendar feed for every routine currently in `store`.

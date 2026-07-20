@@ -11,7 +11,7 @@ unattended in a throwaway workbench, locally, with no cloud dependency.
 | Schedule a **script**            | ❌ (routines only)    | ✅                    | ✅                    | ⚠️ via shell step       | ✅                   |
 | Schedule an **AI agent + prompt**| ✅ routines           | ❌ (DIY wrapper)      | ⚠️ DIY in a workflow  | ✅                      | ✅                   |
 | Runs **locally** / offline       | ✅                    | ✅                    | ❌ cloud              | ⚠️ varies               | ⚠️ varies            |
-| **Agent-agnostic** (swap CLI)    | ✅ claude/codex/hermes| n/a                   | ✅ any                | ❌ Claude only          | ❌ usually 1 vendor  |
+| **Agent-agnostic** (swap CLI)    | ✅ claude/codex/hermes/pi| n/a                   | ✅ any                | ❌ Claude only          | ❌ usually 1 vendor  |
 | **Per-run isolation** (workbench)| ✅ throwaway + reaped | ❌                    | ✅ fresh runner       | ⚠️ varies               | ⚠️ varies            |
 | **Unattended auth** pre-seed     | ✅ (claude trust/MCP) | n/a                   | ⚠️ secrets/tokens     | ✅                      | ⚠️ varies            |
 | Config **git-trackable**         | ✅ TOML + prompt files| ⚠️ crontab file       | ✅ YAML in repo       | ⚠️ varies               | ⚠️ varies            |
@@ -47,7 +47,7 @@ standalone, n8n, Temporal, Airflow, etc.
 
 - **Purpose-built for agent routines** — a prompt + schedule + coding agent,
   synced to the OS crontab, on the same daemon and port as the REST/MCP/UI surface.
-- **Agent-agnostic** — `claude`, `codex`, `hermes` built in; any CLI via a
+- **Agent-agnostic** — `claude`, `codex`, `hermes`, `pi` built in; any CLI via a
   `<name>.toml`. Swap the agent without touching the schedule.
 - **Local-first, self-hosted, free** — no cloud, no per-minute billing, runs
   offline against the host crontab.

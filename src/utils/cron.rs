@@ -1,5 +1,6 @@
 //! Cron expression normalization and validation, shared by routine scheduling.
 
+use cron_union::{union as union_crons, CronUnion};
 use croner::Cron;
 
 use crate::error::AppError;
@@ -37,6 +38,19 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
         .parse::<Cron>()
         .map_err(|err| AppError::BadRequest(format!("invalid cron expression: {err}")))?;
     Ok(())
+}
+
+/// Compile `schedule` through `cron-union` when it is a standard cron expression.
+///
+/// `cron-union` does not understand `@keyword` schedules, so callers fall back to
+/// `croner` for those legacy forms.
+pub(crate) fn compiled_union(schedule: &str) -> Option<CronUnion> {
+    let trimmed = schedule.trim();
+    if trimmed.starts_with('@') || trimmed.split_ascii_whitespace().count() == 7 {
+        return None;
+    }
+    let normalized = normalize_schedule(trimmed);
+    union_crons([normalized.as_str()]).ok()
 }
 
 #[cfg(test)]

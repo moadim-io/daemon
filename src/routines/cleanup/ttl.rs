@@ -43,6 +43,13 @@ const GAP_SAMPLE_FIRES: usize = 48;
 /// affects, since the result is only ever used via `MAX_TTL_SECS.min(..)`) really do have a
 /// constant interval as callers assume.
 pub(super) fn cron_interval_secs(schedule: &str) -> Option<u64> {
+    if let Some(union) = crate::utils::cron::compiled_union(schedule) {
+        let cron = union.iter().next()?.schedule();
+        let mut fires = cron.after(&Local::now());
+        let first = fires.next()?;
+        let second = fires.next()?;
+        return u64::try_from((second - first).num_seconds()).ok();
+    }
     let cron = schedule.parse::<Cron>().ok()?;
     let mut fires = cron.iter_after(Local::now());
     let mut prev = fires.next()?;

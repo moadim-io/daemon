@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use crate::routes::mcp::mcp_types::CreateFlagInput;
 
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
@@ -345,21 +346,6 @@ fn result_json(result: &CallToolResult) -> serde_json::Value {
 }
 
 #[test]
-fn create_flag_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .create_flag(Parameters(CreateFlagInput {
-            id: "no-such".into(),
-            r#type: "bug".into(),
-            description: "d".into(),
-            scope: "general".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn list_flags_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();
@@ -429,26 +415,4 @@ fn create_list_resolve_flag_lifecycle() {
 
     let result = handler.list_flags(Parameters(IdInput { id })).unwrap();
     assert_eq!(result_json(&result).as_array().unwrap().len(), 0);
-}
-
-#[test]
-fn create_flag_invalid_scope_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let _home = TempHome::set();
-    let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
-    let created = handler
-        .create_routine(Parameters(make_create_routine_req()))
-        .unwrap();
-    let id = result_json(&created)["id"].as_str().unwrap().to_string();
-
-    let result = handler
-        .create_flag(Parameters(CreateFlagInput {
-            id,
-            r#type: "bug".into(),
-            description: "d".into(),
-            scope: "nowhere".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
 }

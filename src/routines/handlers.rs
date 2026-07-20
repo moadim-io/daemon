@@ -15,22 +15,9 @@ use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
-    svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger_scheduled,
+    svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs, svc_resolve_flag,
+    svc_run_log, svc_run_summary, svc_trigger_scheduled,
 };
-
-/// Request body for `POST /routines/{id}/flags`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct CreateFlagRequest {
-    /// Free-text flag category. Common examples: `"bug"`, `"gap"`, `"edge_case"`, `"question"`,
-    /// `"blocker"` — any string is accepted.
-    #[serde(rename = "type")]
-    pub flag_type: String,
-    /// Free-text description of what's unclear.
-    pub description: String,
-    /// `"general"` (committed, shared via git) or `"local"` (gitignored, machine-local).
-    pub scope: String,
-}
 
 /// Request body for `POST /routines/lock`.
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -164,20 +151,6 @@ pub async fn ical_feed(
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
         body,
     )
-}
-
-/// `POST /routines/{id}/flags` — raise a new flag against a routine.
-#[utoipa::path(post, path = "/routines/{id}/flags",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = CreateFlagRequest,
-    responses((status = 201, body = Flag), (status = 400, description = "Invalid type/description/scope"), (status = 404, description = "Not found")))]
-pub async fn create_flag(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-    Json(body): Json<CreateFlagRequest>,
-) -> Result<(StatusCode, Json<Flag>), AppError> {
-    let flag = svc_create_flag(&store, &id, &body.flag_type, &body.description, &body.scope)?;
-    Ok((StatusCode::CREATED, Json(flag)))
 }
 
 /// `GET /routines/{id}/flags` — list open flags raised against a routine.

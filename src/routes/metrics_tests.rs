@@ -80,6 +80,22 @@ fn render_emits_help_and_type_for_every_gauge_and_counter() {
 }
 
 #[test]
+fn render_escapes_a_machine_name_containing_prometheus_label_syntax() {
+    let mut snapshot = empty_snapshot(&[]);
+    snapshot.machine = "weird\"machine\\name\nwith-newline";
+    let text = render(&snapshot);
+    assert!(
+        text.contains(
+            r#"moadim_build_info{version="1.2.3",git_sha="abc123",machine="weird\"machine\\name\nwith-newline"} 1"#
+        ),
+        "machine label was not escaped as expected in:\n{text}"
+    );
+    // The raw quote/backslash must not appear unescaped anywhere in the output — an unescaped
+    // one would break every other metric on the same scrape, not just this line.
+    assert!(!text.contains(r#"machine="weird"machine"#));
+}
+
+#[test]
 fn render_runs_total_counts_each_status_independently() {
     let runs = [
         run(100, Some(110), RunStatus::Success),

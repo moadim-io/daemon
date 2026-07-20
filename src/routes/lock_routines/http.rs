@@ -1,7 +1,7 @@
 //! `POST /routines/lock` HTTP handler.
 
 use super::logic;
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 use axum::{extract::State, Json};
 use logic::{LockRequest, LockStatus, RoutineStore};
 
@@ -15,9 +15,7 @@ pub async fn lock_routines(
 ) -> Result<Json<LockStatus>, AppError> {
     // Crontab sync shells out to `crontab`(1); run it on the blocking pool so a slow or
     // hung invocation can't pin a Tokio worker thread (#360).
-    let resp = tokio::task::spawn_blocking(move || logic::build(&store, &body.scope))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || logic::build(&store, &body.scope)).await?;
     Ok(Json(resp))
 }
 

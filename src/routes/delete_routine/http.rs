@@ -1,7 +1,7 @@
 //! `DELETE /routines/{id}` HTTP handler.
 
 use super::logic;
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 use axum::{
     extract::{Path, State},
     Json,
@@ -17,9 +17,7 @@ pub async fn delete_routine(
     Path(id): Path<String>,
 ) -> Result<Json<RoutineResponse>, AppError> {
     // `svc_delete` syncs the crontab (#360); keep it off the async executor thread.
-    let resp = tokio::task::spawn_blocking(move || logic::build(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || logic::build(&store, &id)).await?;
     Ok(Json(resp))
 }
 

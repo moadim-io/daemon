@@ -1,7 +1,7 @@
 //! `DELETE /routines/lock` HTTP handler.
 
 use super::logic;
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 use axum::{
     extract::{Query, State},
     Json,
@@ -18,9 +18,7 @@ pub async fn unlock_routines(
 ) -> Result<Json<LockStatus>, AppError> {
     // See `crate::routes::lock_routines::lock_routines`: crontab sync must not run inline on the
     // async worker thread (#360).
-    let resp = tokio::task::spawn_blocking(move || logic::build(&store, &query.scope))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || logic::build(&store, &query.scope)).await?;
     Ok(Json(resp))
 }
 

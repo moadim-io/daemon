@@ -150,3 +150,20 @@ async fn into_response_body_carries_forbidden_message() {
         "forbidden: nope"
     );
 }
+
+#[tokio::test]
+async fn run_blocking_returns_the_closures_ok() {
+    assert_eq!(run_blocking(|| Ok::<_, AppError>(42)).await.unwrap(), 42);
+}
+
+#[tokio::test]
+async fn run_blocking_passes_through_the_closures_err() {
+    let result = run_blocking(|| Err::<(), _>(AppError::NotFound)).await;
+    assert!(matches!(result, Err(AppError::NotFound)));
+}
+
+#[tokio::test]
+async fn run_blocking_maps_a_panicked_task_to_internal() {
+    let result = run_blocking(|| -> Result<(), AppError> { panic!("boom") }).await;
+    assert!(matches!(result, Err(AppError::Internal)));
+}

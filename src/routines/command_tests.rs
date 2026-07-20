@@ -272,6 +272,12 @@ fn build_routine_command_omits_setup_guard_when_no_setup() {
 }
 
 #[test]
+fn slugify_preserves_folder_segments() {
+    assert_eq!(slugify("ops/nightly triage"), "ops/nightly-triage");
+    assert_eq!(slugify("///ops///nightly triage///"), "ops/nightly-triage");
+}
+
+#[test]
 fn build_routine_command_appends_model_override() {
     // A routine-level model override is appended to the invocation as `--model <id>`, shell-quoted
     // to guard against the (user-controlled) model ID breaking out of the cron line.

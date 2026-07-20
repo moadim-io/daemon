@@ -223,8 +223,9 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
 /// the gitignored `state.local.toml` runtime sidecar, and `.gitignore` (created or reconciled — see
 /// [`ensure_routine_gitignore`]).
 ///
-/// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
-/// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
+/// The folder path is named after the slugified title (`slugify(&routine.title)`); `/` in the
+/// title becomes nested folders. The UUID `id` is stored inside `routine.toml` so it survives a
+/// rename. Daemon-written runtime state
 /// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
 /// version-controlled config file.
 ///

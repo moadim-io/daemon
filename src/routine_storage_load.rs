@@ -137,35 +137,49 @@ pub(crate) fn reload_store_from_dir(store: &RoutineStore, dir: &std::path::Path)
     *store.lock_recover() = fresh;
 }
 
-/// Scan `dir` for routine sub-directories and return the loaded routines keyed by id.
+/// Scan `dir` for routine directories (including nested ones) and return the loaded routines
+/// keyed by id.
 ///
 /// Shared by [`load_store_from_dir`] (build a new store) and [`reload_store_from_dir`] (refresh an
 /// existing one).
 fn scan_routines(dir: &std::path::Path) -> HashMap<String, Routine> {
-    let mut routines = HashMap::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-                let dir_name = entry.file_name().to_string_lossy().to_string();
-                match load_routine_from_base(dir, &dir_name) {
-                    Some(routine) => {
-                        routines.insert(routine.id.clone(), routine);
+    fn walk(
+        base: &std::path::Path,
+        dir: &std::path::Path,
+        routines: &mut HashMap<String, Routine>,
+    ) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                    continue;
+                }
+                let path = entry.path();
+                if path.join("routine.toml").exists() {
+                    let rel = path.strip_prefix(base).unwrap_or(&path);
+                    let rel = rel.to_string_lossy().to_string();
+                    match load_routine_from_base(base, &rel) {
+                        Some(routine) => {
+                            routines.insert(routine.id.clone(), routine);
+                        }
+                        // A dir whose routine.toml exists but the loader rejected (unparsable,
+                        // or missing a required field) would otherwise vanish from the store,
+                        // UI, API and crontab with no trace. Warn so the operator can find and
+                        // fix the file instead of hunting a routine that silently disappeared.
+                        None => {
+                            log::warn!(
+                                "load_store: skipping routine dir {rel:?}: its routine.toml is \
+                                 unparsable or missing a required field (title, schedule, or agent)"
+                            );
+                        }
                     }
-                    // A dir whose routine.toml exists but the loader rejected (unparsable, or
-                    // missing a required field) would otherwise vanish from the store, UI, API
-                    // and crontab with no trace. Warn so the operator can find and fix the file
-                    // instead of hunting a routine that silently disappeared.
-                    None if dir.join(&dir_name).join("routine.toml").exists() => {
-                        log::warn!(
-                            "load_store: skipping routine dir {dir_name:?}: its routine.toml is \
-                             unparsable or missing a required field (title, schedule, or agent)"
-                        );
-                    }
-                    // No routine.toml at all — not a routine dir; skip it quietly.
-                    None => {}
+                } else {
+                    walk(base, &path, routines);
                 }
             }
         }
     }
+
+    let mut routines = HashMap::new();
+    walk(dir, dir, &mut routines);
     routines
 }

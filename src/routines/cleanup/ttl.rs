@@ -30,6 +30,13 @@ pub(crate) fn ttl_ceiling_secs(schedule: &str) -> u64 {
 /// since it only matters when below [`MAX_TTL_SECS`], sub-hour schedules (the only ones it changes)
 /// have a constant interval regardless of `now`.
 pub(super) fn cron_interval_secs(schedule: &str) -> Option<u64> {
+    if let Some(union) = crate::utils::cron::compiled_union(schedule) {
+        let cron = union.iter().next()?.schedule();
+        let mut fires = cron.after(&Local::now());
+        let first = fires.next()?;
+        let second = fires.next()?;
+        return u64::try_from((second - first).num_seconds()).ok();
+    }
     let cron = schedule.parse::<Cron>().ok()?;
     let mut fires = cron.iter_after(Local::now());
     let first = fires.next()?;

@@ -729,7 +729,7 @@
     "/routines/{id}/flags": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_flags"
         ],
         "summary": "`GET /routines/{id}/flags` — list open flags raised against a routine.",
         "operationId": "list_flags",

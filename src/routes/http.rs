@@ -8,6 +8,7 @@ use super::get_lock_status;
 use super::get_routine;
 use super::health;
 use super::list_agents;
+use super::list_flags;
 use super::list_routine_runs;
 use super::list_routines;
 use super::mcp::MoadimMcp;
@@ -251,7 +252,7 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route(
             "/routines/{id}/flags",
-            get(routines::list_flags).post(create_flag::create_flag),
+            get(list_flags::list_flags).post(create_flag::create_flag),
         )
         .route(
             "/routines/{id}/flags/{filename}",

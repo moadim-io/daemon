@@ -42,7 +42,7 @@
         crate::routines::get_all_runs,
         crate::routines::ical_feed,
         crate::routes::create_flag::create_flag,
-        crate::routines::list_flags,
+        crate::routes::list_flags::list_flags,
         crate::routines::resolve_flag,
     ),
     components(schemas(

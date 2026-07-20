@@ -12,6 +12,7 @@ pub mod get_routine;
 pub mod health;
 pub mod http;
 pub mod list_agents;
+pub mod list_flags;
 pub mod list_routine_runs;
 pub mod list_routines;
 pub mod mcp;

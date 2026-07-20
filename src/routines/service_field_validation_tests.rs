@@ -462,3 +462,49 @@ fn svc_create_persists_valid_env_and_redacts_it_from_the_json_response() {
 
     svc_delete(&store, &created.routine.id).unwrap();
 }
+
+#[test]
+fn svc_update_rejects_invalid_env_key() {
+    let _home = TempHome::set();
+    // Covers `validate_env`'s key-shape reject branch via `svc_update` (the `svc_create` side is
+    // covered above by `svc_create_rejects_invalid_env_key`, but the update path calls the same
+    // validator separately and had no test of its own): an invalid key must 400 before the
+    // in-memory routine is mutated.
+    let title = "Svc Update Invalid Env Key ZZZ";
+    let store = new_store();
+    let routine = make_routine("upd-env-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("upd-env-id".into(), routine);
+
+    let result = svc_update(
+        &store,
+        "upd-env-id",
+        UpdateRoutineRequest {
+            model: None,
+            schedule: None,
+            title: None,
+            agent: None,
+            prompt: None,
+            goal: None,
+            repositories: None,
+            machines: None,
+            enabled: None,
+            ttl_secs: None,
+            max_runtime_secs: None,
+            tags: None,
+            env: Some(std::collections::HashMap::from([(
+                "not-valid".to_string(),
+                "x".to_string(),
+            )])),
+        },
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    // The stored routine keeps its original (empty) env map.
+    assert!(store
+        .lock()
+        .unwrap()
+        .get("upd-env-id")
+        .unwrap()
+        .env
+        .is_empty());
+}

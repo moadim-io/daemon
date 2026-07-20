@@ -15,6 +15,7 @@ pub mod list_agents;
 pub mod list_flags;
 pub mod list_routine_runs;
 pub mod list_routines;
+pub mod lock_routines;
 pub mod mcp;
 pub mod metrics;
 pub mod resolve_flag;

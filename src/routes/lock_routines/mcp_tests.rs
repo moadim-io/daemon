@@ -3,28 +3,22 @@
     reason = "test helpers and fixtures do not need doc comments"
 )]
 
-use super::*;
+use rmcp::handler::server::wrapper::Parameters;
+
+use super::MoadimMcp;
+use crate::routes::mcp::mcp_types::LockRoutinesInput;
 
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
         crate::routines::new_store(),
         crate::paths::routines_dir(),
         0,
-        test_shutdown(),
+        std::sync::Arc::new(tokio::sync::Notify::new()),
     )
 }
 
-/// A throwaway shutdown signal for constructing a handler in tests; the `shutdown` tool fires it but
-/// nothing awaits it, so notifying is a harmless no-op.
-fn test_shutdown() -> crate::routes::http::ShutdownSignal {
-    std::sync::Arc::new(tokio::sync::Notify::new())
-}
-
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
-/// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
-/// `"claude"` is accepted) while `load_agent_command` finds no config — exercising the trigger
-/// "no spawn" path without launching a real agent or writing into the user's real home. Tests in
-/// this crate run single-threaded per binary, so the global env mutation is safe.
+/// on drop. Tests in this crate run single-threaded per binary, so the global env mutation is safe.
 struct TempHome;
 
 impl TempHome {
@@ -46,76 +40,6 @@ impl Drop for TempHome {
             std::env::remove_var("MOADIM_HOME_OVERRIDE");
         }
     }
-}
-
-#[test]
-fn unlock_routines_all_removes_both_sentinels() {
-    let _home = TempHome::set();
-    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, true).unwrap();
-    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, true).unwrap();
-    let handler = make_handler();
-    let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
-            scope: "all".into(),
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], false);
-}
-
-#[test]
-fn unlock_routines_shared_removes_only_shared() {
-    let _home = TempHome::set();
-    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, true).unwrap();
-    let handler = make_handler();
-    let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
-            scope: "shared".into(),
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["shared"], false);
-}
-
-#[test]
-fn unlock_routines_local_removes_only_local() {
-    let _home = TempHome::set();
-    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, true).unwrap();
-    let handler = make_handler();
-    let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
-            scope: "local".into(),
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["local"], false);
-}
-
-#[test]
-fn unlock_routines_unknown_scope_is_error() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
-            scope: "bad".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
 }
 
 /// A crontab shim for tests: accepts `-l` (prints empty) and `-` (swallows stdin), making
@@ -165,7 +89,7 @@ impl Drop for SucceedingCronShim {
 }
 
 /// A crontab shim for tests: always exits non-zero so `sync_routines_to_crontab` returns `Err`,
-/// exercising the `log::warn!` path in `unlock_routines`.
+/// exercising the `log::warn!` path in `lock_routines`.
 struct FailingCronShim {
     base: std::path::PathBuf,
     previous: Option<std::ffi::OsString>,
@@ -202,51 +126,104 @@ impl Drop for FailingCronShim {
 }
 
 #[test]
-fn unlock_routines_succeeds_when_crontab_sync_passes() {
+fn lock_routines_shared_creates_sentinel_and_returns_status() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "shared".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["locked"], true);
+    assert_eq!(val["shared"], true);
+    // Clean up so other tests are not affected.
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, false).unwrap();
+}
+
+#[test]
+fn lock_routines_local_creates_sentinel_and_returns_status() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "local".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+    let text = match &result.content[0] {
+        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
+        _ => panic!("expected text content"),
+    };
+    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(val["locked"], true);
+    assert_eq!(val["local"], true);
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
+}
+
+#[test]
+fn lock_routines_unknown_scope_is_error() {
+    let _home = TempHome::set();
+    let handler = make_handler();
+    let result = handler
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "oops".into(),
+        }))
+        .unwrap();
+    assert!(result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn lock_routines_succeeds_when_crontab_sync_passes() {
     // Covers the success fall-through `}` of `if let Err(sync_err) = sync_routines_to_crontab`.
     let _home = TempHome::set();
     let _shim = SucceedingCronShim::new();
     let handler = make_handler();
     let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
-            scope: "all".into(),
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "local".into(),
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
 }
 
 #[test]
-fn unlock_routines_logs_warn_when_crontab_sync_fails() {
-    // Covers the `log::warn!("crontab sync after unlock failed: ...")` line.
+fn lock_routines_logs_warn_when_crontab_sync_fails() {
+    // Covers the `log::warn!("crontab sync after lock failed: ...")` line.
     let _home = TempHome::set();
     let _shim = FailingCronShim::new();
     let handler = make_handler();
+    // The lock still succeeds even if the subsequent crontab sync fails.
     let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
-            scope: "all".into(),
+        .lock_routines(Parameters(LockRoutinesInput {
+            scope: "shared".into(),
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
+    crate::global_lock::set_lock(crate::global_lock::LockScope::Shared, false).unwrap();
 }
 
 #[test]
-fn unlock_routines_returns_error_when_set_lock_fails() {
-    // Covers the `return Ok(err(...))` IO error path in unlock_routines.
-    // Create the sentinel path as a DIRECTORY instead of a file: `path.exists()` is true but
-    // `std::fs::remove_file` returns EISDIR, triggering the error return.
-    let dir = std::env::temp_dir().join(format!("moadim-unlockfail-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(dir.join(".config").join("moadim")).unwrap();
+fn lock_routines_returns_error_when_set_lock_fails() {
+    // Covers the `Err(error) => err(error)` IO error path in lock_routines.
+    // Make set_lock fail by placing a regular file where the config dir must be created.
+    let dir = std::env::temp_dir().join(format!("moadim-lockfail-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // Write a file at `.config` so create_dir_all(".config/moadim") fails.
+    std::fs::write(dir.join(".config"), b"not a dir").unwrap();
     // SAFETY: single-threaded.
     unsafe {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
     }
-    // Make the shared sentinel path a directory so remove_file fails.
-    let lock_path = crate::paths::global_lock_path();
-    std::fs::create_dir_all(&lock_path).unwrap();
-
     let handler = make_handler();
     let result = handler
-        .unlock_routines(Parameters(UnlockRoutinesInput {
+        .lock_routines(Parameters(LockRoutinesInput {
             scope: "shared".into(),
         }))
         .unwrap();

@@ -456,10 +456,10 @@
       },
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::lock_routines"
         ],
         "summary": "`POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.",
-        "operationId": "lock",
+        "operationId": "lock_routines",
         "requestBody": {
           "content": {
             "application/json": {

@@ -33,7 +33,7 @@
         crate::routines::scheduled_trigger,
         crate::routes::cleanup_workbenches::cleanup_workbenches,
         crate::routes::get_lock_status::get_lock_status,
-        crate::routines::lock,
+        crate::routes::lock_routines::lock_routines,
         crate::routines::unlock,
         crate::routines::get_logs,
         crate::routes::list_routine_runs::list_routine_runs,
@@ -70,7 +70,7 @@
         crate::routes::http::MaxConcurrentRunsResponse,
         crate::routes::http::SetMaxConcurrentRunsRequest,
         crate::global_lock::LockStatus,
-        crate::routines::LockRequest,
+        crate::routes::lock_routines::LockRequest,
     ))
 )]
 /// `OpenAPI` document aggregating all REST paths and component schemas.

@@ -11,6 +11,7 @@ use super::list_agents;
 use super::list_flags;
 use super::list_routine_runs;
 use super::list_routines;
+use super::lock_routines;
 use super::mcp::MoadimMcp;
 use super::metrics;
 use super::resolve_flag;
@@ -229,7 +230,7 @@ pub(crate) fn build_app_with_shutdown(
         .route(
             "/routines/lock",
             get(get_lock_status::get_lock_status)
-                .post(routines::lock)
+                .post(lock_routines::lock_routines)
                 .delete(routines::unlock),
         )
         .route(

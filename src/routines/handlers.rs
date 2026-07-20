@@ -18,41 +18,11 @@ use super::service::{
     svc_trigger_scheduled,
 };
 
-/// Request body for `POST /routines/lock`.
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct LockRequest {
-    /// Which sentinel to create: `"shared"` (committed `.lock`) or `"local"` (gitignored `.local.lock`).
-    pub scope: String,
-}
-
 /// Query parameters for `DELETE /routines/lock`.
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct UnlockQuery {
     /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"`.
     pub scope: String,
-}
-
-/// `POST /routines/lock` — create a lock sentinel, halting all routine scheduling and triggers.
-#[utoipa::path(post, path = "/routines/lock",
-    request_body = LockRequest,
-    responses((status = 200, body = LockStatus), (status = 400, description = "Unknown scope"), (status = 500, description = "IO error")))]
-pub async fn lock(
-    State(store): State<RoutineStore>,
-    Json(body): Json<LockRequest>,
-) -> Result<Json<LockStatus>, AppError> {
-    let scope = parse_lock_scope(&body.scope)?;
-    // Crontab sync shells out to `crontab`(1); run it on the blocking pool so a slow or
-    // hung invocation can't pin a Tokio worker thread (#360).
-    tokio::task::spawn_blocking(move || {
-        crate::global_lock::set_lock(scope, true).map_err(|_| AppError::Internal)?;
-        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
-            log::warn!("crontab sync after HTTP lock failed: {sync_err}");
-        }
-        Ok::<_, AppError>(())
-    })
-    .await
-    .map_err(|_| AppError::Internal)??;
-    Ok(Json(crate::global_lock::lock_status()))
 }
 
 /// `DELETE /routines/lock` — remove lock sentinel(s), restoring routine scheduling.
@@ -68,7 +38,8 @@ pub async fn unlock(
     } else {
         vec![parse_lock_scope(&query.scope)?]
     };
-    // See `lock` above: crontab sync must not run inline on the async worker thread (#360).
+    // See `crate::routes::lock_routines::lock_routines`: crontab sync must not run inline on the
+    // async worker thread (#360).
     tokio::task::spawn_blocking(move || {
         for scope in scopes {
             crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;

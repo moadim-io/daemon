@@ -52,10 +52,10 @@ either is missing, so a misconfigured host is easy to spot. See the built-in
 cargo install --locked moadim
 ```
 
-Or, if you prefer npm, install the bootstrapper package and let it call Cargo for you:
+Or, if you prefer npm, install the bootstrapper package and run the same `moadim` command:
 
 ```sh
-npm install -g moadim && moadim-install
+npm install -g moadim && moadim
 ```
 
 `--locked` installs the exact dependency graph published and tested with this
@@ -63,7 +63,7 @@ release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
 to the newest semver-compatible version at install time — so a bad or breaking
 transitive bump can't fail an otherwise-unchanged install.
 
-If `moadim` is not found after install, add Cargo's bin directory to your PATH:
+If `cargo install` is not found after install, add Cargo's bin directory to your PATH:
 
 ```sh
 echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc

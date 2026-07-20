@@ -4,7 +4,7 @@
   "description": "Bootstrapper that installs the moadim daemon with cargo",
   "type": "module",
   "bin": {
-    "moadim-install": "scripts/install.mjs"
+    "moadim": "scripts/install.mjs"
   },
   "files": [
     "README.md",

@@ -17,6 +17,7 @@ pub mod list_routine_runs;
 pub mod list_routines;
 pub mod mcp;
 pub mod metrics;
+pub mod resolve_flag;
 pub mod restart;
 pub mod shutdown;
 pub mod trigger_routine;

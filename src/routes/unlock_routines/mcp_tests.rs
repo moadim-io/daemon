@@ -3,28 +3,22 @@
     reason = "test helpers and fixtures do not need doc comments"
 )]
 
-use super::*;
+use rmcp::handler::server::wrapper::Parameters;
+
+use super::MoadimMcp;
+use crate::routes::mcp::mcp_types::UnlockRoutinesInput;
 
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
         crate::routines::new_store(),
         crate::paths::routines_dir(),
         0,
-        test_shutdown(),
+        std::sync::Arc::new(tokio::sync::Notify::new()),
     )
 }
 
-/// A throwaway shutdown signal for constructing a handler in tests; the `shutdown` tool fires it but
-/// nothing awaits it, so notifying is a harmless no-op.
-fn test_shutdown() -> crate::routes::http::ShutdownSignal {
-    std::sync::Arc::new(tokio::sync::Notify::new())
-}
-
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing it
-/// on drop. With no agent TOMLs present, agent validation falls back to the built-in names (so
-/// `"claude"` is accepted) while `load_agent_command` finds no config — exercising the trigger
-/// "no spawn" path without launching a real agent or writing into the user's real home. Tests in
-/// this crate run single-threaded per binary, so the global env mutation is safe.
+/// on drop. Tests in this crate run single-threaded per binary, so the global env mutation is safe.
 struct TempHome;
 
 impl TempHome {
@@ -231,7 +225,7 @@ fn unlock_routines_logs_warn_when_crontab_sync_fails() {
 
 #[test]
 fn unlock_routines_returns_error_when_set_lock_fails() {
-    // Covers the `return Ok(err(...))` IO error path in unlock_routines.
+    // Covers the `Err(error) => err(error)` IO error path in unlock_routines.
     // Create the sentinel path as a DIRECTORY instead of a file: `path.exists()` is true but
     // `std::fs::remove_file` returns EISDIR, triggering the error return.
     let dir = std::env::temp_dir().join(format!("moadim-unlockfail-{}", uuid::Uuid::new_v4()));

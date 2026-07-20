@@ -491,10 +491,10 @@
       },
       "delete": {
         "tags": [
-          "crate::routines"
+          "crate::routes::unlock_routines"
         ],
         "summary": "`DELETE /routines/lock` — remove lock sentinel(s), restoring routine scheduling.",
-        "operationId": "unlock",
+        "operationId": "unlock_routines",
         "parameters": [
           {
             "name": "scope",

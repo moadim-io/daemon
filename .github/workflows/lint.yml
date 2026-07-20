@@ -126,11 +126,11 @@ jobs:
       - name: Install linecheck
         run: cargo install linecheck --locked
 
-      - name: Check .rs files do not exceed 500 lines
+      - name: Check .rs files do not exceed 400 lines
         # Match the local pre-push hook exactly (same paths, same limit).
         run: |
           # shellcheck disable=SC2046
-          linecheck --max-lines 500 $(find src -name '*.rs')
+          linecheck --max-lines 400 $(find src -name '*.rs')
 
   readme-check:
     name: readme-check

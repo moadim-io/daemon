@@ -338,6 +338,7 @@ register a brand-new agent by dropping in another `<name>.toml`.
 | --------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `command` | string         | yes      | Executable to run (resolved on `PATH`), e.g. `"claude"`.                                                                       |
 | `args`    | array<string>  | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.                                            |
+| `instructions_file` | string | no    | Filename, relative to the workbench, that this agent reads its project instructions from — where the moadim-managed system prompt and routine-origin disclosure are written. Defaults to `CLAUDE.md` (Claude Code's convention); the built-in `codex` agent sets it to `AGENTS.md`. |
 | `setup`   | string         | no       | Shell command run in the workbench **before** the agent launches, inserted verbatim into the cron line. See the variables below. |
 
 **Placeholders** (substituted in each `args` entry at launch):
@@ -412,6 +413,9 @@ moadim status --wait   # poll until a server answers (or 30s elapse) instead of 
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
 moadim trigger <id>    # trigger a routine to run now, outside its schedule
+moadim logs <id>       # print a routine's newest run log (agent.log) to stdout
+moadim install         # register moadim as an OS service (launchd / systemd user)
+moadim uninstall       # remove the OS service registration and the managed crontab block
 moadim restart         # stop a running server (if any) and start a fresh one
 moadim restart --quiet # same, printing only the `restarted: pid <old> -> <new>` line
 moadim restart -i      # same, but bring the fresh instance up in the foreground

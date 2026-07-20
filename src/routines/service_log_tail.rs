@@ -76,6 +76,11 @@ fn read_log_tail_of_len(path: &std::path::Path, len: u64) -> std::io::Result<Str
     let mut file = std::fs::File::open(path)?;
     file.seek(SeekFrom::Start(omitted))?;
     let mut buf = Vec::with_capacity(MAX_LOG_TAIL_BYTES as usize);
+    #[allow(
+        clippy::verbose_file_reads,
+        reason = "reads from the seeked offset to end-of-file for the log's tail, not the whole \
+                  file `fs::read` would read"
+    )]
     file.read_to_end(&mut buf)?;
     // A UTF-8 continuation byte is 10xxxxxx; skip up to 3 of them (the longest possible
     // multi-byte sequence) to land on the next real character's leading byte.

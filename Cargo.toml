@@ -383,3 +383,11 @@ undocumented_unsafe_blocks = "deny"
 # `#[ignore = "requires a live tmux session"]`. No `#[ignore]` exists in this codebase today, so
 # `deny` locks in that any future one must justify itself.
 ignore_without_reason = "deny"
+# Reject `File::open(path)?.read_to_end(...)`/`.read_to_string(...)` in favour of
+# `fs::read`/`fs::read_to_string`, which open, read, and close the file in one call instead of
+# three separate steps a caller has to get right by hand. The two sites this surfaced both seek to
+# an offset before reading a log's tail (not the whole file), where the single-call helpers don't
+# apply — each is annotated with a documented `#[allow]` explaining why, the same pattern already
+# used for `mem_forget`/`clippy::zombie_processes` above. The rest of the codebase is already
+# clean, so `deny` locks that in.
+verbose_file_reads = "deny"

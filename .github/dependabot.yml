@@ -21,17 +21,6 @@ updates:
           - "minor"
           - "patch"
 
-  - package-ecosystem: "cargo"
-    directory: "/ui"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    groups:
-      cargo-ui:
-        update-types:
-          - "minor"
-          - "patch"
-
   - package-ecosystem: "npm"
     directory: "/"
     schedule:

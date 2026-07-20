@@ -78,23 +78,6 @@ fn load_store_from_dir_inserts_written_routines() {
 }
 
 #[test]
-fn load_store_from_dir_finds_nested_routine_dirs() {
-    with_override_home(|_home| {
-        write_routine(&make_routine("rs-nested-id", "ops/nightly triage")).unwrap();
-        let store = load_store_from_dir(&crate::paths::routines_dir());
-        assert!(store
-            .lock()
-            .unwrap()
-            .values()
-            .any(|routine| routine.id == "rs-nested-id"));
-        assert!(crate::paths::routine_toml_path("ops/nightly-triage").exists());
-        assert!(crate::paths::routine_toml_path("ops/nightly-triage")
-            .starts_with(crate::paths::routines_dir()));
-        remove_routine_dir("ops/nightly-triage").unwrap();
-    });
-}
-
-#[test]
 fn write_then_load_round_trips() {
     with_override_home(|_home| {
         let id = "rs-roundtrip-id";

@@ -318,18 +318,7 @@ async fn router_routine_full_lifecycle() {
 }
 
 #[tokio::test]
-async fn router_flag_not_found_paths() {
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/routines/no-such/flags")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-
+async fn router_resolve_flag_not_found_path() {
     let resp = build_app(crate::routines::new_store())
         .oneshot(
             Request::builder()

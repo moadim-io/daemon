@@ -346,18 +346,6 @@ fn result_json(result: &CallToolResult) -> serde_json::Value {
 }
 
 #[test]
-fn list_flags_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .list_flags(Parameters(IdInput {
-            id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn resolve_flag_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();

@@ -11,8 +11,8 @@ use rmcp::{
 #[path = "mcp_types.rs"]
 mod mcp_types;
 use mcp_types::{
-    CreateFlagInput, IdInput, LockRoutinesInput, ResolveFlagInput, SetPowerSavingInput,
-    SnoozeRoutineInput, UnlockRoutinesInput,
+    IdInput, LockRoutinesInput, ResolveFlagInput, SetPowerSavingInput, SnoozeRoutineInput,
+    UnlockRoutinesInput,
 };
 
 /// The `health` tool, kept in `routes/health/mcp.rs` beside the `GET /health` HTTP handler it
@@ -85,6 +85,12 @@ mod update_routine;
 /// combined with this file's below.
 #[path = "trigger_routine/mcp.rs"]
 mod trigger_routine;
+
+/// The `create_flag` tool, kept in `routes/create_flag/mcp.rs` beside the
+/// `POST /routines/{id}/flags` HTTP handler it mirrors. Its own `#[tool_router]` block is
+/// combined with this file's below.
+#[path = "create_flag/mcp.rs"]
+mod create_flag;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -179,28 +185,6 @@ impl MoadimMcp {
         Ok(
             match routines::svc_set_power_saving(&self.routines, &id, active) {
                 Ok(routine) => ok(routine),
-                Err(error) => err(error),
-            },
-        )
-    }
-
-    /// Raise a new flag against a routine, refreshing its `prompt.compiled.local.md` so the next run's
-    /// "Open flags" section includes it.
-    #[tool(
-        description = "Flag something unclear about a routine mid-run — a gap, bug, edge case, or question the agent hit with no other channel to surface it (the run happens unattended inside tmux). `type` is free text (common examples: \"bug\", \"gap\", \"edge_case\", \"question\", \"blocker\"); `scope` is \"general\" (committed, shared via git) or \"local\" (gitignored, machine-local). Unresolved flags are shown back to the agent in the routine's prompt on its next run."
-    )]
-    fn create_flag(
-        &self,
-        Parameters(CreateFlagInput {
-            id,
-            r#type,
-            description,
-            scope,
-        }): Parameters<CreateFlagInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(
-            match routines::svc_create_flag(&self.routines, &id, &r#type, &description, &scope) {
-                Ok(flag) => ok(flag),
                 Err(error) => err(error),
             },
         )
@@ -316,9 +300,9 @@ impl MoadimMcp {
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
 /// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
 /// [`list_routines`], [`get_routine`], [`delete_routine`], [`create_routine`],
-/// [`list_routine_runs`], [`update_routine`], and [`trigger_routine`] modules), since a
-/// `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router()))]
+/// [`list_routine_runs`], [`update_routine`], [`trigger_routine`], and [`create_flag`] modules),
+/// since a `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router() + Self::create_flag_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

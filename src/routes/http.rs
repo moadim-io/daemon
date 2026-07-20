@@ -1,6 +1,7 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::cleanup_workbenches;
+use super::create_flag;
 use super::create_routine;
 use super::delete_routine;
 use super::get_lock_status;
@@ -250,7 +251,7 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route(
             "/routines/{id}/flags",
-            get(routines::list_flags).post(routines::create_flag),
+            get(routines::list_flags).post(create_flag::create_flag),
         )
         .route(
             "/routines/{id}/flags/{filename}",

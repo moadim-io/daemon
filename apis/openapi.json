@@ -765,7 +765,7 @@
       },
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::create_flag"
         ],
         "summary": "`POST /routines/{id}/flags` — raise a new flag against a routine.",
         "operationId": "create_flag",

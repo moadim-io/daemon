@@ -68,7 +68,7 @@ fn write_routine_seeds_gitignore_with_all_required_patterns() {
         write_routine(&make_routine(id, title)).unwrap();
 
         let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        for pattern in ["*.local.*", "*.log", "run.sh"] {
+        for pattern in ["*.compiled.*", "*.local.*", "*.log", "run.sh"] {
             assert!(
                 content.lines().any(|line| line == pattern),
                 "missing required pattern {pattern:?} in {content:?}"
@@ -94,18 +94,19 @@ fn write_routine_heals_a_legacy_gitignore_missing_required_patterns() {
         let title = "Rs Gitignore Heal Routine";
         let slug = slugify(title);
         std::fs::create_dir_all(crate::paths::routine_dir(&slug)).unwrap();
-        // Simulate an install from before `run.sh` was added to the required patterns, plus a
-        // user-added custom entry that reconciliation must preserve. No trailing newline,
-        // exercising the "append one before the new patterns" branch too.
+        // Simulate an install from before `*.compiled.*` and `run.sh` were added to the required
+        // patterns, plus a user-added custom entry that reconciliation must preserve. No trailing
+        // newline, exercising the "append one before the new patterns" branch too.
         std::fs::write(
             crate::paths::routine_gitignore_path(&slug),
-            "*.local.*\n*.log\nmy-custom-pattern",
+            "*.compiled.*\n*.local.*\n*.log\nmy-custom-pattern",
         )
         .unwrap();
 
         write_routine(&make_routine(id, title)).unwrap();
 
         let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
+        assert!(content.lines().any(|line| line == "*.compiled.*"));
         assert!(content.lines().any(|line| line == "run.sh"));
         assert!(
             content.lines().any(|line| line == "my-custom-pattern"),

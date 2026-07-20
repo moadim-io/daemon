@@ -159,7 +159,7 @@ fn svc_create_returns_internal_on_write_failure() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         crate::paths::routine_gitignore_path(&slug),
-        "*.local.*\n*.log\nrun.sh\n",
+        "*.compiled.*\n*.local.*\n*.log\nrun.sh\n",
     )
     .unwrap();
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();

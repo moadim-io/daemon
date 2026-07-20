@@ -418,3 +418,15 @@ fn cron_interval_secs_returns_none_when_second_fire_not_found() {
     // into year 5000 which exceeds croner's YEAR_UPPER_LIMIT → iterator returns None (L36).
     assert!(super::ttl::cron_interval_secs("0 0 0 1 1 * 4999").is_none());
 }
+
+#[test]
+fn cron_interval_secs_is_stable_regardless_of_the_current_time() {
+    // Fires at 09:00 and 09:30 daily: the true minimum gap is always 30 minutes, but "the next two
+    // fires from now" alone gives 30 minutes when `now` is just before 09:00 and ~23.5 hours when
+    // `now` is just after 09:00 — sampling only two fires makes the result flip depending on
+    // wall-clock time. Run at any real `now`, this must always resolve to the 30-minute minimum.
+    assert_eq!(
+        super::ttl::cron_interval_secs("0,30 9 * * *"),
+        Some(30 * 60)
+    );
+}

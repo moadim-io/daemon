@@ -25,16 +25,34 @@ pub(crate) fn ttl_ceiling_secs(schedule: &str) -> u64 {
     MAX_TTL_SECS.min(cron_interval_secs(schedule).unwrap_or(MAX_TTL_SECS))
 }
 
-/// Seconds between the next two scheduled runs of `schedule`, or `None` if it can't be parsed or two
-/// future fire times can't be computed. For irregular schedules this is the interval starting now;
-/// since it only matters when below [`MAX_TTL_SECS`], sub-hour schedules (the only ones it changes)
-/// have a constant interval regardless of `now`.
+/// How many consecutive future fires to sample when hunting for `schedule`'s shortest gap.
+/// Comfortably covers multi-fire-per-day schedules (the only ones where the gap can dip below
+/// [`MAX_TTL_SECS`]) across a multi-day look-ahead window; iterating a cron schedule is cheap, so
+/// there's no cost pressure to trim it further.
+const GAP_SAMPLE_FIRES: usize = 48;
+
+/// The shortest gap between consecutive scheduled runs of `schedule`, or `None` if it can't be
+/// parsed or fewer than two future fire times exist.
+///
+/// Takes the *minimum* gap across up to [`GAP_SAMPLE_FIRES`] consecutive fires after `now`,
+/// rather than just the next two — for an unevenly-spaced schedule, "the next two fires from now"
+/// alone depends on where `now` falls. E.g. `"0,30 9 * * *"` (fires at 09:00 and 09:30 daily) has
+/// a true 30-minute minimum gap, but sampling only the next two fires gives 30 minutes when `now`
+/// is just before 09:00 and ~23.5 hours when `now` is just after 09:00. Sampling multiple fires
+/// keeps the result stable regardless of `now`, so sub-hour schedules (the only ones this
+/// affects, since the result is only ever used via `MAX_TTL_SECS.min(..)`) really do have a
+/// constant interval as callers assume.
 pub(super) fn cron_interval_secs(schedule: &str) -> Option<u64> {
     let cron = schedule.parse::<Cron>().ok()?;
     let mut fires = cron.iter_after(Local::now());
-    let first = fires.next()?;
-    let second = fires.next()?;
-    u64::try_from((second - first).num_seconds()).ok()
+    let mut prev = fires.next()?;
+    let mut min_gap: Option<i64> = None;
+    for next in fires.take(GAP_SAMPLE_FIRES) {
+        let gap = (next - prev).num_seconds();
+        min_gap = Some(min_gap.map_or(gap, |current_min| current_min.min(gap)));
+        prev = next;
+    }
+    u64::try_from(min_gap?).ok()
 }
 
 impl Routine {

@@ -10,7 +10,7 @@ use rmcp::{
 
 #[path = "mcp_types.rs"]
 mod mcp_types;
-use mcp_types::{IdInput, SetPowerSavingInput, SnoozeRoutineInput, UnlockRoutinesInput};
+use mcp_types::{IdInput, SetPowerSavingInput, SnoozeRoutineInput};
 
 /// The `health` tool, kept in `routes/health/mcp.rs` beside the `GET /health` HTTP handler it
 /// mirrors. Its own `#[tool_router]` block is combined with this file's below.
@@ -106,6 +106,12 @@ mod resolve_flag;
 /// with this file's below.
 #[path = "lock_routines/mcp.rs"]
 mod lock_routines;
+
+/// The `unlock_routines` tool, kept in `routes/unlock_routines/mcp.rs` beside the
+/// `DELETE /routines/lock` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "unlock_routines/mcp.rs"]
+mod unlock_routines;
 
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
@@ -220,53 +226,17 @@ impl MoadimMcp {
             Err(error) => err(error),
         })
     }
-
-    /// Remove a global lock sentinel, restoring scheduled and manual triggers for all enabled
-    /// routines.
-    #[tool(
-        description = "Resume all routines by removing a lock sentinel. Use scope=\"shared\" to remove the committed .lock, scope=\"local\" to remove the gitignored .local.lock, or scope=\"all\" to remove both."
-    )]
-    fn unlock_routines(
-        &self,
-        Parameters(UnlockRoutinesInput { scope }): Parameters<UnlockRoutinesInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let scopes: Vec<crate::global_lock::LockScope> = match scope.as_str() {
-            "shared" => vec![crate::global_lock::LockScope::Shared],
-            "local" => vec![crate::global_lock::LockScope::Local],
-            "all" => vec![
-                crate::global_lock::LockScope::Shared,
-                crate::global_lock::LockScope::Local,
-            ],
-            other => {
-                return Ok(err(format!(
-                    "unknown scope {other:?}; use \"shared\", \"local\", or \"all\""
-                )))
-            }
-        };
-        for scope_item in scopes {
-            if let Err(io_err) = crate::global_lock::set_lock(scope_item, false) {
-                return Ok(err(format!("failed to remove lock sentinel: {io_err}")));
-            }
-        }
-        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&self.routines) {
-            log::warn!("crontab sync after unlock failed: {sync_err}");
-        }
-        Ok(ok(crate::global_lock::lock_status()))
-    }
 }
 
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
 /// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
 /// [`list_routines`], [`get_routine`], [`delete_routine`], [`create_routine`],
 /// [`list_routine_runs`], [`update_routine`], [`trigger_routine`], [`create_flag`],
-/// [`list_flags`], [`resolve_flag`], and [`lock_routines`] modules), since a `#[tool_router]`
-/// block only collects the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router() + Self::create_flag_tool_router() + Self::list_flags_tool_router() + Self::resolve_flag_tool_router() + Self::lock_routines_tool_router()))]
+/// [`list_flags`], [`resolve_flag`], [`lock_routines`], and [`unlock_routines`] modules), since a
+/// `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router() + Self::create_flag_tool_router() + Self::list_flags_tool_router() + Self::resolve_flag_tool_router() + Self::lock_routines_tool_router() + Self::unlock_routines_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
-#[cfg(test)]
-#[path = "mcp_lock_tests.rs"]
-mod mcp_lock_tests;
 #[cfg(test)]
 #[path = "mcp_parity_tests.rs"]
 mod mcp_parity_tests;

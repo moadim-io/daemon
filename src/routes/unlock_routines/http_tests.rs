@@ -5,7 +5,7 @@
 
 use axum::extract::{Query, State};
 
-use super::{unlock, UnlockQuery};
+use super::{unlock_routines, UnlockQuery};
 
 /// RAII guard: sets `MOADIM_HOME_OVERRIDE` to a fresh temp dir and clears it on drop.
 struct TempHome(std::path::PathBuf);
@@ -53,7 +53,7 @@ async fn unlock_handler_errors_when_set_lock_fails() {
     std::fs::set_permissions(&config_dir, perms).unwrap();
 
     let store = crate::routines::new_store();
-    let result = unlock(
+    let result = unlock_routines(
         State(store),
         Query(UnlockQuery {
             scope: "shared".to_string(),

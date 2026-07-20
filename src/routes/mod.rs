@@ -22,4 +22,5 @@ pub mod resolve_flag;
 pub mod restart;
 pub mod shutdown;
 pub mod trigger_routine;
+pub mod unlock_routines;
 pub mod update_routine;

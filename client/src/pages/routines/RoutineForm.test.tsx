@@ -21,7 +21,7 @@ describe("RoutineForm validation", () => {
     const save = screen.getByRole("button", { name: "CREATE ROUTINE" });
     expect(save).toBeDisabled();
 
-    fireEvent.change(screen.getByPlaceholderText("nightly triage"), { target: { value: "My routine" } });
+    fireEvent.change(screen.getByPlaceholderText("ops/nightly triage"), { target: { value: "My routine" } });
     expect(save).toBeDisabled();
 
     fireEvent.change(screen.getByPlaceholderText("sec min hour dom month dow year"), {
@@ -38,7 +38,7 @@ describe("RoutineForm validation", () => {
 
   it("whitespace-only fields do not count as filled", () => {
     renderForm();
-    fireEvent.change(screen.getByPlaceholderText("nightly triage"), { target: { value: "   " } });
+    fireEvent.change(screen.getByPlaceholderText("ops/nightly triage"), { target: { value: "   " } });
     fireEvent.change(screen.getByPlaceholderText("sec min hour dom month dow year"), {
       target: { value: "@daily" },
     });
@@ -50,7 +50,7 @@ describe("RoutineForm validation", () => {
 
   it("submits the parsed draft on save", async () => {
     const { onSave } = renderForm();
-    fireEvent.change(screen.getByPlaceholderText("nightly triage"), { target: { value: "My routine" } });
+    fireEvent.change(screen.getByPlaceholderText("ops/nightly triage"), { target: { value: "My routine" } });
     fireEvent.change(screen.getByPlaceholderText("sec min hour dom month dow year"), {
       target: { value: "@daily" },
     });

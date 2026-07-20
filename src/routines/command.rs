@@ -12,9 +12,8 @@ use super::model::Routine;
 
 /// Slugify `title` into a filesystem- and tmux-safe path identifier.
 ///
-/// Lowercases, replaces each run of non-alphanumeric characters *inside a path segment* with a
-/// single `-`, preserves `/` as the segment separator, and trims empty leading/trailing segments.
-/// Returns `"routine"` if nothing usable remains.
+/// Lowercases, replaces each run of non-alphanumeric characters *inside a path segment* with `-`,
+/// preserves `/` as the segment separator, trims empty segments, and returns `"routine"` if empty.
 ///
 /// Unicode-aware: uses [`char::is_alphanumeric`] / [`char::to_lowercase`] rather than the ASCII-only
 /// variants, so non-Latin titles (Hebrew, CJK, Cyrillic) and Latin letters with diacritics (`é`,

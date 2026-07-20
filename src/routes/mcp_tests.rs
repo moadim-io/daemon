@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use mcp_types::UpdateRoutineInput;
 
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
@@ -81,41 +82,6 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
 }
 
 #[test]
-fn list_routines_empty() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .list_routines(Parameters(ListRoutinesParam {
-            local_only: None,
-            include_prompts: None,
-        }))
-        .unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn get_routine_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .get_routine(Parameters(IdInput {
-            id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn create_routine_tool_invalid_cron_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let mut req = make_create_routine_req();
-    req.schedule = "not-a-cron".into();
-    let result = handler.create_routine(Parameters(req)).unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn create_get_update_trigger_delete_routine_success() {
     use rmcp::handler::server::wrapper::Parameters;
     let _home = TempHome::set();
@@ -173,43 +139,6 @@ fn create_get_update_trigger_delete_routine_success() {
     // delete
     let result = handler.delete_routine(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn update_routine_tool_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .update_routine(Parameters(UpdateRoutineInput {
-            id: "no-such".into(),
-            schedule: None,
-            title: Some("x".into()),
-            agent: None,
-            model: None,
-            prompt: None,
-            goal: None,
-            repositories: None,
-            machines: None,
-            enabled: None,
-            ttl_secs: None,
-            max_runtime_secs: None,
-            tags: None,
-            env: None,
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn delete_routine_tool_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .delete_routine(Parameters(IdInput {
-            id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
 }
 
 #[test]

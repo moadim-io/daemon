@@ -68,6 +68,7 @@ fn max_disk_bytes_defaults_to_zero_when_unset() {
         std::env::remove_var(MAX_DISK_BYTES_ENV);
     }
     assert_eq!(max_disk_bytes(), 0);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev {
             Some(value) => std::env::set_var(MAX_DISK_BYTES_ENV, value),
@@ -84,6 +85,7 @@ fn max_disk_bytes_parses_a_valid_value() {
         std::env::set_var(MAX_DISK_BYTES_ENV, "1234");
     }
     assert_eq!(max_disk_bytes(), 1234);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev {
             Some(value) => std::env::set_var(MAX_DISK_BYTES_ENV, value),
@@ -100,6 +102,7 @@ fn max_disk_bytes_falls_back_to_zero_on_garbage() {
         std::env::set_var(MAX_DISK_BYTES_ENV, "not-a-number");
     }
     assert_eq!(max_disk_bytes(), 0);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match prev {
             Some(value) => std::env::set_var(MAX_DISK_BYTES_ENV, value),

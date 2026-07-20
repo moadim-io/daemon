@@ -13,14 +13,10 @@ use crate::global_lock::{LockScope, LockStatus};
 
 use super::flags::Flag;
 use super::ical::{svc_ical, svc_ical_routine};
-use super::model::{
-    CreateRoutineRequest, FleetRunSummary, IcalFeedQuery, Routine, RoutineListQuery,
-    RoutineResponse, RoutineStore, RunSummary, UpdateRoutineRequest,
-};
+use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
-    svc_create, svc_create_flag, svc_delete, svc_get, svc_get_prompt_preview, svc_list,
-    svc_list_all_runs, svc_list_flags, svc_list_runs, svc_logs, svc_resolve_flag, svc_run_log,
-    svc_run_summary, svc_trigger, svc_trigger_scheduled, svc_update,
+    svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
+    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -112,44 +108,6 @@ fn parse_lock_scope(scope: &str) -> Result<LockScope, AppError> {
     }
 }
 
-/// `POST /routines` — create a new routine.
-#[utoipa::path(post, path = "/routines",
-    request_body = CreateRoutineRequest,
-    responses((status = 201, body = RoutineResponse), (status = 400, description = "Invalid cron expression")))]
-pub async fn create(
-    State(store): State<RoutineStore>,
-    Json(body): Json<CreateRoutineRequest>,
-) -> Result<(StatusCode, Json<RoutineResponse>), AppError> {
-    // `svc_create` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that
-    // off the async worker thread.
-    let resp = tokio::task::spawn_blocking(move || svc_create(&store, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok((StatusCode::CREATED, Json(resp)))
-}
-
-/// `GET /routines` — list routines, optionally filtered and sorted by repository.
-#[utoipa::path(get, path = "/routines",
-    params(RoutineListQuery),
-    responses((status = 200, body = Vec<RoutineResponse>)))]
-pub async fn list(
-    State(state): State<crate::routes::http::AppState>,
-    Query(query): Query<RoutineListQuery>,
-) -> Json<Vec<RoutineResponse>> {
-    Json(svc_list(&state.routines, &state.routines_dir, &query))
-}
-
-/// `GET /routines/{id}` — retrieve a single routine by UUID.
-#[utoipa::path(get, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
-pub async fn get(
-    State(state): State<crate::routes::http::AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    Ok(Json(svc_get(&state.routines, &state.routines_dir, &id)?))
-}
-
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed
 /// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include
 /// the routine-origin disclosure written separately to `CLAUDE.md` at trigger time.
@@ -161,55 +119,6 @@ pub async fn get_prompt_preview(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_get_prompt_preview(&store, &id)
-}
-
-/// `PATCH /routines/{id}` — partially update a routine.
-#[utoipa::path(patch, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = UpdateRoutineRequest,
-    responses((status = 200, body = RoutineResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
-pub async fn update(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-    Json(body): Json<UpdateRoutineRequest>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    // See `create` above: `svc_update` syncs the crontab (#360).
-    let resp = tokio::task::spawn_blocking(move || svc_update(&store, &id, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
-}
-
-/// `PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.
-///
-/// Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.
-/// A client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to
-/// default) should not rely on this route for that; use `PATCH` and set every field explicitly.
-#[utoipa::path(put, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    request_body = UpdateRoutineRequest,
-    responses((status = 200, body = RoutineResponse), (status = 400, description = "Invalid"), (status = 404, description = "Not found")))]
-pub async fn replace(
-    state: State<RoutineStore>,
-    path: Path<String>,
-    body: Json<UpdateRoutineRequest>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    update(state, path, body).await
-}
-
-/// `DELETE /routines/{id}` — delete a routine by UUID.
-#[utoipa::path(delete, path = "/routines/{id}",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = RoutineResponse), (status = 404, description = "Not found")))]
-pub async fn delete(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<RoutineResponse>, AppError> {
-    // See `create` above: `svc_delete` syncs the crontab (#360).
-    let resp = tokio::task::spawn_blocking(move || svc_delete(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
 }
 
 /// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
@@ -325,17 +234,6 @@ pub async fn get_logs(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_logs(&store, &id).map(|logs| logs.content)
-}
-
-/// `GET /routines/{id}/runs` — list every run workbench for the routine, newest first.
-#[utoipa::path(get, path = "/routines/{id}/runs",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = [RunSummary]), (status = 404, description = "Not found")))]
-pub async fn get_runs(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<Vec<RunSummary>>, AppError> {
-    svc_list_runs(&store, &id).map(Json)
 }
 
 /// Query parameters for `GET /routines/runs`.

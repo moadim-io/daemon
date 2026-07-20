@@ -215,7 +215,8 @@ pub(super) fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
 
 /// Reject an `env` map with an invalid key or a value that could inject an extra shell statement.
 ///
-/// Keys must be POSIX-portable shell identifiers ([`is_valid_env_key`]) — [`build_routine_command`]
+/// Keys must be POSIX-portable shell identifiers ([`is_valid_env_key`]) —
+/// [`crate::routines::command::build_routine_command`]
 /// emits each entry as a literal `export KEY=<shell-quoted value>` statement, so a key outside that
 /// shape (e.g. containing `=`, whitespace, or `;`) would either fail to export or, unquoted as it
 /// must be for `export NAME=...` syntax to work, let a crafted key break out of the statement.

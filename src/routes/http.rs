@@ -1,13 +1,19 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
 use super::cleanup_workbenches;
+use super::create_routine;
+use super::delete_routine;
 use super::get_lock_status;
+use super::get_routine;
 use super::health;
 use super::list_agents;
+use super::list_routine_runs;
+use super::list_routines;
 use super::mcp::MoadimMcp;
 use super::metrics;
 use super::restart;
 use super::shutdown;
+use super::update_routine;
 use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
@@ -207,7 +213,10 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route("/agents", get(list_agents::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
-        .route("/routines", get(routines::list).post(routines::create))
+        .route(
+            "/routines",
+            get(list_routines::list_routines).post(create_routine::create_routine),
+        )
         .route(
             "/routines/cleanup",
             post(cleanup_workbenches::cleanup_workbenches),
@@ -221,10 +230,10 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route(
             "/routines/{id}",
-            get(routines::get)
-                .put(routines::replace)
-                .patch(routines::update)
-                .delete(routines::delete),
+            get(get_routine::get_routine)
+                .put(update_routine::replace)
+                .patch(update_routine::update_routine)
+                .delete(delete_routine::delete_routine),
         )
         .route("/routines/{id}/trigger", post(routines::trigger))
         .route(
@@ -244,7 +253,10 @@ pub(crate) fn build_app_with_shutdown(
             delete(routines::resolve_flag),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
-        .route("/routines/{id}/runs", get(routines::get_runs))
+        .route(
+            "/routines/{id}/runs",
+            get(list_routine_runs::list_routine_runs),
+        )
         .route(
             "/routines/{id}/runs/{workbench}/log",
             get(routines::get_run_log),

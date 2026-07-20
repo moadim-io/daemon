@@ -1,6 +1,6 @@
 [package]
 name = "moadim"
-version = "1.4.1"
+version = "1.5.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -360,3 +360,20 @@ manual_assert = "deny"
 # AST instead, so it also runs in `cargo clippy` (CI's `lint.yml` job) and can't be skipped by a
 # contributor who bypasses git hooks. The codebase is already clean, so `deny` locks that in.
 tests_outside_test_module = "deny"
+# Require every `unsafe` block to carry a `// SAFETY: ...` comment immediately above it explaining
+# why the block upholds the invariants `unsafe` asks the author to uphold. The codebase already
+# follows this convention almost everywhere (env-var overrides in single-threaded tests, the
+# `flock` FFI call in `utils/claude_json.rs`), but nothing enforced it, so it could silently lapse
+# as new `unsafe` blocks were added. Fixed the 39 violations this surfaced — all in test helpers
+# (`std::env::set_var`/`remove_var` restoring a previous env var after a single-threaded test, and
+# one `libc::kill` cleaning up a test-spawned child process) — by adding the same `// SAFETY:`
+# comment already used at the many documented call sites. No behavior change. `deny` locks in that
+# every future `unsafe` block stays documented.
+undocumented_unsafe_blocks = "deny"
+# Reject a bare `#[ignore]` on a test with no explanation of why it's skipped — the same rationale
+# as `allow_attributes_without_reason` above, applied to test-skipping instead of lint-suppression:
+# a silently ignored test rots invisibly (nobody notices it stopped running, or whether it's still
+# safe to re-enable) unless the reason is written down next to it, e.g.
+# `#[ignore = "requires a live tmux session"]`. No `#[ignore]` exists in this codebase today, so
+# `deny` locks in that any future one must justify itself.
+ignore_without_reason = "deny"

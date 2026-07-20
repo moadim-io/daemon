@@ -27,6 +27,8 @@ mod claude_code;
 mod codex;
 #[path = "hermes/setup.rs"]
 mod hermes;
+#[path = "pi/setup.rs"]
+mod pi;
 
 /// The conventions filename a [`AgentCommand`] reads project instructions from when none is
 /// configured. Claude Code's convention; the historical (and still default) target for the
@@ -110,6 +112,7 @@ const DEFAULT_AGENT_CONFIGS: &[(&str, &str)] = &[
     (claude_code::NAME, claude_code::CONFIG),
     (codex::NAME, codex::CONFIG),
     (hermes::NAME, hermes::CONFIG),
+    (pi::NAME, pi::CONFIG),
 ];
 
 /// Registry keys of the built-in agents, in declaration order.

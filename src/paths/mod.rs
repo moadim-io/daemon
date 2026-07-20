@@ -83,10 +83,16 @@ pub fn routines_readme_path() -> PathBuf {
     routines_dir().join("README.md")
 }
 
-/// Returns the path to `{routines_dir}/{id}/routine.toml`.
+/// Returns the path to `{routines_dir}/{id}/routine.toml`, the tracked routine metadata.
 #[must_use]
 pub fn routine_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.toml")
+}
+
+/// Returns the path to `{routines_dir}/{id}/schedule.cron`, the routine's tracked cron entry.
+#[must_use]
+pub fn routine_cron_path(id: &str) -> PathBuf {
+    routine_dir(id).join("schedule.cron")
 }
 
 /// Returns the path to `{routines_dir}/{id}/prompts/`.
@@ -131,7 +137,7 @@ pub fn routine_state_path(id: &str) -> PathBuf {
 /// Returns the path to `{routines_dir}/{id}/routine.local.toml`, the gitignored sidecar a human
 /// (not the daemon) edits directly to layer secret or machine-local environment variable
 /// overrides on top of `routine.toml`'s tracked `[env]` table — see
-/// [`crate::routines::command::build_routine_command`] and issue #408.
+/// [`crate::routines::build_routine_command`] and issue #408.
 ///
 /// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore` (see
 /// [`routine_gitignore_path`]), so it is never accidentally committed.

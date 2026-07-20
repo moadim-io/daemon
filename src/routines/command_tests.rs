@@ -45,6 +45,7 @@ fn with_path(value: &std::path::Path, body: impl FnOnce()) {
         std::env::set_var("PATH", value);
     }
     body();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("PATH", prev),
@@ -213,6 +214,7 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
         "expected /root-anchored fallback dirs in: {path}"
     );
 
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("HOME", prev),

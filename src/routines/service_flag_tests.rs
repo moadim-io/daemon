@@ -287,6 +287,7 @@ fn sh_bin_never_resolves_to_real_sh_in_test_builds() {
         std::env::remove_var("MOADIM_SH_BIN");
     }
     let bin = sh_bin();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(value) => std::env::set_var("MOADIM_SH_BIN", value),
@@ -308,6 +309,7 @@ fn sh_bin_honors_override() {
         std::env::set_var("MOADIM_SH_BIN", "/custom/shim/sh");
     }
     let bin = sh_bin();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(value) => std::env::set_var("MOADIM_SH_BIN", value),

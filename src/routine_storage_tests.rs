@@ -19,6 +19,7 @@ fn with_override_home(body: impl FnOnce(&std::path::Path)) {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
     }
     body(&home);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match previous {
             Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
@@ -86,13 +87,22 @@ fn write_then_load_round_trips() {
         write_routine(&routine).unwrap();
 
         assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(crate::paths::routine_cron_path(&slug).exists());
         assert!(crate::paths::routine_pure_prompt_path(&slug).exists());
         assert!(crate::paths::routine_compiled_prompt_path(&slug).exists());
         assert!(crate::paths::routine_gitignore_path(&slug).exists());
         let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
         assert!(
+            !toml_text.contains("schedule"),
+            "routine.toml must not carry the schedule: {toml_text}"
+        );
+        assert!(
             !toml_text.contains("prompt"),
             "routine.toml must not carry the prompt: {toml_text}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(crate::paths::routine_cron_path(&slug)).unwrap(),
+            "@daily\n"
         );
         assert_eq!(
             std::fs::read_to_string(crate::paths::routine_pure_prompt_path(&slug)).unwrap(),
@@ -137,18 +147,19 @@ fn tags_round_trip_through_routine_toml() {
 
 #[test]
 fn load_routine_from_dir_applies_defaults_for_absent_optional_fields() {
-    // A minimal routine.toml that omits prompt, enabled, timestamps, and id exercises the
-    // default-fallback arms in load_routine_from_dir: prompt -> "", enabled -> true,
-    // created_at/updated_at -> 0, and id -> dir_name (legacy fallback).
+    // A minimal current-layout routine (schedule.cron + routine.toml) that omits prompt, enabled,
+    // timestamps, and id exercises the default-fallback arms in load_routine_from_dir:
+    // prompt -> "", enabled -> true, created_at/updated_at -> 0, and id -> dir_name (legacy fallback).
     with_override_home(|_home| {
         let slug = "rs-defaults-routine";
         let dir = crate::paths::routine_dir(slug);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "schedule = \"@daily\"\ntitle = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
+            "title = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
         )
         .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
 
         let loaded = load_routine_from_dir(slug).unwrap();
         assert_eq!(loaded.id, slug, "absent id falls back to the dir name");
@@ -187,6 +198,26 @@ fn load_routine_falls_back_to_legacy_last_triggered_in_routine_toml() {
             load_routine_from_dir(slug).unwrap().last_manual_trigger_at,
             Some(777)
         );
+    });
+}
+
+#[test]
+fn load_routine_falls_back_to_legacy_schedule_in_routine_toml() {
+    // Older routine dirs kept the schedule in routine.toml; the loader still accepts that until
+    // the next repersist writes schedule.cron.
+    with_override_home(|_home| {
+        let slug = "rs-legacy-schedule-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "schedule = \"@hourly\"\ntitle = \"Rs Legacy Schedule\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+
+        let loaded = load_routine_from_dir(slug).unwrap();
+        assert_eq!(loaded.schedule, "@hourly");
+        assert!(!crate::paths::routine_cron_path(slug).exists());
     });
 }
 
@@ -304,22 +335,6 @@ fn torn_routine_toml_loads_as_none() {
 }
 
 #[test]
-fn write_routine_leaves_no_tmp_residue() {
-    with_override_home(|_home| {
-        let id = "rs-no-residue-id";
-        let title = "Rs No Residue Routine";
-        let slug = slugify(title);
-        write_routine(&make_routine(id, title)).unwrap();
-        let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
-            .count();
-        assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
-    });
-}
-
-#[test]
 fn load_store_includes_written_routine() {
     with_override_home(|_home| {
         let id = "rs-loadstore-id";
@@ -391,6 +406,7 @@ fn migrate_routine_dirs_moves_legacy_uuid_dir_to_slug() {
         // legacy toml `prompt` field carried over into the new prompts/prompt.pure.md sidecar.
         assert!(!legacy_dir.exists(), "legacy UUID dir should be removed");
         assert!(crate::paths::routine_toml_path(&slug).exists());
+        assert!(crate::paths::routine_cron_path(&slug).exists());
         assert!(crate::paths::routine_compiled_prompt_path(&slug).exists());
         let loaded = load_routine_from_dir(&slug).unwrap();
         assert_eq!(loaded.id, id, "UUID id preserved across the dir migration");
@@ -405,9 +421,11 @@ fn repersist_routines_recreates_missing_prompt_sidecar() {
         let title = "Rs Repersist Routine";
         let slug = slugify(title);
         write_routine(&make_routine(id, title)).unwrap();
-        // Simulate the sync-only state: prompt.compiled.local.md gone, only run.sh-style dir remains.
+        // Simulate the sync-only state: prompt.compiled.local.md and schedule.cron are gone.
         std::fs::remove_file(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
+        std::fs::remove_file(crate::paths::routine_cron_path(&slug)).unwrap();
         assert!(!crate::paths::routine_compiled_prompt_path(&slug).exists());
+        assert!(!crate::paths::routine_cron_path(&slug).exists());
 
         let mut map = HashMap::new();
         map.insert(id.to_string(), make_routine(id, title));
@@ -418,156 +436,13 @@ fn repersist_routines_recreates_missing_prompt_sidecar() {
             crate::paths::routine_compiled_prompt_path(&slug).exists(),
             "repersist should recreate the prompt sidecar"
         );
-    });
-}
-
-#[test]
-fn write_routine_seeds_gitignore_with_all_required_patterns() {
-    with_override_home(|_home| {
-        let id = "rs-gitignore-seed-id";
-        let title = "Rs Gitignore Seed Routine";
-        let slug = slugify(title);
-        write_routine(&make_routine(id, title)).unwrap();
-
-        let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        for pattern in ["*.local.*", "*.log", "run.sh"] {
-            assert!(
-                content.lines().any(|line| line == pattern),
-                "missing required pattern {pattern:?} in {content:?}"
-            );
-        }
-
-        // Writing again with the gitignore already fully seeded exercises the no-op / early-return
-        // branch of `ensure_routine_gitignore` and must leave the file byte-for-byte unchanged.
-        write_routine(&make_routine(id, title)).unwrap();
-        let content_again =
-            std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        assert_eq!(
-            content, content_again,
-            "an already-satisfied gitignore must be left untouched"
-        );
-    });
-}
-
-#[test]
-fn write_routine_heals_a_legacy_gitignore_missing_required_patterns() {
-    with_override_home(|_home| {
-        let id = "rs-gitignore-heal-id";
-        let title = "Rs Gitignore Heal Routine";
-        let slug = slugify(title);
-        std::fs::create_dir_all(crate::paths::routine_dir(&slug)).unwrap();
-        // Simulate an install from before `run.sh` was added to the required patterns, plus a
-        // user-added custom entry that reconciliation must preserve. No trailing newline,
-        // exercising the "append one before the new patterns" branch too.
-        std::fs::write(
-            crate::paths::routine_gitignore_path(&slug),
-            "*.local.*\n*.log\nmy-custom-pattern",
-        )
-        .unwrap();
-
-        write_routine(&make_routine(id, title)).unwrap();
-
-        let content = std::fs::read_to_string(crate::paths::routine_gitignore_path(&slug)).unwrap();
-        assert!(content.lines().any(|line| line == "run.sh"));
         assert!(
-            content.lines().any(|line| line == "my-custom-pattern"),
-            "user-added pattern must survive reconciliation: {content:?}"
+            crate::paths::routine_cron_path(&slug).exists(),
+            "repersist should recreate the cron sidecar"
         );
     });
 }
 
-#[test]
-fn write_routine_persists_env_table_and_load_reads_it_back() {
-    // `routine.toml`'s `[env]` table round-trips through `write_routine` / `load_store`
-    // (#408): absent/empty behaves as before, a non-empty map is written and reloaded intact.
-    with_override_home(|_home| {
-        let id = "rs-env-roundtrip-id";
-        let title = "Rs Env Roundtrip Routine";
-        let mut routine = make_routine(id, title);
-        routine.env = std::collections::HashMap::from([
-            ("MODEL_OVERRIDE".to_string(), "gpt-x".to_string()),
-            ("BASE_URL".to_string(), "https://example.test".to_string()),
-        ]);
-        write_routine(&routine).unwrap();
-
-        let slug = slugify(title);
-        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
-        assert!(
-            toml_text.contains("[env]"),
-            "expected an [env] table in routine.toml, got:\n{toml_text}"
-        );
-
-        let store = load_store();
-        let loaded = store.lock().unwrap().get(id).cloned().unwrap();
-        assert_eq!(
-            loaded.env.get("MODEL_OVERRIDE").map(String::as_str),
-            Some("gpt-x")
-        );
-        assert_eq!(
-            loaded.env.get("BASE_URL").map(String::as_str),
-            Some("https://example.test")
-        );
-    });
-}
-
-#[test]
-fn write_routine_omits_env_table_when_empty() {
-    // An empty `env` map must not spuriously add a `[env]` table — keeps `routine.toml` diffs
-    // clean for routines that never opted into the feature.
-    with_override_home(|_home| {
-        let id = "rs-env-empty-id";
-        let title = "Rs Env Empty Routine";
-        write_routine(&make_routine(id, title)).unwrap();
-        let slug = slugify(title);
-        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
-        assert!(
-            !toml_text.contains("[env]"),
-            "did not expect an [env] table with no env vars set, got:\n{toml_text}"
-        );
-    });
-}
-
-#[test]
-fn routine_local_toml_path_matches_the_gitignored_local_pattern() {
-    // `routine.local.toml`'s `.local.` infix must match the `*.local.*` pattern every routine's
-    // `.gitignore` already seeds (`ROUTINE_GITIGNORE_REQUIRED`), so it never needs its own bespoke
-    // pattern — mirrors `state.local.toml` / `prompt.compiled.local.md` (#408).
-    let path = crate::paths::routine_local_toml_path("some-slug");
-    let name = path.file_name().unwrap().to_str().unwrap();
-    assert_eq!(name, "routine.local.toml");
-    assert!(
-        name.starts_with("routine.") && name.contains(".local."),
-        "expected the *.local.* gitignore glob to match {name:?}"
-    );
-}
-
-#[test]
-fn read_local_env_returns_empty_map_when_sidecar_absent() {
-    with_override_home(|_home| {
-        assert!(read_local_env("no-such-slug").is_empty());
-        assert!(local_env_keys("no-such-slug").is_empty());
-    });
-}
-
-#[test]
-fn read_local_env_reads_the_sidecar_and_local_env_keys_drops_values() {
-    with_override_home(|_home| {
-        let slug = "rs-local-env-read-slug";
-        let dir = crate::paths::routine_dir(slug);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            crate::paths::routine_local_toml_path(slug),
-            "[env]\nGH_TOKEN = \"ghp_super_secret\"\n",
-        )
-        .unwrap();
-
-        let values = read_local_env(slug);
-        assert_eq!(
-            values.get("GH_TOKEN").map(String::as_str),
-            Some("ghp_super_secret")
-        );
-
-        let keys = local_env_keys(slug);
-        assert_eq!(keys, vec!["GH_TOKEN".to_string()]);
-    });
-}
+// Gitignore-reconciliation tests live in `routine_storage_gitignore_tests.rs`, and `[env]`
+// table / `routine.local.toml` sidecar tests live in `routine_storage_env_tests.rs` (both split
+// out to keep this file under the line cap).

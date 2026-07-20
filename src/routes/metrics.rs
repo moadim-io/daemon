@@ -99,6 +99,22 @@ struct RunStatusCounts {
     unknown: u64,
 }
 
+/// Escape a value for use inside a Prometheus text-exposition label (`name="value"`): backslash
+/// and double-quote must themselves be backslash-escaped, and a literal newline is written as the
+/// two-character `\n` sequence, per the exposition format's label-value grammar.
+///
+/// `machine` (set via `moadim machine set <name>` or `MOADIM_MACHINE`, see `crate::machine`) is
+/// the only label value in this file sourced from free-form user input — trimmed but otherwise
+/// unrestricted — so it's the only one that needs this: an operator-chosen name containing `"` or
+/// `\` would otherwise emit unparseable exposition text and break the whole scrape, not just this
+/// one line. `version`/`git_sha` are compile-time constants and never need it.
+fn escape_label_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
 /// Render `snapshot` as Prometheus text exposition format (one `# HELP`/`# TYPE` pair per
 /// series, then its sample line(s)).
 fn render(snapshot: &MetricsSnapshot<'_>) -> String {
@@ -119,7 +135,9 @@ fn render(snapshot: &MetricsSnapshot<'_>) -> String {
     let _ = writeln!(
         out,
         r#"moadim_build_info{{version="{}",git_sha="{}",machine="{}"}} 1"#,
-        snapshot.version, snapshot.git_sha, snapshot.machine
+        snapshot.version,
+        snapshot.git_sha,
+        escape_label_value(snapshot.machine)
     );
 
     let _ = writeln!(

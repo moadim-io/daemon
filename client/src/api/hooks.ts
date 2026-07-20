@@ -218,11 +218,12 @@ export function useUnlock() {
 // ─── Runs ───────────────────────────────────────────────────────────────────
 
 /** `GET /routines/runs` — most recent runs across the whole fleet. */
-export function useAllRuns(limit?: number) {
+export function useAllRuns(limit?: number, options?: Partial<UseQueryOptions<FleetRunSummary[]>>) {
   return useQuery({
     queryKey: ["routines", "runs", limit],
     queryFn: async () =>
       unwrap(await api.GET("/routines/runs", { params: { query: { limit } } })),
+    ...options,
   });
 }
 

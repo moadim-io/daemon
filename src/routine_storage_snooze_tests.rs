@@ -52,6 +52,7 @@ fn with_override_home(body: impl FnOnce(&std::path::Path)) {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
     }
     body(&home);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match previous {
             Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
@@ -338,11 +339,13 @@ fn append_manual_trigger_log_warns_on_write_failure() {
 
     // Override home so routine_manual_log_path resolves into our scratch dir.
     let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: single-threaded test execution.
     unsafe {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
     }
     // Should not panic; just logs a warning.
     append_manual_trigger_log("rs-manual-log-fail-routine", 42);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match previous {
             Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
@@ -381,11 +384,13 @@ fn append_skip_log_warns_on_write_failure() {
     std::fs::create_dir_all(&blocker).unwrap();
 
     let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: single-threaded test execution.
     unsafe {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &dir);
     }
     // Should not panic; just logs a warning.
     append_skip_log("rs-skip-log-fail-routine", 42, "agent load failure");
+    // SAFETY: single-threaded test execution.
     unsafe {
         match previous {
             Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),

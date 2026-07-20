@@ -172,6 +172,40 @@ fn svc_update_sets_max_runtime_secs() {
 }
 
 #[test]
+fn svc_update_sets_env() {
+    let _home = TempHome::set();
+    // Covers the `req.env` validate + apply branches in `svc_update` (#408).
+    let title = "Svc Update Env ZZZ";
+    let store = new_store();
+    let routine = make_routine("env-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("env-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "env-id",
+            UpdateRoutineRequest {
+                env: Some(std::collections::HashMap::from([(
+                    "MODEL_OVERRIDE".to_string(),
+                    "gpt-x".to_string(),
+                )])),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            updated
+                .routine
+                .env
+                .get("MODEL_OVERRIDE")
+                .map(String::as_str),
+            Some("gpt-x")
+        );
+    });
+}
+
+#[test]
 fn svc_update_trims_title_before_persisting() {
     // Covers the title `.trim()` on the `svc_update` apply path. Renaming with the
     // same slug but different spacing/case must store the trimmed title.

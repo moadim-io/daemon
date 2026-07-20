@@ -65,10 +65,9 @@ src/
 │       ├── logic.rs                 response type(s) + the pure function that builds them (no framework code)
 │       ├── http.rs                  thin Axum handler: extracts state, calls logic, wraps in Json
 │       └── mcp.rs                   thin MCP tool: calls logic, wraps in the MCP result type
-│           (e.g. health/, create_routine/, list_routines/, get_routine/, delete_routine/,
-│            list_routine_runs/, list_agents/, get_lock_status/, cleanup_workbenches/,
-│            restart/, shutdown/ — see src/routes/CONTRIBUTING.md. Not every endpoint is
-│            split out yet; e.g. update_routine, MCP-only, is still inline in mcp.rs)
+│           (every REST+MCP endpoint is split out this way now — see the `use
+│            super::<name>;` list at the top of src/routes/http.rs for the current
+│            set of folders, and src/routes/CONTRIBUTING.md for the convention)
 │
 ├── middlewares/
 │   ├── host_validation.rs    guards against DNS-rebinding / cross-origin abuse of the loopback API

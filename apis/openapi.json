@@ -1021,7 +1021,7 @@
           "crate::routines"
         ],
         "summary": "`POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.",
-        "description": "The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).\nUnlike [`trigger`] it does not record a manual trigger; the spawned command records the scheduled\ntimestamp itself. See [`svc_trigger_scheduled`].",
+        "description": "The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).\nUnlike [`crate::routes::trigger_routine::trigger_routine`] it does not record a manual\ntrigger; the spawned command records the scheduled timestamp itself. See\n[`svc_trigger_scheduled`].",
         "operationId": "scheduled_trigger",
         "parameters": [
           {
@@ -1054,11 +1054,11 @@
     "/routines/{id}/trigger": {
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::trigger_routine"
         ],
-        "summary": "`POST /routines/{id}/trigger` — manually run a routine outside its schedule.",
-        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`svc_trigger`].",
-        "operationId": "trigger",
+        "summary": "`POST /routines/{id}/trigger` — manually trigger a routine outside its schedule.",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`crate::routines::svc_trigger`].",
+        "operationId": "trigger_routine",
         "parameters": [
           {
             "name": "id",

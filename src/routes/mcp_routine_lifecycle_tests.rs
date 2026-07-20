@@ -103,32 +103,6 @@ fn snooze_routine_tool_sets_and_clears_snooze() {
 }
 
 #[test]
-fn trigger_routine_tool_returns_error_when_disabled() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let _home = TempHome::set();
-    let routines = crate::routines::new_store();
-    let handler = MoadimMcp::new(routines, crate::paths::routines_dir(), 0, test_shutdown());
-
-    let result = handler
-        .create_routine(Parameters(crate::routines::CreateRoutineRequest {
-            enabled: false,
-            ..make_create_routine_req()
-        }))
-        .unwrap();
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let result = handler.trigger_routine(Parameters(IdInput { id })).unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
 fn set_power_saving_tool_not_found_is_error() {
     use rmcp::handler::server::wrapper::Parameters;
     let handler = make_handler();

@@ -44,6 +44,7 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     timezone: null,
     goal: null,
     flag_count: 0,
+    env_keys: [],
     next_run_at: null,
     ...overrides,
   };

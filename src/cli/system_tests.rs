@@ -104,3 +104,56 @@ fn log_rotation_is_due_is_true_when_small_but_stale() {
 fn log_rotation_is_due_is_false_right_at_the_age_boundary() {
     assert!(!log_rotation_is_due(1024, DAEMON_LOG_MAX_AGE));
 }
+
+struct EnvGuard {
+    name: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn set(name: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(name);
+        // SAFETY: tests in this crate run single-threaded per binary.
+        unsafe {
+            std::env::set_var(name, value);
+        }
+        Self { name, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        // SAFETY: single-threaded test execution.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+}
+
+#[test]
+fn http_request_core_rejects_an_unparsable_bind_override() {
+    let _addr = EnvGuard::set(crate::cli::BIND_ADDR_ENV, "not-a-socket-addr");
+
+    let err = http_request_core("GET", "/health", None, Duration::from_millis(50)).unwrap_err();
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(
+        err.to_string().contains("invalid bind address"),
+        "unexpected message: {err}"
+    );
+}
+
+#[test]
+fn ensure_readme_returns_early_when_the_path_has_no_parent() {
+    // `Path::new("<bare-name>").parent()` is `Some("")`, not `None` — a relative
+    // single-component path still "has a parent" (the empty/current-dir path), so it
+    // does not exercise this branch. `""` (like `/`) is one of the few paths whose
+    // `.parent()` is genuinely `None`, which is what routes `ensure_readme` through
+    // `parent_or_err`'s error arm and back out early — without this, the call falls
+    // through to `std::fs::write`, dropping a stray file in the process's current
+    // directory (as a bare relative path previously did here).
+    ensure_readme(std::path::Path::new(""), "ignored");
+}

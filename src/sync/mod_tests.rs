@@ -251,6 +251,7 @@ fn crontab_bin_never_resolves_to_real_crontab_in_test_builds() {
         std::env::remove_var("MOADIM_CRONTAB_BIN");
     }
     let bin = crontab_bin();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(value) => std::env::set_var("MOADIM_CRONTAB_BIN", value),

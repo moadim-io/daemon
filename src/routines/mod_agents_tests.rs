@@ -31,6 +31,7 @@ fn make_routine(id: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -62,7 +63,8 @@ fn available_agents_falls_back_to_builtins_when_missing() {
         vec![
             "claude".to_string(),
             "codex".to_string(),
-            "hermes".to_string()
+            "hermes".to_string(),
+            "pi".to_string()
         ]
     );
 }
@@ -116,6 +118,7 @@ fn svc_create_invalid_cron_rejected() {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     };
     assert!(svc_create(&store, req).is_err());
 }
@@ -138,6 +141,7 @@ fn svc_create_update_delete_lifecycle() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: vec![],
+            env: std::collections::HashMap::new(),
         },
     )
     .unwrap();
@@ -165,6 +169,7 @@ fn svc_create_update_delete_lifecycle() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: None,
+            env: None,
         },
     )
     .unwrap();
@@ -193,6 +198,7 @@ fn svc_update_not_found() {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: None,
+        env: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -217,6 +223,7 @@ fn svc_update_invalid_cron_rejected() {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: None,
+        env: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

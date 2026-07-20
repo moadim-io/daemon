@@ -40,17 +40,22 @@ pub(crate) fn read_exit_code(workbench_path: &Path) -> Option<i32> {
         .and_then(|text| text.trim().parse::<i32>().ok())
 }
 
-/// Size at which a routine's `runs.log` is rotated to a sibling `.log.1` file (replacing any
-/// previous one) on the next append. The reaper appends one record here per finished run for the
-/// whole life of the daemon with no other trim point, so a long-lived, frequently-firing routine's
-/// history would otherwise grow unbounded — the same shape already fixed for `daemon.log` (see
-/// `DAEMON_LOG_MAX_BYTES` in `cli_system`, #316). A routine's `runs.log` is far smaller per
-/// entry and per-routine, so it gets a smaller cap.
+/// Size at which a routine's `runs.log` is rotated into a sibling `.log.1` file on the next
+/// append. The reaper appends one record here per finished run for the whole life of the daemon
+/// with no other trim point, so a long-lived, frequently-firing routine's history would otherwise
+/// grow unbounded — the same shape already fixed for `daemon.log` (see `DAEMON_LOG_MAX_BYTES` in
+/// `cli_system`, #316). A routine's `runs.log` is far smaller per entry and per-routine, so it
+/// gets a smaller cap.
 const RUN_HISTORY_MAX_BYTES: u64 = 1024 * 1024;
 
-/// Rotate `path` to a sibling `.1` file (overwriting any previous one) if it has grown past
-/// [`RUN_HISTORY_MAX_BYTES`]. Best-effort: a failed rotation (permissions, race) falls through to
-/// the caller's own `append(true)` open rather than blocking the reap sweep that triggered it.
+/// Rotate `path` into a sibling `.1` file if it has grown past [`RUN_HISTORY_MAX_BYTES`].
+///
+/// Unlike a bare rename, this merges `path`'s content onto the end of any existing `.1` file
+/// instead of overwriting it — a plain rename previously discarded the prior rotation's history
+/// on every subsequent rotation (#1277), even though `runs.log` is documented as durable,
+/// TTL-surviving history. [`read_persisted_runs`] reads both files back together. Best-effort: a
+/// failed rotation (permissions, race) falls through to the caller's own `append(true)` open
+/// rather than blocking the reap sweep that triggered it.
 fn rotate_run_history_if_oversized(path: &Path) {
     let Ok(metadata) = std::fs::metadata(path) else {
         return;
@@ -59,26 +64,37 @@ fn rotate_run_history_if_oversized(path: &Path) {
         return;
     }
     let rotated_path = path.with_extension("log.1");
-    let _ = std::fs::rename(path, rotated_path);
+    // `read` is expected to succeed (metadata() above just confirmed the file exists); on the
+    // unlikely race of it disappearing first, falling back to empty just leaves `rotated_path`
+    // holding whatever it already had rather than failing the rotation outright.
+    let current = std::fs::read(path).unwrap_or_default();
+    let mut combined = std::fs::read(&rotated_path).unwrap_or_default();
+    combined.extend_from_slice(&current);
+    if std::fs::write(&rotated_path, combined).is_ok() {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// Append `run` as one NDJSON line to routine `id`'s `runs.log`.
 ///
 /// Rotates the log first if it's grown past [`RUN_HISTORY_MAX_BYTES`] (see
 /// [`rotate_run_history_if_oversized`]), then the append itself is best-effort: a write failure
-/// (creating the routine's directory, opening the log, or the write itself — collapsed into a
-/// single chain so there is one failure path to reason about, not three) is logged and swallowed
-/// rather than blocking the reap sweep that triggered it — losing one history entry is far
-/// cheaper than a stuck cleanup loop.
+/// (serializing `run`, creating the routine's directory, opening the log, or the write itself —
+/// collapsed into a single chain so there is one failure path to reason about, not four) is
+/// logged and swallowed rather than blocking the reap sweep that triggered it — losing one
+/// history entry is far cheaper than a stuck cleanup loop.
 pub(crate) fn append_persisted_run(id: &str, run: &PersistedRun) {
-    let line = serde_json::to_string(run).expect("PersistedRun always serializes");
     let path = routine_run_history_path(id);
     rotate_run_history_if_oversized(&path);
-    let parent = path
-        .parent()
-        .expect("routine run-history path has a parent dir");
-    let result = crate::utils::fs_perms::create_private_dir_all(parent)
-        .and_then(|()| open_history_append(&path).and_then(|mut file| writeln!(file, "{line}")));
+    let result = serde_json::to_string(run)
+        .map_err(std::io::Error::other)
+        .and_then(|line| {
+            crate::utils::fs_perms::parent_or_err(&path, "run history")
+                .and_then(crate::utils::fs_perms::create_private_dir_all)
+                .and_then(|()| {
+                    open_history_append(&path).and_then(|mut file| writeln!(file, "{line}"))
+                })
+        });
     if let Err(err) = result {
         log::warn!("run history: failed to append for routine {id:?}: {err}");
     }
@@ -106,17 +122,22 @@ fn open_history_append(path: &Path) -> std::io::Result<std::fs::File> {
     }
 }
 
-/// Read every persisted run for routine `id`. Order is not guaranteed — callers merge and sort
-/// alongside live workbench-derived runs.
+/// Read every persisted run for routine `id`, including any rotated-out `runs.log.1` (#1277).
+/// Order is not guaranteed — callers merge and sort alongside live workbench-derived runs.
 ///
 /// Malformed lines are skipped rather than failing the whole read: a single corrupted append (e.g.
 /// from a crash mid-write) must not hide every run before or after it.
 pub(crate) fn read_persisted_runs(id: &str) -> Vec<PersistedRun> {
-    let Ok(text) = std::fs::read_to_string(routine_run_history_path(id)) else {
-        return Vec::new();
-    };
-    text.lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
+    let path = routine_run_history_path(id);
+    let rotated_path = path.with_extension("log.1");
+    [rotated_path, path]
+        .iter()
+        .filter_map(|file_path| std::fs::read_to_string(file_path).ok())
+        .flat_map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<PersistedRun>(line).ok())
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 

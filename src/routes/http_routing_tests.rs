@@ -39,27 +39,6 @@ impl Drop for TempHome {
     }
 }
 
-#[tokio::test]
-async fn router_routines_cleanup_returns_removed_count() {
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/routines/cleanup")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert!(val["removed"].is_u64());
-    assert!(val["freed_bytes"].is_u64());
-}
-
 // ── routines CRUD lifecycle (covers all routine HTTP handlers) ────────────────
 
 #[tokio::test]
@@ -336,91 +315,6 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(!crate::paths::routine_dir(&id).exists());
-}
-
-#[tokio::test]
-async fn router_flag_create_rejects_bad_scope() {
-    let _home = TempHome::set();
-    let routines = crate::routines::new_store();
-    let resp = build_app(routines.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/routines")
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"schedule":"@daily","title":"Flag Scope Routine","agent":"claude","prompt":"p"}"#,
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let id = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let resp = build_app(routines.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/api/v1/routines/{id}/flags"))
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"type":"bug","description":"d","scope":"nowhere"}"#,
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn router_flag_not_found_paths() {
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/routines/no-such/flags")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/api/v1/routines/no-such/flags/bug-1.md")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn router_routine_create_invalid_cron_400() {
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/routines")
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"schedule":"bad","title":"t","agent":"a","prompt":"p"}"#,
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

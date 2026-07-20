@@ -29,6 +29,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 

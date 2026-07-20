@@ -53,6 +53,13 @@ fn routine_toml_path_filename() {
 }
 
 #[test]
+fn routine_cron_path_filename() {
+    let path = routine_cron_path("abc");
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "schedule.cron");
+    assert!(path.to_string_lossy().contains("abc"));
+}
+
+#[test]
 fn routine_prompts_dir_filename() {
     let path = routine_prompts_dir("abc");
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "prompts");

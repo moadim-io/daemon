@@ -26,8 +26,8 @@ mod service_validate;
 use service_validate::MAX_TITLE_LEN;
 use service_validate::{
     map_write_routine_err, normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs,
-    validate_agent, validate_goal, validate_machines, validate_prompt, validate_repositories,
-    validate_tags, validate_title,
+    validate_agent, validate_env, validate_goal, validate_machines, validate_prompt,
+    validate_repositories, validate_tags, validate_title,
 };
 
 /// Sort key placing routines with a repository before those without, then by
@@ -158,6 +158,7 @@ pub fn svc_create(
     let tags = validate_tags(&req.tags)?;
     let goal = validate_goal(req.goal.as_deref())?;
     let machines = validate_machines(&req.machines)?;
+    validate_env(&req.env)?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -196,6 +197,7 @@ pub fn svc_create(
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
         tags,
+        env: req.env,
     };
     write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     store

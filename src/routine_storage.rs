@@ -1,23 +1,22 @@
-//! TOML-backed persistence for routines, plus the `prompts/prompt.pure.md` (raw) and
-//! `prompts/prompt.compiled.local.md` (composed) sidecar files.
+//! TOML-backed persistence for routines, plus the tracked `schedule.cron` and the
+//! `prompts/prompt.pure.md` (raw) / `prompts/prompt.compiled.local.md` (composed) sidecar files.
 
 use crate::utils::lock::LockRecover;
 // Re-exported (as `super::routines_dir`) for `routine_storage_migrations`; not called directly
 // in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
 use crate::paths::routines_dir;
+use std::collections::HashMap;
 // Only referenced by the `#[cfg(test)]` sibling test modules via `use super::*;` (they build a
 // `RoutineStore` map by hand); not used directly in this file's own (non-test) code.
-#[cfg(test)]
-use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_compiled_prompt_path, routine_dir, routine_gitignore_path, routine_manual_log_path,
-    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_skip_log_path,
-    routine_state_path, routine_toml_path,
+    routine_compiled_prompt_path, routine_cron_path, routine_dir, routine_gitignore_path,
+    routine_manual_log_path, routine_prompts_dir, routine_pure_prompt_path, routine_script_path,
+    routine_skip_log_path, routine_state_path, routine_toml_path,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -28,6 +27,10 @@ struct RoutineToml {
     /// UUID that uniquely identifies this routine (stable across renames).
     id: Option<String>,
     /// Cron expression.
+    ///
+    /// **Read-only / legacy.** The schedule now lives in the tracked `schedule.cron` sidecar so
+    /// it stays diff-friendly and smaller than the rest of the routine metadata.
+    #[serde(default, skip_serializing)]
     schedule: Option<String>,
     /// Human name.
     title: Option<String>,
@@ -81,6 +84,28 @@ struct RoutineToml {
     /// Free-form labels for the routine; absent means no tags.
     #[serde(default)]
     tags: Vec<String>,
+    /// Non-secret environment variables injected at launch (see [`crate::routines::Routine::env`]).
+    /// Absent/empty means none. Tracked and git-committed — never put a secret here; use the
+    /// gitignored `routine.local.toml` sidecar instead ([`RoutineLocalToml`]).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    env: HashMap<String, String>,
+}
+
+/// TOML representation of a routine's untracked `routine.local.toml` sidecar: secret or
+/// machine-local environment variable overrides that win over `routine.toml`'s `[env]` table at
+/// launch time (issue #408).
+///
+/// Deliberately **not** part of [`RoutineToml`] or [`crate::routines::Routine`] — those are held
+/// in the in-memory [`crate::routines::RoutineStore`] and serialized straight into API responses,
+/// so a secret parsed into either would leak into every `GET /routines` response the moment it
+/// loaded. This struct is read fresh from disk only where a value is actually needed
+/// ([`read_local_env`], called from `build_routine_command` at launch time) and discarded
+/// immediately after.
+#[derive(Debug, Default, Deserialize)]
+struct RoutineLocalToml {
+    /// Secret / machine-local env var overrides; absent means none.
+    #[serde(default)]
+    env: HashMap<String, String>,
 }
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
@@ -118,6 +143,13 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
+/// Read a routine's tracked cron entry from `schedule.cron`, returning the first non-empty line.
+fn read_routine_cron(path: &std::path::PathBuf) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let schedule = text.lines().find(|line| !line.trim().is_empty())?.trim();
+    Some(schedule.to_string())
+}
+
 /// Read a routine's `state.local.toml` sidecar under `base`, defaulting to an empty
 /// [`RuntimeState`] when the sidecar is absent or unparsable (e.g. before the routine has ever
 /// been snoozed).
@@ -129,6 +161,29 @@ fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> RuntimeState {
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default()
+}
+
+/// Read a routine's gitignored `routine.local.toml` sidecar (`{routines_dir}/{id}/routine.local.toml`,
+/// see [`crate::paths::routine_local_toml_path`]), defaulting to an empty map when absent or
+/// unparsable — mirrors [`read_runtime_state`].
+///
+/// **Values only ever flow into [`crate::routines::build_routine_command`]**, which reads
+/// this right before it shell-quotes each entry into an `export KEY=value` launch statement. Every
+/// other caller (API responses, the UI, logs) must go through [`local_env_keys`] instead, which
+/// discards the values this returns and keeps only the key names.
+pub(crate) fn read_local_env(id: &str) -> HashMap<String, String> {
+    std::fs::read_to_string(crate::paths::routine_local_toml_path(id))
+        .ok()
+        .and_then(|text| toml::from_str::<RoutineLocalToml>(&text).ok())
+        .map(|local| local.env)
+        .unwrap_or_default()
+}
+
+/// Return only the *key names* set in a routine's `routine.local.toml` sidecar, never their
+/// values — the redaction-safe read used by [`crate::routines::RoutineResponse::from_routine`]
+/// to surface "what's configured" without ever exposing a secret over the API (#408).
+pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
+    read_local_env(id).into_keys().collect()
 }
 
 /// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
@@ -163,9 +218,10 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(path, &content)
 }
 
-/// Write `routine` to disk: `routine.toml` (tracked config), the `prompts/prompt.pure.md` (raw) and
-/// `prompts/prompt.compiled.local.md` (composed) sidecars, the gitignored `state.local.toml` runtime
-/// sidecar, and `.gitignore` (created or reconciled — see [`ensure_routine_gitignore`]).
+/// Write `routine` to disk: `routine.toml` (tracked config), `schedule.cron` (tracked cron entry),
+/// the `prompts/prompt.pure.md` (raw) and `prompts/prompt.compiled.local.md` (composed) sidecars,
+/// the gitignored `state.local.toml` runtime sidecar, and `.gitignore` (created or reconciled — see
+/// [`ensure_routine_gitignore`]).
 ///
 /// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
 /// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
@@ -206,7 +262,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
-        schedule: Some(routine.schedule.clone()),
+        schedule: None,
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
         model: routine.model.clone(),
@@ -224,15 +280,18 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
         tags: routine.tags.clone(),
+        env: routine.env.clone(),
     };
-    let text = toml::to_string_pretty(&toml_routine).expect(
-        "RoutineToml serialization cannot fail for a struct with only primitive and Option fields",
-    );
+    let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:
     // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
     // is implemented but not wired up — see issue #218.)
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
+    atomic_write(
+        &routine_cron_path(&slug),
+        format!("{}\n", routine.schedule).as_bytes(),
+    )?;
     atomic_write(&routine_pure_prompt_path(&slug), routine.prompt.as_bytes())?;
     atomic_write(
         &routine_compiled_prompt_path(&slug),
@@ -262,8 +321,7 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         skip_runs: routine.skip_runs,
         power_saving: routine.power_saving,
     };
-    let text = toml::to_string_pretty(&state)
-        .expect("RuntimeState serialization cannot fail for a struct with only Option fields");
+    let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
     atomic_write(&path, text.as_bytes())?;
     Ok(())
 }
@@ -320,8 +378,9 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Re-persist every loaded routine to disk, recreating `routine.toml`, `prompts/prompt.pure.md`,
-/// `prompts/prompt.compiled.local.md`, and `.gitignore` in its canonical slug directory.
+/// Re-persist every loaded routine to disk, recreating `routine.toml`, `schedule.cron`,
+/// `prompts/prompt.pure.md`, `prompts/prompt.compiled.local.md`, and `.gitignore` in its canonical
+/// slug directory.
 ///
 /// Nothing else rewrites the prompt sidecars on startup, so a slug dir missing its
 /// `prompts/prompt.compiled.local.md` (e.g. after the UUID→slug migration, or if the sidecar was
@@ -367,6 +426,10 @@ pub(crate) use routine_storage_migrations::{
 mod routine_storage_tests;
 
 #[cfg(test)]
+#[path = "routine_storage_more_tests.rs"]
+mod routine_storage_more_tests;
+
+#[cfg(test)]
 #[path = "routine_storage_prompt_sidecar_tests.rs"]
 mod routine_storage_prompt_sidecar_tests;
 
@@ -397,3 +460,11 @@ mod routine_storage_sidecar_state_tests;
 #[cfg(test)]
 #[path = "routine_storage_slug_collision_tests.rs"]
 mod routine_storage_slug_collision_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_gitignore_tests.rs"]
+mod routine_storage_gitignore_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_env_tests.rs"]
+mod routine_storage_env_tests;

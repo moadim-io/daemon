@@ -106,7 +106,9 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 ~/.config/moadim/
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
-│       ├── routine.toml       # tracked — schedule, agent, repositories
+│       ├── routine.toml       # tracked — metadata (agent, repositories, [env], …)
+│       ├── schedule.cron      # tracked — one cron entry
+│       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
 │       ├── prompts/
 │       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
 │       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
@@ -144,7 +146,8 @@ Moadim owns a single block inside your crontab for routines. Everything outside 
 
 A **routine** is a scheduled AI-agent task: it fires a prompt at a coding
 agent (e.g. Claude) on a cron schedule, each run inside its own throwaway
-workbench.
+workbench. The schedule lives in a sibling `schedule.cron` file; the rest of
+the routine metadata stays in `routine.toml`.
 
 Routines are stored as folders under `~/.config/moadim/routines/<id>/`,
 git-trackable:
@@ -152,7 +155,9 @@ git-trackable:
 ```
 ~/.config/moadim/routines/
 └── nightly-triage/
-    ├── routine.toml   # tracked — schedule, agent, repositories
+    ├── routine.toml       # tracked — metadata (agent, repositories, [env], …)
+    ├── schedule.cron      # tracked — one cron entry
+    ├── routine.local.toml # gitignored, optional — secret/local env var overrides
     ├── prompts/
     │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
     │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
@@ -161,7 +166,7 @@ git-trackable:
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
-| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. |
+| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), stored in `schedule.cron` and evaluated in the host's local timezone — **not** UTC. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |
@@ -172,6 +177,51 @@ git-trackable:
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
+| `env`          | map    | no       | Environment variables injected into the agent's shell session at launch (see [Environment variables](#environment-variables) below). Defaults to empty. |
+
+### Environment variables
+
+By default every routine's agent inherits the daemon operator's entire login-shell environment
+(`~/.profile` is sourced before launch), so all routines on a host share one `GH_TOKEN` and one set
+of credentials. The `env` field lets a routine declare its own scoped variables instead:
+
+- **`routine.toml`'s `env` table** — a plain `string → string` map, tracked and git-committed.
+  Use it for non-secret config (a model override the agent reads, a base URL, a feature flag) —
+  anything you're fine with landing in the config repo's history.
+
+  ```toml
+  [env]
+  GITHUB_ORG = "my-other-org"
+  FEATURE_FLAG = "beta"
+  ```
+
+- **`routine.local.toml`** — an untracked sibling file next to `routine.toml`, gitignored by the
+  same `*.local.*` pattern that already covers `state.local.toml` and
+  `prompt.compiled.local.md`. Use it for secrets (a scoped `GH_TOKEN`, an API key) that must never
+  be committed. Same `[env]` table shape; its keys **win** over `routine.toml`'s when both set the
+  same name.
+
+  ```toml
+  # ~/.config/moadim/routines/nightly-triage/routine.local.toml — never committed
+  [env]
+  GH_TOKEN = "ghp_..."
+  ```
+
+Both sources are merged (local wins on conflict) and emitted as `export KEY=value` statements right
+after the curated `PATH` export and before the agent launches, so they override any
+profile-inherited value for that run only — the daemon's own environment, and every other routine's,
+are untouched.
+
+**Validation:** keys must be POSIX-portable shell identifiers (`[A-Za-z_][A-Za-z0-9_]*`); values
+must not contain newlines. `routine.toml`'s `env` table is validated on create/update (REST/MCP) and
+rejected outright if invalid — nothing bad reaches the crontab. `routine.local.toml` is a file you
+edit by hand, so it isn't validated over the API; a malformed entry there is simply skipped (with a
+warning in the daemon log) rather than breaking the launch.
+
+**Redaction:** env var *values* — from either source — never appear in a `GET`/`POST` routine
+response, the UI, or any log line. A routine response instead carries `env_keys`: the sorted, deduplicated
+list of every configured key name (from both `routine.toml` and `routine.local.toml`), so a client
+can show *what's* set without ever seeing a value.
 
 **Machine identity:** used to filter which of a routine's `machines` entries apply to *this*
 install when several daemons share one `~/.config/moadim` config repo (a laptop, a work box, a
@@ -211,6 +261,7 @@ override when both are set.
 
 ```
 GET    /health                 # liveness + uptime/version, used by status/--wait and the UI health badge
+GET    /metrics                # Prometheus text-exposition metrics: run counts/failures/durations, active sessions, workbench disk usage
 POST   /shutdown               # graceful stop, used by `moadim stop` and the UI STOP button
 POST   /restart                # stop this server and start a fresh instance, used by `moadim restart`
 GET    /routines              # list (filter by ?repository=, sort by ?sort=/&order=)
@@ -279,7 +330,7 @@ built-in `claude` agent.
 Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
 `<name>` is the registry key a routine's `agent` field references (the filename
 stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
-defaults (`claude`, `codex`, `hermes`) into this directory **only if the file is
+defaults (`claude`, `codex`, `hermes`, `pi`) into this directory **only if the file is
 absent** — your edits are never overwritten — so you can both tweak a default and
 register a brand-new agent by dropping in another `<name>.toml`.
 
@@ -287,6 +338,7 @@ register a brand-new agent by dropping in another `<name>.toml`.
 | --------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `command` | string         | yes      | Executable to run (resolved on `PATH`), e.g. `"claude"`.                                                                       |
 | `args`    | array<string>  | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.                                            |
+| `instructions_file` | string | no    | Filename, relative to the workbench, that this agent reads its project instructions from — where the moadim-managed system prompt and routine-origin disclosure are written. Defaults to `CLAUDE.md` (Claude Code's convention); the built-in `codex` agent sets it to `AGENTS.md`. |
 | `setup`   | string         | no       | Shell command run in the workbench **before** the agent launches, inserted verbatim into the cron line. See the variables below. |
 
 **Placeholders** (substituted in each `args` entry at launch):
@@ -304,7 +356,7 @@ scope, so it can prepare per-run state before the agent starts:
 - `$WB` — absolute workbench path.
 - `$SESS` — the tmux session name for the run.
 
-Examples — the headless `codex`/`hermes` form, and the interactive `claude` form
+Examples — the headless `codex`/`hermes`/`pi` form, and the interactive `claude` form
 (the real default's `setup` step also pre-seeds `~/.claude.json`; see the
 prerequisites above):
 
@@ -319,6 +371,12 @@ args = ["exec", "{prompt_file}"]
 command = "claude"
 args = ["--permission-mode", "auto", "{prompt}"]
 # setup = '''...optional pre-launch shell command, runs with $WB and $SESS in scope...'''
+```
+
+```toml
+# ~/.config/moadim/agents/pi.toml
+command = "pi"
+args = ["--approve", "-p", "@{prompt_file}"]
 ```
 
 A routine whose `agent` names a file that is missing or whose TOML is malformed
@@ -355,6 +413,9 @@ moadim status --wait   # poll until a server answers (or 30s elapse) instead of 
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
 moadim trigger <id>    # trigger a routine to run now, outside its schedule
+moadim logs <id>       # print a routine's newest run log (agent.log) to stdout
+moadim install         # register moadim as an OS service (launchd / systemd user)
+moadim uninstall       # remove the OS service registration and the managed crontab block
 moadim restart         # stop a running server (if any) and start a fresh one
 moadim restart --quiet # same, printing only the `restarted: pid <old> -> <new>` line
 moadim restart -i      # same, but bring the fresh instance up in the foreground

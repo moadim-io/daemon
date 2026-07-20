@@ -92,10 +92,7 @@ pub async fn run_with_listener_until(
     listener: tokio::net::TcpListener,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
-    let addr = listener
-        .local_addr()
-        .expect("TCP listener always has a local address")
-        .to_string();
+    let addr = listener.local_addr()?.to_string();
     write_openapi_spec(std::path::Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/apis/openapi.json"

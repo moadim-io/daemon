@@ -189,8 +189,8 @@ fn rotate_run_history_if_oversized_rolls_the_file_past_the_cap() {
 }
 
 #[test]
-fn rotate_run_history_if_oversized_replaces_a_previous_1_file() {
-    let base = std::env::temp_dir().join(format!("moadim-runs-replace-{}", uuid::Uuid::new_v4()));
+fn rotate_run_history_if_oversized_merges_with_a_previous_1_file() {
+    let base = std::env::temp_dir().join(format!("moadim-runs-merge-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&base).unwrap();
     let path = base.join("runs.log");
     std::fs::write(&path, vec![b'y'; (RUN_HISTORY_MAX_BYTES + 1) as usize]).unwrap();
@@ -200,10 +200,14 @@ fn rotate_run_history_if_oversized_replaces_a_previous_1_file() {
     rotate_run_history_if_oversized(&path);
 
     assert!(rotated.exists());
+    assert!(
+        !path.exists(),
+        "the source file is removed once its content is folded into .1"
+    );
     assert_eq!(
         std::fs::metadata(&rotated).unwrap().len(),
-        RUN_HISTORY_MAX_BYTES + 1,
-        "rotation must replace a stale .1 file with the freshly-rolled one"
+        "stale rotated content".len() as u64 + RUN_HISTORY_MAX_BYTES + 1,
+        "rotation must preserve a stale .1 file's content, not overwrite it (#1277)"
     );
     let _ = std::fs::remove_dir_all(&base);
 }
@@ -225,6 +229,34 @@ fn append_persisted_run_rotates_an_oversized_log_before_appending() {
         read_persisted_runs("big-id"),
         vec![sample_run("my-routine-1000", 1000)],
         "the fresh log must contain only the newly appended run, not the rotated-away content"
+    );
+}
+
+#[test]
+fn read_persisted_runs_preserves_history_across_rotation() {
+    let _home = TempHome::set();
+    let path = crate::paths::routine_run_history_path("rotate-id");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+    // Seed an oversized `runs.log` containing one real, pre-rotation run.
+    let old_run = sample_run("my-routine-1000", 1000);
+    let mut content = serde_json::to_string(&old_run).unwrap();
+    content.push('\n');
+    content.push_str(&"x".repeat(RUN_HISTORY_MAX_BYTES as usize));
+    std::fs::write(&path, content).unwrap();
+
+    // Appending a new run rotates the oversized log out of the way first.
+    let new_run = sample_run("my-routine-2000", 2000);
+    append_persisted_run("rotate-id", &new_run);
+
+    let runs = read_persisted_runs("rotate-id");
+    assert!(
+        runs.contains(&old_run),
+        "the pre-rotation run must still be readable after rotation (#1277)"
+    );
+    assert!(
+        runs.contains(&new_run),
+        "the newly appended run must also be readable"
     );
 }
 

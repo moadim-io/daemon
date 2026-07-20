@@ -32,6 +32,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -57,7 +58,7 @@ fn snapshot_ttls_empty_store_is_empty() {
 #[test]
 fn ttl_for_returns_snapshot_value_when_present() {
     let mut snapshot = HashMap::new();
-    snapshot.insert("known".to_string(), 42u64);
+    snapshot.insert("known".to_string(), 42_u64);
     assert_eq!(ttl_for(&snapshot, "known"), 42);
 }
 
@@ -89,7 +90,7 @@ fn snapshot_max_runtimes_empty_store_is_empty() {
 #[test]
 fn max_runtime_for_returns_snapshot_value_when_present() {
     let mut snapshot = HashMap::new();
-    snapshot.insert("known".to_string(), 99u64);
+    snapshot.insert("known".to_string(), 99_u64);
     assert_eq!(max_runtime_for(&snapshot, "known"), 99);
 }
 

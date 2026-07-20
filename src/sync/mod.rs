@@ -129,6 +129,12 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
     // propagated as `SyncError::Io` instead of panicking: every caller of
     // crontab sync already treats a `SyncError` as warn-and-continue (see the
     // module docs), and a panic here would defeat that graceful degradation.
+    #[allow(
+        clippy::expect_used,
+        reason = "`.stdin(Stdio::piped())` is set on this same `Command` a few lines above, so \
+                  `take()` returning `None` here would mean the stdlib itself broke that \
+                  contract, not a real runtime error"
+    )]
     let write_result = child
         .stdin
         .take()
@@ -149,6 +155,26 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
 
 // ─── Block assembly ────────────────────────────────────────────────────────
 
+/// Locate a delimiter line whose trimmed content is *exactly* `marker`.
+///
+/// Returns `(line_start, marker_end)` — the byte offset where the marker's line
+/// begins and the offset just past the marker text — or `None` when no line
+/// matches. Matching the marker as a whole line (rather than a raw substring)
+/// keeps a prefix marker like `# BEGIN MOADIM` from matching the cron-jobs *and*
+/// the more-specific routines marker `# BEGIN MOADIM-ROUTINES`, which would let
+/// a cron-jobs sync silently overwrite the routines block (issue #324).
+fn find_marker_line(crontab: &str, marker: &str) -> Option<(usize, usize)> {
+    let mut offset = 0;
+    for line in crontab.split_inclusive('\n') {
+        let content = line.trim_end_matches('\n');
+        if content.trim() == marker {
+            return Some((offset, offset + content.trim_end().len()));
+        }
+        offset += line.len();
+    }
+    None
+}
+
 /// Replace (or insert) a delimited block (`begin_marker`..`end_marker`) inside `crontab` text.
 pub(crate) fn replace_block_with(
     crontab: &str,
@@ -156,12 +182,12 @@ pub(crate) fn replace_block_with(
     begin_marker: &str,
     end_marker: &str,
 ) -> String {
-    let begin_pos = crontab.find(begin_marker);
-    let end_pos = crontab.find(end_marker);
+    let begin_pos = find_marker_line(crontab, begin_marker).map(|(start, _)| start);
+    let end_pos = find_marker_line(crontab, end_marker).map(|(_, marker_end)| marker_end);
 
     match (begin_pos, end_pos) {
         (Some(begin), Some(end)) if begin < end => {
-            let after = end + end_marker.len();
+            let after = end;
             let mut result = crontab[..begin].to_string();
             result.push_str(block);
             result.push('\n');

@@ -29,6 +29,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -49,6 +50,7 @@ fn with_override_home(body: impl FnOnce(&std::path::Path)) {
         std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
     }
     body(&home);
+    // SAFETY: single-threaded test execution.
     unsafe {
         match previous {
             Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),

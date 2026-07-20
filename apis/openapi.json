@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "1.4.1"
+    "version": "1.5.0"
   },
   "servers": [
     {
@@ -19,7 +19,7 @@
     "/agents": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_agents"
         ],
         "summary": "`GET /agents` — list the agent registry keys a routine may target.",
         "operationId": "list_agents",
@@ -238,6 +238,27 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "crate::routes::metrics"
+        ],
+        "summary": "`GET /api/v1/metrics` — Prometheus text-exposition metrics. See the module doc for how each\nseries is derived; `/health` remains the cheap liveness probe, this is the richer surface.",
+        "operationId": "metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format (version 0.0.4)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/restart": {
       "post": {
         "tags": [
@@ -266,10 +287,10 @@
     "/routines": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_routines"
         ],
         "summary": "`GET /routines` — list routines, optionally filtered and sorted by repository.",
-        "operationId": "list",
+        "operationId": "list_routines",
         "parameters": [
           {
             "name": "repository",
@@ -335,10 +356,10 @@
       },
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::create_routine"
         ],
         "summary": "`POST /routines` — create a new routine.",
-        "operationId": "create",
+        "operationId": "create_routine",
         "requestBody": {
           "content": {
             "application/json": {
@@ -395,10 +416,10 @@
     "/routines/cleanup": {
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::cleanup_workbenches"
         ],
         "summary": "`POST /routines/cleanup` — reap finished, expired run workbenches on demand.",
-        "operationId": "cleanup",
+        "operationId": "cleanup_workbenches",
         "responses": {
           "200": {
             "description": "Workbenches removed and bytes freed",
@@ -416,7 +437,7 @@
     "/routines/lock": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::get_lock_status"
         ],
         "summary": "`GET /routines/lock` — return the current global lock status.",
         "operationId": "get_lock_status",
@@ -547,10 +568,10 @@
     "/routines/{id}": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::get_routine"
         ],
         "summary": "`GET /routines/{id}` — retrieve a single routine by UUID.",
-        "operationId": "get",
+        "operationId": "get_routine",
         "parameters": [
           {
             "name": "id",
@@ -580,7 +601,7 @@
       },
       "put": {
         "tags": [
-          "crate::routines"
+          "crate::routes::update_routine"
         ],
         "summary": "`PUT /routines/{id}` — alias for `PATCH`: a partial-merge update, not a full replace.",
         "description": "Fields omitted from the body are retained from the existing record, exactly as with `PATCH`.\nA client expecting RFC 7231 full-resource-replacement semantics (omitted fields reset to\ndefault) should not rely on this route for that; use `PATCH` and set every field explicitly.",
@@ -627,10 +648,10 @@
       },
       "delete": {
         "tags": [
-          "crate::routines"
+          "crate::routes::delete_routine"
         ],
         "summary": "`DELETE /routines/{id}` — delete a routine by UUID.",
-        "operationId": "delete",
+        "operationId": "delete_routine",
         "parameters": [
           {
             "name": "id",
@@ -660,10 +681,10 @@
       },
       "patch": {
         "tags": [
-          "crate::routines"
+          "crate::routes::update_routine"
         ],
         "summary": "`PATCH /routines/{id}` — partially update a routine.",
-        "operationId": "update",
+        "operationId": "update_routine",
         "parameters": [
           {
             "name": "id",
@@ -708,7 +729,7 @@
     "/routines/{id}/flags": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_flags"
         ],
         "summary": "`GET /routines/{id}/flags` — list open flags raised against a routine.",
         "operationId": "list_flags",
@@ -744,7 +765,7 @@
       },
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::create_flag"
         ],
         "summary": "`POST /routines/{id}/flags` — raise a new flag against a routine.",
         "operationId": "create_flag",
@@ -792,7 +813,7 @@
     "/routines/{id}/flags/{filename}": {
       "delete": {
         "tags": [
-          "crate::routines"
+          "crate::routes::resolve_flag"
         ],
         "summary": "`DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.",
         "operationId": "resolve_flag",
@@ -885,10 +906,10 @@
     "/routines/{id}/runs": {
       "get": {
         "tags": [
-          "crate::routines"
+          "crate::routes::list_routine_runs"
         ],
         "summary": "`GET /routines/{id}/runs` — list every run workbench for the routine, newest first.",
-        "operationId": "get_runs",
+        "operationId": "list_routine_runs",
         "parameters": [
           {
             "name": "id",
@@ -1000,7 +1021,7 @@
           "crate::routines"
         ],
         "summary": "`POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.",
-        "description": "The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).\nUnlike [`trigger`] it does not record a manual trigger; the spawned command records the scheduled\ntimestamp itself. See [`svc_trigger_scheduled`].",
+        "description": "The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).\nUnlike [`crate::routes::trigger_routine::trigger_routine`] it does not record a manual\ntrigger; the spawned command records the scheduled timestamp itself. See\n[`svc_trigger_scheduled`].",
         "operationId": "scheduled_trigger",
         "parameters": [
           {
@@ -1033,11 +1054,11 @@
     "/routines/{id}/trigger": {
       "post": {
         "tags": [
-          "crate::routines"
+          "crate::routes::trigger_routine"
         ],
-        "summary": "`POST /routines/{id}/trigger` — manually run a routine outside its schedule.",
-        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`svc_trigger`].",
-        "operationId": "trigger",
+        "summary": "`POST /routines/{id}/trigger` — manually trigger a routine outside its schedule.",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`crate::routines::svc_trigger`].",
+        "operationId": "trigger_routine",
         "parameters": [
           {
             "name": "id",
@@ -1152,6 +1173,16 @@
           "enabled": {
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
+          },
+          "env": {
+            "type": "object",
+            "description": "Non-secret environment variables to inject into the agent's shell session at launch,\nwritten to `routine.toml`'s `[env]` table (defaults to empty). Keys must match\n`[A-Za-z_][A-Za-z0-9_]*`; values must not contain newlines (#408). For secrets, edit the\ngitignored `routine.local.toml` sidecar directly on disk instead — it is never accepted\nover the API.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "goal": {
             "type": [
@@ -1682,7 +1713,8 @@
               "agent_command_available",
               "file_path",
               "flag_count",
-              "is_running"
+              "is_running",
+              "env_keys"
             ],
             "properties": {
               "agent_command_available": {
@@ -1692,6 +1724,13 @@
               "agent_registered": {
                 "type": "boolean",
                 "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses\nsuccessfully. A present-but-malformed config is silently dropped at crontab-sync time, so\nit reports `false` here too — file existence alone is not \"registered\"."
+              },
+              "env_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Names (never values) of every environment variable set for this routine, merging the\ntracked `routine.toml` `[env]` table with the untracked `routine.local.toml` sidecar\n(secrets), deduplicated and sorted. Lets a client show *what* is configured without ever\nexposing a secret value over the API (issue #408)."
               },
               "file_path": {
                 "type": "string",
@@ -1895,6 +1934,19 @@
               "null"
             ],
             "description": "New enabled state, or `None` to keep the existing value."
+          },
+          "env": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "New tracked `[env]` map, or `None` to keep the existing value. Replaces the whole map (not\nmerged); send the full desired set. See [`CreateRoutineRequest::env`] for validation rules\nand the `routine.local.toml` secrets sidecar.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "goal": {
             "type": [

@@ -30,6 +30,7 @@ fn make_routine(title: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -44,6 +45,7 @@ fn with_path(value: &std::path::Path, body: impl FnOnce()) {
         std::env::set_var("PATH", value);
     }
     body();
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("PATH", prev),
@@ -212,6 +214,7 @@ fn cron_path_falls_back_to_root_home_when_home_unset() {
         "expected /root-anchored fallback dirs in: {path}"
     );
 
+    // SAFETY: single-threaded test execution.
     unsafe {
         match saved {
             Some(prev) => std::env::set_var("HOME", prev),
@@ -472,3 +475,6 @@ mod command_umask_tests;
 
 #[path = "command_trigger_source_tests.rs"]
 mod command_trigger_source_tests;
+
+#[path = "command_env_tests.rs"]
+mod command_env_tests;

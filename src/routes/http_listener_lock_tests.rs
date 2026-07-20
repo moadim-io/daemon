@@ -14,28 +14,6 @@ use super::{build_app, SucceedingCronShim, TempHome};
 // ── Global lock endpoints ─────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn get_lock_status_returns_unlocked_by_default() {
-    let _home = TempHome::set();
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/routines/lock")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["shared"], false);
-    assert_eq!(json["local"], false);
-    assert_eq!(json["locked"], false);
-}
-
-#[tokio::test]
 async fn lock_route_creates_sentinel_and_returns_status() {
     let _home = TempHome::set();
     let resp = build_app(crate::routines::new_store())

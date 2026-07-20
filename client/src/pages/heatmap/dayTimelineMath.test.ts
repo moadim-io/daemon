@@ -52,6 +52,7 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     is_running: false,
     file_path: "",
     flag_count: 3,
+    env_keys: [],
     ...overrides,
   };
 }

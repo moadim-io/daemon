@@ -9,13 +9,13 @@ use std::sync::{Arc, Mutex};
 
 #[test]
 fn lock_recover_returns_guard_for_healthy_mutex() {
-    let mutex = Mutex::new(7u32);
+    let mutex = Mutex::new(7_u32);
     assert_eq!(*mutex.lock_recover(), 7);
 }
 
 #[test]
 fn lock_recover_recovers_a_poisoned_guard() {
-    let mutex = Arc::new(Mutex::new(11u32));
+    let mutex = Arc::new(Mutex::new(11_u32));
     let poisoner = Arc::clone(&mutex);
     let handle = std::thread::spawn(move || {
         let _guard = poisoner.lock().expect("first lock is not yet poisoned");

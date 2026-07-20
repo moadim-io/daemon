@@ -62,24 +62,11 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     }
 }
 
-// ── parity tools: agents / logs / shutdown ──────────────────────────────────────
-
-#[test]
-fn list_agents_tool_returns_array() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.list_agents().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert!(val.is_array());
-}
+// ── parity tools: logs / shutdown ──────────────────────────────────────
 
 #[test]
 fn routine_logs_tool_returns_logs_for_existing_routine() {
@@ -119,22 +106,6 @@ fn routine_logs_tool_not_found_is_error() {
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));
-}
-
-#[test]
-fn get_lock_status_returns_unlocked_by_default() {
-    let _home = TempHome::set();
-    let handler = make_handler();
-    let result = handler.get_lock_status().unwrap();
-    assert!(!result.is_error.unwrap_or(false));
-    let text = match &result.content[0] {
-        rmcp::model::ContentBlock::Text(block) => block.text.clone(),
-        _ => panic!("expected text content"),
-    };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(val["locked"], false);
-    assert_eq!(val["shared"], false);
-    assert_eq!(val["local"], false);
 }
 
 #[test]

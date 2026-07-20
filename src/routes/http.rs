@@ -1,9 +1,23 @@
 //! HTTP server setup: builds the Axum router and starts listening.
 
+use super::cleanup_workbenches;
+use super::create_flag;
+use super::create_routine;
+use super::delete_routine;
+use super::get_lock_status;
+use super::get_routine;
 use super::health;
+use super::list_agents;
+use super::list_flags;
+use super::list_routine_runs;
+use super::list_routines;
 use super::mcp::MoadimMcp;
+use super::metrics;
+use super::resolve_flag;
 use super::restart;
 use super::shutdown;
+use super::trigger_routine;
+use super::update_routine;
 use crate::error::AppError;
 use crate::middlewares;
 use crate::routines::{self, RoutineStore};
@@ -61,7 +75,8 @@ impl axum::extract::FromRef<AppState> for RoutineStore {
     }
 }
 
-/// The embedded Yew SPA HTML (served at `/`), baked into the binary at compile time.
+/// The embedded React `client/` SPA HTML (served at `/`), baked into the binary at compile time
+/// by `src/build/client.rs`.
 const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 
 /// Strong `ETag` for [`INDEX_HTML`], computed once from its content.
@@ -72,15 +87,6 @@ const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 /// does, not resist tampering.
 static INDEX_ETAG: LazyLock<String> = LazyLock::new(|| etag_for(INDEX_HTML));
 
-/// The embedded React `client/` SPA HTML (served at `/client`), baked into the binary at compile
-/// time by `src/build/client.rs`. A second, independent bundle from [`INDEX_HTML`] — see
-/// `Architecture.md`'s "UI inlining strategy" for why both exist side by side during the
-/// `ui/` → `client/` rollout.
-const CLIENT_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/client.html"));
-
-/// Strong `ETag` for [`CLIENT_HTML`], mirroring [`INDEX_ETAG`].
-static CLIENT_ETAG: LazyLock<String> = LazyLock::new(|| etag_for(CLIENT_HTML));
-
 /// Strong `ETag` for an embedded SPA HTML body, deterministic across restarts of the same binary.
 fn etag_for(html: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -88,11 +94,11 @@ fn etag_for(html: &str) -> String {
     format!("\"{:016x}\"", hasher.finish())
 }
 
-/// Serves an embedded SPA's HTML with a strong `ETag`, honoring `If-None-Match` with a bodyless
+/// Serves the embedded SPA's HTML with a strong `ETag`, honoring `If-None-Match` with a bodyless
 /// `304 Not Modified` so a client that already has the current build only pays for the request
 /// round-trip on reload, not a re-download of the full body (issue #401). `Cache-Control:
 /// no-cache` forces that revalidation on every load rather than trusting a local TTL, since the
-/// content can change on any daemon upgrade. Shared by [`index`] and [`client_index`].
+/// content can change on any daemon upgrade.
 fn serve_spa(html: &'static str, etag: &'static str, headers: &HeaderMap) -> Response {
     let not_modified = headers
         .get(IF_NONE_MATCH)
@@ -116,19 +122,6 @@ fn serve_spa(html: &'static str, etag: &'static str, headers: &HeaderMap) -> Res
     ))]
 pub async fn index(headers: HeaderMap) -> Response {
     serve_spa(INDEX_HTML, INDEX_ETAG.as_str(), &headers)
-}
-
-/// `GET /client` (and any `/client/*` deep link) — serve the React client SPA. The nested
-/// router's own `.fallback` (see [`build_app_with_shutdown`]) routes every `/client/*` path here
-/// too, so React Router's client-side routes resolve on a hard refresh or a direct deep link,
-/// exactly like [`index`] does for the Yew `ui/` SPA at `/`.
-#[utoipa::path(get, path = "/client",
-    responses(
-        (status = 200, description = "React client HTML", body = str),
-        (status = 304, description = "Client's cached copy is still current"),
-    ))]
-pub async fn client_index(headers: HeaderMap) -> Response {
-    serve_spa(CLIENT_HTML, CLIENT_ETAG.as_str(), &headers)
 }
 
 /// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
@@ -209,6 +202,7 @@ pub(crate) fn build_app_with_shutdown(
     // client-routed web UI (e.g. `/routines` resolves to a UI page, not JSON).
     let api = Router::new()
         .route("/health", get(health::health))
+        .route("/metrics", get(metrics::metrics))
         .route("/shutdown", post(shutdown::shutdown))
         .route("/restart", post(restart::restart))
         .route("/machine", get(get_current_machine).put(put_machine))
@@ -221,25 +215,34 @@ pub(crate) fn build_app_with_shutdown(
             "/config/max-concurrent-runs",
             get(get_max_concurrent_runs).put(put_max_concurrent_runs),
         )
-        .route("/agents", get(routines::list_agents))
+        .route("/agents", get(list_agents::list_agents))
         .route("/routines.ics", get(routines::ical_feed))
-        .route("/routines", get(routines::list).post(routines::create))
-        .route("/routines/cleanup", post(routines::cleanup))
+        .route(
+            "/routines",
+            get(list_routines::list_routines).post(create_routine::create_routine),
+        )
+        .route(
+            "/routines/cleanup",
+            post(cleanup_workbenches::cleanup_workbenches),
+        )
         .route("/routines/runs", get(routines::get_all_runs))
         .route(
             "/routines/lock",
-            get(routines::get_lock_status)
+            get(get_lock_status::get_lock_status)
                 .post(routines::lock)
                 .delete(routines::unlock),
         )
         .route(
             "/routines/{id}",
-            get(routines::get)
-                .put(routines::replace)
-                .patch(routines::update)
-                .delete(routines::delete),
+            get(get_routine::get_routine)
+                .put(update_routine::replace)
+                .patch(update_routine::update_routine)
+                .delete(delete_routine::delete_routine),
         )
-        .route("/routines/{id}/trigger", post(routines::trigger))
+        .route(
+            "/routines/{id}/trigger",
+            post(trigger_routine::trigger_routine),
+        )
         .route(
             "/routines/{id}/prompt-preview",
             get(routines::get_prompt_preview),
@@ -250,14 +253,17 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route(
             "/routines/{id}/flags",
-            get(routines::list_flags).post(routines::create_flag),
+            get(list_flags::list_flags).post(create_flag::create_flag),
         )
         .route(
             "/routines/{id}/flags/{filename}",
-            delete(routines::resolve_flag),
+            delete(resolve_flag::resolve_flag),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
-        .route("/routines/{id}/runs", get(routines::get_runs))
+        .route(
+            "/routines/{id}/runs",
+            get(list_routine_runs::list_routine_runs),
+        )
         .route(
             "/routines/{id}/runs/{workbench}/log",
             get(routines::get_run_log),
@@ -275,15 +281,6 @@ pub(crate) fn build_app_with_shutdown(
             middlewares::timeout::API_REQUEST_TIMEOUT,
         )));
 
-    // The React client, served alongside `ui/` at `/client` during the rollout (see
-    // `CLIENT_HTML`'s doc comment). Its own `.fallback` scopes the SPA-routing trick to the
-    // `/client` prefix only, the same technique the `/api/v1` nest above uses for
-    // `api_not_found` — so `/client/routines` etc. resolve without touching the outer
-    // `.fallback(get(index))` that still serves `ui/` for everything else.
-    let client_router = Router::new()
-        .route("/", get(client_index))
-        .fallback(client_index);
-
     Router::new()
         .route("/", get(index))
         // Back-compat: the UI used to live at `/ui`; redirect old links to the root.
@@ -292,14 +289,13 @@ pub(crate) fn build_app_with_shutdown(
             get(|| async { axum::response::Redirect::permanent("/") }),
         )
         .nest("/api/v1", api)
-        .nest("/client", client_router)
         .nest_service("/mcp", mcp_service)
         .merge({
             use utoipa::OpenApi as _;
             SwaggerUi::new("/docs").url("/docs/openapi.json", crate::openapi::ApiDoc::openapi())
         })
         // SPA fallback: client-routed pages (`/routines`) and refreshes on them return the app
-        // HTML so the Yew router can resolve the path on load.
+        // HTML so React Router can resolve the path on load.
         .fallback(get(index))
         // Innermost of the cross-cutting layers (added first) so a rejected request's `403`
         // still gets a security-headers pass and a logged inbound/outbound pair, while still

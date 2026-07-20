@@ -82,7 +82,7 @@ fn reap_dir_removes_only_finished_and_expired() {
     std::fs::write(base.join("stray-50"), b"x").unwrap(); // a file, not a dir -> ignored
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 500u64; // expiry threshold: age > 500
+    let ttl_for = |_slug: &str| 500_u64; // expiry threshold: age > 500
     let alive = |session: &str| session == "moadim-running-100";
 
     let stats = reap_dir(
@@ -152,7 +152,7 @@ fn reap_dir_measures_ttl_from_finish_not_trigger() {
     touch_dir(&base, "donelong-100"); // triggered at 100, finished long ago (at 100)
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 500u64; // retention window: 500s from finish
+    let ttl_for = |_slug: &str| 500_u64; // retention window: 500s from finish
     let dead = |_session: &str| false;
     // Finish time is per-workbench: the long-running one finished at 900 (age 100 <= 500 -> kept);
     // the other finished at 100 (age 900 > 500 -> reaped). Run duration never eats the window.
@@ -224,8 +224,8 @@ fn reap_dir_kills_hung_session_over_max_runtime_then_reaps() {
     touch_dir(&base, "hung-100"); // live + over max runtime -> killed, then reaped
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 500u64; // age 900 > 500 -> TTL elapsed
-    let max_runtime_for = |_slug: &str| 300u64; // age 900 > 300 -> watchdog trips
+    let ttl_for = |_slug: &str| 500_u64; // age 900 > 500 -> TTL elapsed
+    let max_runtime_for = |_slug: &str| 300_u64; // age 900 > 300 -> watchdog trips
     let alive = |_session: &str| true; // session is still running
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
@@ -256,8 +256,8 @@ fn reap_dir_records_forced_kill_in_agent_log_when_ttl_not_yet_elapsed() {
     touch_dir(&base, "hung-900"); // live + over max runtime, but TTL not yet elapsed
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 100_000u64; // age 100 <= huge TTL -> not reaped this sweep
-    let max_runtime_for = |_slug: &str| 50u64; // age 100 > 50 -> watchdog trips
+    let ttl_for = |_slug: &str| 100_000_u64; // age 100 <= huge TTL -> not reaped this sweep
+    let max_runtime_for = |_slug: &str| 50_u64; // age 100 > 50 -> watchdog trips
     let alive = |_session: &str| true;
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());
@@ -299,8 +299,8 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
     touch_dir(&base, "gone-100"); // over both bounds but already dead
 
     let now = 1000;
-    let ttl_for = |_slug: &str| 100u64;
-    let max_runtime_for = |_slug: &str| 100u64;
+    let ttl_for = |_slug: &str| 100_u64;
+    let max_runtime_for = |_slug: &str| 100_u64;
     let dead = |_session: &str| false;
     let killed = std::cell::RefCell::new(Vec::new());
     let kill = |session: &str| killed.borrow_mut().push(session.to_string());

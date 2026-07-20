@@ -108,7 +108,7 @@ async fn run_with_listener_serves_over_tcp() {
         .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .await
         .unwrap();
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0_u8; 512];
     let n = stream.read(&mut buf).await.unwrap();
     let response = String::from_utf8_lossy(&buf[..n]);
     assert!(response.starts_with("HTTP/1.1 200"), "got: {response}");
@@ -139,7 +139,7 @@ async fn shutdown_route_stops_the_serving_loop() {
         )
         .await
         .unwrap();
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0_u8; 512];
     let n = stream.read(&mut buf).await.unwrap();
     assert!(
         String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200"),
@@ -206,6 +206,7 @@ async fn router_serves_routines_ical_feed() {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     })
     .unwrap();
     let resp = build_app(crate::routines::new_store())
@@ -260,6 +261,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     };
     crate::routine_storage::write_routine(&mk("a", "Routine A")).unwrap();
     crate::routine_storage::write_routine(&mk("b", "Routine B")).unwrap();
@@ -374,11 +376,13 @@ fn shutdown_grace_honors_env_override_then_falls_back() {
     }
     assert_eq!(shutdown_grace(), Duration::from_millis(42));
     // An unparseable value falls back to the compiled default.
+    // SAFETY: single-threaded test execution.
     unsafe {
         std::env::set_var(SHUTDOWN_GRACE_MS_ENV, "not-a-number");
     }
     assert_eq!(shutdown_grace(), SHUTDOWN_GRACE);
     // An unset value also falls back.
+    // SAFETY: single-threaded test execution.
     unsafe {
         std::env::remove_var(SHUTDOWN_GRACE_MS_ENV);
     }

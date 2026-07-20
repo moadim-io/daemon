@@ -126,8 +126,8 @@ pub(super) const MAX_TITLE_LEN: usize = 200;
 /// content-checked. Two concrete failures follow from a blank or punctuation-only
 /// title (issue #226):
 ///
-/// 1. The moadim routine-origin disclosure breaks — `system_prompt_stmts` writes
-///    `Routine name: <title>` into every workbench `CLAUDE.md`, so an empty title
+/// 1. The moadim routine-origin disclosure breaks — `compose_prompt` writes
+///    `Routine name: <title>` into the compiled prompt body, so an empty title
 ///    yields a nameless disclosure the agent cannot satisfy.
 /// 2. `slugify` maps any title with no ASCII-alphanumerics (`""`, `"   "`, `"!!!"`)
 ///    to the constant `"routine"`, so the routine silently takes a slug the user

@@ -1,7 +1,7 @@
 //! `PATCH /routines/{id}` and `PUT /routines/{id}` HTTP handlers.
 
 use super::logic;
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 use axum::{
     extract::{Path, State},
     Json,
@@ -20,9 +20,7 @@ pub async fn update_routine(
 ) -> Result<Json<RoutineResponse>, AppError> {
     // `svc_update` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that off the
     // async worker thread.
-    let resp = tokio::task::spawn_blocking(move || logic::build(&store, &id, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || logic::build(&store, &id, body)).await?;
     Ok(Json(resp))
 }
 

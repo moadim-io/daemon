@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
@@ -46,9 +46,7 @@ pub async fn scheduled_trigger(
     // See `crate::routes::trigger_routine::trigger_routine`: `svc_trigger_scheduled` shells
     // out to `tmux`(1) too (#360). This is the endpoint the generated crontab line invokes, so
     // a `*/N` herd of scheduled fires is exactly the thundering-herd case #360 is about.
-    let resp = tokio::task::spawn_blocking(move || svc_trigger_scheduled(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || svc_trigger_scheduled(&store, &id)).await?;
     Ok(Json(resp))
 }
 

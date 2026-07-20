@@ -1,7 +1,7 @@
 //! `POST /routines/{id}/trigger` HTTP handler.
 
 use super::logic;
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 use axum::{
     extract::{Path, State},
     Json,
@@ -22,9 +22,7 @@ pub async fn trigger_routine(
     // `svc_trigger` shells out to `tmux`(1) (overlap guard, concurrency cap, session spawn) and
     // does blocking fs I/O — keep that off the async worker thread (#360), same as create/update/
     // delete.
-    let resp = tokio::task::spawn_blocking(move || logic::build(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || logic::build(&store, &id)).await?;
     Ok(Json(resp))
 }
 

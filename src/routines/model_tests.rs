@@ -77,6 +77,7 @@ fn make_routine(agent: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -216,6 +217,7 @@ fn from_routine_populates_derived_fields() {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     };
     let resp = RoutineResponse::from_routine(routine);
     assert!(resp.schedule_description.is_some());
@@ -294,6 +296,7 @@ fn from_routine_counts_open_flags() {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     };
     let slug = slugify(&routine.title);
     crate::routines::flags::create_flag(

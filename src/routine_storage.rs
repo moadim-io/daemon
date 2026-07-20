@@ -5,10 +5,9 @@ use crate::utils::lock::LockRecover;
 // Re-exported (as `super::routines_dir`) for `routine_storage_migrations`; not called directly
 // in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
 use crate::paths::routines_dir;
+use std::collections::HashMap;
 // Only referenced by the `#[cfg(test)]` sibling test modules via `use super::*;` (they build a
 // `RoutineStore` map by hand); not used directly in this file's own (non-test) code.
-#[cfg(test)]
-use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
@@ -85,6 +84,28 @@ struct RoutineToml {
     /// Free-form labels for the routine; absent means no tags.
     #[serde(default)]
     tags: Vec<String>,
+    /// Non-secret environment variables injected at launch (see [`crate::routines::Routine::env`]).
+    /// Absent/empty means none. Tracked and git-committed — never put a secret here; use the
+    /// gitignored `routine.local.toml` sidecar instead ([`RoutineLocalToml`]).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    env: HashMap<String, String>,
+}
+
+/// TOML representation of a routine's untracked `routine.local.toml` sidecar: secret or
+/// machine-local environment variable overrides that win over `routine.toml`'s `[env]` table at
+/// launch time (issue #408).
+///
+/// Deliberately **not** part of [`RoutineToml`] or [`crate::routines::Routine`] — those are held
+/// in the in-memory [`crate::routines::RoutineStore`] and serialized straight into API responses,
+/// so a secret parsed into either would leak into every `GET /routines` response the moment it
+/// loaded. This struct is read fresh from disk only where a value is actually needed
+/// ([`read_local_env`], called from `build_routine_command` at launch time) and discarded
+/// immediately after.
+#[derive(Debug, Default, Deserialize)]
+struct RoutineLocalToml {
+    /// Secret / machine-local env var overrides; absent means none.
+    #[serde(default)]
+    env: HashMap<String, String>,
 }
 
 /// Daemon-written runtime state for a routine, persisted to the gitignored `state.local.toml`
@@ -140,6 +161,29 @@ fn read_runtime_state(base: &std::path::Path, dir_name: &str) -> RuntimeState {
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default()
+}
+
+/// Read a routine's gitignored `routine.local.toml` sidecar (`{routines_dir}/{id}/routine.local.toml`,
+/// see [`crate::paths::routine_local_toml_path`]), defaulting to an empty map when absent or
+/// unparsable — mirrors [`read_runtime_state`].
+///
+/// **Values only ever flow into [`crate::routines::build_routine_command`]**, which reads
+/// this right before it shell-quotes each entry into an `export KEY=value` launch statement. Every
+/// other caller (API responses, the UI, logs) must go through [`local_env_keys`] instead, which
+/// discards the values this returns and keeps only the key names.
+pub(crate) fn read_local_env(id: &str) -> HashMap<String, String> {
+    std::fs::read_to_string(crate::paths::routine_local_toml_path(id))
+        .ok()
+        .and_then(|text| toml::from_str::<RoutineLocalToml>(&text).ok())
+        .map(|local| local.env)
+        .unwrap_or_default()
+}
+
+/// Return only the *key names* set in a routine's `routine.local.toml` sidecar, never their
+/// values — the redaction-safe read used by [`crate::routines::RoutineResponse::from_routine`]
+/// to surface "what's configured" without ever exposing a secret over the API (#408).
+pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
+    read_local_env(id).into_keys().collect()
 }
 
 /// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
@@ -236,6 +280,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
         tags: routine.tags.clone(),
+        env: routine.env.clone(),
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
@@ -415,3 +460,11 @@ mod routine_storage_sidecar_state_tests;
 #[cfg(test)]
 #[path = "routine_storage_slug_collision_tests.rs"]
 mod routine_storage_slug_collision_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_gitignore_tests.rs"]
+mod routine_storage_gitignore_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_env_tests.rs"]
+mod routine_storage_env_tests;

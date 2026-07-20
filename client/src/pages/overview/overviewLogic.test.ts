@@ -49,6 +49,7 @@ function makeRoutine(overrides: Partial<RoutineResponse> = {}): RoutineResponse 
     agent_command_available: false,
     file_path: "",
     flag_count: 0,
+    env_keys: [],
     is_running: false,
     schedule_description: null,
     snoozed_until: null,

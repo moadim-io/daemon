@@ -309,6 +309,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 

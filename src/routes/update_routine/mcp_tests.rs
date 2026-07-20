@@ -34,6 +34,7 @@ fn update_routine_tool_not_found_is_error() {
             ttl_secs: None,
             max_runtime_secs: None,
             tags: None,
+            env: None,
         }))
         .unwrap();
     assert!(result.is_error.unwrap_or(false));

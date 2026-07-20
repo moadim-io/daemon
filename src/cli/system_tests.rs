@@ -148,8 +148,12 @@ fn http_request_core_rejects_an_unparsable_bind_override() {
 
 #[test]
 fn ensure_readme_returns_early_when_the_path_has_no_parent() {
-    ensure_readme(
-        std::path::Path::new("this-file-should-not-exist"),
-        "ignored",
-    );
+    // `Path::new("<bare-name>").parent()` is `Some("")`, not `None` — a relative
+    // single-component path still "has a parent" (the empty/current-dir path), so it
+    // does not exercise this branch. `""` (like `/`) is one of the few paths whose
+    // `.parent()` is genuinely `None`, which is what routes `ensure_readme` through
+    // `parent_or_err`'s error arm and back out early — without this, the call falls
+    // through to `std::fs::write`, dropping a stray file in the process's current
+    // directory (as a bare relative path previously did here).
+    ensure_readme(std::path::Path::new(""), "ignored");
 }

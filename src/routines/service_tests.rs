@@ -62,6 +62,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -89,6 +90,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: vec![],
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -107,6 +109,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: None,
+        env: None,
     }
 }
 

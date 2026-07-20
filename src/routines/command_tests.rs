@@ -30,6 +30,7 @@ fn make_routine(title: &str) -> Routine {
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
     }
 }
 
@@ -474,3 +475,6 @@ mod command_umask_tests;
 
 #[path = "command_trigger_source_tests.rs"]
 mod command_trigger_source_tests;
+
+#[path = "command_env_tests.rs"]
+mod command_env_tests;

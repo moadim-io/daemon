@@ -55,6 +55,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         ttl_secs: None,
         max_runtime_secs: None,
         tags: None,
+        env: None,
     }
 }
 

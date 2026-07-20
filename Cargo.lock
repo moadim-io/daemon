@@ -374,9 +374,9 @@ dependencies = [
 
 [[package]]
 name = "cron-union"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19ad84ecd7707be17cd777be056414b9b599acb6d318c06ed577e8bfbae6bf1e"
+checksum = "89812a1a051e3c64649c1205e51632862ff2590cec7982eef4a8010ac35f11c8"
 dependencies = [
  "cron",
 ]

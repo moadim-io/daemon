@@ -6,7 +6,6 @@
 //! optionally lowered further by an explicit `ttl_secs`.
 
 use chrono::Local;
-use croner::Cron;
 
 use super::super::model::Routine;
 
@@ -34,9 +33,7 @@ const GAP_SAMPLE_FIRES: usize = 48;
 /// The minimum gap (seconds) between consecutive entries in `fires`, sampling up to
 /// [`GAP_SAMPLE_FIRES`] of them. `None` if `fires` yields fewer than two timestamps.
 ///
-/// Shared by both branches of [`cron_interval_secs`] so the cron-union and croner-fallback
-/// paths sample the same way — see that function's doc for why a single "next two fires" diff
-/// isn't enough.
+/// Shared by [`cron_interval_secs`] so the sampling stays stable for unevenly-spaced schedules.
 fn min_gap_secs(mut fires: impl Iterator<Item = chrono::DateTime<Local>>) -> Option<u64> {
     let mut prev = fires.next()?;
     let mut min_gap: Option<i64> = None;
@@ -58,16 +55,11 @@ fn min_gap_secs(mut fires: impl Iterator<Item = chrono::DateTime<Local>>) -> Opt
 /// is just before 09:00 and ~23.5 hours when `now` is just after 09:00. Sampling multiple fires
 /// keeps the result stable regardless of `now`, so sub-hour schedules (the only ones this
 /// affects, since the result is only ever used via `MAX_TTL_SECS.min(..)`) really do have a
-/// constant interval as callers assume. This applies equally to the `cron-union` path below
-/// (the common case) and the `croner` fallback (`@keyword`/7-field schedules) — both go through
-/// [`min_gap_secs`] so neither can regress back to a two-fire diff.
+/// constant interval as callers assume.
 pub(super) fn cron_interval_secs(schedule: &str) -> Option<u64> {
-    if let Some(union) = crate::utils::cron::compiled_union(schedule) {
-        let cron = union.iter().next()?.schedule();
-        return min_gap_secs(cron.after(&Local::now()));
-    }
-    let cron = schedule.parse::<Cron>().ok()?;
-    min_gap_secs(cron.iter_after(Local::now()))
+    let union = crate::utils::cron::compiled_union(schedule)?;
+    let cron = union.iter().next()?.schedule();
+    min_gap_secs(cron.after(&Local::now()))
 }
 
 impl Routine {

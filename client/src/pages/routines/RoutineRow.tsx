@@ -100,8 +100,8 @@ export function RoutineRow({
         />
       </td>
       <td>
-        <div className="cell-schedule" title={r.id}>
-          {r.title}
+        <div className="cell-schedule" title={r.title}>
+          <RoutineTitle title={r.title} />
         </div>
         {goalFirstLine !== undefined && (
           <div className="cell-goal" title={r.goal ?? ""}>
@@ -228,6 +228,23 @@ export function RoutineRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+function RoutineTitle({ title }: { title: string }) {
+  const parts = title.split("/").filter(Boolean);
+  if (parts.length <= 1) return <>{title}</>;
+  return (
+    <span className="cell-title-path">
+      {parts.map((part, idx) => (
+        <span key={`${part}-${idx}`}>
+          {idx > 0 && <span className="cell-title-sep">/</span>}
+          <span className={idx === parts.length - 1 ? "cell-title-leaf" : "cell-title-folder"}>
+            {part}
+          </span>
+        </span>
+      ))}
+    </span>
   );
 }
 

@@ -130,11 +130,12 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
         <label className="form-label">TITLE*</label>
         <input
           className="form-input"
-          placeholder="nightly triage"
+          placeholder="ops/nightly triage"
           autoComplete="off"
           spellCheck={false}
           {...register("title")}
         />
+        <div className="form-hint">Use / to nest folders and subfolders.</div>
       </div>
 
       <div className="form-group">

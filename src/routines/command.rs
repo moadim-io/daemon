@@ -10,33 +10,38 @@ use super::agents::AgentCommand;
 use super::flags::{list_flags, FlagScope};
 use super::model::Routine;
 
-/// Slugify `title` into a filesystem- and tmux-safe identifier.
+/// Slugify `title` into a filesystem- and tmux-safe path identifier.
 ///
-/// Lowercases, replaces each run of non-alphanumeric characters with a single `-`, and trims
-/// leading/trailing `-`. Returns `"routine"` if nothing usable remains.
+/// Lowercases, replaces each run of non-alphanumeric characters *inside a path segment* with `-`,
+/// preserves `/` as the segment separator, trims empty segments, and returns `"routine"` if empty.
 ///
 /// Unicode-aware: uses [`char::is_alphanumeric`] / [`char::to_lowercase`] rather than the ASCII-only
 /// variants, so non-Latin titles (Hebrew, CJK, Cyrillic) and Latin letters with diacritics (`é`,
-/// `ü`) keep their content instead of collapsing to the `"routine"` fallback (#262). Both the
-/// on-disk workbench dir and the tmux session name are shell-quoted wherever the slug is embedded,
-/// so non-ASCII bytes there are safe.
+/// `ü`) keep their content instead of collapsing to the `"routine"` fallback (#262). The path is
+/// still shell-quoted wherever it is embedded.
 pub(crate) fn slugify(title: &str) -> String {
-    let mut out = String::new();
-    let mut prev_dash = false;
-    for ch in title.chars() {
-        if ch.is_alphanumeric() {
-            out.extend(ch.to_lowercase());
-            prev_dash = false;
-        } else if !prev_dash {
-            out.push('-');
-            prev_dash = true;
-        }
-    }
-    let trimmed = out.trim_matches('-').to_string();
-    if trimmed.is_empty() {
+    let segments: Vec<String> = title
+        .split('/')
+        .filter_map(|segment| {
+            let mut out = String::new();
+            let mut prev_dash = false;
+            for ch in segment.chars() {
+                if ch.is_alphanumeric() {
+                    out.extend(ch.to_lowercase());
+                    prev_dash = false;
+                } else if !prev_dash {
+                    out.push('-');
+                    prev_dash = true;
+                }
+            }
+            let trimmed = out.trim_matches('-').to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
+        .collect();
+    if segments.is_empty() {
         "routine".to_string()
     } else {
-        trimmed
+        segments.join("/")
     }
 }
 

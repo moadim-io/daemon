@@ -222,6 +222,26 @@ fn load_routine_falls_back_to_legacy_schedule_in_routine_toml() {
 }
 
 #[test]
+fn load_routine_blank_schedule_cron_with_no_legacy_schedule_returns_none() {
+    // A `schedule.cron` with no non-empty line (e.g. truncated by a crash mid-write) parses to
+    // `None` rather than an empty string, and with no legacy `schedule` field in `routine.toml`
+    // either, the whole load short-circuits to `None` instead of a routine with a blank schedule.
+    with_override_home(|_home| {
+        let slug = "rs-blank-schedule-cron-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "title = \"Rs Blank Schedule Cron\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "\n\n").unwrap();
+
+        assert!(load_routine_from_dir(slug).is_none());
+    });
+}
+
+#[test]
 fn load_routine_ignores_unparsable_sidecar() {
     // A malformed `state.local.toml` parses to `None` (rather than crashing the load), and with no
     // legacy field in `routine.toml` the routine loads with no trigger timestamp.

@@ -2,14 +2,14 @@
 
 ## Supported versions
 
-`moadim` is pre-1.0 and ships from a single release line. Security fixes land on
-the latest published `0.x` release; please upgrade to the newest version before
-reporting.
+`moadim` ships from a single release line (no maintained LTS branches). Security
+fixes land on the latest published release; please upgrade to the newest version
+before reporting.
 
-| Version        | Supported          |
-| -------------- | ------------------ |
-| Latest `0.x`   | :white_check_mark: |
-| Older releases | :x:                |
+| Version         | Supported          |
+| --------------- | ------------------ |
+| Latest release  | :white_check_mark: |
+| Older releases  | :x:                |
 
 ## Reporting a vulnerability
 

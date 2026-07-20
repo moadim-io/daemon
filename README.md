@@ -52,6 +52,12 @@ either is missing, so a misconfigured host is easy to spot. See the built-in
 cargo install --locked moadim
 ```
 
+Or, if you prefer npm, install the bootstrapper package and let it call Cargo for you:
+
+```sh
+npm install -g moadim && moadim-install
+```
+
 `--locked` installs the exact dependency graph published and tested with this
 release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
 to the newest semver-compatible version at install time — so a bad or breaking

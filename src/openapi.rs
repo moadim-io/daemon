@@ -29,7 +29,7 @@
         crate::routes::update_routine::replace,
         crate::routes::update_routine::update_routine,
         crate::routes::delete_routine::delete_routine,
-        crate::routines::trigger,
+        crate::routes::trigger_routine::trigger_routine,
         crate::routines::scheduled_trigger,
         crate::routes::cleanup_workbenches::cleanup_workbenches,
         crate::routes::get_lock_status::get_lock_status,

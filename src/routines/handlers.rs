@@ -16,7 +16,7 @@ use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
     svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled,
+    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger_scheduled,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -119,26 +119,6 @@ pub async fn get_prompt_preview(
     Path(id): Path<String>,
 ) -> Result<String, AppError> {
     svc_get_prompt_preview(&store, &id)
-}
-
-/// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
-///
-/// Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See
-/// [`svc_trigger`].
-#[utoipa::path(post, path = "/routines/{id}/trigger",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
-pub async fn trigger(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<Routine>, AppError> {
-    // `svc_trigger` shells out to `tmux`(1) (overlap guard, concurrency cap, session spawn) and
-    // does blocking fs I/O — keep that off the async worker thread (#360), same as create/update/
-    // delete above.
-    let resp = tokio::task::spawn_blocking(move || svc_trigger(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
 }
 
 /// `POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.

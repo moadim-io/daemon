@@ -13,6 +13,7 @@ use super::mcp::MoadimMcp;
 use super::metrics;
 use super::restart;
 use super::shutdown;
+use super::trigger_routine;
 use super::update_routine;
 use crate::error::AppError;
 use crate::middlewares;
@@ -235,7 +236,10 @@ pub(crate) fn build_app_with_shutdown(
                 .patch(update_routine::update_routine)
                 .delete(delete_routine::delete_routine),
         )
-        .route("/routines/{id}/trigger", post(routines::trigger))
+        .route(
+            "/routines/{id}/trigger",
+            post(trigger_routine::trigger_routine),
+        )
         .route(
             "/routines/{id}/prompt-preview",
             get(routines::get_prompt_preview),

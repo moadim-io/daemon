@@ -274,8 +274,8 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 }
 
 /// Unix epoch seconds of `schedule`'s next fire after now, in the host's local timezone (matching
-/// crontab semantics) — reusing the same `croner` evaluation as the `.ics` feed
-/// ([`super::ical::build_ical`]) and the TTL sweep (`cleanup::ttl::cron_interval_secs`).
+/// crontab semantics), reusing the same compiled schedule path as the TTL sweep
+/// (`cleanup::ttl::cron_interval_secs`).
 ///
 /// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
 /// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
@@ -283,13 +283,9 @@ fn next_run_at(schedule: &str, enabled: bool) -> Option<u64> {
     if !enabled || crate::global_lock::is_globally_locked() {
         return None;
     }
-    if let Some(union) = crate::utils::cron::compiled_union(schedule) {
-        let cron = union.iter().next()?.schedule();
-        let next = cron.after(&Local::now()).next()?;
-        return u64::try_from(next.timestamp()).ok();
-    }
-    let cron: Cron = schedule.parse().ok()?;
-    let next = cron.iter_after(Local::now()).next()?;
+    let union = crate::utils::cron::compiled_union(schedule)?;
+    let cron = union.iter().next()?.schedule();
+    let next = cron.after(&Local::now()).next()?;
     u64::try_from(next.timestamp()).ok()
 }
 

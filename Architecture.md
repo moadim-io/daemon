@@ -53,8 +53,21 @@ src/
 ├── routine_storage.rs   routine.toml + prompts/ (pure/compiled) persistence
 │
 ├── routes/
-│   ├── http.rs          Axum router assembly + run_with_listener_until
-│   └── mcp.rs           MoadimMcp — rmcp tool_router
+│   ├── http.rs                  Axum router assembly, re-exports run_with_listener_until
+│   ├── mcp.rs                   MoadimMcp — rmcp tool_router, composes each endpoint's mcp.rs
+│   ├── http_listener.rs         listener bind + graceful shutdown + run_with_listener_until
+│   ├── http_settings_routes.rs  machine identity + persistent user-prompt settings routes
+│   ├── metrics.rs               GET /api/v1/metrics — Prometheus-format process/routine metrics
+│   ├── CONTRIBUTING.md          when/how to give an endpoint its own <name>/ folder
+│   └── <name>/                  one folder per endpoint with both a REST route and an MCP tool
+│       ├── mod.rs                   wiring only: declares submodules, re-exports the public surface
+│       ├── logic.rs                 response type(s) + the pure function that builds them (no framework code)
+│       ├── http.rs                  thin Axum handler: extracts state, calls logic, wraps in Json
+│       └── mcp.rs                   thin MCP tool: calls logic, wraps in the MCP result type
+│           (e.g. health/, create_routine/, list_routines/, get_routine/, delete_routine/,
+│            list_routine_runs/, list_agents/, get_lock_status/, cleanup_workbenches/,
+│            restart/, shutdown/ — see src/routes/CONTRIBUTING.md. Not every endpoint is
+│            split out yet; e.g. update_routine, MCP-only, is still inline in mcp.rs)
 │
 ├── middlewares/
 │   ├── host_validation.rs    guards against DNS-rebinding / cross-origin abuse of the loopback API

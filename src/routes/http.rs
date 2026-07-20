@@ -13,6 +13,7 @@ use super::list_routine_runs;
 use super::list_routines;
 use super::mcp::MoadimMcp;
 use super::metrics;
+use super::resolve_flag;
 use super::restart;
 use super::shutdown;
 use super::trigger_routine;
@@ -256,7 +257,7 @@ pub(crate) fn build_app_with_shutdown(
         )
         .route(
             "/routines/{id}/flags/{filename}",
-            delete(routines::resolve_flag),
+            delete(resolve_flag::resolve_flag),
         )
         .route("/routines/{id}/logs", get(routines::get_logs))
         .route(

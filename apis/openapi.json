@@ -813,7 +813,7 @@
     "/routines/{id}/flags/{filename}": {
       "delete": {
         "tags": [
-          "crate::routines"
+          "crate::routes::resolve_flag"
         ],
         "summary": "`DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.",
         "operationId": "resolve_flag",

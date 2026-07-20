@@ -318,21 +318,6 @@ async fn router_routine_full_lifecycle() {
 }
 
 #[tokio::test]
-async fn router_resolve_flag_not_found_path() {
-    let resp = build_app(crate::routines::new_store())
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/api/v1/routines/no-such/flags/bug-1.md")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
 async fn router_routine_not_found_paths() {
     for (method, suffix) in [
         ("GET", ""),

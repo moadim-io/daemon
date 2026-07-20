@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::header,
     response::IntoResponse,
     Json,
 };
@@ -14,8 +14,8 @@ use crate::global_lock::{LockScope, LockStatus};
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
-    svc_get_prompt_preview, svc_list_all_runs, svc_logs, svc_resolve_flag, svc_run_log,
-    svc_run_summary, svc_trigger_scheduled,
+    svc_get_prompt_preview, svc_list_all_runs, svc_logs, svc_run_log, svc_run_summary,
+    svc_trigger_scheduled,
 };
 
 /// Request body for `POST /routines/lock`.
@@ -150,21 +150,6 @@ pub async fn ical_feed(
         [(header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
         body,
     )
-}
-
-/// `DELETE /routines/{id}/flags/{filename}` — resolve (delete) a flag.
-#[utoipa::path(delete, path = "/routines/{id}/flags/{filename}",
-    params(
-        ("id" = String, Path, description = "Routine UUID"),
-        ("filename" = String, Path, description = "Flag filename, as returned by create/list"),
-    ),
-    responses((status = 204, description = "Resolved"), (status = 404, description = "Not found")))]
-pub async fn resolve_flag(
-    State(store): State<RoutineStore>,
-    Path((id, filename)): Path<(String, String)>,
-) -> Result<StatusCode, AppError> {
-    svc_resolve_flag(&store, &id, &filename)?;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 /// `GET /routines/{id}/logs` — return the newest workbench `agent.log` as plain text.

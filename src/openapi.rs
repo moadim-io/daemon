@@ -43,7 +43,7 @@
         crate::routines::ical_feed,
         crate::routes::create_flag::create_flag,
         crate::routes::list_flags::list_flags,
-        crate::routines::resolve_flag,
+        crate::routes::resolve_flag::resolve_flag,
     ),
     components(schemas(
         crate::routines::Routine,

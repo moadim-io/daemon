@@ -11,8 +11,6 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
-- use `cron-union` for routine schedule interval calculation so the routine cron path already routes through the union helper that future multi-cron support can build on.
-
 ## [1.5.0] - 2026-07-20
 
 Add a built-in `pi` agent config and seed `pi.toml` alongside the existing `claude`, `codex`, and `hermes` defaults.

@@ -174,6 +174,11 @@ fn next_run_at_some_for_enabled_parseable_schedule() {
 }
 
 #[test]
+fn next_run_at_uses_cron_union_for_standard_crons() {
+    assert!(next_run_at("*/5 * * * *", true).is_some());
+}
+
+#[test]
 fn next_run_at_none_when_disabled() {
     assert!(next_run_at("@daily", false).is_none());
 }

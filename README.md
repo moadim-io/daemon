@@ -271,6 +271,7 @@ PUT    /routines/{id}         # replace
 PATCH  /routines/{id}         # update fields
 DELETE /routines/{id}         # delete
 POST   /routines/{id}/trigger # run now, outside the schedule
+POST   /routines/{id}/scheduled-trigger # daemon-side endpoint the generated crontab line invokes
 GET    /routines/{id}/prompt-preview # composed prompt body a run would receive, no run
 GET    /routines/{id}/logs    # newest workbench's agent.log as plain text
 POST   /routines/cleanup      # reap expired workbenches now

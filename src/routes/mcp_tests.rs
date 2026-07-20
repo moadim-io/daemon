@@ -141,17 +141,5 @@ fn create_get_update_trigger_delete_routine_success() {
     assert!(!result.is_error.unwrap_or(false));
 }
 
-#[test]
-fn trigger_routine_tool_not_found_is_error() {
-    use rmcp::handler::server::wrapper::Parameters;
-    let handler = make_handler();
-    let result = handler
-        .trigger_routine(Parameters(IdInput {
-            id: "no-such".into(),
-        }))
-        .unwrap();
-    assert!(result.is_error.unwrap_or(false));
-}
-
 #[path = "mcp_routine_lifecycle_tests.rs"]
 mod mcp_routine_lifecycle_tests;

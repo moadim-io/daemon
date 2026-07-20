@@ -16,7 +16,7 @@ use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
 use super::service::{
     svc_create_flag, svc_get_prompt_preview, svc_list_all_runs, svc_list_flags, svc_logs,
-    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger, svc_trigger_scheduled,
+    svc_resolve_flag, svc_run_log, svc_run_summary, svc_trigger_scheduled,
 };
 
 /// Request body for `POST /routines/{id}/flags`.
@@ -121,31 +121,12 @@ pub async fn get_prompt_preview(
     svc_get_prompt_preview(&store, &id)
 }
 
-/// `POST /routines/{id}/trigger` — manually run a routine outside its schedule.
-///
-/// Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See
-/// [`svc_trigger`].
-#[utoipa::path(post, path = "/routines/{id}/trigger",
-    params(("id" = String, Path, description = "Routine UUID")),
-    responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
-pub async fn trigger(
-    State(store): State<RoutineStore>,
-    Path(id): Path<String>,
-) -> Result<Json<Routine>, AppError> {
-    // `svc_trigger` shells out to `tmux`(1) (overlap guard, concurrency cap, session spawn) and
-    // does blocking fs I/O — keep that off the async worker thread (#360), same as create/update/
-    // delete above.
-    let resp = tokio::task::spawn_blocking(move || svc_trigger(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
-    Ok(Json(resp))
-}
-
 /// `POST /routines/{id}/scheduled-trigger` — run a routine on its schedule.
 ///
 /// The daemon-side endpoint the generated crontab line invokes (`moadim schedule trigger <id>`).
-/// Unlike [`trigger`] it does not record a manual trigger; the spawned command records the scheduled
-/// timestamp itself. See [`svc_trigger_scheduled`].
+/// Unlike [`crate::routes::trigger_routine::trigger_routine`] it does not record a manual
+/// trigger; the spawned command records the scheduled timestamp itself. See
+/// [`svc_trigger_scheduled`].
 #[utoipa::path(post, path = "/routines/{id}/scheduled-trigger",
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, body = Routine), (status = 404, description = "Not found")))]
@@ -153,9 +134,9 @@ pub async fn scheduled_trigger(
     State(store): State<RoutineStore>,
     Path(id): Path<String>,
 ) -> Result<Json<Routine>, AppError> {
-    // See `trigger` above: `svc_trigger_scheduled` shells out to `tmux`(1) too (#360). This is
-    // the endpoint the generated crontab line invokes, so a `*/N` herd of scheduled fires is
-    // exactly the thundering-herd case #360 is about.
+    // See `crate::routes::trigger_routine::trigger_routine`: `svc_trigger_scheduled` shells
+    // out to `tmux`(1) too (#360). This is the endpoint the generated crontab line invokes, so
+    // a `*/N` herd of scheduled fires is exactly the thundering-herd case #360 is about.
     let resp = tokio::task::spawn_blocking(move || svc_trigger_scheduled(&store, &id))
         .await
         .map_err(|_| AppError::Internal)??;

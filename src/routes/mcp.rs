@@ -80,6 +80,12 @@ mod list_routine_runs;
 #[path = "update_routine/mcp.rs"]
 mod update_routine;
 
+/// The `trigger_routine` tool, kept in `routes/trigger_routine/mcp.rs` beside the
+/// `POST /routines/{id}/trigger` HTTP handler it mirrors. Its own `#[tool_router]` block is
+/// combined with this file's below.
+#[path = "trigger_routine/mcp.rs"]
+mod trigger_routine;
+
 /// MCP server handler that exposes routine management as MCP tools.
 #[derive(Clone)]
 pub struct MoadimMcp {
@@ -139,20 +145,6 @@ impl MoadimMcp {
                 Err(error) => err(error),
             },
         )
-    }
-
-    /// Manually trigger a routine immediately, recording the trigger time.
-    #[tool(
-        description = "Manually trigger a routine outside its schedule, recording last_manual_trigger_at"
-    )]
-    fn trigger_routine(
-        &self,
-        Parameters(IdInput { id }): Parameters<IdInput>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match routines::svc_trigger(&self.routines, &id) {
-            Ok(routine) => ok(routine),
-            Err(error) => err(error),
-        })
     }
 
     /// Snooze a routine's scheduled fires without disabling it or touching manual triggers.
@@ -324,9 +316,9 @@ impl MoadimMcp {
 /// Combines this file's tool router with the split-out tools' (see the [`health`], [`shutdown`],
 /// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
 /// [`list_routines`], [`get_routine`], [`delete_routine`], [`create_routine`],
-/// [`list_routine_runs`], and [`update_routine`] modules), since a `#[tool_router]` block only
-/// collects the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router()))]
+/// [`list_routine_runs`], [`update_routine`], and [`trigger_routine`] modules), since a
+/// `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

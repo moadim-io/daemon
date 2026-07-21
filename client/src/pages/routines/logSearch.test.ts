@@ -1,4 +1,4 @@
-// Ported 1:1 from ui/src/log_viewer_tests.rs.
+// Ported 1:1 from ui/src/log_viewer_tests.rs (removed).
 import { describe, expect, it } from "vitest";
 import { filterLines, highlightSegments, matchCount } from "./logSearch";
 

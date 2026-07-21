@@ -3,7 +3,7 @@ import { toString as cronToString } from "cronstrue";
 /**
  * Normalizes a 7-field (sec min hour dom month dow year) cron expression to
  * the 5-field form the server understands, matching `croner`'s normalization
- * on the Rust side (`ui/src/cron_utils.rs`). `@`-prefixed shorthand (e.g.
+ * on the Rust side (`ui/src/cron_utils.rs (removed)`). `@`-prefixed shorthand (e.g.
  * `@daily`) and already-5/6-field expressions pass through unchanged.
  */
 export function normalizeCron(expr: string): string {
@@ -52,7 +52,7 @@ const MONTHS_ABBR = [
 /**
  * Absolute local (browser timezone) rendering of a unix-seconds timestamp, e.g.
  * "Jun 21, 2026 12:00". Meant as a tooltip companion to `reltime`'s relative "N ago" text, so
- * hovering reveals wall-clock time. Matches `ui/src/cron_utils.rs`'s `abstime`.
+ * hovering reveals wall-clock time. Matches `ui/src/cron_utils.rs (removed)`'s `abstime`.
  */
 export function abstime(ts: number): string {
   if (ts === 0) return "—";

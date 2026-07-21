@@ -1,6 +1,6 @@
 /**
  * Pure text <-> structured-field helpers for the routine create/edit form. Direct port of the
- * free-function helpers in `ui/src/routines/form.rs`.
+ * free-function helpers in `ui/src/routines/form.rs (removed)`.
  */
 import type { components } from "../../api/schema.gen";
 

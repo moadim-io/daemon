@@ -1,10 +1,10 @@
 /**
  * Pure aggregation logic behind the schedule heatmap: the 7×24 fire-density
  * grid, the color-ramp bucketing, the axis totals, and the derived
- * "busiest window" / day labels. Ported 1:1 from
- * `ui/src/schedule_heatmap_grid.rs` — see that file (and its
- * `schedule_heatmap_tests.rs`) for the reference behavior every function here
- * must match. Free of any DOM dependency so it is unit-testable directly.
+ * "busiest window" / day labels. Ported 1:1 from `ui/src/schedule_heatmap_grid.rs`
+ * and its `schedule_heatmap_tests.rs`, both since removed along with the rest of
+ * the Yew UI — this file is now the sole implementation. Free of any DOM
+ * dependency so it is unit-testable directly.
  */
 import type { RoutineResponse } from "../../api/hooks";
 import { dateOnly, parseSchedule, WEEKDAYS } from "../../lib/schedule";

@@ -110,7 +110,10 @@ fn spawn_detached_rotates_oversized_daemon_log() {
     #[cfg(unix)]
     // SAFETY: `pid` is this test's own detached child process; sending it SIGKILL is safe cleanup.
     unsafe {
-        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+        libc::kill(
+            libc::pid_t::try_from(pid).unwrap_or(libc::pid_t::MAX),
+            libc::SIGKILL,
+        );
     }
     #[cfg(not(unix))]
     let _ = pid;

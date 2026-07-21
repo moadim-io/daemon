@@ -430,3 +430,9 @@ struct_field_names = "deny"
 # receiver types, is measurably slower than calling `Clone::clone` directly. The codebase is
 # already clean, so `deny` locks that in.
 implicit_clone = "deny"
+# Reject `.to_string()` on a `&&T` (a reference to a reference — e.g. iterating `&Vec<&str>`
+# yields `&&str`) in favour of calling `.to_string()` on the dereferenced `&T` directly. The
+# extra `&` forces an unnecessary auto-deref through `Display`/`ToString` on every call; spelling
+# it on the inner reference is the same result without that indirection. The codebase is already
+# clean, so `deny` locks that in.
+inefficient_to_string = "deny"

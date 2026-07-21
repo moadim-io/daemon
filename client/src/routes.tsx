@@ -4,11 +4,13 @@ import { OverviewPage } from "./pages/overview/OverviewPage";
 import { RoutinesPage } from "./pages/routines/RoutinesPage";
 import { HeatmapPage } from "./pages/heatmap/HeatmapPage";
 import { ReliabilityPage } from "./pages/reliability/ReliabilityPage";
+import { MachinesPage } from "./pages/machines/MachinesPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 
 /**
  * Route paths are resolved relative to `<BrowserRouter basename="/client">` (see main.tsx):
- * `/`, `/routines`, `/heatmap`, `/reliability`, `/settings` — an unknown path redirects home.
+ * `/`, `/routines`, `/heatmap`, `/reliability`, `/machines`, `/settings` — an unknown path
+ * redirects home.
  */
 export function AppRoutes() {
   return (
@@ -18,6 +20,7 @@ export function AppRoutes() {
         <Route path="routines" element={<RoutinesPage />} />
         <Route path="heatmap" element={<HeatmapPage />} />
         <Route path="reliability" element={<ReliabilityPage />} />
+        <Route path="machines" element={<MachinesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

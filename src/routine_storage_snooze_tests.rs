@@ -144,8 +144,8 @@ fn load_routine_from_dir_missing_agent_returns_none() {
 fn write_routine_fails_on_routine_toml_write_error() {
     use std::os::unix::fs::PermissionsExt as _;
     // Covers `atomic_write(&routine_toml_path(&slug), ..)?` — the dir is read-only so the atomic
-    // write for `routine.toml` (which creates a sibling temp file) fails. The stale-file removals
-    // before it are best-effort, so the read-only dir doesn't trip them.
+    // write for `routine.toml` (which creates a sibling temp file) fails. The stale `run.sh`
+    // removal before it is best-effort, so the read-only dir doesn't trip it.
     with_override_home(|_home| {
         let title = "Rs Toml Write Fail Routine";
         let slug = slugify(title);

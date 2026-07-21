@@ -50,9 +50,8 @@ pub struct AgentCommand {
     #[serde(default)]
     pub args: Vec<String>,
     /// Filename, relative to the workbench, that this agent reads its project instructions from.
-    /// The moadim-managed system prompt and routine-origin disclosure are written here so the agent
-    /// that actually runs sees them. Defaults to `CLAUDE.md` (Claude Code's convention); Codex reads
-    /// `AGENTS.md` instead.
+    /// The moadim-managed system prompt is written here so the agent that actually runs sees it.
+    /// Defaults to `CLAUDE.md` (Claude Code's convention); Codex reads `AGENTS.md` instead.
     #[serde(default = "default_instructions_file")]
     pub instructions_file: String,
     /// Optional shell command run in the workbench *before* the agent launches, inserted verbatim

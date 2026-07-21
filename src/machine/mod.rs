@@ -46,7 +46,7 @@ pub enum MachineSource {
 
 impl MachineSource {
     /// Short human label used in CLI output.
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Env => "MOADIM_MACHINE env",
             Self::File => "machine.local.toml",

@@ -1,6 +1,6 @@
 [package]
 name = "moadim"
-version = "1.5.0"
+version = "1.6.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -21,6 +21,7 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 croner = "3"
+cron-union = "1.0.2"
 dirs = "6"
 env_logger = "0.11"
 iana-time-zone = "0.1"
@@ -28,7 +29,12 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
-rmcp = { version = "2.0.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "2.0.0", features = [
+  "server",
+  "macros",
+  "transport-io",
+  "transport-streamable-http-server",
+] }
 schemars = "1"
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["limit", "util"] }
@@ -377,3 +383,116 @@ undocumented_unsafe_blocks = "deny"
 # `#[ignore = "requires a live tmux session"]`. No `#[ignore]` exists in this codebase today, so
 # `deny` locks in that any future one must justify itself.
 ignore_without_reason = "deny"
+# Reject `File::open(path)?.read_to_end(...)`/`.read_to_string(...)` in favour of
+# `fs::read`/`fs::read_to_string`, which open, read, and close the file in one call instead of
+# three separate steps a caller has to get right by hand. The two sites this surfaced both seek to
+# an offset before reading a log's tail (not the whole file), where the single-call helpers don't
+# apply — each is annotated with a documented `#[allow]` explaining why, the same pattern already
+# used for `mem_forget`/`clippy::zombie_processes` above. The rest of the codebase is already
+# clean, so `deny` locks that in.
+verbose_file_reads = "deny"
+# Require a `# Panics` doc section on any function that can transitively panic (calls `.unwrap()`/
+# `.expect()`, or a bare `panic!()`/`assert!()`), so a caller can tell without reading the body.
+# `unwrap_used`/`expect_used`/`panic` above already ban all three outside tests and the handful of
+# documented, `#[allow]`-scoped exemptions for a genuinely unavoidable panic — this closes the loop
+# on that convention: an exemption must now also surface in the function's public docs, not just a
+# comment next to the call site. The codebase is already clean, so `deny` locks that in.
+missing_panics_doc = "deny"
+# Require an `# Errors` doc section on any function returning `Result` explaining when it errors,
+# the `Err`-side companion to `missing_panics_doc` above. A caller deciding whether to `?` a result
+# or handle it inline should be able to tell what can go wrong from the signature's docs alone,
+# without reading the body (or every function it transitively calls). The codebase is already
+# clean, so `deny` locks that in.
+missing_errors_doc = "deny"
+# Reject a single-character string literal used as a `.replace`/`.split`/`.trim_matches`-style
+# pattern (e.g. `"o"`) in favour of the equivalent `char` literal (`'o'`) — the `char` pattern
+# skips the generic multi-byte substring-search machinery `&str` patterns go through, so it's a
+# free micro-optimization alongside this file's other already-enabled perf lints
+# (`cloned_instead_of_copied`, `format_push_string`, `format_collect`). The codebase is already
+# clean, so `deny` locks that in.
+single_char_pattern = "deny"
+# Reject a chain of similar binary-op expressions (e.g. `a.x + a.x + a.y`) where one operand looks
+# like a copy-paste that should have referenced a different variable/field — the same bug class
+# `redundant_clone` above guards elsewhere in the file, just for arithmetic/comparison groupings
+# instead of clones. This is a real correctness lint (catches silent logic bugs), not a style
+# preference. The codebase is already clean, so `deny` locks that in.
+suspicious_operation_groupings = "deny"
+# Reject a struct field whose name starts with the struct's own name (e.g. `Flag::flag_type`) —
+# the prefix is redundant at every access site, since the struct name is already spelled out right
+# before the field name (`flag.flag_type` repeats "flag"). Fixed the one violation this surfaced:
+# `Flag::flag_type` (`routines/flags.rs`) renamed to `Flag::category`, matching its doc comment
+# ("Free-text category"). The wire format is unchanged — the field already carries
+# `#[serde(rename = "type")]`. The rest of the codebase is already clean, so `deny` locks that in.
+struct_field_names = "deny"
+# Reject `.to_string()`/`.to_owned()`-style conversions on a value that's already the target type
+# (e.g. cloning a `String` via `.to_string()` instead of `.clone()`, or a `Vec` via `.to_vec()`
+# instead of `.clone()`) — the indirect spelling obscures that it's a plain clone and, for some
+# receiver types, is measurably slower than calling `Clone::clone` directly. The codebase is
+# already clean, so `deny` locks that in.
+implicit_clone = "deny"
+# Reject `.to_string()` on a `&&T` (a reference to a reference — e.g. iterating `&Vec<&str>`
+# yields `&&str`) in favour of calling `.to_string()` on the dereferenced `&T` directly. The
+# extra `&` forces an unnecessary auto-deref through `Display`/`ToString` on every call; spelling
+# it on the inner reference is the same result without that indirection. The codebase is already
+# clean, so `deny` locks that in.
+inefficient_to_string = "deny"
+# Reject an `as`-cast from a signed integer to an unsigned one (e.g. `i64 as u64`), which silently
+# wraps a negative value into a huge positive one instead of erroring. Fixed the 2 violations this
+# surfaced, both a Unix-timestamp `i64` (`DateTime::timestamp()`) cast to the `u64` seconds this
+# crate's timestamps are stored as: `logging::format_json_line`'s `ts_local` field and
+# `ical::feed`'s snooze-deadline comparison. Neither value can go negative in practice (both come
+# from "now" or a future cron fire, always post-1970), but the cast gave no indication of that
+# invariant to a reader — converted to `u64::try_from(...)`, clamped to `0`/`false` on the
+# theoretical negative case instead of silently wrapping. No behavior change. The codebase is
+# otherwise already clean, so `deny` locks that in.
+cast_sign_loss = "deny"
+# Reject a `match`/`if let` that manually converts an `Option` to a `Result`
+# (`Some(x) => Ok(x), None => Err(e)`) instead of `.ok_or(e)`. The manual form
+# spells out in several lines what `.ok_or` says in one, and invites the two
+# arms to drift out of sync on a future edit. The codebase is already clean,
+# so `deny` locks that in.
+manual_ok_or = "deny"
+# Reject a `match`/`if let` that manually re-derives what `Option::is_some_and`/`is_none_or` or
+# `Result::is_ok_and`/`is_err_and` already compute (e.g. `match opt { Some(x) => pred(x), None =>
+# false }`) instead of calling the combinator directly. Same rationale as `manual_ok_or` above: the
+# manual form spells out in several lines what the combinator says in one, and invites the arms to
+# drift out of sync on a future edit. The codebase is already clean, so `deny` locks that in.
+manual_is_variant_and = "deny"
+# Reject an `as`-cast from an unsigned integer to a signed one (e.g. `u64 as i64`), the mirror
+# image of `cast_sign_loss` above: a value past the target's positive range silently wraps into a
+# negative one instead of erroring. Fixed the 2 violations this surfaced:
+# `utils::time::format_local`'s Unix-seconds `u64` cast to the `i64` `chrono::Local::timestamp_opt`
+# takes, and a test's `u32` child-process id cast to the `libc::pid_t` (`i32`) `libc::kill` takes.
+# Neither value can realistically exceed the target's range today, but the cast gave no indication
+# of that invariant to a reader — converted to `<target>::try_from(...)`, clamped to the target's
+# `MAX` on the theoretical overflow case instead of silently wrapping. No behavior change. The rest
+# of the codebase is already clean, so `deny` locks that in.
+cast_possible_wrap = "deny"
+# Reject an `as`-cast from an integer to a floating-point type that can't represent every value of
+# the source exactly (e.g. `u64 as f64`, `i64 as f64`) — past 2^52 the cast silently rounds to the
+# nearest representable `f64`, the same "no indication of the invariant" gap `cast_sign_loss` and
+# `cast_possible_wrap` above already close for the other integer-cast directions. Fixed the 2
+# violations this surfaced: `cli::query::humanize_bytes`'s `u64` byte count cast to `f64` for
+# display, which is deliberately an approximation (already rounded to one decimal place) and is
+# kept as `as f64` behind a scoped, reasoned `#[allow]`; and a test's `delay_ms` shim parameter,
+# narrowed from `u64` to `u32` and converted via `f64::from` so the cast is lossless by
+# construction instead of merely lossless in practice. No behavior change. The rest of the
+# codebase is already clean, so `deny` locks that in.
+cast_precision_loss = "deny"
+# Reject a function whose body could run in `const` context but isn't marked `const fn`. A
+# non-`const` function can't be called from a `const`/`static` initializer or another `const fn`,
+# closing off callers unnecessarily when nothing about the body actually requires runtime
+# evaluation. Fixed the 7 violations this surfaced (`cli::liveness_exit_code`,
+# `machine::MachineSource::label`, `routes::mcp::MoadimMcp::new`, `routines::cleanup::is_expired`,
+# `routines::flags::FlagScope::suffix`, `routines::model::bool_true`,
+# `routines::service_log_tail::LogWithMeta::empty`) by adding `const`. No behavior change. The rest
+# of the codebase is already clean, so `deny` locks that in.
+missing_const_for_fn = "deny"
+# Reject a direct `==`/`!=` comparison between floating-point values. Binary floating-point can't
+# represent most decimal fractions exactly, so two values computed by equivalent-looking paths
+# (e.g. `0.1 + 0.2` vs `0.3`) can differ in the last bit and silently fail an exact-equality check
+# that was meant to test "close enough". Callers who really do need bit-exact comparison (e.g.
+# comparing a value against itself, or against a literal it was assigned from verbatim) should use
+# `f64::to_bits`/`==` explicitly, or an epsilon-based comparison otherwise. The codebase is already
+# clean, so `deny` locks that in.
+float_cmp = "deny"

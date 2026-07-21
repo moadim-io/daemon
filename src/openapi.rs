@@ -34,7 +34,7 @@
         crate::routes::cleanup_workbenches::cleanup_workbenches,
         crate::routes::get_lock_status::get_lock_status,
         crate::routes::lock_routines::lock_routines,
-        crate::routines::unlock,
+        crate::routes::unlock_routines::unlock_routines,
         crate::routines::get_logs,
         crate::routes::list_routine_runs::list_routine_runs,
         crate::routines::get_run_log,

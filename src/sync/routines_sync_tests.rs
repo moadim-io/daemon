@@ -138,7 +138,7 @@ impl CronShim {
     /// `crontab -` write on stdin and installing it, widening the window for concurrency
     /// regression tests that must observe two `sync_routines_to_crontab` calls overlapping (or
     /// not) in wall-clock time.
-    fn new_with_write_delay(initial: &str, delay_ms: u64) -> Self {
+    fn new_with_write_delay(initial: &str, delay_ms: u32) -> Self {
         use std::os::unix::fs::PermissionsExt;
 
         let base = std::env::temp_dir().join(format!("moadim-rcronshim-{}", uuid::Uuid::new_v4()));
@@ -147,7 +147,7 @@ impl CronShim {
         std::fs::write(&store_file, initial).unwrap();
         let store_display = store_file.to_string_lossy().into_owned();
         let script_path = base.join("crontab-shim.sh");
-        let delay_secs = delay_ms as f64 / 1000.0;
+        let delay_secs = f64::from(delay_ms) / 1000.0;
         std::fs::write(
             &script_path,
             format!(
@@ -378,7 +378,7 @@ fn sync_routines_to_crontab_serializes_concurrent_calls() {
     // sleeps a fixed delay on every `crontab -` write, so two *unserialized* read-modify-write
     // round trips would overlap and finish in roughly one delay; serialized by the lock, they run
     // back to back and take roughly two.
-    const DELAY_MS: u64 = 150;
+    const DELAY_MS: u32 = 150;
 
     let agent_name = "test-sync-agent-concurrent-lock";
     std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();

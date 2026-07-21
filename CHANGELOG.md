@@ -11,6 +11,214 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-21
+
+Bump `clap` (4.6.2 → 4.6.3) and `tokio` (1.53.0 → 1.53.1) to their latest compatible patch releases. Both are Rust/Cargo dependencies not covered by the existing npm-focused Dependabot PRs.
+
+Bump `cron-union` to `1.0.2` so the routine cron path uses upstream support for `@` aliases and 7-field schedules directly.
+
+test: cover the `spawn_blocking` join-failure branch shared by routine route handlers
+
+`create_routine`, `delete_routine`, `lock_routines`, `trigger_routine`, `unlock_routines`,
+`update_routine`, and the scheduled-trigger handler each repeated the same
+`tokio::task::spawn_blocking(..).await.map_err(|_| AppError::Internal)??` idiom (#360) to keep
+blocking `crontab`/`tmux`/filesystem I/O off the async worker thread. The `map_err` branch — hit
+only when the blocking task itself panics — was duplicated seven times and untested at every call
+site, since the poison-tolerant stores (`LockRecover`) never actually panic through normal use.
+That left `cargo llvm-cov --fail-under-lines 100` (the repo's own CI and pre-push gate) short of
+100%.
+
+Extracts the idiom into one `crate::error::run_blocking` helper used by all seven call sites, and
+adds direct unit tests for it (including one that deliberately panics the blocking closure) so the
+branch is written, and covered, exactly once. No behavior change; purely a dedup + coverage fix.
+
+test: de-genericize the `with_home` test helper in `routine_storage_walk` and add a nested-call test so its `MOADIM_HOME_OVERRIDE` restore branch is exercised, restoring the repo's 100%-line-coverage gate (`cargo llvm-cov --fail-under-lines 100`) to green.
+
+Add an opt-in "Notify on failure" toggle to the Overview page's Recent Runs
+section: requests browser notification permission once enabled, then fires a
+desktop notification the moment a polled run transitions to `failed` (no
+notification for failures already in view when you turn it on).
+
+fix(client): realign `@vitejs/plugin-react`, `react-dom`, and `@types/react-dom` with their peer dependencies
+
+Two prior automated dependency bumps left `client/` with unsatisfiable peer
+dependencies: `@vitejs/plugin-react@6.0.3` requires `vite@^8.0.0` (client is
+pinned to `vite@^6.0.5`), and `react-dom@19.2.7`/`@types/react-dom@19.2.3`
+require `react@^19`/`@types/react@^19` (client is pinned to the `18.3.x`
+line). The first broke `vitest` at config-load time
+(`ERR_PACKAGE_PATH_NOT_EXPORTED` resolving `vite/internal`); the second, once
+unmasked, crashed every test that actually rendered a component
+(`react-dom-client.development.js` reading an undefined internal field).
+Together they meant `pnpm --filter client test` — part of both CI's
+`client-test` job and the local pre-push hook — could not run at all.
+
+Pins `@vitejs/plugin-react` to `^5.2.0` (last major compatible with
+`vite@^6`) and `react-dom`/`@types/react-dom` back to the `18.3.x` line
+matching `react`/`@types/react`. No application code changed; `pnpm --filter
+client test` (329 tests), `typecheck`, and `build` are all green again.
+
+fix(cleanup): `cron_interval_secs` now samples multiple fires to find the schedule's true minimum gap, instead of just the next two — fixes TTL/max-runtime ceilings silently flipping between values depending on wall-clock time for unevenly-spaced multi-fire-per-day schedules (e.g. `"0,30 9 * * *"`).
+
+fix(cleanup): `cron_interval_secs` now applies the same multi-fire minimum-gap sampling to the `cron-union` path, not just the `croner` fallback. Routing schedule math through `cron-union` (#1322) reintroduced the exact "next two fires from now" bug just fixed for the `croner` path (#1323): for an unevenly-spaced multi-fire-per-day schedule like `"0,30 9 * * *"`, the TTL/max-runtime ceiling still flipped between 1800s and 3600s depending on wall-clock time, since `cron-union` compiles almost every schedule (only `@keyword` and 7-field expressions fall back to `croner`). Both branches now go through a shared `min_gap_secs` helper.
+
+test(cli): fix `ensure_readme_returns_early_when_the_path_has_no_parent` to actually exercise its named branch. `Path::new("this-file-should-not-exist").parent()` is `Some("")`, not `None`, so the old test never hit `ensure_readme`'s `parent_or_err` early-return arm — it silently fell through `create_private_dir_all("")` (a no-op) into `std::fs::write`, dropping a stray `this-file-should-not-exist` file into the process's current directory on every `cargo test` run (reproduced: present, untracked, and un-gitignored at the repo root). Switched the test to `Path::new("")`, one of the few paths whose `.parent()` is genuinely `None`, so the branch is actually covered and the run no longer leaves a stray file behind. No production code change.
+
+fix(observability): escape the `machine` label in `GET /api/v1/metrics`'s `moadim_build_info` series for Prometheus text-exposition syntax. `machine` is the only label value in `src/routes/metrics.rs` sourced from free-form user input (`moadim machine set <name>` / `MOADIM_MACHINE`, trimmed but otherwise unrestricted — see `src/machine/mod.rs`); an operator-chosen name containing `"` or `\` was emitted into the label literally, producing unparseable exposition text that would fail the whole scrape, not just that one line. Adds `escape_label_value` (backslash, double-quote, and newline escaping per the exposition format) and applies it to `machine`; `version`/`git_sha` are compile-time constants and don't need it.
+
+Add `*.compiled.*` to the generated routine `.gitignore` so both the legacy `prompt.compiled.md` and current `prompt.compiled.local.md` stay untracked.
+
+refactor(routes): move create_flag HTTP + MCP endpoints into `routes/create_flag`
+
+Follows the `routes/health/` / `routes/shutdown/` / `routes/restart/` /
+`routes/get_lock_status/` / `routes/list_agents/` / `routes/cleanup_workbenches/` /
+`routes/list_routines/` / `routes/get_routine/` / `routes/delete_routine/` /
+`routes/create_routine/` / `routes/list_routine_runs/` / `routes/update_routine/` /
+`routes/trigger_routine/` template (see `src/routes/CONTRIBUTING.md`): splits the
+`POST /routines/{id}/flags` handler (previously `routines::create_flag` in
+`src/routines/handlers.rs`) and the MCP `create_flag` tool into
+`src/routes/create_flag/` — `mod.rs` (wiring), `logic.rs` (a `build()` that wraps
+`crate::routines::svc_create_flag`, plus the `CreateFlagRequest` request body,
+moved out of `routines::handlers`), `http.rs`, and `mcp.rs` (declared as a child
+module of `routes::mcp` so it keeps access to `MoadimMcp`'s private state). Both
+surfaces now call the same `logic::build()` instead of each hand-calling
+`svc_create_flag`.
+
+`list_flags` and `resolve_flag` are left as-is in `routines::handlers` /
+`routes::mcp` for now — they're separate MCP tool + REST handler pairs sharing
+the same `/routines/{id}/flags` path family, split out in their own follow-up PRs.
+
+No behavior change: same response (the created `Flag`, 201; 400 on an invalid
+`type`/`description`/`scope`; 404 when the routine doesn't exist).
+
+refactor(routes): move list_flags HTTP + MCP endpoints into `routes/list_flags`
+
+Follows the `routes/health/` / `routes/shutdown/` / `routes/restart/` /
+`routes/get_lock_status/` / `routes/list_agents/` / `routes/cleanup_workbenches/` /
+`routes/list_routines/` / `routes/get_routine/` / `routes/delete_routine/` /
+`routes/create_routine/` / `routes/list_routine_runs/` / `routes/update_routine/` /
+`routes/trigger_routine/` / `routes/create_flag/` template (see
+`src/routes/CONTRIBUTING.md`): splits the `GET /routines/{id}/flags` handler
+(previously `routines::list_flags` in `src/routines/handlers.rs`) and the MCP
+`list_flags` tool into `src/routes/list_flags/` — `mod.rs` (wiring), `logic.rs`
+(a `build()` that wraps `crate::routines::svc_list_flags`), `http.rs`, and
+`mcp.rs` (declared as a child module of `routes::mcp` so it keeps access to
+`MoadimMcp`'s private state). Both surfaces now call the same `logic::build()`
+instead of each hand-calling `svc_list_flags`.
+
+`resolve_flag` is left as-is in `routines::handlers` / `routes::mcp` for
+now — it's a separate MCP tool + REST handler pair sharing the same
+`/routines/{id}/flags/{filename}` path family, split out in its own follow-up
+PR.
+
+No behavior change: same response (`Vec<Flag>`, 200; 404 when the routine
+doesn't exist).
+
+refactor(routes): move lock_routines HTTP + MCP endpoints into `routes/lock_routines`
+
+Follows the `routes/health/` / `routes/shutdown/` / `routes/restart/` /
+`routes/get_lock_status/` / `routes/list_agents/` / `routes/cleanup_workbenches/` /
+`routes/list_routines/` / `routes/get_routine/` / `routes/delete_routine/` /
+`routes/create_routine/` / `routes/list_routine_runs/` / `routes/update_routine/` /
+`routes/trigger_routine/` / `routes/create_flag/` / `routes/list_flags/` /
+`routes/resolve_flag/` template (see `src/routes/CONTRIBUTING.md`): splits the
+`POST /routines/lock` handler (previously `routines::lock` in
+`src/routines/handlers.rs`, named `lock`) and the MCP `lock_routines` tool
+into `src/routes/lock_routines/` — `mod.rs` (wiring), `logic.rs` (a `build()`
+that validates the scope, creates the lock sentinel, and syncs the crontab),
+`http.rs` (renamed handler `lock_routines`, still offloading to
+`spawn_blocking` since the crontab sync shells out to `crontab`(1)), and
+`mcp.rs` (declared as a child module of `routes::mcp` so it keeps access to
+`MoadimMcp`'s private state). Both surfaces now call the same
+`logic::build()` instead of each hand-validating the scope and syncing the
+crontab separately.
+
+`unlock`/`unlock_routines` are unchanged and still live in
+`src/routines/handlers.rs` / `routes/mcp.rs` — a future PR will split those
+out the same way.
+
+No behavior change: same response (the current lock status), 400 on an
+unknown scope, 500 on IO failure.
+
+refactor(routes): move resolve_flag HTTP + MCP endpoints into `routes/resolve_flag`
+
+Follows the `routes/health/` / `routes/shutdown/` / `routes/restart/` /
+`routes/get_lock_status/` / `routes/list_agents/` / `routes/cleanup_workbenches/` /
+`routes/list_routines/` / `routes/get_routine/` / `routes/delete_routine/` /
+`routes/create_routine/` / `routes/list_routine_runs/` / `routes/update_routine/` /
+`routes/trigger_routine/` / `routes/create_flag/` / `routes/list_flags/` template
+(see `src/routes/CONTRIBUTING.md`): splits the `DELETE
+/routines/{id}/flags/{filename}` handler (previously `routines::resolve_flag` in
+`src/routines/handlers.rs`) and the MCP `resolve_flag` tool into
+`src/routes/resolve_flag/` — `mod.rs` (wiring), `logic.rs` (a `build()` that wraps
+`crate::routines::svc_resolve_flag`), `http.rs`, and `mcp.rs` (declared as a child
+module of `routes::mcp` so it keeps access to `MoadimMcp`'s private state). Both
+surfaces now call the same `logic::build()` instead of each hand-calling
+`svc_resolve_flag`.
+
+No behavior change: same response (204 on success, error on a missing routine or
+flag).
+
+Move the routine-origin disclosure into the compiled prompt body so it shows up in prompt previews and `prompt.compiled.local.md` instead of being injected only at launch time.
+
+refactor(routes): move trigger_routine HTTP + MCP endpoints into `routes/trigger_routine`
+
+Follows the `routes/health/` / `routes/shutdown/` / `routes/restart/` /
+`routes/get_lock_status/` / `routes/list_agents/` / `routes/cleanup_workbenches/` /
+`routes/list_routines/` / `routes/get_routine/` / `routes/delete_routine/` /
+`routes/create_routine/` / `routes/list_routine_runs/` / `routes/update_routine/`
+template (see `src/routes/CONTRIBUTING.md`): splits the `POST
+/routines/{id}/trigger` handler (previously `routines::trigger` in
+`src/routines/handlers.rs`) and the MCP `trigger_routine` tool into
+`src/routes/trigger_routine/` — `mod.rs` (wiring), `logic.rs` (a `build()`
+that wraps `crate::routines::svc_trigger`), `http.rs` (still offloading to
+`spawn_blocking` since `svc_trigger` shells out to `tmux`(1) and does blocking
+fs I/O), and `mcp.rs` (declared as a child module of `routes::mcp` so it keeps
+access to `MoadimMcp`'s private state). Both surfaces now call the same
+`logic::build()` instead of each hand-calling `svc_trigger`.
+
+No behavior change: same response (the triggered routine record, 423 when
+disabled or in power-saving mode, 404 when missing).
+
+refactor(routes): move unlock_routines HTTP + MCP endpoints into `routes/unlock_routines`
+
+Follows the `routes/health/` / `routes/shutdown/` / `routes/restart/` /
+`routes/get_lock_status/` / `routes/list_agents/` / `routes/cleanup_workbenches/` /
+`routes/list_routines/` / `routes/get_routine/` / `routes/delete_routine/` /
+`routes/create_routine/` / `routes/list_routine_runs/` / `routes/update_routine/` /
+`routes/trigger_routine/` / `routes/create_flag/` / `routes/list_flags/` /
+`routes/resolve_flag/` / `routes/lock_routines/` template (see
+`src/routes/CONTRIBUTING.md`): splits the `DELETE /routines/lock` handler
+(previously `routines::unlock` in `src/routines/handlers.rs`) and the MCP
+`unlock_routines` tool into `src/routes/unlock_routines/` — `mod.rs`
+(wiring), `logic.rs` (a `build()` that validates the scope — now including
+`"all"` in the single shared parser instead of special-casing it at each
+call site — removes the matching lock sentinel(s), and syncs the crontab),
+`http.rs` (renamed handler `unlock_routines`, still offloading to
+`spawn_blocking` since the crontab sync shells out to `crontab`(1)), and
+`mcp.rs` (declared as a child module of `routes::mcp` so it keeps access to
+`MoadimMcp`'s private state). Both surfaces now call the same
+`logic::build()` instead of each hand-validating the scope and syncing the
+crontab separately.
+
+`snooze_routine` and `set_power_saving` have no REST counterpart, so they
+stay as-is in `routes/mcp.rs`.
+
+No behavior change: same response (the current lock status), 400 on an
+unknown scope, 500 on IO failure.
+
+feat(routines): support nested routine folders — a routine's `title` may contain `/`-separated
+path segments (e.g. `ops/nightly triage`), organizing routines into folders and subfolders in the
+UI. `slugify` now preserves `/` as a segment separator instead of collapsing it, so nested titles
+produce nested, filesystem- and tmux-safe slugs.
+
+feat(routines): per-routine environment variables via `[env]` + `routine.local.toml` (#408)
+
+test(routine_storage): cover `read_routine_cron`'s empty-file branch — a `schedule.cron` sidecar with no non-empty line (e.g. truncated by a crash mid-write) now has a regression test asserting the whole routine load short-circuits to `None` instead of silently loading with a blank schedule, closing a gap in the pre-push 100%-line-coverage gate.
+
+test(routines): cover `rotate_run_history_if_oversized`'s rotated-write-failure branch — when the `.1` sibling can't be written (e.g. it turns out to be a directory), the oversized source `runs.log` must survive rather than being removed, since removal is gated on the write actually succeeding. This branch previously had no test, unlike its sibling I/O-failure branches elsewhere in `cleanup::log_cap`.
+
+Use `cron-union` for routine schedule math so the routine cron path already routes through the union helper that future multi-cron support can build on.
+
 ## [1.5.0] - 2026-07-20
 
 Add a built-in `pi` agent config and seed `pi.toml` alongside the existing `claude`, `codex`, and `hermes` defaults.
@@ -4447,7 +4655,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/moadim-io/daemon/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/moadim-io/daemon/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/moadim-io/daemon/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/moadim-io/daemon/compare/v1.3.1...v1.4.0

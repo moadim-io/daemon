@@ -54,6 +54,30 @@ pub(crate) fn agent_command_available(command: &str) -> bool {
         .is_some_and(|path| agent_command_available_in(&path, command))
 }
 
+/// The first whitespace-delimited token of an agent's `setup` step — the interpreter or binary it
+/// shells out to (e.g. `python3` for the built-in `claude` agent's workspace-trust seeding). `None`
+/// for an empty/all-whitespace `setup` string.
+///
+/// `setup` is inserted verbatim into the launch command (see
+/// [`super::build_routine_command`]), so this is a best-effort probe, not a shell parse:
+/// it only catches the common "the step shells out to an interpreter that isn't installed" case
+/// (issue #404), not every way a `setup` step can fail.
+pub(crate) fn setup_step_interpreter(setup: &str) -> Option<&str> {
+    setup.split_whitespace().next()
+}
+
+/// Whether an agent's `setup` step (if any) is safe to run: either there is no `setup` step, or
+/// its [`setup_step_interpreter`] resolves on the daemon's live `PATH`. Mirrors
+/// [`agent_command_available`] so a routine whose `setup` step would fail before the agent ever
+/// launches (e.g. the built-in `claude` agent's `setup` shelling out to a missing `python3`) is
+/// distinguishable from one that would actually run — see [`crate::routines::model::RoutineResponse`].
+pub(crate) fn setup_step_available(setup: Option<&str>) -> bool {
+    match setup.and_then(setup_step_interpreter) {
+        Some(bin) => agent_command_available(bin),
+        None => true,
+    }
+}
+
 /// Common install locations to probe for `tmux` when it is not on `path` at all.
 ///
 /// Split out so [`resolve_tmux_bin_from`] can be exercised in tests against fake, temp-dir-anchored

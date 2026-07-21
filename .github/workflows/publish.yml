@@ -70,7 +70,7 @@ jobs:
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -110,12 +110,13 @@ jobs:
       - name: Verify prebuilt UI ships in the published tarball
         run: cargo package --list --allow-dirty | grep -qx prebuilt.html || (echo "prebuilt.html not in package tarball" && exit 1)
 
-      - name: Commit prebuilt UI so cargo publish includes it
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
-          git add prebuilt.html
-          git commit -m "ci: bundle prebuilt UI"
+      # No commit step for prebuilt.html here: it used to be an untracked build
+      # artifact committed on the runner, but it's tracked in the repo now (kept
+      # in lockstep with client/src by prebuilt.yml), so the fresh build is
+      # normally byte-identical and a bare `git commit` fails the job with
+      # "nothing to commit" — which silently blocked the v1.5.0/v1.6.0 crates.io
+      # publishes. `cargo publish --allow-dirty` below packages the working-tree
+      # file either way, so a commit was never needed for tarball inclusion.
 
       - name: Verify tag matches Cargo.toml version
         run: |

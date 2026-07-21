@@ -18,6 +18,7 @@ use super::resolve_flag;
 use super::restart;
 use super::shutdown;
 use super::trigger_routine;
+use super::unlock_routines;
 use super::update_routine;
 use crate::error::AppError;
 use crate::middlewares;
@@ -231,7 +232,7 @@ pub(crate) fn build_app_with_shutdown(
             "/routines/lock",
             get(get_lock_status::get_lock_status)
                 .post(lock_routines::lock_routines)
-                .delete(routines::unlock),
+                .delete(unlock_routines::unlock_routines),
         )
         .route(
             "/routines/{id}",

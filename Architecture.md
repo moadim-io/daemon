@@ -162,35 +162,36 @@ It carries `agent`, `prompt`, `repositories` (`{ repository, branch }`),
 and a `title`. Routines have their own store (`RoutineStore`), REST endpoints
 (`/routines`), MCP tools (`create_routine`, …), and crontab block.
 
-When a routine fires there is **no moadim process in the loop and no clone step**. At create/update
-time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes `prompts/prompt.compiled.local.md`
-(a repositories-as-context preamble + the prompt) into `~/.config/moadim/routines/<id>/`, then writes a
-single self-contained shell command into a dedicated crontab block:
+At create/update time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes
+`prompts/prompt.compiled.local.md` (a repositories-as-context preamble + the prompt) into
+`~/.config/moadim/routines/<id>/`, then writes a single line into a dedicated crontab block:
 
 ```
 # BEGIN MOADIM-ROUTINES
 # Managed by moadim — routines (agent tmux sessions)
-<sched> TS=$(date +\%s); WB=…/workbenches/<slug>-$TS; mkdir -p $WB; \
-  { cp …/prompts/prompt.compiled.local.md $WB/prompt.md; \
-    tmux new-session -d -s moadim-<slug>-$TS -c $WB '<agent-cmd>'; \
-    tmux pipe-pane -o -t … "cat >> $WB/agent.log"; } >> $WB/launch.log 2>&1   # moadim-routine:<id>
+<sched> '<moadim-exe-path>' schedule trigger '<id>' # moadim-routine:<id>
 # END MOADIM-ROUTINES
 ```
 
-OS cron runs that line directly: it makes a fresh empty workbench under `~/.moadim/workbenches/`,
-launches the agent **interactively** (no `-p`) in a detached tmux session rooted there, and captures
-output via `pipe-pane`. The prompt reaches the agent as a process **argument** (the `{prompt}`
-placeholder expands to `"$(cat prompt.md)"`), so there is no keystroke-injection readiness race. The
-agent decides whether to clone the listed repositories. `POST /routines/{id}/trigger` runs the
-identical command via `sh -c`.
+That crontab line does **not** launch the agent by itself — it invokes the `moadim` binary directly
+(`moadim schedule trigger <id>`, a thin HTTP client), which calls `POST
+/routines/{id}/scheduled-trigger` on the **running daemon**. Scheduled routines therefore require
+the daemon to be running (it is installed as an OS service — launchd/systemd user — for exactly
+this reason). That handler (`routines::service_trigger::svc_trigger_scheduled`) and the manual
+`POST /routines/{id}/trigger` handler both funnel into `spawn_routine_command`, which builds the
+launch script (`routines::command::build_routine_command`) and spawns it in-process: it makes a fresh empty
+workbench under `~/.moadim/workbenches/`, launches the agent **interactively** (no `-p`) in a
+detached tmux session rooted there, and captures output via `pipe-pane`. The prompt reaches the
+agent as a process **argument** (the `{prompt}` placeholder expands to `"$(cat prompt.md)"`), so
+there is no keystroke-injection readiness race. The agent decides whether to clone the listed
+repositories.
 
-Everything after the `mkdir` runs inside a `{ … } >> $WB/launch.log 2>&1` group, so a failure in the
-prompt copy, the agent's `setup` step, or the `tmux` launch itself is captured next to the run's other
-artifacts instead of going to cron's mail spool (silently discarded on the headless hosts this daemon
-targets). `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's
-diagnostics for the steps that get the session running in the first place. Only the `PATH` export and
-the `mkdir` itself precede the redirect — a failure that early means `$WB` may not exist yet, so
-there's nowhere to write a launch log to.
+The spawned script runs under a *login* shell (`sh -lc`) so the user's `~/.profile` is sourced and
+the agent inherits their environment (`GH_TOKEN`, API keys, …). Everything after the workbench
+`mkdir` is redirected into `$WB/launch.log`, so a failure in the prompt copy, the agent's `setup`
+step, or the `tmux` launch itself is captured next to the run's other artifacts instead of being
+lost. `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's
+diagnostics for the steps that get the session running in the first place.
 
 `agent.log` capture optimizes for **operator readability** over raw audit fidelity: `svc_logs` /
 `svc_run_log` (`src/routines/service_log_tail.rs`) strip ANSI/VT escape sequences and collapse

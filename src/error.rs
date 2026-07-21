@@ -55,6 +55,25 @@ impl IntoResponse for AppError {
     }
 }
 
+/// Runs `blocking_fn` on Tokio's blocking thread pool, folding a cancelled-or-panicked task into
+/// [`AppError::Internal`].
+///
+/// Several route handlers shell out to `crontab`(1)/`tmux`(1) or do blocking filesystem I/O
+/// (#360) and previously each repeated `tokio::task::spawn_blocking(..).await.map_err(|_|
+/// AppError::Internal)??` inline. That copy-pasted the one branch that only fires when the
+/// blocking task itself panics into every call site — untested at all of them, since none can
+/// make the poison-tolerant stores (`LockRecover`) actually panic. Centralizing it here means the
+/// branch is written, and covered, exactly once.
+pub async fn run_blocking<F, T>(blocking_fn: F) -> Result<T, AppError>
+where
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(blocking_fn)
+        .await
+        .map_err(|_| AppError::Internal)?
+}
+
 #[cfg(test)]
 #[path = "error_tests.rs"]
 mod error_tests;

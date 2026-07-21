@@ -1097,6 +1097,11 @@ textarea {
   color: var(--accent-ink);
 }
 
+.notify-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .btn-refresh {
   border: 1px solid var(--border-strong);
   background: var(--surface);

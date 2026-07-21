@@ -186,10 +186,11 @@ pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
     read_local_env(id).into_keys().collect()
 }
 
-/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, and the
-/// obsolete per-routine launch script. `prompts/prompt.compiled.local.md` needs no entry of its
-/// own — its `.local.` filename already matches `*.local.*` (issue #1046).
-const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.local.*", "*.log", "run.sh"];
+/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, compiled
+/// prompt sidecars, and the obsolete per-routine launch script. The legacy
+/// `prompts/prompt.compiled.md` and the current `prompts/prompt.compiled.local.md` are both
+/// derived, so they stay out of git via `*.compiled.*`.
+const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.compiled.*", "*.local.*", "*.log", "run.sh"];
 
 /// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
 /// appending whichever are missing and leaving the rest of the file (including user additions)
@@ -223,8 +224,9 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
 /// the gitignored `state.local.toml` runtime sidecar, and `.gitignore` (created or reconciled — see
 /// [`ensure_routine_gitignore`]).
 ///
-/// The folder is named after the slugified title (`slugify(&routine.title)`). The UUID `id` is
-/// stored inside `routine.toml` so it survives a rename. Daemon-written runtime state
+/// The folder path is named after the slugified title (`slugify(&routine.title)`); `/` in the
+/// title becomes nested folders. The UUID `id` is stored inside `routine.toml` so it survives a
+/// rename. Daemon-written runtime state
 /// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
 /// version-controlled config file.
 ///

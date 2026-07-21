@@ -112,7 +112,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │       ├── prompts/
 │       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
 │       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-│       └── .gitignore         # generated — excludes *.local.* and *.log
+│       └── .gitignore         # generated — excludes *.compiled.*, *.local.*, and *.log
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
 └── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
@@ -161,7 +161,7 @@ git-trackable:
     ├── prompts/
     │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
     │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-    └── .gitignore     # generated — excludes *.local.* and *.log
+    └── .gitignore     # generated — excludes *.compiled.*, *.local.*, and *.log
 ```
 
 | Field          | Type   | Required | Description                                                                                  |
@@ -271,6 +271,7 @@ PUT    /routines/{id}         # replace
 PATCH  /routines/{id}         # update fields
 DELETE /routines/{id}         # delete
 POST   /routines/{id}/trigger # run now, outside the schedule
+POST   /routines/{id}/scheduled-trigger # daemon-side endpoint the generated crontab line invokes
 GET    /routines/{id}/prompt-preview # composed prompt body a run would receive, no run
 GET    /routines/{id}/logs    # newest workbench's agent.log as plain text
 POST   /routines/cleanup      # reap expired workbenches now
@@ -315,9 +316,10 @@ things on the host beyond the `claude` CLI itself:
   pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
   approvals) so the unattended session never blocks on a prompt. If `python3`
   is not on `PATH`, the setup step fails and the run no-ops. This is now
-  surfaced (not just silent): the daemon logs a startup warning and
-  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, though
-  the affected routine's own health dot still shows green.
+  surfaced (not just silent): the daemon logs a startup warning,
+  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, and the
+  affected routine's own health dot in the UI shows "AGENT MISSING" instead of
+  green (`RoutineResponse.agent_setup_available` reports `false`).
 - **`tmux`** — every routine run is launched inside a tmux session (named after
   the run's workbench), so a tmux binary must be installed.
 
@@ -338,7 +340,7 @@ register a brand-new agent by dropping in another `<name>.toml`.
 | --------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `command` | string         | yes      | Executable to run (resolved on `PATH`), e.g. `"claude"`.                                                                       |
 | `args`    | array<string>  | no       | Arguments passed to `command`. Supports the placeholders below. Defaults to empty.                                            |
-| `instructions_file` | string | no    | Filename, relative to the workbench, that this agent reads its project instructions from — where the moadim-managed system prompt and routine-origin disclosure are written. Defaults to `CLAUDE.md` (Claude Code's convention); the built-in `codex` agent sets it to `AGENTS.md`. |
+| `instructions_file` | string | no    | Filename, relative to the workbench, that this agent reads its project instructions from — where the moadim-managed system prompt is written. Defaults to `CLAUDE.md` (Claude Code's convention); the built-in `codex` agent sets it to `AGENTS.md`. |
 | `setup`   | string         | no       | Shell command run in the workbench **before** the agent launches, inserted verbatim into the cron line. See the variables below. |
 
 **Placeholders** (substituted in each `args` entry at launch):

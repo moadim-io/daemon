@@ -8,8 +8,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::error::AppError;
-use crate::global_lock::{LockScope, LockStatus};
+use crate::error::{run_blocking, AppError};
 
 use super::ical::{svc_ical, svc_ical_routine};
 use super::model::{FleetRunSummary, IcalFeedQuery, Routine, RoutineStore};
@@ -18,56 +17,9 @@ use super::service::{
     svc_trigger_scheduled,
 };
 
-/// Query parameters for `DELETE /routines/lock`.
-#[derive(Deserialize, utoipa::IntoParams)]
-pub struct UnlockQuery {
-    /// Which sentinel(s) to remove: `"shared"`, `"local"`, or `"all"`.
-    pub scope: String,
-}
-
-/// `DELETE /routines/lock` — remove lock sentinel(s), restoring routine scheduling.
-#[utoipa::path(delete, path = "/routines/lock",
-    params(UnlockQuery),
-    responses((status = 200, body = LockStatus), (status = 400, description = "Unknown scope"), (status = 500, description = "IO error")))]
-pub async fn unlock(
-    State(store): State<RoutineStore>,
-    Query(query): Query<UnlockQuery>,
-) -> Result<Json<LockStatus>, AppError> {
-    let scopes: Vec<LockScope> = if query.scope == "all" {
-        vec![LockScope::Shared, LockScope::Local]
-    } else {
-        vec![parse_lock_scope(&query.scope)?]
-    };
-    // See `crate::routes::lock_routines::lock_routines`: crontab sync must not run inline on the
-    // async worker thread (#360).
-    tokio::task::spawn_blocking(move || {
-        for scope in scopes {
-            crate::global_lock::set_lock(scope, false).map_err(|_| AppError::Internal)?;
-        }
-        if let Err(sync_err) = crate::sync::routines::sync_routines_to_crontab(&store) {
-            log::warn!("crontab sync after HTTP unlock failed: {sync_err}");
-        }
-        Ok::<_, AppError>(())
-    })
-    .await
-    .map_err(|_| AppError::Internal)??;
-    Ok(Json(crate::global_lock::lock_status()))
-}
-
-/// Parse a `scope` string into a [`LockScope`], returning `400 BadRequest` on unknown values.
-fn parse_lock_scope(scope: &str) -> Result<LockScope, AppError> {
-    match scope {
-        "shared" => Ok(LockScope::Shared),
-        "local" => Ok(LockScope::Local),
-        other => Err(AppError::BadRequest(format!(
-            "unknown scope {other:?}; use \"shared\" or \"local\""
-        ))),
-    }
-}
-
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed
-/// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include
-/// the routine-origin disclosure written separately to `CLAUDE.md` at trigger time.
+/// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Includes the
+/// routine-origin disclosure because it now lives in the composed prompt.
 #[utoipa::path(get, path = "/routines/{id}/prompt-preview",
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, description = "Composed prompt body as plain text"), (status = 404, description = "Not found")))]
@@ -94,9 +46,7 @@ pub async fn scheduled_trigger(
     // See `crate::routes::trigger_routine::trigger_routine`: `svc_trigger_scheduled` shells
     // out to `tmux`(1) too (#360). This is the endpoint the generated crontab line invokes, so
     // a `*/N` herd of scheduled fires is exactly the thundering-herd case #360 is about.
-    let resp = tokio::task::spawn_blocking(move || svc_trigger_scheduled(&store, &id))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || svc_trigger_scheduled(&store, &id)).await?;
     Ok(Json(resp))
 }
 
@@ -181,7 +131,3 @@ pub async fn get_run_summary(
 ) -> Result<String, AppError> {
     svc_run_summary(&store, &id, &workbench)
 }
-
-#[cfg(test)]
-#[path = "handlers_tests.rs"]
-mod handlers_tests;

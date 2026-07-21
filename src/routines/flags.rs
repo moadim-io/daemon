@@ -36,7 +36,7 @@ pub enum FlagScope {
 
 impl FlagScope {
     /// The filename suffix (including the leading `.`) this scope's flag files carry.
-    fn suffix(self) -> &'static str {
+    const fn suffix(self) -> &'static str {
         match self {
             Self::General => ".md",
             Self::Local => ".local.md",
@@ -51,7 +51,7 @@ pub struct Flag {
     pub filename: String,
     /// Free-text category, e.g. `"bug"`, `"gap"`, `"edge_case"`, `"question"`.
     #[serde(rename = "type")]
-    pub flag_type: String,
+    pub category: String,
     /// Free-text body describing what's unclear.
     pub description: String,
     /// Whether this flag is committed (general) or machine-local.
@@ -139,7 +139,7 @@ pub fn create_flag(
 
     Ok(Flag {
         filename,
-        flag_type: flag_type.to_string(),
+        category: flag_type.to_string(),
         description: description.to_string(),
         scope,
         created_at,
@@ -166,7 +166,7 @@ pub fn list_flags(slug: &str) -> Vec<Flag> {
             let description = parts.next().unwrap_or_default().trim().to_string();
             Some(Flag {
                 filename,
-                flag_type,
+                category: flag_type,
                 description,
                 scope,
                 created_at,

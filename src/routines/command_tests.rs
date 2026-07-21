@@ -112,12 +112,12 @@ fn build_routine_command_extends_path_rather_than_replacing_it() {
 }
 
 #[test]
-fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
-    // The routine-origin disclosure write into `$WB/CLAUDE.md` must fail-fast, mirroring the
+fn build_routine_command_writes_daemon_preamble_before_prompt_copy() {
+    // The daemon-managed instructions write into `$WB/CLAUDE.md` must fail-fast, mirroring the
     // `cp prompt.md` guard: a failed redirect (read-only/full $HOME, unwritable $WB, disk-quota)
     // must abort the launch before the prompt copy, setup, and tmux session — otherwise the agent
-    // would run with no disclosure mandate.
-    let routine = make_routine("Cmd Disclosure Guard Routine");
+    // would run with no daemon-managed preamble.
+    let routine = make_routine("Cmd Preamble Guard Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
         args: vec![],
@@ -130,16 +130,16 @@ fn build_routine_command_fail_fasts_when_disclosure_write_fails() {
     let write = cmd.find(r#"> "$WB/CLAUDE.md" || {"#).unwrap();
     assert!(
         cmd.contains(
-            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write agent instructions disclosure; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
+            r#"> "$WB/CLAUDE.md" || { echo "moadim: failed to write agent instructions preamble; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }"#
         ),
-        "expected the CLAUDE.md disclosure write to fail-fast in: {cmd}"
+        "expected the CLAUDE.md preamble write to fail-fast in: {cmd}"
     );
 
-    // The guard must precede the prompt copy, so a failed disclosure write never reaches it.
+    // The guard must precede the prompt copy, so a failed preamble write never reaches it.
     let copy = cmd.find("/prompt.md\"").unwrap();
     assert!(
         write < copy,
-        "disclosure-write guard must precede the prompt copy"
+        "preamble-write guard must precede the prompt copy"
     );
 
     // The best-effort user-prompt append stays best-effort (`|| true`), not aborting.
@@ -269,6 +269,12 @@ fn build_routine_command_omits_setup_guard_when_no_setup() {
         !cmd.contains("agent setup failed"),
         "did not expect a setup guard with no setup step in: {cmd}"
     );
+}
+
+#[test]
+fn slugify_preserves_folder_segments() {
+    assert_eq!(slugify("ops/nightly triage"), "ops/nightly-triage");
+    assert_eq!(slugify("///ops///nightly triage///"), "ops/nightly-triage");
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! `POST /routines` HTTP handler.
 
 use super::logic;
-use crate::error::AppError;
+use crate::error::{run_blocking, AppError};
 use axum::{extract::State, http::StatusCode, Json};
 use logic::{CreateRoutineRequest, RoutineResponse, RoutineStore};
 
@@ -15,9 +15,7 @@ pub async fn create_routine(
 ) -> Result<(StatusCode, Json<RoutineResponse>), AppError> {
     // `svc_create` syncs the crontab, which shells out to `crontab`(1) (#360) — keep that
     // off the async worker thread.
-    let resp = tokio::task::spawn_blocking(move || logic::build(&store, body))
-        .await
-        .map_err(|_| AppError::Internal)??;
+    let resp = run_blocking(move || logic::build(&store, body)).await?;
     Ok((StatusCode::CREATED, Json(resp)))
 }
 

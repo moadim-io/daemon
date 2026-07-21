@@ -27,7 +27,7 @@ import {
 } from "./heatmapMath";
 
 /** How often "now" advances so the grid (and its today/current-hour highlight)
- * rolls forward between fetches. Mirrors `ui/src/schedule_heatmap.rs`'s `TICK_MS`. */
+ * rolls forward between fetches. Mirrors `ui/src/schedule_heatmap.rs (removed)`'s `TICK_MS`. */
 const TICK_MS = 60_000;
 
 const HEAT_FILTERS: HeatFilter[] = ["all", "routine"];

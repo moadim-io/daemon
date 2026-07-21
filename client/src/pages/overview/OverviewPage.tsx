@@ -1,10 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAllRuns, useLockStatus, useRoutines, useTriggerRoutine, useUnlock } from "../../api/hooks";
 import { GlobalLockBanner } from "../../components/GlobalLockBanner";
 import { loadRefreshToken, refreshMs, RefreshControl, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
+import {
+  fireFailureNotification,
+  freshFailures,
+  loadNotifyFailures,
+  requestNotifyPermission,
+  saveNotifyFailures,
+  snapshotRunStatuses,
+  type RunStatusSnapshot,
+} from "../../lib/failureNotify";
 import { useToasts } from "../../shell/toasts";
 import { AttentionTable } from "./AttentionTable";
+import { NotifyToggle } from "./NotifyToggle";
 import { attentionItems, computeKpis, nextRunSummary, sourcesOf, upcomingRuns } from "./overviewLogic";
 import { OverviewStats } from "./OverviewStats";
 import { RecentRunsTable } from "./RecentRunsTable";
@@ -19,7 +29,7 @@ const TICK_MS = 10_000;
 /**
  * The OVERVIEW landing page: a single-pane operations summary that
  * aggregates routines into KPI tiles and one merged "upcoming runs"
- * schedule. Direct port of `ui/src/overview.rs`'s `OverviewPage` shell — all
+ * schedule. Direct port of `ui/src/overview.rs (removed)`'s `OverviewPage` shell — all
  * KPI/merge/attention math lives in the host-tested `overviewLogic.ts`; this
  * component is a thin shell that maps fetched records into `SchedSource`s
  * and renders the result.
@@ -36,6 +46,8 @@ export function OverviewPage() {
 
   const [now, setNow] = useState(() => new Date());
   const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
+  const [notifyEnabled, setNotifyEnabled] = useState(loadNotifyFailures);
+  const prevRunStatuses = useRef<RunStatusSnapshot | null>(null);
 
   // Advance "now" so countdowns re-render between fetches.
   useEffect(() => {
@@ -59,6 +71,50 @@ export function OverviewPage() {
     saveRefreshToken(token);
     setRefreshToken(token);
   }, []);
+
+  // Watches each poll of the fleet's recent runs for fresh failures and fires a desktop
+  // notification per run. Seeds a baseline snapshot on the first tick after enabling so
+  // failures already in view don't spam on toggle-on — only later transitions surface.
+  useEffect(() => {
+    if (!notifyEnabled) {
+      prevRunStatuses.current = null;
+      return;
+    }
+    const runsData = runsQuery.data;
+    if (runsData === undefined) return;
+    if (prevRunStatuses.current === null) {
+      prevRunStatuses.current = snapshotRunStatuses(runsData);
+      return;
+    }
+    for (const failed of freshFailures(runsData, prevRunStatuses.current)) {
+      fireFailureNotification(failed);
+    }
+    prevRunStatuses.current = snapshotRunStatuses(runsData);
+  }, [runsQuery.data, notifyEnabled]);
+
+  const handleToggleNotify = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        saveNotifyFailures(false);
+        setNotifyEnabled(false);
+        return;
+      }
+      void requestNotifyPermission().then((perm) => {
+        if (perm === "granted") {
+          saveNotifyFailures(true);
+          setNotifyEnabled(true);
+        } else {
+          addToast(
+            perm === "unsupported"
+              ? "Desktop notifications aren't supported in this browser"
+              : "Notification permission was denied",
+            "err",
+          );
+        }
+      });
+    },
+    [addToast],
+  );
 
   const handleTrigger = useCallback(
     (id: string) => {
@@ -104,6 +160,9 @@ export function OverviewPage() {
       <UpcomingTable runs={runs} now={now} loading={routinesQuery.isLoading} error={loadError} onTrigger={handleTrigger} />
       <div className="section-hd">
         <span className="section-label">RECENT RUNS</span>
+        <div className="section-acts">
+          <NotifyToggle enabled={notifyEnabled} onToggle={handleToggleNotify} />
+        </div>
       </div>
       <RecentRunsTable runs={runsQuery.data ?? []} loading={runsQuery.isLoading} />
     </div>

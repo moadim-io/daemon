@@ -103,7 +103,7 @@ fn svc_create_flag_persists_and_refreshes_prompt() {
     let id = created.routine.id;
 
     let flag = svc_create_flag(&store, &id, "bug", "broken thing", "general").unwrap();
-    assert_eq!(flag.flag_type, "bug");
+    assert_eq!(flag.category, "bug");
     assert_eq!(flag.description, "broken thing");
 
     // prompt.compiled.local.md is refreshed with the new open flag so the next run sees it.

@@ -446,3 +446,9 @@ inefficient_to_string = "deny"
 # theoretical negative case instead of silently wrapping. No behavior change. The codebase is
 # otherwise already clean, so `deny` locks that in.
 cast_sign_loss = "deny"
+# Reject a `match`/`if let` that manually converts an `Option` to a `Result`
+# (`Some(x) => Ok(x), None => Err(e)`) instead of `.ok_or(e)`. The manual form
+# spells out in several lines what `.ok_or` says in one, and invites the two
+# arms to drift out of sync on a future edit. The codebase is already clean,
+# so `deny` locks that in.
+manual_ok_or = "deny"

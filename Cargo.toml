@@ -398,3 +398,9 @@ verbose_file_reads = "deny"
 # on that convention: an exemption must now also surface in the function's public docs, not just a
 # comment next to the call site. The codebase is already clean, so `deny` locks that in.
 missing_panics_doc = "deny"
+# Require an `# Errors` doc section on any function returning `Result` explaining when it errors,
+# the `Err`-side companion to `missing_panics_doc` above. A caller deciding whether to `?` a result
+# or handle it inline should be able to tell what can go wrong from the signature's docs alone,
+# without reading the body (or every function it transitively calls). The codebase is already
+# clean, so `deny` locks that in.
+missing_errors_doc = "deny"

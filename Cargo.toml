@@ -391,3 +391,10 @@ ignore_without_reason = "deny"
 # used for `mem_forget`/`clippy::zombie_processes` above. The rest of the codebase is already
 # clean, so `deny` locks that in.
 verbose_file_reads = "deny"
+# Require a `# Panics` doc section on any function that can transitively panic (calls `.unwrap()`/
+# `.expect()`, or a bare `panic!()`/`assert!()`), so a caller can tell without reading the body.
+# `unwrap_used`/`expect_used`/`panic` above already ban all three outside tests and the handful of
+# documented, `#[allow]`-scoped exemptions for a genuinely unavoidable panic — this closes the loop
+# on that convention: an exemption must now also surface in the function's public docs, not just a
+# comment next to the call site. The codebase is already clean, so `deny` locks that in.
+missing_panics_doc = "deny"

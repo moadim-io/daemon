@@ -110,7 +110,7 @@ pub fn routine_pure_prompt_path(id: &str) -> PathBuf {
 /// Returns the path to `{routines_dir}/{id}/prompts/prompt.compiled.local.md`, the composed prompt
 /// (repositories preamble + pure prompt) that the launch command copies into the workbench.
 ///
-/// `.local.` keeps it matching the routine `.gitignore`'s `*.local.*` pattern: it is fully derived
+/// `.local.` keeps it matching the config `.gitignore`'s `*.local.*` pattern: it is fully derived
 /// from `prompt.pure.md` + `routine.toml` and rewritten on every [`crate::routine_storage::write_routine`]
 /// call, so (unlike `prompt.pure.md`) it should never be tracked (issue #1046).
 #[must_use]
@@ -118,7 +118,10 @@ pub fn routine_compiled_prompt_path(id: &str) -> PathBuf {
     routine_prompts_dir(id).join("prompt.compiled.local.md")
 }
 
-/// Returns the path to `{routines_dir}/{id}/.gitignore`.
+/// Returns the path to `{routines_dir}/{id}/.gitignore`, the legacy per-routine gitignore an
+/// older daemon generated. No longer written: the config dir's root `.gitignore` covers every
+/// routine directory recursively, and [`crate::routine_storage::write_routine`] removes any
+/// leftover per-routine file.
 #[must_use]
 pub fn routine_gitignore_path(id: &str) -> PathBuf {
     routine_dir(id).join(".gitignore")
@@ -127,7 +130,7 @@ pub fn routine_gitignore_path(id: &str) -> PathBuf {
 /// Returns the path to `{routines_dir}/{id}/state.local.toml`, the gitignored sidecar holding
 /// daemon-written runtime state (`snoozed_until`, `skip_runs`) kept out of the tracked `routine.toml`.
 ///
-/// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore`, so
+/// The `.local.` infix matches the `*.local.*` pattern seeded into the config `.gitignore`, so
 /// snooze churn never produces version-control diffs.
 #[must_use]
 pub fn routine_state_path(id: &str) -> PathBuf {
@@ -139,8 +142,8 @@ pub fn routine_state_path(id: &str) -> PathBuf {
 /// overrides on top of `routine.toml`'s tracked `[env]` table — see
 /// [`crate::routines::build_routine_command`] and issue #408.
 ///
-/// The `.local.` infix matches the `*.local.*` pattern seeded into each routine's `.gitignore` (see
-/// [`routine_gitignore_path`]), so it is never accidentally committed.
+/// The `.local.` infix matches the `*.local.*` pattern seeded into the config `.gitignore`, so it
+/// is never accidentally committed.
 #[must_use]
 pub fn routine_local_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.local.toml")
@@ -151,7 +154,7 @@ pub fn routine_local_toml_path(id: &str) -> PathBuf {
 ///
 /// The cron shell command appends a line (`printf '%s\n' "$TS" >> scheduled.log`) at each firing;
 /// the daemon reads only the last line to derive `last_scheduled_trigger_at`. The `.log` suffix
-/// matches the `*.log` pattern seeded into each routine's `.gitignore`.
+/// matches the `*.log` pattern seeded into the config `.gitignore`.
 #[must_use]
 pub fn routine_scheduled_log_path(id: &str) -> PathBuf {
     routine_dir(id).join("scheduled.log")
@@ -161,7 +164,7 @@ pub fn routine_scheduled_log_path(id: &str) -> PathBuf {
 /// records every manual trigger as one Unix-timestamp line.
 ///
 /// The daemon appends a line at each manual trigger; reading the last line gives
-/// `last_manual_trigger_at`. The `.log` suffix matches the `*.log` pattern in the routine's
+/// `last_manual_trigger_at`. The `.log` suffix matches the `*.log` pattern in the config
 /// `.gitignore`.
 #[must_use]
 pub fn routine_manual_log_path(id: &str) -> PathBuf {
@@ -175,7 +178,7 @@ pub fn routine_manual_log_path(id: &str) -> PathBuf {
 ///
 /// Without this, a skipped trigger left no trace anywhere a caller could read back: `routine_logs`
 /// looks up the newest *workbench's* `agent.log`, and a skipped trigger never creates a workbench
-/// (#1145). The `.log` suffix matches the `*.log` pattern in the routine's `.gitignore`.
+/// (#1145). The `.log` suffix matches the `*.log` pattern in the config `.gitignore`.
 #[must_use]
 pub fn routine_skip_log_path(id: &str) -> PathBuf {
     routine_dir(id).join("skip.log")
@@ -188,7 +191,7 @@ pub fn routine_skip_log_path(id: &str) -> PathBuf {
 /// One compact JSON object is appended per run, right before its workbench is reaped (see
 /// `routines::cleanup::reap_dir`), so run history survives past workbench retention instead of
 /// disappearing the moment its workbench directory is removed. The `.log` suffix matches the
-/// `*.log` pattern seeded into each routine's `.gitignore`.
+/// `*.log` pattern seeded into the config `.gitignore`.
 #[must_use]
 pub fn routine_run_history_path(id: &str) -> PathBuf {
     routine_dir(id).join("runs.log")

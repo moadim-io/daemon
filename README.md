@@ -109,12 +109,12 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │       ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
 │       ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
 │       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
-│       ├── prompts/
-│       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-│       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-│       └── .gitignore         # generated — excludes *.compiled.*, *.local.*, and *.log
+│       └── prompts/
+│           ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+│           └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
+├── .gitignore                 # generated — excludes *.compiled.*, *.local.*, *.log, … for the whole tree
 └── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
 
 ~/.moadim/                     # runtime tree, separate from the config dir above
@@ -159,11 +159,14 @@ git-trackable:
     ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
     ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
     ├── routine.local.toml # gitignored, optional — secret/local env var overrides
-    ├── prompts/
-    │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-    │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-    └── .gitignore     # generated — excludes *.compiled.*, *.local.*, and *.log
+    └── prompts/
+        ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+        └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ```
+
+The gitignored files are covered by the single generated `.gitignore` at the
+config-dir root (`~/.config/moadim/.gitignore`), whose patterns apply to the
+whole tree — routine directories don't carry their own.
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |

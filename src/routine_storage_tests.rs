@@ -90,7 +90,10 @@ fn write_then_load_round_trips() {
         assert!(crate::paths::routine_cron_path(&slug).exists());
         assert!(crate::paths::routine_pure_prompt_path(&slug).exists());
         assert!(crate::paths::routine_compiled_prompt_path(&slug).exists());
-        assert!(crate::paths::routine_gitignore_path(&slug).exists());
+        assert!(
+            !crate::paths::routine_gitignore_path(&slug).exists(),
+            "per-routine .gitignore is no longer generated"
+        );
         let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
         assert!(
             toml_text.contains("schedule = \"@daily\""),

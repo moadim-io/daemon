@@ -137,10 +137,16 @@ fn ensure_readme(path: &std::path::Path, content: &str) {
 
 /// Ensure the config dir `.gitignore` contains all required patterns on every start.
 ///
+/// This is the single `.gitignore` for the whole config tree — its patterns apply recursively, so
+/// they also cover every routine directory (per-routine `.gitignore` files are no longer
+/// generated): `*.local.*` catches the machine-local sidecars (`state.local.toml`,
+/// `routine.local.toml`, `prompt.compiled.local.md`), `*.log` the trigger logs, `*.compiled.*`
+/// the legacy `prompts/prompt.compiled.md`, and `run.sh` the obsolete per-routine launch script.
+///
 /// Reads the existing file (if any), appends any missing patterns, and writes back only when
 /// something changed. Preserves user-added entries. Best-effort: failure is not fatal.
 fn ensure_config_gitignore() {
-    const REQUIRED: &[&str] = &["*.pid", "*.log", "*.local.*"];
+    const REQUIRED: &[&str] = &["*.pid", "*.log", "*.local.*", "*.compiled.*", "run.sh"];
     let gitignore = crate::paths::config_gitignore_path();
     let existing = std::fs::read_to_string(&gitignore).unwrap_or_default();
     let lines: Vec<&str> = existing.lines().collect();

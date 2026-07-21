@@ -119,9 +119,10 @@ pub fn routine_compiled_prompt_path(id: &str) -> PathBuf {
 }
 
 /// Returns the path to `{routines_dir}/{id}/.gitignore`, the legacy per-routine gitignore an
-/// older daemon generated. No longer written: the config dir's root `.gitignore` covers every
-/// routine directory recursively, and [`crate::routine_storage::write_routine`] removes any
-/// leftover per-routine file.
+/// older daemon generated. No longer written (the config dir's root `.gitignore` covers every
+/// routine directory recursively); an existing file is left untouched, since it may carry
+/// user-added patterns. Test-only: production code no longer touches this path.
+#[cfg(test)]
 #[must_use]
 pub fn routine_gitignore_path(id: &str) -> PathBuf {
     routine_dir(id).join(".gitignore")

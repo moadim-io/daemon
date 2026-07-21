@@ -14,9 +14,9 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_compiled_prompt_path, routine_cron_path, routine_dir, routine_gitignore_path,
-    routine_manual_log_path, routine_prompts_dir, routine_pure_prompt_path, routine_script_path,
-    routine_skip_log_path, routine_state_path, routine_toml_path,
+    routine_compiled_prompt_path, routine_cron_path, routine_dir, routine_manual_log_path,
+    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_skip_log_path,
+    routine_state_path, routine_toml_path,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -192,8 +192,9 @@ pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
 /// the `prompts/prompt.pure.md` (raw) and `prompts/prompt.compiled.local.md` (composed) sidecars,
 /// and the gitignored `state.local.toml` runtime sidecar. Gitignore coverage for the machine-local
 /// files comes from the single config-dir `.gitignore` (`cli_system::ensure_config_gitignore`),
-/// whose patterns apply recursively; per-routine `.gitignore` files are no longer generated, and
-/// any left behind by an older daemon is removed here.
+/// whose patterns apply recursively; per-routine `.gitignore` files are no longer generated. One
+/// left behind by an older daemon is not touched — it may carry user-added patterns, and it stays
+/// correct alongside the root one.
 ///
 /// The folder path is named after the slugified title (`slugify(&routine.title)`); `/` in the
 /// title becomes nested folders. The UUID `id` is stored inside `routine.toml` so it survives a
@@ -226,12 +227,10 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 
-    // Remove any stale `run.sh` and per-routine `.gitignore` left by an older daemon: the crontab
-    // line now invokes the binary directly, and gitignore coverage now lives solely in the config
-    // dir's root `.gitignore`, whose patterns apply recursively. Best-effort: a missing file is
-    // fine. Startup re-persists every routine, so this heals existing installs.
+    // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
+    // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a
+    // missing file is fine. Startup re-persists every routine, so this heals existing installs.
     let _ = std::fs::remove_file(routine_script_path(&slug));
-    let _ = std::fs::remove_file(routine_gitignore_path(&slug));
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
@@ -359,8 +358,7 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 /// `prompts/prompt.compiled.local.md` (e.g. after the UUID→slug migration, or if the sidecar was
 /// lost) would fail the launch command's `cp prompt.compiled.local.md`. Re-persisting from the
 /// in-memory store
-/// heals those dirs (and removes any stale legacy `run.sh` and per-routine `.gitignore`).
-/// Idempotent; safe to call on every
+/// heals those dirs (and removes any stale legacy `run.sh`). Idempotent; safe to call on every
 /// startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();

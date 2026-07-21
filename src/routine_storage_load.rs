@@ -72,10 +72,12 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
     let title = toml.title?;
     let id = toml.id.unwrap_or_else(|| dir_name.to_string());
     let runtime_state = read_runtime_state(base, dir_name);
-    // Prefer the tracked cron file; fall back to legacy routine.toml, then routines that predate
-    // the split keep loading until repersisted.
-    let schedule =
-        read_routine_cron(&base.join(dir_name).join("schedule.cron")).or(toml.schedule)?;
+    // routine.toml is authoritative (schedule.cron only mirrors it and is not functional yet);
+    // fall back to the cron sidecar so dirs written while the schedule lived only there keep
+    // loading until repersisted.
+    let schedule = toml
+        .schedule
+        .or_else(|| read_routine_cron(&base.join(dir_name).join("schedule.cron")))?;
     // Prefer the log file; fall back to legacy state.local.toml field then routine.toml field for
     // routines that predate the log-file migration.
     let last_manual_trigger_at = read_manual_state(base, dir_name)

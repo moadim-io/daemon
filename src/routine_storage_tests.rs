@@ -96,8 +96,8 @@ fn write_then_load_round_trips() {
         );
         let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
         assert!(
-            !toml_text.contains("schedule"),
-            "routine.toml must not carry the schedule: {toml_text}"
+            toml_text.contains("schedule = \"@daily\""),
+            "routine.toml must carry the authoritative schedule: {toml_text}"
         );
         assert!(
             !toml_text.contains("prompt"),
@@ -150,19 +150,18 @@ fn tags_round_trip_through_routine_toml() {
 
 #[test]
 fn load_routine_from_dir_applies_defaults_for_absent_optional_fields() {
-    // A minimal current-layout routine (schedule.cron + routine.toml) that omits prompt, enabled,
-    // timestamps, and id exercises the default-fallback arms in load_routine_from_dir:
-    // prompt -> "", enabled -> true, created_at/updated_at -> 0, and id -> dir_name (legacy fallback).
+    // A minimal routine.toml that omits prompt, enabled, timestamps, and id exercises the
+    // default-fallback arms in load_routine_from_dir: prompt -> "", enabled -> true,
+    // created_at/updated_at -> 0, and id -> dir_name (legacy fallback).
     with_override_home(|_home| {
         let slug = "rs-defaults-routine";
         let dir = crate::paths::routine_dir(slug);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "title = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
+            "schedule = \"@daily\"\ntitle = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
         )
         .unwrap();
-        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
 
         let loaded = load_routine_from_dir(slug).unwrap();
         assert_eq!(loaded.id, slug, "absent id falls back to the dir name");
@@ -205,30 +204,54 @@ fn load_routine_falls_back_to_legacy_last_triggered_in_routine_toml() {
 }
 
 #[test]
-fn load_routine_falls_back_to_legacy_schedule_in_routine_toml() {
-    // Older routine dirs kept the schedule in routine.toml; the loader still accepts that until
-    // the next repersist writes schedule.cron.
+fn load_routine_prefers_routine_toml_schedule_over_cron_sidecar() {
+    // routine.toml is the authoritative schedule source; the schedule.cron mirror is not
+    // functional yet, so a diverging sidecar must lose.
     with_override_home(|_home| {
-        let slug = "rs-legacy-schedule-routine";
+        let slug = "rs-toml-schedule-wins-routine";
         let dir = crate::paths::routine_dir(slug);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "schedule = \"@hourly\"\ntitle = \"Rs Legacy Schedule\"\nagent = \"claude\"\n",
+            "schedule = \"@hourly\"\ntitle = \"Rs Toml Schedule Wins\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@weekly\n").unwrap();
+
+        assert_eq!(load_routine_from_dir(slug).unwrap().schedule, "@hourly");
+    });
+}
+
+#[test]
+fn load_routine_falls_back_to_cron_sidecar_when_routine_toml_has_no_schedule() {
+    // Dirs written while the schedule lived only in schedule.cron keep loading until the next
+    // repersist restores the field in routine.toml. Comment lines are skipped when reading the
+    // sidecar.
+    with_override_home(|_home| {
+        let slug = "rs-cron-fallback-routine";
+        let dir = crate::paths::routine_dir(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            crate::paths::routine_toml_path(slug),
+            "title = \"Rs Cron Fallback\"\nagent = \"claude\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            crate::paths::routine_cron_path(slug),
+            "# some comment\n\n@hourly\n",
         )
         .unwrap();
 
-        let loaded = load_routine_from_dir(slug).unwrap();
-        assert_eq!(loaded.schedule, "@hourly");
-        assert!(!crate::paths::routine_cron_path(slug).exists());
+        assert_eq!(load_routine_from_dir(slug).unwrap().schedule, "@hourly");
     });
 }
 
 #[test]
 fn load_routine_blank_schedule_cron_with_no_legacy_schedule_returns_none() {
-    // A `schedule.cron` with no non-empty line (e.g. truncated by a crash mid-write) parses to
-    // `None` rather than an empty string, and with no legacy `schedule` field in `routine.toml`
-    // either, the whole load short-circuits to `None` instead of a routine with a blank schedule.
+    // A `schedule.cron` with no cron line — only blanks and comments (e.g. truncated by a crash
+    // mid-write) — parses to `None` rather than an empty string, and with no `schedule` field in
+    // `routine.toml` either, the whole load short-circuits to `None` instead of a routine with a
+    // blank schedule.
     with_override_home(|_home| {
         let slug = "rs-blank-schedule-cron-routine";
         let dir = crate::paths::routine_dir(slug);
@@ -238,7 +261,11 @@ fn load_routine_blank_schedule_cron_with_no_legacy_schedule_returns_none() {
             "title = \"Rs Blank Schedule Cron\"\nagent = \"claude\"\n",
         )
         .unwrap();
-        std::fs::write(crate::paths::routine_cron_path(slug), "\n\n").unwrap();
+        std::fs::write(
+            crate::paths::routine_cron_path(slug),
+            "# not functional yet\n\n",
+        )
+        .unwrap();
 
         assert!(load_routine_from_dir(slug).is_none());
     });

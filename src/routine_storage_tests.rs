@@ -100,14 +100,9 @@ fn write_then_load_round_trips() {
             !toml_text.contains("prompt"),
             "routine.toml must not carry the prompt: {toml_text}"
         );
-        let cron_text = std::fs::read_to_string(crate::paths::routine_cron_path(&slug)).unwrap();
-        assert!(
-            cron_text.starts_with("# NOTE: this file is not functional yet"),
-            "schedule.cron must open with the not-functional-yet comment: {cron_text}"
-        );
-        assert!(
-            cron_text.ends_with("\n@daily\n"),
-            "schedule.cron must mirror the cron entry after the comment: {cron_text}"
+        assert_eq!(
+            std::fs::read_to_string(crate::paths::routine_cron_path(&slug)).unwrap(),
+            "@daily\n"
         );
         assert_eq!(
             std::fs::read_to_string(crate::paths::routine_pure_prompt_path(&slug)).unwrap(),
@@ -227,8 +222,8 @@ fn load_routine_prefers_routine_toml_schedule_over_cron_sidecar() {
 #[test]
 fn load_routine_falls_back_to_cron_sidecar_when_routine_toml_has_no_schedule() {
     // Dirs written while the schedule lived only in schedule.cron keep loading until the next
-    // repersist restores the field in routine.toml. Comment lines (like the not-functional-yet
-    // header the daemon writes) are skipped when reading the sidecar.
+    // repersist restores the field in routine.toml. Comment lines are skipped when reading the
+    // sidecar.
     with_override_home(|_home| {
         let slug = "rs-cron-fallback-routine";
         let dir = crate::paths::routine_dir(slug);
@@ -251,9 +246,9 @@ fn load_routine_falls_back_to_cron_sidecar_when_routine_toml_has_no_schedule() {
 #[test]
 fn load_routine_blank_schedule_cron_with_no_legacy_schedule_returns_none() {
     // A `schedule.cron` with no cron line — only blanks and comments (e.g. truncated by a crash
-    // mid-write, leaving just the header) — parses to `None` rather than an empty string, and with
-    // no `schedule` field in `routine.toml` either, the whole load short-circuits to `None`
-    // instead of a routine with a blank schedule.
+    // mid-write) — parses to `None` rather than an empty string, and with no `schedule` field in
+    // `routine.toml` either, the whole load short-circuits to `None` instead of a routine with a
+    // blank schedule.
     with_override_home(|_home| {
         let slug = "rs-blank-schedule-cron-routine";
         let dir = crate::paths::routine_dir(slug);

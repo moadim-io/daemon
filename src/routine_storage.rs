@@ -27,8 +27,7 @@ struct RoutineToml {
     /// UUID that uniquely identifies this routine (stable across renames).
     id: Option<String>,
     /// Cron expression. Authoritative: the daemon reads the schedule from here. It is also
-    /// mirrored into the tracked `schedule.cron` sidecar, which is not functional yet (see
-    /// [`CRON_SIDECAR_HEADER`]).
+    /// mirrored into the tracked `schedule.cron` sidecar, which is not functional yet.
     #[serde(default)]
     schedule: Option<String>,
     /// Human name.
@@ -142,14 +141,8 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Comment written at the top of every `schedule.cron` sidecar. The sidecar mirrors
-/// `routine.toml`'s `schedule` field but is not consumed anywhere yet — `routine.toml` stays the
-/// source of truth until the sidecar is wired up.
-const CRON_SIDECAR_HEADER: &str =
-    "# NOTE: this file is not functional yet — the daemon reads `schedule` from routine.toml.";
-
 /// Read a routine's tracked cron entry from `schedule.cron`, returning the first line that is
-/// neither empty nor a `#` comment (so the [`CRON_SIDECAR_HEADER`] is skipped).
+/// neither empty nor a `#` comment.
 fn read_routine_cron(path: &std::path::PathBuf) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     let schedule = text
@@ -302,7 +295,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
     atomic_write(
         &routine_cron_path(&slug),
-        format!("{CRON_SIDECAR_HEADER}\n{}\n", routine.schedule).as_bytes(),
+        format!("{}\n", routine.schedule).as_bytes(),
     )?;
     atomic_write(&routine_pure_prompt_path(&slug), routine.prompt.as_bytes())?;
     atomic_write(

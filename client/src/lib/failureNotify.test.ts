@@ -61,6 +61,29 @@ describe("notify-failures preference", () => {
     saveNotifyFailures(false);
     expect(loadNotifyFailures()).toBe(false);
   });
+
+  // Mirrors theme.ts's equivalent guard (see theme.test.ts): both preferences are read/written
+  // through the same try/catch-and-fall-back shape, so a private-mode/quota storage error must
+  // not crash the app either.
+  describe("when localStorage throws (private mode / quota)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("falls back to off instead of propagating the error", () => {
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new DOMException("blocked", "SecurityError");
+      });
+      expect(loadNotifyFailures()).toBe(false);
+    });
+
+    it("saveNotifyFailures swallows the error instead of propagating it", () => {
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("blocked", "SecurityError");
+      });
+      expect(() => saveNotifyFailures(true)).not.toThrow();
+    });
+  });
 });
 
 describe("notification support/permission", () => {

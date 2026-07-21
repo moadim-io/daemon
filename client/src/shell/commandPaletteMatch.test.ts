@@ -38,6 +38,7 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     tags: [],
     agent_registered: false,
     agent_command_available: false,
+    agent_setup_available: false,
     is_running: false,
     file_path: "",
     schedule_description: null,

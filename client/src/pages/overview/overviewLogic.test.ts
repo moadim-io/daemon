@@ -47,6 +47,7 @@ function makeRoutine(overrides: Partial<RoutineResponse> = {}): RoutineResponse 
     machines: [],
     agent_registered: false,
     agent_command_available: false,
+    agent_setup_available: false,
     file_path: "",
     flag_count: 0,
     env_keys: [],

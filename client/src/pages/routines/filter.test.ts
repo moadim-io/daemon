@@ -61,6 +61,10 @@ function routine(
     tags: [],
     agent_registered: false,
     agent_command_available: false,
+    // Defaults to available (no known `setup`-step problem) so the many existing fixtures below
+    // that only override `agent_registered` keep exercising the health states they were written
+    // for; the dedicated `agent_setup_available: false` tests set this explicitly (issue #404).
+    agent_setup_available: true,
     is_running: false,
     file_path: "",
     schedule_description: null,
@@ -555,6 +559,18 @@ describe("filter", () => {
   it("health missing agent is agent missing", () => {
     // agent_registered defaults to false in routine()
     const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], true);
+    expect(routineHealth(r, now())).toBe("agent-missing");
+  });
+
+  it("health registered agent with unresolvable setup step is agent missing (#404)", () => {
+    // A well-formed, registered agent whose `setup` step shells out to an interpreter that isn't
+    // on `PATH` (e.g. the built-in `claude` agent's `python3` dependency) must not read as
+    // healthy: the launch command's fail-fast guard aborts the run in `setup` before the agent
+    // ever starts, the same silent-no-op class as a missing agent config.
+    const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], true, {
+      agent_registered: true,
+      agent_setup_available: false,
+    });
     expect(routineHealth(r, now())).toBe("agent-missing");
   });
 

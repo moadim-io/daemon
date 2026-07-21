@@ -436,3 +436,13 @@ implicit_clone = "deny"
 # it on the inner reference is the same result without that indirection. The codebase is already
 # clean, so `deny` locks that in.
 inefficient_to_string = "deny"
+# Reject an `as`-cast from a signed integer to an unsigned one (e.g. `i64 as u64`), which silently
+# wraps a negative value into a huge positive one instead of erroring. Fixed the 2 violations this
+# surfaced, both a Unix-timestamp `i64` (`DateTime::timestamp()`) cast to the `u64` seconds this
+# crate's timestamps are stored as: `logging::format_json_line`'s `ts_local` field and
+# `ical::feed`'s snooze-deadline comparison. Neither value can go negative in practice (both come
+# from "now" or a future cron fire, always post-1970), but the cast gave no indication of that
+# invariant to a reader — converted to `u64::try_from(...)`, clamped to `0`/`false` on the
+# theoretical negative case instead of silently wrapping. No behavior change. The codebase is
+# otherwise already clean, so `deny` locks that in.
+cast_sign_loss = "deny"

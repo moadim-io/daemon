@@ -35,7 +35,7 @@ fn format_json_line(record: &log::Record<'_>) -> String {
     let now = chrono::Utc::now();
     serde_json::json!({
         "ts": now.to_rfc3339(),
-        "ts_local": crate::utils::time::format_local(now.timestamp() as u64),
+        "ts_local": crate::utils::time::format_local(u64::try_from(now.timestamp()).unwrap_or(0)),
         "level": record.level().to_string(),
         "target": record.target(),
         "msg": record.args().to_string(),

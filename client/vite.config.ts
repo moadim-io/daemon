@@ -5,7 +5,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 // Single self-contained dist/index.html, embedded verbatim into the daemon
 // binary by src/build/client.rs — see that file for the fallback chain.
 export default defineConfig({
-  base: "/client/",
+  base: "/",
   plugins: [react(), viteSingleFile()],
   build: {
     outDir: "dist",

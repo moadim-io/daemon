@@ -18,8 +18,8 @@ use super::service::{
 };
 
 /// `GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed
-/// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include
-/// the routine-origin disclosure written separately to `CLAUDE.md` at trigger time.
+/// in-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Includes the
+/// routine-origin disclosure because it now lives in the composed prompt.
 #[utoipa::path(get, path = "/routines/{id}/prompt-preview",
     params(("id" = String, Path, description = "Routine UUID")),
     responses((status = 200, description = "Composed prompt body as plain text"), (status = 404, description = "Not found")))]

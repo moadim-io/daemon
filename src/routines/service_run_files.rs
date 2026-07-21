@@ -62,8 +62,7 @@ pub fn svc_run_summary(
 /// workbench, writing `prompt.md`, or launching an agent (issue #391). Mirrors `svc_get`'s lookup,
 /// but returns the *derived* prompt body instead of the stored routine fields.
 ///
-/// Does not include the routine-origin disclosure written separately to `CLAUDE.md` at trigger
-/// time — that isn't part of [`compose_prompt`], so it isn't part of this preview either.
+/// Includes the routine-origin disclosure because it is now part of [`compose_prompt`].
 pub fn svc_get_prompt_preview(store: &RoutineStore, id: &str) -> Result<String, AppError> {
     let routine = store
         .lock_recover()

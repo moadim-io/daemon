@@ -160,7 +160,7 @@ impl MoadimMcp {
     /// Return the exact prompt body a routine's run would receive, without creating a workbench
     /// or launching an agent.
     #[tool(
-        description = "Preview the exact composed prompt body a routine's run would receive, without triggering a real run (no workbench, no agent launch). Does not include the routine-origin disclosure written separately to CLAUDE.md at trigger time."
+        description = "Preview the exact composed prompt body a routine's run would receive, without triggering a real run (no workbench, no agent launch). Includes the routine-origin disclosure because it is part of the composed prompt."
     )]
     fn preview_routine_prompt(
         &self,

@@ -88,8 +88,9 @@ fn validate_cron_rejects_unsupported_keywords() {
 }
 
 #[test]
-fn compiled_union_uses_standard_crons_and_skips_keywords() {
+fn compiled_union_uses_supported_crons() {
     assert!(compiled_union("0 */5 * * * *").is_some());
-    assert!(compiled_union("0 30 9 * * 1-5 *").is_none());
-    assert!(compiled_union("@daily").is_none());
+    assert!(compiled_union("0 30 9 * * 1-5 *").is_some());
+    assert!(compiled_union("@daily").is_some());
+    assert!(compiled_union("@midnight").is_none());
 }

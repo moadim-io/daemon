@@ -40,13 +40,13 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Compile `schedule` through `cron-union` when it is a standard cron expression.
+/// Compile `schedule` through `cron-union` when it is a supported cron expression.
 ///
-/// `cron-union` does not understand `@keyword` schedules, so callers fall back to
-/// `croner` for those legacy forms.
+/// `cron-union` now accepts the same `@keyword` aliases and 7-field schedules the daemon
+/// already validates, so this is the fast path for every schedule shape we keep around.
 pub(crate) fn compiled_union(schedule: &str) -> Option<CronUnion> {
     let trimmed = schedule.trim();
-    if trimmed.starts_with('@') || trimmed.split_ascii_whitespace().count() == 7 {
+    if matches!(trimmed, "@reboot" | "@midnight") {
         return None;
     }
     let normalized = normalize_schedule(trimmed);

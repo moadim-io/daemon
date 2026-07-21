@@ -143,7 +143,7 @@ fn err(msg: impl std::fmt::Display) -> CallToolResult {
 #[tool_router]
 impl MoadimMcp {
     /// Create a new `MoadimMcp` handler connected to the given routine store.
-    pub fn new(
+    pub const fn new(
         routines: RoutineStore,
         routines_dir: std::path::PathBuf,
         uptime_start: u64,

@@ -89,7 +89,7 @@ pub(super) fn parse_workbench_name(name: &str) -> Option<(&str, u64)> {
 
 /// Whether a workbench triggered at `ts` has outlived `ttl` as of `now` (saturating, so clock skew
 /// that puts `ts` in the future reads as age 0, never expired).
-fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
+const fn is_expired(now: u64, ts: u64, ttl: u64) -> bool {
     now.saturating_sub(ts) > ttl
 }
 

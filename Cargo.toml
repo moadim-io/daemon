@@ -468,3 +468,12 @@ manual_is_variant_and = "deny"
 # `MAX` on the theoretical overflow case instead of silently wrapping. No behavior change. The rest
 # of the codebase is already clean, so `deny` locks that in.
 cast_possible_wrap = "deny"
+# Reject a function whose body could run in `const` context but isn't marked `const fn`. A
+# non-`const` function can't be called from a `const`/`static` initializer or another `const fn`,
+# closing off callers unnecessarily when nothing about the body actually requires runtime
+# evaluation. Fixed the 7 violations this surfaced (`cli::liveness_exit_code`,
+# `machine::MachineSource::label`, `routes::mcp::MoadimMcp::new`, `routines::cleanup::is_expired`,
+# `routines::flags::FlagScope::suffix`, `routines::model::bool_true`,
+# `routines::service_log_tail::LogWithMeta::empty`) by adding `const`. No behavior change. The rest
+# of the codebase is already clean, so `deny` locks that in.
+missing_const_for_fn = "deny"

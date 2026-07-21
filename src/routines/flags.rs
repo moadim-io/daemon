@@ -36,7 +36,7 @@ pub enum FlagScope {
 
 impl FlagScope {
     /// The filename suffix (including the leading `.`) this scope's flag files carry.
-    fn suffix(self) -> &'static str {
+    const fn suffix(self) -> &'static str {
         match self {
             Self::General => ".md",
             Self::Local => ".local.md",

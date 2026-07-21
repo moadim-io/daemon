@@ -59,7 +59,7 @@ pub(crate) fn agent_command_available(command: &str) -> bool {
 /// for an empty/all-whitespace `setup` string.
 ///
 /// `setup` is inserted verbatim into the launch command (see
-/// [`super::command::build_routine_command`]), so this is a best-effort probe, not a shell parse:
+/// [`super::build_routine_command`]), so this is a best-effort probe, not a shell parse:
 /// it only catches the common "the step shells out to an interpreter that isn't installed" case
 /// (issue #404), not every way a `setup` step can fail.
 pub(crate) fn setup_step_interpreter(setup: &str) -> Option<&str> {

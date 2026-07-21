@@ -417,3 +417,10 @@ single_char_pattern = "deny"
 # instead of clones. This is a real correctness lint (catches silent logic bugs), not a style
 # preference. The codebase is already clean, so `deny` locks that in.
 suspicious_operation_groupings = "deny"
+# Reject a struct field whose name starts with the struct's own name (e.g. `Flag::flag_type`) —
+# the prefix is redundant at every access site, since the struct name is already spelled out right
+# before the field name (`flag.flag_type` repeats "flag"). Fixed the one violation this surfaced:
+# `Flag::flag_type` (`routines/flags.rs`) renamed to `Flag::category`, matching its doc comment
+# ("Free-text category"). The wire format is unchanged — the field already carries
+# `#[serde(rename = "type")]`. The rest of the codebase is already clean, so `deny` locks that in.
+struct_field_names = "deny"

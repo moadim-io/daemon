@@ -65,7 +65,7 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
             let _ = writeln!(
                 body,
                 "- **{}** ({scope}): {}",
-                flag.flag_type, flag.description
+                flag.category, flag.description
             );
         }
     }

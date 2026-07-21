@@ -26,11 +26,10 @@ use crate::utils::atomic::atomic_write;
 struct RoutineToml {
     /// UUID that uniquely identifies this routine (stable across renames).
     id: Option<String>,
-    /// Cron expression.
-    ///
-    /// **Read-only / legacy.** The schedule now lives in the tracked `schedule.cron` sidecar so
-    /// it stays diff-friendly and smaller than the rest of the routine metadata.
-    #[serde(default, skip_serializing)]
+    /// Cron expression. Authoritative: the daemon reads the schedule from here. It is also
+    /// mirrored into the tracked `schedule.cron` sidecar, which is not functional yet (see
+    /// [`CRON_SIDECAR_HEADER`]).
+    #[serde(default)]
     schedule: Option<String>,
     /// Human name.
     title: Option<String>,
@@ -143,10 +142,20 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read a routine's tracked cron entry from `schedule.cron`, returning the first non-empty line.
+/// Comment written at the top of every `schedule.cron` sidecar. The sidecar mirrors
+/// `routine.toml`'s `schedule` field but is not consumed anywhere yet — `routine.toml` stays the
+/// source of truth until the sidecar is wired up.
+const CRON_SIDECAR_HEADER: &str =
+    "# NOTE: this file is not functional yet — the daemon reads `schedule` from routine.toml.";
+
+/// Read a routine's tracked cron entry from `schedule.cron`, returning the first line that is
+/// neither empty nor a `#` comment (so the [`CRON_SIDECAR_HEADER`] is skipped).
 fn read_routine_cron(path: &std::path::PathBuf) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
-    let schedule = text.lines().find(|line| !line.trim().is_empty())?.trim();
+    let schedule = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))?;
     Some(schedule.to_string())
 }
 
@@ -219,7 +228,8 @@ fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(path, &content)
 }
 
-/// Write `routine` to disk: `routine.toml` (tracked config), `schedule.cron` (tracked cron entry),
+/// Write `routine` to disk: `routine.toml` (tracked config, including the authoritative
+/// `schedule`), `schedule.cron` (tracked cron mirror, not functional yet),
 /// the `prompts/prompt.pure.md` (raw) and `prompts/prompt.compiled.local.md` (composed) sidecars,
 /// the gitignored `state.local.toml` runtime sidecar, and `.gitignore` (created or reconciled — see
 /// [`ensure_routine_gitignore`]).
@@ -264,7 +274,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
-        schedule: None,
+        schedule: Some(routine.schedule.clone()),
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
         model: routine.model.clone(),
@@ -292,7 +302,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
     atomic_write(
         &routine_cron_path(&slug),
-        format!("{}\n", routine.schedule).as_bytes(),
+        format!("{CRON_SIDECAR_HEADER}\n{}\n", routine.schedule).as_bytes(),
     )?;
     atomic_write(&routine_pure_prompt_path(&slug), routine.prompt.as_bytes())?;
     atomic_write(

@@ -21,7 +21,7 @@ pub const EXIT_USAGE: i32 = 2;
 
 /// Map a server-liveness flag to the script-friendly process exit code: `0` when a server is
 /// reachable, [`EXIT_NOT_RUNNING`] when it is not.
-fn liveness_exit_code(running: bool) -> i32 {
+const fn liveness_exit_code(running: bool) -> i32 {
     if running {
         0
     } else {

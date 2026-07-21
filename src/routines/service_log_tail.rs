@@ -21,7 +21,7 @@ pub(crate) struct LogWithMeta {
 
 impl LogWithMeta {
     /// An empty log tail: no content, zero size, not truncated.
-    pub(crate) fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             content: String::new(),
             total_bytes: 0,

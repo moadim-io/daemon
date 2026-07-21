@@ -3,7 +3,7 @@ import { useNow } from "../lib/useNow";
 /**
  * Live auto-refresh control for a data table's action row: a Grafana/Datadog
  * -style interval dropdown plus an "updated Ns ago" freshness cue. Direct
- * counterpart to `ui/src/refresh.rs`'s `RefreshControl`, simplified to lean
+ * counterpart to `ui/src/refresh.rs (removed)`'s `RefreshControl`, simplified to lean
  * on TanStack Query's `dataUpdatedAt` for freshness instead of tracking a
  * separate timestamp — the interval codec and persistence are still pure/
  * host-tested (see `RefreshControl.test.ts`) to preserve the operator-facing

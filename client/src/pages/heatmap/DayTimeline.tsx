@@ -13,7 +13,7 @@ interface DayTimelineProps {
 }
 
 /** The day drill-down: every fire on `day`, laid out by hour. A simplified,
- * redesigned take on `ui/src/day_timeline.rs` — same underlying fire-time math
+ * redesigned take on `ui/src/day_timeline.rs (removed)` — same underlying fire-time math
  * (see `dayTimeline.ts`), without that version's pixel-precise zoom levels: each
  * chip already shows its exact HH:MM, so a zoom control isn't needed to read
  * sub-hour timing. */

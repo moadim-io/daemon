@@ -1,4 +1,4 @@
-// clone_title/TTL_PRESETS cases ported 1:1 from ui/src/routines/form_tests.rs; the remaining
+// clone_title/TTL_PRESETS cases ported 1:1 from ui/src/routines/form_tests.rs (removed); the remaining
 // cases cover the round-trip text<->structured-field helpers form_tests.rs didn't exercise.
 import { describe, expect, it } from "vitest";
 import { cloneTitle, parseTtl, reposToText, tagsToText, textToRepos, textToTags } from "./routineDraft";

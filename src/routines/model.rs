@@ -431,7 +431,7 @@ pub fn new_store() -> RoutineStore {
 }
 
 /// Serde default for boolean fields that should default to `true`.
-pub(crate) fn bool_true() -> bool {
+pub(crate) const fn bool_true() -> bool {
     true
 }
 

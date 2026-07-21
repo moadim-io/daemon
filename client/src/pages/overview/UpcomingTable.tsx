@@ -12,7 +12,7 @@ export interface UpcomingTableProps {
 
 /**
  * The Overview page's "upcoming runs" table with a trigger button per row.
- * Direct port of `ui/src/overview_upcoming.rs`.
+ * Direct port of `ui/src/overview_upcoming.rs (removed)`.
  */
 export function UpcomingTable({ runs, now, loading, error, onTrigger }: UpcomingTableProps) {
   if (error !== undefined) {

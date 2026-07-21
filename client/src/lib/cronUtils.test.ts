@@ -72,7 +72,7 @@ describe("abstime", () => {
 
   it("formats a known instant in local time, zero-padded", () => {
     // Built via the local `Date` constructor so the expected string matches regardless of the
-    // host's timezone, mirroring `abstime_formats_a_known_instant` in `ui/src/cron_utils_tests.rs`.
+    // host's timezone, mirroring `abstime_formats_a_known_instant` in `ui/src/cron_utils_tests.rs (removed)`.
     const d = new Date(2026, 5, 21, 12, 0, 30); // June (0-indexed) 21, 2026, 12:00:30
     expect(abstime(Math.floor(d.getTime() / 1000))).toBe("Jun 21, 2026 12:00");
   });

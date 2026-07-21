@@ -436,3 +436,55 @@ implicit_clone = "deny"
 # it on the inner reference is the same result without that indirection. The codebase is already
 # clean, so `deny` locks that in.
 inefficient_to_string = "deny"
+# Reject an `as`-cast from a signed integer to an unsigned one (e.g. `i64 as u64`), which silently
+# wraps a negative value into a huge positive one instead of erroring. Fixed the 2 violations this
+# surfaced, both a Unix-timestamp `i64` (`DateTime::timestamp()`) cast to the `u64` seconds this
+# crate's timestamps are stored as: `logging::format_json_line`'s `ts_local` field and
+# `ical::feed`'s snooze-deadline comparison. Neither value can go negative in practice (both come
+# from "now" or a future cron fire, always post-1970), but the cast gave no indication of that
+# invariant to a reader — converted to `u64::try_from(...)`, clamped to `0`/`false` on the
+# theoretical negative case instead of silently wrapping. No behavior change. The codebase is
+# otherwise already clean, so `deny` locks that in.
+cast_sign_loss = "deny"
+# Reject a `match`/`if let` that manually converts an `Option` to a `Result`
+# (`Some(x) => Ok(x), None => Err(e)`) instead of `.ok_or(e)`. The manual form
+# spells out in several lines what `.ok_or` says in one, and invites the two
+# arms to drift out of sync on a future edit. The codebase is already clean,
+# so `deny` locks that in.
+manual_ok_or = "deny"
+# Reject a `match`/`if let` that manually re-derives what `Option::is_some_and`/`is_none_or` or
+# `Result::is_ok_and`/`is_err_and` already compute (e.g. `match opt { Some(x) => pred(x), None =>
+# false }`) instead of calling the combinator directly. Same rationale as `manual_ok_or` above: the
+# manual form spells out in several lines what the combinator says in one, and invites the arms to
+# drift out of sync on a future edit. The codebase is already clean, so `deny` locks that in.
+manual_is_variant_and = "deny"
+# Reject an `as`-cast from an unsigned integer to a signed one (e.g. `u64 as i64`), the mirror
+# image of `cast_sign_loss` above: a value past the target's positive range silently wraps into a
+# negative one instead of erroring. Fixed the 2 violations this surfaced:
+# `utils::time::format_local`'s Unix-seconds `u64` cast to the `i64` `chrono::Local::timestamp_opt`
+# takes, and a test's `u32` child-process id cast to the `libc::pid_t` (`i32`) `libc::kill` takes.
+# Neither value can realistically exceed the target's range today, but the cast gave no indication
+# of that invariant to a reader — converted to `<target>::try_from(...)`, clamped to the target's
+# `MAX` on the theoretical overflow case instead of silently wrapping. No behavior change. The rest
+# of the codebase is already clean, so `deny` locks that in.
+cast_possible_wrap = "deny"
+# Reject an `as`-cast from an integer to a floating-point type that can't represent every value of
+# the source exactly (e.g. `u64 as f64`, `i64 as f64`) — past 2^52 the cast silently rounds to the
+# nearest representable `f64`, the same "no indication of the invariant" gap `cast_sign_loss` and
+# `cast_possible_wrap` above already close for the other integer-cast directions. Fixed the 2
+# violations this surfaced: `cli::query::humanize_bytes`'s `u64` byte count cast to `f64` for
+# display, which is deliberately an approximation (already rounded to one decimal place) and is
+# kept as `as f64` behind a scoped, reasoned `#[allow]`; and a test's `delay_ms` shim parameter,
+# narrowed from `u64` to `u32` and converted via `f64::from` so the cast is lossless by
+# construction instead of merely lossless in practice. No behavior change. The rest of the
+# codebase is already clean, so `deny` locks that in.
+cast_precision_loss = "deny"
+# Reject a function whose body could run in `const` context but isn't marked `const fn`. A
+# non-`const` function can't be called from a `const`/`static` initializer or another `const fn`,
+# closing off callers unnecessarily when nothing about the body actually requires runtime
+# evaluation. Fixed the 7 violations this surfaced (`cli::liveness_exit_code`,
+# `machine::MachineSource::label`, `routes::mcp::MoadimMcp::new`, `routines::cleanup::is_expired`,
+# `routines::flags::FlagScope::suffix`, `routines::model::bool_true`,
+# `routines::service_log_tail::LogWithMeta::empty`) by adding `const`. No behavior change. The rest
+# of the codebase is already clean, so `deny` locks that in.
+missing_const_for_fn = "deny"

@@ -3,7 +3,7 @@ import { ATTENTION_BADGE, ATTENTION_DETAIL, type AttentionItem } from "./overvie
 
 /**
  * The NEEDS ATTENTION triage table: one row per enabled-but-broken entity,
- * worst fault first. Direct port of `ui/src/overview_attention.rs`'s
+ * worst fault first. Direct port of `ui/src/overview_attention.rs (removed)`'s
  * `AttentionTable`. Rendered only when `items` is non-empty (see the page).
  */
 export function AttentionTable({ items }: { items: AttentionItem[] }) {

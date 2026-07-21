@@ -3,7 +3,7 @@
  * soonest-first "upcoming runs" list, the "needs attention" triage
  * classification, and the record -> `SchedSource` mappers.
  *
- * Direct TS port of `ui/src/overview.rs` + `ui/src/overview_attention.rs`'s
+ * Direct TS port of `ui/src/overview.rs (removed)` + `ui/src/overview_attention.rs (removed)`'s
  * pure functions (no DOM/fetch here — see `OverviewPage.tsx` for the data
  * loading shell). All functions take `now` explicitly so they stay
  * deterministic and unit-testable (see `overviewLogic.test.ts`).

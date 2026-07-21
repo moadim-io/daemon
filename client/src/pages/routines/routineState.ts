@@ -1,6 +1,6 @@
 /**
  * Page/view/sort/group-by state helpers. Direct port of the pure parts of
- * `ui/src/routines/state.rs` (the `RState`/`RAction` reducer itself is reimplemented as plain
+ * `ui/src/routines/state.rs (removed)` (the `RState`/`RAction` reducer itself is reimplemented as plain
  * React `useState` in `RoutinesPage`, per the TanStack Query conventions used elsewhere in this
  * app — see the module doc in `page.tsx`).
  */

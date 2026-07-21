@@ -1,4 +1,4 @@
-// Ported 1:1 from ui/src/routines/filter_tests.rs, filter_distinct_tests.rs,
+// Ported 1:1 from ui/src/routines/filter_tests.rs (removed), filter_distinct_tests.rs,
 // filter_facet_codec_tests.rs, and filter_health_tests.rs.
 import { describe, expect, it } from "vitest";
 import type { RoutineResponse } from "../../api/hooks";
@@ -692,7 +692,7 @@ describe("filter", () => {
   });
 
   // `healthBadge`/`healthBadgeClass` were the only exported `filter.ts` functions with no test
-  // (mirrors ui/src/routines/filter_health_tests.rs's `health_badge_and_badge_class_cover_all_variants`,
+  // (mirrors ui/src/routines/filter_health_tests.rs (removed)'s `health_badge_and_badge_class_cover_all_variants`,
   // added alongside this test) — assert the exact rendered strings for every variant, and that
   // both stay unique, so a copy-paste badge/class collision is caught here instead of silently in
   // the UI.

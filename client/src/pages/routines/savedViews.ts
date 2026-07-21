@@ -3,7 +3,7 @@
  * can be captured into a portable `ViewSnapshot`, saved under a name, and re-applied later. The
  * most recent state is auto-persisted and restored on load so a reload doesn't silently drop an
  * operator's in-progress triage view (Linear/GitHub Issues/Grafana pinned-view convention).
- * Direct port of `ui/src/routines/saved_views.rs`.
+ * Direct port of `ui/src/routines/saved_views.rs (removed)`.
  */
 import {
   namedFacetValue,

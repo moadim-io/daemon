@@ -1,5 +1,5 @@
-// Ported 1:1 from the sort/group portions of ui/src/routines/state_tests.rs and the whole of
-// ui/src/routines/state_group_by_tests.rs. (The Yew-reducer selection/modal tests in
+// Ported 1:1 from the sort/group portions of ui/src/routines/state_tests.rs (removed) and the whole of
+// ui/src/routines/state_group_by_tests.rs (removed). (The Yew-reducer selection/modal tests in
 // state_tests.rs don't port 1:1 — this page uses plain React state instead of a Yew reducer; that
 // behavior is covered by RoutinesPage's own tests instead.)
 import { describe, expect, it } from "vitest";
@@ -44,6 +44,9 @@ function routine(
     tags: [],
     agent_registered: false,
     agent_command_available: false,
+    // Defaults to available so the `agent_registered`-only overrides below (e.g.
+    // `routineWithHealth`) keep exercising the health state they were written for.
+    agent_setup_available: true,
     is_running: false,
     file_path: "",
     schedule_description: null,

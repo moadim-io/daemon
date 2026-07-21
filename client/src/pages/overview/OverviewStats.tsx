@@ -1,6 +1,6 @@
 import type { Kpis } from "./overviewLogic";
 
-/** The Overview page's KPI tile row. Direct port of `ui/src/overview_stats.rs`. */
+/** The Overview page's KPI tile row. Direct port of `ui/src/overview_stats.rs (removed)`. */
 export function OverviewStats({ kpis: k, nextRun }: { kpis: Kpis; nextRun: string | undefined }) {
   return (
     <div className="stats">

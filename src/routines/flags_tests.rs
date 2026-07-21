@@ -41,7 +41,7 @@ fn create_flag_writes_general_file_with_md_suffix() {
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md")));
     assert!(!flag.filename.ends_with(".local.md"));
-    assert_eq!(flag.flag_type, "bug");
+    assert_eq!(flag.category, "bug");
     assert_eq!(flag.description, "the thing is broken");
     assert_eq!(flag.scope, FlagScope::General);
     assert!(crate::paths::routine_flags_dir("r1")
@@ -61,7 +61,7 @@ fn create_flag_writes_local_file_with_local_md_suffix() {
 fn create_flag_trims_type_and_description() {
     let _home = TempHome::set();
     let flag = create_flag("r1", "  bug  ", "  broken  ", FlagScope::General).unwrap();
-    assert_eq!(flag.flag_type, "bug");
+    assert_eq!(flag.category, "bug");
     assert_eq!(flag.description, "broken");
 }
 
@@ -76,7 +76,7 @@ fn create_flag_slugifies_type_in_filename_but_keeps_exact_type_in_body() {
     )
     .unwrap();
     assert!(flag.filename.starts_with("missing-auth-check-"));
-    assert_eq!(flag.flag_type, "Missing Auth Check!");
+    assert_eq!(flag.category, "Missing Auth Check!");
 }
 
 #[test]
@@ -190,10 +190,10 @@ fn list_flags_round_trips_type_description_and_scope() {
 
     let flags = list_flags("r1");
     assert_eq!(flags.len(), 2);
-    assert!(flags.iter().any(|flag| flag.flag_type == "bug"
+    assert!(flags.iter().any(|flag| flag.category == "bug"
         && flag.description == "broken thing"
         && flag.scope == FlagScope::General));
-    assert!(flags.iter().any(|flag| flag.flag_type == "gap"
+    assert!(flags.iter().any(|flag| flag.category == "gap"
         && flag.description == "missing thing"
         && flag.scope == FlagScope::Local));
 }
@@ -267,7 +267,7 @@ fn list_flags_defaults_missing_description_to_empty() {
 
     let flags = list_flags("r1");
     assert_eq!(flags.len(), 1);
-    assert_eq!(flags[0].flag_type, "bug");
+    assert_eq!(flags[0].category, "bug");
     assert_eq!(flags[0].description, "");
 }
 

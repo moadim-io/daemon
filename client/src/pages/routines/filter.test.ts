@@ -1,4 +1,4 @@
-// Ported 1:1 from ui/src/routines/filter_tests.rs, filter_distinct_tests.rs,
+// Ported 1:1 from ui/src/routines/filter_tests.rs (removed), filter_distinct_tests.rs,
 // filter_facet_codec_tests.rs, and filter_health_tests.rs.
 import { describe, expect, it } from "vitest";
 import type { RoutineResponse } from "../../api/hooks";
@@ -61,6 +61,10 @@ function routine(
     tags: [],
     agent_registered: false,
     agent_command_available: false,
+    // Defaults to available (no known `setup`-step problem) so the many existing fixtures below
+    // that only override `agent_registered` keep exercising the health states they were written
+    // for; the dedicated `agent_setup_available: false` tests set this explicitly (issue #404).
+    agent_setup_available: true,
     is_running: false,
     file_path: "",
     schedule_description: null,
@@ -558,6 +562,18 @@ describe("filter", () => {
     expect(routineHealth(r, now())).toBe("agent-missing");
   });
 
+  it("health registered agent with unresolvable setup step is agent missing (#404)", () => {
+    // A well-formed, registered agent whose `setup` step shells out to an interpreter that isn't
+    // on `PATH` (e.g. the built-in `claude` agent's `python3` dependency) must not read as
+    // healthy: the launch command's fail-fast guard aborts the run in `setup` before the agent
+    // ever starts, the same silent-no-op class as a missing agent config.
+    const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], true, {
+      agent_registered: true,
+      agent_setup_available: false,
+    });
+    expect(routineHealth(r, now())).toBe("agent-missing");
+  });
+
   it("health fully configured is healthy", () => {
     const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], true, {
       agent_registered: true,
@@ -676,7 +692,7 @@ describe("filter", () => {
   });
 
   // `healthBadge`/`healthBadgeClass` were the only exported `filter.ts` functions with no test
-  // (mirrors ui/src/routines/filter_health_tests.rs's `health_badge_and_badge_class_cover_all_variants`,
+  // (mirrors ui/src/routines/filter_health_tests.rs (removed)'s `health_badge_and_badge_class_cover_all_variants`,
   // added alongside this test) — assert the exact rendered strings for every variant, and that
   // both stay unique, so a copy-paste badge/class collision is caught here instead of silently in
   // the UI.

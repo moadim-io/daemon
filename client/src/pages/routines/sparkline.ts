@@ -2,7 +2,7 @@
  * Pure math backing the inline run-history sparkline: a compact strip of ticks giving an
  * at-a-glance pass/fail trend per routine (mirrors the CI "pipeline graph" pattern: GitHub
  * Actions' per-workflow run history, GitLab's pipeline mini-graph).
- * Direct port of the pure parts of `ui/src/routines/sparkline.rs`.
+ * Direct port of the pure parts of `ui/src/routines/sparkline.rs (removed)`.
  */
 import type { FleetRunSummary } from "../../api/hooks";
 

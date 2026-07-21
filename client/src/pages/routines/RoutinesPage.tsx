@@ -2,7 +2,7 @@
  * Top-level Routines page — composition of the filter/table/calendar/day views, the
  * create/edit form, and the history/logs/flags sub-pages.
  *
- * `RPage`/`RModal` state modeling: the Rust source (`ui/src/routines/state.rs`) models this via
+ * `RPage`/`RModal` state modeling: the Rust source (`ui/src/routines/state.rs (removed)`) models this via
  * a `RPage` enum (List/New/Logs(id)/History(id)/Flags(id)/Clone(Routine)) plus an independent
  * `RModal` overlay (None/Edit(id)/ConfirmDelete/ConfirmBulkDelete). This port keeps that same
  * shape as plain `useState` rather than nested routes: every sub-page needs the already-loaded

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use super::agents::load_agent_command;
 use super::cleanup::tmux_session_prefix_alive;
-use super::command::{agent_command_available, slugify, tmux_session_prefix};
+use super::command::{agent_command_available, setup_step_available, slugify, tmux_session_prefix};
 use super::flags::list_flags;
 use crate::paths::routine_toml_path;
 
@@ -221,6 +221,18 @@ pub struct RoutineResponse {
     /// alone. `false` whenever the agent config is missing, unreadable, or malformed, since no
     /// `command` can be resolved in that case either.
     pub agent_command_available: bool,
+    /// `true` if the agent config has no `setup` step, or that step's first whitespace-delimited
+    /// token (the interpreter/binary it shells out to, e.g. `python3` for the built-in `claude`
+    /// agent's workspace-trust seeding) resolves on the daemon's `PATH`. Distinct from
+    /// [`Self::agent_command_available`]: the agent's own `command` can be installed while its
+    /// `setup` step still shells out to something that isn't — in which case the launch command's
+    /// fail-fast guard (`build_routine_command`) aborts the run before the agent ever starts, a
+    /// failure otherwise invisible to anything checking only `agent_command_available`. `false`
+    /// here means the run is expected to abort in `setup` rather than actually launch the agent.
+    /// `false` whenever the agent config is missing, unreadable, or malformed too (mirrors
+    /// `agent_command_available`'s pessimistic default) — `agent_registered` is the field that
+    /// distinguishes that case. See issue #404.
+    pub agent_setup_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
     /// Human-readable description of the schedule, including the timezone the
@@ -298,8 +310,14 @@ impl RoutineResponse {
         // registered would paint a never-firing routine as healthy. See issue #301.
         let agent_command = load_agent_command(&routine.agent);
         let agent_registered = agent_command.is_ok();
-        let agent_command_available =
-            agent_command.is_ok_and(|agent| agent_command_available(&agent.command));
+        let agent_command_available = agent_command
+            .as_ref()
+            .is_ok_and(|agent| agent_command_available(&agent.command));
+        // Distinct from `agent_command_available` above: the agent binary itself can resolve while
+        // its `setup` step still shells out to something missing (issue #404's `python3` case).
+        let agent_setup_available = agent_command
+            .as_ref()
+            .is_ok_and(|agent| setup_step_available(agent.setup.as_deref()));
         let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
         let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
@@ -317,6 +335,7 @@ impl RoutineResponse {
             routine,
             agent_registered,
             agent_command_available,
+            agent_setup_available,
             file_path,
             schedule_description,
             timezone,
@@ -412,7 +431,7 @@ pub fn new_store() -> RoutineStore {
 }
 
 /// Serde default for boolean fields that should default to `true`.
-pub(crate) fn bool_true() -> bool {
+pub(crate) const fn bool_true() -> bool {
     true
 }
 

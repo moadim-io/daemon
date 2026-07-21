@@ -8,7 +8,7 @@ import { MachinesPage } from "./pages/machines/MachinesPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 
 /**
- * Route paths are resolved relative to `<BrowserRouter basename="/client">` (see main.tsx):
+ * Route paths are resolved from the server root — the daemon serves this SPA at `GET /`:
  * `/`, `/routines`, `/heatmap`, `/reliability`, `/machines`, `/settings` — an unknown path
  * redirects home.
  */

@@ -106,15 +106,15 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 ~/.config/moadim/
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
-│       ├── routine.toml       # tracked — metadata (agent, repositories, [env], …)
-│       ├── schedule.cron      # tracked — one cron entry
+│       ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
+│       ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
 │       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
-│       ├── prompts/
-│       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-│       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-│       └── .gitignore         # generated — excludes *.compiled.*, *.local.*, and *.log
+│       └── prompts/
+│           ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+│           └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
+├── .gitignore                 # generated — excludes *.compiled.*, *.local.*, *.log, … for the whole tree
 └── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
 
 ~/.moadim/                     # runtime tree, separate from the config dir above
@@ -146,8 +146,9 @@ Moadim owns a single block inside your crontab for routines. Everything outside 
 
 A **routine** is a scheduled AI-agent task: it fires a prompt at a coding
 agent (e.g. Claude) on a cron schedule, each run inside its own throwaway
-workbench. The schedule lives in a sibling `schedule.cron` file; the rest of
-the routine metadata stays in `routine.toml`.
+workbench. The schedule lives in `routine.toml` with the rest of the routine
+metadata; a sibling `schedule.cron` file mirrors the cron entry but is not
+functional yet.
 
 Routines are stored as folders under `~/.config/moadim/routines/<id>/`,
 git-trackable:
@@ -155,18 +156,21 @@ git-trackable:
 ```
 ~/.config/moadim/routines/
 └── nightly-triage/
-    ├── routine.toml       # tracked — metadata (agent, repositories, [env], …)
-    ├── schedule.cron      # tracked — one cron entry
+    ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
+    ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
     ├── routine.local.toml # gitignored, optional — secret/local env var overrides
-    ├── prompts/
-    │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-    │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-    └── .gitignore     # generated — excludes *.compiled.*, *.local.*, and *.log
+    └── prompts/
+        ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+        └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ```
+
+The gitignored files are covered by the single generated `.gitignore` at the
+config-dir root (`~/.config/moadim/.gitignore`), whose patterns apply to the
+whole tree — routine directories don't carry their own.
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
-| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), stored in `schedule.cron` and evaluated in the host's local timezone — **not** UTC. |
+| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. Mirrored into `schedule.cron`, which is not functional yet. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |

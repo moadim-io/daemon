@@ -112,9 +112,9 @@ fn write_routine_omits_env_table_when_empty() {
 
 #[test]
 fn routine_local_toml_path_matches_the_gitignored_local_pattern() {
-    // `routine.local.toml`'s `.local.` infix must match the `*.local.*` pattern every routine's
-    // `.gitignore` already seeds (`ROUTINE_GITIGNORE_REQUIRED`), so it never needs its own bespoke
-    // pattern — mirrors `state.local.toml` / `prompt.compiled.local.md` (#408).
+    // `routine.local.toml`'s `.local.` infix must match the `*.local.*` pattern the config
+    // `.gitignore` already seeds (`cli_system::ensure_config_gitignore`), so it never needs its
+    // own bespoke pattern — mirrors `state.local.toml` / `prompt.compiled.local.md` (#408).
     let path = crate::paths::routine_local_toml_path("some-slug");
     let name = path.file_name().unwrap().to_str().unwrap();
     assert_eq!(name, "routine.local.toml");

@@ -1,4 +1,4 @@
-// Ported 1:1 from ui/src/routines/saved_views_tests.rs (the snapshot codec only — the
+// Ported 1:1 from ui/src/routines/saved_views_tests.rs (removed) (the snapshot codec only — the
 // localStorage round-trip and SavedViewsBar UI aren't covered there either).
 import { describe, expect, it } from "vitest";
 import { defaultRoutineFilter, type RoutineFilter } from "./filter";

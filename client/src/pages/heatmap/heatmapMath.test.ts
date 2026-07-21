@@ -19,7 +19,7 @@ import type { RoutineResponse } from "../../api/hooks";
 
 /** A fixed reference instant: Mon 2026-06-22 10:00:00 local. Off midnight and
  * noon so per-day schedules land unambiguously inside the window. Ported 1:1
- * from `ui/src/schedule_heatmap_tests.rs`. */
+ * from `ui/src/schedule_heatmap_tests.rs (removed)`. */
 const now = () => new Date(2026, 5, 22, 10, 0, 0);
 const today = () => new Date(2026, 5, 22);
 

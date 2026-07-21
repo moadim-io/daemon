@@ -29,7 +29,7 @@ const TICK_MS = 10_000;
 /**
  * The OVERVIEW landing page: a single-pane operations summary that
  * aggregates routines into KPI tiles and one merged "upcoming runs"
- * schedule. Direct port of `ui/src/overview.rs`'s `OverviewPage` shell — all
+ * schedule. Direct port of `ui/src/overview.rs (removed)`'s `OverviewPage` shell — all
  * KPI/merge/attention math lives in the host-tested `overviewLogic.ts`; this
  * component is a thin shell that maps fetched records into `SchedSource`s
  * and renders the result.

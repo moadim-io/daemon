@@ -424,3 +424,9 @@ suspicious_operation_groupings = "deny"
 # ("Free-text category"). The wire format is unchanged — the field already carries
 # `#[serde(rename = "type")]`. The rest of the codebase is already clean, so `deny` locks that in.
 struct_field_names = "deny"
+# Reject `.to_string()`/`.to_owned()`-style conversions on a value that's already the target type
+# (e.g. cloning a `String` via `.to_string()` instead of `.clone()`, or a `Vec` via `.to_vec()`
+# instead of `.clone()`) — the indirect spelling obscures that it's a plain clone and, for some
+# receiver types, is measurably slower than calling `Clone::clone` directly. The codebase is
+# already clean, so `deny` locks that in.
+implicit_clone = "deny"

@@ -72,7 +72,7 @@ Enable `clippy::missing_const_for_fn` to catch functions whose bodies could run 
 
 Enable `clippy::struct_field_names` to reject a struct field whose name redundantly repeats the struct's own name. Fixes the one violation this surfaced: `Flag::flag_type` (`src/routines/flags.rs`) renamed to `Flag::category`, matching its doc comment ("Free-text category"). The wire format is unchanged — the field already carries `#[serde(rename = "type")]`. No behavior change.
 
-Enable `clippy::verbose_file_reads` to require `fs::read`/`fs::read_to_string` over manual `File::open` + `read_to_end`/`read_to_string`. The two sites that genuinely need the verbose form (reading a log's tail from a seeked offset, not the whole file) get a documented `#[allow]`.
+Enable `clippy::verbose_file_reads` to require `fs::read`/`fs::read_to_string` over manual `File::open` + `read_to_end`/`read_to_string`. The two sites that genuinely need the verbose form (reading a log's tail from an offset after a seek, not the whole file) get a documented `#[allow]`.
 
 test(client): cover failureNotify.ts's localStorage error-handling branch
 

@@ -411,3 +411,9 @@ missing_errors_doc = "deny"
 # (`cloned_instead_of_copied`, `format_push_string`, `format_collect`). The codebase is already
 # clean, so `deny` locks that in.
 single_char_pattern = "deny"
+# Reject a chain of similar binary-op expressions (e.g. `a.x + a.x + a.y`) where one operand looks
+# like a copy-paste that should have referenced a different variable/field — the same bug class
+# `redundant_clone` above guards elsewhere in the file, just for arithmetic/comparison groupings
+# instead of clones. This is a real correctness lint (catches silent logic bugs), not a style
+# preference. The codebase is already clean, so `deny` locks that in.
+suspicious_operation_groupings = "deny"

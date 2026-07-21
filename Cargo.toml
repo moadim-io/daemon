@@ -452,3 +452,9 @@ cast_sign_loss = "deny"
 # arms to drift out of sync on a future edit. The codebase is already clean,
 # so `deny` locks that in.
 manual_ok_or = "deny"
+# Reject a `match`/`if let` that manually re-derives what `Option::is_some_and`/`is_none_or` or
+# `Result::is_ok_and`/`is_err_and` already compute (e.g. `match opt { Some(x) => pred(x), None =>
+# false }`) instead of calling the combinator directly. Same rationale as `manual_ok_or` above: the
+# manual form spells out in several lines what the combinator says in one, and invites the arms to
+# drift out of sync on a future edit. The codebase is already clean, so `deny` locks that in.
+manual_is_variant_and = "deny"

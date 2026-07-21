@@ -46,7 +46,7 @@ fn cap_agent_log_to(path: &Path, max_bytes: u64) -> std::io::Result<bool> {
     let mut tail = Vec::with_capacity(max_bytes as usize);
     #[allow(
         clippy::verbose_file_reads,
-        reason = "reads from the seeked offset to end-of-file for the log's tail, not the whole \
+        reason = "reads from the sought offset to end-of-file for the log's tail, not the whole \
                   file `fs::read` would read"
     )]
     file.read_to_end(&mut tail)?;

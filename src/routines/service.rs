@@ -324,8 +324,12 @@ mod service_list_tests;
 mod service_sync_tests;
 
 #[cfg(test)]
-#[path = "service_field_validation_tests.rs"]
-mod service_field_validation_tests;
+#[path = "service_field_validation_create_tests.rs"]
+mod service_field_validation_create_tests;
+
+#[cfg(test)]
+#[path = "service_field_validation_update_tests.rs"]
+mod service_field_validation_update_tests;
 
 #[cfg(test)]
 #[path = "service_flag_tests.rs"]

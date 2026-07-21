@@ -5,6 +5,7 @@
 
 use super::*;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 /// Point `MOADIM_HOME_OVERRIDE` at a fresh tempdir for the duration of `body`, restoring the
 /// previous value afterwards — mirrors `command_tests::build_routine_command_workbench_base_tracks_moadim_home_override`.

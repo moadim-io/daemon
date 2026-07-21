@@ -23,9 +23,8 @@ pub const NAME: &str = "claude";
 /// this process actually wrote what it meant to.
 ///
 /// Reads project instructions from `AGENTS.md` — the same file Codex uses — so the moadim-managed
-/// system prompt and routine-origin disclosure are unified onto one instructions file across
-/// agents. Claude Code loads `AGENTS.md` as a memory/context file, so the disclosure is honored
-/// exactly as it would be from `CLAUDE.md`.
+/// system prompt is unified onto one instructions file across agents. Claude Code loads `AGENTS.md`
+/// as a memory/context file, so the prompt is honored exactly as it would be from `CLAUDE.md`.
 pub const CONFIG: &str = r#"command = "claude"
 args = ["--permission-mode", "auto", "{prompt}"]
 instructions_file = "AGENTS.md"

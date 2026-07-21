@@ -11,6 +11,7 @@ By participating in this project you agree to abide by our
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
 | [`linecheck`](https://crates.io/crates/linecheck) | 500-line-per-file gate over `src/`, enforced by the pre-push hook and CI's `linecheck` job (`cargo install linecheck`) |
+| [`direnv`](https://direnv.net/) | Auto-runs `.envrc` on `cd` so the bundled git hooks stay enabled (`core.hooksPath = .githooks`) |
 | [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
 | [pnpm](https://pnpm.io/installation) | Builds the React UI (`client/`, `pnpm install` once at the repo root) and runs [Changesets](https://github.com/changesets/changesets) (`pnpm changeset`) — see [Workflow](#workflow) below |
 
@@ -70,6 +71,14 @@ Enable the bundled git hooks once per clone:
 ```sh
 git config core.hooksPath .githooks
 ```
+
+Or let `direnv` do it automatically when you `cd` into the repo:
+
+```sh
+direnv allow
+```
+
+(`.envrc` already runs the same `git config --local ...` command.)
 
 The **pre-commit** hook spell-checks the tree with
 [`typos`](https://github.com/crate-ci/typos); the **pre-push** hook runs the

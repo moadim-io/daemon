@@ -239,17 +239,6 @@ fn build_routine_command_writes_claude_md() {
     );
     // dynamic date/timezone appended at run time
     assert!(cmd.contains("$(date)"), "run-time date expansion missing");
-    // routine-origin disclosure section, naming the routine, written into the moadim prompt
-    assert!(
-        cmd.contains("Routine origin disclosure"),
-        "routine-origin disclosure section missing"
-    );
-    assert!(cmd.contains("Routine name: "), "routine-name label missing");
-    // the routine title is injected as a printf %s argument after the disclosure body
-    assert!(
-        cmd.contains("'My Routine'"),
-        "routine title not injected into CLAUDE.md write"
-    );
     // user prompt appended if file exists
     assert!(
         cmd.contains("user_prompt.md"),
@@ -260,15 +249,22 @@ fn build_routine_command_writes_claude_md() {
     let prompt_md_at = cmd.find("cp ").expect("cp in cmd");
     assert!(
         claude_md_at < prompt_md_at,
-        "CLAUDE.md write should precede cp prompt.md"
+        "CLAUDE.md write should precede prompt copy"
     );
 }
 
 #[test]
+fn compose_prompt_writes_routine_origin_disclosure() {
+    let routine = make_routine("rid");
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("Routine origin disclosure"));
+    assert!(prompt.contains("Routine name: My Routine"));
+}
+
+#[test]
 fn build_routine_command_writes_disclosure_to_codex_instructions_file() {
-    // Codex reads project instructions from AGENTS.md, not CLAUDE.md. The moadim-managed system
-    // prompt and routine-origin disclosure must land in the file the selected agent actually reads,
-    // otherwise a codex-backed routine never sees the mandatory disclosure.
+    // Codex reads project instructions from AGENTS.md, not CLAUDE.md. The daemon-managed system
+    // prompt must land in the file the selected agent actually reads.
     let routine = make_routine("rid");
     let agent = AgentCommand {
         command: "codex".to_string(),
@@ -277,7 +273,7 @@ fn build_routine_command_writes_disclosure_to_codex_instructions_file() {
         setup: None,
     };
     let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
-    // The disclosure is written to AGENTS.md, the file Codex reads...
+    // The prompt file is still written to AGENTS.md, the file Codex reads...
     assert!(
         cmd.contains(r#"> "$WB/AGENTS.md""#),
         "moadim prompt should be written to AGENTS.md for the codex agent"
@@ -286,12 +282,11 @@ fn build_routine_command_writes_disclosure_to_codex_instructions_file() {
         cmd.contains(r#">> "$WB/AGENTS.md""#),
         "user prompt should be appended to AGENTS.md for the codex agent"
     );
-    // ...and carries the same disclosure payload as the CLAUDE.md path.
+    // ...and the disclosure now lives in the compiled prompt body.
     assert!(
-        cmd.contains("Routine origin disclosure"),
-        "routine-origin disclosure section missing for codex"
+        compose_prompt(&routine).contains("Routine origin disclosure"),
+        "routine-origin disclosure section missing from compiled prompt"
     );
-    assert!(cmd.contains("'My Routine'"), "routine title not injected");
     // CLAUDE.md is not written for a codex routine: Codex would never read it.
     assert!(
         !cmd.contains("CLAUDE.md"),

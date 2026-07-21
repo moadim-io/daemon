@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "servers": [
     {
@@ -880,7 +880,7 @@
         "tags": [
           "crate::routines"
         ],
-        "summary": "`GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed\nin-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Does not include\nthe routine-origin disclosure written separately to `CLAUDE.md` at trigger time.",
+        "summary": "`GET /routines/{id}/prompt-preview` — the exact prompt body a run would receive, computed\nin-memory with no workbench, `prompt.md` write, or agent launch (issue #391). Includes the\nroutine-origin disclosure because it now lives in the composed prompt.",
         "operationId": "get_prompt_preview",
         "parameters": [
           {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyTheme, loadThemeLight, saveThemeLight } from "./theme";
 
 beforeEach(() => {
@@ -23,5 +23,25 @@ describe("theme", () => {
     expect(document.documentElement.classList.contains("theme-light")).toBe(true);
     applyTheme(false);
     expect(document.documentElement.classList.contains("theme-light")).toBe(false);
+  });
+
+  describe("when localStorage throws (private mode / quota)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("falls back to dark instead of propagating the error", () => {
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new DOMException("blocked", "SecurityError");
+      });
+      expect(loadThemeLight()).toBe(false);
+    });
+
+    it("saveThemeLight swallows the error instead of propagating it", () => {
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("blocked", "SecurityError");
+      });
+      expect(() => saveThemeLight(true)).not.toThrow();
+    });
   });
 });

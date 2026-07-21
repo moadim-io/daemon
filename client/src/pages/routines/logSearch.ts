@@ -1,6 +1,6 @@
 /**
  * Pure text-search helpers backing the log viewer's search box: filtering, match counting, and
- * Unicode-safe highlighting. Direct port of the pure functions in `ui/src/log_viewer.rs`.
+ * Unicode-safe highlighting. Direct port of the pure functions in `ui/src/log_viewer.rs (removed)`.
  */
 
 /**
@@ -48,7 +48,7 @@ export function highlightSegments(text: string, query: string): [boolean, string
 
   const chars = Array.from(text);
   // One lowercase code point per entry in `chars`, mirroring the Rust port's
-  // `c.to_lowercase().next().unwrap_or(c)` (ui/src/log_viewer.rs). `String.prototype.toLowerCase()`
+  // `c.to_lowercase().next().unwrap_or(c)` (ui/src/log_viewer.rs (removed)). `String.prototype.toLowerCase()`
   // on a single code point can itself expand to more than one (e.g. Turkish `İ` → `i` + a combining
   // dot above, 2 code points) — keeping the raw multi-char result here would break the 1:1
   // correspondence with `chars` that the sliding-window match below depends on, silently dropping

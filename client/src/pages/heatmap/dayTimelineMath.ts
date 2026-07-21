@@ -2,7 +2,7 @@
  * Bucketing for the heatmap's day drill-down: given a set of schedule-bearing
  * items, resolve every fire that lands on one calendar day (via
  * `lib/schedule.ts`'s `fireTimesOnDay`, shared with the routines page's own
- * day-timeline) and group them by hour. Ported from `ui/src/day_timeline.rs`'s
+ * day-timeline) and group them by hour. Ported from `ui/src/day_timeline.rs (removed)`'s
  * bucketing loop (that file has no host-side Rust tests to port 1:1; see
  * `dayTimelineMath.test.ts` for the sanity coverage this logic gets here
  * instead).
@@ -55,7 +55,7 @@ export function bucketDayFires(items: TimelineItem[], day: Date): BucketEntry[][
 }
 
 /** Whether scheduled fires are currently suppressed for `routine`, at `now`.
- * Ported from `ui/src/overview.rs`'s `is_snoozed`. */
+ * Ported from `ui/src/overview.rs (removed)`'s `is_snoozed`. */
 function isRoutineSnoozed(routine: RoutineResponse, now: Date): boolean {
   const until = routine.snoozed_until;
   const snoozed = until != null && until > Math.floor(now.getTime() / 1000);

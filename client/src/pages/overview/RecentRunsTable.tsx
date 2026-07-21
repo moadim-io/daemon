@@ -7,7 +7,7 @@ import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDis
  * The Overview page's fleet-wide "recent runs" table: the most recent runs
  * across every routine, complementing `UpcomingTable`'s future-fire view
  * with the equivalent view of the past. Direct port of
- * `ui/src/overview_recent_runs.rs`.
+ * `ui/src/overview_recent_runs.rs (removed)`.
  */
 export function RecentRunsTable({ runs, loading }: { runs: FleetRunSummary[]; loading: boolean }) {
   if (loading) {

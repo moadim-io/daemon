@@ -1,4 +1,4 @@
-/** Direct port of `humanize_bytes` in `ui/src/routines/model.rs`. */
+/** Direct port of `humanize_bytes` in `ui/src/routines/model.rs (removed)`. */
 const UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 /** Render a byte count as a short human-readable size (1024-based). */

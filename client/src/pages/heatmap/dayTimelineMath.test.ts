@@ -49,6 +49,7 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     updated_at: 0,
     agent_registered: false,
     agent_command_available: false,
+    agent_setup_available: false,
     is_running: false,
     file_path: "",
     flag_count: 3,

@@ -7,10 +7,10 @@ use super::*;
 
 use crate::routines::new_store;
 
-struct TempHome(std::path::PathBuf);
+pub(super) struct TempHome(std::path::PathBuf);
 
 impl TempHome {
-    fn set() -> Self {
+    pub(super) fn set() -> Self {
         let dir = std::env::temp_dir().join(format!("moadim-svctest-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp home");
         // SAFETY: single-threaded test execution.
@@ -31,7 +31,7 @@ impl Drop for TempHome {
     }
 }
 
-fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Routine {
+pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Routine {
     Routine {
         model: None,
         id: id.to_string(),
@@ -59,7 +59,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
 }
 
 /// Build a create request with the given title and an otherwise-valid body.
-fn create_req_with_title(title: &str) -> CreateRoutineRequest {
+pub(super) fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
@@ -137,52 +137,6 @@ fn svc_create_rejects_unknown_agent() {
 }
 
 #[test]
-fn svc_update_rejects_blank_and_punctuation_titles() {
-    let _home = TempHome::set();
-    // Covers the `req.title` validation branch in `svc_update`: renaming an
-    // existing routine to an empty, whitespace-only, or punctuation-only title
-    // 400s and leaves the stored title untouched (issue #226).
-    let original = "Svc Update Title Guard ZZZ";
-    for title in ["", "   ", "!!!"] {
-        let store = new_store();
-        let routine = make_routine("title-guard-id", original, 1, 1);
-        crate::routine_storage::write_routine(&routine).unwrap();
-        store
-            .lock()
-            .unwrap()
-            .insert("title-guard-id".into(), routine);
-
-        let result = svc_update(
-            &store,
-            "title-guard-id",
-            UpdateRoutineRequest {
-                model: None,
-                schedule: None,
-                title: Some(title.into()),
-                agent: None,
-                prompt: None,
-                goal: None,
-                repositories: None,
-                machines: None,
-                enabled: None,
-                ttl_secs: None,
-                max_runtime_secs: None,
-                tags: None,
-                env: None,
-            },
-        );
-        assert!(
-            matches!(result, Err(AppError::BadRequest(_))),
-            "update to title {title:?} should be rejected"
-        );
-        assert_eq!(
-            store.lock().unwrap().get("title-guard-id").unwrap().title,
-            original
-        );
-    }
-}
-
-#[test]
 fn svc_create_accepts_builtin_agent() {
     let _home = TempHome::set();
     // Covers the success path of agent validation: a built-in agent
@@ -212,44 +166,6 @@ fn svc_create_accepts_builtin_agent() {
     assert_eq!(created.routine.agent, "claude");
 
     svc_delete(&store, &created.routine.id).unwrap();
-}
-
-#[test]
-fn svc_update_rejects_unknown_agent() {
-    let _home = TempHome::set();
-    // Covers the agent-validation branch in `svc_update`: updating a routine's
-    // agent to an unknown name must fail with `BadRequest` before persisting.
-    let title = "Svc Update Unknown Agent ZZZ";
-    let store = new_store();
-    let routine = make_routine("upd-agent-id", title, 1, 1);
-    crate::routine_storage::write_routine(&routine).unwrap();
-    store.lock().unwrap().insert("upd-agent-id".into(), routine);
-
-    let result = svc_update(
-        &store,
-        "upd-agent-id",
-        UpdateRoutineRequest {
-            model: None,
-            schedule: None,
-            title: None,
-            agent: Some("no-such-agent-zzz".into()),
-            prompt: None,
-            goal: None,
-            repositories: None,
-            machines: None,
-            enabled: None,
-            ttl_secs: None,
-            max_runtime_secs: None,
-            tags: None,
-            env: None,
-        },
-    );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
-    // The stored routine keeps its original (valid) agent.
-    assert_eq!(
-        store.lock().unwrap().get("upd-agent-id").unwrap().agent,
-        "claude"
-    );
 }
 
 #[test]
@@ -353,50 +269,6 @@ fn svc_create_trims_repository_entries() {
     assert_eq!(repo.branch.as_deref(), Some("main"));
 
     svc_delete(&store, &created.routine.id).unwrap();
-}
-
-#[test]
-fn svc_update_rejects_blank_repository_url() {
-    let _home = TempHome::set();
-    // Covers the repositories-validation branch in `svc_update`: replacing the
-    // list with a blank-URL entry must fail with `BadRequest` before persisting.
-    let title = "Svc Update Blank Repo ZZZ";
-    let store = new_store();
-    let routine = make_routine("upd-repo-id", title, 1, 1);
-    crate::routine_storage::write_routine(&routine).unwrap();
-    store.lock().unwrap().insert("upd-repo-id".into(), routine);
-
-    let result = svc_update(
-        &store,
-        "upd-repo-id",
-        UpdateRoutineRequest {
-            model: None,
-            schedule: None,
-            title: None,
-            agent: None,
-            prompt: None,
-            goal: None,
-            repositories: Some(vec![Repository {
-                repository: " ".into(),
-                branch: None,
-            }]),
-            machines: None,
-            enabled: None,
-            ttl_secs: None,
-            max_runtime_secs: None,
-            tags: None,
-            env: None,
-        },
-    );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
-    // The stored routine keeps its original (empty) repository list.
-    assert!(store
-        .lock()
-        .unwrap()
-        .get("upd-repo-id")
-        .unwrap()
-        .repositories
-        .is_empty());
 }
 
 #[test]

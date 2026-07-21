@@ -1,4 +1,4 @@
-// Ported 1:1 from ui/src/routines/sparkline_tests.rs.
+// Ported 1:1 from ui/src/routines/sparkline_tests.rs (removed).
 import { describe, expect, it } from "vitest";
 import type { FleetRunSummary } from "../../api/hooks";
 import { RUN_HISTORY_FETCH_LIMIT, SPARKLINE_LEN, groupRecentRuns, sparkTickClass } from "./sparkline";

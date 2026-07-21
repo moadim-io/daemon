@@ -55,6 +55,13 @@ pub(super) fn humanize_bytes(bytes: u64) -> String {
     if bytes < 1024 {
         return format!("{bytes} B");
     }
+    // Approximating a byte count for human display never needs exact precision above 2^52 —
+    // any `moadim` workbench/log total that large would already be a many-petabyte anomaly, and
+    // the rendered value is rounded to one decimal place anyway.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "human-readable size display, not an exact value"
+    )]
     let mut size = bytes as f64;
     let mut unit = 0;
     while size >= 1024.0 && unit < UNITS.len() - 1 {

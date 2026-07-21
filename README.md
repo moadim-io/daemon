@@ -316,9 +316,10 @@ things on the host beyond the `claude` CLI itself:
   pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
   approvals) so the unattended session never blocks on a prompt. If `python3`
   is not on `PATH`, the setup step fails and the run no-ops. This is now
-  surfaced (not just silent): the daemon logs a startup warning and
-  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, though
-  the affected routine's own health dot still shows green.
+  surfaced (not just silent): the daemon logs a startup warning,
+  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, and the
+  affected routine's own health dot in the UI shows "AGENT MISSING" instead of
+  green (`RoutineResponse.agent_setup_available` reports `false`).
 - **`tmux`** — every routine run is launched inside a tmux session (named after
   the run's workbench), so a tmux binary must be installed.
 

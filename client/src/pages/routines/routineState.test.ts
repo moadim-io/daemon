@@ -44,6 +44,9 @@ function routine(
     tags: [],
     agent_registered: false,
     agent_command_available: false,
+    // Defaults to available so the `agent_registered`-only overrides below (e.g.
+    // `routineWithHealth`) keep exercising the health state they were written for.
+    agent_setup_available: true,
     is_running: false,
     file_path: "",
     schedule_description: null,

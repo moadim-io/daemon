@@ -186,43 +186,12 @@ pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
     read_local_env(id).into_keys().collect()
 }
 
-/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, compiled
-/// prompt sidecars, and the obsolete per-routine launch script. The legacy
-/// `prompts/prompt.compiled.md` and the current `prompts/prompt.compiled.local.md` are both
-/// derived, so they stay out of git via `*.compiled.*`.
-const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.compiled.*", "*.local.*", "*.log", "run.sh"];
-
-/// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
-/// appending whichever are missing and leaving the rest of the file (including user additions)
-/// untouched. Mirrors `cli_system::ensure_config_gitignore`'s reconciliation, scoped per routine.
-/// [`write_routine`] calls this unconditionally, so [`repersist_routines`] heals existing installs'
-/// `.gitignore` files on every daemon startup, not just newly created ones.
-fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
-    let lines: Vec<&str> = existing.lines().collect();
-    let missing: Vec<&str> = ROUTINE_GITIGNORE_REQUIRED
-        .iter()
-        .copied()
-        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
-        .collect();
-    if missing.is_empty() {
-        return Ok(());
-    }
-    let mut content = existing;
-    if !content.is_empty() && !content.ends_with('\n') {
-        content.push('\n');
-    }
-    for pattern in &missing {
-        content.push_str(pattern);
-        content.push('\n');
-    }
-    std::fs::write(path, &content)
-}
-
 /// Write `routine` to disk: `routine.toml` (tracked config), `schedule.cron` (tracked cron entry),
 /// the `prompts/prompt.pure.md` (raw) and `prompts/prompt.compiled.local.md` (composed) sidecars,
-/// the gitignored `state.local.toml` runtime sidecar, and `.gitignore` (created or reconciled — see
-/// [`ensure_routine_gitignore`]).
+/// and the gitignored `state.local.toml` runtime sidecar. Gitignore coverage for the machine-local
+/// files comes from the single config-dir `.gitignore` (`cli_system::ensure_config_gitignore`),
+/// whose patterns apply recursively; per-routine `.gitignore` files are no longer generated, and
+/// any left behind by an older daemon is removed here.
 ///
 /// The folder path is named after the slugified title (`slugify(&routine.title)`); `/` in the
 /// title becomes nested folders. The UUID `id` is stored inside `routine.toml` so it survives a
@@ -255,12 +224,12 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 
-    ensure_routine_gitignore(&routine_gitignore_path(&slug))?;
-
-    // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
-    // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a
-    // missing file is fine. Startup re-persists every routine, so this heals existing installs.
+    // Remove any stale `run.sh` and per-routine `.gitignore` left by an older daemon: the crontab
+    // line now invokes the binary directly, and gitignore coverage now lives solely in the config
+    // dir's root `.gitignore`, whose patterns apply recursively. Best-effort: a missing file is
+    // fine. Startup re-persists every routine, so this heals existing installs.
     let _ = std::fs::remove_file(routine_script_path(&slug));
+    let _ = std::fs::remove_file(routine_gitignore_path(&slug));
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
@@ -381,14 +350,15 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 }
 
 /// Re-persist every loaded routine to disk, recreating `routine.toml`, `schedule.cron`,
-/// `prompts/prompt.pure.md`, `prompts/prompt.compiled.local.md`, and `.gitignore` in its canonical
+/// `prompts/prompt.pure.md`, and `prompts/prompt.compiled.local.md` in its canonical
 /// slug directory.
 ///
 /// Nothing else rewrites the prompt sidecars on startup, so a slug dir missing its
 /// `prompts/prompt.compiled.local.md` (e.g. after the UUID→slug migration, or if the sidecar was
 /// lost) would fail the launch command's `cp prompt.compiled.local.md`. Re-persisting from the
 /// in-memory store
-/// heals those dirs (and removes any stale legacy `run.sh`). Idempotent; safe to call on every
+/// heals those dirs (and removes any stale legacy `run.sh` and per-routine `.gitignore`).
+/// Idempotent; safe to call on every
 /// startup after [`load_store`].
 pub fn repersist_routines(store: &RoutineStore) {
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();

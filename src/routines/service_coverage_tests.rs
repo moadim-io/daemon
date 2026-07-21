@@ -150,18 +150,13 @@ fn svc_list_local_only_filters_non_matching_machines() {
 fn svc_create_returns_internal_on_write_failure() {
     use std::os::unix::fs::PermissionsExt as _;
     // Covers L304: `write_routine(..).map_err(|_| AppError::Internal)?` in `svc_create`.
-    // The slug dir is pre-created with a `.gitignore` (so that step is skipped),
-    // then made read-only so the atomic write of `routine.toml` fails.
+    // The slug dir is pre-created, then made read-only so the atomic write of
+    // `routine.toml` fails.
     let _home = TempHome::set();
     let title = "Svc Create Write Fail ZZZ";
     let slug = slugify(title);
     let dir = crate::paths::routine_dir(&slug);
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        crate::paths::routine_gitignore_path(&slug),
-        "*.compiled.*\n*.local.*\n*.log\nrun.sh\n",
-    )
-    .unwrap();
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
     let store = new_store();

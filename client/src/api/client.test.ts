@@ -37,4 +37,8 @@ describe("unwrapVoid", () => {
   it("throws ApiError on failure", () => {
     expect(() => unwrapVoid({ error: { error: "nope" }, response: resp(404) })).toThrow("nope");
   });
+
+  it("throws a generic message when the error body has no message", () => {
+    expect(() => unwrapVoid({ response: resp(500) })).toThrow("HTTP 500");
+  });
 });

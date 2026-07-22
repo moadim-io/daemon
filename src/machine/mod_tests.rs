@@ -118,6 +118,42 @@ fn targets_matches_only_named_machine() {
     assert!(!targets(&[], "a"));
 }
 
+#[test]
+fn targets_glob_entry_matches_any_or_a_family() {
+    assert!(targets(&["*".to_string()], "anything"));
+    let machines = vec!["box-*".to_string()];
+    assert!(targets(&machines, "box-1"));
+    assert!(!targets(&machines, "other-1"));
+    // A glob is still a full match: no implicit substring/suffix.
+    assert!(!targets(&machines, "prefix-box-1"));
+}
+
+// ─── glob_match ─────────────────────────────────────────────────────────────
+
+#[test]
+fn glob_match_without_star_is_exact() {
+    assert!(glob_match("box", "box"));
+    assert!(!glob_match("box", "boxes"));
+    assert!(!glob_match("box", ""));
+}
+
+#[test]
+fn glob_match_star_matches_prefix_middle_suffix_and_everything() {
+    assert!(glob_match("*", "anything at all"));
+    assert!(glob_match("box-*", "box-1"));
+    // Name exhausted exactly at a trailing `*`: the post-loop "consume remaining stars" step runs.
+    assert!(glob_match("box-*", "box-"));
+    assert!(!glob_match("box-*", "other"));
+    assert!(glob_match("*-work", "m4-work"));
+    assert!(!glob_match("*-work", "m4-personal"));
+    assert!(glob_match("a*z", "abcz"));
+    assert!(!glob_match("a*z", "abcy"));
+    assert!(glob_match("a**b", "axxxb")); // Consecutive stars collapse to one.
+                                          // The first `*` in "*bc" greedily consumes too much and must backtrack for "bc" to land.
+    assert!(glob_match("*bc", "abcbc"));
+    assert!(!glob_match("*bc", "abcd"));
+}
+
 // ─── MachineSource labels ──────────────────────────────────────────────────
 
 #[test]

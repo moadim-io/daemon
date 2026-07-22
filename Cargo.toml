@@ -503,3 +503,10 @@ float_cmp = "deny"
 # having to confirm no fields are actually being destructured. The codebase is already clean, so
 # `deny` locks that in.
 equatable_if_let = "deny"
+# Reject `.sort()`/`.sort_by()`/`.sort_by_key()` on a slice of primitives (integers, floats,
+# chars, bools) in favour of the `_unstable` variant. A stable sort only matters when equal
+# elements must keep their relative order, which is meaningless for primitives — two `5`s are
+# indistinguishable regardless of which one came first. The unstable variant is faster and,
+# unlike the stable one, sorts in place without allocating a scratch buffer. The codebase is
+# already clean, so `deny` locks that in.
+stable_sort_primitive = "deny"

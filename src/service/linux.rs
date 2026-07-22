@@ -122,7 +122,7 @@ fn report_installed(unit: &Path) {
 /// no systemd-logind, insufficient privilege), print a warning with the manual command instead of
 /// aborting the install.
 fn enable_linger(unit: &Path) {
-    if let Ok(()) = run(&loginctl_bin(), &["enable-linger"]) {
+    if matches!(run(&loginctl_bin(), &["enable-linger"]), Ok(())) {
         if let Some(marker) = linger_marker_path(unit) {
             // Best-effort: if the marker can't be written, uninstall just won't disable
             // linger later, which is the safe direction to fail in.

@@ -286,6 +286,14 @@ fn next_run_at_none_for_unparseable_schedule() {
 }
 
 #[test]
+fn next_run_at_none_for_impossible_calendar_date() {
+    // Feb 30 never occurs, so a schedule pinned to it parses fine but has no upcoming fire —
+    // covers `next_run_at`'s "no upcoming fire" branch, distinct from the unparseable-schedule
+    // case above.
+    assert!(next_run_at("0 0 30 2 *", true).is_none());
+}
+
+#[test]
 fn from_routine_populates_derived_fields() {
     let routine = Routine {
         id: "rid".into(),

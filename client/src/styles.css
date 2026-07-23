@@ -432,6 +432,17 @@ textarea {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+}
+
+.cmdk-row-action {
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.cmdk-row:hover .cmdk-row-action,
+.cmdk-row.active .cmdk-row-action {
+  opacity: 1;
 }
 
 .cmdk-row-title {

@@ -126,6 +126,20 @@ pub async fn index(headers: HeaderMap) -> Response {
     serve_spa(INDEX_HTML, INDEX_ETAG.as_str(), &headers)
 }
 
+/// `GET /client` (and any `/client/*` deep link) — permanent redirect to the same path at the
+/// root. The React client used to be routed under `/client` (with the legacy Yew UI at `/`);
+/// old bookmarks and deep links (e.g. `/client/routines?history=<id>`) still resolve.
+pub async fn redirect_client_to_root(uri: axum::http::Uri) -> axum::response::Redirect {
+    let path = match uri.path().strip_prefix("/client") {
+        Some("") | None => "/",
+        Some(rest) => rest,
+    };
+    match uri.query() {
+        Some(query) => axum::response::Redirect::permanent(&format!("{path}?{query}")),
+        None => axum::response::Redirect::permanent(path),
+    }
+}
+
 /// Fallback for any unmatched path under `/api/v1` — returns a JSON `404`.
 ///
 /// The nested API router needs its own fallback: in axum 0.8 a `nest`ed router with no
@@ -290,6 +304,10 @@ pub(crate) fn build_app_with_shutdown(
             "/ui",
             get(|| async { axum::response::Redirect::permanent("/") }),
         )
+        // Back-compat: the React client used to live under `/client` — see
+        // `redirect_client_to_root`.
+        .route("/client", get(redirect_client_to_root))
+        .route("/client/{*rest}", get(redirect_client_to_root))
         .nest("/api/v1", api)
         .nest_service("/mcp", mcp_service)
         .merge({

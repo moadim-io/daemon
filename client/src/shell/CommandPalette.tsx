@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, unwrap } from "../api/client";
+import { useTriggerRoutine } from "../api/hooks";
+import { useToasts } from "./toasts";
 import {
   badgeFor,
   buildCommands,
@@ -17,6 +19,8 @@ const ROUTE_PATH: Record<string, string> = {
   home: "/",
   routines: "/routines",
   heatmap: "/heatmap",
+  reliability: "/reliability",
+  machines: "/machines",
   settings: "/settings",
 };
 
@@ -30,6 +34,8 @@ export interface CommandPaletteProps {
 
 export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme }: CommandPaletteProps) {
   const navigate = useNavigate();
+  const triggerRoutine = useTriggerRoutine();
+  const { addToast } = useToasts();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +70,9 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
   const order = rank(commands, query);
   const sel = clampSelection(selected, order.length);
 
+  // A routine result opens straight into its history — the same `?history=<id>`
+  // deep link the Overview page's recent-runs panel uses — rather than the bare
+  // routines list, so picking a specific routine actually lands on it.
   const launch = (row: number) => {
     const command = commands[order[row] ?? -1];
     if (command) {
@@ -77,12 +86,30 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
         case "action-toggle-theme":
           onToggleTheme();
           break;
+        case "routine":
+          navigate(`/routines?history=${encodeURIComponent(command.routineId ?? "")}`);
+          break;
         default: {
           const routeKind = routeFor(command.kind);
           if (routeKind) navigate(ROUTE_PATH[routeKind] ?? "/");
         }
       }
     }
+    onClose();
+  };
+
+  // Quick action: fire a routine directly from its result row without navigating
+  // away, mirroring the modifier-key secondary-action pattern of Linear/Raycast's
+  // command palettes.
+  const triggerFromRow = (row: number) => {
+    const command = commands[order[row] ?? -1];
+    if (!command || command.kind !== "routine" || !command.routineId) return;
+    const id = command.routineId;
+    const title = command.title;
+    triggerRoutine.mutate(id, {
+      onSuccess: () => addToast(`Triggered "${title}"`, "ok"),
+      onError: (e) => addToast(`Trigger failed: ${e.message}`, "err"),
+    });
     onClose();
   };
 
@@ -106,7 +133,11 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
         break;
       case "Enter":
         e.preventDefault();
-        launch(sel);
+        if (e.metaKey || e.ctrlKey) {
+          triggerFromRow(sel);
+        } else {
+          launch(sel);
+        }
         break;
       case "Escape":
         e.preventDefault();
@@ -177,6 +208,20 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
                     <span className="cmdk-row-title">{command.title}</span>
                     <span className="cmdk-row-sub">{command.subtitle}</span>
                   </span>
+                  {command.kind === "routine" && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm cmdk-row-action"
+                      title="Trigger now (⌘⏎)"
+                      aria-label={`Trigger ${command.title} now`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerFromRow(row);
+                      }}
+                    >
+                      ⚡
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -188,6 +233,9 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
           </span>
           <span>
             <span className="cmdk-key">↵</span> open
+          </span>
+          <span>
+            <span className="cmdk-key">⌘↵</span> trigger routine
           </span>
           <span>
             <span className="cmdk-key">esc</span> close

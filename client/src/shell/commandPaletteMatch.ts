@@ -5,13 +5,15 @@ export type CmdKind =
   | "nav-overview"
   | "nav-routines"
   | "nav-heatmap"
+  | "nav-reliability"
+  | "nav-machines"
   | "nav-settings"
   | "routine"
   | "action-refresh"
   | "action-stop"
   | "action-toggle-theme";
 
-export type RouteKind = "home" | "routines" | "heatmap" | "settings";
+export type RouteKind = "home" | "routines" | "heatmap" | "reliability" | "machines" | "settings";
 
 export interface Command {
   kind: CmdKind;
@@ -33,6 +35,10 @@ export function routeFor(kind: CmdKind): RouteKind | undefined {
       return "routines";
     case "nav-heatmap":
       return "heatmap";
+    case "nav-reliability":
+      return "reliability";
+    case "nav-machines":
+      return "machines";
     case "nav-settings":
       return "settings";
     default:
@@ -46,6 +52,8 @@ export function badgeFor(kind: CmdKind): string {
     case "nav-overview":
     case "nav-routines":
     case "nav-heatmap":
+    case "nav-reliability":
+    case "nav-machines":
     case "nav-settings":
       return "GO";
     case "routine":
@@ -156,6 +164,18 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
       title: "Heatmap",
       subtitle: "7-day x 24-hour fire-density grid",
       keywords: "schedule density grid busy collisions calendar",
+    },
+    {
+      kind: "nav-reliability",
+      title: "Reliability",
+      subtitle: "Success rate, streaks & duration regressions",
+      keywords: "flaky failing streak p50 p95 duration regression health",
+    },
+    {
+      kind: "nav-machines",
+      title: "Machines",
+      subtitle: "Per-host fleet inventory",
+      keywords: "fleet hosts inventory nodes servers",
     },
     {
       kind: "nav-settings",

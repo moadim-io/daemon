@@ -141,51 +141,16 @@ fn load_routine_from_dir_missing_agent_returns_none() {
 
 #[cfg(unix)]
 #[test]
-fn write_routine_fails_on_gitignore_write_error() {
-    use std::os::unix::fs::PermissionsExt as _;
-    // Covers `ensure_routine_gitignore`'s trailing `std::fs::write(path, ..)?` — the dir (and its
-    // `prompts/` subdir) already exist but the dir is read-only, and `.gitignore` is absent, so
-    // writing it fails and the error is propagated.
-    //
-    // The `prompts/` subdir must be pre-created: `write_routine` calls
-    // `create_dir_all(routine_prompts_dir(&slug))` *before* the `.gitignore` write, and
-    // creating a not-yet-existing subdir under a read-only parent fails first, which
-    // would exercise that branch instead of the intended gitignore-write branch below.
-    with_override_home(|_home| {
-        let title = "Rs Gitignore Fail Routine";
-        let slug = slugify(title);
-        let dir = crate::paths::routine_dir(&slug);
-        // Create dir and prompts/ without a .gitignore, then lock the dir.
-        std::fs::create_dir_all(crate::paths::routine_prompts_dir(&slug)).unwrap();
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        let result = write_routine(&make_routine("rs-gitignore-fail-id", title));
-
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(
-            result.is_err(),
-            "write_routine should fail when .gitignore cannot be written"
-        );
-    });
-}
-
-#[cfg(unix)]
-#[test]
 fn write_routine_fails_on_routine_toml_write_error() {
     use std::os::unix::fs::PermissionsExt as _;
-    // Covers L185: `atomic_write(&routine_toml_path(&slug), ..)? ` — `.gitignore` exists
-    // (so that step is skipped), but the dir is read-only so the atomic write for
-    // `routine.toml` (which creates a sibling temp file) fails.
+    // Covers `atomic_write(&routine_toml_path(&slug), ..)?` — the dir is read-only so the atomic
+    // write for `routine.toml` (which creates a sibling temp file) fails. The stale `run.sh`
+    // removal before it is best-effort, so the read-only dir doesn't trip it.
     with_override_home(|_home| {
         let title = "Rs Toml Write Fail Routine";
         let slug = slugify(title);
         let dir = crate::paths::routine_dir(&slug);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            crate::paths::routine_gitignore_path(&slug),
-            "*.compiled.*\n*.local.*\n*.log\nrun.sh\n",
-        )
-        .unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
         let result = write_routine(&make_routine("rs-toml-write-fail-id", title));

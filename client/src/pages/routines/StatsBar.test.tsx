@@ -30,6 +30,7 @@ function routine(id: string, enabled: boolean, overrides: Partial<RoutineRespons
     tags: [],
     agent_registered: true,
     agent_command_available: true,
+    agent_setup_available: true,
     is_running: false,
     file_path: "",
     schedule_description: null,

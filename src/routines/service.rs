@@ -289,6 +289,9 @@ pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, App
 mod service_log_tail;
 #[cfg(test)]
 pub(crate) use service_log_tail::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_BYTES};
+#[cfg(test)]
+#[path = "service_log_tail_tests.rs"]
+mod service_log_tail_tests;
 
 #[path = "service_trigger.rs"]
 mod service_trigger;
@@ -324,8 +327,12 @@ mod service_list_tests;
 mod service_sync_tests;
 
 #[cfg(test)]
-#[path = "service_field_validation_tests.rs"]
-mod service_field_validation_tests;
+#[path = "service_field_validation_create_tests.rs"]
+mod service_field_validation_create_tests;
+
+#[cfg(test)]
+#[path = "service_field_validation_update_tests.rs"]
+mod service_field_validation_update_tests;
 
 #[cfg(test)]
 #[path = "service_flag_tests.rs"]

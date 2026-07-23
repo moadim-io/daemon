@@ -106,15 +106,15 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 ~/.config/moadim/
 ├── routines/                  # scheduled AI-agent tasks (see ## Routines)
 │   └── nightly-triage/
-│       ├── routine.toml       # tracked — metadata (agent, repositories, [env], …)
-│       ├── schedule.cron      # tracked — one cron entry
+│       ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
+│       ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
 │       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
-│       ├── prompts/
-│       │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-│       │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-│       └── .gitignore         # generated — excludes *.compiled.*, *.local.*, and *.log
+│       └── prompts/
+│           ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+│           └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
+├── .gitignore                 # generated — excludes *.compiled.*, *.local.*, *.log, … for the whole tree
 └── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
 
 ~/.moadim/                     # runtime tree, separate from the config dir above
@@ -146,8 +146,9 @@ Moadim owns a single block inside your crontab for routines. Everything outside 
 
 A **routine** is a scheduled AI-agent task: it fires a prompt at a coding
 agent (e.g. Claude) on a cron schedule, each run inside its own throwaway
-workbench. The schedule lives in a sibling `schedule.cron` file; the rest of
-the routine metadata stays in `routine.toml`.
+workbench. The schedule lives in `routine.toml` with the rest of the routine
+metadata; a sibling `schedule.cron` file mirrors the cron entry but is not
+functional yet.
 
 Routines are stored as folders under `~/.config/moadim/routines/<id>/`,
 git-trackable:
@@ -155,24 +156,27 @@ git-trackable:
 ```
 ~/.config/moadim/routines/
 └── nightly-triage/
-    ├── routine.toml       # tracked — metadata (agent, repositories, [env], …)
-    ├── schedule.cron      # tracked — one cron entry
+    ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
+    ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
     ├── routine.local.toml # gitignored, optional — secret/local env var overrides
-    ├── prompts/
-    │   ├── prompt.pure.md      # tracked — the raw, user-authored prompt
-    │   └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
-    └── .gitignore     # generated — excludes *.compiled.*, *.local.*, and *.log
+    └── prompts/
+        ├── prompt.pure.md      # tracked — the raw, user-authored prompt
+        └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ```
+
+The gitignored files are covered by the single generated `.gitignore` at the
+config-dir root (`~/.config/moadim/.gitignore`), whose patterns apply to the
+whole tree — routine directories don't carry their own.
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
-| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), stored in `schedule.cron` and evaluated in the host's local timezone — **not** UTC. |
+| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. Mirrored into `schedule.cron`, which is not functional yet. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |
 | `goal`         | string | no       | A very short (≤5 lines) statement of the routine's goal — the "why" behind the prompt. Rendered into `prompt.md` as a `## Goal` preamble. |
 | `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
-| `machines`     | list   | no       | Machine identities this routine runs on (matched against this install's resolved machine name — see below). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
+| `machines`     | list   | no       | Machine identities this routine runs on (matched against this install's resolved machine name — see below). An entry may be an exact name or a glob containing `*` (e.g. `"*"` for any machine, `"box-*"` for a family). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
@@ -316,9 +320,10 @@ things on the host beyond the `claude` CLI itself:
   pre-seed per-workbench state in `~/.claude.json` (trust dialog + MCP-server
   approvals) so the unattended session never blocks on a prompt. If `python3`
   is not on `PATH`, the setup step fails and the run no-ops. This is now
-  surfaced (not just silent): the daemon logs a startup warning and
-  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, though
-  the affected routine's own health dot still shows green.
+  surfaced (not just silent): the daemon logs a startup warning,
+  `GET /api/v1/health`'s `dependencies.python3` flag reports `false`, and the
+  affected routine's own health dot in the UI shows "AGENT MISSING" instead of
+  green (`RoutineResponse.agent_setup_available` reports `false`).
 - **`tmux`** — every routine run is launched inside a tmux session (named after
   the run's workbench), so a tmux binary must be installed.
 

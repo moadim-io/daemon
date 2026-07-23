@@ -11,6 +11,196 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-23
+
+Add a unit test covering `next_run_at`'s "no upcoming fire" branch (an impossible calendar date like `0 0 30 2 *`, which parses fine but never fires), closing one of the gaps in the repo's 100%-line-coverage floor.
+
+test(client): cover `unwrapVoid`'s generic-message fallback branch
+
+`pnpm --filter client test:coverage` showed `src/api/client.ts` at 100% lines but only 92.85% branches, missing `unwrapVoid`'s `error?.error ?? \`HTTP ${response.status}\`` fallback — the sibling `unwrap` function already had a test for this exact branch ("throws a generic message when the error body has no message"), but `unwrapVoid` never got the matching one. Adds it, mirroring the existing `unwrap` test one-for-one.
+
+No behavior change — test-only. `src/api/client.ts` is now at 100% branch coverage.
+
+Enable `clippy::equatable_if_let`, rejecting an `if let PAT = expr` that only tests a single unit-like variant with no bindings extracted in favor of a direct `==` comparison. No behavior change — the codebase is already clean, so `deny` locks that in.
+
+Rewrite enable_linger()'s if-let-Ok-unit pattern as .is_ok() (src/service/linux.rs). No behavior change -- clears the sole violation blocking clippy::equatable_if_let (PR #1391) from a clean CI run.
+
+Support glob-style wildcards in a routine's `machines` targeting list: an entry containing `*` now matches the resolved machine name as a glob (`*` standing for any run of characters) instead of requiring an exact string. `machines = ["*"]` runs a routine on any machine; `machines = ["box-*"]` matches a whole family without enumerating each name. Plain entries with no `*` still match by exact equality, unchanged. Closes #1393.
+
+Fix `svc_logs` returning a 500 for a small `agent.log` containing invalid UTF-8 (e.g. binary tool output, or a multi-byte character split by a `tmux pipe-pane` write): the under-cap read path now uses a lossy UTF-8 decode, matching the truncated-tail path's existing behavior, instead of erroring out via `read_to_string`.
+
+## [1.6.1] - 2026-07-21
+
+Bump `jiff`, `jiff-static` (0.2.33 → 0.2.34), and `syn` (3.0.0 → 3.0.2) to their latest compatible patch releases (#1314).
+
+test(client): add coverage for `SettingsPage`'s persistent-prompt editor
+
+`SettingsPage.tsx` had zero test coverage (`pnpm --filter client
+test:coverage` showed 0% statements/branches/lines) despite carrying real
+logic — seeding the draft from the loaded prompt, tracking dirty state, and
+gating the Save button on it. Adds `SettingsPage.test.tsx` covering: the
+loading state before the prompt query resolves, the textarea seeding from a
+loaded prompt with Save disabled until edited, and Save enabling plus the
+"unsaved changes" hint once the draft diverges from the loaded value.
+
+No behavior change — test-only.
+
+test: cover `svc_update`'s invalid-env-key reject branch
+
+`svc_update` calls the same `validate_env` used by `svc_create`, but only the `svc_create` side
+had a test for the invalid-key rejection branch (`svc_create_rejects_invalid_env_key`). The
+`svc_update` call at `validate_env(env)?` in `service_update.rs` was left untested, so
+`cargo llvm-cov --fail-under-lines 100` (the repo's own CI and pre-push gate) fell short on that
+line.
+
+Adds `svc_update_rejects_invalid_env_key`, mirroring the existing `svc_update_rejects_blank_repository_url`
+test shape, asserting the update is rejected with `BadRequest` and the routine's env map is left
+untouched. No behavior change; test-only coverage fix.
+
+test(client): add coverage for the routines-page `ViewToggle` (list/calendar/day switcher)
+
+`ViewToggle.tsx` had zero test coverage (`pnpm --filter client test:coverage`
+showed 25% statements / 0% branches, lines 16-23 uncovered) even though it
+carries real interactive logic — which button renders active and which view
+value gets passed back on click. Adds `ViewToggle.test.tsx` covering: all
+three buttons render with their labels, only the current view's button gets
+the `active` class, and clicking a button calls `onSetView` with that
+button's view (including re-clicking the already-active one, which is a
+no-op passthrough rather than a toggle-off like `StatsBar`'s facets).
+
+No behavior change — test-only. `ViewToggle.tsx` is now at 100% coverage.
+
+Enable `clippy::cast_possible_wrap`, the mirror image of `clippy::cast_sign_loss`, to reject an `as`-cast from an unsigned integer to a signed one, which silently wraps a value past the target's positive range into a negative one instead of erroring. Fixes the 2 violations this surfaced — `utils::time::format_local`'s Unix-seconds `u64` cast to the `i64` `chrono::Local::timestamp_opt` takes, and a test's `u32` child-process id cast to the `libc::pid_t` (`i32`) `libc::kill` takes — by converting to `<target>::try_from(...)`, clamped to the target's `MAX` on the theoretical overflow case instead of silently wrapping.
+
+Enable `clippy::cast_precision_loss` to catch an `as`-cast from an integer to a floating-point type that can't represent every value of the source exactly (e.g. `u64 as f64`, past 2^52 the cast silently rounds to the nearest representable `f64`), the same "no indication of the invariant" gap `cast_sign_loss` and `cast_possible_wrap` already close for the other integer-cast directions. Fixes the 2 violations this surfaced: `cli::query::humanize_bytes`'s `u64` byte count cast to `f64` for display, which is deliberately an approximation already rounded to one decimal place and is kept as `as f64` behind a scoped, reasoned `#[allow]`; and a test's `delay_ms` shim parameter, narrowed from `u64` to `u32` and converted via `f64::from` so the cast is lossless by construction instead of merely lossless in practice. No behavior change.
+
+Enable `clippy::cast_sign_loss` to reject an `as`-cast from a signed integer to an unsigned one, which silently wraps a negative value into a huge positive one instead of erroring. Fixes the 2 violations this surfaced — a Unix-timestamp `i64` cast to the `u64` seconds this crate stores timestamps as, in `logging::format_json_line` and `ical::feed` — by converting to `u64::try_from(...)` instead.
+
+Enable `clippy::float_cmp` to reject a direct `==`/`!=` comparison between floating-point values. Binary floating-point can't represent most decimal fractions exactly, so two values computed by equivalent-looking paths can differ in the last bit and silently fail an exact-equality check that was meant to test "close enough". The codebase is already clean, so `deny` locks that in. No behavior change.
+
+Enable `clippy::implicit_clone` to reject an indirect `.to_string()`/`.to_owned()`-style clone of a value that's already the target type, in favour of calling `.clone()` directly. The codebase already had zero violations, so this is a lock-in with no behavior change.
+
+Enable `clippy::inefficient_to_string` to reject calling `.to_string()` on a `&&T` (e.g. `&&str`) in favour of calling it on the dereferenced `&T` directly, avoiding an unnecessary extra indirection through `Display`/`ToString`. The codebase already had zero violations, so this is a lock-in with no behavior change.
+
+Enable `clippy::manual_is_variant_and` to reject a `match`/`if let` that manually re-derives what `Option::is_some_and`/`is_none_or` or `Result::is_ok_and`/`is_err_and` already compute (e.g. `match opt { Some(x) => pred(x), None => false }`) instead of calling the combinator directly. The codebase was already clean against this lint; `deny` locks that in.
+
+Enable `clippy::manual_ok_or` to reject a `match`/`if let` that manually converts an `Option` to a `Result` (`Some(x) => Ok(x), None => Err(e)`) instead of `.ok_or(e)`. The codebase was already clean against this lint; `deny` locks that in.
+
+Enable `clippy::missing_const_for_fn` to catch functions whose bodies could run in `const` context but weren't marked `const fn`, closing off callers that need a `const`/`static` initializer or another `const fn` for no reason. Fixes the 7 violations this surfaced (`cli::liveness_exit_code`, `machine::MachineSource::label`, `routes::mcp::MoadimMcp::new`, `routines::cleanup::is_expired`, `routines::flags::FlagScope::suffix`, `routines::model::bool_true`, `routines::service_log_tail::LogWithMeta::empty`) by adding `const`. No behavior change.
+
+Enable `clippy::struct_field_names` to reject a struct field whose name redundantly repeats the struct's own name. Fixes the one violation this surfaced: `Flag::flag_type` (`src/routines/flags.rs`) renamed to `Flag::category`, matching its doc comment ("Free-text category"). The wire format is unchanged — the field already carries `#[serde(rename = "type")]`. No behavior change.
+
+Enable `clippy::verbose_file_reads` to require `fs::read`/`fs::read_to_string` over manual `File::open` + `read_to_end`/`read_to_string`. The two sites that genuinely need the verbose form (reading a log's tail from a seek offset, not the whole file) get a documented `#[allow]`.
+
+test(client): cover failureNotify.ts's localStorage error-handling branch
+
+`pnpm --filter client test:coverage` showed `src/lib/failureNotify.ts`'s
+`loadNotifyFailures` `catch` (falling back to notifications-off) untested,
+even though it exists specifically to keep a blocked `localStorage`
+(private browsing, quota exceeded, disabled storage) from crashing the
+failure-notification preference read. Mirrors the same gap already closed
+for `theme.ts` (see the `theme-storage-error-coverage` changeset): adds
+tests that mock `Storage.prototype.getItem`/`setItem` to throw and assert
+the fallback/no-throw behavior each catch is there for.
+
+No behavior change — test-only. `failureNotify.ts` is now at 100% line
+coverage.
+
+Fix the web UI rendering a blank page at `GET /` (#1379). Removing the legacy Yew UI (v1.5.0) promoted the React client to the server root, but the client's `BrowserRouter` kept its old `basename="/client"`, so the router matched nothing at `/` and rendered an empty page. The router (and Vite `base`) now resolve from `/`, and old `/client` and `/client/*` links — including query strings like `/client/routines?history=<id>` — permanently redirect to their root-relative equivalents.
+
+chore: move `routine_storage_walk`'s tests out of an inline `#[cfg(test)]` block
+
+`src/routine_storage_walk.rs` held its unit tests in an inline `#[cfg(test)] mod tests { ... }`
+block, which the repo's own convention (see CONTRIBUTING.md) and `.githooks/pre-push`'s
+test-file-convention check explicitly forbid in favor of `*_tests.rs` sibling files. Nothing in
+CI mirrors that specific check (unlike fmt/clippy/coverage/linecheck, which all have a CI job),
+so it silently broke `main` for any contributor running the actual local pre-push hook — running
+`sh .githooks/pre-push` on HEAD failed at the very first gate with `FAIL:
+src/routine_storage_walk.rs: inline test block found (use *_tests.rs instead)`.
+
+Moves the two tests into `src/routine_storage_walk_tests.rs`, matching the `#[path = "..."] mod
+..._tests;` pattern already used by every other `_tests.rs` file in the crate. No behavior
+change — the tests are unmodified, just relocated so the hook (and any future CI job that mirrors
+it) passes again.
+
+Fix stale `ui/src/*.rs` doc-comment references in `client/src/`. `bc9da2e` removed the legacy Yew UI crate (`ui/`) in favor of the React client, but left ~28 doc comments across `client/src/` pointing contributors at now-deleted Rust files as the "ported from" / "see that file for reference behavior" source of truth. Marked each stale reference `(removed)`, and reworded `heatmapMath.ts`'s comment (which told the reader to go check the deleted file for reference behavior) to note the port is now the sole implementation. No behavior change; doc comments only.
+
+Bump the npm dependency group across `client/` (6 updates): `@tanstack/react-query`, `react`, `react-dom`, `react-hook-form`, `typescript-eslint`, and `@changesets/cli`. No behavior change.
+
+fix(client): pin the `@redocly/openapi-core` → `js-yaml` transitive dependency to a patched version
+
+`openapi-typescript` (used by `client`'s `generate:api` script, which `build`/`typecheck`/`lint`/`test`
+all run through their `pre*` hooks) pulls in `@redocly/openapi-core@1.34.17`, which resolves
+`js-yaml@4.2.0` — a version affected by [GHSA-52cp-r559-cp3m](https://github.com/advisories/GHSA-52cp-r559-cp3m)
+(quadratic CPU consumption via YAML merge-key chains), flagged `high` by `pnpm audit`.
+
+Adds a scoped `pnpm.overrides` entry (`"@redocly/openapi-core>js-yaml": ">=4.3.0"`) rather than a
+blanket `js-yaml` override, since the tree also carries `js-yaml@3.15.0` via `@changesets/cli`'s
+`read-yaml-file` dependency — a global override would force that 3.x consumer onto an incompatible
+4.x API. `@redocly/openapi-core` itself already declares `js-yaml: ^4.2.0`, so 4.3.0 satisfies its
+own declared range; codegen output (`schema.gen.ts`), `pnpm --filter client typecheck`, `lint`, and
+`test` (347 tests) are all unchanged. `pnpm audit` now reports no known vulnerabilities.
+
+Stop generating a `.gitignore` inside every routine directory; the config dir's root `.gitignore` (now also seeding `*.compiled.*` and `run.sh`) covers routine dirs recursively. Existing per-routine `.gitignore` files are left untouched.
+
+Restore the `schedule` field in `routine.toml`. The schedule-to-`schedule.cron` split made the sidecar the source of truth prematurely; `routine.toml` now carries the authoritative `schedule` again (written and read first), while the `schedule.cron` sidecar keeps being written as a mirror of the cron entry (not functional yet). Dirs written during the sidecar-only era still load via a cron-file fallback (comment lines are skipped) until the next repersist heals them, and the JSON Schema requires `schedule` again.
+
+fix: surface a routine's unresolvable `setup`-step interpreter as unhealthy instead of green
+
+`GET /api/v1/routines` responses (`RoutineResponse`) now carry `agent_setup_available`, mirroring
+the existing `agent_command_available` field: `true` unless the agent config has a `setup` step
+whose first token (the interpreter it shells out to, e.g. `python3` for the built-in `claude`
+agent's workspace-trust seeding) does not resolve on the daemon's `PATH`.
+
+Closes the remaining gap from issue #404: `GET /health`'s `dependencies.python3` flag (added in
+#902) already told the operator the daemon-wide dependency was missing, but a routine using the
+`claude` agent still showed a green "healthy" dot even though its `setup` step — and therefore
+the whole run — was guaranteed to fail before the agent ever launched. The UI's `routineHealth()`
+now folds `agent_setup_available` into the same "AGENT MISSING" badge `agent_registered` already
+uses, since both mean the run aborts without the agent starting.
+
+refactor(routines): split prompt composition out of `command.rs` into `command_prompt.rs`
+
+`src/routines/command.rs` had grown to exactly 500 lines — the ceiling
+`linecheck` (the `.githooks/pre-push` line-count gate) enforces — so the very
+next change to that file, however small, would have broken CI immediately.
+
+Follows the same pattern this file already uses twice
+(`command_path_resolution.rs`, `command_system_prompt.rs`): moves
+`compose_prompt`, `substitute`, `placeholder_tokens`,
+`validate_placeholders`, `MAX_INLINE_PROMPT_BYTES`, and
+`inline_prompt_overflow` — the prompt-composition and
+`{placeholder}`-substitution/validation logic — into a new
+`src/routines/command_prompt.rs`, re-exported from `command.rs` via
+`pub(crate) use command_prompt::*;` so every existing
+`crate::routines::command::...` import path is unchanged. `command.rs` drops
+to 332 lines.
+
+No behavior change and no new tests needed: existing tests
+(`command_tests.rs`, `command_placeholder_tests.rs`) keep passing unmodified
+against the re-exported items. `cargo fmt`, `cargo clippy --all-targets`,
+`cargo test`, and `cargo llvm-cov --fail-under-lines 100` all pass, and line
+coverage stays at 100%.
+
+test(client): cover theme.ts's localStorage error-handling branches
+
+`pnpm --filter client test:coverage` showed `src/lib/theme.ts` at 85.71%
+lines: `loadThemeLight`'s `catch` (line 13, falling back to dark) and
+`saveThemeLight`'s `catch` (swallowing the write failure) were both
+untested, even though they exist specifically to keep a blocked
+`localStorage` (private browsing, quota exceeded, disabled storage) from
+crashing the theme toggle. Adds two tests that mock `Storage.prototype`'s
+`getItem`/`setItem` to throw and assert the fallback/no-throw behavior each
+catch is there for.
+
+No behavior change — test-only. `theme.ts` is now at 100% coverage.
+
+Bump `vite` from 6.4.3 to 8.1.5 in `client/`. No behavior change.
+
+Bump `@vitejs/plugin-react` from 5.2.0 to 6.0.3 in `client/`. Requires `vite` ^7 or later, already bumped separately to 8.1.5. No behavior change.
+
+Bump `zod` from 3.25.76 to 4.4.3 in `client/`. No behavior change.
+
 ## [1.6.0] - 2026-07-21
 
 Bump `clap` (4.6.2 → 4.6.3) and `tokio` (1.53.0 → 1.53.1) to their latest compatible patch releases. Both are Rust/Cargo dependencies not covered by the existing npm-focused Dependabot PRs.
@@ -4655,7 +4845,9 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/moadim-io/daemon/compare/v1.6.1...v1.7.0
+[1.6.1]: https://github.com/moadim-io/daemon/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/moadim-io/daemon/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/moadim-io/daemon/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/moadim-io/daemon/compare/v1.4.0...v1.4.1

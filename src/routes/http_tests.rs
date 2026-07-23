@@ -321,6 +321,57 @@ async fn build_app_redirects_ui_to_root() {
 }
 
 #[tokio::test]
+async fn build_app_redirects_client_to_root() {
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/client")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(resp.headers().get("location").unwrap(), "/");
+}
+
+#[tokio::test]
+async fn build_app_redirects_client_deep_link_to_root_path() {
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/client/routines")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(resp.headers().get("location").unwrap(), "/routines");
+}
+
+#[tokio::test]
+async fn build_app_redirects_client_deep_link_preserving_query() {
+    let app = build_app(crate::routines::new_store());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/client/routines?history=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        resp.headers().get("location").unwrap(),
+        "/routines?history=abc"
+    );
+}
+
+#[tokio::test]
 async fn build_app_spa_fallback_serves_ui_on_client_routes() {
     // `/routines` (and other client-routed paths) are NOT API endpoints — the API lives under
     // `/api/v1`. Unmatched GETs fall back to the app HTML so React Router can resolve the path.

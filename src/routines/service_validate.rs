@@ -245,8 +245,9 @@ pub(super) fn validate_env(
 /// Reject blank (empty/whitespace-only) `machines` entries and return a normalized copy with each
 /// entry trimmed and duplicates collapsed (first occurrence kept).
 ///
-/// `machine::targets` matches this list by exact string equality against the resolved machine name
-/// (see #600). Left unvalidated, a whitespace-padded or typo'd entry can never match anything, and a
+/// `machine::targets` matches this list against the resolved machine name, either by exact string
+/// equality or, for an entry containing `*`, as a glob (see #600, #1393). Left unvalidated, a
+/// whitespace-padded or typo'd entry can never match anything, and a
 /// non-empty list of *only* empty-string entries slips past the dormant-routine warning — which fires
 /// solely on `machines.is_empty()` — leaving a routine that runs nowhere with no warning at all.
 /// Trimming and rejecting blanks mirrors `validate_repositories`/`validate_tags`; the extra dedup

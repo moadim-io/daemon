@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "1.6.0"
+    "version": "1.7.0"
   },
   "servers": [
     {
@@ -1711,6 +1711,7 @@
             "required": [
               "agent_registered",
               "agent_command_available",
+              "agent_setup_available",
               "file_path",
               "flag_count",
               "is_running",
@@ -1724,6 +1725,10 @@
               "agent_registered": {
                 "type": "boolean",
                 "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses\nsuccessfully. A present-but-malformed config is silently dropped at crontab-sync time, so\nit reports `false` here too — file existence alone is not \"registered\"."
+              },
+              "agent_setup_available": {
+                "type": "boolean",
+                "description": "`true` if the agent config has no `setup` step, or that step's first whitespace-delimited\ntoken (the interpreter/binary it shells out to, e.g. `python3` for the built-in `claude`\nagent's workspace-trust seeding) resolves on the daemon's `PATH`. Distinct from\n[`Self::agent_command_available`]: the agent's own `command` can be installed while its\n`setup` step still shells out to something that isn't — in which case the launch command's\nfail-fast guard (`build_routine_command`) aborts the run before the agent ever starts, a\nfailure otherwise invisible to anything checking only `agent_command_available`. `false`\nhere means the run is expected to abort in `setup` rather than actually launch the agent.\n`false` whenever the agent config is missing, unreadable, or malformed too (mirrors\n`agent_command_available`'s pessimistic default) — `agent_registered` is the field that\ndistinguishes that case. See issue #404."
               },
               "env_keys": {
                 "type": "array",

@@ -14,9 +14,9 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::{
-    routine_compiled_prompt_path, routine_cron_path, routine_dir, routine_gitignore_path,
-    routine_manual_log_path, routine_prompts_dir, routine_pure_prompt_path, routine_script_path,
-    routine_skip_log_path, routine_state_path, routine_toml_path,
+    routine_compiled_prompt_path, routine_cron_path, routine_dir, routine_manual_log_path,
+    routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_skip_log_path,
+    routine_state_path, routine_toml_path,
 };
 use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
 use crate::utils::atomic::atomic_write;
@@ -26,11 +26,9 @@ use crate::utils::atomic::atomic_write;
 struct RoutineToml {
     /// UUID that uniquely identifies this routine (stable across renames).
     id: Option<String>,
-    /// Cron expression.
-    ///
-    /// **Read-only / legacy.** The schedule now lives in the tracked `schedule.cron` sidecar so
-    /// it stays diff-friendly and smaller than the rest of the routine metadata.
-    #[serde(default, skip_serializing)]
+    /// Cron expression. Authoritative: the daemon reads the schedule from here. It is also
+    /// mirrored into the tracked `schedule.cron` sidecar, which is not functional yet.
+    #[serde(default)]
     schedule: Option<String>,
     /// Human name.
     title: Option<String>,
@@ -143,10 +141,14 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
-/// Read a routine's tracked cron entry from `schedule.cron`, returning the first non-empty line.
+/// Read a routine's tracked cron entry from `schedule.cron`, returning the first line that is
+/// neither empty nor a `#` comment.
 fn read_routine_cron(path: &std::path::PathBuf) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
-    let schedule = text.lines().find(|line| !line.trim().is_empty())?.trim();
+    let schedule = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))?;
     Some(schedule.to_string())
 }
 
@@ -186,43 +188,13 @@ pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
     read_local_env(id).into_keys().collect()
 }
 
-/// Patterns every routine's `.gitignore` must carry: machine-local runtime state, logs, compiled
-/// prompt sidecars, and the obsolete per-routine launch script. The legacy
-/// `prompts/prompt.compiled.md` and the current `prompts/prompt.compiled.local.md` are both
-/// derived, so they stay out of git via `*.compiled.*`.
-const ROUTINE_GITIGNORE_REQUIRED: &[&str] = &["*.compiled.*", "*.local.*", "*.log", "run.sh"];
-
-/// Ensure `path` (a routine's `.gitignore`) contains every pattern in [`ROUTINE_GITIGNORE_REQUIRED`],
-/// appending whichever are missing and leaving the rest of the file (including user additions)
-/// untouched. Mirrors `cli_system::ensure_config_gitignore`'s reconciliation, scoped per routine.
-/// [`write_routine`] calls this unconditionally, so [`repersist_routines`] heals existing installs'
-/// `.gitignore` files on every daemon startup, not just newly created ones.
-fn ensure_routine_gitignore(path: &std::path::Path) -> std::io::Result<()> {
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
-    let lines: Vec<&str> = existing.lines().collect();
-    let missing: Vec<&str> = ROUTINE_GITIGNORE_REQUIRED
-        .iter()
-        .copied()
-        .filter(|pat| !lines.iter().any(|line| line.trim() == *pat))
-        .collect();
-    if missing.is_empty() {
-        return Ok(());
-    }
-    let mut content = existing;
-    if !content.is_empty() && !content.ends_with('\n') {
-        content.push('\n');
-    }
-    for pattern in &missing {
-        content.push_str(pattern);
-        content.push('\n');
-    }
-    std::fs::write(path, &content)
-}
-
 /// Write `routine` to disk: `routine.toml` (tracked config), `schedule.cron` (tracked cron entry),
 /// the `prompts/prompt.pure.md` (raw) and `prompts/prompt.compiled.local.md` (composed) sidecars,
-/// the gitignored `state.local.toml` runtime sidecar, and `.gitignore` (created or reconciled — see
-/// [`ensure_routine_gitignore`]).
+/// and the gitignored `state.local.toml` runtime sidecar. Gitignore coverage for the machine-local
+/// files comes from the single config-dir `.gitignore` (`cli_system::ensure_config_gitignore`),
+/// whose patterns apply recursively; per-routine `.gitignore` files are no longer generated. One
+/// left behind by an older daemon is not touched — it may carry user-added patterns, and it stays
+/// correct alongside the root one.
 ///
 /// The folder path is named after the slugified title (`slugify(&routine.title)`); `/` in the
 /// title becomes nested folders. The UUID `id` is stored inside `routine.toml` so it survives a
@@ -255,8 +227,6 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
 
-    ensure_routine_gitignore(&routine_gitignore_path(&slug))?;
-
     // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
     // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a
     // missing file is fine. Startup re-persists every routine, so this heals existing installs.
@@ -264,7 +234,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
-        schedule: None,
+        schedule: Some(routine.schedule.clone()),
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
         model: routine.model.clone(),
@@ -381,7 +351,7 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 }
 
 /// Re-persist every loaded routine to disk, recreating `routine.toml`, `schedule.cron`,
-/// `prompts/prompt.pure.md`, `prompts/prompt.compiled.local.md`, and `.gitignore` in its canonical
+/// `prompts/prompt.pure.md`, and `prompts/prompt.compiled.local.md` in its canonical
 /// slug directory.
 ///
 /// Nothing else rewrites the prompt sidecars on startup, so a slug dir missing its

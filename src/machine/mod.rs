@@ -217,9 +217,49 @@ pub fn referenced_machines() -> std::collections::BTreeSet<String> {
 /// `true` if an entry targeting `machines` should run on the machine named `me`.
 ///
 /// An empty list targets *no* machine (dormant until assigned), so an entry runs only when its list
-/// explicitly names this machine. Used by the routine crontab sync filter.
+/// explicitly names this machine. Each entry matches either by exact string equality, or — if it
+/// contains `*` — as a glob where `*` stands for any (possibly empty) run of characters (e.g. `"*"`
+/// matches every machine, `"box-*"` matches `"box-1"` and `"box-2"`). Used by the routine crontab
+/// sync filter. See issue #1393.
 pub fn targets(machines: &[String], me: &str) -> bool {
-    machines.iter().any(|name| name == me)
+    machines.iter().any(|pattern| {
+        if pattern.contains('*') {
+            glob_match(pattern, me)
+        } else {
+            pattern == me
+        }
+    })
+}
+
+/// `true` if `name` matches `pattern`, where `*` stands for any (possibly empty) run of characters
+/// and every other character must match literally. Classic greedy two-pointer wildcard match with
+/// backtracking to the most recent `*` on a mismatch.
+fn glob_match(pattern: &str, name: &str) -> bool {
+    let pattern: Vec<char> = pattern.chars().collect();
+    let name: Vec<char> = name.chars().collect();
+    let (mut pi, mut ni) = (0, 0);
+    let mut star: Option<usize> = None;
+    let mut star_match = 0;
+    while ni < name.len() {
+        if pi < pattern.len() && pattern[pi] == name[ni] {
+            pi += 1;
+            ni += 1;
+        } else if pi < pattern.len() && pattern[pi] == '*' {
+            star = Some(pi);
+            star_match = ni;
+            pi += 1;
+        } else if let Some(star_pi) = star {
+            pi = star_pi + 1;
+            star_match += 1;
+            ni = star_match;
+        } else {
+            return false;
+        }
+    }
+    while pattern.get(pi) == Some(&'*') {
+        pi += 1;
+    }
+    pi == pattern.len()
 }
 
 /// Run the `moadim machine` CLI subcommand, returning the process exit code.

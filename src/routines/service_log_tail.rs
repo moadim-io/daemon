@@ -70,7 +70,14 @@ pub(crate) fn read_log_tail(path: &std::path::Path) -> std::io::Result<String> {
 fn read_log_tail_of_len(path: &std::path::Path, len: u64) -> std::io::Result<String> {
     use std::io::{Read, Seek, SeekFrom};
     if len <= MAX_LOG_TAIL_BYTES {
-        return std::fs::read_to_string(path).map(|contents| strip_ansi_noise(&contents));
+        // Lossy, like the truncated path below: a raw `tmux pipe-pane` capture can contain a byte
+        // sequence that isn't valid UTF-8 (e.g. binary output from some CLI tool, or a multi-byte
+        // character split across a pipe write), and `read_to_string` errors out on the first
+        // invalid byte. That turned "log had one bad byte" into "log endpoint returns 500 with no
+        // content at all" for a small file, while a large file serving its truncated tail already
+        // degraded gracefully via `from_utf8_lossy`. Read raw bytes so both paths behave the same.
+        let bytes = std::fs::read(path)?;
+        return Ok(strip_ansi_noise(&String::from_utf8_lossy(&bytes)));
     }
     let omitted = len - MAX_LOG_TAIL_BYTES;
     let mut file = std::fs::File::open(path)?;

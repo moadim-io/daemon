@@ -5,6 +5,7 @@ const TABS = [
   { to: "/routines", label: "Routines", end: false },
   { to: "/heatmap", label: "Heatmap", end: false },
   { to: "/reliability", label: "Reliability", end: false },
+  { to: "/machines", label: "Machines", end: false },
   { to: "/settings", label: "Settings", end: false },
 ];
 

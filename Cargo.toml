@@ -1,6 +1,6 @@
 [package]
 name = "moadim"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -488,3 +488,25 @@ cast_precision_loss = "deny"
 # `routines::service_log_tail::LogWithMeta::empty`) by adding `const`. No behavior change. The rest
 # of the codebase is already clean, so `deny` locks that in.
 missing_const_for_fn = "deny"
+# Reject a direct `==`/`!=` comparison between floating-point values. Binary floating-point can't
+# represent most decimal fractions exactly, so two values computed by equivalent-looking paths
+# (e.g. `0.1 + 0.2` vs `0.3`) can differ in the last bit and silently fail an exact-equality check
+# that was meant to test "close enough". Callers who really do need bit-exact comparison (e.g.
+# comparing a value against itself, or against a literal it was assigned from verbatim) should use
+# `f64::to_bits`/`==` explicitly, or an epsilon-based comparison otherwise. The codebase is already
+# clean, so `deny` locks that in.
+float_cmp = "deny"
+# Reject an `if let Some(PAT) = expr` / `if let None = expr` (or the `matches!`-eligible enum-variant
+# equivalent) whose pattern only tests a single unit-like variant with no bindings extracted — a
+# direct `==` comparison (the type must derive `PartialEq`, which every such enum in this codebase
+# already does per `derive_partial_eq_without_eq` above) says the same thing without the reader
+# having to confirm no fields are actually being destructured. The codebase is already clean, so
+# `deny` locks that in.
+equatable_if_let = "deny"
+# Reject `.sort()`/`.sort_by()`/`.sort_by_key()` on a slice of primitives (integers, floats,
+# chars, bools) in favour of the `_unstable` variant. A stable sort only matters when equal
+# elements must keep their relative order, which is meaningless for primitives — two `5`s are
+# indistinguishable regardless of which one came first. The unstable variant is faster and,
+# unlike the stable one, sorts in place without allocating a scratch buffer. The codebase is
+# already clean, so `deny` locks that in.
+stable_sort_primitive = "deny"

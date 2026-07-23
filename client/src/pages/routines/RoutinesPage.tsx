@@ -34,6 +34,7 @@ import { loadRefreshToken, RefreshControl, refreshMs, saveRefreshToken, type Ref
 import { useToasts } from "../../shell/toasts";
 import { BulkBar, BulkDeleteDialog, ConfirmDeleteDialog } from "./BulkBar";
 import { humanizeBytes } from "./bytes";
+import { downloadCsv, routinesToCsv } from "./csvExport";
 import { DayTimeline, type TimelineItem } from "./DayTimeline";
 import {
   DUE_SOON_WINDOW_MS,
@@ -365,6 +366,11 @@ export function RoutinesPage() {
     [routines, filter, now, sortCol, sortDir],
   );
 
+  const onExportCsv = () => {
+    downloadCsv(`routines-${new Date().toISOString().slice(0, 10)}.csv`, routinesToCsv(visible));
+    addToast(`Exported ${visible.length} routine(s) to CSV`, "ok");
+  };
+
   // List rows omit `prompt` by default (see `include_prompts`), so the edit form fetches the
   // full routine by id instead of reusing the cached list row.
   const editRoutineQuery = useRoutine(modal.kind === "edit" ? modal.id : "", modal.kind === "edit");
@@ -464,6 +470,15 @@ export function RoutinesPage() {
             onClick={onCleanup}
           >
             CLEANUP NOW
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            title="Export the currently filtered/sorted routines to a CSV file"
+            disabled={visible.length === 0}
+            onClick={onExportCsv}
+          >
+            EXPORT CSV
           </button>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setPage({ kind: "new" })}>
             + NEW ROUTINE

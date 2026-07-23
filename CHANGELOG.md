@@ -11,6 +11,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-23
+
+Add a unit test covering `next_run_at`'s "no upcoming fire" branch (an impossible calendar date like `0 0 30 2 *`, which parses fine but never fires), closing one of the gaps in the repo's 100%-line-coverage floor.
+
+test(client): cover `unwrapVoid`'s generic-message fallback branch
+
+`pnpm --filter client test:coverage` showed `src/api/client.ts` at 100% lines but only 92.85% branches, missing `unwrapVoid`'s `error?.error ?? \`HTTP ${response.status}\`` fallback — the sibling `unwrap` function already had a test for this exact branch ("throws a generic message when the error body has no message"), but `unwrapVoid` never got the matching one. Adds it, mirroring the existing `unwrap` test one-for-one.
+
+No behavior change — test-only. `src/api/client.ts` is now at 100% branch coverage.
+
+Enable `clippy::equatable_if_let`, rejecting an `if let PAT = expr` that only tests a single unit-like variant with no bindings extracted in favor of a direct `==` comparison. No behavior change — the codebase is already clean, so `deny` locks that in.
+
+Rewrite enable_linger()'s if-let-Ok-unit pattern as .is_ok() (src/service/linux.rs). No behavior change -- clears the sole violation blocking clippy::equatable_if_let (PR #1391) from a clean CI run.
+
+Support glob-style wildcards in a routine's `machines` targeting list: an entry containing `*` now matches the resolved machine name as a glob (`*` standing for any run of characters) instead of requiring an exact string. `machines = ["*"]` runs a routine on any machine; `machines = ["box-*"]` matches a whole family without enumerating each name. Plain entries with no `*` still match by exact equality, unchanged. Closes #1393.
+
+Fix `svc_logs` returning a 500 for a small `agent.log` containing invalid UTF-8 (e.g. binary tool output, or a multi-byte character split by a `tmux pipe-pane` write): the under-cap read path now uses a lossy UTF-8 decode, matching the truncated-tail path's existing behavior, instead of erroring out via `read_to_string`.
+
 ## [1.6.1] - 2026-07-21
 
 Bump `jiff`, `jiff-static` (0.2.33 → 0.2.34), and `syn` (3.0.0 → 3.0.2) to their latest compatible patch releases (#1314).
@@ -4827,7 +4845,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/moadim-io/daemon/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/moadim-io/daemon/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/moadim-io/daemon/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/moadim-io/daemon/compare/v1.4.1...v1.5.0

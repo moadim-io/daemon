@@ -510,3 +510,15 @@ equatable_if_let = "deny"
 # unlike the stable one, sorts in place without allocating a scratch buffer. The codebase is
 # already clean, so `deny` locks that in.
 stable_sort_primitive = "deny"
+# Reject a struct with more than 3 `bool` fields — past that count, a call site constructing or
+# reading the struct positionally (or a `Default`-then-mutate sequence) can no longer tell which
+# `true`/`false` means what without cross-checking field names, and the 2^n combinations invite
+# states that were never meant to be reachable together. The one violation this surfaced,
+# `routines::model::RoutineResponse`, is a `#[serde(flatten)]` HTTP response DTO whose four bools
+# (`agent_registered`, `agent_command_available`, `agent_setup_available`, `is_running`) are
+# independent, already-documented probes with their own doc comments, not combinatorial state —
+# collapsing them into an enum would also break the JSON shape existing API clients parse. Kept as
+# a scoped, reasoned `#[allow]` on that struct, the same pattern already used for
+# `mem_forget`/`clippy::zombie_processes` above. The rest of the codebase is already clean, so
+# `deny` locks that in.
+struct_excessive_bools = "deny"

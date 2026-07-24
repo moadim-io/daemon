@@ -325,84 +325,8 @@ fn reap_dir_does_not_kill_dead_session_missing_tmux() {
     std::fs::remove_dir_all(&base).unwrap();
 }
 
-#[test]
-fn kill_sessions_for_slug_kills_only_live_matching_sessions() {
-    // #333: deleting a routine must not leave its in-flight workbench session running.
-    let base = std::env::temp_dir().join("moadim-cleanup-kill-slug-test");
-    let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).unwrap();
-
-    touch_dir(&base, "deleted-100"); // matching slug, live      -> killed
-    touch_dir(&base, "deleted-200"); // matching slug, dead      -> left alone (already gone)
-    touch_dir(&base, "other-100"); // different slug, live       -> untouched
-    touch_dir(&base, "notawb"); // no timestamp, ignored
-    std::fs::write(base.join("deleted-stray"), b"x").unwrap(); // a file, not a dir -> ignored
-
-    let alive = |session: &str| session == "moadim-deleted-100" || session == "moadim-other-100";
-    let killed = std::cell::RefCell::new(Vec::new());
-    let kill = |session: &str| killed.borrow_mut().push(session.to_string());
-
-    let count = kill_sessions_for_slug(&base, "deleted", &alive, &kill);
-
-    assert_eq!(count, 1);
-    assert_eq!(killed.into_inner(), vec!["moadim-deleted-100".to_string()]);
-
-    std::fs::remove_dir_all(&base).unwrap();
-}
-
-#[test]
-fn kill_sessions_for_slug_returns_zero_for_a_missing_dir() {
-    let missing =
-        std::env::temp_dir().join(format!("moadim-kill-slug-missing-{}", uuid::Uuid::new_v4()));
-    let _ = std::fs::remove_dir_all(&missing);
-    let dead = |_session: &str| false;
-    assert_eq!(
-        kill_sessions_for_slug(&missing, "anything", &dead, &|_| {}),
-        0
-    );
-}
-
-#[test]
-fn kill_sessions_for_deleted_routine_kills_the_live_workbench_session() {
-    let home = std::env::temp_dir().join(format!(
-        "moadim-cleanup-kill-deleted-{}",
-        uuid::Uuid::new_v4()
-    ));
-    let prev_home = std::env::var_os("MOADIM_HOME_OVERRIDE");
-    let prev_tmux = std::env::var_os("MOADIM_TMUX_BIN");
-    // SAFETY: tests in this crate run single-threaded (RUST_TEST_THREADS=1); restored below.
-    unsafe {
-        std::env::set_var("MOADIM_HOME_OVERRIDE", &home);
-        std::env::set_var("MOADIM_TMUX_BIN", "/usr/bin/true");
-    }
-
-    let workbenches = crate::paths::workbenches_dir();
-    std::fs::create_dir_all(&workbenches).unwrap();
-    std::fs::create_dir_all(workbenches.join("deleted-routine-1")).unwrap();
-    std::fs::create_dir_all(workbenches.join("other-routine-1")).unwrap();
-
-    let killed = kill_sessions_for_deleted_routine("deleted-routine");
-    assert_eq!(
-        killed, 1,
-        "only the deleted routine's live session is killed"
-    );
-    // The workbench directory itself is left in place; only the session is force-killed.
-    assert!(workbenches.join("deleted-routine-1").exists());
-    assert!(workbenches.join("other-routine-1").exists());
-
-    // SAFETY: single-threaded harness; restore the saved overrides.
-    unsafe {
-        match prev_home {
-            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
-            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
-        }
-        match prev_tmux {
-            Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value),
-            None => std::env::remove_var("MOADIM_TMUX_BIN"),
-        }
-    }
-    let _ = std::fs::remove_dir_all(&home);
-}
+// `kill_sessions_for_slug`/`kill_sessions_for_deleted_routine`/`kill_matching_sessions`/
+// `kill_all_routine_sessions` coverage lives in `kill_tests.rs`.
 
 // Run-history persistence coverage (`cleanup_expired_workbenches` + `runs.log`) lives in
 // `cleanup_run_history_tests.rs`.

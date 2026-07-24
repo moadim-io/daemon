@@ -11,6 +11,22 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-07-24
+
+feat(client): command palette covers every page and can trigger a routine inline
+
+The `⌘K` command palette was missing the Reliability and Machines pages, and
+selecting a routine only opened the generic Routines list instead of that
+routine. It now lists all six pages, deep-links a selected routine straight
+to its history (reusing the existing `?history=<id>` link), and adds a
+`⌘⏎`/⚡-button quick action to trigger a routine without leaving the palette.
+
+Enable clippy::stable_sort_primitive lint, rejecting stable sorts on primitive slices in favor of the faster unstable variant (#1396).
+
+fix(client): re-pin `typescript` to `^5.9.3`, undoing the dependabot `^7.0.2` bump (#1311) that broke `generate:api` again (`openapi-typescript` crashes with `ts.factory` undefined under TypeScript 7, the same regression already fixed once in #1250). This was blocking every `client (typecheck + lint)` and `client (vitest)` CI job on main.
+
+feat(client): export the current Routines table view to CSV (#1404). Adds an `EXPORT CSV` toolbar action that downloads whatever rows the active search/facet filters, sort, and group-by have already narrowed down to — title, schedule, agent, machines, tags, status, next/last run timestamps, and flag count — using only fields the existing `GET /routines` response already returns.
+
 ## [1.7.0] - 2026-07-23
 
 Add a unit test covering `next_run_at`'s "no upcoming fire" branch (an impossible calendar date like `0 0 30 2 *`, which parses fine but never fires), closing one of the gaps in the repo's 100%-line-coverage floor.
@@ -4845,7 +4861,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/moadim-io/daemon/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/moadim-io/daemon/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/moadim-io/daemon/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/moadim-io/daemon/compare/v1.5.0...v1.6.0

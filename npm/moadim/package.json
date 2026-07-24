@@ -1,0 +1,33 @@
+{
+  "name": "moadim",
+  "version": "1.5.0",
+  "description": "Bootstrapper that installs the moadim daemon with cargo",
+  "type": "module",
+  "bin": {
+    "moadim": "scripts/install.mjs"
+  },
+  "files": [
+    "README.md",
+    "scripts/install.mjs"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moadim-io/daemon.git",
+    "directory": "npm/moadim"
+  },
+  "homepage": "https://moadim.io",
+  "keywords": [
+    "moadim",
+    "daemon",
+    "scheduler",
+    "mcp",
+    "automation"
+  ],
+  "scripts": {
+    "test": "node scripts/install.test.mjs"
+  }
+}

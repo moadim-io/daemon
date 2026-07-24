@@ -11,7 +11,8 @@ export type CmdKind =
   | "routine"
   | "action-refresh"
   | "action-stop"
-  | "action-toggle-theme";
+  | "action-toggle-theme"
+  | "action-shortcuts";
 
 export type RouteKind = "home" | "routines" | "heatmap" | "reliability" | "machines" | "settings";
 
@@ -200,6 +201,12 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
       title: "Toggle Theme",
       subtitle: "Switch between dark and light mode",
       keywords: "theme light dark mode toggle appearance action",
+    },
+    {
+      kind: "action-shortcuts",
+      title: "Keyboard Shortcuts",
+      subtitle: "View all shortcuts, including go-to navigation chords",
+      keywords: "help cheatsheet hotkeys nav chord action",
     },
   ];
   for (const routine of routines) {

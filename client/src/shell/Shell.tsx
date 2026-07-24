@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHealth, useMachine, useRenameMachine, useShutdown } from "../api/hooks";
 import { applyTheme, loadThemeLight, saveThemeLight } from "../lib/theme";
+import { isEditableTarget, routeForChordKey } from "../lib/keyNav";
 import { Header } from "./Header";
 import { Nav } from "./Nav";
 import { CommandPalette } from "./CommandPalette";
 import { RenameMachineDialog } from "./RenameMachineDialog";
+import { ShortcutsHelp } from "./ShortcutsHelp";
 import { ShutdownDialog } from "./ShutdownDialog";
 import { ToastStack } from "./ToastStack";
 import { useToasts } from "./toasts";
+
+/** How long a bare `g` keeps the "go-to" chord armed while waiting for its second key. */
+const CHORD_TIMEOUT_MS = 900;
 
 /** Persistent chrome around every routed page: header, nav, global dialogs, toasts. */
 export function Shell() {
@@ -17,7 +22,9 @@ export function Shell() {
   const [showShutdown, setShowShutdown] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showRenameMachine, setShowRenameMachine] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { addToast } = useToasts();
   const health = useHealth(30_000);
@@ -25,24 +32,63 @@ export function Shell() {
   const shutdown = useShutdown();
   const renameMachine = useRenameMachine();
 
+  const toggleShortcuts = () => setShowShortcuts((open) => !open);
+
   useEffect(() => {
     applyTheme(lightTheme);
   }, [lightTheme]);
 
-  // Global ⌘K / Ctrl-K toggles the palette; Escape dismisses whichever shell-level dialog is open.
+  // Global ⌘K / Ctrl-K toggles the palette; `?` toggles the shortcuts cheat
+  // sheet; `g` then a bound letter (see keyNav.ts) jumps straight to a page;
+  // Escape dismisses whichever shell-level dialog is open. The chord/bare-key
+  // handlers bail out while a modifier is held or the event target is a text
+  // field, so they never steal keystrokes from routine forms or search boxes.
   useEffect(() => {
+    let chordArmed = false;
+    let chordTimer: ReturnType<typeof setTimeout> | undefined;
+    const disarmChord = () => {
+      chordArmed = false;
+      clearTimeout(chordTimer);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setShowPalette((open) => !open);
-      } else if (event.key === "Escape") {
+        return;
+      }
+      if (event.key === "Escape") {
         setShowShutdown(false);
         setShowRenameMachine(false);
+        setShowShortcuts(false);
+        disarmChord();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) {
+        return;
+      }
+      if (chordArmed) {
+        disarmChord();
+        const route = routeForChordKey(event.key);
+        if (route) {
+          event.preventDefault();
+          navigate(route);
+        }
+        return;
+      }
+      if (event.key.toLowerCase() === "g") {
+        chordArmed = true;
+        chordTimer = setTimeout(disarmChord, CHORD_TIMEOUT_MS);
+      } else if (event.key === "?") {
+        event.preventDefault();
+        toggleShortcuts();
       }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      clearTimeout(chordTimer);
+    };
+  }, [navigate]);
 
   const toggleTheme = () => {
     setLightTheme((prev) => {
@@ -86,6 +132,7 @@ export function Shell() {
         onPalette={() => setShowPalette((open) => !open)}
         onTheme={toggleTheme}
         onRenameMachine={() => setShowRenameMachine(true)}
+        onShortcuts={toggleShortcuts}
       />
       <Nav />
       <div className="page">
@@ -97,7 +144,9 @@ export function Shell() {
         onRefresh={() => void health.refetch()}
         onStop={() => setShowShutdown(true)}
         onToggleTheme={toggleTheme}
+        onShortcuts={toggleShortcuts}
       />
+      {showShortcuts && <ShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {showRenameMachine && (
         <RenameMachineDialog
           current={machine.data?.name ?? ""}

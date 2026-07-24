@@ -306,6 +306,31 @@ textarea {
   gap: 8px;
 }
 
+.shortcuts-dialog {
+  width: 360px;
+}
+
+.shortcuts-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcuts-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.shortcuts-list li > span:last-child {
+  margin-left: 6px;
+  color: var(--text-dim);
+}
+
 .form-label {
   display: block;
   font-size: 12px;

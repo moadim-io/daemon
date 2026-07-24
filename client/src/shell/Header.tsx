@@ -16,6 +16,7 @@ export interface HeaderProps {
   onPalette: () => void;
   onTheme: () => void;
   onRenameMachine: () => void;
+  onShortcuts: () => void;
 }
 
 export function Header(props: HeaderProps) {
@@ -79,6 +80,9 @@ export function Header(props: HeaderProps) {
         </button>
         <button className="icon-btn" title="Command palette (⌘K)" onClick={props.onPalette}>
           ⌘K
+        </button>
+        <button className="icon-btn" title="Keyboard shortcuts (?)" onClick={props.onShortcuts}>
+          ?
         </button>
         <button className="icon-btn" title="Refresh" onClick={props.onRefresh}>
           ↻

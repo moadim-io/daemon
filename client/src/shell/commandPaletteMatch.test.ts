@@ -138,7 +138,7 @@ describe("buildCommands", () => {
 
   it("lists pages then actions then routines", () => {
     const commands = buildCommands([routine({ title: "Nightly Audit", schedule: "0 0 * * *" })]);
-    expect(commands).toHaveLength(10); // 6 nav + 3 action + 1 routine
+    expect(commands).toHaveLength(11); // 6 nav + 4 action + 1 routine
     expect(commands.map((c) => c.kind)).toEqual([
       "nav-overview",
       "nav-routines",
@@ -149,12 +149,14 @@ describe("buildCommands", () => {
       "action-refresh",
       "action-stop",
       "action-toggle-theme",
+      "action-shortcuts",
       "routine",
     ]);
     expect(commands[8]!.keywords).toContain("theme");
-    expect(commands[9]!.title).toBe("Nightly Audit");
-    expect(commands[9]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
-    expect(commands[9]!.keywords).toContain("claude");
+    expect(commands[9]!.keywords).toContain("chord");
+    expect(commands[10]!.title).toBe("Nightly Audit");
+    expect(commands[10]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
+    expect(commands[10]!.keywords).toContain("claude");
   });
 });
 

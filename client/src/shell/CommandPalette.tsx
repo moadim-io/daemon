@@ -30,9 +30,17 @@ export interface CommandPaletteProps {
   onRefresh: () => void;
   onStop: () => void;
   onToggleTheme: () => void;
+  onShortcuts: () => void;
 }
 
-export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onClose,
+  onRefresh,
+  onStop,
+  onToggleTheme,
+  onShortcuts,
+}: CommandPaletteProps) {
   const navigate = useNavigate();
   const triggerRoutine = useTriggerRoutine();
   const { addToast } = useToasts();
@@ -85,6 +93,9 @@ export function CommandPalette({ open, onClose, onRefresh, onStop, onToggleTheme
           break;
         case "action-toggle-theme":
           onToggleTheme();
+          break;
+        case "action-shortcuts":
+          onShortcuts();
           break;
         case "routine":
           navigate(`/routines?history=${encodeURIComponent(command.routineId ?? "")}`);

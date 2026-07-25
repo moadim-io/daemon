@@ -1,7 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useHealth, useMachine, useRenameMachine, useShutdown } from "../api/hooks";
+import { useAllRuns, useHealth, useMachine, useRenameMachine, useShutdown } from "../api/hooks";
+import { freshFailures, snapshotRunStatuses, type RunStatusSnapshot } from "../lib/failureNotify";
+import {
+  entriesForFailures,
+  loadNotificationLog,
+  markAllRead,
+  saveNotificationLog,
+  type NotificationEntry,
+} from "../lib/notificationLog";
 import { applyTheme, loadThemeLight, saveThemeLight } from "../lib/theme";
 import { isEditableTarget, routeForChordKey } from "../lib/keyNav";
 import { Header } from "./Header";
@@ -15,6 +23,12 @@ import { useToasts } from "./toasts";
 
 /** How long a bare `g` keeps the "go-to" chord armed while waiting for its second key. */
 const CHORD_TIMEOUT_MS = 900;
+
+/** How many of the most recent fleet-wide runs the always-on notification watch polls. */
+const NOTIF_POLL_LIMIT = 50;
+
+/** Notification watch cadence — independent of any page's own (user-configurable) refresh rate. */
+const NOTIF_POLL_MS = 15_000;
 
 /** Persistent chrome around every routed page: header, nav, global dialogs, toasts. */
 export function Shell() {
@@ -31,8 +45,45 @@ export function Shell() {
   const machine = useMachine();
   const shutdown = useShutdown();
   const renameMachine = useRenameMachine();
+  const notifRuns = useAllRuns(NOTIF_POLL_LIMIT, { refetchInterval: NOTIF_POLL_MS });
+
+  const [notifLog, setNotifLog] = useState<NotificationEntry[]>(loadNotificationLog);
+  const prevRunStatuses = useRef<RunStatusSnapshot | null>(null);
 
   const toggleShortcuts = () => setShowShortcuts((open) => !open);
+
+  // Always-on fleet failure watch, independent of which page is mounted — the persistence layer
+  // under the header's Notification Center. Seeds a baseline snapshot on the first tick so
+  // failures already in view on load don't flood the inbox; only later transitions are logged.
+  useEffect(() => {
+    const runsData = notifRuns.data;
+    if (runsData === undefined) return;
+    if (prevRunStatuses.current === null) {
+      prevRunStatuses.current = snapshotRunStatuses(runsData);
+      return;
+    }
+    const failed = freshFailures(runsData, prevRunStatuses.current);
+    prevRunStatuses.current = snapshotRunStatuses(runsData);
+    if (failed.length === 0) return;
+    setNotifLog((prev) => {
+      const next = entriesForFailures(prev, failed);
+      saveNotificationLog(next);
+      return next;
+    });
+  }, [notifRuns.data]);
+
+  const markNotificationsRead = () => {
+    setNotifLog((prev) => {
+      const next = markAllRead(prev);
+      if (next !== prev) saveNotificationLog(next);
+      return next;
+    });
+  };
+
+  const clearNotifications = () => {
+    setNotifLog([]);
+    saveNotificationLog([]);
+  };
 
   useEffect(() => {
     applyTheme(lightTheme);
@@ -133,6 +184,7 @@ export function Shell() {
         onTheme={toggleTheme}
         onRenameMachine={() => setShowRenameMachine(true)}
         onShortcuts={toggleShortcuts}
+        notifications={{ entries: notifLog, onMarkAllRead: markNotificationsRead, onClear: clearNotifications }}
       />
       <Nav />
       <div className="page">

@@ -1,4 +1,5 @@
 import type { HealthResponse } from "../api/hooks";
+import { NotificationCenter, type NotificationCenterProps } from "./NotificationCenter";
 
 function fmtUptime(secs: number): string {
   if (secs < 60) return `${secs}s`;
@@ -17,6 +18,7 @@ export interface HeaderProps {
   onTheme: () => void;
   onRenameMachine: () => void;
   onShortcuts: () => void;
+  notifications: NotificationCenterProps;
 }
 
 export function Header(props: HeaderProps) {
@@ -78,6 +80,7 @@ export function Header(props: HeaderProps) {
         >
           {props.light ? "☀" : "🌙"}
         </button>
+        <NotificationCenter {...props.notifications} />
         <button className="icon-btn" title="Command palette (⌘K)" onClick={props.onPalette}>
           ⌘K
         </button>

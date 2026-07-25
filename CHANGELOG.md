@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-07-25
+
+feat(client): keyboard-first navigation — `g` then a letter jumps straight to any page (o/r/h/l/m/s), and `?` opens a shortcuts cheat sheet listing every binding, including the existing ⌘K command palette. Both live entirely on data the client already has (routes/nav are static), so no daemon changes were needed.
+
 ## [1.7.1] - 2026-07-24
 
 feat(client): command palette covers every page and can trigger a routine inline
@@ -4861,7 +4865,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/moadim-io/daemon/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/moadim-io/daemon/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/moadim-io/daemon/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/moadim-io/daemon/compare/v1.6.0...v1.6.1

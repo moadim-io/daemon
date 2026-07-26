@@ -290,6 +290,16 @@ pub fn global_local_lock_path() -> PathBuf {
     config_dir().join(".local.lock")
 }
 
+/// Returns the path to `~/.config/moadim/install_prompt.local.marker`, a machine-local sentinel
+/// recording that the post-start "install as a system service?" prompt (see
+/// [`crate::cli::run_background`]) has already been shown, so it fires at most once regardless of
+/// the answer given. The `.local.` infix matches the `*.local.*` pattern seeded into the config
+/// `.gitignore`, so this sentinel never leaks into a shared config repo.
+#[must_use]
+pub fn install_prompt_marker_path() -> PathBuf {
+    config_dir().join("install_prompt.local.marker")
+}
+
 /// Returns the path to `~/.config/moadim/machine.local.toml`, the gitignored, per-machine file
 /// that records this install's machine identity (the `name` used to match a routine/job's
 /// `machines` targeting list). The `.local.` infix matches the `*.local.*` pattern seeded into the

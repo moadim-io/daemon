@@ -56,6 +56,7 @@ pub(crate) fn start_detached_and_report(verb: &str) -> anyhow::Result<()> {
         bind_addr()
     );
     report_endpoints();
+    maybe_hint_install();
     Ok(())
 }
 
@@ -64,4 +65,47 @@ fn report_endpoints() {
     println!("  UI    http://{}", bind_addr());
     println!("  stop  moadim stop   (or use the STOP button in the UI)");
     println!("  logs  {}", paths_daemon_log());
+}
+
+/// After a bare `moadim` start, print a one-time hint to install the daemon as an OS service (so it
+/// survives reboots and is restarted on crash) when it isn't already installed. Skipped entirely on
+/// unsupported platforms, where [`crate::service::install`] would just error anyway.
+///
+/// Deliberately a printed hint, not an interactive `[y/N]` prompt: nothing else in this codebase
+/// reads stdin, and a detached `moadim` start (cron, a service manager, CI, or any piped/redirected
+/// stdin) has no answer to give — blocking on `read_line` there would hang the process indefinitely.
+/// `moadim install` is the hint's suggested next step.
+///
+/// Fires at most once while uninstalled: the fact that the hint was shown is recorded via
+/// [`crate::paths::install_prompt_marker_path`] so subsequent starts stay quiet.
+/// [`should_hint_install`] already short-circuits once the service is actually installed, so no
+/// marker write is needed on that path.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) fn maybe_hint_install() {
+    let marker = crate::paths::install_prompt_marker_path();
+    let installed = crate::service::is_installed().unwrap_or(true);
+    if !should_hint_install(marker.exists(), installed) {
+        return;
+    }
+
+    println!(
+        "moadim is not installed as a system service, so it won't restart on crash or survive a \
+         reboot."
+    );
+    println!("  run `moadim install` to fix that (this hint won't show again)");
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&marker, "");
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn maybe_hint_install() {}
+
+/// Whether [`maybe_hint_install`] should print the install hint: only when it hasn't already fired
+/// once (`marker_exists`) and the service isn't already installed. Split out so the decision is
+/// unit-testable in isolation.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) const fn should_hint_install(marker_exists: bool, installed: bool) -> bool {
+    !marker_exists && !installed
 }

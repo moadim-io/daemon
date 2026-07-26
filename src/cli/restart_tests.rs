@@ -51,6 +51,45 @@ fn restart_json_and_quiet_flags_parse() {
     );
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn should_hint_install_only_when_unmarked_and_not_installed() {
+    assert!(
+        should_hint_install(false, false),
+        "no marker + not installed -> hint"
+    );
+    assert!(
+        !should_hint_install(true, false),
+        "already shown (marker present) -> don't repeat"
+    );
+    assert!(
+        !should_hint_install(false, true),
+        "already installed -> nothing to hint"
+    );
+    assert!(!should_hint_install(true, true));
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn maybe_hint_install_writes_marker_when_not_installed() {
+    let home = crate::cli::cli_spawn_tests::temp_home("install-hint-fresh");
+    let _home =
+        crate::cli::cli_spawn_tests::EnvGuard::set("MOADIM_HOME_OVERRIDE", home.to_str().unwrap());
+    let marker = crate::paths::install_prompt_marker_path();
+    assert!(!marker.exists());
+
+    maybe_hint_install();
+    assert!(
+        marker.exists(),
+        "a fresh, uninstalled start must record that the hint fired"
+    );
+
+    // A second start must not error or duplicate work now that the marker is present.
+    maybe_hint_install();
+    assert!(marker.exists());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 #[test]
 fn restart_json_reports_old_new_pid_and_address() {
     let rotated: serde_json::Value = serde_json::from_str(&restart_json(Some(123), 456)).unwrap();

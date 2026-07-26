@@ -220,11 +220,14 @@ fn install_then_uninstall_round_trips_against_a_sandbox() {
     }
 
     let unit = base.join("systemd/user/moadim.service");
+    assert!(!is_installed().unwrap(), "not installed before install()");
     install().unwrap();
     assert!(unit.exists(), "install writes the systemd unit file");
+    assert!(is_installed().unwrap(), "installed after install()");
 
     uninstall().unwrap();
     assert!(!unit.exists(), "uninstall removes the unit file");
+    assert!(!is_installed().unwrap(), "not installed after uninstall()");
     // A second uninstall exercises the not-installed branch and must not error.
     uninstall().unwrap();
 

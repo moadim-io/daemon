@@ -64,6 +64,11 @@ pub(super) fn unit_path_from_config_dir(config_dir: Option<PathBuf>) -> anyhow::
     Ok(base.join("systemd/user").join(SYSTEMD_UNIT_NAME))
 }
 
+/// Whether the moadim systemd user unit is currently installed (its unit file exists).
+pub fn is_installed() -> anyhow::Result<bool> {
+    Ok(unit_path()?.exists())
+}
+
 /// Render the systemd user unit for the moadim service.
 ///
 /// `exe` is the absolute path to the `moadim` binary. The service runs `moadim --interactive` in the

@@ -5,6 +5,7 @@ import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
 import { LogViewer } from "./LogViewer";
+import { RunDurationChart } from "./RunDurationChart";
 
 export interface RoutineHistoryProps {
   id: string;
@@ -61,55 +62,62 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
           </div>
         </div>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>STARTED</th>
-                <th>STATUS</th>
-                <th>DURATION</th>
-                <th>EXIT CODE</th>
-                <th>RETENTION</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => {
-                const isSelected = selected === run.workbench;
-                return (
-                  <tr key={run.workbench} className={isSelected ? "row-selected" : ""}>
-                    <td>
-                      <div className="cell-time" title={`${run.workbench} · ${abstime(run.started_at)}`}>
-                        {reltime(run.started_at)}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
-                    </td>
-                    <td>{run.finished_at != null ? fmtRunDuration(run.started_at, run.finished_at) : "—"}</td>
-                    <td>{run.exit_code ?? "—"}</td>
-                    <td>
-                      {run.retention_expires_at != null ? (
-                        <span className="cell-meta">{fmtRetention(nowSecs, run.retention_expires_at)}</span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="act-btn logs"
-                        onClick={() => setSelected(isSelected ? undefined : run.workbench)}
-                      >
-                        {isSelected ? "HIDE LOG" : "VIEW LOG"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <RunDurationChart
+            runs={runs}
+            selected={selected}
+            onSelect={(workbench) => setSelected(selected === workbench ? undefined : workbench)}
+          />
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>STARTED</th>
+                  <th>STATUS</th>
+                  <th>DURATION</th>
+                  <th>EXIT CODE</th>
+                  <th>RETENTION</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => {
+                  const isSelected = selected === run.workbench;
+                  return (
+                    <tr key={run.workbench} className={isSelected ? "row-selected" : ""}>
+                      <td>
+                        <div className="cell-time" title={`${run.workbench} · ${abstime(run.started_at)}`}>
+                          {reltime(run.started_at)}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
+                      </td>
+                      <td>{run.finished_at != null ? fmtRunDuration(run.started_at, run.finished_at) : "—"}</td>
+                      <td>{run.exit_code ?? "—"}</td>
+                      <td>
+                        {run.retention_expires_at != null ? (
+                          <span className="cell-meta">{fmtRetention(nowSecs, run.retention_expires_at)}</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="act-btn logs"
+                          onClick={() => setSelected(isSelected ? undefined : run.workbench)}
+                        >
+                          {isSelected ? "HIDE LOG" : "VIEW LOG"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {selected !== undefined && (

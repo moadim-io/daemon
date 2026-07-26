@@ -188,6 +188,16 @@ fn daemon_log_file_ends_with_daemon_log() {
 }
 
 #[test]
+fn install_prompt_marker_path_filename() {
+    let path = install_prompt_marker_path();
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "install_prompt.local.marker"
+    );
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
 fn user_prompt_path_filename() {
     let path = user_prompt_path();
     assert_eq!(

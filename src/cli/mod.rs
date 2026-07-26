@@ -443,6 +443,8 @@ pub(crate) use cli_system::{rotate_daemon_log_if_due, LOG_ROTATION_CHECK_INTERVA
 mod cli_restart;
 pub use cli_restart::restart;
 use cli_restart::start_detached_and_report;
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+use cli_restart::{maybe_hint_install, should_hint_install};
 #[cfg(test)]
 use cli_restart::{restart_json, restart_rotation_line};
 

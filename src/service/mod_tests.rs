@@ -384,11 +384,14 @@ fn install_then_uninstall_round_trips_against_a_sandbox() {
     }
 
     let plist = base.join("Library/LaunchAgents/io.moadim.daemon.plist");
+    assert!(!is_installed().unwrap(), "not installed before install()");
     install().unwrap();
     assert!(plist.exists(), "install writes the LaunchAgent plist");
+    assert!(is_installed().unwrap(), "installed after install()");
 
     uninstall().unwrap();
     assert!(!plist.exists(), "uninstall removes the plist");
+    assert!(!is_installed().unwrap(), "not installed after uninstall()");
     // A second uninstall exercises the not-installed branch and must not error.
     uninstall().unwrap();
 

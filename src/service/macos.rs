@@ -49,6 +49,11 @@ pub(super) fn plist_path_from_home(home: Option<PathBuf>) -> anyhow::Result<Path
         .join(format!("{LAUNCHD_LABEL}.plist")))
 }
 
+/// Whether the moadim launchd agent is currently installed (its plist file exists).
+pub fn is_installed() -> anyhow::Result<bool> {
+    Ok(plist_path()?.exists())
+}
+
 /// `PATH` to give the launchd agent, in place of launchd's own minimal default
 /// (`/usr/bin:/bin:/usr/sbin:/sbin`).
 ///

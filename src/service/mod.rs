@@ -19,10 +19,10 @@ mod macos;
 mod linux;
 
 #[cfg(target_os = "macos")]
-pub use macos::{install, uninstall};
+pub use macos::{install, is_installed, uninstall};
 
 #[cfg(target_os = "linux")]
-pub use linux::{install, uninstall};
+pub use linux::{install, is_installed, uninstall};
 
 // Bring the platform render/path helpers into this module's namespace so the shared
 // `service_tests` submodule can reach them via `super::*` regardless of which OS compiles.

@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-07-27
+
+feat(cli): print a one-time hint on a bare `moadim` start ("run `moadim install` to fix that") when the daemon isn't registered as an OS service yet, so it doesn't silently fail to survive a reboot or crash-restart. Non-interactive — no stdin prompt — and fires at most once per install, tracked via `~/.config/moadim/install_prompt.local.marker`.
+
 ## [1.7.3] - 2026-07-26
 
 feat(client): persistent notification center — a bell icon in the header with an unread-count badge and a dropdown inbox of recent fleet-wide run failures, always polling regardless of which page is open and persisted via localStorage so it survives navigation/reload. Frontend-only, built entirely on `GET /routines/runs`, which the client already fetches elsewhere.
@@ -4869,7 +4873,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.3...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.4...HEAD
+[1.7.4]: https://github.com/moadim-io/daemon/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/moadim-io/daemon/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/moadim-io/daemon/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/moadim-io/daemon/compare/v1.7.0...v1.7.1

@@ -59,6 +59,10 @@ pub(crate) fn tmux_session_prefix(slug: &str) -> String {
 mod command_prompt;
 pub(crate) use command_prompt::*;
 
+#[path = "command_repositories.rs"]
+mod command_repositories;
+pub(crate) use command_repositories::*;
+
 #[path = "command_path_resolution.rs"]
 mod command_path_resolution;
 pub(crate) use command_path_resolution::*;
@@ -277,6 +281,11 @@ pub(crate) fn build_routine_command(
             src = shell_quote(&prompt_path)
         ),
     ]);
+    // Pre-clone/fetch each declared repository into the workbench, before the agent's own setup
+    // step runs, so a `setup` step (or the agent itself) that expects the repos already present
+    // sees them from its first command (#466). A no-repositories routine emits nothing here,
+    // leaving today's empty-workbench behaviour untouched.
+    inner_stmts.extend(clone_repository_stmts(&routine.repositories));
     if let Some(setup) = &agent.setup {
         // Fail-fast if the agent's setup step fails, mirroring the `cp prompt.md` guard above. The
         // statements are `;`-joined (no `set -e`), so a bare `setup` failure would be ignored and

@@ -179,12 +179,16 @@ That crontab line does **not** launch the agent by itself — it invokes the `mo
 the daemon to be running (it is installed as an OS service — launchd/systemd user — for exactly
 this reason). That handler (`routines::service_trigger::svc_trigger_scheduled`) and the manual
 `POST /routines/{id}/trigger` handler both funnel into `spawn_routine_command`, which builds the
-launch script (`routines::command::build_routine_command`) and spawns it in-process: it makes a fresh empty
-workbench under `~/.moadim/workbenches/`, launches the agent **interactively** (no `-p`) in a
-detached tmux session rooted there, and captures output via `pipe-pane`. The prompt reaches the
-agent as a process **argument** (the `{prompt}` placeholder expands to `"$(cat prompt.md)"`), so
-there is no keystroke-injection readiness race. The agent decides whether to clone the listed
-repositories.
+launch script (`routines::command::build_routine_command`) and spawns it in-process: it makes a fresh
+workbench under `~/.moadim/workbenches/`, pre-clones each declared repository into it
+(`routines::command_repositories::clone_repository_stmts`, #466) from a persistent local mirror
+under `~/.config/moadim/cache/` — the first run of a given repo URL clones the mirror, every later
+run (of any routine referencing the same URL) only fetches it — then launches the agent
+**interactively** (no `-p`) in a detached tmux session rooted there, and captures output via
+`pipe-pane`. The prompt reaches the agent as a process **argument** (the `{prompt}` placeholder
+expands to `"$(cat prompt.md)"`), so there is no keystroke-injection readiness race. A clone/fetch
+failure (bad URL, unreachable host, missing `branch`) aborts the run and is recorded in `agent.log`,
+the same as a failed prompt copy or `setup` step.
 
 The spawned script runs under a *login* shell (`sh -lc`) so the user's `~/.profile` is sourced and
 the agent inherits their environment (`GH_TOKEN`, API keys, …). Everything after the workbench

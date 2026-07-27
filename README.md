@@ -175,7 +175,7 @@ whole tree — routine directories don't carry their own.
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |
 | `goal`         | string | no       | A very short (≤5 lines) statement of the routine's goal — the "why" behind the prompt. Rendered into `prompt.md` as a `## Goal` preamble. |
-| `repositories` | list   | no       | Git repos listed in the prompt as context. Moadim does **not** clone them — the agent does.   |
+| `repositories` | list   | no       | Git repos pre-cloned into the workbench before the agent launches (via a persistent local mirror cache under `~/.config/moadim/cache/`, reused across runs). A clone/fetch failure — bad URL, unreachable host, missing `branch` — aborts the run and is recorded in `agent.log`. |
 | `machines`     | list   | no       | Machine identities this routine runs on (matched against this install's resolved machine name — see below). An entry may be an exact name or a glob containing `*` (e.g. `"*"` for any machine, `"box-*"` for a family). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |

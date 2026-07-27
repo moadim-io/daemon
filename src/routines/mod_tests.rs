@@ -73,7 +73,9 @@ fn compose_prompt_lists_repos_and_prompt() {
     let routine = make_routine("x");
     let prompt = compose_prompt(&routine);
     assert!(prompt.contains("# Workbench"));
-    assert!(prompt.contains("https://github.com/octocat/Hello-World (branch master)"));
+    assert!(
+        prompt.contains("- ./Hello-World — https://github.com/octocat/Hello-World (branch master)")
+    );
     assert!(prompt.contains("do the thing"));
 }
 
@@ -85,7 +87,7 @@ fn compose_prompt_repo_without_branch() {
         branch: None,
     }];
     let prompt = compose_prompt(&routine);
-    assert!(prompt.contains("- git@example.com:a/b\n"));
+    assert!(prompt.contains("- ./b — git@example.com:a/b\n"));
 }
 
 #[test]
@@ -95,8 +97,8 @@ fn compose_prompt_without_repositories_omits_clone_header() {
     let prompt = compose_prompt(&routine);
     assert!(prompt.contains("# Workbench"));
     assert!(prompt.contains("You are working in an empty directory.\n"));
-    // No dangling "clone any you need:" header (and no empty bullet list) when there are no repos.
-    assert!(!prompt.contains("clone any you need"));
+    // No dangling "already cloned" header (and no empty bullet list) when there are no repos.
+    assert!(!prompt.contains("already cloned"));
     assert!(!prompt.contains("\n- "));
     assert!(prompt.contains("do the thing"));
 }

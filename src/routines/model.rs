@@ -13,7 +13,8 @@ use super::command::{agent_command_available, setup_step_available, slugify, tmu
 use super::flags::list_flags;
 use crate::paths::routine_toml_path;
 
-/// A git repository made available to a routine's agent as prompt context (not cloned by moadim).
+/// A git repository the daemon pre-clones (via a persistent local mirror, see
+/// [`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct Repository {
     /// Git remote URL.

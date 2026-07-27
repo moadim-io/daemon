@@ -1513,7 +1513,7 @@
       },
       "Repository": {
         "type": "object",
-        "description": "A git repository made available to a routine's agent as prompt context (not cloned by moadim).",
+        "description": "A git repository the daemon pre-clones (via a persistent local mirror, see\n[`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).",
         "required": [
           "repository"
         ],

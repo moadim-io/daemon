@@ -484,3 +484,6 @@ mod command_trigger_source_tests;
 
 #[path = "command_env_tests.rs"]
 mod command_env_tests;
+
+#[path = "command_repositories_tests.rs"]
+mod command_repositories_tests;

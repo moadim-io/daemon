@@ -43,7 +43,7 @@ pub fn generate(manifest_dir: &str) {
             },
             "repositories": {
                 "type": "array",
-                "description": "Git repositories listed to the agent as prompt context (not cloned by moadim).",
+                "description": "Git repositories the daemon pre-clones (via a persistent local mirror cache) into the workbench before the agent launches.",
                 "items": {
                     "type": "object",
                     "required": ["repository"],

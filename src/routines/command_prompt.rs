@@ -3,6 +3,7 @@
 
 use std::fmt::Write as _;
 
+use super::repo_dir_name;
 use super::slugify;
 use crate::routines::agents::AgentCommand;
 use crate::routines::flags::{list_flags, FlagScope};
@@ -10,28 +11,32 @@ use crate::routines::model::Routine;
 
 /// Compose the `prompt.compiled.local.md` body: a repositories-as-context preamble, an optional
 /// `## Goal` section, a routine-origin disclosure block, the prompt, and an "Open flags" section.
-/// When the routine lists no repositories the preamble omits the "clone any you need:" sentence
-/// and its (otherwise empty) bullet list, so the agent never sees a dangling header promising a
-/// repo list with nothing under it.
+/// When the routine lists no repositories the preamble omits the "already cloned" sentence and
+/// its (otherwise empty) bullet list, so the agent never sees a dangling header promising a repo
+/// list with nothing under it.
 pub(crate) fn compose_prompt(routine: &Routine) -> String {
     let mut body = String::from("# Workbench\n");
     if routine.repositories.is_empty() {
         body.push_str("You are working in an empty directory.\n");
     } else {
+        // These repos are pre-cloned by `build_routine_command` (via `clone_repository_stmts`,
+        // #466) before the agent ever launches, so the preamble points at where they already
+        // live instead of instructing the agent to clone them itself.
         body.push_str(
-            "You are working in an empty directory. These repositories are relevant — clone any you need:\n",
+            "These repositories are already cloned into the workbench — cd into them, don't re-clone:\n",
         );
         for repo in &routine.repositories {
+            let dir = repo_dir_name(&repo.repository);
             // `write!` into the existing `String` directly rather than `format!` + `push_str`,
             // which would allocate a throwaway `String` per repository just to copy it into
             // `body` immediately after. Writing to a `String` is infallible, so the `Result` is
             // deliberately discarded.
             match &repo.branch {
                 Some(branch) => {
-                    let _ = writeln!(body, "- {} (branch {})", repo.repository, branch);
+                    let _ = writeln!(body, "- ./{dir} — {} (branch {branch})", repo.repository);
                 }
                 None => {
-                    let _ = writeln!(body, "- {}", repo.repository);
+                    let _ = writeln!(body, "- ./{dir} — {}", repo.repository);
                 }
             }
         }

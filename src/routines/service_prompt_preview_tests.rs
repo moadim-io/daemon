@@ -68,8 +68,9 @@ fn preview_matches_compose_prompt_with_repositories() {
 
     let preview = svc_get_prompt_preview(&store, "with-repos").expect("routine exists");
     assert_eq!(preview, compose_prompt(&routine));
-    assert!(preview.contains("- https://github.com/octocat/Hello-World\n"));
-    assert!(preview.contains("- https://github.com/octocat/Spoon-Knife (branch main)\n"));
+    assert!(preview.contains("- ./Hello-World — https://github.com/octocat/Hello-World\n"));
+    assert!(preview
+        .contains("- ./Spoon-Knife — https://github.com/octocat/Spoon-Knife (branch main)\n"));
 }
 
 #[test]

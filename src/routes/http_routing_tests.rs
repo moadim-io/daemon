@@ -107,7 +107,7 @@ async fn router_routine_full_lifecycle() {
     let preview = String::from_utf8(bytes.to_vec()).unwrap();
     // The routine's own prompt body and its declared repository both flow into the preview
     // verbatim (see `compose_prompt`), same as they would in a real run's `prompt.md`.
-    assert!(preview.contains("- r (branch main)\n"));
+    assert!(preview.contains("- ./r — r (branch main)\n"));
     assert!(preview.trim_end().ends_with('p'));
 
     // PATCH

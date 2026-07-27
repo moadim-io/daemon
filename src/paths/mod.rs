@@ -326,6 +326,44 @@ pub fn user_prompt_path() -> PathBuf {
     config_dir().join("user_prompt.md")
 }
 
+// ─── Repository cache ────────────────────────────────────────────────────────
+
+/// Returns the path to `{config_dir}/cache/<sanitized-url>`, the persistent local mirror clone of
+/// a declared repository (issue #466) — shared across every run, of every routine, that references
+/// the same `url`, so a repository is fetched from the remote at most once per fresh URL rather
+/// than re-cloned in full on every fire.
+///
+/// `url` is turned into a directory name by replacing every byte outside `[A-Za-z0-9._-]` with
+/// `_`, rather than parsed into host/owner/repo segments: this keeps every valid git remote form
+/// (`https://…`, `git@host:owner/repo.git`, `ssh://…`, a local path) supported without a URL
+/// parser, at the cost of a longer, less pretty directory name than a host/owner/repo tree would
+/// give.
+#[must_use]
+pub fn repo_cache_dir(url: &str) -> PathBuf {
+    config_dir()
+        .join("cache")
+        .join(sanitize_repo_cache_name(url))
+}
+
+/// Sanitize `url` into a single filesystem-safe path segment for [`repo_cache_dir`].
+fn sanitize_repo_cache_name(url: &str) -> String {
+    let sanitized: String = url
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "repo".to_string()
+    } else {
+        sanitized
+    }
+}
+
 // ─── Workbenches ─────────────────────────────────────────────────────────────
 
 /// Returns the path to `~/.moadim/`.

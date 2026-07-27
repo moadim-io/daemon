@@ -1431,6 +1431,83 @@ textarea {
   color: var(--text-faint);
 }
 
+/* ─── Routines: run-duration chart ───────────────────────────────────── */
+
+.duration-chart {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.duration-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 3px 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.duration-row:hover,
+.duration-row.row-selected {
+  background: var(--surface-2);
+}
+
+.duration-row-time {
+  flex: 0 0 64px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.duration-row-track {
+  flex: 1;
+  height: 10px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.duration-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.duration-bar.success {
+  background: var(--ok);
+}
+
+.duration-bar.failed {
+  background: var(--err);
+}
+
+.duration-bar.running {
+  background: var(--warn);
+}
+
+.duration-bar.unknown {
+  background: var(--text-faint);
+}
+
+.duration-row-dur {
+  flex: 0 0 56px;
+  font-size: 11px;
+  text-align: right;
+  color: var(--text-faint);
+}
+
 /* ─── Routines: health badge ──────────────────────────────────────────── */
 
 .health-badge {

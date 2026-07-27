@@ -1,6 +1,8 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import type { FleetRunSummary, RoutineResponse } from "../../api/hooks";
-import { groupRoutines, type RCol, type RDir, type RGroupBy } from "./routineState";
+import { ALL_ROUTINE_HEALTHS, healthBadgeClass } from "./filter";
+import { loadCollapsedGroups, saveCollapsedGroups } from "./groupCollapse";
+import { groupHealthCounts, groupRoutines, type RCol, type RDir, type RGroupBy } from "./routineState";
 import { RoutineRow } from "./RoutineRow";
 
 function SortTh({
@@ -52,6 +54,22 @@ export interface RoutineTableProps {
 
 export function RoutineTable(props: RoutineTableProps) {
   const { routines, loading, filterActive, onClearFilters } = props;
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsedGroups);
+
+  const toggleGroup = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      saveCollapsedGroups(next);
+      return next;
+    });
+  };
+
+  const setAllCollapsed = (keys: readonly string[]) => {
+    const next = new Set(keys);
+    saveCollapsedGroups(next);
+    setCollapsed(next);
+  };
 
   if (loading) {
     return (
@@ -89,9 +107,24 @@ export function RoutineTable(props: RoutineTableProps) {
 
   const allVisibleSelected = routines.length > 0 && routines.every((r) => props.selected.has(r.id));
   const groups = groupRoutines(routines, props.groupBy);
+  const groupKey = (label: string) => `${props.groupBy}:${label}`;
 
   return (
     <div className="table-wrap">
+      {props.groupBy !== "none" && groups.length > 1 && (
+        <div className="group-controls">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setAllCollapsed(groups.map(([label]) => groupKey(label)))}
+          >
+            COLLAPSE ALL
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed([])}>
+            EXPAND ALL
+          </button>
+        </div>
+      )}
       <table>
         <thead>
           <tr>
@@ -121,36 +154,59 @@ export function RoutineTable(props: RoutineTableProps) {
           </tr>
         </thead>
         <tbody>
-          {groups.map(([label, group]) => (
-            <Fragment key={`grp-${label}`}>
-              {props.groupBy !== "none" && (
-                <tr className="group-hd" key={`hd-${label}`}>
-                  <td colSpan={15}>
-                    <span className="group-label">{label}</span>{" "}
-                    <span className="group-count">({group.length})</span>
-                  </td>
-                </tr>
-              )}
-              {group.map((r) => (
-                <RoutineRow
-                  key={r.id}
-                  routine={r}
-                  now={props.now}
-                  runs={props.runHistory.get(r.id) ?? []}
-                  selected={props.selected.has(r.id)}
-                  onSelect={props.onSelect}
-                  onEdit={props.onEdit}
-                  onClone={props.onClone}
-                  onDelete={props.onDelete}
-                  onToggle={props.onToggle}
-                  onTrigger={props.onTrigger}
-                  onLogs={props.onLogs}
-                  onHistory={props.onHistory}
-                  onFlags={props.onFlags}
-                />
-              ))}
-            </Fragment>
-          ))}
+          {groups.map(([label, group]) => {
+            const key = groupKey(label);
+            const isCollapsed = props.groupBy !== "none" && collapsed.has(key);
+            const counts = groupHealthCounts(group, props.now);
+            return (
+              <Fragment key={`grp-${label}`}>
+                {props.groupBy !== "none" && (
+                  <tr className="group-hd" key={`hd-${label}`}>
+                    <td colSpan={15}>
+                      <div className="group-hd-row">
+                        <button
+                          type="button"
+                          className="group-hd-toggle"
+                          onClick={() => toggleGroup(key)}
+                          aria-expanded={!isCollapsed}
+                        >
+                          <span className="group-caret">{isCollapsed ? "▶" : "▼"}</span>
+                          <span className="group-label">{label}</span>
+                          <span className="group-count">({group.length})</span>
+                        </button>
+                        <span className="group-health-chips">
+                          {ALL_ROUTINE_HEALTHS.filter((h) => (counts.get(h) ?? 0) > 0).map((h) => (
+                            <span key={h} className={`${healthBadgeClass(h)} chip`}>
+                              {counts.get(h)}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!isCollapsed &&
+                  group.map((r) => (
+                    <RoutineRow
+                      key={r.id}
+                      routine={r}
+                      now={props.now}
+                      runs={props.runHistory.get(r.id) ?? []}
+                      selected={props.selected.has(r.id)}
+                      onSelect={props.onSelect}
+                      onEdit={props.onEdit}
+                      onClone={props.onClone}
+                      onDelete={props.onDelete}
+                      onToggle={props.onToggle}
+                      onTrigger={props.onTrigger}
+                      onLogs={props.onLogs}
+                      onHistory={props.onHistory}
+                      onFlags={props.onFlags}
+                    />
+                  ))}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

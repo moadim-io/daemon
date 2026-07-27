@@ -6,7 +6,14 @@
  */
 import type { RoutineResponse } from "../../api/hooks";
 import { nextFireAfter } from "../../lib/schedule";
-import { lastFireAt, routineHealth, healthPriority, healthBadge } from "./filter";
+import {
+  ALL_ROUTINE_HEALTHS,
+  lastFireAt,
+  routineHealth,
+  healthPriority,
+  healthBadge,
+  type RoutineHealth,
+} from "./filter";
 
 // ─── Sort column / direction ─────────────────────────────────────────────────
 
@@ -40,9 +47,9 @@ export function parseRDir(s: string): RDir {
 
 // ─── Group-by ────────────────────────────────────────────────────────────────
 
-export type RGroupBy = "none" | "agent" | "machine" | "status" | "health";
+export type RGroupBy = "none" | "agent" | "machine" | "status" | "health" | "folder";
 
-const RGROUP_BYS: readonly RGroupBy[] = ["none", "agent", "machine", "status", "health"];
+const RGROUP_BYS: readonly RGroupBy[] = ["none", "agent", "machine", "status", "health", "folder"];
 
 /** Parse a persisted token back to a variant, defaulting to `"none"` for unknown values. */
 export function parseRGroupBy(s: string): RGroupBy {
@@ -62,7 +69,21 @@ export function groupByLabel(by: RGroupBy): string {
       return "Status";
     case "health":
       return "Health";
+    case "folder":
+      return "Folder";
   }
+}
+
+/**
+ * The folder a routine's title lives in: everything before the final `/`-separated segment
+ * (the leaf name shown in the table), mirroring the breadcrumb split `RoutineTitle` already
+ * renders. `"(root)"` for a title with no `/`, matching the `"(unassigned)"` convention used
+ * for the machine group-by.
+ */
+export function folderOf(title: string): string {
+  const parts = title.split("/").filter(Boolean);
+  parts.pop();
+  return parts.length > 0 ? parts.join("/") : "(root)";
 }
 
 /** Group key for a single routine under the given dimension. */
@@ -78,7 +99,22 @@ export function routineGroupKey(r: RoutineResponse, by: RGroupBy): string {
       return r.enabled ? "Enabled" : "Disabled";
     case "health":
       return healthBadge(routineHealth(r, new Date()));
+    case "folder":
+      return folderOf(r.title);
   }
+}
+
+/** Count of routines in `group` per health variant, in `ALL_ROUTINE_HEALTHS` order. */
+export function groupHealthCounts(
+  group: readonly RoutineResponse[],
+  now: Date,
+): Map<RoutineHealth, number> {
+  const counts = new Map<RoutineHealth, number>(ALL_ROUTINE_HEALTHS.map((h) => [h, 0]));
+  for (const r of group) {
+    const h = routineHealth(r, now);
+    counts.set(h, (counts.get(h) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**

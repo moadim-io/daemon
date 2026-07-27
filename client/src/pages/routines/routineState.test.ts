@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 import type { RoutineResponse } from "../../api/hooks";
 import {
   flipDir,
+  folderOf,
+  groupByLabel,
+  groupHealthCounts,
   groupRoutines,
   parseRGroupBy,
   routineGroupKey,
@@ -289,5 +292,70 @@ describe("routineState — group by (state_group_by_tests.rs)", () => {
     expect(groups[0]?.[1].length).toBe(1);
     expect(groups[1]?.[0]).toBe("Enabled");
     expect(groups[1]?.[1].length).toBe(2);
+  });
+
+  it("groupByLabel folder", () => {
+    expect(groupByLabel("folder")).toBe("Folder");
+  });
+
+  it("folderOf returns (root) for an unnested title", () => {
+    expect(folderOf("Nightly backup")).toBe("(root)");
+  });
+
+  it("folderOf returns the path before the leaf segment", () => {
+    expect(folderOf("backend/db/vacuum")).toBe("backend/db");
+    expect(folderOf("backend/vacuum")).toBe("backend");
+  });
+
+  it("folderOf ignores leading/trailing/doubled slashes", () => {
+    expect(folderOf("/backend//vacuum/")).toBe("backend");
+  });
+
+  it("routine_group_key folder returns the parsed folder path", () => {
+    const nested = routine("id1", "backend/db/vacuum", "claude", "0 * * * *", [], true);
+    const root = routine("id2", "Nightly backup", "claude", "0 * * * *", [], true);
+    expect(routineGroupKey(nested, "folder")).toBe("backend/db");
+    expect(routineGroupKey(root, "folder")).toBe("(root)");
+  });
+
+  it("group_routines by folder groups nested titles under their shared parent", () => {
+    const rs = [
+      routine("a", "backend/db/vacuum", "claude", "0 * * * *", [], true),
+      routine("b", "Standalone", "claude", "0 * * * *", [], true),
+      routine("c", "backend/db/reindex", "claude", "0 * * * *", [], true),
+    ];
+    const groups = groupRoutines(rs, "folder");
+    expect(groups.length).toBe(2);
+    expect(groups[0]?.[0]).toBe("(root)");
+    expect(groups[0]?.[1].length).toBe(1);
+    expect(groups[1]?.[0]).toBe("backend/db");
+    expect(groups[1]?.[1].length).toBe(2);
+  });
+});
+
+describe("routineState — groupHealthCounts", () => {
+  function routineWithHealth(id: string, enabled: boolean, machines: string[], agentRegistered: boolean) {
+    return routine(id, id, "claude", "0 * * * *", machines, enabled, { agent_registered: agentRegistered });
+  }
+
+  it("tallies each group member under its health variant", () => {
+    const rs = [
+      routineWithHealth("healthy-1", true, ["m1"], true),
+      routineWithHealth("healthy-2", true, ["m1"], true),
+      routineWithHealth("dormant-1", true, [], true),
+      routineWithHealth("disabled-1", false, ["m1"], false),
+    ];
+    const counts = groupHealthCounts(rs, now());
+    expect(counts.get("healthy")).toBe(2);
+    expect(counts.get("dormant")).toBe(1);
+    expect(counts.get("disabled")).toBe(1);
+    expect(counts.get("agent-missing")).toBe(0);
+  });
+
+  it("returns every variant at zero for an empty group", () => {
+    const counts = groupHealthCounts([], now());
+    expect(counts.get("healthy")).toBe(0);
+    expect(counts.get("snoozed")).toBe(0);
+    expect(counts.size).toBe(7);
   });
 });

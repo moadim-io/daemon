@@ -1,6 +1,6 @@
 import { groupByLabel, parseRGroupBy, type RGroupBy } from "./routineState";
 
-const GROUP_BYS: readonly RGroupBy[] = ["none", "agent", "machine", "status", "health"];
+const GROUP_BYS: readonly RGroupBy[] = ["none", "agent", "machine", "status", "health", "folder"];
 
 export interface GroupBySelectorProps {
   groupBy: RGroupBy;

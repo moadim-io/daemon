@@ -41,6 +41,7 @@ fn empty_snapshot(runs: &[FleetRunSummary]) -> MetricsSnapshot<'_> {
         machine: "test-machine",
         active_sessions: 2,
         workbench_bytes: 1024,
+        repo_cache_bytes: 512,
         runs,
         cleanup_removed_total: 5,
         cleanup_freed_bytes_total: 2048,
@@ -55,6 +56,7 @@ fn render_emits_help_and_type_for_every_gauge_and_counter() {
         "moadim_build_info",
         "moadim_active_sessions",
         "moadim_workbench_bytes",
+        "moadim_repo_cache_bytes",
         "moadim_runs_total",
         "moadim_run_duration_seconds",
         "moadim_cleanup_removed_total",
@@ -75,6 +77,7 @@ fn render_emits_help_and_type_for_every_gauge_and_counter() {
     ));
     assert!(text.contains("moadim_active_sessions 2"));
     assert!(text.contains("moadim_workbench_bytes 1024"));
+    assert!(text.contains("moadim_repo_cache_bytes 512"));
     assert!(text.contains("moadim_cleanup_removed_total 5"));
     assert!(text.contains("moadim_cleanup_freed_bytes_total 2048"));
 }

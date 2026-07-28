@@ -2,7 +2,7 @@
 //! drive a cleanup sweep without holding the store lock across filesystem and tmux work.
 
 use crate::utils::lock::LockRecover;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::super::command::slugify;
 use super::super::model::RoutineStore;
@@ -52,6 +52,26 @@ pub fn snapshot_routine_ids(store: &RoutineStore) -> HashMap<String, String> {
     let lock = store.lock_recover();
     lock.values()
         .map(|routine| (slugify(&routine.title), routine.id.clone()))
+        .collect()
+}
+
+/// Snapshot the set of repo-cache directory *names* (see [`crate::paths::repo_cache_dir`]) every
+/// currently-stored routine's `repositories` still references.
+///
+/// Backs the orphaned-mirror sweep ([`super::repo_cache_cap::prune_orphaned`], issue #1425): a
+/// mirror whose name is absent from this snapshot was cloned for a repository no routine declares
+/// anymore (the routine was deleted, or edited to a different URL) and is safe to remove. Taken up
+/// front for the same reason as [`snapshot_ttls`] — the store lock must not be held across the
+/// sweep's filesystem work.
+pub fn snapshot_repo_cache_names(store: &RoutineStore) -> HashSet<String> {
+    let lock = store.lock_recover();
+    lock.values()
+        .flat_map(|routine| &routine.repositories)
+        .filter_map(|repo| {
+            crate::paths::repo_cache_dir(&repo.repository)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
         .collect()
 }
 

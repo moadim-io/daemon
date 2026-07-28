@@ -328,6 +328,14 @@ pub fn user_prompt_path() -> PathBuf {
 
 // ─── Repository cache ────────────────────────────────────────────────────────
 
+/// Returns the path to `{config_dir}/cache/`, the root of every repository mirror
+/// [`repo_cache_dir`] creates. Used by the cleanup sweep (issue #1425) to walk and prune the whole
+/// tree without each caller re-deriving `config_dir().join("cache")` by hand.
+#[must_use]
+pub fn repo_cache_root_dir() -> PathBuf {
+    config_dir().join("cache")
+}
+
 /// Returns the path to `{config_dir}/cache/<sanitized-url>`, the persistent local mirror clone of
 /// a declared repository (issue #466) — shared across every run, of every routine, that references
 /// the same `url`, so a repository is fetched from the remote at most once per fresh URL rather
@@ -340,9 +348,7 @@ pub fn user_prompt_path() -> PathBuf {
 /// give.
 #[must_use]
 pub fn repo_cache_dir(url: &str) -> PathBuf {
-    config_dir()
-        .join("cache")
-        .join(sanitize_repo_cache_name(url))
+    repo_cache_root_dir().join(sanitize_repo_cache_name(url))
 }
 
 /// Sanitize `url` into a single filesystem-safe path segment for [`repo_cache_dir`].

@@ -68,8 +68,7 @@ pub(crate) fn clone_repository_stmts(repositories: &[Repository]) -> Vec<String>
             };
             format!(
                 r#"mkdir -p {cache_parent} && {{ if [ -d {cache} ]; then git -C {cache} fetch --prune --quiet origin; else git clone --mirror --quiet {url} {cache}; fi; }} || {{ echo "moadim: failed to sync cached repository {url}; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}; git clone --local --quiet{branch_arg} {cache} "$WB/{dir_name}" || {{ echo "moadim: failed to materialize repository {url}{branch_desc}; aborting launch" | tee -a "$WB/agent.log" >&2; exit 1; }}"#,
-                cache_parent =
-                    shell_quote(&crate::paths::config_dir().join("cache").to_string_lossy()),
+                cache_parent = shell_quote(&crate::paths::repo_cache_root_dir().to_string_lossy()),
             )
         })
         .collect()

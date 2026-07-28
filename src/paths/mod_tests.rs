@@ -278,3 +278,16 @@ fn claude_json_path_is_dot_claude_json_under_home() {
 fn sanitize_repo_cache_name_empty_url_falls_back_to_repo() {
     assert_eq!(super::sanitize_repo_cache_name(""), "repo");
 }
+
+#[test]
+fn repo_cache_root_dir_ends_with_cache_under_config_dir() {
+    let path = repo_cache_root_dir();
+    assert_eq!(path.file_name().unwrap().to_str().unwrap(), "cache");
+    assert_eq!(path.parent().unwrap(), config_dir());
+}
+
+#[test]
+fn repo_cache_dir_is_child_of_repo_cache_root_dir() {
+    let path = repo_cache_dir("https://example.com/a/b.git");
+    assert_eq!(path.parent().unwrap(), repo_cache_root_dir());
+}

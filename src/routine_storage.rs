@@ -138,15 +138,23 @@ fn read_routine_toml(path: &std::path::PathBuf) -> Option<RoutineToml> {
     toml::from_str(&text).ok()
 }
 
+/// Read a routine's tracked cron entries from `schedule.cron`, returning every line that is neither
+/// empty nor a `#` comment.
+pub(crate) fn read_routine_crons(path: &std::path::Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(ToString::to_string)
+        .collect()
+}
+
 /// Read a routine's tracked cron entry from `schedule.cron`, returning the first line that is
 /// neither empty nor a `#` comment.
-fn read_routine_cron(path: &std::path::PathBuf) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let schedule = text
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty() && !line.starts_with('#'))?;
-    Some(schedule.to_string())
+fn read_routine_cron(path: &std::path::Path) -> Option<String> {
+    read_routine_crons(path).into_iter().next()
 }
 
 /// Read a routine's `state.local.toml` sidecar under `base`, defaulting to an empty

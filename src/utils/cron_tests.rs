@@ -93,4 +93,5 @@ fn compiled_union_uses_supported_crons() {
     assert!(compiled_union("0 30 9 * * 1-5 *").is_some());
     assert!(compiled_union("@daily").is_some());
     assert!(compiled_union("@midnight").is_none());
+    assert!(compiled_union("@reboot").is_none());
 }

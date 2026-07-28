@@ -23,8 +23,10 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use crate::routines::{load_agent_command, shell_quote, Routine, RoutineStore};
+use crate::routine_storage::read_routine_crons;
+use crate::routines::{load_agent_command, shell_quote, slugify, Routine, RoutineStore};
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
+use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::lock::LockRecover;
 
 /// Process-wide lock serializing the crontab read-modify-write sequence.
@@ -55,7 +57,7 @@ const BLOCK_HEADER: &str = "# Managed by moadim — routines (agent tmux session
 /// cannot break resolution; both the path and the routine ID are shell-quoted. The launch command
 /// itself ([`crate::routines::build_routine_command`]) is built and spawned by the daemon when the
 /// `schedule trigger` request arrives, so it is not duplicated into the crontab line.
-pub(crate) fn format_routine_line(routine: &Routine) -> String {
+pub(crate) fn format_routine_line_for_schedule(routine: &Routine, schedule: &str) -> String {
     // The daemon is already running from this binary, so resolving its own path cannot realistically
     // fail; a failure here means the process has no executable path at all, which is unrecoverable.
     #[allow(
@@ -66,7 +68,7 @@ pub(crate) fn format_routine_line(routine: &Routine) -> String {
                   through short of reshaping every crontab-formatting caller"
     )]
     let exe = std::env::current_exe().expect("daemon executable path is resolvable");
-    let schedule = to_os_schedule(&routine.schedule);
+    let schedule = to_os_schedule(schedule);
     format!(
         "{} {} schedule trigger {} # moadim-routine:{}",
         schedule,
@@ -74,6 +76,52 @@ pub(crate) fn format_routine_line(routine: &Routine) -> String {
         shell_quote(&routine.id),
         routine.id
     )
+}
+
+/// Format a single routine using its public schedule field.
+#[cfg(test)]
+pub(crate) fn format_routine_line(routine: &Routine) -> String {
+    format_routine_line_for_schedule(routine, &routine.schedule)
+}
+
+/// Read the cron sidecar schedules for a routine, falling back to the loaded single schedule.
+fn routine_schedules_for_crontab(routine: &Routine) -> Vec<String> {
+    let slug = slugify(&routine.title);
+    let entries = read_routine_crons(&crate::paths::routine_dir(&slug).join("schedule.cron"));
+    if entries.is_empty() {
+        vec![routine.schedule.clone()]
+    } else {
+        let schedules: Vec<String> = entries
+            .iter()
+            .map(|entry| normalize_schedule(entry))
+            .filter(|schedule| match validate_cron(schedule) {
+                Ok(()) => true,
+                Err(err) => {
+                    log::warn!(
+                        "routine sync: invalid schedule.cron entry {:?} for routine {:?}: {}; \
+                         skipping",
+                        schedule,
+                        routine.id,
+                        err
+                    );
+                    false
+                }
+            })
+            .collect();
+        if schedules.is_empty() {
+            return vec![routine.schedule.clone()];
+        }
+        let refs: Vec<&str> = schedules.iter().map(String::as_str).collect();
+        #[allow(
+            clippy::expect_used,
+            reason = "each entry was validated by validate_cron before reaching cron-union"
+        )]
+        cron_union::union(refs)
+            .expect("validated cron schedules compile through cron-union")
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
 }
 
 /// Build the full routines block from the enabled managed routines in `store`.
@@ -114,7 +162,12 @@ fn build_block(store: &RoutineStore) -> String {
         .filter_map(|routine| match load_agent_command(&routine.agent) {
             // Validate the agent config at sync time so a broken routine is skipped here rather than
             // failing at fire time; the crontab line itself no longer embeds the agent command.
-            Ok(_) => Some(format_routine_line(routine)),
+            Ok(_) => Some(
+                routine_schedules_for_crontab(routine)
+                    .iter()
+                    .map(|schedule| format_routine_line_for_schedule(routine, schedule))
+                    .collect::<Vec<_>>(),
+            ),
             Err(err) => {
                 log::warn!(
                     "routine sync: cannot load agent {:?} ({}) for routine {:?}; skipping",
@@ -125,6 +178,7 @@ fn build_block(store: &RoutineStore) -> String {
                 None
             }
         })
+        .flatten()
         .collect();
 
     if lines.is_empty() {
@@ -216,3 +270,7 @@ fn sync_routines_to_crontab_blocking(store: &RoutineStore) -> Result<(), SyncErr
 #[cfg(test)]
 #[path = "routines_sync_tests.rs"]
 mod routines_sync_tests;
+
+#[cfg(test)]
+#[path = "routines_sync_multi_cron_tests.rs"]
+mod routines_sync_multi_cron_tests;

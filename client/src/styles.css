@@ -65,6 +65,9 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* Any stray fixed-width child must scroll within its own container (`.table-wrap`,
+     `.app-nav`, etc.), never widen the page itself on a narrow viewport. */
+  overflow-x: hidden;
 }
 
 a {
@@ -2216,4 +2219,60 @@ textarea {
 .day-chip-flag {
   font-size: 10px;
   color: var(--warn);
+}
+
+/* ─── Responsive: narrow / touch viewports ───────────────────────────── */
+
+@media (max-width: 720px) {
+  .app-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .brand-sub {
+    display: none;
+  }
+
+  .header-right {
+    gap: 6px;
+  }
+
+  .machine-badge,
+  .icon-btn {
+    /* Touch target floor per platform guidance, not the 24px desktop hit-box. */
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .app-nav {
+    padding: 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .app-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-link {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 12px 10px;
+  }
+
+  .page {
+    padding: 16px 12px 40px;
+  }
+
+  .modal-hd,
+  .modal-body,
+  .modal-ft {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .notif-panel {
+    width: min(320px, 92vw);
+  }
 }

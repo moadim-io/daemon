@@ -273,3 +273,8 @@ fn claude_json_path_is_dot_claude_json_under_home() {
 
     assert_eq!(path, Some(std::path::PathBuf::from("/home/u/.claude.json")));
 }
+
+#[test]
+fn sanitize_repo_cache_name_empty_url_falls_back_to_repo() {
+    assert_eq!(super::sanitize_repo_cache_name(""), "repo");
+}

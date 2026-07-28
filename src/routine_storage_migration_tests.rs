@@ -381,6 +381,7 @@ fn migrate_routine_dirs_from_dir_logs_on_remove_failure() {
             "id = \"{id}\"\nschedule = \"@daily\"\ntitle = \"{title}\"\nagent = \"claude\"\nprompt = \"task\"\nenabled = true\n"
         );
         std::fs::write(legacy_dir.join("routine.toml"), &toml).unwrap();
+        std::fs::write(legacy_dir.join("schedule.cron"), "@daily\n").unwrap();
         std::fs::write(legacy_dir.join("prompt.md"), "legacy").unwrap();
 
         // Read-only legacy dir blocks removing its own children, so remove_dir_all fails.

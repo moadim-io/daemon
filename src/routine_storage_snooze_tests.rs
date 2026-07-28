@@ -106,16 +106,16 @@ fn load_routine_from_dir_missing_title_returns_none() {
 }
 
 #[test]
-fn load_routine_from_dir_missing_schedule_returns_none() {
-    // Covers L124: `schedule: toml.schedule?,` — a TOML with `title` and `agent` but
-    // no `schedule` field causes `load_routine_from_dir` to return `None`.
+fn load_routine_from_dir_requires_schedule_cron_sidecar() {
+    // A legacy routine.toml `schedule` is no longer a source of truth: the routine should load only
+    // when the tracked schedule.cron sidecar exists.
     with_override_home(|_home| {
-        let slug = "rs-no-schedule-zzz";
+        let slug = "rs-no-schedule-cron-zzz";
         let dir = crate::paths::routine_dir(slug);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "title = \"Rs No Schedule\"\nagent = \"claude\"\n",
+            "title = \"Rs No Schedule Cron\"\nagent = \"claude\"\nschedule = \"@daily\"\n",
         )
         .unwrap();
         assert!(load_routine_from_dir(slug).is_none());
@@ -124,17 +124,18 @@ fn load_routine_from_dir_missing_schedule_returns_none() {
 
 #[test]
 fn load_routine_from_dir_missing_agent_returns_none() {
-    // Covers L126: `agent: toml.agent?,` — a TOML with `title` and `schedule` but no
-    // `agent` field causes `load_routine_from_dir` to return `None`.
+    // Covers `agent: toml.agent?` — a TOML with title and schedule.cron but no `agent` field
+    // causes `load_routine_from_dir` to return `None`.
     with_override_home(|_home| {
         let slug = "rs-no-agent-zzz";
         let dir = crate::paths::routine_dir(slug);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "title = \"Rs No Agent\"\nschedule = \"@daily\"\n",
+            "title = \"Rs No Agent\"\n",
         )
         .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
         assert!(load_routine_from_dir(slug).is_none());
     });
 }

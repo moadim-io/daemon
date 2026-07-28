@@ -8,6 +8,34 @@ use super::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Minimal view of pre-sidecar `routine.toml` files that still carried the cron schedule.
+#[derive(Debug, Deserialize)]
+struct LegacyRoutineSchedule {
+    /// Legacy cron expression, used only to seed `schedule.cron` during directory migration.
+    schedule: Option<String>,
+}
+
+/// Seed a missing `schedule.cron` from a legacy `routine.toml` before loading a legacy directory.
+pub(crate) fn seed_schedule_cron_from_legacy_toml(routine_dir: &std::path::Path) {
+    let cron_path = routine_dir.join("schedule.cron");
+    if cron_path.exists() {
+        return;
+    }
+    let Some(schedule) = std::fs::read_to_string(routine_dir.join("routine.toml"))
+        .ok()
+        .and_then(|text| toml::from_str::<LegacyRoutineSchedule>(&text).ok())
+        .and_then(|legacy| legacy.schedule)
+    else {
+        return;
+    };
+    if let Err(err) = std::fs::write(&cron_path, format!("{}\n", schedule.trim())) {
+        log::warn!(
+            "migrate_routine_dirs: failed to seed {} from legacy routine.toml schedule: {err}",
+            cron_path.display()
+        );
+    }
+}
+
 /// Legacy scheduled-state TOML, superseded by the `scheduled.log` append-only file.
 ///
 /// Only used during startup migration: if `scheduled.local.toml` exists and `scheduled.log` does
@@ -151,6 +179,7 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
             continue;
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
+        seed_schedule_cron_from_legacy_toml(&entry.path());
         let Some(routine) = load_routine_from_dir(&dir_name) else {
             // A dir without a parsable routine.toml (e.g. a sync-created dir holding only run.sh)
             // carries no routine to migrate; the routine it shadows is healed from its own dir.

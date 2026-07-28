@@ -1,6 +1,6 @@
 #:schema ./routine.schema.json
 
-schedule = "30 9 * * 1-5"
+# schedule.cron (next to this file) holds the cron entry.
 title    = "My routine"
 agent    = "claude"
 prompt   = "Describe the task for the agent here."

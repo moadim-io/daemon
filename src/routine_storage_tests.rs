@@ -96,8 +96,8 @@ fn write_then_load_round_trips() {
         );
         let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
         assert!(
-            toml_text.contains("schedule = \"@daily\""),
-            "routine.toml must carry the authoritative schedule: {toml_text}"
+            !toml_text.contains("schedule"),
+            "routine.toml must not carry the schedule: {toml_text}"
         );
         assert!(
             !toml_text.contains("prompt"),
@@ -159,9 +159,10 @@ fn load_routine_from_dir_applies_defaults_for_absent_optional_fields() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "schedule = \"@daily\"\ntitle = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
+            "title = \"Rs Defaults Routine\"\nagent = \"claude\"\n",
         )
         .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
 
         let loaded = load_routine_from_dir(slug).unwrap();
         assert_eq!(loaded.id, slug, "absent id falls back to the dir name");
@@ -190,9 +191,10 @@ fn load_routine_falls_back_to_legacy_last_triggered_in_routine_toml() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "schedule = \"@daily\"\ntitle = \"Rs Legacy Trigger\"\nagent = \"claude\"\nlast_triggered_at = 777\n",
+            "title = \"Rs Legacy Trigger\"\nagent = \"claude\"\nlast_triggered_at = 777\n",
         )
         .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
         // No sidecar exists yet.
         assert!(!crate::paths::routine_state_path(slug).exists());
 
@@ -204,9 +206,9 @@ fn load_routine_falls_back_to_legacy_last_triggered_in_routine_toml() {
 }
 
 #[test]
-fn load_routine_prefers_routine_toml_schedule_over_cron_sidecar() {
-    // routine.toml is the authoritative schedule source; the schedule.cron mirror is not
-    // functional yet, so a diverging sidecar must lose.
+fn load_routine_ignores_legacy_toml_schedule_when_cron_sidecar_exists() {
+    // schedule.cron is the authoritative schedule source; a diverging legacy routine.toml schedule
+    // is ignored.
     with_override_home(|_home| {
         let slug = "rs-toml-schedule-wins-routine";
         let dir = crate::paths::routine_dir(slug);
@@ -218,15 +220,13 @@ fn load_routine_prefers_routine_toml_schedule_over_cron_sidecar() {
         .unwrap();
         std::fs::write(crate::paths::routine_cron_path(slug), "@weekly\n").unwrap();
 
-        assert_eq!(load_routine_from_dir(slug).unwrap().schedule, "@hourly");
+        assert_eq!(load_routine_from_dir(slug).unwrap().schedule, "@weekly");
     });
 }
 
 #[test]
-fn load_routine_falls_back_to_cron_sidecar_when_routine_toml_has_no_schedule() {
-    // Dirs written while the schedule lived only in schedule.cron keep loading until the next
-    // repersist restores the field in routine.toml. Comment lines are skipped when reading the
-    // sidecar.
+fn load_routine_reads_schedule_from_cron_sidecar() {
+    // The schedule lives in schedule.cron. Comment lines are skipped when reading the sidecar.
     with_override_home(|_home| {
         let slug = "rs-cron-fallback-routine";
         let dir = crate::paths::routine_dir(slug);
@@ -281,9 +281,10 @@ fn load_routine_ignores_unparsable_sidecar() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "schedule = \"@daily\"\ntitle = \"Rs Bad Sidecar\"\nagent = \"claude\"\n",
+            "title = \"Rs Bad Sidecar\"\nagent = \"claude\"\n",
         )
         .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
         std::fs::write(crate::paths::routine_state_path(slug), "= not valid toml =").unwrap();
 
         assert_eq!(
@@ -325,9 +326,10 @@ fn load_routine_ignores_unparsable_scheduled_log() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             crate::paths::routine_toml_path(slug),
-            "schedule = \"@daily\"\ntitle = \"Rs Bad Scheduled Sidecar\"\nagent = \"claude\"\n",
+            "title = \"Rs Bad Scheduled Sidecar\"\nagent = \"claude\"\n",
         )
         .unwrap();
+        std::fs::write(crate::paths::routine_cron_path(slug), "@daily\n").unwrap();
         std::fs::write(
             crate::paths::routine_scheduled_log_path(slug),
             "not a timestamp\n",

@@ -46,8 +46,8 @@ fn scratch_routines_dir() -> std::path::PathBuf {
     dir
 }
 
-/// Write `routine` to `{base}/{routine.id}/routine.toml` so the directory-aware reload in
-/// `svc_list`/`svc_get` loads it back, keyed by the `id` inside the file.
+/// Write `routine` to `{base}/{routine.id}/routine.toml` plus schedule.cron so the
+/// directory-aware reload in `svc_list`/`svc_get` loads it back, keyed by the `id` inside the file.
 ///
 /// The scan keys routines by the `id` field in `routine.toml` (the directory name is only the scan
 /// entry), so using the id as the dir name keeps fixtures with identical titles from colliding the
@@ -58,9 +58,8 @@ fn write_routine_to(base: &std::path::Path, routine: &Routine) {
     let dir = base.join(&routine.id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut toml = format!(
-        "id = \"{}\"\nschedule = \"{}\"\ntitle = \"{}\"\nagent = \"{}\"\nprompt = \"{}\"\nenabled = {}\ncreated_at = {}\nupdated_at = {}\nmachines = {:?}\ntags = {:?}\n",
+        "id = \"{}\"\ntitle = \"{}\"\nagent = \"{}\"\nprompt = \"{}\"\nenabled = {}\ncreated_at = {}\nupdated_at = {}\nmachines = {:?}\ntags = {:?}\n",
         routine.id,
-        routine.schedule,
         routine.title,
         routine.agent,
         routine.prompt,
@@ -78,6 +77,7 @@ fn write_routine_to(base: &std::path::Path, routine: &Routine) {
         }
     }
     std::fs::write(dir.join("routine.toml"), toml).unwrap();
+    std::fs::write(dir.join("schedule.cron"), format!("{}\n", routine.schedule)).unwrap();
 }
 
 #[test]

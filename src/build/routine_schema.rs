@@ -16,19 +16,15 @@ pub fn generate(manifest_dir: &str) {
     let routine_schema = json!({
         "$schema": "https://json-schema.org/draft-07/schema#",
         "title": "Routine",
-        "description": "A scheduled AI-agent task. Normally written and maintained by the daemon (one routine.toml per routine); this schema documents its on-disk shape and powers editor validation. Runtime trigger state lives in a gitignored state.local.toml sidecar, not here.",
+        "description": "A scheduled AI-agent task. Normally written and maintained by the daemon (one routine.toml plus one schedule.cron sidecar per routine); this schema documents routine.toml's on-disk shape and powers editor validation. Runtime trigger state lives in a gitignored state.local.toml sidecar, not here.",
         "type": "object",
-        "required": ["schedule", "title", "agent", "prompt"],
+        "required": ["title", "agent", "prompt"],
         "properties": {
             "id": {
                 "type": "string",
                 "description": "UUID v4 uniquely identifying the routine, stable across renames. Assigned by the daemon on create."
             },
-            "schedule": {
-                "type": "string",
-                "description": "Cron expression for when the routine runs, evaluated in the host's local system timezone (the OS crontab timezone), not UTC. Also mirrored into the sibling schedule.cron sidecar, which is not functional yet — this field stays authoritative.",
-                "examples": ["@hourly", "@daily", "30 9 * * 1-5"]
-            },
+
             "title": {
                 "type": "string",
                 "description": "Human name; slugified to name the workbench folder and tmux session."
@@ -108,7 +104,7 @@ pub fn generate(manifest_dir: &str) {
     let example_toml = concat!(
         "#:schema ./routine.schema.json\n",
         "\n",
-        "schedule = \"30 9 * * 1-5\"\n",
+        "# schedule.cron (next to this file) holds the cron entry.\n",
         "title    = \"My routine\"\n",
         "agent    = \"claude\"\n",
         "prompt   = \"Describe the task for the agent here.\"\n",

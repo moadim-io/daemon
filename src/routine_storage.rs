@@ -26,10 +26,7 @@ use crate::utils::atomic::atomic_write;
 struct RoutineToml {
     /// UUID that uniquely identifies this routine (stable across renames).
     id: Option<String>,
-    /// Cron expression. Authoritative: the daemon reads the schedule from here. It is also
-    /// mirrored into the tracked `schedule.cron` sidecar, which is not functional yet.
-    #[serde(default)]
-    schedule: Option<String>,
+
     /// Human name.
     title: Option<String>,
     /// Agent registry key.
@@ -234,7 +231,6 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
-        schedule: Some(routine.schedule.clone()),
         title: Some(routine.title.clone()),
         agent: Some(routine.agent.clone()),
         model: routine.model.clone(),
@@ -408,6 +404,10 @@ mod routine_storage_prompt_sidecar_tests;
 #[cfg(test)]
 #[path = "routine_storage_migration_tests.rs"]
 mod routine_storage_migration_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_schedule_cron_migration_tests.rs"]
+mod routine_storage_schedule_cron_migration_tests;
 
 #[cfg(test)]
 #[path = "routine_storage_prompt_file_migration_tests.rs"]

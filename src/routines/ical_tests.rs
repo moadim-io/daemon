@@ -51,16 +51,17 @@ fn scratch_dir() -> std::path::PathBuf {
     dir
 }
 
-/// Write `routine` to `{base}/{routine.id}/routine.toml` so the directory-aware reload loads it
-/// back keyed by the `id` inside the file.
+/// Write `routine` to `{base}/{routine.id}/routine.toml` plus schedule.cron so the
+/// directory-aware reload loads it back keyed by the `id` inside the file.
 fn write_routine_to(base: &std::path::Path, routine: &Routine) {
     let dir = base.join(&routine.id);
     std::fs::create_dir_all(&dir).unwrap();
     let toml = format!(
-        "id = \"{}\"\nschedule = \"{}\"\ntitle = \"{}\"\nagent = \"{}\"\nprompt = \"{}\"\nenabled = {}\ncreated_at = 0\nupdated_at = 0\nmachines = []\ntags = []\n",
-        routine.id, routine.schedule, routine.title, routine.agent, routine.prompt, routine.enabled,
+        "id = \"{}\"\ntitle = \"{}\"\nagent = \"{}\"\nprompt = \"{}\"\nenabled = {}\ncreated_at = 0\nupdated_at = 0\nmachines = []\ntags = []\n",
+        routine.id, routine.title, routine.agent, routine.prompt, routine.enabled,
     );
     std::fs::write(dir.join("routine.toml"), toml).unwrap();
+    std::fs::write(dir.join("schedule.cron"), format!("{}\n", routine.schedule)).unwrap();
 }
 
 #[test]

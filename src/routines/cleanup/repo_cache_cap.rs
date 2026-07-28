@@ -1,5 +1,5 @@
 //! Two safety valves for `{config_dir}/cache/`, the persistent local mirror cache
-//! [`crate::routines::command_repositories::clone_repository_stmts`] backs each routine's
+//! [`crate::routines::command::clone_repository_stmts`] backs each routine's
 //! declared `repositories` with (issue #466): nothing ever removed a mirror once cloned, so the
 //! cache grew unbounded as routines were deleted, edited to a new URL, or a URL was a one-off
 //! typo (issue #1425).

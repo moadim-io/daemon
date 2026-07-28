@@ -4,7 +4,7 @@
 )]
 
 use super::super::super::command::slugify;
-use super::super::super::model::{new_store, Routine};
+use super::super::super::model::{new_store, Repository, Routine};
 use super::super::runtime::MAX_RUNTIME_SECS;
 use super::super::ttl::MAX_TTL_SECS;
 use super::*;
@@ -98,4 +98,35 @@ fn max_runtime_for_returns_snapshot_value_when_present() {
 fn max_runtime_for_falls_back_to_cap_for_orphan_slug() {
     let snapshot: HashMap<String, u64> = HashMap::new();
     assert_eq!(max_runtime_for(&snapshot, "orphan"), MAX_RUNTIME_SECS);
+}
+
+#[test]
+fn snapshot_repo_cache_names_maps_every_referenced_repository() {
+    let store = new_store();
+    let repo = Repository {
+        repository: "https://example.com/a/b.git".into(),
+        branch: None,
+    };
+    store.lock().unwrap().insert(
+        "id".into(),
+        Routine {
+            repositories: vec![repo.clone()],
+            ..routine_with("My Routine", "*/10 * * * *", None)
+        },
+    );
+
+    let snapshot = snapshot_repo_cache_names(&store);
+    let expected = crate::paths::repo_cache_dir(&repo.repository)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let mut want = std::collections::HashSet::new();
+    want.insert(expected);
+    assert_eq!(snapshot, want);
+}
+
+#[test]
+fn snapshot_repo_cache_names_empty_store_is_empty() {
+    assert!(snapshot_repo_cache_names(&new_store()).is_empty());
 }

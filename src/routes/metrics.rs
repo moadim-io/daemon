@@ -53,6 +53,10 @@ struct MetricsSnapshot<'input> {
     active_sessions: usize,
     /// Total size in bytes of the workbench tree on disk.
     workbench_bytes: u64,
+    /// Total size in bytes of the repository mirror cache tree (`{config_dir}/cache/`) on disk —
+    /// never pruned before issue #1425, so previously invisible without walking the filesystem
+    /// by hand.
+    repo_cache_bytes: u64,
     /// Every run across every routine, live and historical (see
     /// [`crate::routines::svc_list_all_runs`]).
     runs: &'input [FleetRunSummary],
@@ -78,6 +82,7 @@ pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         machine: machine.as_str(),
         active_sessions: crate::routines::tmux_session_count(crate::routines::TMUX_SESSION_PREFIX),
         workbench_bytes: crate::routines::workbenches_total_bytes(),
+        repo_cache_bytes: crate::routines::repo_cache_total_bytes(),
         runs: &runs,
         cleanup_removed_total,
         cleanup_freed_bytes_total,
@@ -153,6 +158,13 @@ fn render(snapshot: &MetricsSnapshot<'_>) -> String {
     );
     let _ = writeln!(out, "# TYPE moadim_workbench_bytes gauge");
     let _ = writeln!(out, "moadim_workbench_bytes {}", snapshot.workbench_bytes);
+
+    let _ = writeln!(
+        out,
+        "# HELP moadim_repo_cache_bytes Total size in bytes of the repository mirror cache tree ({{config_dir}}/cache/) on disk."
+    );
+    let _ = writeln!(out, "# TYPE moadim_repo_cache_bytes gauge");
+    let _ = writeln!(out, "moadim_repo_cache_bytes {}", snapshot.repo_cache_bytes);
 
     render_runs_total(&mut out, snapshot.runs);
     render_run_duration_histogram(&mut out, snapshot.runs);

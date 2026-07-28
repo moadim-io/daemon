@@ -30,6 +30,7 @@ use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code
 mod counters;
 mod disk_cap;
 mod log_cap;
+mod repo_cache_cap;
 mod runtime;
 mod session;
 mod snapshot;
@@ -38,6 +39,7 @@ mod ttl;
 use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
 
 pub(crate) use counters::totals as cleanup_sweep_totals;
+pub(crate) use repo_cache_cap::total_bytes as repo_cache_total_bytes;
 pub(crate) use runtime::max_runtime_ceiling_secs;
 pub(crate) use session::tmux_session_alive as run_session_alive;
 pub(crate) use session::tmux_session_count;
@@ -323,7 +325,8 @@ fn reap_dir(
 ///
 /// Returns the count of workbenches removed and the total bytes freed. Safe to call repeatedly; it
 /// only ever touches directories whose run has ended. Also enforces the optional total-disk safety
-/// valve (see [`disk_cap::enforce`]) once the normal TTL reap above has run.
+/// valve (see [`disk_cap::enforce`]) once the normal TTL reap above has run, and sweeps the
+/// repository mirror cache under `{config_dir}/cache/` (see [`repo_cache_cap::sweep`], issue #1425).
 pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
     let ttls = snapshot::snapshot_ttls(store);
     let max_runtimes = snapshot::snapshot_max_runtimes(store);
@@ -376,9 +379,12 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
         &tmux_session_alive,
         &agent_log_finish_time,
     );
+    // Repository mirror cache (issue #1425): both its safety valves live behind one call — see
+    // [`repo_cache_cap::sweep`].
+    let repo_cache_stats = repo_cache_cap::sweep(store);
     let stats = ReapStats {
-        removed: ttl_stats.removed + cap_stats.removed,
-        freed_bytes: ttl_stats.freed_bytes + cap_stats.freed_bytes,
+        removed: ttl_stats.removed + cap_stats.removed + repo_cache_stats.removed,
+        freed_bytes: ttl_stats.freed_bytes + cap_stats.freed_bytes + repo_cache_stats.freed_bytes,
     };
     // Record this sweep for `moadim_cleanup_removed_total`/`moadim_cleanup_freed_bytes_total`
     // (see `counters`) — both the periodic background task and the on-demand `svc_cleanup` route

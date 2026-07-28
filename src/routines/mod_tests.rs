@@ -403,11 +403,18 @@ fn ensure_default_agents_writes_parsable_configs() {
     assert_eq!(codex.command, "codex");
     assert!(codex.args.contains(&"{prompt_file}".to_string()));
 
-    // hermes default parses and passes the prompt file as an argument
+    // hermes default parses and passes the prompt as a one-shot argument
     let hermes: AgentCommand =
         toml::from_str(&std::fs::read_to_string(dir.join("hermes.toml")).unwrap()).unwrap();
     assert_eq!(hermes.command, "hermes");
-    assert!(hermes.args.contains(&"{prompt_file}".to_string()));
+    assert_eq!(
+        hermes.args,
+        vec![
+            "-z".to_string(),
+            "{prompt}".to_string(),
+            "--ignore-rules".to_string()
+        ]
+    );
 
     // pi default parses and runs print mode against the composed prompt file
     let pi: AgentCommand =

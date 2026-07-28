@@ -127,6 +127,10 @@ fn pid_file_write_read_clear_roundtrip() {
         content.contains("*.local.*"),
         "gitignore must cover *.local.*"
     );
+    assert!(
+        content.contains(".compailed.cron"),
+        "gitignore must cover cron-union output"
+    );
     // Manually remove one pattern; a second write must restore it without
     // duplicating the patterns already present.
     std::fs::write(&gitignore, "*.pid\n*.log\n").unwrap();
@@ -135,6 +139,10 @@ fn pid_file_write_read_clear_roundtrip() {
     assert!(
         content.contains("*.local.*"),
         "missing pattern must be re-added"
+    );
+    assert!(
+        content.contains(".compailed.cron"),
+        "missing cron-union pattern must be re-added"
     );
     assert_eq!(
         content.matches("*.pid").count(),

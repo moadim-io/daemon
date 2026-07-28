@@ -1315,6 +1315,31 @@ textarea {
   font-size: 11px;
 }
 
+.group-hd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.group-hd-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.group-caret {
+  color: var(--text-faint);
+  font-size: 9px;
+  width: 8px;
+}
+
 .group-label {
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -1322,6 +1347,18 @@ textarea {
 
 .group-count {
   color: var(--text-faint);
+}
+
+.group-health-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.group-controls {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
 }
 
 .cell-schedule {
@@ -1537,6 +1574,11 @@ textarea {
 .health-badge.agent-missing {
   background: var(--err-bg);
   color: var(--err);
+}
+
+.health-badge.chip {
+  padding: 1px 5px;
+  font-size: 9px;
 }
 
 /* ─── Routines: enabled toggle switch ────────────────────────────────── */

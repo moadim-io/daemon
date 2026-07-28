@@ -510,3 +510,13 @@ equatable_if_let = "deny"
 # unlike the stable one, sorts in place without allocating a scratch buffer. The codebase is
 # already clean, so `deny` locks that in.
 stable_sort_primitive = "deny"
+# Reject a `match`/`if let` scrutinee that evaluates to a lock guard (`MutexGuard`,
+# `RwLockReadGuard`, etc.) or other type with a significant `Drop` side effect, since the guard
+# stays held for the scrutinee's temporary lifetime — which extends across every match arm, not
+# just the line it's read on. In a long-running daemon with routines and MCP handlers reading
+# shared state concurrently, that's a wider lock-hold window than the code appears to need,
+# raising contention and deadlock risk (e.g. against another lock taken inside an arm) that isn't
+# visible from the `match`'s shape alone. Binding the value to a `let` before the `match` (or
+# scoping the lock/read to just the data actually needed) makes the hold time match what's
+# written. The codebase is already clean, so `deny` locks that in.
+significant_drop_in_scrutinee = "deny"

@@ -5,9 +5,9 @@ pub const NAME: &str = "hermes";
 
 /// Default `hermes.toml` contents, written on startup when the file is absent.
 ///
-/// Runs `hermes exec` headless with the composed prompt file passed as an argument
-/// (`{prompt_file}`), mirroring the Codex default. Users can override the file under
-/// `~/.config/moadim/agents/hermes.toml` if their Hermes CLI expects a different invocation.
+/// Runs Hermes headless in one-shot mode with the composed prompt passed as an argument
+/// (`{prompt}`). Users can override the file under `~/.config/moadim/agents/hermes.toml`
+/// if their Hermes CLI expects a different invocation.
 pub const CONFIG: &str = r#"command = "hermes"
-args = ["exec", "{prompt_file}"]
+args = ["-z", "{prompt}", "--ignore-rules"]
 "#;

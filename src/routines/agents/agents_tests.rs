@@ -50,6 +50,21 @@ fn codex_default_config_enables_sandbox_network_access() {
 }
 
 #[test]
+fn hermes_default_config_uses_oneshot_prompt_argument() {
+    let cmd: AgentCommand =
+        toml::from_str(super::hermes::CONFIG).expect("hermes default config must be valid TOML");
+    assert_eq!(cmd.command, "hermes");
+    assert_eq!(
+        cmd.args,
+        vec![
+            "-z".to_string(),
+            "{prompt}".to_string(),
+            "--ignore-rules".to_string()
+        ]
+    );
+}
+
+#[test]
 fn load_agent_command_parses_a_valid_config() {
     // Happy path: a well-formed config resolves to an `AgentCommand` (Ok), unchanged from before.
     let agent_name = "load-agent-valid-zzz";

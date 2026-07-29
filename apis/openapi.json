@@ -1588,7 +1588,7 @@
           "consecutive_failures": {
             "type": "integer",
             "format": "int32",
-            "description": "Number of scheduled/manual runs that finished failed-or-unknown in a row, most recently\nfirst — reset to `0` the instant any run succeeds. Daemon-owned runtime state: persisted in\nthe gitignored `state.local.toml` sidecar, not `routine.toml`, mirroring\n[`Routine::power_saving`]. Counted by [`crate::routines::cleanup::circuit_breaker`] as each\nrun's outcome becomes durable; see [`Routine::failure_threshold`] and issue #521.",
+            "description": "Number of scheduled/manual runs that finished failed-or-unknown in a row, most recently\nfirst — reset to `0` the instant any run succeeds. Daemon-owned runtime state: persisted in\nthe gitignored `state.local.toml` sidecar, not `routine.toml`, mirroring\n[`Routine::power_saving`]. Counted by `crate::routines::cleanup::circuit_breaker` as each\nrun's outcome becomes durable; see [`Routine::failure_threshold`] and issue #521.",
             "minimum": 0
           },
           "created_at": {
@@ -1607,7 +1607,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "Consecutive failed-or-unknown-outcome runs after which this routine auto-disables — the\nopt-in failure circuit-breaker (issue #521). `None` or `0` opts out, preserving today's\nbehavior of retrying forever no matter how many times in a row a routine has failed; this is\nthe default so existing routines are unaffected. A \"failed\" run here is any [`RunStatus`]\nother than `Success`, including `Unknown` (session gone with no exit code — e.g. force-killed\nby the max-runtime watchdog): a routine that only ever hangs and gets killed is exactly the\nresource-wasting loop this breaker exists to stop. Tracked config, written to `routine.toml`\nlike [`Routine::ttl_secs`]/[`Routine::max_runtime_secs`]; unlike those two, `0` is a valid,\nmeaningful value here (opt-out) rather than a rejected one. See\n[`crate::routines::cleanup::circuit_breaker`] for where it's enforced.",
+            "description": "Consecutive failed-or-unknown-outcome runs after which this routine auto-disables — the\nopt-in failure circuit-breaker (issue #521). `None` or `0` opts out, preserving today's\nbehavior of retrying forever no matter how many times in a row a routine has failed; this is\nthe default so existing routines are unaffected. A \"failed\" run here is any [`RunStatus`]\nother than `Success`, including `Unknown` (session gone with no exit code — e.g. force-killed\nby the max-runtime watchdog): a routine that only ever hangs and gets killed is exactly the\nresource-wasting loop this breaker exists to stop. Tracked config, written to `routine.toml`\nlike [`Routine::ttl_secs`]/[`Routine::max_runtime_secs`]; unlike those two, `0` is a valid,\nmeaningful value here (opt-out) rather than a rejected one. See\n`crate::routines::cleanup::circuit_breaker` for where it's enforced.",
             "minimum": 0
           },
           "goal": {

@@ -1,16 +1,14 @@
 //! The failure circuit-breaker (issue #521): a routine that fails every scheduled fire otherwise
 //! keeps spawning a fresh agent session forever — on a `*/5` cron that is ~288 doomed sessions/day,
 //! burning CPU, disk, and API spend with no automatic backstop. This module tracks each routine's
-//! [`Routine::consecutive_failures`](crate::routines::model::Routine::consecutive_failures) and,
-//! once it reaches the routine's opt-in
-//! [`Routine::failure_threshold`](crate::routines::model::Routine::failure_threshold),
-//! auto-disables it through the same `enabled = false` path a user
+//! `Routine::consecutive_failures` and, once it reaches the routine's opt-in
+//! `Routine::failure_threshold`, auto-disables it through the same `enabled = false` path a user
 //! flipping the toggle off would use — so the very next crontab sync removes it, and no further
 //! sessions spawn.
 //!
 //! # Hook point: the TTL-reap `persist` closure, not `svc_list_runs`
 //!
-//! A run's outcome becomes knowable in two places: the on-demand `service_runs`
+//! A run's outcome becomes knowable in two places: the on-demand `svc_list_runs`
 //! listing (`svc_list_runs`/`run_summary`), computed fresh on every `GET .../runs` call straight
 //! from the workbench's `exit_code` file and tmux liveness; and the periodic TTL-reap sweep
 //! ([`super::cleanup_expired_workbenches`]'s `persist` closure), which already durably records the

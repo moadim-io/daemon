@@ -170,6 +170,20 @@ pub struct Routine {
     /// gitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`.
     #[serde(default)]
     pub power_saving: bool,
+    /// Number of scheduled/manual runs that finished failed-or-unknown in a row, most recently
+    /// first — reset to `0` the instant any run succeeds. Daemon-owned runtime state: persisted in
+    /// the gitignored `state.local.toml` sidecar, not `routine.toml`, mirroring
+    /// [`Routine::power_saving`]. Counted by [`crate::routines::cleanup::circuit_breaker`] as each
+    /// run's outcome becomes durable; see [`Routine::failure_threshold`] and issue #521.
+    #[serde(default)]
+    pub consecutive_failures: u32,
+    /// Human-readable reason this routine was auto-disabled by the failure circuit-breaker, or
+    /// `None` if it has never tripped one (or a user has since manually re-enabled it, which clears
+    /// this — see `svc_update`). Distinguishes an auto-disable from a user-initiated one: both flip
+    /// [`Routine::enabled`] to `false`, but only the former sets a reason. Daemon-owned runtime
+    /// state, persisted in `state.local.toml` alongside [`Routine::consecutive_failures`].
+    #[serde(default)]
+    pub auto_disabled_reason: Option<String>,
     /// How long (seconds) a finished run's workbench is retained before auto-cleanup removes it.
     /// Caps the cron-derived retention (`min(MAX_TTL_SECS, cron interval)`) lower; it can only
     /// shorten, never extend it. `None` uses the cron-derived value. Sessions still running are
@@ -185,6 +199,18 @@ pub struct Routine {
     /// zero when set; `0` is rejected by `svc_create`/`svc_update` (#233).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Consecutive failed-or-unknown-outcome runs after which this routine auto-disables — the
+    /// opt-in failure circuit-breaker (issue #521). `None` or `0` opts out, preserving today's
+    /// behavior of retrying forever no matter how many times in a row a routine has failed; this is
+    /// the default so existing routines are unaffected. A "failed" run here is any [`RunStatus`]
+    /// other than `Success`, including `Unknown` (session gone with no exit code — e.g. force-killed
+    /// by the max-runtime watchdog): a routine that only ever hangs and gets killed is exactly the
+    /// resource-wasting loop this breaker exists to stop. Tracked config, written to `routine.toml`
+    /// like [`Routine::ttl_secs`]/[`Routine::max_runtime_secs`]; unlike those two, `0` is a valid,
+    /// meaningful value here (opt-out) rather than a rejected one. See
+    /// [`crate::routines::cleanup::circuit_breaker`] for where it's enforced.
+    #[serde(default)]
+    pub failure_threshold: Option<u32>,
     /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
     /// Defaults to empty; each entry is trimmed and must be non-blank.
     #[serde(default)]

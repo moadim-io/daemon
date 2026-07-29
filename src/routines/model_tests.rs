@@ -78,6 +78,9 @@ fn make_routine(agent: &str) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -318,6 +321,9 @@ fn from_routine_populates_derived_fields() {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     };
     let resp = RoutineResponse::from_routine(routine);
     assert!(resp.schedule_description.is_some());
@@ -397,6 +403,9 @@ fn from_routine_counts_open_flags() {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     };
     let slug = slugify(&routine.title);
     crate::routines::flags::create_flag(

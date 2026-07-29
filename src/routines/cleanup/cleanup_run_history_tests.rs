@@ -33,6 +33,9 @@ fn make_routine(id: &str, title: &str) -> super::super::model::Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 

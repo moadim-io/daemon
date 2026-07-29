@@ -55,6 +55,9 @@ pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -74,6 +77,7 @@ pub(super) fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         max_runtime_secs: None,
         tags: vec![],
         env: std::collections::HashMap::new(),
+        failure_threshold: None,
     }
 }
 
@@ -129,6 +133,7 @@ fn svc_create_rejects_unknown_agent() {
             max_runtime_secs: None,
             tags: vec![],
             env: std::collections::HashMap::new(),
+            failure_threshold: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -160,6 +165,7 @@ fn svc_create_accepts_builtin_agent() {
             max_runtime_secs: None,
             tags: vec![],
             env: std::collections::HashMap::new(),
+            failure_threshold: None,
         },
     )
     .unwrap();
@@ -195,6 +201,7 @@ fn svc_create_rejects_blank_repository_url() {
                 max_runtime_secs: None,
                 tags: vec![],
                 env: std::collections::HashMap::new(),
+                failure_threshold: None,
             },
         );
         assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -228,6 +235,7 @@ fn svc_create_rejects_blank_repository_branch() {
             max_runtime_secs: None,
             tags: vec![],
             env: std::collections::HashMap::new(),
+            failure_threshold: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -261,6 +269,7 @@ fn svc_create_trims_repository_entries() {
             max_runtime_secs: None,
             tags: vec![],
             env: std::collections::HashMap::new(),
+            failure_threshold: None,
         },
     )
     .unwrap();

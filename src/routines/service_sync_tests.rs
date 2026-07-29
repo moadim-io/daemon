@@ -56,6 +56,9 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -100,6 +103,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 max_runtime_secs: None,
                 tags: vec![],
                 env: std::collections::HashMap::new(),
+                failure_threshold: None,
             },
         )
         .unwrap();
@@ -129,6 +133,7 @@ fn svc_create_rejects_goal_over_five_lines() {
             max_runtime_secs: None,
             tags: vec![],
             env: std::collections::HashMap::new(),
+            failure_threshold: None,
         },
     );
     match result {
@@ -160,6 +165,7 @@ fn svc_create_trims_and_persists_goal() {
                 max_runtime_secs: None,
                 tags: vec![],
                 env: std::collections::HashMap::new(),
+                failure_threshold: None,
             },
         )
         .unwrap();
@@ -207,6 +213,7 @@ fn svc_update_clears_goal_with_empty_string() {
                 max_runtime_secs: None,
                 tags: None,
                 env: None,
+                failure_threshold: None,
             },
         )
         .unwrap();
@@ -241,6 +248,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 max_runtime_secs: None,
                 tags: None,
                 env: None,
+                failure_threshold: None,
             },
         )
         .unwrap();

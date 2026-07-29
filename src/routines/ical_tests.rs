@@ -31,6 +31,9 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -472,27 +475,5 @@ fn truncation_marker_also_uses_tzid_dtstart_when_host_zone_known() {
     assert_eq!(count(&ics, "DTSTART;TZID=America/New_York:"), 3);
 }
 
-#[test]
-fn utc_offset_formats_per_rfc5545() {
-    assert_eq!(
-        format_utc_offset(chrono::FixedOffset::east_opt(0).unwrap()),
-        "+0000"
-    );
-    assert_eq!(
-        format_utc_offset(chrono::FixedOffset::east_opt(3 * 3600).unwrap()),
-        "+0300"
-    );
-    assert_eq!(
-        format_utc_offset(chrono::FixedOffset::west_opt(5 * 3600).unwrap()),
-        "-0500"
-    );
-    assert_eq!(
-        format_utc_offset(chrono::FixedOffset::east_opt(5 * 3600 + 30 * 60).unwrap()),
-        "+0530"
-    );
-    // A non-zero seconds component (some pre-1900 zones) appends a third HH:MM:SS group.
-    assert_eq!(
-        format_utc_offset(chrono::FixedOffset::east_opt(3 * 3600 + 25).unwrap()),
-        "+030025"
-    );
-}
+// `format_utc_offset` tests live in `ical_offset_tests.rs` (split out to keep this file under the
+// line cap).

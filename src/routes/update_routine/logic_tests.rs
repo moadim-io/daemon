@@ -20,6 +20,7 @@ fn make_update_req() -> UpdateRoutineRequest {
         max_runtime_secs: None,
         tags: None,
         env: None,
+        failure_threshold: None,
     }
 }
 

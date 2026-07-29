@@ -1,3 +1,6 @@
+//! `repersist_routines` tests, split out of `routine_storage_tests.rs` to keep that file under
+//! the repo's line-count gate.
+
 #![allow(
     clippy::missing_docs_in_private_items,
     reason = "test helpers and fixtures do not need doc comments"
@@ -5,13 +8,11 @@
 
 use super::*;
 use crate::routines::{slugify, Repository, Routine};
-
-fn scratch_dir(tag: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("moadim-rs-{tag}-{}", uuid::Uuid::new_v4()))
-}
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 fn with_override_home(body: impl FnOnce(&std::path::Path)) {
-    let home = scratch_dir("override-home-more");
+    let home = std::env::temp_dir().join(format!("moadim-rs-repersist-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
     let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
     // SAFETY: tests in this crate run single-threaded per binary.
@@ -63,29 +64,30 @@ fn make_routine(id: &str, title: &str) -> Routine {
 }
 
 #[test]
-fn write_routine_leaves_no_tmp_residue() {
+fn repersist_routines_recreates_missing_prompt_sidecar() {
     with_override_home(|_home| {
-        let id = "rs-no-residue-id";
-        let title = "Rs No Residue Routine";
+        let id = "rs-repersist-id";
+        let title = "Rs Repersist Routine";
         let slug = slugify(title);
         write_routine(&make_routine(id, title)).unwrap();
-        let residue = std::fs::read_dir(crate::paths::routine_dir(&slug))
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
-            .count();
-        assert_eq!(residue, 0, "atomic_write must leave no .tmp files behind");
-    });
-}
+        // Simulate the sync-only state: prompt.compiled.local.md and schedule.cron are gone.
+        std::fs::remove_file(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
+        std::fs::remove_file(crate::paths::routine_cron_path(&slug)).unwrap();
+        assert!(!crate::paths::routine_compiled_prompt_path(&slug).exists());
+        assert!(!crate::paths::routine_cron_path(&slug).exists());
 
-#[test]
-fn write_routine_errors_when_schedule_cron_is_a_directory() {
-    with_override_home(|_home| {
-        let title = "Rs Cron Dir Failure";
-        let slug = slugify(title);
-        std::fs::create_dir_all(crate::paths::routine_cron_path(&slug)).unwrap();
+        let mut map = HashMap::new();
+        map.insert(id.to_string(), make_routine(id, title));
+        let store = Arc::new(Mutex::new(map));
+        repersist_routines(&store);
 
-        let err = write_routine(&make_routine("rs-cron-dir-failure", title)).unwrap_err();
-        assert!(err.to_string().contains("directory") || err.to_string().contains("exists"));
+        assert!(
+            crate::paths::routine_compiled_prompt_path(&slug).exists(),
+            "repersist should recreate the prompt sidecar"
+        );
+        assert!(
+            crate::paths::routine_cron_path(&slug).exists(),
+            "repersist should recreate the cron sidecar"
+        );
     });
 }

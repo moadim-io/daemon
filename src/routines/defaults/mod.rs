@@ -86,8 +86,11 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        consecutive_failures: 0,
+        auto_disabled_reason: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        failure_threshold: None,
         tags: Vec::new(),
         env: std::collections::HashMap::new(),
     }
@@ -150,8 +153,15 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         skip_runs: cur.skip_runs,
         // Power saving is daemon/policy-owned, not spec-derived: carry it over like snooze state.
         power_saving: cur.power_saving,
+        // Circuit-breaker runtime state is daemon-owned but not spec-derived either: carry it over
+        // like power saving, so a reconcile doesn't silently clear an in-progress failure streak or
+        // an auto-disable reason.
+        consecutive_failures: cur.consecutive_failures,
+        auto_disabled_reason: cur.auto_disabled_reason.clone(),
         ttl_secs: cur.ttl_secs,
         max_runtime_secs: cur.max_runtime_secs,
+        // The circuit-breaker threshold is user-owned, like `tags`: never overridden by the spec.
+        failure_threshold: cur.failure_threshold,
         // Tags are user-owned, like `enabled`: never overridden by the spec.
         tags: cur.tags.clone(),
         // Env vars are user-owned, like `tags`: never overridden by the spec.

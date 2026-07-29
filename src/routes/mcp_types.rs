@@ -112,6 +112,9 @@ pub(super) struct UpdateRoutineInput {
     /// New max runtime (seconds) for a single run before the watchdog kills it, or `None` to keep
     /// the existing value. Must be greater than zero when set; `0` is rejected (#233).
     pub(super) max_runtime_secs: Option<u64>,
+    /// New failure-circuit-breaker threshold, or `None` to keep the existing value. `Some(0)`
+    /// explicitly opts back out (#521); unlike `ttl_secs`/`max_runtime_secs`, `0` is accepted here.
+    pub(super) failure_threshold: Option<u32>,
     /// New tags list, or `None` to keep the existing value.
     pub(super) tags: Option<Vec<String>>,
     /// New tracked `[env]` map (replaces the whole map), or `None` to keep the existing value.

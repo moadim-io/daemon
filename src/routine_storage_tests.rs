@@ -56,6 +56,9 @@ fn make_routine(id: &str, title: &str) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -466,35 +469,7 @@ fn migrate_routine_dirs_moves_legacy_uuid_dir_to_slug() {
     });
 }
 
-#[test]
-fn repersist_routines_recreates_missing_prompt_sidecar() {
-    with_override_home(|_home| {
-        let id = "rs-repersist-id";
-        let title = "Rs Repersist Routine";
-        let slug = slugify(title);
-        write_routine(&make_routine(id, title)).unwrap();
-        // Simulate the sync-only state: prompt.compiled.local.md and schedule.cron are gone.
-        std::fs::remove_file(crate::paths::routine_compiled_prompt_path(&slug)).unwrap();
-        std::fs::remove_file(crate::paths::routine_cron_path(&slug)).unwrap();
-        assert!(!crate::paths::routine_compiled_prompt_path(&slug).exists());
-        assert!(!crate::paths::routine_cron_path(&slug).exists());
-
-        let mut map = HashMap::new();
-        map.insert(id.to_string(), make_routine(id, title));
-        let store = Arc::new(Mutex::new(map));
-        repersist_routines(&store);
-
-        assert!(
-            crate::paths::routine_compiled_prompt_path(&slug).exists(),
-            "repersist should recreate the prompt sidecar"
-        );
-        assert!(
-            crate::paths::routine_cron_path(&slug).exists(),
-            "repersist should recreate the cron sidecar"
-        );
-    });
-}
-
-// Gitignore-reconciliation tests live in `routine_storage_gitignore_tests.rs`, and `[env]`
-// table / `routine.local.toml` sidecar tests live in `routine_storage_env_tests.rs` (both split
-// out to keep this file under the line cap).
+// Gitignore-reconciliation tests live in `routine_storage_gitignore_tests.rs`, `[env]`
+// table / `routine.local.toml` sidecar tests live in `routine_storage_env_tests.rs`, and
+// `repersist_routines` tests live in `routine_storage_repersist_tests.rs` (all split out to keep
+// this file under the line cap).

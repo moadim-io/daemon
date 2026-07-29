@@ -101,8 +101,11 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         snoozed_until: runtime_state.snoozed_until,
         skip_runs: runtime_state.skip_runs,
         power_saving: runtime_state.power_saving,
+        consecutive_failures: runtime_state.consecutive_failures,
+        auto_disabled_reason: runtime_state.auto_disabled_reason,
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
+        failure_threshold: toml.failure_threshold,
         tags: toml.tags,
         env: toml.env,
     })

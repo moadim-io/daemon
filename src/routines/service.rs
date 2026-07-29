@@ -194,8 +194,13 @@ pub fn svc_create(
         // Power saving is system-driven, never settable via create/update — see
         // `svc_set_power_saving`.
         power_saving: false,
+        // A brand-new routine has no run history yet; the circuit-breaker state (like
+        // `power_saving`) starts clean regardless of `failure_threshold`.
+        consecutive_failures: 0,
+        auto_disabled_reason: None,
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
+        failure_threshold: req.failure_threshold,
         tags,
         env: req.env,
     };

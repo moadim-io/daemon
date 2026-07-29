@@ -56,6 +56,9 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -323,6 +326,7 @@ fn svc_create_syncs_crontab_on_success() {
                 max_runtime_secs: None,
                 tags: vec![],
                 env: std::collections::HashMap::new(),
+                failure_threshold: None,
             },
         )
         .unwrap();
@@ -359,6 +363,7 @@ fn svc_update_syncs_crontab_on_success() {
                 max_runtime_secs: None,
                 tags: None,
                 env: None,
+                failure_threshold: None,
             },
         )
         .unwrap();

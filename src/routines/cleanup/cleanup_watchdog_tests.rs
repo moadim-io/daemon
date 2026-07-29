@@ -310,6 +310,9 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         ttl_secs,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 

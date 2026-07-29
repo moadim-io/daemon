@@ -32,6 +32,9 @@ fn make_routine(id: &str) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -119,6 +122,7 @@ fn svc_create_invalid_cron_rejected() {
         max_runtime_secs: None,
         tags: vec![],
         env: std::collections::HashMap::new(),
+        failure_threshold: None,
     };
     assert!(svc_create(&store, req).is_err());
 }
@@ -142,6 +146,7 @@ fn svc_create_update_delete_lifecycle() {
             max_runtime_secs: None,
             tags: vec![],
             env: std::collections::HashMap::new(),
+            failure_threshold: None,
         },
     )
     .unwrap();
@@ -170,6 +175,7 @@ fn svc_create_update_delete_lifecycle() {
             max_runtime_secs: None,
             tags: None,
             env: None,
+            failure_threshold: None,
         },
     )
     .unwrap();
@@ -199,6 +205,7 @@ fn svc_update_not_found() {
         max_runtime_secs: None,
         tags: None,
         env: None,
+        failure_threshold: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -224,6 +231,7 @@ fn svc_update_invalid_cron_rejected() {
         max_runtime_secs: None,
         tags: None,
         env: None,
+        failure_threshold: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

@@ -128,8 +128,12 @@ fn pid_file_write_read_clear_roundtrip() {
         "gitignore must cover *.local.*"
     );
     assert!(
-        content.contains(".compailed.cron"),
+        content.contains("schedule.compailed.cron"),
         "gitignore must cover cron-union output"
+    );
+    assert!(
+        content.contains(".compailed.cron"),
+        "gitignore must keep covering legacy cron-union output"
     );
     // Manually remove one pattern; a second write must restore it without
     // duplicating the patterns already present.
@@ -141,8 +145,12 @@ fn pid_file_write_read_clear_roundtrip() {
         "missing pattern must be re-added"
     );
     assert!(
-        content.contains(".compailed.cron"),
+        content.contains("schedule.compailed.cron"),
         "missing cron-union pattern must be re-added"
+    );
+    assert!(
+        content.contains(".compailed.cron"),
+        "missing legacy cron-union pattern must be re-added"
     );
     assert_eq!(
         content.matches("*.pid").count(),

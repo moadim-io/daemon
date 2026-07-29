@@ -133,10 +133,14 @@ fn write_compailed_cron_sidecar(routine: &Routine, schedules: &[String]) {
     let slug = slugify(&routine.title);
     let dir = crate::paths::routine_dir(&slug);
     let path = crate::paths::routine_compailed_cron_path(&slug);
+    let legacy_path = dir.join(".compailed.cron");
     let mut text = schedules.join("\n");
     text.push('\n');
     let _ = crate::utils::fs_perms::create_private_dir_all(&dir);
     let _ = std::fs::write(&path, text);
+    if legacy_path != path && legacy_path.exists() {
+        let _ = std::fs::remove_file(legacy_path);
+    }
 }
 
 /// Build the full routines block from the enabled managed routines in `store`.

@@ -51,6 +51,7 @@ fn build_block_reads_multiple_crons_from_schedule_sidecar_and_unions_redundant_e
         "# human-edited extra fires\n*/10 * * * *\n*/20 * * * *\n5 9 * * 1-5\n",
     )
     .unwrap();
+    std::fs::write(routine_dir.join(".compailed.cron"), "stale compiled cron\n").unwrap();
 
     let store = new_store();
     store.lock().unwrap().insert(
@@ -74,6 +75,10 @@ fn build_block_reads_multiple_crons_from_schedule_sidecar_and_unions_redundant_e
     assert_eq!(
         std::fs::read_to_string(crate::paths::routine_compailed_cron_path(&slug)).unwrap(),
         "*/10 * * * *\n5 9 * * 1-5\n"
+    );
+    assert!(
+        !routine_dir.join(".compailed.cron").exists(),
+        "legacy hidden cron-union sidecar should be removed"
     );
     assert_eq!(
         std::fs::read_to_string(routine_dir.join("schedule.cron")).unwrap(),

@@ -66,6 +66,8 @@ jobs:
     # make this job skip too.
     if: always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped') && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ env.TAG }}
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -94,3 +96,57 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG }}
           body_path: release-notes.md
+
+  # Cross-compiled binary archives attached to the release created above, so `cargo binstall
+  # moadim` and users without a Rust toolchain have a prebuilt executable to download instead of
+  # `cargo install`'s from-source compile (#329). `cargo build --release` alone already embeds the
+  # UI: build.rs falls back to the committed prebuilt.html verbatim whenever pnpm isn't installed
+  # (see prebuilt.yml's header comment), which is exactly this job's case, so no extra UI-build
+  # step is needed here.
+  #
+  # Unix-only, matching the daemon itself (see #187's tmux/crontab dependency). Linux aarch64 is a
+  # nice-to-have per #329 and left for later — the three targets below cover the common case.
+  build-binaries:
+    name: Build binary (${{ matrix.target }})
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package archive and checksum
+        id: package
+        run: |
+          VERSION=${TAG#v}
+          ARCHIVE="moadim-${VERSION}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" moadim
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256

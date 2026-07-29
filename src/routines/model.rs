@@ -173,7 +173,7 @@ pub struct Routine {
     /// Number of scheduled/manual runs that finished failed-or-unknown in a row, most recently
     /// first — reset to `0` the instant any run succeeds. Daemon-owned runtime state: persisted in
     /// the gitignored `state.local.toml` sidecar, not `routine.toml`, mirroring
-    /// [`Routine::power_saving`]. Counted by [`crate::routines::cleanup::circuit_breaker`] as each
+    /// [`Routine::power_saving`]. Counted by `crate::routines::cleanup::circuit_breaker` as each
     /// run's outcome becomes durable; see [`Routine::failure_threshold`] and issue #521.
     #[serde(default)]
     pub consecutive_failures: u32,
@@ -208,7 +208,7 @@ pub struct Routine {
     /// resource-wasting loop this breaker exists to stop. Tracked config, written to `routine.toml`
     /// like [`Routine::ttl_secs`]/[`Routine::max_runtime_secs`]; unlike those two, `0` is a valid,
     /// meaningful value here (opt-out) rather than a rejected one. See
-    /// [`crate::routines::cleanup::circuit_breaker`] for where it's enforced.
+    /// `crate::routines::cleanup::circuit_breaker` for where it's enforced.
     #[serde(default)]
     pub failure_threshold: Option<u32>,
     /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).

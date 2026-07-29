@@ -263,6 +263,14 @@ describe("fromRoutine", () => {
     const later = new Date(atTen().getTime() + 3_600_000);
     expect(fromRoutine(routine, later).snoozed).toBe(false);
   });
+
+  it("carries the failure circuit-breaker's auto-disable reason (issue #521)", () => {
+    const tripped = makeRoutine({ enabled: false, auto_disabled_reason: "5 consecutive failures" });
+    expect(fromRoutine(tripped, atTen()).autoDisabledReason).toBe("5 consecutive failures");
+
+    const manuallyOff = makeRoutine({ enabled: false, auto_disabled_reason: null });
+    expect(fromRoutine(manuallyOff, atTen()).autoDisabledReason).toBeUndefined();
+  });
 });
 
 describe("sourcesOf", () => {
@@ -278,10 +286,25 @@ describe("sourcesOf", () => {
 // ── NEEDS ATTENTION triage ──────────────────────────────────────────────────
 
 describe("attentionReason", () => {
-  it("skips disabled even when broken", () => {
-    // A disabled entity is intentional, never flagged — even with every fault.
+  it("skips a manually-disabled entity even when broken", () => {
+    // A manually-disabled entity is intentional, never flagged — even with every fault.
     const s = { ...src("routine", "off", "not a cron", false), machinesEmpty: true, agentRegistered: false };
     expect(attentionReason(s, atTen())).toBeUndefined();
+  });
+
+  it("an auto-disabled entity (failure circuit-breaker, #521) is always flagged", () => {
+    const s = { ...src("routine", "off", "*/5 * * * *", false), autoDisabledReason: "5 consecutive failures" };
+    expect(attentionReason(s, atTen())).toBe("auto-disabled");
+  });
+
+  it("auto-disabled outranks every other fault", () => {
+    const s = {
+      ...src("routine", "off", "not a cron", false),
+      machinesEmpty: true,
+      agentRegistered: false,
+      autoDisabledReason: "5 consecutive failures",
+    };
+    expect(attentionReason(s, atTen())).toBe("auto-disabled");
   });
 
   it("healthy is undefined", () => {
@@ -345,6 +368,18 @@ describe("attentionItems", () => {
     expect(items[1]?.label).toBe("zeta-dormant");
     expect(items[2]?.reason).toBe("dead-schedule");
     expect(items[3]?.reason).toBe("agent-unregistered");
+  });
+
+  it("auto-disabled outranks dormant, dead-schedule, and agent-unregistered", () => {
+    const dormant = { ...src("routine", "dormant", "*/5 * * * *", true), machinesEmpty: true };
+    const autoOff = {
+      ...src("routine", "auto-off", "*/5 * * * *", false),
+      autoDisabledReason: "5 consecutive failures",
+    };
+    const items = attentionItems([dormant, autoOff], atTen());
+    expect(items[0]?.reason).toBe("auto-disabled");
+    expect(items[0]?.label).toBe("auto-off");
+    expect(items[1]?.reason).toBe("dormant");
   });
 
   it("carries the flag count for the has-open-flags reason", () => {

@@ -78,6 +78,17 @@ describe("StatsBar", () => {
     expect(tileValue("UNREGISTERED AGENT")).toBe("1");
   });
 
+  it("counts auto-disabled routines separately from manually-disabled ones (issue #521)", () => {
+    renderBar([
+      routine("auto-off", false, { auto_disabled_reason: "5 consecutive failures" }),
+      routine("manual-off", false),
+      routine("on", true),
+    ]);
+    expect(tileValue("DISABLED")).toBe("2");
+    expect(tileValue("AUTO-DISABLED")).toBe("1");
+    expect(screen.getByText("AUTO-DISABLED").closest("button")).toHaveClass("has-auto-disabled");
+  });
+
   it("applies a has-* class only when its tile's count is non-zero", () => {
     renderBar([routine("a", true, { machines: [] })]);
     expect(screen.getByText("DORMANT").closest("button")).toHaveClass("has-dormant");

@@ -356,6 +356,7 @@ describe("routineState — groupHealthCounts", () => {
     const counts = groupHealthCounts([], now());
     expect(counts.get("healthy")).toBe(0);
     expect(counts.get("snoozed")).toBe(0);
-    expect(counts.size).toBe(7);
+    expect(counts.get("auto-disabled")).toBe(0);
+    expect(counts.size).toBe(8);
   });
 });

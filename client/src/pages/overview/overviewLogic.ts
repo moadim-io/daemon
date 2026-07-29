@@ -43,6 +43,8 @@ export interface SchedSource {
   flagCount: number;
   /** Whether scheduled fires are currently suppressed (snoozed or skip-runs active). */
   snoozed: boolean;
+  /** The failure circuit-breaker's reason string (issue #521) when this entity was auto-disabled. */
+  autoDisabledReason?: string;
 }
 
 /** Aggregate counts shown as the KPI tile row. */
@@ -70,17 +72,24 @@ export interface UpcomingRun {
 }
 
 /** Why an enabled entity needs attention, in triage priority order (lower = higher priority). */
-export type AttentionReason = "dormant" | "dead-schedule" | "agent-unregistered" | "has-open-flags";
+export type AttentionReason =
+  | "auto-disabled"
+  | "dormant"
+  | "dead-schedule"
+  | "agent-unregistered"
+  | "has-open-flags";
 
 const ATTENTION_RANK: Record<AttentionReason, number> = {
-  dormant: 0,
-  "dead-schedule": 1,
-  "agent-unregistered": 2,
-  "has-open-flags": 3,
+  "auto-disabled": 0,
+  dormant: 1,
+  "dead-schedule": 2,
+  "agent-unregistered": 3,
+  "has-open-flags": 4,
 };
 
 /** Short uppercase badge label for the ISSUE column. */
 export const ATTENTION_BADGE: Record<AttentionReason, string> = {
+  "auto-disabled": "AUTO-DISABLED",
   dormant: "DORMANT",
   "dead-schedule": "DEAD SCHEDULE",
   "agent-unregistered": "AGENT MISSING",
@@ -89,6 +98,7 @@ export const ATTENTION_BADGE: Record<AttentionReason, string> = {
 
 /** Human explanation of the operational consequence. */
 export const ATTENTION_DETAIL: Record<AttentionReason, string> = {
+  "auto-disabled": "the failure circuit-breaker disabled this — investigate and re-enable",
   dormant: "assigned to no machine — fires nowhere",
   "dead-schedule": "schedule has no future fire — never runs again",
   "agent-unregistered": "agent not registered — every run errors",
@@ -110,13 +120,13 @@ function compareLabel(a: string, b: string): number {
 }
 
 /**
- * The single most fundamental fault for an enabled `source`, or `undefined`
- * when it is healthy. Disabled entities are intentional and never flagged.
- * Faults are checked in priority order so each entity reports exactly one
- * reason.
+ * The single most fundamental fault for `source`, or `undefined` when it is healthy. A
+ * manually-disabled entity is intentional and never flagged; an *auto*-disabled one (the
+ * failure circuit-breaker, issue #521, tripped) is the opposite of intentional and always is.
+ * Faults are checked in priority order so each entity reports exactly one reason.
  */
 export function attentionReason(source: SchedSource, now: Date): AttentionReason | undefined {
-  if (!source.enabled) return undefined;
+  if (!source.enabled) return source.autoDisabledReason !== undefined ? "auto-disabled" : undefined;
   if (source.machinesEmpty) return "dormant";
   if (nextFireAfterAny(scheduleList(source), now) === undefined) return "dead-schedule";
   if (source.agentRegistered === false) return "agent-unregistered";
@@ -220,6 +230,7 @@ export function fromRoutine(routine: RoutineResponse, now: Date): SchedSource {
     agentRegistered: routine.agent_registered,
     flagCount: routine.flag_count,
     snoozed: isSnoozed(routine, now),
+    autoDisabledReason: routine.auto_disabled_reason ?? undefined,
   };
 }
 

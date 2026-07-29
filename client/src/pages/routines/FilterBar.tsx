@@ -16,6 +16,7 @@ const STATUS_OPTIONS: [RoutineStatusFacet, string][] = [
 	["all", "All"],
 	["enabled", "Enabled"],
 	["disabled", "Disabled"],
+	["auto-disabled", "Auto-disabled"],
 	["dormant", "Dormant"],
 	["due", "Due soon"],
 	["snoozed", "Snoozed"],

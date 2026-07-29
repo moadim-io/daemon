@@ -14,6 +14,7 @@ export function StatsBar({ routines, now, active, onStatus }: StatsBarProps) {
   const total = routines.length;
   const enabled = routines.filter((r) => r.enabled).length;
   const disabled = total - enabled;
+  const autoDisabled = routines.filter((r) => !r.enabled && r.auto_disabled_reason != null).length;
   const dueSoon = routines.filter(
     (r) => r.enabled && !isRoutineSnoozed(r, now) && firesWithin(r.schedule, now, DUE_SOON_WINDOW_MS),
   ).length;
@@ -26,6 +27,7 @@ export function StatsBar({ routines, now, active, onStatus }: StatsBarProps) {
     ["all", "TOTAL", total, ""],
     ["enabled", "ENABLED", enabled, ""],
     ["disabled", "DISABLED", disabled, ""],
+    ["auto-disabled", "AUTO-DISABLED", autoDisabled, autoDisabled > 0 ? "has-auto-disabled" : ""],
     ["dormant", "DORMANT", dormant, dormant > 0 ? "has-dormant" : ""],
     ["due", "DUE SOON", dueSoon, ""],
     ["snoozed", "SNOOZED", snoozed, ""],

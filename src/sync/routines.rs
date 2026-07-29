@@ -117,15 +117,18 @@ fn compailed_schedules_for_crontab(routine: &Routine, pure_schedules: &[String])
         return vec![routine.schedule.clone()];
     }
     let refs: Vec<&str> = schedules.iter().map(String::as_str).collect();
-    #[allow(
-        clippy::expect_used,
-        reason = "each entry was validated by validate_cron before reaching cron-union"
-    )]
-    cron_union::union(refs)
-        .expect("validated cron schedules compile through cron-union")
-        .iter()
-        .map(ToString::to_string)
-        .collect()
+    match cron_union::union(refs) {
+        Ok(union) => union.iter().map(ToString::to_string).collect(),
+        Err(err) => {
+            log::warn!(
+                "routine sync: cron-union could not compile schedules for routine {:?}: {}; \
+                 using validated schedules without dedupe",
+                routine.id,
+                err
+            );
+            schedules
+        }
+    }
 }
 
 /// Write the gitignored cron-union output sidecar used by the OS crontab.

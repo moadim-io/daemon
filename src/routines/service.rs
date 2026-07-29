@@ -30,6 +30,34 @@ use service_validate::{
     validate_repositories, validate_tags, validate_title,
 };
 
+/// Validate and normalize all schedules, requiring at least one non-blank expression.
+pub(super) fn validate_and_normalize_schedules(
+    schedules: &[String],
+) -> Result<Vec<String>, AppError> {
+    if schedules.is_empty() {
+        return Err(AppError::BadRequest(
+            "at least one schedule is required".to_string(),
+        ));
+    }
+    let mut normalized = Vec::with_capacity(schedules.len());
+    for schedule in schedules {
+        reject_blank("schedule", schedule)?;
+        validate_cron(schedule)?;
+        normalized.push(normalize_schedule(schedule));
+    }
+    Ok(normalized)
+}
+
+/// Return the minimum cron-derived ceiling across every configured schedule.
+pub(super) fn min_schedule_ceiling(schedules: &[String], ceiling_for: impl Fn(&str) -> u64) -> u64 {
+    schedules
+        .iter()
+        .map(String::as_str)
+        .map(ceiling_for)
+        .min()
+        .unwrap_or(u64::MAX)
+}
+
 /// Sort key placing routines with a repository before those without, then by
 /// the primary (first) repository URL alphabetically (case-insensitive).
 fn repo_sort_key(routine: &Routine) -> (bool, String) {
@@ -136,21 +164,25 @@ pub fn svc_create(
     store: &RoutineStore,
     req: CreateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
-    validate_cron(&req.schedule)?;
+    let input_schedules = if req.schedules.is_empty() {
+        vec![req.schedule.clone()]
+    } else {
+        req.schedules.clone()
+    };
+    let schedules = validate_and_normalize_schedules(&input_schedules)?;
     reject_blank("title", &req.title)?;
     validate_prompt(&req.prompt)?;
     reject_zero_secs("ttl_secs", req.ttl_secs)?;
     reject_zero_secs("max_runtime_secs", req.max_runtime_secs)?;
-    let ceiling_schedule = normalize_schedule(&req.schedule);
     reject_over_ceiling(
         "ttl_secs",
         req.ttl_secs,
-        ttl_ceiling_secs(&ceiling_schedule),
+        min_schedule_ceiling(&schedules, ttl_ceiling_secs),
     )?;
     reject_over_ceiling(
         "max_runtime_secs",
         req.max_runtime_secs,
-        max_runtime_ceiling_secs(&ceiling_schedule),
+        min_schedule_ceiling(&schedules, max_runtime_ceiling_secs),
     )?;
     validate_title(&req.title)?;
     validate_agent(&req.agent)?;
@@ -171,7 +203,8 @@ pub fn svc_create(
     let now = now_secs();
     let routine = Routine {
         id: Uuid::new_v4().to_string(),
-        schedule: normalize_schedule(&req.schedule),
+        schedule: schedules[0].clone(),
+        schedules,
         // Trim before persisting so a padded title (`"  Deploy  "`) is not rendered
         // verbatim into the workbench `CLAUDE.md` disclosure, the iCal `SUMMARY`, and
         // the UI rows. Mirrors `validate_repositories`, which already normalizes the
@@ -322,6 +355,10 @@ pub use service_trigger_flags::{svc_create_flag, svc_list_flags, svc_resolve_fla
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
+
+#[cfg(test)]
+#[path = "service_multi_schedule_tests.rs"]
+mod service_multi_schedule_tests;
 
 #[cfg(test)]
 #[path = "service_list_tests.rs"]

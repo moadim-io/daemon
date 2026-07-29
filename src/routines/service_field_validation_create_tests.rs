@@ -36,6 +36,7 @@ pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -66,6 +67,7 @@ pub(super) fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),
@@ -122,6 +124,7 @@ fn svc_create_rejects_unknown_agent() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Unknown Agent ZZZ".into(),
             agent: "no-such-agent-zzz".into(),
             prompt: "p".into(),
@@ -154,6 +157,7 @@ fn svc_create_accepts_builtin_agent() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: title.into(),
             agent: "claude".into(),
             prompt: "p".into(),
@@ -187,6 +191,7 @@ fn svc_create_rejects_blank_repository_url() {
             CreateRoutineRequest {
                 model: None,
                 schedule: "@daily".into(),
+                schedules: vec![],
                 title: "Svc Create Blank Repo ZZZ".into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
@@ -221,6 +226,7 @@ fn svc_create_rejects_blank_repository_branch() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Blank Branch ZZZ".into(),
             agent: "claude".into(),
             prompt: "p".into(),
@@ -255,6 +261,7 @@ fn svc_create_trims_repository_entries() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: title.into(),
             agent: "claude".into(),
             prompt: "p".into(),

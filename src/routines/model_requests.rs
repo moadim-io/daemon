@@ -9,9 +9,12 @@ use super::{bool_true, Repository};
 /// Request body for creating a new routine.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct CreateRoutineRequest {
-    /// Cron expression for the new routine. Evaluated in the host's local system
-    /// timezone (the OS crontab timezone), not UTC.
+    /// Primary cron expression for the new routine. Evaluated in the host's local system
+    /// timezone (the OS crontab timezone), not UTC. Kept for backward-compatible clients.
     pub schedule: String,
+    /// All cron expressions for the new routine. When provided, the first entry becomes `schedule`.
+    #[serde(default)]
+    pub schedules: Vec<String>,
     /// Human name for the routine.
     pub title: String,
     /// Agent registry key to launch.
@@ -66,9 +69,11 @@ pub struct CreateRoutineRequest {
 /// Request body for partially updating an existing routine.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
 pub struct UpdateRoutineRequest {
-    /// New cron expression, or `None` to keep the existing value. Evaluated in the
+    /// New primary cron expression, or `None` to keep the existing value. Evaluated in the
     /// host's local system timezone (the OS crontab timezone), not UTC.
     pub schedule: Option<String>,
+    /// Replace all cron expressions. When provided, the first entry becomes `schedule`.
+    pub schedules: Option<Vec<String>>,
     /// New title, or `None` to keep the existing value.
     pub title: Option<String>,
     /// New agent key, or `None` to keep the existing value.

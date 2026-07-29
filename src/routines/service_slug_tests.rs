@@ -43,6 +43,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -82,6 +83,7 @@ fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Valid Title".into(),
         agent: "claude".into(),
         prompt: "do the thing".into(),
@@ -102,6 +104,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
         model: None,
         schedule: None,
+        schedules: None,
         title: None,
         agent: None,
         prompt: None,
@@ -154,6 +157,7 @@ fn svc_create_rejects_duplicate_slug() {
             CreateRoutineRequest {
                 model: None,
                 schedule: "@daily".into(),
+                schedules: vec![],
                 title: title.into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
@@ -175,6 +179,7 @@ fn svc_create_rejects_duplicate_slug() {
             CreateRoutineRequest {
                 model: None,
                 schedule: "@daily".into(),
+                schedules: vec![],
                 // Different casing/spacing, same slug.
                 title: "  svc create   DUP zzz ".into(),
                 agent: "claude".into(),
@@ -234,6 +239,7 @@ fn svc_create_rejects_malformed_agent_config() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Malformed ZZZ".into(),
             agent: agent_name.into(),
             prompt: "p".into(),
@@ -270,6 +276,7 @@ fn svc_create_rejects_unreadable_agent_config() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Unreadable ZZZ".into(),
             agent: agent_name.into(),
             prompt: "p".into(),
@@ -313,6 +320,7 @@ fn svc_update_rejects_malformed_agent_config() {
         UpdateRoutineRequest {
             model: None,
             schedule: None,
+            schedules: None,
             title: None,
             agent: Some(agent_name.into()),
             prompt: None,
@@ -361,6 +369,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
             UpdateRoutineRequest {
                 model: None,
                 schedule: None,
+                schedules: None,
                 // Rename "other" into the slug already owned by "keep".
                 title: Some(title_keep.into()),
                 agent: None,

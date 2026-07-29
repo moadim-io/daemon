@@ -9,7 +9,7 @@
  * deterministic and unit-testable (see `overviewLogic.test.ts`).
  */
 import type { RoutineResponse } from "../../api/hooks";
-import { firesWithin, nextFireAfter, fmtUntil } from "../../lib/schedule";
+import { firesWithin, nextFireAfterAny, fmtUntil, scheduleList } from "../../lib/schedule";
 
 /** Which kind of scheduled entity a row/tile refers to. Only "routine" exists today. */
 export type Kind = "routine";
@@ -27,7 +27,9 @@ export interface SchedSource {
   id: string;
   /** Display name: the routine title. */
   label: string;
-  /** Raw cron expression used to compute the next fire. */
+  /** Raw cron expressions used to compute the next fire. */
+  schedules?: string[];
+  /** Primary cron expression, kept for display/backward compatibility. */
   schedule: string;
   /** Server-provided human description of the schedule, when present. */
   human: string | undefined;
@@ -116,7 +118,7 @@ function compareLabel(a: string, b: string): number {
 export function attentionReason(source: SchedSource, now: Date): AttentionReason | undefined {
   if (!source.enabled) return undefined;
   if (source.machinesEmpty) return "dormant";
-  if (nextFireAfter(source.schedule, now) === undefined) return "dead-schedule";
+  if (nextFireAfterAny(scheduleList(source), now) === undefined) return "dead-schedule";
   if (source.agentRegistered === false) return "agent-unregistered";
   if (source.flagCount > 0) return "has-open-flags";
   return undefined;
@@ -139,7 +141,7 @@ export function computeKpis(sources: SchedSource[], now: Date): Kpis {
   const total = sources.length;
   const enabled = sources.filter((s) => s.enabled).length;
   const dueSoon = sources.filter(
-    (s) => s.enabled && !s.snoozed && firesWithin(s.schedule, now, DUE_SOON_WINDOW_MS),
+    (s) => s.enabled && !s.snoozed && scheduleList(s).some((schedule) => firesWithin(schedule, now, DUE_SOON_WINDOW_MS)),
   ).length;
   const flags = sources.reduce((sum, s) => sum + s.flagCount, 0);
   const snoozed = sources.filter((s) => s.enabled && s.snoozed).length;
@@ -165,7 +167,7 @@ export function upcomingRuns(sources: SchedSource[], now: Date): UpcomingRun[] {
   const runs: UpcomingRun[] = [];
   for (const s of sources) {
     if (!s.enabled || s.snoozed) continue;
-    const at = nextFireAfter(s.schedule, now);
+    const at = nextFireAfterAny(scheduleList(s), now);
     if (at === undefined) continue;
     runs.push({
       kind: s.kind,
@@ -211,6 +213,7 @@ export function fromRoutine(routine: RoutineResponse, now: Date): SchedSource {
     id: routine.id,
     label: routine.title,
     schedule: routine.schedule,
+    schedules: scheduleList(routine),
     human: routine.schedule_description ?? undefined,
     enabled: routine.enabled,
     machinesEmpty: targetsNoMachine(routine.machines),

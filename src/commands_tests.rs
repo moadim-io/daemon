@@ -228,6 +228,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "routines",
             "update",
             "rid",
+            "--schedule",
+            "@hourly",
             "--title",
             "t2",
             "--model",
@@ -389,7 +391,7 @@ fn insert_opt_only_inserts_present_values() {
 fn routine_body_serializes_all_fields() {
     let value: Value = serde_json::from_str(
         &routine_body(
-            "* * * * *".into(),
+            vec!["* * * * *".to_string()],
             "title".into(),
             "agent".into(),
             Some("claude-sonnet-4-6".into()),
@@ -431,7 +433,7 @@ fn routine_body_serializes_all_fields() {
 fn routine_body_rejects_bad_repositories() {
     assert_eq!(
         routine_body(
-            "* * * * *".into(),
+            vec!["* * * * *".to_string()],
             "t".into(),
             "a".into(),
             None,
@@ -453,7 +455,7 @@ fn routine_body_rejects_bad_machines() {
     // Covers the `?` error branch on the `machines` insert_json_opt call (L509).
     assert_eq!(
         routine_body(
-            "* * * * *".into(),
+            vec!["* * * * *".to_string()],
             "t".into(),
             "a".into(),
             None,

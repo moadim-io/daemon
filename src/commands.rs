@@ -78,9 +78,9 @@ enum ScheduleCmd {
 enum RoutineCmd {
     /// Create a new routine.
     Create {
-        /// Cron expression (host local timezone, not UTC).
-        #[arg(long)]
-        schedule: String,
+        /// Cron expression (host local timezone, not UTC). Repeat to set multiple schedules.
+        #[arg(long, required = true)]
+        schedule: Vec<String>,
         /// Human-readable title.
         #[arg(long)]
         title: String,
@@ -128,9 +128,9 @@ enum RoutineCmd {
     Update {
         /// UUID of the routine to update.
         id: String,
-        /// New cron expression (host local timezone, not UTC).
+        /// New cron expression (host local timezone, not UTC). Repeat to replace all schedules.
         #[arg(long)]
-        schedule: Option<String>,
+        schedule: Vec<String>,
         /// New title.
         #[arg(long)]
         title: Option<String>,
@@ -170,9 +170,9 @@ enum RoutineCmd {
     Replace {
         /// UUID of the routine to replace.
         id: String,
-        /// Cron expression (host local timezone, not UTC).
-        #[arg(long)]
-        schedule: String,
+        /// Cron expression (host local timezone, not UTC). Repeat to set multiple schedules.
+        #[arg(long, required = true)]
+        schedule: Vec<String>,
         /// Human-readable title.
         #[arg(long)]
         title: String,
@@ -312,7 +312,9 @@ fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             tags,
         } => {
             let mut map = Map::new();
-            insert_opt(&mut map, "schedule", schedule.map(Value::String));
+            if !schedule.is_empty() {
+                map.insert("schedules".to_string(), tags_value(schedule));
+            }
             insert_opt(&mut map, "title", title.map(Value::String));
             insert_opt(&mut map, "agent", agent.map(Value::String));
             insert_opt(&mut map, "model", model.map(Value::String));
@@ -445,7 +447,7 @@ fn routine_path(id: &str) -> String {
     reason = "all parameters map to distinct CLI flags with no natural grouping"
 )]
 fn routine_body(
-    schedule: String,
+    schedule: Vec<String>,
     title: String,
     agent: String,
     model: Option<String>,
@@ -459,7 +461,9 @@ fn routine_body(
     disabled: bool,
 ) -> Result<String, i32> {
     let mut map = Map::new();
-    map.insert("schedule".to_string(), Value::String(schedule));
+    let primary = schedule.first().cloned().unwrap_or_default();
+    map.insert("schedule".to_string(), Value::String(primary));
+    map.insert("schedules".to_string(), tags_value(schedule));
     map.insert("title".to_string(), Value::String(title));
     map.insert("agent".to_string(), Value::String(agent));
     insert_opt(&mut map, "model", model.map(Value::String));

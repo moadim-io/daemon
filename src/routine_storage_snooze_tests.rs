@@ -13,6 +13,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),

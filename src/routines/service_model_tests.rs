@@ -13,6 +13,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -42,6 +43,7 @@ fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Valid Title".into(),
         agent: "claude".into(),
         prompt: "do the thing".into(),
@@ -61,6 +63,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),
@@ -81,6 +84,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
         model: None,
         schedule: None,
+        schedules: None,
         title: None,
         agent: None,
         prompt: None,

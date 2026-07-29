@@ -1,4 +1,5 @@
 import type { RoutineResponse } from "../api/hooks";
+import { scheduleList } from "../lib/schedule";
 
 /** What a palette entry points at. */
 export type CmdKind =
@@ -132,7 +133,7 @@ export function scheduleLabel(human: string | null | undefined, raw: string): st
 
 /** Subtitle for a routine command: schedule label plus status tags, if any. */
 export function routineSubtitle(routine: RoutineResponse): string {
-  const sched = scheduleLabel(routine.schedule_description, routine.schedule);
+  const sched = scheduleLabel(routine.schedule_description, scheduleList(routine).join(", "));
   const tags: string[] = [];
   if (!routine.enabled) {
     tags.push("DISABLED");
@@ -214,7 +215,7 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
       kind: "routine",
       title: routine.title,
       subtitle: routineSubtitle(routine),
-      keywords: `${routine.id} ${routine.agent} ${routine.schedule} ${(routine.tags ?? []).join(" ")} routine`,
+      keywords: `${routine.id} ${routine.agent} ${scheduleList(routine).join(" ")} ${(routine.tags ?? []).join(" ")} routine`,
       routineId: routine.id,
     });
   }

@@ -85,9 +85,11 @@ pub(super) struct SetPowerSavingInput {
 pub(super) struct UpdateRoutineInput {
     /// UUID of the routine to update.
     pub(super) id: String,
-    /// New cron expression, or `None` to keep the existing value. Evaluated in the
+    /// New primary cron expression, or `None` to keep the existing value. Evaluated in the
     /// host's local system timezone (the OS crontab timezone), not UTC.
     pub(super) schedule: Option<String>,
+    /// Replace all cron expressions. When provided, the first entry becomes `schedule`.
+    pub(super) schedules: Option<Vec<String>>,
     /// New title, or `None` to keep the existing value.
     pub(super) title: Option<String>,
     /// New agent key, or `None` to keep the existing value.

@@ -12,6 +12,7 @@ type Repository = components["schemas"]["Repository"];
 
 export interface RoutineDraft {
   schedule: string;
+  schedules: string[];
   title: string;
   agent: string;
   model: string | null;
@@ -54,7 +55,7 @@ const CRON_PRESETS: [string, string][] = [
 function draftToValues(draft?: Partial<RoutineDraft>): FormValues {
   return {
     title: draft?.title ?? "",
-    schedule: draft?.schedule ?? "",
+    schedule: (draft?.schedules && draft.schedules.length > 0 ? draft.schedules : draft?.schedule ? [draft.schedule] : []).join("\n"),
     agent: draft?.agent ?? "claude",
     model: draft?.model ?? "",
     prompt: draft?.prompt ?? "",
@@ -92,22 +93,25 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
 
   const title = useWatch({ control, name: "title" });
   const schedule = useWatch({ control, name: "schedule" });
+  const schedules = schedule.split("\n").map((line) => line.trim()).filter(Boolean);
   const agent = useWatch({ control, name: "agent" });
   const prompt = useWatch({ control, name: "prompt" });
   const machines = useWatch({ control, name: "machines" });
   const canSave =
     nonBlank.safeParse(title).success &&
-    nonBlank.safeParse(schedule).success &&
+    schedules.length > 0 &&
     nonBlank.safeParse(agent).success &&
     nonBlank.safeParse(prompt).success;
 
-  const [cronOk, cronText] = describeCronLive(schedule);
-  const previewClass =
-    schedule.trim() === "" ? "cron-preview" : cronOk ? "cron-preview ok" : "cron-preview bad";
+  const cronPreviews = schedules.map((line) => describeCronLive(line));
+  const cronOk = schedules.length > 0 && cronPreviews.every(([ok]) => ok);
+  const cronText = schedules.length === 0 ? "" : cronPreviews.map(([, text]) => text).join(" · ");
+  const previewClass = schedule.trim() === "" ? "cron-preview" : cronOk ? "cron-preview ok" : "cron-preview bad";
 
   const submit = handleSubmit((v) => {
     onSave({
-      schedule: v.schedule,
+      schedule: schedules[0] ?? "",
+      schedules,
       title: v.title,
       agent: v.agent,
       model: v.model.trim() === "" ? null : v.model,
@@ -139,10 +143,11 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
       </div>
 
       <div className="form-group">
-        <label className="form-label">SCHEDULE*</label>
-        <input
-          className="form-input"
-          placeholder="sec min hour dom month dow year"
+        <label className="form-label">SCHEDULES*</label>
+        <textarea
+          className="form-textarea"
+          rows={3}
+          placeholder="one cron per line"
           {...register("schedule")}
         />
         <div className="cron-presets">

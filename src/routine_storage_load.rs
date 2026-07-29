@@ -11,7 +11,7 @@ use crate::paths::routines_dir;
 use crate::routines::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
 
-use super::{read_routine_cron, read_routine_toml, read_runtime_state};
+use super::{read_routine_crons, read_routine_toml, read_runtime_state};
 
 #[path = "routine_storage_walk.rs"]
 mod routine_storage_walk;
@@ -74,7 +74,8 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
     let runtime_state = read_runtime_state(base, dir_name);
     // The tracked cron sidecar is the only schedule source of truth. A legacy routine.toml
     // `schedule` key is ignored and does not keep a routine loadable without schedule.cron.
-    let schedule = read_routine_cron(&base.join(dir_name).join("schedule.cron"))?;
+    let schedules = read_routine_crons(&base.join(dir_name).join("schedule.cron"));
+    let schedule = schedules.first()?.clone();
     // Prefer the log file; fall back to legacy state.local.toml field then routine.toml field for
     // routines that predate the log-file migration.
     let last_manual_trigger_at = read_manual_state(base, dir_name)
@@ -85,6 +86,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
     Some(Routine {
         id,
         schedule,
+        schedules,
         title,
         agent: toml.agent?,
         model: toml.model,

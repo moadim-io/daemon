@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CAL_MONTHS, WEEKDAYS, dateOnly, fireTimesOnDay } from "../../lib/schedule";
+import { CAL_MONTHS, WEEKDAYS, dateOnly, fireTimesOnDay, scheduleList } from "../../lib/schedule";
 
 /** Pixel height of one hour row per zoom level; index 0 is the compact, chip-wrapping layout. */
 const ZOOM_LEVELS = [40, 140, 300, 600];
@@ -10,6 +10,7 @@ export interface TimelineItem {
   id?: string;
   label: string;
   schedule: string;
+  schedules?: string[];
   /** Rendered muted when true. */
   snoozed: boolean;
   flagCount: number;
@@ -57,9 +58,11 @@ export function DayTimeline({ items, loading, onClick }: DayTimelineProps) {
   const buckets: BucketEntry[][] = Array.from({ length: 24 }, () => []);
   let total = 0;
   for (const it of items) {
-    for (const t of fireTimesOnDay(it.schedule, day)) {
-      buckets[t.getHours()]?.push({ time: t, label: it.label, id: it.id, snoozed: it.snoozed, flagCount: it.flagCount });
-      total++;
+    for (const schedule of scheduleList(it)) {
+      for (const t of fireTimesOnDay(schedule, day)) {
+        buckets[t.getHours()]?.push({ time: t, label: it.label, id: it.id, snoozed: it.snoozed, flagCount: it.flagCount });
+        total++;
+      }
     }
   }
   for (const b of buckets) b.sort((a, b2) => a.time.getTime() - b2.time.getTime());

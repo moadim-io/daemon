@@ -9,6 +9,7 @@ fn make_req() -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "not-a-cron".into(),
+        schedules: vec![],
         title: "Logic Create Routine".into(),
         agent: "claude".into(),
         prompt: "p".into(),

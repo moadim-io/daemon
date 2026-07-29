@@ -11,6 +11,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         model: None,
         id: id.to_string(),
         schedule: "30 9 * * 1-5".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: agent.to_string(),
         prompt: "p".to_string(),

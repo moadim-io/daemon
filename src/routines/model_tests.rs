@@ -58,6 +58,7 @@ fn make_routine(agent: &str) -> Routine {
     Routine {
         id: "model-test-id".into(),
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Model Test Routine".into(),
         agent: agent.into(),
         model: None,
@@ -268,24 +269,24 @@ fn describe_schedule_returns_none_for_unparseable() {
 
 #[test]
 fn next_run_at_some_for_enabled_parseable_schedule() {
-    assert!(next_run_at("@daily", true).is_some());
+    assert!(next_run_at(&["@daily".to_string()], true).is_some());
 }
 
 #[test]
 fn next_run_at_uses_cron_union_for_standard_crons() {
-    assert!(next_run_at("*/5 * * * *", true).is_some());
+    assert!(next_run_at(&["*/5 * * * *".to_string()], true).is_some());
 }
 
 #[test]
 fn next_run_at_none_when_disabled() {
-    assert!(next_run_at("@daily", false).is_none());
+    assert!(next_run_at(&["@daily".to_string()], false).is_none());
 }
 
 #[test]
 fn next_run_at_none_for_unparseable_schedule() {
-    assert!(next_run_at("@reboot", true).is_none());
-    assert!(next_run_at("@midnight", true).is_none());
-    assert!(next_run_at("not a cron", true).is_none());
+    assert!(next_run_at(&["@reboot".to_string()], true).is_none());
+    assert!(next_run_at(&["@midnight".to_string()], true).is_none());
+    assert!(next_run_at(&["not a cron".to_string()], true).is_none());
 }
 
 #[test]
@@ -293,7 +294,7 @@ fn next_run_at_none_for_impossible_calendar_date() {
     // Feb 30 never occurs, so a schedule pinned to it parses fine but has no upcoming fire —
     // covers `next_run_at`'s "no upcoming fire" branch, distinct from the unparseable-schedule
     // case above.
-    assert!(next_run_at("0 0 30 2 *", true).is_none());
+    assert!(next_run_at(&["0 0 30 2 *".to_string()], true).is_none());
 }
 
 #[test]
@@ -301,6 +302,7 @@ fn from_routine_populates_derived_fields() {
     let routine = Routine {
         id: "rid".into(),
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "My Title".into(),
         agent: "claude".into(),
         model: None,
@@ -383,6 +385,7 @@ fn from_routine_counts_open_flags() {
     let routine = Routine {
         id: "rid2".into(),
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Flag Count Model Test ZZZ".into(),
         agent: "claude".into(),
         model: None,

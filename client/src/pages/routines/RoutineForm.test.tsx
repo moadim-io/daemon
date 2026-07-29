@@ -24,7 +24,7 @@ describe("RoutineForm validation", () => {
     fireEvent.change(screen.getByPlaceholderText("ops/nightly triage"), { target: { value: "My routine" } });
     expect(save).toBeDisabled();
 
-    fireEvent.change(screen.getByPlaceholderText("sec min hour dom month dow year"), {
+    fireEvent.change(screen.getByPlaceholderText("one cron per line"), {
       target: { value: "@daily" },
     });
     // Agent already defaults to "claude" — still missing prompt.
@@ -39,7 +39,7 @@ describe("RoutineForm validation", () => {
   it("whitespace-only fields do not count as filled", () => {
     renderForm();
     fireEvent.change(screen.getByPlaceholderText("ops/nightly triage"), { target: { value: "   " } });
-    fireEvent.change(screen.getByPlaceholderText("sec min hour dom month dow year"), {
+    fireEvent.change(screen.getByPlaceholderText("one cron per line"), {
       target: { value: "@daily" },
     });
     fireEvent.change(screen.getByPlaceholderText("Review open PRs and summarize…"), {
@@ -51,7 +51,7 @@ describe("RoutineForm validation", () => {
   it("submits the parsed draft on save", async () => {
     const { onSave } = renderForm();
     fireEvent.change(screen.getByPlaceholderText("ops/nightly triage"), { target: { value: "My routine" } });
-    fireEvent.change(screen.getByPlaceholderText("sec min hour dom month dow year"), {
+    fireEvent.change(screen.getByPlaceholderText("one cron per line"), {
       target: { value: "@daily" },
     });
     fireEvent.change(screen.getByPlaceholderText("Review open PRs and summarize…"), {
@@ -60,7 +60,7 @@ describe("RoutineForm validation", () => {
     fireEvent.click(screen.getByRole("button", { name: "CREATE ROUTINE" }));
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "My routine", schedule: "@daily", prompt: "Do the thing", agent: "claude" }),
+        expect.objectContaining({ title: "My routine", schedule: "@daily", schedules: ["@daily"], prompt: "Do the thing", agent: "claude" }),
       ),
     );
   });
@@ -68,7 +68,7 @@ describe("RoutineForm validation", () => {
   it("a cron preset button fills the schedule field", () => {
     renderForm();
     fireEvent.click(screen.getByRole("button", { name: "every hour" }));
-    expect(screen.getByPlaceholderText("sec min hour dom month dow year")).toHaveValue("0 0 * * * * *");
+    expect(screen.getByPlaceholderText("one cron per line")).toHaveValue("0 0 * * * * *");
   });
 
   it("edit mode renders the modal chrome with SAVE CHANGES", () => {

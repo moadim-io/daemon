@@ -37,6 +37,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -315,6 +316,7 @@ fn svc_create_syncs_crontab_on_success() {
             CreateRoutineRequest {
                 model: None,
                 schedule: "@daily".into(),
+                schedules: vec![],
                 title: title.into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
@@ -352,6 +354,7 @@ fn svc_update_syncs_crontab_on_success() {
             UpdateRoutineRequest {
                 model: None,
                 schedule: None,
+                schedules: None,
                 title: None,
                 agent: None,
                 prompt: Some("changed".into()),

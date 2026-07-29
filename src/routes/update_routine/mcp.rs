@@ -19,6 +19,7 @@ impl MoadimMcp {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let req = UpdateRoutineRequest {
             schedule: input.schedule,
+            schedules: input.schedules,
             title: input.title,
             agent: input.agent,
             model: input.model,

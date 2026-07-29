@@ -46,6 +46,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         model: None,
         goal: None,
         schedule: None,
+        schedules: None,
         title: None,
         agent: None,
         prompt: None,
@@ -96,6 +97,7 @@ fn svc_update_not_found_when_no_schedule_and_id_missing() {
                 model: None,
                 goal: None,
                 schedule: None,
+                schedules: None,
                 ..empty_update_request()
             },
         );
@@ -117,6 +119,7 @@ fn svc_update_not_found_when_schedule_provided_and_id_missing() {
                 model: None,
                 goal: None,
                 schedule: Some("@daily".into()),
+                schedules: None,
                 ..empty_update_request()
             },
         );

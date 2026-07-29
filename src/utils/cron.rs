@@ -45,12 +45,22 @@ pub(crate) fn validate_cron(expr: &str) -> Result<(), AppError> {
 /// `cron-union` now accepts the same `@keyword` aliases and 7-field schedules the daemon
 /// already validates, so this is the fast path for every schedule shape we keep around.
 pub(crate) fn compiled_union(schedule: &str) -> Option<CronUnion> {
-    let trimmed = schedule.trim();
-    if matches!(trimmed, "@reboot" | "@midnight") {
+    compiled_union_many(std::slice::from_ref(&schedule.to_string()))
+}
+
+/// Compile one or more schedules through `cron-union`.
+pub(crate) fn compiled_union_many(schedules: &[String]) -> Option<CronUnion> {
+    let normalized: Vec<String> = schedules
+        .iter()
+        .map(|schedule| schedule.trim())
+        .filter(|schedule| !matches!(*schedule, "@reboot" | "@midnight"))
+        .map(normalize_schedule)
+        .collect();
+    if normalized.is_empty() {
         return None;
     }
-    let normalized = normalize_schedule(trimmed);
-    union_crons([normalized.as_str()]).ok()
+    let refs: Vec<&str> = normalized.iter().map(String::as_str).collect();
+    union_crons(refs).ok()
 }
 
 #[cfg(test)]

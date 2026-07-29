@@ -14,6 +14,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         model: None,
         id: "id".into(),
         schedule: schedule.into(),
+        schedules: vec![],
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),

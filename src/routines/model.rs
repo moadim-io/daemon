@@ -89,9 +89,12 @@ pub struct IcalFeedQuery {
 pub struct Routine {
     /// Unique identifier (UUID v4).
     pub id: String,
-    /// Cron expression defining when the routine runs, evaluated in the host's local
-    /// system timezone (the OS crontab timezone), not UTC.
+    /// Primary cron expression defining when the routine runs, evaluated in the host's local
+    /// system timezone (the OS crontab timezone), not UTC. Kept for backward-compatible clients.
     pub schedule: String,
+    /// All cron expressions defining when the routine runs. The first entry mirrors [`Routine::schedule`].
+    #[serde(default)]
+    pub schedules: Vec<String>,
     /// Human name; slugified to name the workbench and tmux session.
     pub title: String,
     /// Agent registry key (e.g. `"claude"`) resolved from `~/.config/moadim/agents/`.
@@ -269,9 +272,12 @@ pub struct RoutineResponse {
     pub agent_setup_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
-    /// Human-readable description of the schedule, including the timezone the
+    /// Human-readable description of the primary schedule, including the timezone the
     /// cron expression is interpreted in, or `null` if it cannot be parsed.
     pub schedule_description: Option<String>,
+    /// Human-readable descriptions of every schedule.
+    #[serde(default)]
+    pub schedule_descriptions: Vec<String>,
     /// IANA name of the local timezone the schedule is interpreted in (e.g.
     /// `"Asia/Jerusalem"`), or `null` if it cannot be determined. Cron
     /// expressions are evaluated in this timezone, **not** UTC.
@@ -281,8 +287,9 @@ pub struct RoutineResponse {
     pub flag_count: usize,
     /// Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone
     /// (matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.
-    /// `None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming
-    /// fire (e.g. `@reboot`). See issue #369.
+    /// `None` when disabled, globally locked, or no schedule is parseable / has an upcoming
+    /// fire (e.g. `@reboot`). See issue #369. For multi-schedule routines this is the earliest
+    /// upcoming fire across all schedules.
     pub next_run_at: Option<u64>,
     /// `true` if any fire of this routine currently has a live tmux session — i.e. an agent is
     /// running right now. Derived by probing for a session under the routine's
@@ -325,14 +332,25 @@ fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
 ///
 /// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
 /// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
-fn next_run_at(schedule: &str, enabled: bool) -> Option<u64> {
+fn next_run_at(schedules: &[String], enabled: bool) -> Option<u64> {
     if !enabled || crate::global_lock::is_globally_locked() {
         return None;
     }
-    let union = crate::utils::cron::compiled_union(schedule)?;
+    let union = crate::utils::cron::compiled_union_many(schedules)?;
     let cron = union.iter().next()?.schedule();
     let next = cron.after(&Local::now()).next()?;
     u64::try_from(next.timestamp()).ok()
+}
+
+impl Routine {
+    /// Return all configured schedules, falling back to the legacy primary schedule when needed.
+    pub fn effective_schedules(&self) -> Vec<String> {
+        if self.schedules.is_empty() {
+            vec![self.schedule.clone()]
+        } else {
+            self.schedules.clone()
+        }
+    }
 }
 
 impl RoutineResponse {
@@ -354,9 +372,16 @@ impl RoutineResponse {
             .is_ok_and(|agent| setup_step_available(agent.setup.as_deref()));
         let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
         let timezone = local_timezone();
-        let schedule_description = describe_schedule(&routine.schedule, timezone.as_deref());
+        let schedules = routine.effective_schedules();
+        let schedule_description = schedules
+            .first()
+            .and_then(|schedule| describe_schedule(schedule, timezone.as_deref()));
+        let schedule_descriptions = schedules
+            .iter()
+            .filter_map(|schedule| describe_schedule(schedule, timezone.as_deref()))
+            .collect();
         let flag_count = list_flags(&slug).len();
-        let next_run_at = next_run_at(&routine.schedule, routine.enabled);
+        let next_run_at = next_run_at(&schedules, routine.enabled);
         let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
         // Key names only — never values. `local_env_keys` reads `routine.local.toml` (if any) and
         // drops the values immediately, so a secret override never survives past this call. See
@@ -372,6 +397,7 @@ impl RoutineResponse {
             agent_setup_available,
             file_path,
             schedule_description,
+            schedule_descriptions,
             timezone,
             flag_count,
             next_run_at,
@@ -421,13 +447,11 @@ pub struct RunSummary {
     pub finished_at: Option<u64>,
     /// `finished_at` as a human-readable local timestamp, when finished.
     pub finished_at_local: Option<String>,
-    /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
+    /// Success/failure/running/unknown from exit code and tmux liveness.
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
-    /// Unix seconds this run's workbench is due to be reaped (`finished_at` +
-    /// [`Routine::effective_ttl_secs`]). `None` while the run hasn't finished, or once its
-    /// workbench is already gone (a run restored from `runs.log` after TTL reaping).
+    /// Unix seconds this run's workbench is due to be reaped.
     pub retention_expires_at: Option<u64>,
 }
 
@@ -437,7 +461,7 @@ pub struct RunSummary {
 pub struct FleetRunSummary {
     /// The routine this run belongs to.
     pub routine_id: String,
-    /// The routine's title, at the time of this call (not snapshotted per-run).
+    /// The routine's current title.
     pub routine_title: String,
     /// Workbench directory name (`{slug}-{unix_secs}`).
     pub workbench: String,
@@ -449,16 +473,15 @@ pub struct FleetRunSummary {
     pub finished_at: Option<u64>,
     /// `finished_at` as a human-readable local timestamp, when finished.
     pub finished_at_local: Option<String>,
-    /// Success/failure/running/unknown, derived from the exit-code file and tmux session liveness.
+    /// Success/failure/running/unknown from exit code and tmux liveness.
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
 }
 
-/// Thread-safe shared store of routines keyed by ID.
+/// Routines keyed by ID.
 pub type RoutineStore = Arc<Mutex<HashMap<String, Routine>>>;
 
-/// Create an empty [`RoutineStore`].
 #[cfg(test)]
 pub fn new_store() -> RoutineStore {
     Arc::new(Mutex::new(HashMap::new()))
@@ -468,9 +491,6 @@ pub fn new_store() -> RoutineStore {
 pub(crate) const fn bool_true() -> bool {
     true
 }
-
-// `CreateRoutineRequest` / `UpdateRoutineRequest` live in `model_requests.rs` (split out to keep
-// this file under the line cap).
 #[path = "model_requests.rs"]
 mod model_requests;
 pub use model_requests::{CreateRoutineRequest, UpdateRoutineRequest};

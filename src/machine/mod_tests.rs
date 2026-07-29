@@ -284,6 +284,7 @@ fn referenced_machines_unions_routines() {
     let routine = crate::routines::Routine {
         id: "r1".to_string(),
         schedule: "0 9 * * *".to_string(),
+        schedules: vec![],
         title: "Routine One".to_string(),
         agent: "claude".to_string(),
         model: None,
@@ -360,6 +361,7 @@ fn run_list_with_referenced_machine() {
     let routine = crate::routines::Routine {
         id: "r1".to_string(),
         schedule: "0 9 * * *".to_string(),
+        schedules: vec![],
         title: "Routine".to_string(),
         agent: "claude".to_string(),
         model: None,

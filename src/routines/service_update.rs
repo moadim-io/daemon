@@ -1,12 +1,12 @@
 //! `svc_update`, split out of `service.rs` to stay under the repo's 500-line-per-file cap.
 
 use super::{
-    map_write_routine_err, max_runtime_ceiling_secs, migrate_workbenches, normalize_model,
-    normalize_schedule, now_secs, reject_blank, reject_over_ceiling, reject_zero_secs,
-    remove_routine_dir, slugify, ttl_ceiling_secs, validate_agent, validate_cron, validate_env,
-    validate_goal, validate_machines, validate_prompt, validate_repositories, validate_tags,
-    validate_title, write_routine, AppError, LockRecover, RoutineResponse, RoutineStore,
-    UpdateRoutineRequest,
+    map_write_routine_err, max_runtime_ceiling_secs, migrate_workbenches, min_schedule_ceiling,
+    normalize_model, now_secs, reject_blank, reject_over_ceiling, reject_zero_secs,
+    remove_routine_dir, slugify, ttl_ceiling_secs, validate_agent,
+    validate_and_normalize_schedules, validate_env, validate_goal, validate_machines,
+    validate_prompt, validate_repositories, validate_tags, validate_title, write_routine, AppError,
+    LockRecover, RoutineResponse, RoutineStore, UpdateRoutineRequest,
 };
 
 /// Apply non-`None` fields from `req` to the routine identified by `id`.
@@ -15,9 +15,18 @@ pub fn svc_update(
     id: &str,
     req: UpdateRoutineRequest,
 ) -> Result<RoutineResponse, AppError> {
-    if let Some(ref sched) = req.schedule {
-        validate_cron(sched)?;
+    if req.schedule.is_some() && req.schedules.is_some() {
+        return Err(AppError::BadRequest(
+            "send either schedule or schedules, not both".to_string(),
+        ));
     }
+    let requested_schedules = match (&req.schedule, &req.schedules) {
+        (Some(schedule), None) => Some(validate_and_normalize_schedules(std::slice::from_ref(
+            schedule,
+        ))?),
+        (None, Some(schedules)) => Some(validate_and_normalize_schedules(schedules)?),
+        (None, None) | (Some(_), Some(_)) => None,
+    };
     if let Some(ref title) = req.title {
         reject_blank("title", title)?;
         validate_title(title)?;
@@ -68,8 +77,8 @@ pub fn svc_update(
     // Reject ttl/max-runtime above the cron-derived ceiling for the *effective* schedule (the new
     // one if supplied, else the routine's current schedule) — before any mutation, so a rejected
     // update leaves the in-memory store untouched (#468).
-    let effective_schedule = if let Some(schedule) = req.schedule.as_deref() {
-        normalize_schedule(schedule)
+    let effective_schedules = if let Some(schedules) = &requested_schedules {
+        schedules.clone()
     } else {
         #[allow(
             clippy::expect_used,
@@ -80,17 +89,17 @@ pub fn svc_update(
         let routine = lock
             .get(id)
             .expect("id existence checked above, and the lock has been held continuously since");
-        routine.schedule.clone()
+        routine.effective_schedules()
     };
     reject_over_ceiling(
         "ttl_secs",
         req.ttl_secs,
-        ttl_ceiling_secs(&effective_schedule),
+        min_schedule_ceiling(&effective_schedules, ttl_ceiling_secs),
     )?;
     reject_over_ceiling(
         "max_runtime_secs",
         req.max_runtime_secs,
-        max_runtime_ceiling_secs(&effective_schedule),
+        min_schedule_ceiling(&effective_schedules, max_runtime_ceiling_secs),
     )?;
     #[allow(
         clippy::expect_used,
@@ -101,8 +110,9 @@ pub fn svc_update(
     let routine = lock
         .get_mut(id)
         .expect("id existence checked above, and the lock has been held continuously since");
-    if let Some(schedule) = req.schedule {
-        routine.schedule = normalize_schedule(&schedule);
+    if let Some(schedules) = requested_schedules {
+        routine.schedule = schedules[0].clone();
+        routine.schedules = schedules;
     }
     if let Some(title) = req.title {
         // Trim on rename for the same reason as `svc_create` above.

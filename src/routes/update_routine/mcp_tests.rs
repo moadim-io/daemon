@@ -23,6 +23,7 @@ fn update_routine_tool_not_found_is_error() {
         .update_routine(Parameters(UpdateRoutineInput {
             id: "no-such".into(),
             schedule: None,
+            schedules: None,
             title: Some("x".into()),
             agent: None,
             model: None,

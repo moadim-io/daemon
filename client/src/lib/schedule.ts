@@ -47,6 +47,35 @@ export function nextFires(schedule: string, now: Date, n: number): Date[] {
   return out;
 }
 
+
+/** Return all schedules with backward-compatible fallback to the legacy primary field. */
+export function scheduleList(source: { schedule: string; schedules?: string[] }): string[] {
+  return source.schedules && source.schedules.length > 0 ? source.schedules : [source.schedule];
+}
+
+/** Earliest next fire across every schedule. */
+export function nextFireAfterAny(schedules: string[], now: Date): Date | undefined {
+  return schedules
+    .map((schedule) => nextFireAfter(schedule, now))
+    .filter((fire): fire is Date => fire !== undefined)
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+}
+
+/** Merged, de-duplicated next fires across every schedule. */
+export function nextFiresAny(schedules: string[], now: Date, n: number): Date[] {
+  const fires = schedules.flatMap((schedule) => nextFires(schedule, now, n));
+  const seen = new Set<number>();
+  return fires
+    .sort((a, b) => a.getTime() - b.getTime())
+    .filter((fire) => {
+      const ms = fire.getTime();
+      if (seen.has(ms)) return false;
+      seen.add(ms);
+      return true;
+    })
+    .slice(0, n);
+}
+
 /** `true` when `schedule`'s next fire lands within `windowMs` of `now`. */
 export function firesWithin(schedule: string, now: Date, windowMs: number): boolean {
   const then = nextFireAfter(schedule, now);

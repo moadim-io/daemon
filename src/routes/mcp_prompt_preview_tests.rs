@@ -74,6 +74,7 @@ fn preview_routine_prompt_success_contains_prompt() {
         .create_routine(Parameters(crate::routines::CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Preview Routine".into(),
             agent: "claude".into(),
             prompt: "do the thing".into(),

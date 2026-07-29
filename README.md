@@ -57,6 +57,18 @@ release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
 to the newest semver-compatible version at install time — so a bad or breaking
 transitive bump can't fail an otherwise-unchanged install.
 
+Prefer a prebuilt binary over compiling from source? Each release publishes
+binary archives (with a SHA256 checksum) for macOS (Apple Silicon and Intel)
+and Linux x86_64. Install one with [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall)
+(no Rust toolchain compile required):
+
+```sh
+cargo binstall moadim
+```
+
+...or download the archive for your platform directly from the
+[Releases page](https://github.com/moadim-io/daemon/releases).
+
 If `moadim` is not found after install, add Cargo's bin directory to your PATH:
 
 ```sh

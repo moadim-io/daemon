@@ -14,6 +14,13 @@ homepage = "https://moadim.io"
 keywords = ["scheduler", "mcp", "automation", "rest"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
+# Lets `cargo binstall moadim` fetch the prebuilt archive release.yml's `build-binaries` job
+# attaches to each `v*` tag's GitHub Release instead of compiling from source (#329).
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/moadim-{ version }-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"

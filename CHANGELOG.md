@@ -11,6 +11,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [1.7.6] - 2026-07-29
+
+feat(client): add a responsive breakpoint to the app shell so the header, nav, page padding, and touch targets adapt on narrow (mobile/tablet) viewports instead of overflowing.
+
+fix(paths): add missing test coverage for the empty-sanitize fallback branch in `sanitize_repo_cache_name`, closing the crate-wide 100% line coverage gap left by #1417.
+
+fix: update the built-in Hermes agent config to launch Hermes in one-shot mode with the composed prompt, replacing the unsupported `hermes exec` default.
+
+Allow manually edited `schedule.cron` sidecars to carry multiple cron entries and dedupe redundant entries with cron-union when syncing crontab.
+
+chore(deps): bump the npm group with 3 updates
+
+fix(routines): prune the repository mirror cache under `{config_dir}/cache/` — orphaned mirrors (routine deleted or `repositories` URL edited) are now removed on every cleanup sweep, and an optional `MOADIM_MAX_REPO_CACHE_DISK_BYTES` ceiling evicts least-recently-fetched mirrors once the tree exceeds it, mirroring the existing `MOADIM_MAX_WORKBENCH_DISK_BYTES` safety valve. The tree's total size is now also reported via the new `moadim_repo_cache_bytes` metric (closes #1425).
+
+feat(client): add a "Folder" group-by to the Routines table (grouping by the `/`-nested path already supported in titles), and make every group-by mode collapsible with a per-group health rollup chip and persisted collapse state, plus a COLLAPSE ALL / EXPAND ALL pair (#1420).
+
+Use `schedule.cron` as the authoritative routine schedule source instead of `routine.toml`.
+
 ## [1.7.5] - 2026-07-28
 
 feat(routines): pre-clone/cache declared repositories into the workbench before the agent launches (#466), instead of only printing them as a "clone any you need" prompt preamble. Each declared repository is backed by a persistent local mirror under `~/.config/moadim/cache/`, keyed by its URL — the first run clones the mirror, every later run of any routine referencing the same URL only `git fetch`es it, so repeated fires reuse already-downloaded objects instead of re-cloning from the remote. A clone/fetch failure (bad URL, unreachable host, a `branch` that doesn't exist upstream) now aborts the run with the reason recorded in `agent.log`, the same as the existing prompt-copy/setup/tmux guards, instead of failing silently inside the agent session.
@@ -4877,7 +4895,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.5...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.6...HEAD
+[1.7.6]: https://github.com/moadim-io/daemon/compare/v1.7.5...v1.7.6
 [1.7.5]: https://github.com/moadim-io/daemon/compare/v1.7.4...v1.7.5
 [1.7.4]: https://github.com/moadim-io/daemon/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/moadim-io/daemon/compare/v1.7.2...v1.7.3

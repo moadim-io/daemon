@@ -40,6 +40,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: title.into(),
         agent: "claude".into(),
         prompt: "p".into(),

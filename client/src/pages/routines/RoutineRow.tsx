@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FleetRunSummary, RoutineResponse } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
-import { fmtUntil, fmtWhen, nextFireAfter, nextFires } from "../../lib/schedule";
+import { fmtUntil, fmtWhen, nextFireAfterAny, nextFiresAny, scheduleList } from "../../lib/schedule";
 import {
   DUE_SOON_WINDOW_MS,
   healthBadge,
@@ -29,7 +29,7 @@ export function NextRunCell({ routine, now }: { routine: RoutineResponse; now: D
       </>
     );
   }
-  const then = nextFireAfter(routine.schedule, now);
+  const then = nextFireAfterAny(scheduleList(routine), now);
   if (then === undefined) {
     return <span className="cell-next muted">—</span>;
   }
@@ -75,7 +75,8 @@ export function RoutineRow({
 }: RoutineRowProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const cronText = r.schedule_description ?? "—";
+  const schedules = scheduleList(r);
+  const cronText = (r.schedule_descriptions ?? [r.schedule_description]).filter(Boolean).join(" · ") || "—";
   const updated = reltime(r.updated_at);
   const repos = r.repositories ?? [];
   const machines = (r.machines ?? []).filter((m) => m.trim() !== "");
@@ -110,7 +111,7 @@ export function RoutineRow({
         )}
       </td>
       <td>
-        <div className="cell-schedule">{r.schedule}</div>
+        <div className="cell-schedule">{schedules.join("\n")}</div>
         <div className="cell-schedule-human">{cronText}</div>
         <button
           type="button"
@@ -123,7 +124,7 @@ export function RoutineRow({
         >
           ▸ fires
         </button>
-        {previewOpen && <FiresPanel schedule={r.schedule} now={now} />}
+        {previewOpen && <FiresPanel schedules={schedules} now={now} />}
       </td>
       <td>
         <NextRunCell routine={r} now={now} />
@@ -248,8 +249,8 @@ function RoutineTitle({ title }: { title: string }) {
   );
 }
 
-function FiresPanel({ schedule, now }: { schedule: string; now: Date }) {
-  const fires = nextFires(schedule, now, 10);
+function FiresPanel({ schedules, now }: { schedules: string[]; now: Date }) {
+  const fires = nextFiresAny(schedules, now, 10);
   if (fires.length === 0) {
     return (
       <div className="fires-panel">

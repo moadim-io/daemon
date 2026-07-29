@@ -291,6 +291,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         model: None,
         id: "x".into(),
         schedule: schedule.into(),
+        schedules: vec![],
         title: "t".into(),
         agent: "claude".into(),
         prompt: "p".into(),

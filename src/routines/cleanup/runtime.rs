@@ -31,7 +31,13 @@ impl Routine {
     /// lowered by an explicit `max_runtime_secs` if set. An explicit value can only shorten the
     /// bound, never raise it above the cron-derived cap.
     pub fn effective_max_runtime_secs(&self) -> u64 {
-        let ceiling = max_runtime_ceiling_secs(&self.schedule);
+        let ceiling = self
+            .effective_schedules()
+            .iter()
+            .map(String::as_str)
+            .map(max_runtime_ceiling_secs)
+            .min()
+            .unwrap_or(MAX_RUNTIME_SECS);
         self.max_runtime_secs
             .map_or(ceiling, |secs| secs.min(ceiling))
     }

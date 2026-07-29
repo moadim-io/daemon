@@ -68,7 +68,13 @@ impl Routine {
     /// `min(MAX_TTL_SECS, cron interval)`, then further lowered by an explicit `ttl_secs` if set.
     /// An explicit `ttl_secs` can only shorten retention, never raise it above the cron-derived cap.
     pub fn effective_ttl_secs(&self) -> u64 {
-        let ceiling = ttl_ceiling_secs(&self.schedule);
+        let ceiling = self
+            .effective_schedules()
+            .iter()
+            .map(String::as_str)
+            .map(ttl_ceiling_secs)
+            .min()
+            .unwrap_or(MAX_TTL_SECS);
         self.ttl_secs.map_or(ceiling, |secs| secs.min(ceiling))
     }
 }

@@ -67,6 +67,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Mcp Routine".into(),
         agent: "claude".into(),
         prompt: "p".into(),
@@ -121,6 +122,7 @@ fn create_get_update_trigger_delete_routine_success() {
         .update_routine(Parameters(UpdateRoutineInput {
             id: id.clone(),
             schedule: None,
+            schedules: None,
             title: Some("Renamed".into()),
             agent: None,
             model: None,

@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "1.7.6"
+    "version": "2.0.0"
   },
   "servers": [
     {
@@ -1236,7 +1236,14 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression for the new routine. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC."
+            "description": "Primary cron expression for the new routine. Evaluated in the host's local system\ntimezone (the OS crontab timezone), not UTC. Kept for backward-compatible clients."
+          },
+          "schedules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All cron expressions for the new routine. When provided, the first entry becomes `schedule`."
           },
           "tags": {
             "type": "array",
@@ -1363,7 +1370,7 @@
           },
           "routine_title": {
             "type": "string",
-            "description": "The routine's title, at the time of this call (not snapshotted per-run)."
+            "description": "The routine's current title."
           },
           "started_at": {
             "type": "integer",
@@ -1377,7 +1384,7 @@
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
-            "description": "Success/failure/running/unknown, derived from the exit-code file and tmux session liveness."
+            "description": "Success/failure/running/unknown from exit code and tmux liveness."
           },
           "workbench": {
             "type": "string",
@@ -1679,7 +1686,14 @@
           },
           "schedule": {
             "type": "string",
-            "description": "Cron expression defining when the routine runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC."
+            "description": "Primary cron expression defining when the routine runs, evaluated in the host's local\nsystem timezone (the OS crontab timezone), not UTC. Kept for backward-compatible clients."
+          },
+          "schedules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All cron expressions defining when the routine runs. The first entry mirrors [`Routine::schedule`]."
           },
           "skip_runs": {
             "type": [
@@ -1787,7 +1801,7 @@
                   "null"
                 ],
                 "format": "int64",
-                "description": "Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone\n(matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.\n`None` when disabled, globally locked, or `schedule` is unparseable or has no upcoming\nfire (e.g. `@reboot`). See issue #369.",
+                "description": "Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone\n(matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.\n`None` when disabled, globally locked, or no schedule is parseable / has an upcoming\nfire (e.g. `@reboot`). See issue #369. For multi-schedule routines this is the earliest\nupcoming fire across all schedules.",
                 "minimum": 0
               },
               "schedule_description": {
@@ -1795,7 +1809,14 @@
                   "string",
                   "null"
                 ],
-                "description": "Human-readable description of the schedule, including the timezone the\ncron expression is interpreted in, or `null` if it cannot be parsed."
+                "description": "Human-readable description of the primary schedule, including the timezone the\ncron expression is interpreted in, or `null` if it cannot be parsed."
+              },
+              "schedule_descriptions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Human-readable descriptions of every schedule."
               },
               "timezone": {
                 "type": [
@@ -1869,7 +1890,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Unix seconds this run's workbench is due to be reaped (`finished_at` +\n[`Routine::effective_ttl_secs`]). `None` while the run hasn't finished, or once its\nworkbench is already gone (a run restored from `runs.log` after TTL reaping).",
+            "description": "Unix seconds this run's workbench is due to be reaped.",
             "minimum": 0
           },
           "started_at": {
@@ -1884,7 +1905,7 @@
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
-            "description": "Success/failure/running/unknown, derived from the exit-code file and tmux session liveness."
+            "description": "Success/failure/running/unknown from exit code and tmux liveness."
           },
           "workbench": {
             "type": "string",
@@ -2048,7 +2069,17 @@
               "string",
               "null"
             ],
-            "description": "New cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
+            "description": "New primary cron expression, or `None` to keep the existing value. Evaluated in the\nhost's local system timezone (the OS crontab timezone), not UTC."
+          },
+          "schedules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Replace all cron expressions. When provided, the first entry becomes `schedule`."
           },
           "tags": {
             "type": [

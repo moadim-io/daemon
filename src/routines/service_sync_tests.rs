@@ -37,6 +37,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -92,6 +93,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
             CreateRoutineRequest {
                 model: None,
                 schedule: "@daily".into(),
+                schedules: vec![],
                 title: title.into(),
                 agent: "claude".into(),
                 prompt: "p".into(),
@@ -121,6 +123,7 @@ fn svc_create_rejects_goal_over_five_lines() {
         &store,
         CreateRoutineRequest {
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Long Goal ZZZ".into(),
             agent: "claude".into(),
             model: None,
@@ -153,6 +156,7 @@ fn svc_create_trims_and_persists_goal() {
             &store,
             CreateRoutineRequest {
                 schedule: "@daily".into(),
+                schedules: vec![],
                 title: title.into(),
                 agent: "claude".into(),
                 model: None,
@@ -201,6 +205,7 @@ fn svc_update_clears_goal_with_empty_string() {
             "upd-goal-id",
             UpdateRoutineRequest {
                 schedule: None,
+                schedules: None,
                 title: None,
                 agent: None,
                 model: None,
@@ -237,6 +242,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
             UpdateRoutineRequest {
                 model: None,
                 schedule: None,
+                schedules: None,
                 title: None,
                 agent: None,
                 prompt: Some("changed".into()),

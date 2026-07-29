@@ -1,4 +1,5 @@
 import type { RoutineResponse } from "../../api/hooks";
+import { scheduleList } from "../../lib/schedule";
 
 const COLUMNS = [
   "id",
@@ -53,8 +54,8 @@ export function routinesToCsv(routines: RoutineResponse[]): string {
         r.title,
         String(r.enabled),
         statusOf(r),
-        r.schedule,
-        r.schedule_description ?? "",
+        scheduleList(r).join("\n"),
+        (r.schedule_descriptions ?? [r.schedule_description]).filter(Boolean).join("\n"),
         r.timezone ?? "",
         r.agent,
         r.model ?? "",

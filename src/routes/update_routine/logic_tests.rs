@@ -8,6 +8,7 @@ use super::{build, UpdateRoutineRequest};
 fn make_update_req() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
         schedule: None,
+        schedules: None,
         title: None,
         agent: None,
         model: None,

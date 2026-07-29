@@ -21,6 +21,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
         model: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Mcp Routine".into(),
         agent: "claude".into(),
         prompt: "p".into(),

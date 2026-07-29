@@ -188,6 +188,7 @@ async fn router_serves_routines_ical_feed() {
         model: None,
         id: "r1".to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -245,6 +246,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
     let mk = |id: &str, title: &str| crate::routines::Routine {
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         model: None,

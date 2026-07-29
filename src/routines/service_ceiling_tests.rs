@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -84,6 +85,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         model: None,
         goal: None,
         schedule: "@daily".into(),
+        schedules: vec![],
         title: "Valid Title".into(),
         agent: "claude".into(),
         prompt: "do the thing".into(),
@@ -104,6 +106,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         model: None,
         goal: None,
         schedule: None,
+        schedules: None,
         title: None,
         agent: None,
         prompt: None,
@@ -130,6 +133,7 @@ fn svc_create_rejects_ttl_above_cron_ceiling() {
             model: None,
             goal: None,
             schedule: "*/5 * * * *".into(),
+            schedules: vec![],
             ttl_secs: Some(1800),
             ..valid_create_request()
         },
@@ -148,6 +152,7 @@ fn svc_create_rejects_max_runtime_above_cron_ceiling() {
             model: None,
             goal: None,
             schedule: "*/5 * * * *".into(),
+            schedules: vec![],
             max_runtime_secs: Some(1800),
             ..valid_create_request()
         },
@@ -175,6 +180,7 @@ fn svc_create_accepts_secs_at_cron_ceiling() {
             model: None,
             goal: None,
             schedule: "*/5 * * * *".into(),
+            schedules: vec![],
             // Same slug as the pre-seeded routine.
             title: "  at   ceiling ZZZ ".into(),
             ttl_secs: Some(300),
@@ -192,6 +198,7 @@ fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
     // 1800s ttl exceeds the 300s ceiling and is rejected without mutating the store (#468).
     let store = store_with(vec![Routine {
         schedule: "*/5 * * * *".to_string(),
+        schedules: vec![],
         ..make_routine("upd-ttl-ceiling", "Keep Ceiling", 1, 1)
     }]);
     let result = svc_update(
@@ -230,6 +237,7 @@ fn svc_update_rejects_secs_above_new_schedule_ceiling() {
             model: None,
             goal: None,
             schedule: Some("*/5 * * * *".into()),
+            schedules: None,
             max_runtime_secs: Some(1800),
             ..empty_update_request()
         },

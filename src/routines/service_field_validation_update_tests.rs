@@ -30,6 +30,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
             UpdateRoutineRequest {
                 model: None,
                 schedule: None,
+                schedules: None,
                 title: Some(title.into()),
                 agent: None,
                 prompt: None,
@@ -72,6 +73,7 @@ fn svc_update_rejects_unknown_agent() {
         UpdateRoutineRequest {
             model: None,
             schedule: None,
+            schedules: None,
             title: None,
             agent: Some("no-such-agent-zzz".into()),
             prompt: None,
@@ -111,6 +113,7 @@ fn svc_update_rejects_blank_repository_url() {
         UpdateRoutineRequest {
             model: None,
             schedule: None,
+            schedules: None,
             title: None,
             agent: None,
             prompt: None,
@@ -158,6 +161,7 @@ fn svc_update_rejects_invalid_env_key() {
         UpdateRoutineRequest {
             model: None,
             schedule: None,
+            schedules: None,
             title: None,
             agent: None,
             prompt: None,

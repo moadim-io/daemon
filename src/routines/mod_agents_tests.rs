@@ -10,6 +10,7 @@ fn make_routine(id: &str) -> Routine {
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: "My Routine".to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -110,6 +111,7 @@ fn svc_create_invalid_cron_rejected() {
     let store = new_store();
     let req = CreateRoutineRequest {
         schedule: "not-a-cron".into(),
+        schedules: vec![],
         title: "t".into(),
         agent: "claude".into(),
         model: None,
@@ -135,6 +137,7 @@ fn svc_create_update_delete_lifecycle() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Cov Routine".into(),
             agent: "claude".into(),
             prompt: "p".into(),
@@ -161,6 +164,7 @@ fn svc_create_update_delete_lifecycle() {
         UpdateRoutineRequest {
             model: None,
             schedule: Some("@weekly".into()),
+            schedules: None,
             title: Some("Renamed".into()),
             agent: Some("codex".into()),
             prompt: Some("p2".into()),
@@ -193,6 +197,7 @@ fn svc_create_update_delete_lifecycle() {
 fn svc_update_not_found() {
     let req = UpdateRoutineRequest {
         schedule: None,
+        schedules: None,
         title: Some("x".into()),
         agent: None,
         model: None,
@@ -219,6 +224,7 @@ fn svc_update_invalid_cron_rejected() {
         .insert("id".into(), make_routine("id"));
     let req = UpdateRoutineRequest {
         schedule: Some("bad".into()),
+        schedules: None,
         title: None,
         agent: None,
         model: None,

@@ -63,9 +63,11 @@ const DEFAULT_ROUTINES: &[DefaultRoutine] =
 /// time and normalizing the schedule. Kept separate from disk/store mutation so it can be unit
 /// tested.
 fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
+    let schedule = normalize_schedule(spec.schedule);
     Routine {
         id: Uuid::new_v4().to_string(),
-        schedule: normalize_schedule(spec.schedule),
+        schedule: schedule.clone(),
+        schedules: vec![schedule],
         title: spec.title.to_string(),
         agent: spec.agent.to_string(),
         model: None,
@@ -111,7 +113,9 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
 /// [`materialize`] does for freshly created defaults. (#723)
 fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> {
     let schedule = normalize_schedule(spec.schedule);
+    let schedules = vec![schedule.clone()];
     let up_to_date = cur.schedule == schedule
+        && cur.effective_schedules() == schedules
         && cur.agent == spec.agent
         && cur.prompt == spec.prompt
         && cur.goal.as_deref() == Some(spec.goal)
@@ -125,6 +129,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
     Some(Routine {
         id: cur.id.clone(),
         schedule,
+        schedules,
         title: spec.title.to_string(),
         agent: spec.agent.to_string(),
         // Model is user-owned, like `tags`: never overridden by the spec.

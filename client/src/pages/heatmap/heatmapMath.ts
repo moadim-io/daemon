@@ -7,7 +7,7 @@
  * dependency so it is unit-testable directly.
  */
 import type { RoutineResponse } from "../../api/hooks";
-import { dateOnly, parseSchedule, WEEKDAYS } from "../../lib/schedule";
+import { dateOnly, parseSchedule, scheduleList, WEEKDAYS } from "../../lib/schedule";
 
 /** Rows in the grid: the next 7 calendar days, row 0 = today. */
 export const HEAT_DAYS = 7;
@@ -40,6 +40,7 @@ export function heatFilterAccepts(filter: HeatFilter, kind: HeatKind): boolean {
 export interface HeatSource {
   kind: HeatKind;
   schedule: string;
+  schedules?: string[];
   enabled: boolean;
 }
 
@@ -68,21 +69,23 @@ export function computeHeatmap(sources: HeatSource[], now: Date, filter: HeatFil
 
   for (const source of sources) {
     if (!source.enabled || !heatFilterAccepts(filter, source.kind)) continue;
-    const cron = parseSchedule(source.schedule, now);
-    if (!cron) continue;
     let contributed = false;
-    // Fires strictly after `now` in chronological order, so each `date` is on or
-    // after `today`; stop at the first fire that lands on or past the window's
-    // end. The iteration cap bounds cost on pathological (sub-minute) schedules.
-    for (let i = 0; i < MAX_FIRES_PER_SOURCE && cron.hasNext(); i++) {
-      const dt = cron.next().toDate();
-      const date = dateOnly(dt);
-      if (date.getTime() >= endDate.getTime()) break;
-      const day = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-      const row = grid[day];
-      if (!row) continue;
-      row[dt.getHours()] = (row[dt.getHours()] ?? 0) + 1;
-      contributed = true;
+    for (const schedule of scheduleList(source)) {
+      const cron = parseSchedule(schedule, now);
+      if (!cron) continue;
+      // Fires strictly after `now` in chronological order, so each `date` is on or
+      // after `today`; stop at the first fire that lands on or past the window's
+      // end. The iteration cap bounds cost on pathological (sub-minute) schedules.
+      for (let i = 0; i < MAX_FIRES_PER_SOURCE && cron.hasNext(); i++) {
+        const dt = cron.next().toDate();
+        const date = dateOnly(dt);
+        if (date.getTime() >= endDate.getTime()) break;
+        const day = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+        const row = grid[day];
+        if (!row) continue;
+        row[dt.getHours()] = (row[dt.getHours()] ?? 0) + 1;
+        contributed = true;
+      }
     }
     if (contributed) sourcesCounted++;
   }
@@ -161,5 +164,5 @@ export function dayLabel(today: Date, day: number): string {
 
 /** Map the routine record list into one `HeatSource` array. */
 export function sourcesOf(routines: RoutineResponse[]): HeatSource[] {
-  return routines.map((r) => ({ kind: "routine", schedule: r.schedule, enabled: r.enabled }));
+  return routines.map((r) => ({ kind: "routine", schedule: r.schedule, schedules: scheduleList(r), enabled: r.enabled }));
 }

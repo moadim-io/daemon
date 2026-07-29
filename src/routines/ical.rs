@@ -240,9 +240,7 @@ fn build_ical_core_with_tz(
         if !routine.enabled || globally_locked || routine.power_saving {
             continue;
         }
-        let Ok(cron) = routine.schedule.parse::<Cron>() else {
-            continue;
-        };
+        let schedules = routine.effective_schedules();
         let summary = escape_text(&routine.title);
         let description = escape_text(&format!(
             "{} (agent: {})",
@@ -259,9 +257,15 @@ fn build_ical_core_with_tz(
         // mirror the exact skip performed there so the feed matches what will actually run.
         let snoozed_until = routine.snoozed_until;
         let skip_runs = routine.skip_runs.unwrap_or(0) as usize;
-        let mut fires = cron
-            .iter_after(now)
-            .take_while(|dt| *dt <= horizon)
+        let mut all_fires: Vec<DateTime<Local>> = schedules
+            .iter()
+            .filter_map(|schedule| schedule.parse::<Cron>().ok())
+            .flat_map(|cron| cron.iter_after(now).take_while(|dt| *dt <= horizon))
+            .collect();
+        all_fires.sort();
+        all_fires.dedup();
+        let mut fires = all_fires
+            .into_iter()
             .filter(move |dt| {
                 snoozed_until
                     .is_none_or(|until| u64::try_from(dt.timestamp()).is_ok_and(|ts| ts >= until))

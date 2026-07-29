@@ -160,12 +160,6 @@ pub(crate) fn read_routine_crons(path: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
-/// Read a routine's tracked cron entry from `schedule.cron`, returning the first line that is
-/// neither empty nor a `#` comment.
-fn read_routine_cron(path: &std::path::Path) -> Option<String> {
-    read_routine_crons(path).into_iter().next()
-}
-
 /// Read a routine's `state.local.toml` sidecar under `base`, defaulting to an empty
 /// [`RuntimeState`] when the sidecar is absent or unparsable (e.g. before the routine has ever
 /// been snoozed).
@@ -276,7 +270,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
     atomic_write(
         &routine_cron_path(&slug),
-        format!("{}\n", routine.schedule).as_bytes(),
+        format!("{}\n", routine.effective_schedules().join("\n")).as_bytes(),
     )?;
     atomic_write(&routine_pure_prompt_path(&slug), routine.prompt.as_bytes())?;
     atomic_write(

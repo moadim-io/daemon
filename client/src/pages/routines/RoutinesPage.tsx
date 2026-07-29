@@ -31,6 +31,7 @@ import {
 } from "../../api/hooks";
 import { GlobalLockBanner } from "../../components/GlobalLockBanner";
 import { loadRefreshToken, RefreshControl, refreshMs, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
+import { scheduleList } from "../../lib/schedule";
 import { useToasts } from "../../shell/toasts";
 import { BulkBar, BulkDeleteDialog, ConfirmDeleteDialog } from "./BulkBar";
 import { humanizeBytes } from "./bytes";
@@ -410,6 +411,7 @@ export function RoutinesPage() {
   if (page.kind === "clone") {
     const pre: RoutineDraft = {
       schedule: page.source.schedule,
+      schedules: scheduleList(page.source),
       title: cloneTitle(page.source.title),
       agent: page.source.agent,
       model: page.source.model ?? null,
@@ -442,6 +444,7 @@ export function RoutinesPage() {
       id: r.id,
       label: r.title,
       schedule: r.schedule,
+      schedules: scheduleList(r),
       snoozed: isRoutineSnoozed(r, now),
       flagCount: r.flag_count ?? 0,
     }));
@@ -568,6 +571,7 @@ export function RoutinesPage() {
           initial={
             editRoutine && {
               schedule: editRoutine.schedule,
+              schedules: scheduleList(editRoutine),
               title: editRoutine.title,
               agent: editRoutine.agent,
               model: editRoutine.model ?? null,

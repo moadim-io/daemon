@@ -12,6 +12,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         model: None,
         id: id.to_string(),
         schedule: "@daily".to_string(),
+        schedules: vec![],
         title: title.to_string(),
         agent: "claude".to_string(),
         prompt: "do the thing".to_string(),
@@ -47,6 +48,7 @@ fn svc_create_rejects_empty_prompt() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Empty Prompt ZZZ".into(),
             agent: "claude".into(),
             prompt: String::new(),
@@ -75,6 +77,7 @@ fn svc_create_rejects_whitespace_prompt() {
         CreateRoutineRequest {
             model: None,
             schedule: "@daily".into(),
+            schedules: vec![],
             title: "Svc Create Whitespace Prompt ZZZ".into(),
             agent: "claude".into(),
             prompt: "   \n\t".into(),
@@ -113,6 +116,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
         UpdateRoutineRequest {
             model: None,
             schedule: None,
+            schedules: None,
             title: None,
             agent: None,
             prompt: Some("   ".into()),

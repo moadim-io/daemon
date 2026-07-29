@@ -251,6 +251,7 @@ async fn build_app_serves_machines() {
             model: None,
             id: "r1".to_string(),
             schedule: "@daily".to_string(),
+            schedules: vec![],
             title: "R".to_string(),
             agent: "claude".to_string(),
             prompt: "p".to_string(),

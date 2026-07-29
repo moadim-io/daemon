@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { icalFeedUrl, type RoutineResponse } from "../../api/hooks";
-import { CAL_MONTHS, GRID_CELLS, WEEKDAYS, monthStart, occurrencesPerDay } from "../../lib/schedule";
+import { CAL_MONTHS, GRID_CELLS, WEEKDAYS, monthStart, occurrencesPerDay, scheduleList } from "../../lib/schedule";
 import { isRoutineSnoozed } from "./filter";
 import { useToasts } from "../../shell/toasts";
 
@@ -50,10 +50,13 @@ export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarPr
   const cells: Hit[][] = Array.from({ length: GRID_CELLS }, () => []);
   let scheduled = 0;
   for (const r of routines.filter((r) => r.enabled)) {
-    const counts = occurrencesPerDay(r.schedule, gridStart);
-    if (counts === undefined) continue;
+    const countsBySchedule = scheduleList(r)
+      .map((schedule) => occurrencesPerDay(schedule, gridStart))
+      .filter((counts): counts is number[] => counts !== undefined);
+    if (countsBySchedule.length === 0) continue;
     scheduled++;
     const snoozed = isRoutineSnoozed(r, calNow);
+    const counts = countsBySchedule.reduce((acc, cur) => acc.map((v, i) => v + (cur[i] ?? 0)));
     counts.forEach((c, i) => {
       if (c > 0) cells[i]?.push({ id: r.id, title: r.title, count: c, snoozed });
     });

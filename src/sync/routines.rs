@@ -84,44 +84,59 @@ pub(crate) fn format_routine_line(routine: &Routine) -> String {
     format_routine_line_for_schedule(routine, &routine.schedule)
 }
 
-/// Read the cron sidecar schedules for a routine, falling back to the loaded single schedule.
-fn routine_schedules_for_crontab(routine: &Routine) -> Vec<String> {
+/// Read the pure cron sidecar schedules for a routine, falling back to the loaded single schedule.
+fn pure_schedules_for_crontab(routine: &Routine) -> Vec<String> {
     let slug = slugify(&routine.title);
     let entries = read_routine_crons(&crate::paths::routine_dir(&slug).join("schedule.cron"));
     if entries.is_empty() {
         vec![routine.schedule.clone()]
     } else {
-        let schedules: Vec<String> = entries
-            .iter()
-            .map(|entry| normalize_schedule(entry))
-            .filter(|schedule| match validate_cron(schedule) {
-                Ok(()) => true,
-                Err(err) => {
-                    log::warn!(
-                        "routine sync: invalid schedule.cron entry {:?} for routine {:?}: {}; \
-                         skipping",
-                        schedule,
-                        routine.id,
-                        err
-                    );
-                    false
-                }
-            })
-            .collect();
-        if schedules.is_empty() {
-            return vec![routine.schedule.clone()];
-        }
-        let refs: Vec<&str> = schedules.iter().map(String::as_str).collect();
-        #[allow(
-            clippy::expect_used,
-            reason = "each entry was validated by validate_cron before reaching cron-union"
-        )]
-        cron_union::union(refs)
-            .expect("validated cron schedules compile through cron-union")
-            .iter()
-            .map(ToString::to_string)
-            .collect()
+        entries
     }
+}
+
+/// Compile pure schedules with cron-union, skipping invalid human-edited entries.
+fn compailed_schedules_for_crontab(routine: &Routine, pure_schedules: &[String]) -> Vec<String> {
+    let schedules: Vec<String> = pure_schedules
+        .iter()
+        .map(|entry| normalize_schedule(entry))
+        .filter(|schedule| match validate_cron(schedule) {
+            Ok(()) => true,
+            Err(err) => {
+                log::warn!(
+                    "routine sync: invalid schedule.cron entry {:?} for routine {:?}: {}; skipping",
+                    schedule,
+                    routine.id,
+                    err
+                );
+                false
+            }
+        })
+        .collect();
+    if schedules.is_empty() {
+        return vec![routine.schedule.clone()];
+    }
+    let refs: Vec<&str> = schedules.iter().map(String::as_str).collect();
+    #[allow(
+        clippy::expect_used,
+        reason = "each entry was validated by validate_cron before reaching cron-union"
+    )]
+    cron_union::union(refs)
+        .expect("validated cron schedules compile through cron-union")
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Write the gitignored cron-union output sidecar used by the OS crontab.
+fn write_compailed_cron_sidecar(routine: &Routine, schedules: &[String]) {
+    let slug = slugify(&routine.title);
+    let dir = crate::paths::routine_dir(&slug);
+    let path = crate::paths::routine_compailed_cron_path(&slug);
+    let mut text = schedules.join("\n");
+    text.push('\n');
+    let _ = crate::utils::fs_perms::create_private_dir_all(&dir);
+    let _ = std::fs::write(&path, text);
 }
 
 /// Build the full routines block from the enabled managed routines in `store`.
@@ -162,12 +177,15 @@ fn build_block(store: &RoutineStore) -> String {
         .filter_map(|routine| match load_agent_command(&routine.agent) {
             // Validate the agent config at sync time so a broken routine is skipped here rather than
             // failing at fire time; the crontab line itself no longer embeds the agent command.
-            Ok(_) => Some(
-                routine_schedules_for_crontab(routine)
+            Ok(_) => Some({
+                let pure_schedules = pure_schedules_for_crontab(routine);
+                let compailed_schedules = compailed_schedules_for_crontab(routine, &pure_schedules);
+                write_compailed_cron_sidecar(routine, &compailed_schedules);
+                compailed_schedules
                     .iter()
                     .map(|schedule| format_routine_line_for_schedule(routine, schedule))
-                    .collect::<Vec<_>>(),
-            ),
+                    .collect::<Vec<_>>()
+            }),
             Err(err) => {
                 log::warn!(
                     "routine sync: cannot load agent {:?} ({}) for routine {:?}; skipping",

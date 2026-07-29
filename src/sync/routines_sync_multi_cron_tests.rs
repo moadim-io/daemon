@@ -68,6 +68,14 @@ fn build_block_reads_multiple_crons_from_schedule_sidecar_and_unions_redundant_e
         !block.contains("*/20 * * * * "),
         "cron-union should remove redundant subset: {block}"
     );
+    assert_eq!(
+        std::fs::read_to_string(crate::paths::routine_compailed_cron_path(&slug)).unwrap(),
+        "*/10 * * * *\n5 9 * * 1-5\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(routine_dir.join("schedule.cron")).unwrap(),
+        "# human-edited extra fires\n*/10 * * * *\n*/20 * * * *\n5 9 * * 1-5\n"
+    );
 
     std::fs::remove_file(&cfg).unwrap();
     let _ = std::fs::remove_dir_all(routine_dir);
@@ -112,6 +120,14 @@ fn build_block_skips_invalid_multi_cron_entries_and_falls_back_if_none_valid() {
     assert!(block.contains("15 10 * * * "), "{block}");
     assert!(!block.contains("not a cron"), "{block}");
     assert!(!block.contains("99 99 99 99 99"), "{block}");
+    assert_eq!(
+        std::fs::read_to_string(crate::paths::routine_compailed_cron_path(&valid_slug)).unwrap(),
+        "5 9 * * 1-5\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(crate::paths::routine_compailed_cron_path(&invalid_slug)).unwrap(),
+        "15 10 * * *\n"
+    );
 
     std::fs::remove_file(&cfg).unwrap();
     let _ = std::fs::remove_dir_all(valid_dir);

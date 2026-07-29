@@ -95,6 +95,15 @@ pub fn routine_cron_path(id: &str) -> PathBuf {
     routine_dir(id).join("schedule.cron")
 }
 
+/// Returns the path to `{routines_dir}/{id}/.compailed.cron`, the gitignored cron-union output.
+///
+/// The filename intentionally preserves the current sidecar spelling. `schedule.cron` stays the
+/// human-authored source; this derived file is rewritten by crontab sync and ignored by git.
+#[must_use]
+pub fn routine_compailed_cron_path(id: &str) -> PathBuf {
+    routine_dir(id).join(".compailed.cron")
+}
+
 /// Returns the path to `{routines_dir}/{id}/prompts/`.
 #[must_use]
 pub fn routine_prompts_dir(id: &str) -> PathBuf {

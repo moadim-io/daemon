@@ -8,10 +8,12 @@ import {
   distinctMachines,
   distinctRepositories,
   distinctTags,
+  failureRisk,
   filterRoutines,
   healthBadge,
   healthBadgeClass,
   healthPriority,
+  healthTooltip,
   isFilterActive,
   isRoutineSnoozed,
   lastFireAt,
@@ -140,6 +142,18 @@ describe("filter", () => {
     expect(matchesFilter(enabled, off, now(), window)).toBe(false);
     expect(matchesFilter(disabled, off, now(), window)).toBe(true);
     expect(matchesFilter(disabled, on, now(), window)).toBe(false);
+  });
+
+  it("status auto-disabled matches only disabled routines with a breaker reason", () => {
+    const f: RoutineFilter = { ...defaultFilter(), status: "auto-disabled" };
+    const autoOff = routine("a", "t", "claude", "0 * * * *", ["m1"], [], false, {
+      auto_disabled_reason: "5 consecutive failures",
+    });
+    expect(matchesFilter(f, autoOff, now(), window)).toBe(true);
+    const manualOff = routine("b", "t", "claude", "0 * * * *", ["m1"], [], false);
+    expect(matchesFilter(f, manualOff, now(), window)).toBe(false);
+    const on = routine("c", "t", "claude", "0 * * * *", ["m1"], [], true);
+    expect(matchesFilter(f, on, now(), window)).toBe(false);
   });
 
   it("status dormant requires enabled and no machines", () => {
@@ -522,6 +536,51 @@ describe("filter", () => {
       power_saving: true,
     });
     expect(routineHealth(r, now())).toBe("disabled");
+  });
+
+  it("health auto-disabled by the failure circuit-breaker (#521)", () => {
+    const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], false, {
+      auto_disabled_reason: "5 consecutive failures",
+    });
+    expect(routineHealth(r, now())).toBe("auto-disabled");
+    expect(healthBadge("auto-disabled")).toBe("AUTO-DISABLED");
+    expect(healthBadgeClass("auto-disabled")).toBe("health-badge auto-disabled");
+    expect(healthTooltip(r, "auto-disabled")).toBe("5 consecutive failures");
+  });
+
+  it("a manual disable (no reason) stays plain 'disabled', not 'auto-disabled'", () => {
+    const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], false);
+    expect(routineHealth(r, now())).toBe("disabled");
+    expect(healthTooltip(r, "disabled")).toBe(healthBadge("disabled"));
+  });
+
+  it("auto-disabled outranks power-saving", () => {
+    const r = routine("a", "A", "claude", "0 * * * *", ["machine1"], [], false, {
+      power_saving: true,
+      auto_disabled_reason: "3 consecutive failures",
+    });
+    expect(routineHealth(r, now())).toBe("auto-disabled");
+  });
+
+  it("failure_risk is none for a healthy or disabled routine, or when the breaker is off", () => {
+    const healthy = routine("a", "A", "claude", "0 * * * *", ["m"], [], true, { agent_registered: true });
+    expect(failureRisk(healthy)).toBe("none");
+    expect(failureRisk({ ...healthy, consecutive_failures: 2, failure_threshold: 5 })).toBe("warning");
+    expect(failureRisk({ ...healthy, enabled: false, consecutive_failures: 2, failure_threshold: 5 })).toBe(
+      "none",
+    );
+    expect(failureRisk({ ...healthy, consecutive_failures: 0, failure_threshold: 5 })).toBe("none");
+    expect(failureRisk({ ...healthy, consecutive_failures: 2, failure_threshold: null })).toBe("none");
+    expect(failureRisk({ ...healthy, consecutive_failures: 2, failure_threshold: 0 })).toBe("none");
+  });
+
+  it("failure_risk is critical one failure before the threshold trips", () => {
+    const r = routine("a", "A", "claude", "0 * * * *", ["m"], [], true, {
+      agent_registered: true,
+      consecutive_failures: 4,
+      failure_threshold: 5,
+    });
+    expect(failureRisk(r)).toBe("critical");
   });
 
   it("trigger_button_title names the pause reason", () => {

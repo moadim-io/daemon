@@ -4,8 +4,10 @@ import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtUntil, fmtWhen, nextFireAfterAny, nextFiresAny, scheduleList } from "../../lib/schedule";
 import {
   DUE_SOON_WINDOW_MS,
+  failureRisk,
   healthBadge,
   healthBadgeClass,
+  healthTooltip,
   isRoutineSnoozed,
   lastFireAt,
   routineHealth,
@@ -89,6 +91,7 @@ export function RoutineRow({
     (r.last_scheduled_trigger_at == null || r.last_manual_trigger_at >= r.last_scheduled_trigger_at);
 
   const health = routineHealth(r, now);
+  const risk = failureRisk(r);
 
   return (
     <tr className={selected ? "row-selected" : ""}>
@@ -168,9 +171,17 @@ export function RoutineRow({
         </span>
       </td>
       <td>
-        <span className={healthBadgeClass(health)} title={healthBadge(health)}>
+        <span className={healthBadgeClass(health)} title={healthTooltip(r, health)}>
           {healthBadge(health)}
         </span>
+        {risk !== "none" && (
+          <div
+            className={`failure-chip ${risk}`}
+            title={`${r.consecutive_failures} consecutive failure(s) — auto-disables at ${r.failure_threshold}`}
+          >
+            {r.consecutive_failures}/{r.failure_threshold}
+          </div>
+        )}
       </td>
       <td>
         <label className="toggle">

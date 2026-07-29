@@ -1285,7 +1285,8 @@ textarea {
 
 .stat-card.has-dormant .stat-val,
 .stat-card.has-flags .stat-val,
-.stat-card.has-unreg .stat-val {
+.stat-card.has-unreg .stat-val,
+.stat-card.has-auto-disabled .stat-val {
   color: var(--warn);
 }
 
@@ -1574,7 +1575,8 @@ textarea {
 
 .health-badge.dormant,
 .health-badge.dead,
-.health-badge.agent-missing {
+.health-badge.agent-missing,
+.health-badge.auto-disabled {
   background: var(--err-bg);
   color: var(--err);
 }
@@ -1582,6 +1584,26 @@ textarea {
 .health-badge.chip {
   padding: 1px 5px;
   font-size: 9px;
+}
+
+/* ─── Routines: failure circuit-breaker chip (issue #521) ───────────────── */
+
+.failure-chip {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.failure-chip.critical {
+  background: var(--err-bg);
+  color: var(--err);
 }
 
 /* ─── Routines: enabled toggle switch ────────────────────────────────── */

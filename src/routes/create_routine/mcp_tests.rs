@@ -29,6 +29,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         max_runtime_secs: None,
         tags: vec![],
         env: std::collections::HashMap::new(),
+        failure_threshold: None,
     }
 }
 

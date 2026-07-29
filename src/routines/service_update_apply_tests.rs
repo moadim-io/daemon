@@ -55,6 +55,9 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         ttl_secs: None,
         max_runtime_secs: None,
         env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
     }
 }
 
@@ -73,6 +76,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         max_runtime_secs: None,
         tags: None,
         env: None,
+        failure_threshold: None,
     }
 }
 
@@ -124,6 +128,7 @@ fn svc_update_sets_ttl_secs() {
                 max_runtime_secs: None,
                 tags: None,
                 env: None,
+                failure_threshold: None,
             },
         )
         .unwrap();
@@ -164,6 +169,7 @@ fn svc_update_sets_max_runtime_secs() {
                 max_runtime_secs: Some(1234),
                 tags: None,
                 env: None,
+                failure_threshold: None,
             },
         )
         .unwrap();
@@ -202,6 +208,88 @@ fn svc_update_sets_env() {
                 .map(String::as_str),
             Some("gpt-x")
         );
+    });
+}
+
+#[test]
+fn svc_update_sets_failure_threshold() {
+    let _home = TempHome::set();
+    // Covers the `req.failure_threshold` apply branch in `svc_update`.
+    let title = "Svc Update Failure Threshold ZZZ";
+    let store = new_store();
+    let routine = make_routine("threshold-id", title, 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("threshold-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "threshold-id",
+            UpdateRoutineRequest {
+                failure_threshold: Some(5),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.failure_threshold, Some(5));
+    });
+}
+
+#[test]
+fn svc_update_re_enabling_resets_circuit_breaker_state() {
+    let _home = TempHome::set();
+    // Covers the `req.enabled == Some(true)` reset branch in `svc_update` (#521): a manual
+    // re-enable must clear both the failure streak and the auto-disable reason, not just flip
+    // `enabled` back on.
+    let title = "Svc Update Reenable Resets Breaker ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("reenable-id", title, 1, 1);
+    routine.enabled = false;
+    routine.consecutive_failures = 4;
+    routine.auto_disabled_reason = Some("auto-disabled after 4 consecutive failed run(s)".into());
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("reenable-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "reenable-id",
+            UpdateRoutineRequest {
+                enabled: Some(true),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert!(updated.routine.enabled);
+        assert_eq!(updated.routine.consecutive_failures, 0);
+        assert!(updated.routine.auto_disabled_reason.is_none());
+    });
+}
+
+#[test]
+fn svc_update_disabling_does_not_touch_circuit_breaker_state() {
+    let _home = TempHome::set();
+    // The reset only fires for `enabled == Some(true)`; a manual disable (or an update that
+    // doesn't touch `enabled` at all) must leave an in-progress failure streak alone.
+    let title = "Svc Update Disable Keeps Breaker State ZZZ";
+    let store = new_store();
+    let mut routine = make_routine("disable-id", title, 1, 1);
+    routine.consecutive_failures = 2;
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("disable-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "disable-id",
+            UpdateRoutineRequest {
+                enabled: Some(false),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert!(!updated.routine.enabled);
+        assert_eq!(updated.routine.consecutive_failures, 2);
     });
 }
 

@@ -27,6 +27,7 @@ use crate::utils::time::now_secs;
 use super::model::{RoutineStore, RunStatus};
 use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
 
+mod circuit_breaker;
 mod counters;
 mod disk_cap;
 mod log_cap;
@@ -362,6 +363,10 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
                     exit_code,
                 },
             );
+            // Feed the same, already-deduplicated outcome into the failure circuit-breaker (#521);
+            // see `circuit_breaker`'s doc comment for why this hook point (not `svc_list_runs`) was
+            // chosen.
+            circuit_breaker::record_run_outcome(store, routine_id, status);
         };
     let ttl_stats = reap_dir(
         &workbenches_dir(),

@@ -41,6 +41,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 max_runtime_secs: None,
                 tags: None,
                 env: None,
+                failure_threshold: None,
             },
         );
         assert!(
@@ -82,6 +83,7 @@ fn svc_update_rejects_unknown_agent() {
             max_runtime_secs: None,
             tags: None,
             env: None,
+            failure_threshold: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -123,6 +125,7 @@ fn svc_update_rejects_blank_repository_url() {
             max_runtime_secs: None,
             tags: None,
             env: None,
+            failure_threshold: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -169,6 +172,7 @@ fn svc_update_rejects_invalid_env_key() {
                 "not-valid".to_string(),
                 "x".to_string(),
             )])),
+            failure_threshold: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

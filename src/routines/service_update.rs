@@ -129,11 +129,25 @@ pub fn svc_update(
     if let Some(enabled) = req.enabled {
         routine.enabled = enabled;
     }
+    // Manually re-enabling clears the failure circuit-breaker's state (#521): an operator flipping
+    // a routine back on is a deliberate "give it another chance" signal, so it starts that chance
+    // with a clean slate rather than tripping again after just one more failure because the old
+    // count (or an even-older auto-disable reason) survived the toggle. Unconditional on
+    // `enabled == Some(true)` rather than only on a false->true transition — sending `enabled: true`
+    // while already enabled is the same "I want this healthy" signal and should have the same
+    // effect, not a silent no-op that leaves a stale reason behind.
+    if req.enabled == Some(true) {
+        routine.consecutive_failures = 0;
+        routine.auto_disabled_reason = None;
+    }
     if let Some(ttl) = req.ttl_secs {
         routine.ttl_secs = Some(ttl);
     }
     if let Some(max_runtime) = req.max_runtime_secs {
         routine.max_runtime_secs = Some(max_runtime);
+    }
+    if let Some(threshold) = req.failure_threshold {
+        routine.failure_threshold = Some(threshold);
     }
     if let Some(tags) = tags {
         routine.tags = tags;

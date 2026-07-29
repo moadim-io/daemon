@@ -319,3 +319,7 @@ fn cmd_list() -> i32 {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod machine_tests;
+
+#[cfg(test)]
+#[path = "mod_concurrency_tests.rs"]
+mod machine_concurrency_tests;

@@ -401,3 +401,7 @@ pub fn svc_ical_routine(store: &RoutineStore, dir: &std::path::Path, id: &str) -
 #[cfg(test)]
 #[path = "ical_tests.rs"]
 mod ical_tests;
+
+#[cfg(test)]
+#[path = "ical_offset_tests.rs"]
+mod ical_offset_tests;

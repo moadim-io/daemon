@@ -29,6 +29,7 @@ impl MoadimMcp {
             enabled: input.enabled,
             ttl_secs: input.ttl_secs,
             max_runtime_secs: input.max_runtime_secs,
+            failure_threshold: input.failure_threshold,
             tags: input.tags,
             env: input.env,
         };

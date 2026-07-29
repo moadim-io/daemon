@@ -45,6 +45,11 @@ pub struct CreateRoutineRequest {
     /// than zero when set; `0` is rejected (#233).
     #[serde(default)]
     pub max_runtime_secs: Option<u64>,
+    /// Consecutive failed-or-unknown runs after which this routine auto-disables (the failure
+    /// circuit-breaker, #521). `None` or `0` opts out (the default): unlike `ttl_secs`/
+    /// `max_runtime_secs`, `0` is a meaningful opt-out value here, not rejected.
+    #[serde(default)]
+    pub failure_threshold: Option<u32>,
     /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
     /// and must be non-blank.
     #[serde(default)]
@@ -87,6 +92,9 @@ pub struct UpdateRoutineRequest {
     /// New max runtime (seconds) for a single run, or `None` to keep the existing value. Must be
     /// greater than zero when set; `0` is rejected (#233).
     pub max_runtime_secs: Option<u64>,
+    /// New failure-circuit-breaker threshold, or `None` to keep the existing value. `Some(0)`
+    /// explicitly opts back out (#521); unlike `ttl_secs`/`max_runtime_secs`, `0` is accepted here.
+    pub failure_threshold: Option<u32>,
     /// New tags list, or `None` to keep the existing value.
     pub tags: Option<Vec<String>>,
     /// New tracked `[env]` map, or `None` to keep the existing value. Replaces the whole map (not

@@ -78,6 +78,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         max_runtime_secs: None,
         tags: vec![],
         env: std::collections::HashMap::new(),
+        failure_threshold: None,
     }
 }
 
@@ -132,6 +133,7 @@ fn create_get_update_trigger_delete_routine_success() {
             max_runtime_secs: None,
             tags: None,
             env: None,
+            failure_threshold: None,
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));

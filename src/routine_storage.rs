@@ -6,10 +6,6 @@ use crate::utils::lock::LockRecover;
 // in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
 use crate::paths::routines_dir;
 use std::collections::HashMap;
-// Only referenced by the `#[cfg(test)]` sibling test modules via `use super::*;` (they build a
-// `RoutineStore` map by hand); not used directly in this file's own (non-test) code.
-#[cfg(test)]
-use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +72,11 @@ struct RoutineToml {
     /// the daemon default.
     #[serde(default)]
     max_runtime_secs: Option<u64>,
+    /// Consecutive failed-or-unknown runs after which the daemon auto-disables this routine
+    /// (the failure circuit-breaker); `None`/`0` opts out. See
+    /// [`crate::routines::Routine::failure_threshold`] (#521).
+    #[serde(default)]
+    failure_threshold: Option<u32>,
     /// Free-form labels for the routine; absent means no tags.
     #[serde(default)]
     tags: Vec<String>,
@@ -130,6 +131,14 @@ struct RuntimeState {
     /// [`crate::routines::Routine::power_saving`].
     #[serde(default)]
     power_saving: bool,
+    /// Count of consecutive failed-or-unknown runs. See
+    /// [`crate::routines::Routine::consecutive_failures`].
+    #[serde(default)]
+    consecutive_failures: u32,
+    /// Why the failure circuit-breaker last auto-disabled this routine, or `None`. See
+    /// [`crate::routines::Routine::auto_disabled_reason`].
+    #[serde(default)]
+    auto_disabled_reason: Option<String>,
 }
 
 /// Parse a routine TOML file at `path`, returning `None` on any error.
@@ -255,6 +264,7 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
         last_manual_trigger_at: None,
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
+        failure_threshold: routine.failure_threshold,
         tags: routine.tags.clone(),
         env: routine.env.clone(),
     };
@@ -283,7 +293,12 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
 /// when all are `None`, so the on-disk state always mirrors the in-memory routine.
 fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
     let path = routine_state_path(slug);
-    if routine.snoozed_until.is_none() && routine.skip_runs.is_none() && !routine.power_saving {
+    if routine.snoozed_until.is_none()
+        && routine.skip_runs.is_none()
+        && !routine.power_saving
+        && routine.consecutive_failures == 0
+        && routine.auto_disabled_reason.is_none()
+    {
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
@@ -296,6 +311,8 @@ fn write_runtime_state(slug: &str, routine: &Routine) -> std::io::Result<()> {
         snoozed_until: routine.snoozed_until,
         skip_runs: routine.skip_runs,
         power_saving: routine.power_saving,
+        consecutive_failures: routine.consecutive_failures,
+        auto_disabled_reason: routine.auto_disabled_reason.clone(),
     };
     let text = toml::to_string_pretty(&state).map_err(std::io::Error::other)?;
     atomic_write(&path, text.as_bytes())?;
@@ -400,6 +417,10 @@ pub(crate) use routine_storage_migrations::{
 #[cfg(test)]
 #[path = "routine_storage_tests.rs"]
 mod routine_storage_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_repersist_tests.rs"]
+mod routine_storage_repersist_tests;
 
 #[cfg(test)]
 #[path = "routine_storage_more_tests.rs"]

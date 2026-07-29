@@ -14,7 +14,18 @@
 //! This is the only sync direction the daemon runs. See [`crate::sync::routines::sync_routines_to_crontab`].
 
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// Environment override for the `crontab -` install timeout, in seconds.
+const CRONTAB_WRITE_TIMEOUT_ENV: &str = "MOADIM_CRONTAB_WRITE_TIMEOUT_SECS";
+
+/// Default wall-clock time allowed for `crontab -` to install the generated block.
+const DEFAULT_CRONTAB_WRITE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Poll interval used while waiting for `crontab -` to exit.
+const CRONTAB_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Crontab block for routines (agent-driven tmux jobs).
 pub mod routines;
@@ -141,8 +152,11 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         .expect("stdin is piped")
         .write_all(content.as_bytes());
 
-    // Always wait() to reap the child, even when the write above failed.
-    let status = child.wait()?;
+    // Always wait to reap the child, even when the write above failed. Use a
+    // timeout instead of plain `wait()`: on macOS, privacy/TCC prompts for
+    // `SystemPolicySysAdminFiles` can leave setuid `crontab -` blocked
+    // headlessly, which otherwise wedges daemon startup before HTTP binds.
+    let status = wait_for_crontab_write(&mut child)?;
     write_result?;
 
     if !status.success() {
@@ -151,6 +165,36 @@ pub(crate) fn write_crontab(content: &str) -> Result<(), SyncError> {
         )));
     }
     Ok(())
+}
+
+/// Wait for a `crontab -` child, killing it if the install does not finish promptly.
+fn wait_for_crontab_write(child: &mut Child) -> Result<ExitStatus, SyncError> {
+    let timeout = crontab_write_timeout();
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            let pid = child.id();
+            let _ = child.kill();
+            let status = child.wait()?;
+            return Err(SyncError::CrontabCommand(format!(
+                "crontab - timed out after {}s; killed pid {pid} ({status})",
+                timeout.as_secs()
+            )));
+        }
+        thread::sleep(CRONTAB_WAIT_POLL_INTERVAL);
+    }
+}
+
+/// Resolve the configured timeout for installing crontab content.
+fn crontab_write_timeout() -> Duration {
+    std::env::var(CRONTAB_WRITE_TIMEOUT_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .map_or(DEFAULT_CRONTAB_WRITE_TIMEOUT, Duration::from_secs)
 }
 
 // ─── Block assembly ────────────────────────────────────────────────────────
@@ -259,6 +303,14 @@ pub fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod sync_tests;
+
+#[cfg(test)]
+#[path = "crontab_io_tests.rs"]
+mod crontab_io_tests;
+
+#[cfg(test)]
+#[path = "clear_crontab_tests.rs"]
+mod clear_crontab_tests;
 
 #[cfg(test)]
 #[path = "mod_replace_block_tests.rs"]

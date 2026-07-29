@@ -206,6 +206,13 @@ pub struct Routine {
 
 /// A [`Routine`] enriched with derived, non-persisted fields for API responses.
 #[derive(Debug, Clone, Serialize, JsonSchema, utoipa::ToSchema)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "agent_registered/agent_command_available/agent_setup_available/is_running are \
+              independent, already-documented probes, not combinatorial state, and this is a \
+              #[serde(flatten)] HTTP response DTO — collapsing them into an enum would break the \
+              JSON shape existing API clients parse"
+)]
 pub struct RoutineResponse {
     /// The underlying routine.
     #[serde(flatten)]

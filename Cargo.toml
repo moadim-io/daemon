@@ -520,3 +520,10 @@ stable_sort_primitive = "deny"
 # scoping the lock/read to just the data actually needed) makes the hold time match what's
 # written. The codebase is already clean, so `deny` locks that in.
 significant_drop_in_scrutinee = "deny"
+# Reject a struct with more than 3 `bool` fields. Past that count, a call site constructing or
+# reading the struct positionally (or a `Default`-then-mutate sequence) can no longer tell which
+# `true`/`false` means what without cross-checking field names against their declarations, and `n`
+# independent bools imply `2^n` possible states, most of which were never meant to be reachable
+# together. A state machine or a two-variant enum usually expresses the real, restricted set of
+# valid combinations far more precisely than a pile of loose flags.
+struct_excessive_bools = "deny"

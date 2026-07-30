@@ -12,6 +12,14 @@ test("overview dashboard screenshot stays reviewable", async ({ page }, testInfo
   await saveScreenshot(page, testInfo.project.name, "overview");
 });
 
+test("dark overview screenshot stays reviewable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "one dark-mode desktop baseline is enough");
+  await forceDarkTheme(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "dark-overview");
+});
+
 test("routines operations screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/routines");
   await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
@@ -48,5 +56,12 @@ async function saveScreenshot(page: Page, project: string, name: string) {
     path: `../docs/screenshots/ui-e2e/${project}-${name}.png`,
     fullPage: true,
     animations: "disabled",
+  });
+}
+
+async function forceDarkTheme(page: Page) {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.addInitScript(() => {
+    localStorage.setItem("moadim.client.theme", "dark");
   });
 }

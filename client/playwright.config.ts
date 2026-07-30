@@ -8,7 +8,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: "http://127.0.0.1:4173",
-    colorScheme: "dark",
+    colorScheme: "light",
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },

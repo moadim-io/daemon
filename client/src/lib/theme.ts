@@ -8,9 +8,9 @@ const THEME_KEY = "moadim.client.theme";
 /** Reads the persisted theme from localStorage. Returns `true` for light theme. */
 export function loadThemeLight(): boolean {
   try {
-    return localStorage.getItem(THEME_KEY) === "light";
+    return localStorage.getItem(THEME_KEY) !== "dark";
   } catch {
-    return false;
+    return true;
   }
 }
 

@@ -1,50 +1,53 @@
-/* Redesign: a calm, editorial control panel — not a terminal pastiche.
-   Warm neutral paper background, a single ink accent, generous whitespace. */
-:root {
-  --bg: #14130f;
-  --surface: #1c1a15;
-  --surface-2: #24211b;
-  --border: #343026;
-  --border-strong: #4a4536;
-  --text: #f2ede2;
-  --text-dim: #b3ab98;
-  --text-faint: #7d7566;
-  --accent: #e08a4c;
-  --accent-ink: #14130f;
-  --ok: #7fbf8a;
-  --ok-bg: #1c2b1e;
-  --err: #e2685a;
-  --err-bg: #2e1c19;
-  --warn: #d9ab5c;
-  --warn-bg: #2e2517;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+/* Landing-aligned neobrutalist design tokens.
+   Matches moadim.io: paper grid, black ink borders, yellow accent, hard shadows. */
+:root,
+html.theme-light {
+  --bg: #f4f1e8;
+  --surface: #ffffff;
+  --surface-2: #f9f5df;
+  --border: #0a0a0a;
+  --border-strong: #0a0a0a;
+  --text: #0a0a0a;
+  --text-dim: #332f24;
+  --text-faint: #5f5744;
+  --accent: #ffd400;
+  --accent-ink: #0a0a0a;
+  --ok: #16833a;
+  --ok-bg: #dff8e7;
+  --err: #d02f21;
+  --err-bg: #ffe0db;
+  --warn: #9f6800;
+  --warn-bg: #fff0b8;
+  --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  --radius: 6px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.18);
-  color-scheme: dark;
+  --radius: 0;
+  --shadow: 6px 6px 0 0 var(--border);
+  --shadow-lg: 10px 10px 0 0 var(--border);
+  --shadow-hover: 8px 8px 0 0 var(--border);
+  --shadow-active: 2px 2px 0 0 var(--border);
+  --grid-line: color-mix(in srgb, var(--text) 6%, var(--bg));
+  color-scheme: light;
 }
 
-/* Redesign: a calm, editorial control panel — not a terminal pastiche.
-   Warm neutral paper background, a single ink accent, generous whitespace. */
-html.theme-light {
-  --bg: #f7f6f3;
-  --surface: #ffffff;
-  --surface-2: #f0eee9;
-  --border: #e2ded5;
-  --border-strong: #cfc9ba;
-  --text: #1f1d1a;
-  --text-dim: #6b6558;
-  --text-faint: #9b9484;
-  --accent: #b5541e;
-  --accent-ink: #ffffff;
-  --ok: #3f7d4a;
-  --ok-bg: #e8f2e9;
-  --err: #b13a2c;
-  --err-bg: #fbeae7;
-  --warn: #a6741a;
-  --warn-bg: #fbf1de;
-  --shadow: 0 1px 2px rgba(31, 29, 26, 0.06), 0 4px 12px rgba(31, 29, 26, 0.05);
-  color-scheme: light;
+html:not(.theme-light) {
+  --bg: #0a0a0a;
+  --surface: #181818;
+  --surface-2: #24210e;
+  --border: #f4f1e8;
+  --border-strong: #f4f1e8;
+  --text: #f4f1e8;
+  --text-dim: #d8d0bb;
+  --text-faint: #a89f88;
+  --accent: #ffd400;
+  --accent-ink: #0a0a0a;
+  --ok: #7ee68f;
+  --ok-bg: #102515;
+  --err: #ff7a68;
+  --err-bg: #2d130f;
+  --warn: #ffd400;
+  --warn-bg: #2a2200;
+  --grid-line: color-mix(in srgb, var(--text) 9%, var(--bg));
+  color-scheme: dark;
 }
 
 * {
@@ -2311,5 +2314,266 @@ textarea {
 
   .notif-panel {
     width: min(320px, 92vw);
+  }
+}
+
+
+/* ─── Landing-style neobrutalist chrome overrides ─────────────────────── */
+body {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 32px 32px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--border);
+  outline-offset: 3px;
+}
+
+.app-header,
+.app-nav {
+  border-color: var(--border);
+  border-width: 0 0 4px;
+  background: var(--surface);
+}
+
+.app-header {
+  text-transform: uppercase;
+}
+
+.brand {
+  background: var(--accent);
+  border: 3px solid var(--border);
+  box-shadow: var(--shadow-active);
+  color: var(--accent-ink);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+}
+
+.brand-sub {
+  color: inherit;
+  font-weight: 900;
+}
+
+.nav-link {
+  border: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  color: var(--text);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  background: var(--accent);
+  border-left-color: var(--border);
+  border-right-color: var(--border);
+  color: var(--accent-ink);
+}
+
+.page {
+  max-width: 1280px;
+  padding-top: 34px;
+}
+
+.page-title {
+  display: inline-block;
+  background: var(--accent);
+  border: 4px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--accent-ink);
+  font-size: clamp(30px, 5vw, 58px);
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  margin: 0 0 30px;
+  padding: 8px 12px;
+  text-transform: uppercase;
+}
+
+.card,
+.stat-card,
+.table-wrap,
+.settings-section,
+.reliability-card,
+.heatmap-card,
+.cal-wrap,
+.day-wrap,
+.modal,
+.dialog,
+.cmdk,
+.notif-panel,
+.global-lock-banner {
+  background: var(--surface);
+  border: 4px solid var(--border);
+  border-radius: 0;
+  box-shadow: var(--shadow-lg);
+}
+
+.stats {
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.stat-card,
+.settings-section,
+.reliability-card,
+.heatmap-card {
+  padding: 16px;
+}
+
+.section-hd {
+  margin: 26px 0 12px;
+}
+
+.stat-label,
+.section-label,
+.form-label,
+th,
+.kind-badge,
+.view-toggle-label {
+  color: var(--text);
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stat-val {
+  color: var(--text);
+  font-size: 34px;
+  font-weight: 950;
+  letter-spacing: -0.05em;
+}
+
+.section-label,
+.dep-warn,
+.kind-badge,
+.status-pill,
+.pill,
+.flag-scope,
+.cmdk-hint,
+.cmdk-key {
+  background: var(--accent);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  color: var(--accent-ink);
+}
+
+.btn,
+.machine-badge,
+.icon-btn,
+.form-input,
+.form-textarea,
+.form-select,
+.cmdk-input,
+.search-input {
+  background: var(--surface);
+  border: 3px solid var(--border);
+  border-radius: 0;
+  box-shadow: 3px 3px 0 0 var(--border);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.btn,
+.machine-badge,
+.icon-btn,
+.nav-link,
+.cal-chip.clickable,
+.day-chip.clickable,
+.cmdk-row {
+  transition: box-shadow 120ms ease, transform 120ms ease, background-color 120ms ease;
+}
+
+.btn:hover:not(:disabled),
+.machine-badge:hover,
+.icon-btn:hover:not(:disabled),
+.cal-chip.clickable:hover,
+.day-chip.clickable:hover,
+.cmdk-row.active {
+  background: var(--accent);
+  border-color: var(--border);
+  color: var(--accent-ink);
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow);
+}
+
+.btn:active:not(:disabled),
+.machine-badge:active,
+.icon-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: var(--shadow-active);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--border);
+  color: var(--accent-ink);
+}
+
+.btn-danger,
+.icon-btn.danger {
+  background: var(--err-bg);
+  border-color: var(--border);
+  color: var(--err);
+}
+
+.health-dot {
+  border: 2px solid var(--border);
+  border-radius: 0;
+  height: 12px;
+  width: 12px;
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+th,
+td {
+  border-bottom: 3px solid var(--border);
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+.cmdk-row,
+.notif-row,
+.cal-day,
+.day-hour,
+.log-line {
+  border-color: var(--border);
+}
+
+.toast {
+  border: 3px solid var(--border);
+  border-radius: 0;
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

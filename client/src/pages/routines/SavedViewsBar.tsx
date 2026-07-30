@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useToasts } from "../../shell/toasts";
 import type { SavedView, ViewSnapshot } from "./savedViews";
 
 export interface SavedViewsBarProps {
@@ -10,6 +11,7 @@ export interface SavedViewsBarProps {
 
 /** Dropdown to apply a saved view, plus inline controls to save/delete named presets. */
 export function SavedViewsBar({ views, onApply, onSave, onDelete }: SavedViewsBarProps) {
+  const { addToast } = useToasts();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   // ponytail: tracks only which view was last picked/saved, for the DELETE button and the
@@ -35,6 +37,16 @@ export function SavedViewsBar({ views, onApply, onSave, onDelete }: SavedViewsBa
     if (picked === "") return;
     onDelete(picked);
     setPicked("");
+  };
+
+  // The URL is kept in sync with the current filter/sort/group-by on every change (see
+  // RoutinesPage's `applyViewToParams` effect), so by the time this runs `location.href` already
+  // reflects whatever's on screen — no snapshot needs threading through as a prop.
+  const onCopyLink = () => {
+    navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => addToast("Link copied — includes current filters, sort, and grouping", "ok"))
+      .catch(() => addToast("Copy failed", "err"));
   };
 
   return (
@@ -83,6 +95,14 @@ export function SavedViewsBar({ views, onApply, onSave, onDelete }: SavedViewsBa
               }}
             >
               ☆ SAVE VIEW
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              title="Copy a shareable link to this filtered/sorted/grouped view"
+              onClick={onCopyLink}
+            >
+              🔗 COPY LINK
             </button>
             {picked !== "" && (
               <button type="button" className="btn btn-ghost btn-sm" title="Delete this saved view" onClick={onDeleteClick}>

@@ -76,6 +76,7 @@ import {
 } from "./savedViews";
 import { SavedViewsBar } from "./SavedViewsBar";
 import { groupRecentRuns, RUN_HISTORY_FETCH_LIMIT } from "./sparkline";
+import { applyViewToParams, paramsToSnapshot } from "./urlView";
 import { StatsBar } from "./StatsBar";
 import { ViewToggle, type RView } from "./ViewToggle";
 
@@ -100,8 +101,12 @@ export function RoutinesPage() {
   const { addToast } = useToasts();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ── Persisted view state (restored from the last-used filter/sort/group-by) ──
-  const initialSnapshot = useMemo(() => loadLastView(), []);
+  // ── Persisted view state (restored from the URL, falling back to the last-used
+  // filter/sort/group-by) ── A shared link's `?q=...&sort=...` wins over the locally-persisted
+  // view, so opening a teammate's link shows their filters instead of silently reverting to
+  // whatever this browser had saved.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialSnapshot = useMemo(() => paramsToSnapshot(searchParams) ?? loadLastView(), []);
   const initialDecoded = initialSnapshot ? decodeSnapshot(initialSnapshot) : undefined;
 
   // Deep link: `/routines?history=<id>` (e.g. from the Overview page's recent-runs
@@ -140,9 +145,13 @@ export function RoutinesPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Auto-persist the current filter/sort/group-by so a reload restores it.
+  // Auto-persist the current filter/sort/group-by so a reload restores it, and mirror it into
+  // the URL so the address bar is always a valid, shareable link to the current view.
   useEffect(() => {
-    saveLastView(captureSnapshot(filter, sortCol, sortDir, groupBy));
+    const snapshot = captureSnapshot(filter, sortCol, sortDir, groupBy);
+    saveLastView(snapshot);
+    setSearchParams((prev) => applyViewToParams(prev, snapshot), { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, sortCol, sortDir, groupBy]);
 
   // Global "/" focuses search, Escape closes the open modal.

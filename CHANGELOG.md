@@ -11,6 +11,27 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-07-30
+
+Surface the most recent managed-routine crontab sync failure in the health response so macOS crontab/TCC write timeouts are visible instead of leaving users with a healthy daemon and stale OS schedules.
+
+Derive routine `folder`, `slug`, and `rel_path` from the on-disk `routines/` tree, preserve filesystem locations across normal updates, and add explicit routine move APIs for REST and MCP.
+
+Restyle the built-in daemon web UI to match the moadim.io landing page with paper-grid backgrounds, yellow accents, thick ink borders, and hard neobrutalist shadows.
+
+Install the macOS LaunchAgent with a WorkingDirectory matching the directory where `moadim install` was run so launchd restarts keep the intended server root instead of defaulting to `/`.
+
+### Fixed
+
+`moadim restart -f`/`--foreground` now relaunches attached to the terminal
+instead of silently falling back to a detached restart — `-f`/`--foreground`
+are now accepted as aliases of `-i`/`--interactive` on `restart`, matching
+`start`'s existing behavior.
+
+Add folder-aware routine management in the web UI, including filesystem-derived folder grouping, visible routine locations, and a move dialog backed by the explicit move API.
+
+Skip duplicate scheduled-trigger requests that target the same routine in the same minute, preventing overlapping multi-schedule cron expressions from launching duplicate workbenches.
+
 ## [3.0.0] - 2026-07-30
 
 Write cron-union output to gitignored `.compailed.cron` while preserving `schedule.cron` as the pure human-edited source.
@@ -4933,7 +4954,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/moadim-io/daemon/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/moadim-io/daemon/compare/v1.7.6...v3.0.0
 [1.7.6]: https://github.com/moadim-io/daemon/compare/v1.7.5...v1.7.6
 [1.7.5]: https://github.com/moadim-io/daemon/compare/v1.7.4...v1.7.5

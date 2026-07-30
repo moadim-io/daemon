@@ -265,11 +265,16 @@ pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
     let on_multi_thread_runtime = tokio::runtime::Handle::try_current()
         .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
-    if on_multi_thread_runtime {
+    let result = if on_multi_thread_runtime {
         tokio::task::block_in_place(|| sync_routines_to_crontab_blocking(store))
     } else {
         sync_routines_to_crontab_blocking(store)
+    };
+    match &result {
+        Ok(()) => crate::sync::record_crontab_sync_success(),
+        Err(err) => crate::sync::record_crontab_sync_failure(err),
     }
+    result
 }
 
 /// Blocking body of [`sync_routines_to_crontab`], split out so the wrapper can choose whether to
@@ -295,6 +300,10 @@ fn sync_routines_to_crontab_blocking(store: &RoutineStore) -> Result<(), SyncErr
 #[cfg(test)]
 #[path = "routines_sync_tests.rs"]
 mod routines_sync_tests;
+
+#[cfg(test)]
+#[path = "routines_sync_status_tests.rs"]
+mod routines_sync_status_tests;
 
 #[cfg(test)]
 #[path = "routines_sync_multi_cron_tests.rs"]

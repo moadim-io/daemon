@@ -259,6 +259,15 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "p",
         ],
         &["routines", "delete", "rid"],
+        &[
+            "routines",
+            "move",
+            "rid",
+            "--folder",
+            "maintenance",
+            "--slug",
+            "nightly",
+        ],
         &["routines", "trigger", "rid"],
         &["routines", "logs", "rid"],
         &["routines", "ical"],
@@ -278,6 +287,19 @@ fn logs_print_raw_when_body_is_not_json() {
     let server = FakeServer::start(200, "plain log line\nsecond line");
     let _addr = EnvGuard::set(BIND_ENV, &server.addr);
     assert_eq!(run(argv(&["routines", "logs", "abc"])), 0);
+}
+
+#[test]
+fn move_preserves_current_slug_when_slug_is_omitted() {
+    let server = FakeServer::start(
+        200,
+        "{\"id\":\"rid\",\"slug\":\"daily\",\"rel_path\":\"maintenance/daily\"}",
+    );
+    let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+    assert_eq!(
+        run(argv(&["routine", "move", "rid", "--folder", "maintenance"])),
+        0
+    );
 }
 
 #[test]

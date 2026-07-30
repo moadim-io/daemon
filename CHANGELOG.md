@@ -11,6 +11,44 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-07-30
+
+Write cron-union output to gitignored `.compailed.cron` while preserving `schedule.cron` as the pure human-edited source.
+
+Update cron-union to 1.0.3 so compiled routine cron generation natively accepts POSIX zero-based day-of-week ranges.
+
+Keep valid cron schedules active when cron-union cannot simplify an expression, falling back to the validated schedule lines instead of panicking during crontab sync.
+
+Time out hung `crontab -` installs so daemon startup and routine sync report a clear error instead of wedging.
+
+Enable `clippy::struct_excessive_bools`, scope-allowed on `RoutineResponse`.
+
+Drop broken intra-doc links so `cargo doc` passes on main.
+
+Expose multi-schedule routines across REST, MCP, CLI, UI, derived next-run fields, and calendar projections while keeping the legacy `schedule` field as the primary schedule for backward compatibility.
+
+### Added
+
+Opt-in failure circuit-breaker for routines (#521): set a routine's new `failure_threshold` to
+auto-disable it (and stop scheduling further runs) after that many consecutive failed-or-unknown
+runs, instead of retrying forever. `consecutive_failures` and `auto_disabled_reason` are tracked
+per routine and surfaced on `GET /routines`; manually re-enabling a routine resets the counter and
+clears the reason. Leaving `failure_threshold` unset (or `0`) keeps today's unlimited-retry
+behavior. UI surfacing is left as a follow-up.
+
+Write cron-union output to `schedule.compailed.cron` instead of the legacy hidden `.compailed.cron` sidecar.
+
+### Added
+
+UI: surface the failure circuit-breaker (#521) on the Routines and Overview pages. A routine
+auto-disabled by repeated failures now shows a distinct AUTO-DISABLED health badge (tooltip
+carries the daemon's actual `auto_disabled_reason`) instead of being indistinguishable from a
+routine someone paused on purpose, gets its own filter facet and Routines-page stat tile, and
+now appears in the Overview's NEEDS ATTENTION panel — previously auto-disabled routines were
+silently excluded there along with intentionally-paused ones. An enabled routine nearing its
+`failure_threshold` also gets an inline "N/M failures" chip (amber, red on the failure that would
+trip the breaker) as an early warning before it auto-disables.
+
 ## [1.7.6] - 2026-07-29
 
 feat(client): add a responsive breakpoint to the app shell so the header, nav, page padding, and touch targets adapt on narrow (mobile/tablet) viewports instead of overflowing.
@@ -4895,7 +4933,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v1.7.6...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/moadim-io/daemon/compare/v1.7.6...v3.0.0
 [1.7.6]: https://github.com/moadim-io/daemon/compare/v1.7.5...v1.7.6
 [1.7.5]: https://github.com/moadim-io/daemon/compare/v1.7.4...v1.7.5
 [1.7.4]: https://github.com/moadim-io/daemon/compare/v1.7.3...v1.7.4

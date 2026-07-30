@@ -15,7 +15,9 @@
     "pretest": "pnpm run generate:api",
     "test": "vitest run",
     "pretest:coverage": "pnpm run generate:api",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e:screenshots": "playwright test --config playwright.config.ts",
+    "test:e2e:screenshots:check": "pnpm run test:e2e:screenshots && test -z \"$(git -C .. status --porcelain -- docs/screenshots/ui-e2e)\""
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
@@ -30,6 +32,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.2.17",

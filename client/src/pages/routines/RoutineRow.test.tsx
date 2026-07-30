@@ -29,6 +29,7 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     agent_setup_available: true,
     is_running: false,
     file_path: "",
+    folder: null,
     slug: "routine",
     rel_path: "routine",
     schedule_description: null,
@@ -52,6 +53,7 @@ function renderRow(r: RoutineResponse) {
           onEdit={vi.fn()}
           onClone={vi.fn()}
           onDelete={vi.fn()}
+          onMove={vi.fn()}
           onToggle={vi.fn()}
           onTrigger={vi.fn()}
           onLogs={vi.fn()}

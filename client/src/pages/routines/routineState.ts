@@ -74,16 +74,10 @@ export function groupByLabel(by: RGroupBy): string {
   }
 }
 
-/**
- * The folder a routine's title lives in: everything before the final `/`-separated segment
- * (the leaf name shown in the table), mirroring the breadcrumb split `RoutineTitle` already
- * renders. `"(root)"` for a title with no `/`, matching the `"(unassigned)"` convention used
- * for the machine group-by.
- */
-export function folderOf(title: string): string {
-  const parts = title.split("/").filter(Boolean);
-  parts.pop();
-  return parts.length > 0 ? parts.join("/") : "(root)";
+/** The filesystem-derived folder for a routine. Root-level routines render as `(root)`. */
+export function routineFolder(r: Pick<RoutineResponse, "folder">): string {
+  const folder = r.folder?.trim();
+  return folder ? folder : "(root)";
 }
 
 /** Group key for a single routine under the given dimension. */
@@ -100,7 +94,7 @@ export function routineGroupKey(r: RoutineResponse, by: RGroupBy): string {
     case "health":
       return healthBadge(routineHealth(r, new Date()));
     case "folder":
-      return folderOf(r.title);
+      return routineFolder(r);
   }
 }
 

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { RoutineResponse } from "../../api/hooks";
 import {
   flipDir,
-  folderOf,
+  routineFolder,
   groupByLabel,
   groupHealthCounts,
   groupRoutines,
@@ -52,6 +52,7 @@ function routine(
     agent_setup_available: true,
     is_running: false,
     file_path: "",
+    folder: null,
     slug: "routine",
     rel_path: "routine",
     schedule_description: null,
@@ -300,31 +301,27 @@ describe("routineState — group by (state_group_by_tests.rs)", () => {
     expect(groupByLabel("folder")).toBe("Folder");
   });
 
-  it("folderOf returns (root) for an unnested title", () => {
-    expect(folderOf("Nightly backup")).toBe("(root)");
+  it("routineFolder returns (root) for an unfiled routine", () => {
+    expect(routineFolder(routine("id", "Nightly backup", "claude", "0 * * * *", [], true))).toBe("(root)");
   });
 
-  it("folderOf returns the path before the leaf segment", () => {
-    expect(folderOf("backend/db/vacuum")).toBe("backend/db");
-    expect(folderOf("backend/vacuum")).toBe("backend");
+  it("routineFolder returns the filesystem-derived folder", () => {
+    const r = routine("id", "Nightly backup", "claude", "0 * * * *", [], true, { folder: "backend/db" });
+    expect(routineFolder(r)).toBe("backend/db");
   });
 
-  it("folderOf ignores leading/trailing/doubled slashes", () => {
-    expect(folderOf("/backend//vacuum/")).toBe("backend");
-  });
-
-  it("routine_group_key folder returns the parsed folder path", () => {
-    const nested = routine("id1", "backend/db/vacuum", "claude", "0 * * * *", [], true);
-    const root = routine("id2", "Nightly backup", "claude", "0 * * * *", [], true);
+  it("routine_group_key folder returns the filesystem-derived folder path", () => {
+    const nested = routine("id1", "Display Name", "claude", "0 * * * *", [], true, { folder: "backend/db" });
+    const root = routine("id2", "backend/db/title text only", "claude", "0 * * * *", [], true);
     expect(routineGroupKey(nested, "folder")).toBe("backend/db");
     expect(routineGroupKey(root, "folder")).toBe("(root)");
   });
 
-  it("group_routines by folder groups nested titles under their shared parent", () => {
+  it("group_routines by folder groups filesystem folders, not slashy titles", () => {
     const rs = [
-      routine("a", "backend/db/vacuum", "claude", "0 * * * *", [], true),
-      routine("b", "Standalone", "claude", "0 * * * *", [], true),
-      routine("c", "backend/db/reindex", "claude", "0 * * * *", [], true),
+      routine("a", "Vacuum", "claude", "0 * * * *", [], true, { folder: "backend/db" }),
+      routine("b", "backend/db/title-only", "claude", "0 * * * *", [], true),
+      routine("c", "Reindex", "claude", "0 * * * *", [], true, { folder: "backend/db" }),
     ];
     const groups = groupRoutines(rs, "folder");
     expect(groups.length).toBe(2);

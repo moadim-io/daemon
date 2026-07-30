@@ -21,6 +21,7 @@ import {
   useDeleteRoutine,
   useLockStatus,
   useMachine,
+  useMoveRoutine,
   useMachines,
   useRoutine,
   useRoutines,
@@ -59,6 +60,7 @@ import { RoutineFlags } from "./RoutineFlags";
 import { RoutineForm, type RoutineDraft } from "./RoutineForm";
 import { RoutineHistory } from "./RoutineHistory";
 import { RoutineLogs } from "./RoutineLogs";
+import { MoveRoutineDialog } from "./MoveRoutineDialog";
 import { RoutineTable } from "./RoutineTable";
 import { cloneTitle } from "./routineDraft";
 import { flipDir, sortRoutines, type RCol, type RDir, type RGroupBy } from "./routineState";
@@ -88,6 +90,7 @@ type RPage =
 type RModal =
   | { kind: "none" }
   | { kind: "edit"; id: string }
+  | { kind: "move"; id: string }
   | { kind: "confirmDelete"; id: string; title: string }
   | { kind: "confirmBulkDelete" };
 
@@ -204,6 +207,7 @@ export function RoutinesPage() {
   // ── Mutations ──────────────────────────────────────────────────────────────
   const createRoutine = useCreateRoutine();
   const updateRoutine = useUpdateRoutine();
+  const moveRoutine = useMoveRoutine();
   const deleteRoutine = useDeleteRoutine();
   const triggerRoutine = useTriggerRoutine();
   const cleanupRoutines = useCleanupRoutines();
@@ -241,6 +245,19 @@ export function RoutinesPage() {
           addToast("Routine updated", "ok");
         },
         onError: (e) => addToast(`Update failed: ${e.message}`, "err"),
+      },
+    );
+  };
+
+  const onMoveRoutine = (id: string, folder: string | undefined, slug: string) => {
+    moveRoutine.mutate(
+      { id, body: { folder, slug } },
+      {
+        onSuccess: () => {
+          closeModal();
+          addToast("Routine moved", "ok");
+        },
+        onError: (e) => addToast(`Move failed: ${e.message}`, "err"),
       },
     );
   };
@@ -537,6 +554,7 @@ export function RoutinesPage() {
             if (source) setPage({ kind: "clone", source });
           }}
           onDelete={(id, title) => setModal({ kind: "confirmDelete", id, title })}
+          onMove={(id) => setModal({ kind: "move", id })}
           onToggle={onToggle}
           onTrigger={onTrigger}
           onLogs={(id) => setPage({ kind: "logs", id })}
@@ -589,6 +607,17 @@ export function RoutinesPage() {
           onSave={(draft) => onSaveEdit(modal.id, draft)}
         />
       )}
+      {modal.kind === "move" && (() => {
+        const routine = routines.find((r) => r.id === modal.id);
+        return routine ? (
+          <MoveRoutineDialog
+            routine={routine}
+            saving={moveRoutine.isPending}
+            onCancel={closeModal}
+            onConfirm={(folder, slug) => onMoveRoutine(modal.id, folder, slug)}
+          />
+        ) : null;
+      })()}
       {modal.kind === "confirmDelete" && (
         <ConfirmDeleteDialog title={modal.title} onCancel={closeModal} onConfirm={() => onConfirmDelete(modal.id)} />
       )}

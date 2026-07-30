@@ -44,6 +44,7 @@ export interface RoutineTableProps {
   onEdit: (id: string) => void;
   onClone: (id: string) => void;
   onDelete: (id: string, title: string) => void;
+  onMove: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
   onTrigger: (id: string) => void;
   onLogs: (id: string) => void;
@@ -197,6 +198,7 @@ export function RoutineTable(props: RoutineTableProps) {
                       onEdit={props.onEdit}
                       onClone={props.onClone}
                       onDelete={props.onDelete}
+                      onMove={props.onMove}
                       onToggle={props.onToggle}
                       onTrigger={props.onTrigger}
                       onLogs={props.onLogs}

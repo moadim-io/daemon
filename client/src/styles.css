@@ -417,6 +417,21 @@ textarea {
   gap: 8px;
 }
 
+.move-dialog {
+  width: min(480px, 90vw);
+}
+
+.move-preview {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-bottom: 16px;
+  padding: 8px 10px;
+}
+
 .shortcuts-dialog {
   width: 360px;
 }

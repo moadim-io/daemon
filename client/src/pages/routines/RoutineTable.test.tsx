@@ -29,6 +29,7 @@ function routine(id: string, title: string, agent: string, overrides: Partial<Ro
     agent_setup_available: true,
     is_running: false,
     file_path: "",
+    folder: null,
     slug: "routine",
     rel_path: "routine",
     schedule_description: null,
@@ -56,6 +57,7 @@ function baseProps(overrides: Partial<RoutineTableProps> = {}): RoutineTableProp
     onEdit: vi.fn(),
     onClone: vi.fn(),
     onDelete: vi.fn(),
+    onMove: vi.fn(),
     onToggle: vi.fn(),
     onTrigger: vi.fn(),
     onLogs: vi.fn(),
@@ -71,13 +73,13 @@ describe("RoutineTable — grouping", () => {
 
   const routines = [
     routine("a", "Nightly backup", "claude", { agent_registered: true }),
-    routine("b", "backend/db/vacuum", "codex", { enabled: false }),
-    routine("c", "backend/db/reindex", "claude", { agent_registered: false }),
+    routine("b", "Vacuum", "codex", { enabled: false, folder: "backend/db", slug: "Vacuum", rel_path: "backend/db/Vacuum" }),
+    routine("c", "Reindex", "claude", { agent_registered: false, folder: "backend/db", slug: "reindex", rel_path: "backend/db/reindex" }),
   ];
 
   it("groupBy none renders no group headers", () => {
-    render(<RoutineTable {...baseProps({ routines, groupBy: "none" })} />);
-    expect(screen.queryByText(/backend\/db/)).not.toBeInTheDocument();
+    const { container } = render(<RoutineTable {...baseProps({ routines, groupBy: "none" })} />);
+    expect(container.querySelector(".group-hd")).toBeNull();
   });
 
   it("groupBy folder renders a header per folder with a rollup count", () => {
@@ -90,20 +92,20 @@ describe("RoutineTable — grouping", () => {
   it("shows a health chip per non-zero health variant in the group", () => {
     render(<RoutineTable {...baseProps({ routines, groupBy: "folder" })} />);
     const backendHeader = screen.getByText("backend/db").closest(".group-hd-row") as HTMLElement;
-    // codex/vacuum is disabled, claude/reindex has no registered agent — two distinct health
+    // codex/Vacuum is disabled, claude/reindex has no registered agent — two distinct health
     // chips, not merged into one.
     expect(within(backendHeader).getAllByText("1")).toHaveLength(2);
   });
 
   it("collapsing a group hides its rows but keeps the header", () => {
     render(<RoutineTable {...baseProps({ routines, groupBy: "folder" })} />);
-    expect(screen.getByText("vacuum")).toBeInTheDocument();
+    expect(screen.getByText("Vacuum")).toBeInTheDocument();
     fireEvent.click(screen.getByText("backend/db"));
     expect(screen.getByText("backend/db")).toBeInTheDocument();
-    expect(screen.queryByText("vacuum")).not.toBeInTheDocument();
+    expect(screen.queryByText("Vacuum")).not.toBeInTheDocument();
     // Expanding again brings the rows back.
     fireEvent.click(screen.getByText("backend/db"));
-    expect(screen.getByText("vacuum")).toBeInTheDocument();
+    expect(screen.getByText("Vacuum")).toBeInTheDocument();
   });
 
   it("collapse state survives a remount (persisted to localStorage)", () => {
@@ -111,17 +113,17 @@ describe("RoutineTable — grouping", () => {
     fireEvent.click(screen.getByText("backend/db"));
     unmount();
     render(<RoutineTable {...baseProps({ routines, groupBy: "folder" })} />);
-    expect(screen.queryByText("vacuum")).not.toBeInTheDocument();
+    expect(screen.queryByText("Vacuum")).not.toBeInTheDocument();
   });
 
   it("COLLAPSE ALL hides every group's rows, EXPAND ALL restores them", () => {
     render(<RoutineTable {...baseProps({ routines, groupBy: "folder" })} />);
     fireEvent.click(screen.getByText("COLLAPSE ALL"));
     expect(screen.queryByText("Nightly backup")).not.toBeInTheDocument();
-    expect(screen.queryByText("vacuum")).not.toBeInTheDocument();
+    expect(screen.queryByText("Vacuum")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("EXPAND ALL"));
     expect(screen.getByText("Nightly backup")).toBeInTheDocument();
-    expect(screen.getByText("vacuum")).toBeInTheDocument();
+    expect(screen.getByText("Vacuum")).toBeInTheDocument();
   });
 
   it("hides the collapse-all/expand-all controls for a single group", () => {

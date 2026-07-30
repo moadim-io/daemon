@@ -8,6 +8,7 @@ export type RoutineResponse = Schemas["RoutineResponse"];
 export type Routine = Schemas["Routine"];
 export type CreateRoutineRequest = Schemas["CreateRoutineRequest"];
 export type UpdateRoutineRequest = Schemas["UpdateRoutineRequest"];
+export type MoveRoutineRequest = Schemas["MoveRoutineRequest"];
 export type Flag = Schemas["Flag"];
 export type CreateFlagRequest = Schemas["CreateFlagRequest"];
 export type RunSummary = Schemas["RunSummary"];
@@ -149,6 +150,15 @@ export function useUpdateRoutine() {
   return useMutation({
     mutationFn: async ({ id, body }: { id: string; body: UpdateRoutineRequest }) =>
       unwrap(await api.PATCH("/routines/{id}", { params: { path: { id } }, body })),
+    onSuccess: (_data, { id }) => invalidateRoutines(queryClient, id),
+  });
+}
+
+export function useMoveRoutine() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: MoveRoutineRequest }) =>
+      unwrap(await api.POST("/routines/{id}/move", { params: { path: { id } }, body })),
     onSuccess: (_data, { id }) => invalidateRoutines(queryClient, id),
   });
 }

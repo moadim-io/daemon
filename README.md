@@ -501,6 +501,8 @@ moadim routines list
 moadim routines get <id>
 moadim routines update <id> --title "Renamed" --ttl-secs 3600
 moadim routines replace <id> --schedule "0 8 * * *" --title "Daily" --agent claude --prompt "..."
+moadim routines move <id-or-slug> --folder maintenance   # preserve current slug
+moadim routines move <id-or-slug> --folder team/ops --slug nightly-triage
 moadim routines trigger <id>
 moadim routines logs <id>
 moadim routines ical          # iCalendar feed of upcoming fire times

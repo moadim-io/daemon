@@ -47,7 +47,7 @@ pub enum Command {
         /// hint block. Ignored under `json`, which always prints its single object.
         quiet: bool,
         /// Start the fresh instance in the foreground, attached to the terminal, instead of
-        /// detached in the background (mirrors `moadim -i`).
+        /// detached in the background (mirrors `moadim -i`/`-f`).
         interactive: bool,
     },
     /// Ask a running background server to stop. `json` requests machine-readable output.
@@ -181,10 +181,12 @@ fn wants_quiet(rest: &[String]) -> bool {
     rest.iter().any(|arg| arg == "--quiet" || arg == "-q")
 }
 
-/// Whether a `--interactive`/`-i` flag appears among a command's trailing arguments, requesting
-/// that `restart` bring the fresh instance up in the foreground instead of detached.
+/// Whether a `--interactive`/`-i` flag (or its `--foreground`/`-f` alias, matching the top-level
+/// start flags) appears among a command's trailing arguments, requesting that `restart` bring the
+/// fresh instance up in the foreground instead of detached.
 fn wants_interactive(rest: &[String]) -> bool {
-    rest.iter().any(|arg| arg == "--interactive" || arg == "-i")
+    rest.iter()
+        .any(|arg| arg == "--interactive" || arg == "-i" || arg == "--foreground" || arg == "-f")
 }
 
 /// Default poll timeout for a bare `--wait` (no explicit seconds) on `status`.
@@ -223,7 +225,9 @@ pub fn help_text() -> String {
          \n\
          COMMANDS:\n\
          \x20   restart [--json] [-q] [-i] stop a running server (if any) and start a fresh one\n\
-         \x20                          (-q/--quiet: rotation line only; -i/--interactive: foreground)\n\
+         \x20                          (-q/--quiet: rotation line only; -i/--interactive: run the\n\
+         \x20                          fresh instance in the foreground, attached to the terminal\n\
+         \x20                          (Ctrl-C to stop); aliases: -f, --foreground)\n\
          \x20   stop [--json] [-q]     stop a running background server (-q/--quiet: no stdout)\n\
          \x20   status [--json] [--wait[=SECS]] show whether a server is running (--wait: poll until\n\
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\

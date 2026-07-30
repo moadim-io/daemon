@@ -7,7 +7,9 @@ use super::*;
 
 #[test]
 fn restart_command_interactive_flag() {
-    for flag in ["-i", "--interactive"] {
+    // `-f`/`--foreground` are accepted as aliases of `-i`/`--interactive`, matching the
+    // top-level start flags (issue #308).
+    for flag in ["-i", "--interactive", "-f", "--foreground"] {
         assert_eq!(
             parse(argv(&["restart", flag])),
             Command::Restart {

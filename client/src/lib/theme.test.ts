@@ -7,8 +7,8 @@ beforeEach(() => {
 });
 
 describe("theme", () => {
-  it("defaults to dark when nothing is stored", () => {
-    expect(loadThemeLight()).toBe(false);
+  it("defaults to the landing-style light theme when nothing is stored", () => {
+    expect(loadThemeLight()).toBe(true);
   });
 
   it("round-trips a saved preference", () => {
@@ -30,11 +30,11 @@ describe("theme", () => {
       vi.restoreAllMocks();
     });
 
-    it("falls back to dark instead of propagating the error", () => {
+    it("falls back to the landing-style light theme instead of propagating the error", () => {
       vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
         throw new DOMException("blocked", "SecurityError");
       });
-      expect(loadThemeLight()).toBe(false);
+      expect(loadThemeLight()).toBe(true);
     });
 
     it("saveThemeLight swallows the error instead of propagating it", () => {

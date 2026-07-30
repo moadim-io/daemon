@@ -178,6 +178,25 @@ fn svc_trigger_scheduled_missing_routine_not_found() {
 }
 
 #[test]
+fn svc_trigger_scheduled_skips_duplicate_fire_in_same_minute() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let mut routine = make_routine("trig-sched-dedupe-id", "Trig Sched Dedupe ZZZ", 1, 1);
+    routine.last_scheduled_trigger_at = Some(now_secs());
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-sched-dedupe-id".into(), routine);
+
+    let result = svc_trigger_scheduled(&store, "trig-sched-dedupe-id");
+
+    assert!(
+        matches!(result, Err(AppError::Locked(ref msg)) if msg.contains("already fired this minute")),
+        "expected same-minute scheduled fire dedupe, got {result:?}"
+    );
+}
+
+#[test]
 fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
     let _home = TempHome::set();
     // The scheduled path must leave `last_manual_trigger_at` untouched (it is for *manual* triggers

@@ -104,6 +104,23 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
         }
     }
 
+    let ts = now_secs();
+    if routine
+        .last_scheduled_trigger_at
+        .is_some_and(|last| last / 60 == ts / 60)
+    {
+        let reason = "routine already fired this minute; skipping duplicate scheduled trigger";
+        let slug = slugify(&routine.title);
+        drop(lock);
+        append_skip_log(&slug, ts, reason);
+        return Err(AppError::Locked(reason.into()));
+    }
+    // Same-minute claim (#795): multiple crontab lines can target the same routine when a
+    // multi-schedule routine has overlapping expressions. Claim the current minute while holding the
+    // store mutex so a second scheduled-trigger request observes the in-memory timestamp and no-ops
+    // instead of launching a duplicate workbench. The spawned scheduled command still appends the
+    // durable `scheduled.log` entry for load-after-restart history.
+    routine.last_scheduled_trigger_at = Some(ts);
     let routine = routine.clone();
     drop(lock);
     spawn_routine_command(&routine, TriggerSource::Scheduled);

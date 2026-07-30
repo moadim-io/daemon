@@ -8,3 +8,5 @@ dist/
 *.profraw
 client/coverage/
 .compailed.cron
+client/test-results/
+client/playwright-report/

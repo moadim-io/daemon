@@ -41,6 +41,7 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     agent_setup_available: false,
     is_running: false,
     file_path: "",
+    folder: null,
     slug: "routine",
     rel_path: "routine",
     schedule_description: null,

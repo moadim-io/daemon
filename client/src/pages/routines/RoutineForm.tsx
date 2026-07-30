@@ -139,7 +139,7 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
           spellCheck={false}
           {...register("title")}
         />
-        <div className="form-hint">Use / to nest folders and subfolders.</div>
+        <div className="form-hint">Display name only. Use MOVE to change the filesystem folder.</div>
       </div>
 
       <div className="form-group">

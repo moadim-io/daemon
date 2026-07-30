@@ -49,6 +49,7 @@ function makeRoutine(overrides: Partial<RoutineResponse> = {}): RoutineResponse 
     agent_command_available: false,
     agent_setup_available: false,
     file_path: "",
+    folder: null,
     slug: "routine",
     rel_path: "routine",
     flag_count: 0,

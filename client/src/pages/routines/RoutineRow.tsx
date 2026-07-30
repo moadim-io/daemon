@@ -53,6 +53,7 @@ export interface RoutineRowProps {
   onEdit: (id: string) => void;
   onClone: (id: string) => void;
   onDelete: (id: string, title: string) => void;
+  onMove: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
   onTrigger: (id: string) => void;
   onLogs: (id: string) => void;
@@ -69,6 +70,7 @@ export function RoutineRow({
   onEdit,
   onClone,
   onDelete,
+  onMove,
   onToggle,
   onTrigger,
   onLogs,
@@ -106,6 +108,9 @@ export function RoutineRow({
       <td>
         <div className="cell-schedule" title={r.title}>
           <RoutineTitle title={r.title} />
+        </div>
+        <div className="cell-goal" title={r.rel_path}>
+          {r.folder ? `/${r.folder}/${r.slug}` : `/${r.slug}`}
         </div>
         {goalFirstLine !== undefined && (
           <div className="cell-goal" title={r.goal ?? ""}>
@@ -218,6 +223,9 @@ export function RoutineRow({
           </button>
           <button type="button" className="act-btn edit" onClick={() => onEdit(r.id)}>
             EDIT
+          </button>
+          <button type="button" className="act-btn" title="Move folder" onClick={() => onMove(r.id)}>
+            MOVE
           </button>
           <button
             type="button"

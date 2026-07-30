@@ -74,14 +74,14 @@ fn agent_path(home: &Path) -> String {
 /// Render the launchd property list for the moadim user agent.
 ///
 /// `exe` is the absolute path to the `moadim` binary; `log` is where launchd writes its stdout and
-/// stderr; `home` derives the `PATH` (see [`agent_path`]). The agent runs `moadim --interactive` so
-/// launchd supervises it directly.
+/// stderr; `home` derives the `PATH` (see [`agent_path`]); `working_dir` is the Moadim server root
+/// the daemon should use. The agent runs `moadim --interactive` so launchd supervises it directly.
 ///
 /// `KeepAlive` is a `{ SuccessfulExit = false }` dict (not unconditional `true`): launchd relaunches
 /// the agent only when it exits abnormally, so a crash is still auto-restarted but a clean shutdown
 /// — `moadim stop`, the UI STOP button, `POST /shutdown`, all of which exit `0` — stays stopped
 /// instead of being immediately resurrected by launchd.
-pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path) -> String {
+pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path, working_dir: &Path) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -105,6 +105,8 @@ pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path) -> String {
   <string>{log}</string>
   <key>StandardErrorPath</key>
   <string>{log}</string>
+  <key>WorkingDirectory</key>
+  <string>{working_dir}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -116,19 +118,26 @@ pub(super) fn render_plist(exe: &Path, log: &Path, home: &Path) -> String {
         label = LAUNCHD_LABEL,
         exe = xml_escape(&exe.display().to_string()),
         log = xml_escape(&log.display().to_string()),
+        working_dir = xml_escape(&working_dir.display().to_string()),
         path = xml_escape(&agent_path(home)),
     )
 }
 
 /// Render the plist for `exe`/`log`/`home` and write it (creating parent dirs) to `plist`.
-pub(super) fn write_plist(plist: &Path, exe: &Path, log: &Path, home: &Path) -> anyhow::Result<()> {
+pub(super) fn write_plist(
+    plist: &Path,
+    exe: &Path,
+    log: &Path,
+    home: &Path,
+    working_dir: &Path,
+) -> anyhow::Result<()> {
     if let Some(dir) = plist.parent() {
         std::fs::create_dir_all(dir)?;
     }
     if let Some(dir) = log.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(plist, render_plist(exe, log, home))?;
+    std::fs::write(plist, render_plist(exe, log, home, working_dir))?;
     Ok(())
 }
 
@@ -165,7 +174,8 @@ pub fn install() -> anyhow::Result<()> {
                   `plist_path_from_home`), so this is a proven invariant, not a real failure path"
     )]
     let home = home.expect("plist_path_from_home errors before this point when home is None");
-    write_plist(&plist, &exe, &log, &home)?;
+    let working_dir = std::env::current_dir()?;
+    write_plist(&plist, &exe, &log, &home, &working_dir)?;
     reload_agent(&plist)?;
     report_installed(&plist, &log);
     request_automation_permission();

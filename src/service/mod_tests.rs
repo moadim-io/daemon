@@ -13,6 +13,7 @@ fn plist_carries_label_program_args_and_supervision_keys() {
         std::path::Path::new("/opt/moadim/bin/moadim"),
         std::path::Path::new("/Users/u/.config/moadim/daemon.log"),
         std::path::Path::new("/Users/u"),
+        std::path::Path::new("/Users/u/.hermes"),
     );
     assert!(plist.contains("<string>io.moadim.daemon</string>"));
     assert!(plist.contains("<string>/opt/moadim/bin/moadim</string>"));
@@ -27,6 +28,8 @@ fn plist_carries_label_program_args_and_supervision_keys() {
         "KeepAlive must not be unconditional true"
     );
     assert!(plist.contains("/Users/u/.config/moadim/daemon.log"));
+    assert!(plist.contains("<key>WorkingDirectory</key>"));
+    assert!(plist.contains("<string>/Users/u/.hermes</string>"));
     assert!(plist.contains("<key>EnvironmentVariables</key>"));
     assert!(plist.contains("/opt/homebrew/bin:/usr/local/bin:/Users/u/.cargo/bin"));
 }
@@ -38,8 +41,10 @@ fn plist_escapes_xml_metacharacters_in_paths() {
         std::path::Path::new("/tmp/a&b<c>"),
         std::path::Path::new("/tmp/log"),
         std::path::Path::new("/tmp/home"),
+        std::path::Path::new("/tmp/work&root"),
     );
     assert!(plist.contains("/tmp/a&amp;b&lt;c&gt;"));
+    assert!(plist.contains("/tmp/work&amp;root"));
     assert!(!plist.contains("a&b<c>"));
 }
 
@@ -186,7 +191,7 @@ fn write_plist_skips_dir_creation_when_paths_have_no_parent() {
     // path ("") skips create_dir_all for both the plist and the log. The trailing write then fails,
     // which is expected — only the no-parent branches need exercising.
     let no_parent = std::path::Path::new("");
-    assert!(write_plist(no_parent, no_parent, no_parent, no_parent).is_err());
+    assert!(write_plist(no_parent, no_parent, no_parent, no_parent, no_parent).is_err());
 }
 
 #[cfg(target_os = "macos")]
@@ -204,6 +209,7 @@ fn write_plist_errors_when_plist_dir_creation_blocked() {
         &plist,
         std::path::Path::new("/usr/local/bin/moadim"),
         &log,
+        &base,
         &base
     )
     .is_err());
@@ -228,6 +234,7 @@ fn write_plist_errors_when_log_dir_creation_blocked() {
         &plist,
         std::path::Path::new("/usr/local/bin/moadim"),
         &log,
+        &base,
         &base
     )
     .is_err());

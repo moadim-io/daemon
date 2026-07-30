@@ -299,50 +299,6 @@ fn svc_update_returns_internal_on_write_failure() {
 
 #[cfg(unix)]
 #[test]
-fn svc_update_returns_internal_on_remove_dir_failure_after_title_change() {
-    use std::os::unix::fs::PermissionsExt as _;
-    // Covers L405: `remove_routine_dir(&old_slug).map_err(|_| AppError::Internal)?`.
-    // write_routine for the NEW slug succeeds (its dir is pre-created and writable);
-    // removing the OLD slug dir fails because the parent `routines/` is read-only.
-    let _home = TempHome::set();
-    let old_title = "Svc Update Old Remove ZZZ";
-    let new_title = "Svc Update New Remove ZZZ";
-    let new_slug = slugify(new_title);
-
-    let store = new_store();
-    let routine = make_routine("upd-rm-fail-id", old_title, 1, 1);
-    crate::routine_storage::write_routine(&routine).unwrap();
-    store
-        .lock()
-        .unwrap()
-        .insert("upd-rm-fail-id".into(), routine);
-
-    // Pre-create the new slug dir so write_routine can succeed without creating it.
-    let new_dir = crate::paths::routine_dir(&new_slug);
-    std::fs::create_dir_all(&new_dir).unwrap();
-
-    // Make the routines/ parent read-only: write inside existing subdirs still works
-    // (directory permission is on the parent, not subdirs), but removing an entry from
-    // it (old slug dir) fails.
-    let routines = crate::paths::routines_dir();
-    std::fs::set_permissions(&routines, std::fs::Permissions::from_mode(0o555)).unwrap();
-
-    let result = svc_update(
-        &store,
-        "upd-rm-fail-id",
-        UpdateRoutineRequest {
-            model: None,
-            title: Some(new_title.into()),
-            ..empty_update_request()
-        },
-    );
-
-    std::fs::set_permissions(&routines, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(matches!(result, Err(AppError::Internal)));
-}
-
-#[cfg(unix)]
-#[test]
 fn svc_delete_returns_internal_on_remove_dir_failure() {
     use std::os::unix::fs::PermissionsExt as _;
     // Covers L416: `remove_routine_dir(..).map_err(|_| AppError::Internal)?` in `svc_delete`.

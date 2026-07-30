@@ -4,7 +4,6 @@
 use std::fmt::Write as _;
 
 use super::repo_dir_name;
-use super::slugify;
 use crate::routines::agents::AgentCommand;
 use crate::routines::flags::{list_flags, FlagScope};
 use crate::routines::model::Routine;
@@ -59,7 +58,7 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
     body.push_str(&routine.prompt);
     body.push('\n');
 
-    let flags = list_flags(&slugify(&routine.title));
+    let flags = list_flags(&crate::routine_storage::routine_rel_dir(routine));
     if !flags.is_empty() {
         body.push_str("\n---\n# Open flags\n\nRaised on a previous run and not yet resolved:\n\n");
         for flag in &flags {

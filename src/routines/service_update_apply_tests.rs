@@ -323,3 +323,47 @@ fn svc_update_trims_title_before_persisting() {
 
     let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
 }
+
+#[test]
+fn svc_update_title_does_not_move_filesystem_owned_folder() {
+    let _home = TempHome::set();
+    let rel = "team/ops/stable-dir";
+    let store = new_store();
+    let mut routine = make_routine("stable-dir-id", "Old Display Title", 1, 1);
+    routine.prompt = "old prompt".to_string();
+    let dir = crate::paths::routine_dir(rel);
+    std::fs::create_dir_all(dir.join("prompts")).unwrap();
+    std::fs::write(
+        crate::paths::routine_toml_path(rel),
+        "id = \"stable-dir-id\"\ntitle = \"Old Display Title\"\nagent = \"claude\"\n",
+    )
+    .unwrap();
+    std::fs::write(crate::paths::routine_cron_path(rel), "@daily\n").unwrap();
+    std::fs::write(crate::paths::routine_pure_prompt_path(rel), "old prompt").unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("stable-dir-id".into(), routine);
+
+    with_empty_path(|| {
+        let updated = svc_update(
+            &store,
+            "stable-dir-id",
+            UpdateRoutineRequest {
+                title: Some("New Display Title".into()),
+                prompt: Some("new prompt".into()),
+                ..empty_update_request()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.routine.title, "New Display Title");
+        assert_eq!(updated.rel_path, rel);
+    });
+
+    assert!(crate::paths::routine_toml_path(rel).exists());
+    assert_eq!(
+        std::fs::read_to_string(crate::paths::routine_pure_prompt_path(rel)).unwrap(),
+        "new prompt"
+    );
+    assert!(!crate::paths::routine_toml_path("new-display-title").exists());
+}

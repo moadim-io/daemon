@@ -4,7 +4,7 @@
 
 use super::{
     load_routine_from_dir, read_routine_toml, remove_routine_dir, routines_dir, slugify,
-    write_routine, RuntimeState,
+    write_routine_to_rel_dir, RuntimeState,
 };
 use serde::{Deserialize, Serialize};
 
@@ -189,7 +189,7 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
         if slug == dir_name {
             continue;
         }
-        if let Err(err) = write_routine(&routine) {
+        if let Err(err) = write_routine_to_rel_dir(&routine, &slug) {
             log::warn!("migrate_routine_dirs: failed to write {slug:?}: {err}; leaving legacy dir");
             continue;
         }

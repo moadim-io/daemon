@@ -16,6 +16,8 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
     agent_command_available: true,
     agent_setup_available: true,
     file_path: "/tmp/r1/routine.toml",
+    slug: "routine",
+    rel_path: "routine",
     flag_count: 0,
     is_running: false,
     env_keys: [],

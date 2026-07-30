@@ -875,6 +875,57 @@
         }
       }
     },
+    "/routines/{id}/move": {
+      "post": {
+        "tags": [
+          "crate::routes::move_routine"
+        ],
+        "summary": "`POST /routines/{id}/move` — explicitly move a routine directory under `routines/`.",
+        "operationId": "move_routine",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Routine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Target exists"
+          }
+        }
+      }
+    },
     "/routines/{id}/prompt-preview": {
       "get": {
         "tags": [
@@ -1561,6 +1612,26 @@
           }
         }
       },
+      "MoveRoutineRequest": {
+        "type": "object",
+        "description": "Move-request body shared by HTTP and MCP surfaces.",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "folder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New parent folder relative to `routines/`; omit or pass blank for the root."
+          },
+          "slug": {
+            "type": "string",
+            "description": "New routine directory name inside `folder`."
+          }
+        }
+      },
       "Repository": {
         "type": "object",
         "description": "A git repository the daemon pre-clones (via a persistent local mirror, see\n[`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).",
@@ -1792,6 +1863,8 @@
               "agent_command_available",
               "agent_setup_available",
               "file_path",
+              "slug",
+              "rel_path",
               "flag_count",
               "is_running",
               "env_keys"
@@ -1825,6 +1898,13 @@
                 "description": "Number of open flags raised against this routine (see [`super::flags`]). Surfaced here so\nlistings can badge it without a separate `list_flags` round-trip per routine.",
                 "minimum": 0
               },
+              "folder": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Parent folder relative to `routines/`, derived from the routine's filesystem location.\n`None` means the routine lives directly under `routines/`."
+              },
               "is_running": {
                 "type": "boolean",
                 "description": "`true` if any fire of this routine currently has a live tmux session — i.e. an agent is\nrunning right now. Derived by probing for a session under the routine's\n`moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not\npersisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing\nbest-effort \"no tmux, nothing running\" stance. See issue #438."
@@ -1838,12 +1918,16 @@
                 "description": "Unix epoch seconds of this routine's next scheduled fire, in the host's local timezone\n(matching crontab semantics) — the future counterpart to `last_scheduled_trigger_at`.\n`None` when disabled, globally locked, or no schedule is parseable / has an upcoming\nfire (e.g. `@reboot`). See issue #369. For multi-schedule routines this is the earliest\nupcoming fire across all schedules.",
                 "minimum": 0
               },
+              "rel_path": {
+                "type": "string",
+                "description": "Full routine directory relative to `routines/`."
+              },
               "schedule_description": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "Human-readable description of the primary schedule, including the timezone the\ncron expression is interpreted in, or `null` if it cannot be parsed."
+                "description": "Human-readable description of the schedule, including the timezone the\ncron expression is interpreted in, or `null` if it cannot be parsed."
               },
               "schedule_descriptions": {
                 "type": "array",
@@ -1851,6 +1935,10 @@
                   "type": "string"
                 },
                 "description": "Human-readable descriptions of every schedule."
+              },
+              "slug": {
+                "type": "string",
+                "description": "Last path segment of the routine's filesystem location."
               },
               "timezone": {
                 "type": [

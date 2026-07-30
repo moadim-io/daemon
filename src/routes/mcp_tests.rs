@@ -4,7 +4,7 @@
 )]
 
 use super::*;
-use mcp_types::UpdateRoutineInput;
+use mcp_types::{MoveRoutineInput, UpdateRoutineInput};
 
 fn make_handler() -> MoadimMcp {
     MoadimMcp::new(
@@ -140,9 +140,35 @@ fn create_get_update_trigger_delete_routine_success() {
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));
 
+    // move
+    let result = handler
+        .move_routine(Parameters(MoveRoutineInput {
+            id: id.clone(),
+            folder: Some("mcp/folder".into()),
+            slug: "moved-routine".into(),
+        }))
+        .unwrap();
+    assert!(!result.is_error.unwrap_or(false));
+
     // delete
     let result = handler.delete_routine(Parameters(IdInput { id })).unwrap();
     assert!(!result.is_error.unwrap_or(false));
+}
+
+#[test]
+fn move_routine_tool_returns_error_for_missing_routine() {
+    use rmcp::handler::server::wrapper::Parameters;
+    let handler = make_handler();
+
+    let result = handler
+        .move_routine(Parameters(MoveRoutineInput {
+            id: "missing".into(),
+            folder: Some("mcp/folder".into()),
+            slug: "moved-routine".into(),
+        }))
+        .unwrap();
+
+    assert!(result.is_error.unwrap_or(false));
 }
 
 #[path = "mcp_routine_lifecycle_tests.rs"]

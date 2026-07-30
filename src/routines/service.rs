@@ -4,7 +4,7 @@ use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::routine_storage::{remove_routine_dir, write_routine};
+use crate::routine_storage::{remove_routine_dir, routine_rel_dir, routine_slug, write_routine};
 use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 
@@ -255,6 +255,9 @@ pub fn svc_create(
 #[path = "service_update.rs"]
 mod service_update;
 pub use service_update::svc_update;
+#[path = "service_move.rs"]
+mod service_move;
+pub use service_move::{svc_move, MoveRoutineRequest};
 
 /// Rename `old_name` to `new_name` in every routine's `machines` list, persist each changed
 /// routine to disk, and sync the crontab so the new machine identity takes effect immediately.
@@ -306,14 +309,15 @@ pub fn svc_rename_machine(store: &RoutineStore, old_name: &str, new_name: &str) 
 /// startup — deleting a default is a deliberate "I never want this" gesture, not a no-op.
 pub fn svc_delete(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {
     let routine = store.lock_recover().remove(id).ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
+    let slug = routine_slug(&routine);
+    let rel_dir = routine_rel_dir(&routine);
     let killed = kill_sessions_for_deleted_routine(&slug);
     if killed > 0 {
         log::warn!(
             "routine delete: killed {killed} in-flight session(s) for deleted routine {slug:?}"
         );
     }
-    remove_routine_dir(&slug).map_err(|_| AppError::Internal)?;
+    remove_routine_dir(&rel_dir).map_err(|_| AppError::Internal)?;
     if is_default_slug(&slug) {
         record_removed_default(&slug);
     }
@@ -333,7 +337,6 @@ mod service_log_tail_tests;
 
 #[path = "service_trigger.rs"]
 mod service_trigger;
-use service_trigger::migrate_workbenches;
 #[cfg(test)]
 pub(crate) use service_trigger::sh_bin;
 pub use service_trigger::{

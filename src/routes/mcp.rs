@@ -77,6 +77,12 @@ mod list_routine_runs;
 #[path = "update_routine/mcp.rs"]
 mod update_routine;
 
+/// The `move_routine` tool, kept in `routes/move_routine/mcp.rs` beside the
+/// `POST /routines/{id}/move` HTTP handler it mirrors. Its own `#[tool_router]` block is combined
+/// with this file's below.
+#[path = "move_routine/mcp.rs"]
+mod move_routine;
+
 /// The `trigger_routine` tool, kept in `routes/trigger_routine/mcp.rs` beside the
 /// `POST /routines/{id}/trigger` HTTP handler it mirrors. Its own `#[tool_router]` block is
 /// combined with this file's below.
@@ -232,9 +238,9 @@ impl MoadimMcp {
 /// [`restart`], [`get_lock_status`], [`list_agents`], [`cleanup_workbenches`],
 /// [`list_routines`], [`get_routine`], [`delete_routine`], [`create_routine`],
 /// [`list_routine_runs`], [`update_routine`], [`trigger_routine`], [`create_flag`],
-/// [`list_flags`], [`resolve_flag`], [`lock_routines`], and [`unlock_routines`] modules), since a
+/// [`list_flags`], [`resolve_flag`], [`move_routine`], [`lock_routines`], and [`unlock_routines`] modules), since a
 /// `#[tool_router]` block only collects the `#[tool]` methods in its own `impl`.
-#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::trigger_routine_tool_router() + Self::create_flag_tool_router() + Self::list_flags_tool_router() + Self::resolve_flag_tool_router() + Self::lock_routines_tool_router() + Self::unlock_routines_tool_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::health_tool_router() + Self::shutdown_tool_router() + Self::restart_tool_router() + Self::get_lock_status_tool_router() + Self::list_agents_tool_router() + Self::cleanup_workbenches_tool_router() + Self::list_routines_tool_router() + Self::get_routine_tool_router() + Self::delete_routine_tool_router() + Self::create_routine_tool_router() + Self::list_routine_runs_tool_router() + Self::update_routine_tool_router() + Self::move_routine_tool_router() + Self::trigger_routine_tool_router() + Self::create_flag_tool_router() + Self::list_flags_tool_router() + Self::resolve_flag_tool_router() + Self::lock_routines_tool_router() + Self::unlock_routines_tool_router()))]
 impl rmcp::ServerHandler for MoadimMcp {}
 
 #[cfg(test)]

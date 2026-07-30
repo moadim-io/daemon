@@ -12,7 +12,7 @@ use crate::routines::cleanup::{
     tmux_session_prefix_alive,
 };
 use crate::routines::command::{
-    build_routine_command, inline_prompt_overflow, slugify, tmux_session_prefix, TriggerSource,
+    build_routine_command, inline_prompt_overflow, tmux_session_prefix, TriggerSource,
     TMUX_SESSION_PREFIX,
 };
 use crate::routines::model::{CleanupResponse, Routine, RoutineStore};
@@ -43,7 +43,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     let routine = routine.clone();
     drop(lock);
     write_routine(&routine).map_err(|_| AppError::Internal)?;
-    append_manual_trigger_log(&crate::routines::slugify(&routine.title), ts);
+    append_manual_trigger_log(&crate::routine_storage::routine_rel_dir(&routine), ts);
     spawn_routine_command(&routine, TriggerSource::Manual);
     Ok(routine)
 }
@@ -110,9 +110,9 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
         .is_some_and(|last| last / 60 == ts / 60)
     {
         let reason = "routine already fired this minute; skipping duplicate scheduled trigger";
-        let slug = slugify(&routine.title);
+        let rel_dir = crate::routine_storage::routine_rel_dir(routine);
         drop(lock);
-        append_skip_log(&slug, ts, reason);
+        append_skip_log(&rel_dir, ts, reason);
         return Err(AppError::Locked(reason.into()));
     }
     // Same-minute claim (#795): multiple crontab lines can target the same routine when a
@@ -223,7 +223,11 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
                     routine.agent,
                 );
                 log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
-                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
+                append_skip_log(
+                    &crate::routine_storage::routine_rel_dir(routine),
+                    now_secs(),
+                    &reason,
+                );
                 return;
             }
             // Overlap guard (#514): a routine has no built-in mutual exclusion between fires, so a
@@ -231,14 +235,19 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // all acting on the same target — duplicate PRs/issues, racing pushes. Every fire's tmux
             // session name shares the same `moadim-{slug}-` prefix (see `build_routine_command`); if
             // any of them is still alive, skip this fire instead of launching a second one.
-            let session_prefix = tmux_session_prefix(&slugify(&routine.title));
+            let session_prefix =
+                tmux_session_prefix(&crate::routine_storage::routine_slug(routine));
             if tmux_session_prefix_alive(&session_prefix) {
                 let reason = format!(
                     "a previous run (tmux session prefix {session_prefix:?}) is still active \
                      (overlap guard)"
                 );
                 log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
-                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
+                append_skip_log(
+                    &crate::routine_storage::routine_rel_dir(routine),
+                    now_secs(),
+                    &reason,
+                );
                 return;
             }
             // Global concurrency cap (#335): the overlap guard above only stops one routine from
@@ -261,7 +270,11 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
                      fire will be retried on its next scheduled tick"
                 );
                 log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
-                append_skip_log(&slugify(&routine.title), now_secs(), &reason);
+                append_skip_log(
+                    &crate::routine_storage::routine_rel_dir(routine),
+                    now_secs(),
+                    &reason,
+                );
                 return;
             }
             let cmd = build_routine_command(routine, &agent, source);
@@ -277,7 +290,11 @@ fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
         Err(err) => {
             let reason = format!("cannot load agent {:?} ({err})", routine.agent);
             log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
-            append_skip_log(&slugify(&routine.title), now_secs(), &reason);
+            append_skip_log(
+                &crate::routine_storage::routine_rel_dir(routine),
+                now_secs(),
+                &reason,
+            );
         }
     }
 }
@@ -295,36 +312,6 @@ pub fn svc_cleanup(store: &RoutineStore) -> CleanupResponse {
     }
 }
 
-/// Rename every existing workbench directory from `old_slug` to `new_slug`, preserving each run's
-/// trigger timestamp (`{old_slug}-{ts}` -> `{new_slug}-{ts}`).
-///
-/// Called from `svc_update` when a routine's title (and thus slug) changes. Workbenches are keyed
-/// by slug, not the routine's stable UUID, so without this migration a rename would strand every
-/// prior run under the old slug: [`svc_logs`] (which looks up by *current* slug) would find nothing,
-/// and an in-flight run would fall through to the cleanup watchdog's orphan defaults instead of the
-/// routine's own `ttl_secs`/`max_runtime_secs` (#267). A failed rename is logged and skipped rather
-/// than failing the update itself — this is best-effort history preservation, not a correctness
-/// requirement of the rename.
-pub(super) fn migrate_workbenches(old_slug: &str, new_slug: &str) {
-    let Ok(entries) = std::fs::read_dir(workbenches_dir()) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some((dir_slug, ts)) = parse_workbench_name(&name) else {
-            continue;
-        };
-        if dir_slug != old_slug {
-            continue;
-        }
-        let from = workbenches_dir().join(&name);
-        let to = workbenches_dir().join(format!("{new_slug}-{ts}"));
-        if let Err(err) = std::fs::rename(&from, &to) {
-            log::warn!("failed to migrate workbench {name} to {new_slug}-{ts}: {err}");
-        }
-    }
-}
-
 /// Return the contents of the newest workbench `agent.log` for routine `id`, plus whether that
 /// content is a truncated window rather than the complete file (see [`LogWithMeta`]).
 pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError> {
@@ -333,7 +320,8 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError>
         .get(id)
         .cloned()
         .ok_or(AppError::NotFound)?;
-    let slug = slugify(&routine.title);
+    let slug = crate::routine_storage::routine_slug(&routine);
+    let rel_dir = crate::routine_storage::routine_rel_dir(&routine);
     let mut newest: Option<(u64, String)> = None;
     if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
         for entry in entries.flatten() {
@@ -353,11 +341,11 @@ pub fn svc_logs(store: &RoutineStore, id: &str) -> Result<LogWithMeta, AppError>
         }
     }
     let Some((_, dir)) = newest else {
-        return skip_log_fallback(&slug);
+        return skip_log_fallback(&rel_dir);
     };
     let log_path = workbenches_dir().join(dir).join("agent.log");
     if !log_path.exists() {
-        return skip_log_fallback(&slug);
+        return skip_log_fallback(&rel_dir);
     }
     read_log_tail_with_meta(&log_path).map_err(|_| AppError::Internal)
 }

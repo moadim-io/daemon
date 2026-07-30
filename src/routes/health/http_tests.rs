@@ -42,6 +42,10 @@ async fn build_app_serves_health() {
         json["dependencies"]["python3"].is_boolean(),
         "health payload should carry a boolean dependencies.python3 flag, got: {json}"
     );
+    assert!(
+        json["crontab_sync"]["ok"].is_boolean(),
+        "health payload should carry crontab_sync.ok, got: {json}"
+    );
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     // The resolved machine name is surfaced so clients can identify which daemon answered.
     assert!(

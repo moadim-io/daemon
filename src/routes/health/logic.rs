@@ -5,6 +5,17 @@ use crate::routines;
 use crate::utils::time::now_secs;
 use serde::Serialize;
 
+/// OS scheduler synchronization state surfaced by health endpoints.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CrontabSyncHealth {
+    /// Whether the most recent OS crontab sync attempt completed successfully.
+    pub ok: bool,
+    /// Last sync error, when the most recent attempt failed.
+    pub last_error: Option<String>,
+    /// Unix timestamp of the last sync failure, when known.
+    pub last_error_at: Option<u64>,
+}
+
 /// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
 /// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
 /// instead of having routine runs silently no-op.
@@ -31,6 +42,8 @@ pub struct HealthResponse {
     pub machine: String,
     /// Presence of required external binaries on the daemon's `PATH`.
     pub dependencies: DependencyHealth,
+    /// Whether the managed routine block was last synced into the OS crontab successfully.
+    pub crontab_sync: CrontabSyncHealth,
     /// Daemon version (from `CARGO_PKG_VERSION`).
     pub version: String,
     /// Short git commit SHA the daemon was built from, or `"unknown"` outside a git checkout.
@@ -56,6 +69,14 @@ pub fn build(uptime_start: u64) -> HealthResponse {
         dependencies: DependencyHealth {
             tmux: routines::tmux_available(),
             python3: routines::agent_command_available("python3"),
+        },
+        crontab_sync: {
+            let status = crate::sync::crontab_sync_status();
+            CrontabSyncHealth {
+                ok: status.ok,
+                last_error: status.last_error,
+                last_error_at: status.last_error_at,
+            }
         },
         version: crate::build_info::VERSION.to_string(),
         git_sha: crate::build_info::GIT_SHA.to_string(),

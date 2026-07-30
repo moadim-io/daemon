@@ -4,6 +4,7 @@
 )]
 
 use super::build;
+use crate::sync::{record_crontab_sync_failure, reset_crontab_sync_status_for_tests, SyncError};
 use crate::utils::time::now_secs;
 
 #[test]
@@ -28,4 +29,32 @@ fn build_carries_version_and_machine() {
     assert_eq!(response.git_sha, crate::build_info::GIT_SHA);
     assert_eq!(response.build_date, crate::build_info::BUILD_DATE);
     assert!(!response.machine.is_empty());
+}
+
+#[test]
+fn build_surfaces_last_crontab_sync_failure() {
+    reset_crontab_sync_status_for_tests();
+    record_crontab_sync_failure(&SyncError::CrontabCommand(
+        "crontab - timed out".to_string(),
+    ));
+
+    let response = build(now_secs());
+
+    assert!(!response.crontab_sync.ok);
+    assert_eq!(
+        response.crontab_sync.last_error.as_deref(),
+        Some("crontab: crontab - timed out")
+    );
+    assert!(response.crontab_sync.last_error_at.is_some());
+    reset_crontab_sync_status_for_tests();
+}
+
+#[test]
+fn build_reports_healthy_crontab_sync_after_reset() {
+    reset_crontab_sync_status_for_tests();
+    let response = build(now_secs());
+
+    assert!(response.crontab_sync.ok);
+    assert_eq!(response.crontab_sync.last_error, None);
+    assert_eq!(response.crontab_sync.last_error_at, None);
 }

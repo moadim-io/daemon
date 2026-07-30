@@ -15,8 +15,63 @@
 
 use std::io::Write;
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
+
+use crate::utils::lock::LockRecover;
+use crate::utils::time::now_secs;
+
+/// Snapshot of the most recent OS crontab sync result.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CrontabSyncStatus {
+    /// Whether the most recent sync attempt completed successfully.
+    pub ok: bool,
+    /// Last sync error, when the most recent attempt failed.
+    pub last_error: Option<String>,
+    /// Unix timestamp of the last sync failure, when known.
+    pub last_error_at: Option<u64>,
+}
+
+impl Default for CrontabSyncStatus {
+    fn default() -> Self {
+        Self {
+            ok: true,
+            last_error: None,
+            last_error_at: None,
+        }
+    }
+}
+
+/// Process-local health state for OS crontab sync.
+fn crontab_sync_state() -> &'static Mutex<CrontabSyncStatus> {
+    static STATE: OnceLock<Mutex<CrontabSyncStatus>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(CrontabSyncStatus::default()))
+}
+
+/// Return the last recorded OS crontab sync status.
+pub(crate) fn crontab_sync_status() -> CrontabSyncStatus {
+    crontab_sync_state().lock_recover().clone()
+}
+
+/// Mark the OS crontab sync state healthy after a successful sync attempt.
+pub(crate) fn record_crontab_sync_success() {
+    *crontab_sync_state().lock_recover() = CrontabSyncStatus::default();
+}
+
+/// Mark the OS crontab sync state unhealthy after a failed sync attempt.
+pub(crate) fn record_crontab_sync_failure(err: &SyncError) {
+    *crontab_sync_state().lock_recover() = CrontabSyncStatus {
+        ok: false,
+        last_error: Some(err.to_string()),
+        last_error_at: Some(now_secs()),
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_crontab_sync_status_for_tests() {
+    record_crontab_sync_success();
+}
 
 /// Environment override for the `crontab -` install timeout, in seconds.
 const CRONTAB_WRITE_TIMEOUT_ENV: &str = "MOADIM_CRONTAB_WRITE_TIMEOUT_SECS";

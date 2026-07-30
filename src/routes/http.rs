@@ -14,6 +14,7 @@ use super::list_routines;
 use super::lock_routines;
 use super::mcp::MoadimMcp;
 use super::metrics;
+use super::move_routine;
 use super::resolve_flag;
 use super::restart;
 use super::shutdown;
@@ -255,6 +256,7 @@ pub(crate) fn build_app_with_shutdown(
                 .patch(update_routine::update_routine)
                 .delete(delete_routine::delete_routine),
         )
+        .route("/routines/{id}/move", post(move_routine::move_routine))
         .route(
             "/routines/{id}/trigger",
             post(trigger_routine::trigger_routine),

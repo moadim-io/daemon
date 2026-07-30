@@ -80,6 +80,17 @@ pub(super) struct SetPowerSavingInput {
     pub(super) active: bool,
 }
 
+/// Input for the `move_routine` MCP tool.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct MoveRoutineInput {
+    /// UUID of the routine to move.
+    pub(super) id: String,
+    /// New parent folder relative to `routines/`; omit or pass blank for the root.
+    pub(super) folder: Option<String>,
+    /// New routine directory name inside `folder`.
+    pub(super) slug: String,
+}
+
 /// Input for the `update_routine` MCP tool.
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct UpdateRoutineInput {

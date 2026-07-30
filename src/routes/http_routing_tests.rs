@@ -124,6 +124,22 @@ async fn router_routine_full_lifecycle() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // move (explicit filesystem location change)
+    let resp = build_app(routines.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/routines/{id}/move"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"folder":"http/folder","slug":"moved-routine"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
     // PUT (replace)
     let resp = build_app(routines.clone())
         .oneshot(

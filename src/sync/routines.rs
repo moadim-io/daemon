@@ -24,7 +24,7 @@
 use std::sync::{Mutex, OnceLock};
 
 use crate::routine_storage::read_routine_crons;
-use crate::routines::{load_agent_command, shell_quote, slugify, Routine, RoutineStore};
+use crate::routines::{load_agent_command, shell_quote, Routine, RoutineStore};
 use crate::sync::{read_crontab, replace_block_with, to_os_schedule, write_crontab, SyncError};
 use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::lock::LockRecover;
@@ -86,8 +86,8 @@ pub(crate) fn format_routine_line(routine: &Routine) -> String {
 
 /// Read the pure cron sidecar schedules for a routine, falling back to the loaded single schedule.
 fn pure_schedules_for_crontab(routine: &Routine) -> Vec<String> {
-    let slug = slugify(&routine.title);
-    let entries = read_routine_crons(&crate::paths::routine_dir(&slug).join("schedule.cron"));
+    let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+    let entries = read_routine_crons(&crate::paths::routine_dir(&rel_dir).join("schedule.cron"));
     if entries.is_empty() {
         vec![routine.schedule.clone()]
     } else {
@@ -133,9 +133,9 @@ fn compailed_schedules_for_crontab(routine: &Routine, pure_schedules: &[String])
 
 /// Write the gitignored cron-union output sidecar used by the OS crontab.
 fn write_compailed_cron_sidecar(routine: &Routine, schedules: &[String]) {
-    let slug = slugify(&routine.title);
-    let dir = crate::paths::routine_dir(&slug);
-    let path = crate::paths::routine_compailed_cron_path(&slug);
+    let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+    let dir = crate::paths::routine_dir(&rel_dir);
+    let path = crate::paths::routine_compailed_cron_path(&rel_dir);
     let legacy_path = dir.join(".compailed.cron");
     let mut text = schedules.join("\n");
     text.push('\n');

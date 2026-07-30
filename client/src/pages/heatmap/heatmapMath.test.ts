@@ -201,6 +201,8 @@ function routine(schedule: string, enabled: boolean): RoutineResponse {
     agent_setup_available: false,
     is_running: false,
     file_path: "",
+    slug: "routine",
+    rel_path: "routine",
     flag_count: 0,
     env_keys: [],
   };

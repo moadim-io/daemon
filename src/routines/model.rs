@@ -9,9 +9,11 @@ use std::sync::{Arc, Mutex};
 
 use super::agents::load_agent_command;
 use super::cleanup::tmux_session_prefix_alive;
-use super::command::{agent_command_available, setup_step_available, slugify, tmux_session_prefix};
+#[cfg(test)]
+use super::command::slugify;
+use super::command::{agent_command_available, setup_step_available, tmux_session_prefix};
 use super::flags::list_flags;
-use crate::paths::routine_toml_path;
+use crate::paths::routines_dir;
 
 /// A git repository the daemon pre-clones (via a persistent local mirror, see
 /// [`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).
@@ -272,7 +274,14 @@ pub struct RoutineResponse {
     pub agent_setup_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
-    /// Human-readable description of the primary schedule, including the timezone the
+    /// Parent folder relative to `routines/`, derived from the routine's filesystem location.
+    /// `None` means the routine lives directly under `routines/`.
+    pub folder: Option<String>,
+    /// Last path segment of the routine's filesystem location.
+    pub slug: String,
+    /// Full routine directory relative to `routines/`.
+    pub rel_path: String,
+    /// Human-readable description of the schedule, including the timezone the
     /// cron expression is interpreted in, or `null` if it cannot be parsed.
     pub schedule_description: Option<String>,
     /// Human-readable descriptions of every schedule.
@@ -356,7 +365,9 @@ impl Routine {
 impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
-        let slug = slugify(&routine.title);
+        let rel_path = crate::routine_storage::routine_rel_dir(&routine);
+        let slug = crate::routine_storage::routine_slug(&routine);
+        let folder = crate::routine_storage::routine_folder(&routine);
         // An agent counts as registered only if its config both exists *and* parses: a
         // present-but-malformed config is silently dropped at crontab-sync time, so reporting it as
         // registered would paint a never-firing routine as healthy. See issue #301.
@@ -370,7 +381,11 @@ impl RoutineResponse {
         let agent_setup_available = agent_command
             .as_ref()
             .is_ok_and(|agent| setup_step_available(agent.setup.as_deref()));
-        let file_path = routine_toml_path(&slug).to_string_lossy().into_owned();
+        let file_path = routines_dir()
+            .join(&rel_path)
+            .join("routine.toml")
+            .to_string_lossy()
+            .into_owned();
         let timezone = local_timezone();
         let schedules = routine.effective_schedules();
         let schedule_description = schedules
@@ -396,6 +411,9 @@ impl RoutineResponse {
             agent_command_available,
             agent_setup_available,
             file_path,
+            folder,
+            slug,
+            rel_path,
             schedule_description,
             schedule_descriptions,
             timezone,
@@ -417,68 +435,6 @@ pub struct CleanupResponse {
     pub freed_bytes: u64,
 }
 
-/// Outcome of a single past run, derived from its workbench on disk.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum RunStatus {
-    /// The tmux session is still alive.
-    Running,
-    /// The agent process exited `0`.
-    Success,
-    /// The agent process exited non-zero.
-    Failed,
-    /// The session is gone but no exit code was recorded (killed, crashed before
-    /// writing it, or from a build predating exit-code capture).
-    Unknown,
-}
-
-/// One past (or in-progress) run of a routine, listed newest-first.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
-pub struct RunSummary {
-    /// Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`.
-    pub workbench: String,
-    /// Unix seconds the run was triggered.
-    pub started_at: u64,
-    /// `started_at` as a human-readable local (daemon machine's timezone) timestamp.
-    pub started_at_local: String,
-    /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
-    pub finished_at: Option<u64>,
-    /// `finished_at` as a human-readable local timestamp, when finished.
-    pub finished_at_local: Option<String>,
-    /// Success/failure/running/unknown from exit code and tmux liveness.
-    pub status: RunStatus,
-    /// Process exit code, when recorded.
-    pub exit_code: Option<i32>,
-    /// Unix seconds this run's workbench is due to be reaped.
-    pub retention_expires_at: Option<u64>,
-}
-
-/// One past (or in-progress) run, across every routine, listed newest-first — the fleet-wide
-/// counterpart to [`RunSummary`] backing an overview "recent runs" view.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema, utoipa::ToSchema)]
-pub struct FleetRunSummary {
-    /// The routine this run belongs to.
-    pub routine_id: String,
-    /// The routine's current title.
-    pub routine_title: String,
-    /// Workbench directory name (`{slug}-{unix_secs}`).
-    pub workbench: String,
-    /// Unix seconds the run was triggered.
-    pub started_at: u64,
-    /// `started_at` as a human-readable local (daemon machine's timezone) timestamp.
-    pub started_at_local: String,
-    /// Unix seconds the run finished (`exit_code` file's mtime), `None` while running or unknown.
-    pub finished_at: Option<u64>,
-    /// `finished_at` as a human-readable local timestamp, when finished.
-    pub finished_at_local: Option<String>,
-    /// Success/failure/running/unknown from exit code and tmux liveness.
-    pub status: RunStatus,
-    /// Process exit code, when recorded.
-    pub exit_code: Option<i32>,
-}
-
 /// Routines keyed by ID.
 pub type RoutineStore = Arc<Mutex<HashMap<String, Routine>>>;
 
@@ -491,6 +447,10 @@ pub fn new_store() -> RoutineStore {
 pub(crate) const fn bool_true() -> bool {
     true
 }
+#[path = "model_runs.rs"]
+mod model_runs;
+pub use model_runs::{FleetRunSummary, RunStatus, RunSummary};
+
 #[path = "model_requests.rs"]
 mod model_requests;
 pub use model_requests::{CreateRoutineRequest, UpdateRoutineRequest};

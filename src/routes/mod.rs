@@ -18,6 +18,7 @@ pub mod list_routines;
 pub mod lock_routines;
 pub mod mcp;
 pub mod metrics;
+pub mod move_routine;
 pub mod resolve_flag;
 pub mod restart;
 pub mod shutdown;

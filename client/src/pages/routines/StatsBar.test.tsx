@@ -33,6 +33,8 @@ function routine(id: string, enabled: boolean, overrides: Partial<RoutineRespons
     agent_setup_available: true,
     is_running: false,
     file_path: "",
+    slug: "routine",
+    rel_path: "routine",
     schedule_description: null,
     goal: null,
     flag_count: 0,

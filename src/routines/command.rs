@@ -108,8 +108,8 @@ pub(crate) fn is_valid_env_key(key: &str) -> bool {
 /// check, so a malformed entry there is dropped (with a warning) rather than corrupting the
 /// single-line, `;`-joined launch command.
 fn env_export_stmts(routine: &Routine) -> Vec<String> {
-    let slug = slugify(&routine.title);
-    let local_env = read_local_env(&slug);
+    let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+    let local_env = read_local_env(&rel_dir);
     let mut merged: BTreeMap<String, String> = BTreeMap::new();
     for (key, value) in routine.env.iter().chain(local_env.iter()) {
         if is_valid_env_key(key) && !value.contains('\n') && !value.contains('\r') {
@@ -159,11 +159,12 @@ pub(crate) fn build_routine_command(
     agent: &AgentCommand,
     source: TriggerSource,
 ) -> String {
-    let slug = slugify(&routine.title);
-    let prompt_path = routine_compiled_prompt_path(&slug)
+    let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+    let slug = crate::routine_storage::routine_slug(routine);
+    let prompt_path = routine_compiled_prompt_path(&rel_dir)
         .to_string_lossy()
         .into_owned();
-    let scheduled_log_path = routine_scheduled_log_path(&slug)
+    let scheduled_log_path = routine_scheduled_log_path(&rel_dir)
         .to_string_lossy()
         .into_owned();
     // Resolve through the same seam the reaper (`cleanup/mod.rs`) and the LOGS view

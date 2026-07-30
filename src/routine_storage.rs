@@ -204,41 +204,44 @@ pub(crate) fn local_env_keys(id: &str) -> Vec<String> {
 /// left behind by an older daemon is not touched — it may carry user-added patterns, and it stays
 /// correct alongside the root one.
 ///
-/// The folder path is named after the slugified title (`slugify(&routine.title)`); `/` in the
-/// title becomes nested folders. The UUID `id` is stored inside `routine.toml` so it survives a
-/// rename. Daemon-written runtime state
-/// (`last_manual_trigger_at`) goes to the sidecar, not `routine.toml`, so a trigger never churns the
-/// version-controlled config file.
+/// Existing routines are written back to their current filesystem location under `routines/`.
+/// The title-derived slug is used only for brand-new routines that do not have a persisted
+/// `routine.toml` yet. The UUID `id` is stored inside `routine.toml` so it survives a title rename
+/// or explicit filesystem move. Daemon-written runtime state goes to the sidecar, not
+/// `routine.toml`, so a trigger never churns the version-controlled config file.
 ///
-/// Two distinct titles can slugify to the same folder name (e.g. `"Update deps!"` and
-/// `"Update deps?"` both become `update-deps`). In-memory create/update handlers already reject
-/// that when both routines are loaded in the [`RoutineStore`], but a slug can also collide with a
-/// stale on-disk `routine.toml` that isn't (or is no longer) in memory — e.g. a directory left
-/// behind by a failed [`remove_routine_dir`]. Guard here too, as the last line of defense against
-/// silently overwriting another routine's files (#188): refuse to write when the target slug's
-/// `routine.toml` already exists and belongs to a different `id`.
+/// The target directory's `routine.toml`, when present, must belong to the same id. This is the last
+/// line of defense against silently overwriting another routine's files (#188).
 pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
-    let slug = slugify(&routine.title);
-    let dir = routine_dir(&slug);
+    let rel_dir = routine_storage_location::routine_rel_dir(routine);
+    write_routine_to_rel_dir(routine, &rel_dir)
+}
+
+/// Write `routine` to an explicit directory relative to `routines/`.
+///
+/// Used only by migrations that deliberately move legacy on-disk layouts; normal updates should use
+/// [`write_routine`] so filesystem-owned locations are preserved.
+pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std::io::Result<()> {
+    let dir = routine_dir(rel_dir);
     if let Some(existing_id) =
-        read_routine_toml(&routine_toml_path(&slug)).and_then(|existing| existing.id)
+        read_routine_toml(&routine_toml_path(rel_dir)).and_then(|existing| existing.id)
     {
         if existing_id != routine.id {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 format!(
-                    "slug \"{slug}\" is already used on disk by routine {existing_id}; refusing to overwrite it"
+                    "routine dir \"{rel_dir}\" is already used on disk by routine {existing_id}; refusing to overwrite it"
                 ),
             ));
         }
     }
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
-    crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(&slug))?;
+    crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(rel_dir))?;
 
     // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
     // the crontab line now invokes the binary directly, so the script is obsolete. Best-effort: a
     // missing file is fine. Startup re-persists every routine, so this heals existing installs.
-    let _ = std::fs::remove_file(routine_script_path(&slug));
+    let _ = std::fs::remove_file(routine_script_path(rel_dir));
 
     let toml_routine = RoutineToml {
         id: Some(routine.id.clone()),
@@ -267,17 +270,20 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:
     // there is no continuously-running reverse crontab sync re-reading these files; reverse sync
     // is implemented but not wired up — see issue #218.)
-    atomic_write(&routine_toml_path(&slug), text.as_bytes())?;
+    atomic_write(&routine_toml_path(rel_dir), text.as_bytes())?;
     atomic_write(
-        &routine_cron_path(&slug),
+        &routine_cron_path(rel_dir),
         format!("{}\n", routine.effective_schedules().join("\n")).as_bytes(),
     )?;
-    atomic_write(&routine_pure_prompt_path(&slug), routine.prompt.as_bytes())?;
     atomic_write(
-        &routine_compiled_prompt_path(&slug),
+        &routine_pure_prompt_path(rel_dir),
+        routine.prompt.as_bytes(),
+    )?;
+    atomic_write(
+        &routine_compiled_prompt_path(rel_dir),
         compose_prompt(routine).as_bytes(),
     )?;
-    write_runtime_state(&slug, routine)?;
+    write_runtime_state(rel_dir, routine)?;
     Ok(())
 }
 
@@ -395,6 +401,10 @@ pub use routine_storage_load::load_store;
 pub(crate) use routine_storage_load::load_store_from_dir;
 pub(crate) use routine_storage_load::reload_store_from_dir;
 
+#[path = "routine_storage_location.rs"]
+mod routine_storage_location;
+pub(crate) use routine_storage_location::{routine_folder, routine_rel_dir, routine_slug};
+
 #[path = "routine_storage_migrations.rs"]
 mod routine_storage_migrations;
 pub use routine_storage_migrations::{
@@ -463,3 +473,7 @@ mod routine_storage_gitignore_tests;
 #[cfg(test)]
 #[path = "routine_storage_env_tests.rs"]
 mod routine_storage_env_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_location_tests.rs"]
+mod routine_storage_location_tests;

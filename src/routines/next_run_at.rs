@@ -38,8 +38,8 @@ impl RoutineResponse {
     /// Build a response from `routine`, deriving registration status and schedule description.
     pub fn from_routine(routine: Routine) -> Self {
         let rel_path = crate::routine_storage::routine_rel_dir(&routine);
-        let slug = crate::routine_storage::routine_slug(&routine);
-        let folder = crate::routine_storage::routine_folder(&routine);
+        let slug = crate::routine_storage::slug_from_rel_dir(&rel_path);
+        let folder = crate::routine_storage::folder_from_rel_dir(&rel_path);
         // An agent counts as registered only if its config both exists *and* parses: a
         // present-but-malformed config is silently dropped at crontab-sync time, so reporting it as
         // registered would paint a never-firing routine as healthy. See issue #301.

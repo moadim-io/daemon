@@ -66,6 +66,21 @@ fn write_routine_preserves_existing_filesystem_location_after_title_change() {
 }
 
 #[test]
+fn slug_from_rel_dir_returns_last_segment() {
+    assert_eq!(slug_from_rel_dir("guidde/prs/review-nudge"), "review-nudge");
+    assert_eq!(slug_from_rel_dir("top-level-slug"), "top-level-slug");
+}
+
+#[test]
+fn folder_from_rel_dir_returns_parent_or_none_at_top_level() {
+    assert_eq!(
+        folder_from_rel_dir("guidde/prs/review-nudge"),
+        Some("guidde/prs".to_string())
+    );
+    assert_eq!(folder_from_rel_dir("top-level-slug"), None);
+}
+
+#[test]
 fn routine_response_derives_folder_slug_and_paths_from_disk_location() {
     with_override_home(|| {
         let id = "location-response-id";

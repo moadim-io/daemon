@@ -9,7 +9,9 @@ pub(crate) use routine_storage_load::reload_store_from_dir;
 
 #[path = "routine_storage_location.rs"]
 mod routine_storage_location;
-pub(crate) use routine_storage_location::{routine_folder, routine_rel_dir, routine_slug};
+pub(crate) use routine_storage_location::{
+    folder_from_rel_dir, routine_rel_dir, routine_slug, slug_from_rel_dir,
+};
 
 #[path = "routine_storage_migrations.rs"]
 mod routine_storage_migrations;

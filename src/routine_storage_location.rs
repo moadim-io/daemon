@@ -67,13 +67,25 @@ pub(crate) fn routine_rel_dir(routine: &Routine) -> String {
 
 /// Return the last path segment of a routine's filesystem location.
 pub(crate) fn routine_slug(routine: &Routine) -> String {
-    let rel_dir = routine_rel_dir(routine);
+    slug_from_rel_dir(&routine_rel_dir(routine))
+}
+
+/// Return the last path segment of an already-computed [`routine_rel_dir`] value.
+///
+/// Pure string derivation — no filesystem access. Prefer this over [`routine_slug`] when a
+/// `rel_dir` has already been computed for the same routine, so callers that need both the
+/// directory and its slug (or folder) don't each trigger their own recursive tree walk.
+pub(crate) fn slug_from_rel_dir(rel_dir: &str) -> String {
     rel_dir.rsplit('/').next().unwrap_or("").to_string()
 }
 
-/// Return the parent folder of a routine's filesystem location, relative to `routines/`.
-pub(crate) fn routine_folder(routine: &Routine) -> Option<String> {
-    std::path::Path::new(&routine_rel_dir(routine))
+/// Return the parent folder of an already-computed [`routine_rel_dir`] value, relative to
+/// `routines/`.
+///
+/// Pure string derivation — no filesystem access. See [`slug_from_rel_dir`] for why this exists
+/// as a companion for callers that already computed a relative directory.
+pub(crate) fn folder_from_rel_dir(rel_dir: &str) -> Option<String> {
+    std::path::Path::new(rel_dir)
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .map(rel_string)

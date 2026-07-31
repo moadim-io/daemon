@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::global_lock::LockScope;
 pub use crate::global_lock::LockStatus;
-pub use crate::routines::RoutineStore;
+pub(crate) use crate::routines::RoutineStore;
 
 /// Request body for `POST /routines/lock`.
 #[derive(Deserialize, utoipa::ToSchema)]

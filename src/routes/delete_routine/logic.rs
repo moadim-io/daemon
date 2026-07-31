@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{RoutineResponse, RoutineStore};
+pub(crate) use crate::routines::{RoutineResponse, RoutineStore};
 
 /// Delete the routine with the given UUID, returning the deleted record.
 pub fn build(store: &RoutineStore, id: &str) -> Result<RoutineResponse, AppError> {

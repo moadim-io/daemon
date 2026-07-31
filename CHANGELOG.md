@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-07-31
+
+Add a `moadim routines move` CLI command for moving routines between filesystem-derived folders and slugs through the explicit move API.
+
+Mirror the Routines page's filter/sort/group-by state into the URL and add a "COPY LINK" action, so an operator can share a link to a specific filtered/sorted view instead of walking a teammate through reproducing it by hand.
+
+Add a mocked dark-mode UI E2E screenshot baseline for visual PR review.
+
+Add mocked Playwright UI E2E screenshot coverage for PR visual review.
+
 ## [3.1.0] - 2026-07-30
 
 Surface the most recent managed-routine crontab sync failure in the health response so macOS crontab/TCC write timeouts are visible instead of leaving users with a healthy daemon and stale OS schedules.
@@ -4954,7 +4964,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/moadim-io/daemon/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/moadim-io/daemon/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/moadim-io/daemon/compare/v1.7.6...v3.0.0
 [1.7.6]: https://github.com/moadim-io/daemon/compare/v1.7.5...v1.7.6

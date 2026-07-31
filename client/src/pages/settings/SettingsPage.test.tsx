@@ -42,6 +42,22 @@ describe("SettingsPage", () => {
     expect(localStorage.getItem("moadim.refresh-interval")).toBe("30");
   });
 
+  it("moves the light/dark theme control into settings and persists changes", () => {
+    localStorage.setItem("moadim.client.theme", "light");
+    renderPage("existing prompt");
+
+    const light = screen.getByRole("button", { name: "Light" });
+    const dark = screen.getByRole("button", { name: "Dark" });
+    expect(light).toHaveAttribute("aria-pressed", "true");
+    expect(dark).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(dark);
+
+    expect(localStorage.getItem("moadim.client.theme")).toBe("dark");
+    expect(light).toHaveAttribute("aria-pressed", "false");
+    expect(dark).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("seeds the textarea from the loaded prompt and disables save until edited", () => {
     renderPage("existing prompt");
     expect(screen.getByPlaceholderText(/always run/)).toHaveValue("existing prompt");

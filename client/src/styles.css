@@ -916,6 +916,13 @@ textarea {
   max-width: 70ch;
 }
 
+.settings-segmented {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ─── Heatmap: header + filter toggle ───────────────────────────────── */
 
 .hm-hd {

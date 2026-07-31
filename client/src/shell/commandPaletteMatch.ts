@@ -12,7 +12,6 @@ export type CmdKind =
   | "routine"
   | "action-refresh"
   | "action-stop"
-  | "action-toggle-theme"
   | "action-shortcuts";
 
 export type RouteKind = "home" | "routines" | "heatmap" | "reliability" | "machines" | "settings";
@@ -182,8 +181,8 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
     {
       kind: "nav-settings",
       title: "Settings",
-      subtitle: "Persistent agent prompt",
-      keywords: "config preferences user prompt",
+      subtitle: "Preferences, appearance, refresh cadence, and prompt",
+      keywords: "config preferences user prompt theme light dark appearance refresh cadence",
     },
     {
       kind: "action-refresh",
@@ -196,12 +195,6 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
       title: "Stop Server",
       subtitle: "Shut the moadim server down",
       keywords: "shutdown halt kill quit action",
-    },
-    {
-      kind: "action-toggle-theme",
-      title: "Toggle Theme",
-      subtitle: "Switch between dark and light mode",
-      keywords: "theme light dark mode toggle appearance action",
     },
     {
       kind: "action-shortcuts",

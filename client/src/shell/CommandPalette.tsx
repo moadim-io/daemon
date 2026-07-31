@@ -29,7 +29,6 @@ export interface CommandPaletteProps {
   onClose: () => void;
   onRefresh: () => void;
   onStop: () => void;
-  onToggleTheme: () => void;
   onShortcuts: () => void;
 }
 
@@ -38,7 +37,6 @@ export function CommandPalette({
   onClose,
   onRefresh,
   onStop,
-  onToggleTheme,
   onShortcuts,
 }: CommandPaletteProps) {
   const navigate = useNavigate();
@@ -90,9 +88,6 @@ export function CommandPalette({
           break;
         case "action-stop":
           onStop();
-          break;
-        case "action-toggle-theme":
-          onToggleTheme();
           break;
         case "action-shortcuts":
           onShortcuts();

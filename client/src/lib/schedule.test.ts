@@ -6,7 +6,9 @@ import {
   fmtWhen,
   monthStart,
   nextFireAfter,
+  nextFireAfterAny,
   nextFires,
+  nextFiresAny,
   occurrencesPerDay,
 } from "./schedule";
 
@@ -128,6 +130,56 @@ describe("fireTimesOnDay", () => {
 
   it("is empty for an invalid schedule", () => {
     expect(fireTimesOnDay("not a cron", day())).toEqual([]);
+  });
+});
+
+describe("nextFireAfterAny", () => {
+  it("returns the earliest fire across every schedule", () => {
+    const then = nextFireAfterAny(["0 0 * * *", "0 * * * *"], now());
+    expect(then).toEqual(new Date(2026, 5, 21, 13, 0, 0));
+  });
+
+  it("ignores invalid schedules and uses the remaining valid ones", () => {
+    const then = nextFireAfterAny(["not a cron", "0 * * * *"], now());
+    expect(then).toEqual(new Date(2026, 5, 21, 13, 0, 0));
+  });
+
+  it("is undefined when every schedule is invalid", () => {
+    expect(nextFireAfterAny(["not a cron", ""], now())).toBeUndefined();
+  });
+
+  it("is undefined for an empty list", () => {
+    expect(nextFireAfterAny([], now())).toBeUndefined();
+  });
+});
+
+describe("nextFiresAny", () => {
+  it("merges, sorts, and de-duplicates fires across schedules", () => {
+    // "0 */2 * * *" fires 14:00, 16:00, 18:00; "0 * * * *" fires 13:00, 14:00, 15:00 —
+    // the coinciding 14:00 collapses to one entry.
+    const fires = nextFiresAny(["0 */2 * * *", "0 * * * *"], now(), 3);
+    expect(fires).toEqual([
+      new Date(2026, 5, 21, 13, 0, 0),
+      new Date(2026, 5, 21, 14, 0, 0),
+      new Date(2026, 5, 21, 15, 0, 0),
+    ]);
+  });
+
+  it("de-duplicates fires that coincide across schedules", () => {
+    const fires = nextFiresAny(["0 * * * *", "0 * * * *"], now(), 2);
+    expect(fires).toEqual([
+      new Date(2026, 5, 21, 13, 0, 0),
+      new Date(2026, 5, 21, 14, 0, 0),
+    ]);
+  });
+
+  it("ignores invalid schedules", () => {
+    const fires = nextFiresAny(["not a cron", "0 * * * *"], now(), 1);
+    expect(fires).toEqual([new Date(2026, 5, 21, 13, 0, 0)]);
+  });
+
+  it("is empty for an empty list", () => {
+    expect(nextFiresAny([], now(), 5)).toEqual([]);
   });
 });
 

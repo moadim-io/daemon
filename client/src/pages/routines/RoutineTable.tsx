@@ -126,7 +126,7 @@ export function RoutineTable(props: RoutineTableProps) {
           </button>
         </div>
       )}
-      <table>
+      <table className="routine-table">
         <thead>
           <tr>
             <th className="col-select">
@@ -163,7 +163,7 @@ export function RoutineTable(props: RoutineTableProps) {
               <Fragment key={`grp-${label}`}>
                 {props.groupBy !== "none" && (
                   <tr className="group-hd" key={`hd-${label}`}>
-                    <td colSpan={15}>
+                    <td colSpan={15} data-label="Group">
                       <div className="group-hd-row">
                         <button
                           type="button"

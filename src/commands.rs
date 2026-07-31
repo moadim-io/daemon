@@ -449,7 +449,11 @@ use commands_http::{insert_json_opt, insert_opt, request, tags_value, to_body};
 
 #[path = "commands_routine_actions.rs"]
 mod commands_routine_actions;
-use commands_routine_actions::{move_routine, set_routine_enabled};
+use commands_routine_actions::set_routine_enabled;
+
+#[path = "routes/move_routine/cli.rs"]
+mod move_routine_cli;
+use move_routine_cli::move_routine;
 
 #[cfg(test)]
 #[path = "commands_tests.rs"]

@@ -10,12 +10,10 @@ function fmtUptime(secs: number): string {
 export interface HeaderProps {
   health: HealthResponse | undefined;
   healthOk: boolean;
-  light: boolean;
   machineName: string | undefined;
   onRefresh: () => void;
   onStop: () => void;
   onPalette: () => void;
-  onTheme: () => void;
   onRenameMachine: () => void;
   onShortcuts: () => void;
   notifications: NotificationCenterProps;
@@ -82,13 +80,6 @@ export function Header(props: HeaderProps) {
             {props.machineName}
           </button>
         )}
-        <button
-          className="icon-btn"
-          title={props.light ? "Switch to dark mode" : "Switch to light mode"}
-          onClick={props.onTheme}
-        >
-          {props.light ? "☀" : "🌙"}
-        </button>
         <NotificationCenter {...props.notifications} />
         <button className="icon-btn" title="Command palette (⌘K)" onClick={props.onPalette}>
           ⌘K

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyTheme, loadThemeLight, saveThemeLight } from "./theme";
+import { applyTheme, loadThemeLight, saveThemeLight, THEME_CHANGE_EVENT } from "./theme";
 
 beforeEach(() => {
   localStorage.clear();
@@ -16,6 +16,16 @@ describe("theme", () => {
     expect(loadThemeLight()).toBe(true);
     saveThemeLight(false);
     expect(loadThemeLight()).toBe(false);
+  });
+
+  it("notifies same-tab listeners when the preference changes", () => {
+    const listener = vi.fn();
+    window.addEventListener(THEME_CHANGE_EVENT, listener);
+
+    saveThemeLight(false);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(THEME_CHANGE_EVENT, listener);
   });
 
   it("toggles the theme-light class on <html>", () => {

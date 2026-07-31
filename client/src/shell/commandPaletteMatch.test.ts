@@ -141,7 +141,7 @@ describe("buildCommands", () => {
 
   it("lists pages then actions then routines", () => {
     const commands = buildCommands([routine({ title: "Nightly Audit", schedule: "0 0 * * *" })]);
-    expect(commands).toHaveLength(11); // 6 nav + 4 action + 1 routine
+    expect(commands).toHaveLength(10); // 6 nav + 3 action + 1 routine
     expect(commands.map((c) => c.kind)).toEqual([
       "nav-overview",
       "nav-routines",
@@ -151,15 +151,14 @@ describe("buildCommands", () => {
       "nav-settings",
       "action-refresh",
       "action-stop",
-      "action-toggle-theme",
       "action-shortcuts",
       "routine",
     ]);
-    expect(commands[8]!.keywords).toContain("theme");
-    expect(commands[9]!.keywords).toContain("chord");
-    expect(commands[10]!.title).toBe("Nightly Audit");
-    expect(commands[10]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
-    expect(commands[10]!.keywords).toContain("claude");
+    expect(commands[5]!.keywords).toContain("theme");
+    expect(commands[8]!.keywords).toContain("chord");
+    expect(commands[9]!.title).toBe("Nightly Audit");
+    expect(commands[9]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
+    expect(commands[9]!.keywords).toContain("claude");
   });
 });
 
@@ -222,7 +221,6 @@ describe("routeFor / badgeFor", () => {
     expect(routeFor("routine")).toBe("routines");
     expect(routeFor("action-refresh")).toBeUndefined();
     expect(routeFor("action-stop")).toBeUndefined();
-    expect(routeFor("action-toggle-theme")).toBeUndefined();
   });
 
   it("maps every kind to its badge", () => {
@@ -235,7 +233,6 @@ describe("routeFor / badgeFor", () => {
     expect(badgeFor("routine")).toBe("ROUTINE");
     expect(badgeFor("action-refresh")).toBe("ACTION");
     expect(badgeFor("action-stop")).toBe("ACTION");
-    expect(badgeFor("action-toggle-theme")).toBe("ACTION");
   });
 });
 

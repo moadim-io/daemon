@@ -4,6 +4,7 @@
  * same stored value while both are served.
  */
 const THEME_KEY = "moadim.client.theme";
+export const THEME_CHANGE_EVENT = "moadim-theme-change";
 
 /** Reads the persisted theme from localStorage. Returns `true` for light theme. */
 export function loadThemeLight(): boolean {
@@ -21,6 +22,7 @@ export function saveThemeLight(light: boolean): void {
   } catch {
     // storage unavailable (private mode / quota) — in-memory choice still applies
   }
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { light } }));
 }
 
 /** Applies or removes the `theme-light` CSS class on `<html>`. */

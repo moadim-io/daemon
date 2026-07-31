@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSetUserPrompt, useUserPrompt } from "../../api/hooks";
 import { loadRefreshToken, RefreshControl, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
+import { loadThemeLight, saveThemeLight } from "../../lib/theme";
 import { useToasts } from "../../shell/toasts";
 
 export function SettingsPage() {
@@ -11,6 +12,7 @@ export function SettingsPage() {
   const [content, setContent] = useState("");
   const [loadedContent, setLoadedContent] = useState("");
   const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
+  const [lightTheme, setLightTheme] = useState(loadThemeLight);
 
   // Seed the editable draft once the initial fetch resolves. Adjusting state during
   // render (rather than in an effect) on a tracked "previous prop" per
@@ -41,9 +43,37 @@ export function SettingsPage() {
     addToast("Refresh cadence saved", "ok");
   };
 
+  const onSetTheme = (nextLight: boolean) => {
+    saveThemeLight(nextLight);
+    setLightTheme(nextLight);
+    addToast("Theme saved", "ok");
+  };
+
   return (
     <div>
       <h1 className="page-title">Settings</h1>
+      <div className="card settings-card">
+        <div className="settings-card-title">Appearance</div>
+        <p className="settings-card-copy">Choose the app theme. This replaces the header theme toggle so appearance lives with the rest of Settings.</p>
+        <div className="settings-segmented" role="group" aria-label="Theme">
+          <button
+            type="button"
+            className={`btn ${lightTheme ? "btn-primary" : "btn-secondary"}`}
+            aria-pressed={lightTheme}
+            onClick={() => onSetTheme(true)}
+          >
+            Light
+          </button>
+          <button
+            type="button"
+            className={`btn ${!lightTheme ? "btn-primary" : "btn-secondary"}`}
+            aria-pressed={!lightTheme}
+            onClick={() => onSetTheme(false)}
+          >
+            Dark
+          </button>
+        </div>
+      </div>
       <div className="card settings-card">
         <div className="settings-card-title">Data refresh</div>
         <p className="settings-card-copy">

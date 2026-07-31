@@ -25,12 +25,10 @@ function renderHeader(healthData: HealthResponse) {
     <Header
       health={healthData}
       healthOk={healthData.running}
-      light={false}
       machineName="box-1"
       onRefresh={vi.fn()}
       onStop={vi.fn()}
       onPalette={vi.fn()}
-      onTheme={vi.fn()}
       onRenameMachine={vi.fn()}
       onShortcuts={vi.fn()}
       notifications={{ entries: [], onMarkAllRead: vi.fn(), onClear: vi.fn() }}

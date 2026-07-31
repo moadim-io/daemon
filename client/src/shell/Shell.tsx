@@ -10,7 +10,7 @@ import {
   saveNotificationLog,
   type NotificationEntry,
 } from "../lib/notificationLog";
-import { applyTheme, loadThemeLight, saveThemeLight } from "../lib/theme";
+import { applyTheme, loadThemeLight, THEME_CHANGE_EVENT } from "../lib/theme";
 import { isEditableTarget, routeForChordKey } from "../lib/keyNav";
 import { Header } from "./Header";
 import { Nav } from "./Nav";
@@ -89,6 +89,16 @@ export function Shell() {
     applyTheme(lightTheme);
   }, [lightTheme]);
 
+  useEffect(() => {
+    const onThemeChange = () => setLightTheme(loadThemeLight());
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    window.addEventListener("storage", onThemeChange);
+    return () => {
+      window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+      window.removeEventListener("storage", onThemeChange);
+    };
+  }, []);
+
   // Global ⌘K / Ctrl-K toggles the palette; `?` toggles the shortcuts cheat
   // sheet; `g` then a bound letter (see keyNav.ts) jumps straight to a page;
   // Escape dismisses whichever shell-level dialog is open. The chord/bare-key
@@ -141,14 +151,6 @@ export function Shell() {
     };
   }, [navigate]);
 
-  const toggleTheme = () => {
-    setLightTheme((prev) => {
-      const next = !prev;
-      saveThemeLight(next);
-      return next;
-    });
-  };
-
   const confirmShutdown = () => {
     setShowShutdown(false);
     shutdown.mutate(undefined, {
@@ -176,12 +178,10 @@ export function Shell() {
       <Header
         health={health.data}
         healthOk={health.data?.running ?? false}
-        light={lightTheme}
         machineName={machine.data?.name}
         onRefresh={() => void health.refetch()}
         onStop={() => setShowShutdown(true)}
         onPalette={() => setShowPalette((open) => !open)}
-        onTheme={toggleTheme}
         onRenameMachine={() => setShowRenameMachine(true)}
         onShortcuts={toggleShortcuts}
         notifications={{ entries: notifLog, onMarkAllRead: markNotificationsRead, onClear: clearNotifications }}
@@ -195,7 +195,6 @@ export function Shell() {
         onClose={() => setShowPalette(false)}
         onRefresh={() => void health.refetch()}
         onStop={() => setShowShutdown(true)}
-        onToggleTheme={toggleTheme}
         onShortcuts={toggleShortcuts}
       />
       {showShortcuts && <ShortcutsHelp onClose={() => setShowShortcuts(false)} />}

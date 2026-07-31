@@ -62,8 +62,13 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
 test("settings refresh cadence screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByText("Appearance", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Light" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dark" })).toBeVisible();
   await expect(page.getByText("Data refresh")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Auto-refresh interval" })).toBeVisible();
+  await expect(page.locator('button[title="Switch to dark mode"]')).toHaveCount(0);
+  await expect(page.locator('button[title="Switch to light mode"]')).toHaveCount(0);
   await saveScreenshot(page, testInfo.project.name, "settings");
 });
 

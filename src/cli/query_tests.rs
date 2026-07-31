@@ -8,6 +8,7 @@ fn status_json_reports_running_pid_and_address() {
     let health = HealthInfo {
         uptime_secs: 8123,
         version: "1.2.3".to_string(),
+        crontab_sync: None,
     };
     let value: serde_json::Value =
         serde_json::from_str(&status_json(true, Some(42), Some(&health))).unwrap();
@@ -37,6 +38,7 @@ fn parse_health_reads_uptime_and_version() {
         Some(HealthInfo {
             uptime_secs: 42,
             version: "9.9.9".to_string(),
+            crontab_sync: None,
         })
     );
 }
@@ -68,6 +70,7 @@ fn fetch_health_parses_a_well_formed_health_response() {
         Some(HealthInfo {
             uptime_secs: 7,
             version: "3.2.1".to_string(),
+            crontab_sync: None,
         })
     );
 }

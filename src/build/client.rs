@@ -17,6 +17,16 @@ pub fn build(manifest_dir: &str) {
     let prebuilt = Path::new(manifest_dir).join("prebuilt.html");
     let client_dir = Path::new(manifest_dir).join("client");
 
+    // Crates.io verifies `cargo publish` from an extracted tarball without a
+    // `.git` directory. In that context the tarball already contains the
+    // release `prebuilt.html`, so avoid running the frontend build: it
+    // regenerates ignored files under `client/`, and Cargo rejects build
+    // scripts that modify the packaged source directory during verification.
+    if !Path::new(manifest_dir).join(".git").exists() && prebuilt.exists() {
+        std::fs::copy(&prebuilt, &output).expect("failed to copy prebuilt client UI");
+        return;
+    }
+
     if client_dir.exists() {
         emit_rerun_triggers(&client_dir);
         if run_pnpm_build(manifest_dir) {

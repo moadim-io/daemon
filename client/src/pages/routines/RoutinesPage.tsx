@@ -61,6 +61,7 @@ import { RoutineForm, type RoutineDraft } from "./RoutineForm";
 import { RoutineHistory } from "./RoutineHistory";
 import { RoutineLogs } from "./RoutineLogs";
 import { MoveRoutineDialog } from "./MoveRoutineDialog";
+import { RoutineFilesystemTree } from "./RoutineFilesystemTree";
 import { RoutineTable } from "./RoutineTable";
 import { cloneTitle } from "./routineDraft";
 import { flipDir, sortRoutines, type RCol, type RDir, type RGroupBy } from "./routineState";
@@ -554,6 +555,27 @@ export function RoutinesPage() {
           groupBy={groupBy}
           runHistory={runHistory}
           onSort={onColSort}
+          onEdit={(id) => setModal({ kind: "edit", id })}
+          onClone={(id) => {
+            const source = routines.find((r) => r.id === id);
+            if (source) setPage({ kind: "clone", source });
+          }}
+          onDelete={(id, title) => setModal({ kind: "confirmDelete", id, title })}
+          onMove={(id) => setModal({ kind: "move", id })}
+          onToggle={onToggle}
+          onTrigger={onTrigger}
+          onLogs={(id) => setPage({ kind: "logs", id })}
+          onHistory={(id) => setPage({ kind: "history", id })}
+          onFlags={(id) => setPage({ kind: "flags", id })}
+          onClearFilters={() => setFilter(defaultRoutineFilter())}
+        />
+      )}
+      {view === "files" && (
+        <RoutineFilesystemTree
+          routines={visible}
+          loading={routinesQuery.isLoading}
+          filterActive={filterActive}
+          now={now}
           onEdit={(id) => setModal({ kind: "edit", id })}
           onClone={(id) => {
             const source = routines.find((r) => r.id === id);

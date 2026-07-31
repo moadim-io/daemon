@@ -12,6 +12,7 @@ const routines = [
     tags: ["digest", "release"],
     machines: ["m1"],
     nextRunAt: NOW_SECS + 3_600,
+    location: { folder: "ops/discord", slug: "daily-digest" },
     status: { running: false, flags: 1 },
   }),
   routine({
@@ -22,6 +23,7 @@ const routines = [
     tags: ["qa", "ui"],
     machines: ["m1", "mini-lab"],
     nextRunAt: NOW_SECS + 1_800,
+    location: { folder: "quality/screenshots", slug: "screen-tests" },
     status: { running: true, flags: 0 },
   }),
   routine({
@@ -32,6 +34,7 @@ const routines = [
     tags: ["learning"],
     machines: ["mini-lab"],
     nextRunAt: NOW_SECS + 7_200,
+    location: { folder: "learning", slug: "skill-loop" },
     status: { running: false, powerSaving: true, flags: 2 },
   }),
 ];
@@ -122,6 +125,7 @@ type RoutineSeed = {
   tags: string[];
   machines: string[];
   nextRunAt: number;
+  location: { folder: string | null; slug: string };
   status: { running: boolean; powerSaving?: boolean; flags: number };
 };
 
@@ -139,7 +143,10 @@ function routine(seed: RoutineSeed) {
     prompt: "Run the routine with evidence and concise reporting.",
     repositories: [{ repository: "https://github.com/moadim-io/daemon", branch: "main" }],
     env_keys: ["HERMES_PROFILE"],
-    file_path: `/Users/ofek/.config/moadim/routines/${seed.id}/routine.toml`,
+    file_path: `/Users/ofek/.config/moadim/routines/${routinePath(seed.location)}/routine.toml`,
+    folder: seed.location.folder,
+    slug: seed.location.slug,
+    rel_path: routinePath(seed.location),
     flag_count: seed.status.flags,
     is_running: seed.status.running,
     power_saving: seed.status.powerSaving ?? false,
@@ -156,6 +163,10 @@ function routine(seed: RoutineSeed) {
     last_manual_trigger_at: NOW_SECS - 7_200,
     last_scheduled_trigger_at: NOW_SECS - 86_400,
   };
+}
+
+function routinePath(location: RoutineSeed["location"]) {
+  return location.folder === null ? location.slug : `${location.folder}/${location.slug}`;
 }
 
 type RunSeed = {

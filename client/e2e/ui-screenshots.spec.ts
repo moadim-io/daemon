@@ -59,6 +59,28 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
   }
 });
 
+test("routines filesystem screenshot stays reviewable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "filesystem tree baseline is desktop-only");
+  await page.goto("/routines");
+  await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
+  await page.getByRole("button", { name: "FILES" }).click();
+  await expect(page.getByRole("tree", { name: "Routine filesystem" })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: /ops folder/i })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: /ops\/discord\/daily-digest routine/i })).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "routines-filesystem");
+});
+
+test("routine folder management dialog screenshot stays reviewable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "folder management baseline is desktop-only");
+  await page.goto("/routines");
+  await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
+  await page.getByRole("button", { name: "FILES" }).click();
+  await page.getByRole("button", { name: "Move folder" }).first().click();
+  await expect(page.getByRole("dialog", { name: "FOLDER MANAGEMENT" })).toBeVisible();
+  await expect(page.getByLabel("Current path ops/discord/daily-digest")).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "routines-folder-management");
+});
+
 test("settings refresh cadence screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();

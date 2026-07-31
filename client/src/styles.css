@@ -1766,8 +1766,8 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
   white-space: normal;
 }
 
@@ -1806,6 +1806,70 @@ textarea {
   background: var(--ok-bg);
   border-color: var(--ok);
   color: var(--ok);
+}
+
+.actions-menu-root {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.actions-menu-trigger {
+  min-width: 86px;
+}
+
+.actions-menu {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  min-width: 168px;
+  padding: 6px;
+  background: var(--surface);
+  border: 3px solid var(--border);
+  box-shadow: 6px 6px 0 var(--border);
+  text-align: left;
+}
+
+.actions-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.actions-menu-item:hover,
+.actions-menu-item:focus-visible {
+  background: var(--accent);
+  color: var(--border);
+  outline: none;
+}
+
+.actions-menu-item.danger {
+  color: var(--err);
+}
+
+.actions-menu-item.danger:hover,
+.actions-menu-item.danger:focus-visible {
+  background: var(--err-bg);
+  color: var(--err);
+}
+
+.actions-menu-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border-soft);
 }
 
 .routine-actions-cell {

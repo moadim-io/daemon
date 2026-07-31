@@ -50,6 +50,12 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
   }
 
   await saveScreenshot(page, testInfo.project.name, "routines");
+
+  if (testInfo.project.name === "chromium-desktop") {
+    await page.getByRole("button", { name: "ACTIONS ▾" }).first().click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await saveScreenshot(page, testInfo.project.name, "routines-actions-menu");
+  }
 });
 
 test("reliability screenshot stays reviewable", async ({ page }, testInfo) => {

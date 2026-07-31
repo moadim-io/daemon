@@ -48,7 +48,7 @@ describe("MoveRoutineDialog", () => {
     fireEvent.change(screen.getByLabelText("FOLDER"), { target: { value: "hermes/learning" } });
     fireEvent.change(screen.getByLabelText("SLUG*"), { target: { value: "review-nudge" } });
     expect(screen.getByText("routines/hermes/learning/review-nudge/routine.toml")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Move"));
+    fireEvent.click(screen.getByText("MOVE"));
 
     expect(onConfirm).toHaveBeenCalledWith("hermes/learning", "review-nudge");
   });
@@ -59,10 +59,10 @@ describe("MoveRoutineDialog", () => {
 
     fireEvent.change(screen.getByLabelText("FOLDER"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("SLUG*"), { target: { value: "bad/slug" } });
-    expect(screen.getByText("Move")).toBeDisabled();
+    expect(screen.getByText("MOVE")).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("SLUG*"), { target: { value: "root-slug" } });
-    fireEvent.click(screen.getByText("Move"));
+    fireEvent.click(screen.getByText("MOVE"));
     expect(onConfirm).toHaveBeenCalledWith(undefined, "root-slug");
   });
 });

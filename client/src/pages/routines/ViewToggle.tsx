@@ -1,4 +1,4 @@
-export type RView = "table" | "calendar" | "day";
+export type RView = "table" | "files" | "calendar" | "day";
 
 export interface ViewToggleProps {
   view: RView;
@@ -7,6 +7,7 @@ export interface ViewToggleProps {
 
 const VIEWS: [RView, string][] = [
   ["table", "LIST"],
+  ["files", "FILES"],
   ["calendar", "CALENDAR"],
   ["day", "DAY"],
 ];

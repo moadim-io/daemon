@@ -12,6 +12,7 @@ describe("ViewToggle", () => {
   it("renders a button for each view with its label", () => {
     renderToggle("table");
     expect(screen.getByText("LIST")).toBeInTheDocument();
+    expect(screen.getByText("FILES")).toBeInTheDocument();
     expect(screen.getByText("CALENDAR")).toBeInTheDocument();
     expect(screen.getByText("DAY")).toBeInTheDocument();
   });

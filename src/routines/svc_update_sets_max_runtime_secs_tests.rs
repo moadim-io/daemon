@@ -31,6 +31,7 @@ fn svc_update_sets_max_runtime_secs() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: Some(1234),
+                power_saving_exempt: None,
                 tags: None,
                 env: None,
                 failure_threshold: None,

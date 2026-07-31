@@ -52,6 +52,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,

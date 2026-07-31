@@ -22,6 +22,7 @@ fn svc_update_rejects_and_sets_tags() {
         "upd-tags-id",
         UpdateRoutineRequest {
             model: None,
+            power_saving_exempt: None,
             tags: Some(vec![" ".into()]),
             ..empty_update_request()
         },
@@ -33,6 +34,7 @@ fn svc_update_rejects_and_sets_tags() {
         "upd-tags-id",
         UpdateRoutineRequest {
             model: None,
+            power_saving_exempt: None,
             tags: Some(vec!["  ops  ".into()]),
             ..empty_update_request()
         },
@@ -55,6 +57,7 @@ fn svc_create_trims_model_and_blank_normalizes_to_none() {
         CreateRoutineRequest {
             model: Some("  claude-sonnet-4-6  ".into()),
             ..create_req_with_title(title)
+            power_saving_exempt: false,
         },
     )
     .unwrap();
@@ -68,6 +71,7 @@ fn svc_create_trims_model_and_blank_normalizes_to_none() {
         CreateRoutineRequest {
             model: Some("   ".into()),
             ..create_req_with_title(title2)
+            power_saving_exempt: false,
         },
     )
     .unwrap();

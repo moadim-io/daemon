@@ -38,6 +38,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
                 enabled: None,
                 ttl_secs: None,
                 max_runtime_secs: None,
+                power_saving_exempt: None,
                 tags: None,
                 env: None,
                 failure_threshold: None,

@@ -1274,6 +1274,10 @@
             ],
             "description": "Model ID to run the agent with, or `None` to use the agent's own default. A\nblank/whitespace-only value is treated the same as `None`."
           },
+          "power_saving_exempt": {
+            "type": "boolean",
+            "description": "Whether this routine may run while the host is in system power saving. Defaults to `false`."
+          },
           "prompt": {
             "type": "string",
             "description": "Task prompt."
@@ -1778,6 +1782,10 @@
             "type": "boolean",
             "description": "Whether scheduled and manual firing is paused to conserve resources, independent of\n[`Routine::enabled`].\n\n`enabled` is user-owned intent (\"I want this routine on/off\"); `power_saving` is a\nsystem/policy throttle layered on top — both must hold for a firing to launch an agent\n(`enabled && !power_saving`). Never mutated by `svc_create`/`svc_update` (set via\n[`crate::routines::svc_set_power_saving`] instead), so it survives a config edit the same\nway `snoozed_until` and `skip_runs` do. Daemon-owned runtime state: persisted in the\ngitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`."
           },
+          "power_saving_exempt": {
+            "type": "boolean",
+            "description": "Whether this routine is allowed to run while the host is in system power saving.\n\nThis is user-owned routine metadata, persisted in `routine.toml`: critical maintenance or\nalerting routines can opt out of the host-level battery/Low Power Mode throttle while normal\nroutines keep the conservative default and skip launches until the host leaves power saving."
+          },
           "prompt": {
             "type": "string",
             "description": "The task prompt handed to the agent.\n\nOmitted from serialized output when empty. A persisted routine always has a\nnon-blank prompt (enforced by `validate_prompt`), so this never affects\n`routine.toml` persistence; it lets list responses drop the prompt by blanking\nit in-memory (see [`RoutineListQuery::include_prompts`] / `svc_list`)."
@@ -2168,6 +2176,13 @@
               "null"
             ],
             "description": "New model ID, or `None` to keep the existing value. A blank/whitespace-only value clears\nthe model back to the agent's own default."
+          },
+          "power_saving_exempt": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "New system power-saving exemption flag, or `None` to keep the existing value."
           },
           "prompt": {
             "type": [

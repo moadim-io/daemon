@@ -64,6 +64,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -166,7 +167,6 @@ fn svc_list_breaks_ties_on_id_deterministically() {
 #[test]
 fn svc_list_omits_prompt_by_default() {
     let _home = TempHome::set();
-    // Default query leaves the prompt blank, and `skip_serializing_if` drops the field entirely.
     let store = store_with(vec![make_routine("a", "Alpha", 0, 0)]);
     let list = svc_list(
         &store,

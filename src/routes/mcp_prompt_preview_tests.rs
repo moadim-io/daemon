@@ -84,6 +84,7 @@ fn preview_routine_prompt_success_contains_prompt() {
             enabled: true,
             ttl_secs: None,
             max_runtime_secs: None,
+            power_saving_exempt: false,
             tags: vec![],
             env: std::collections::HashMap::new(),
             failure_threshold: None,

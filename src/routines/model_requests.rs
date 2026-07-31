@@ -53,6 +53,9 @@ pub struct CreateRoutineRequest {
     /// `max_runtime_secs`, `0` is a meaningful opt-out value here, not rejected.
     #[serde(default)]
     pub failure_threshold: Option<u32>,
+    /// Whether this routine may run while the host is in system power saving. Defaults to `false`.
+    #[serde(default)]
+    pub power_saving_exempt: bool,
     /// Free-form labels for the routine (defaults to empty). Each entry is trimmed
     /// and must be non-blank.
     #[serde(default)]
@@ -100,6 +103,8 @@ pub struct UpdateRoutineRequest {
     /// New failure-circuit-breaker threshold, or `None` to keep the existing value. `Some(0)`
     /// explicitly opts back out (#521); unlike `ttl_secs`/`max_runtime_secs`, `0` is accepted here.
     pub failure_threshold: Option<u32>,
+    /// New system power-saving exemption flag, or `None` to keep the existing value.
+    pub power_saving_exempt: Option<bool>,
     /// New tags list, or `None` to keep the existing value.
     pub tags: Option<Vec<String>>,
     /// New tracked `[env]` map, or `None` to keep the existing value. Replaces the whole map (not

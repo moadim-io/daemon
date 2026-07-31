@@ -121,6 +121,7 @@ fn svc_update_rejects_zero_durations() {
             model: None,
             goal: None,
             max_runtime_secs: Some(0),
+            power_saving_exempt: None,
             tags: None,
             ..empty_update_request()
         },

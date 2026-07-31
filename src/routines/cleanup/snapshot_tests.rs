@@ -30,6 +30,7 @@ fn routine_with(title: &str, schedule: &str, ttl_secs: Option<u64>) -> Routine {
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         tags: vec![],
         ttl_secs,
         max_runtime_secs: None,

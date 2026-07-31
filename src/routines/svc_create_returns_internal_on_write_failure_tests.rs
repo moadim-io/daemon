@@ -41,6 +41,7 @@ fn svc_create_rejects_blank_tag() {
             &store,
             CreateRoutineRequest {
                 model: None,
+                power_saving_exempt: false,
                 tags: vec![tag.to_string()],
                 ..valid_create_request()
             },

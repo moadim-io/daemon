@@ -58,6 +58,7 @@ fn make_routine(
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         consecutive_failures: 0,
         auto_disabled_reason: None,
         tags: vec![],

@@ -73,6 +73,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,

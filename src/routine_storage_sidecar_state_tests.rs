@@ -50,6 +50,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -141,8 +142,8 @@ fn power_saving_persists_to_sidecar_not_routine_toml() {
 
         let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
         assert!(
-            !toml_text.contains("power_saving"),
-            "routine.toml must not carry power-saving state: {toml_text}"
+            !toml_text.contains("power_saving ="),
+            "routine.toml must not carry daemon power-saving state: {toml_text}"
         );
         assert!(crate::paths::routine_state_path(&slug).exists());
         let state_text = std::fs::read_to_string(crate::paths::routine_state_path(&slug)).unwrap();

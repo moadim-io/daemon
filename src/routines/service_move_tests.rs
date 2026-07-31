@@ -104,6 +104,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         consecutive_failures: 0,
         auto_disabled_reason: None,
         ttl_secs: None,

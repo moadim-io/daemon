@@ -98,6 +98,13 @@ pub struct Routine {
     /// gitignored `state.local.toml` sidecar, not the version-controlled `routine.toml`.
     #[serde(default)]
     pub power_saving: bool,
+    /// Whether this routine is allowed to run while the host is in system power saving.
+    ///
+    /// This is user-owned routine metadata, persisted in `routine.toml`: critical maintenance or
+    /// alerting routines can opt out of the host-level battery/Low Power Mode throttle while normal
+    /// routines keep the conservative default and skip launches until the host leaves power saving.
+    #[serde(default)]
+    pub power_saving_exempt: bool,
     /// Number of scheduled/manual runs that finished failed-or-unknown in a row, most recently
     /// first — reset to `0` the instant any run succeeds. Daemon-owned runtime state: persisted in
     /// the gitignored `state.local.toml` sidecar, not `routine.toml`, mirroring

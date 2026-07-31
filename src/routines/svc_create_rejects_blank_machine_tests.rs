@@ -31,6 +31,7 @@ fn svc_create_trims_and_dedupes_machines() {
         CreateRoutineRequest {
             machines: vec!["  laptop  ".into(), "laptop".into(), "server".into()],
             ..create_req_with_title(title)
+            power_saving_exempt: false,
         },
     )
     .unwrap();

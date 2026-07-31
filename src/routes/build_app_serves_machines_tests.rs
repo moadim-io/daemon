@@ -35,6 +35,7 @@ async fn build_app_serves_machines() {
             snoozed_until: None,
             skip_runs: None,
             power_saving: false,
+        power_saving_exempt: false,
             ttl_secs: None,
             max_runtime_secs: None,
             env: std::collections::HashMap::new(),

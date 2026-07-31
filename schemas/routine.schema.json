@@ -36,6 +36,11 @@
       "minimum": 0,
       "type": "integer"
     },
+    "power_saving_exempt": {
+      "default": false,
+      "description": "Whether the routine may launch while the host is on battery or Low Power Mode.",
+      "type": "boolean"
+    },
     "prompt": {
       "description": "Task prompt handed to the agent.",
       "type": "string"

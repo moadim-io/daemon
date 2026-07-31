@@ -61,6 +61,11 @@ pub fn generate(manifest_dir: &str) {
                 "description": "Whether the routine is active.",
                 "default": true
             },
+            "power_saving_exempt": {
+                "type": "boolean",
+                "description": "Whether the routine may launch while the host is on battery or Low Power Mode.",
+                "default": false
+            },
             "created_at": {
                 "type": "integer",
                 "minimum": 0,
@@ -109,6 +114,7 @@ pub fn generate(manifest_dir: &str) {
         "agent    = \"claude\"\n",
         "prompt   = \"Describe the task for the agent here.\"\n",
         "enabled  = true\n",
+        "power_saving_exempt = false\n",
         "\n",
         "# Repositories listed to the agent as prompt context (optional).\n",
         "# [[repositories]]\n",

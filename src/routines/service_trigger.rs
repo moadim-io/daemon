@@ -43,8 +43,11 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     if !routine.enabled {
         return Err(AppError::Locked("routine is disabled".into()));
     }
-    if routine.power_saving {
-        return Err(AppError::Locked("routine is in power-saving mode".into()));
+    if let Some(reason) = power_saving_block_reason(
+        routine,
+        crate::system_power::is_system_power_saving_active(),
+    ) {
+        return Err(AppError::Locked(reason.into()));
     }
     let ts = now_secs();
     routine.last_manual_trigger_at = Some(ts);
@@ -84,8 +87,15 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
     if !routine.enabled {
         return Err(AppError::Locked("routine is disabled".into()));
     }
-    if routine.power_saving {
-        return Err(AppError::Locked("routine is in power-saving mode".into()));
+    if let Some(reason) = power_saving_block_reason(
+        routine,
+        crate::system_power::is_system_power_saving_active(),
+    ) {
+        let ts = now_secs();
+        let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+        drop(lock);
+        append_skip_log(&rel_dir, ts, reason);
+        return Err(AppError::Locked(reason.into()));
     }
 
     if let Some(until) = routine.snoozed_until {
@@ -157,4 +167,19 @@ pub(crate) fn sh_bin() -> String {
     let fallback = "sh".to_string();
     fallback
 }
+
+/// Return the power-saving reason that should block `routine`, if any.
+pub(super) const fn power_saving_block_reason(
+    routine: &Routine,
+    system_active: bool,
+) -> Option<&'static str> {
+    if routine.power_saving {
+        return Some("routine is in power-saving mode");
+    }
+    if system_active && !routine.power_saving_exempt {
+        return Some("system power saving is active");
+    }
+    None
+}
+
 include!("svc_snooze.rs");

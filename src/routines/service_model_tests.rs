@@ -21,6 +21,7 @@ fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         enabled: true,
         ttl_secs: None,
         max_runtime_secs: None,
+        power_saving_exempt: false,
         tags: vec![],
         env: std::collections::HashMap::new(),
         failure_threshold: None,
@@ -40,6 +41,7 @@ fn svc_create_trims_and_stores_tags() {
         &store,
         CreateRoutineRequest {
             model: None,
+            power_saving_exempt: false,
             tags: vec!["  triage  ".into(), "nightly".into()],
             ..create_req_with_title(title)
         },
@@ -64,6 +66,7 @@ fn svc_create_dedupes_tags() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            power_saving_exempt: false,
             tags: vec!["  nightly  ".into(), "nightly".into(), "triage".into()],
             ..create_req_with_title(title)
         },

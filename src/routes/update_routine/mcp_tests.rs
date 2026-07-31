@@ -34,6 +34,7 @@ fn update_routine_tool_not_found_is_error() {
             enabled: None,
             ttl_secs: None,
             max_runtime_secs: None,
+            power_saving_exempt: None,
             tags: None,
             env: None,
             failure_threshold: None,

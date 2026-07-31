@@ -446,6 +446,7 @@ export function RoutinesPage() {
       repositories: page.source.repositories ?? [],
       machines: page.source.machines ?? [],
       enabled: page.source.enabled,
+      power_saving_exempt: page.source.power_saving_exempt ?? false,
       ttl_secs: page.source.ttl_secs ?? null,
       tags: page.source.tags ?? [],
     };
@@ -607,6 +608,7 @@ export function RoutinesPage() {
               repositories: editRoutine.repositories ?? [],
               machines: editRoutine.machines ?? [],
               enabled: editRoutine.enabled,
+              power_saving_exempt: editRoutine.power_saving_exempt ?? false,
               ttl_secs: editRoutine.ttl_secs ?? null,
               tags: editRoutine.tags ?? [],
             }

@@ -534,3 +534,11 @@ significant_drop_in_scrutinee = "deny"
 # together. A state machine or a two-variant enum usually expresses the real, restricted set of
 # valid combinations far more precisely than a pile of loose flags.
 struct_excessive_bools = "deny"
+# Reject `x = y.clone()` in favour of `x.clone_from(&y)` where `x` is already initialized.
+# `Clone::clone_from` lets a type reuse `x`'s existing allocation instead of allocating a fresh one
+# and dropping the old value, so the plain-assignment form does unnecessary allocate/drop work for
+# any type that overrides it (most collection and `String`-like types). Fixed the one violation
+# this surfaced: `routines::service_update::svc_update` assigning a freshly validated schedule onto
+# the routine's existing `schedule: String` field. The rest of the codebase is already clean, so
+# `deny` locks that in.
+assigning_clones = "deny"

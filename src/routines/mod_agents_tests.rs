@@ -128,4 +128,4 @@ fn svc_create_invalid_cron_rejected() {
     };
     assert!(svc_create(&store, req).is_err());
 }
-include!("mod_agents_tests_part3.rs");
+include!("svc_create_update_delete_lifecycle_tests.rs");

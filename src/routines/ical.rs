@@ -11,9 +11,9 @@ use super::model::{Routine, RoutineStore};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "ical_part2.rs"]
-mod ical_part2;
-pub(crate) use ical_part2::*;
+#[path = "build_ical_core_with_tz.rs"]
+mod build_ical_core_with_tz;
+pub(crate) use build_ical_core_with_tz::*;
 
 /// How far ahead (in days) the feed projects each routine's fire times.
 const HORIZON_DAYS: i64 = 30;
@@ -158,4 +158,4 @@ fn fold_line(line: &str) -> String {
     }
     out
 }
-include!("ical_part3.rs");
+include!("build_ical_named.rs");

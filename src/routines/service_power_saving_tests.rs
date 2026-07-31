@@ -147,4 +147,4 @@ fn svc_set_power_saving_missing_routine_not_found() {
         Err(AppError::NotFound)
     ));
 }
-include!("service_power_saving_tests_part2.rs");
+include!("svc_set_power_saving_sets_and_clears_without_touching_enabled_tests.rs");

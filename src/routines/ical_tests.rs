@@ -147,4 +147,4 @@ fn power_saving_routine_contributes_nothing() {
     let ics = build_ical(&[routine], fixed_now());
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
 }
-include!("ical_tests_part3.rs");
+include!("snoozed_routine_skips_fires_before_the_deadline_tests.rs");

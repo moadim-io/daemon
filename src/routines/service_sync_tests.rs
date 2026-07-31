@@ -144,4 +144,4 @@ fn svc_create_rejects_goal_over_five_lines() {
         other => panic!("expected BadRequest, got {other:?}"),
     }
 }
-include!("service_sync_tests_part2.rs");
+include!("svc_create_trims_and_persists_goal_tests.rs");

@@ -166,4 +166,4 @@ fn source_labels_are_distinct() {
     );
     assert_eq!(MachineSource::Hostname.label(), "system hostname");
 }
-include!("mod_tests_part3.rs");
+include!("read_machine_file_absent_is_none_tests.rs");

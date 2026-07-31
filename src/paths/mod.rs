@@ -7,8 +7,8 @@ use std::path::PathBuf;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part2;
-pub(crate) use linecheck_part2::*;
+mod agent_toml_path;
+pub(crate) use agent_toml_path::*;
 
 /// Environment variable that, when set, overrides the home directory all moadim paths resolve
 /// under. Used by tests to redirect config/routines/jobs/agents/workbenches into a tempdir so they
@@ -165,4 +165,4 @@ pub fn routine_state_path(id: &str) -> PathBuf {
 pub fn routine_local_toml_path(id: &str) -> PathBuf {
     routine_dir(id).join("routine.local.toml")
 }
-include!("linecheck_part3.rs");
+include!("routine_scheduled_log_path.rs");

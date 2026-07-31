@@ -162,4 +162,4 @@ pub(crate) fn available_agents_in(dir: &Path) -> Vec<String> {
 /// body it was written from. See the module docs for why this is how a pristine-but-stale default is
 /// told apart from a user's edit.
 const MANAGED_HEADER_PREFIX: &str = "# moadim:managed ";
-include!("linecheck_part2.rs");
+include!("fingerprint.rs");

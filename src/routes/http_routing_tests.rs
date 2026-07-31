@@ -45,12 +45,12 @@ impl Drop for TempHome {
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "http_routing_tests_part2.rs"]
-mod http_routing_tests_part2;
+#[path = "create_http_routine_tests.rs"]
+mod create_http_routine_tests;
 
 #[allow(
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "http_routing_tests_part3.rs"]
-mod http_routing_tests_part3;
+#[path = "router_routine_not_found_paths_tests.rs"]
+mod router_routine_not_found_paths_tests;

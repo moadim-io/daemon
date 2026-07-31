@@ -152,4 +152,4 @@ fn create_flag_propagates_write_failure() {
 
     assert!(result.is_err());
 }
-include!("flags_tests_part3.rs");
+include!("create_flag_propagates_create_dir_failure_tests.rs");

@@ -11,14 +11,14 @@ use std::time::Duration;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part2;
-pub(crate) use linecheck_part2::*;
+mod wants_quiet;
+pub(crate) use wants_quiet::*;
 #[allow(
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part3;
-pub(crate) use linecheck_part3::*;
+mod stop_json;
+pub(crate) use stop_json::*;
 
 /// Environment marker set on the backgrounded child so it knows it was spawned by the launcher.
 pub(crate) const DAEMONIZED_ENV: &str = "MOADIM_DAEMONIZED";
@@ -131,4 +131,4 @@ pub enum Command {
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
 /// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
 pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "enable", "disable"];
-include!("linecheck_part4.rs");
+include!("wants_json.rs");

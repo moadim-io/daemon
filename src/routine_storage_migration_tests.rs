@@ -165,4 +165,4 @@ fn migrate_prompts_to_subfolder_from_dir_defaults_missing_legacy_prompt_to_empty
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
-include!("routine_storage_migration_tests_part3.rs");
+include!("migrate_prompts_to_subfolder_from_dir_skips_dir_without_routine_toml_tests.rs");

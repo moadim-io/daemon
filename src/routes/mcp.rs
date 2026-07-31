@@ -145,4 +145,4 @@ fn ok(val: impl serde::Serialize) -> CallToolResult {
 fn err(msg: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(msg.to_string())])
 }
-include!("mcp_part2.rs");
+include!("preview_routine_prompt.rs");

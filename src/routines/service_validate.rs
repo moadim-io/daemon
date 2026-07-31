@@ -9,9 +9,9 @@ use crate::routines::model::Repository;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "service_validate_part2.rs"]
-mod service_validate_part2;
-pub(crate) use service_validate_part2::*;
+#[path = "validate_machines.rs"]
+mod validate_machines;
+pub(crate) use validate_machines::*;
 
 /// Map a [`crate::routine_storage::write_routine`] failure to an [`AppError`], turning the
 /// on-disk slug-collision guard (#188, `ErrorKind::AlreadyExists`) into a 409 the caller can act
@@ -158,4 +158,4 @@ pub(super) fn validate_title(title: &str) -> Result<(), AppError> {
     }
     Ok(())
 }
-include!("service_validate_part3.rs");
+include!("validate_repositories.rs");

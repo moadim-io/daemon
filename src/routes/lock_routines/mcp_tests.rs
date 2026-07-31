@@ -165,4 +165,4 @@ fn lock_routines_local_creates_sentinel_and_returns_status() {
     assert_eq!(val["local"], true);
     crate::global_lock::set_lock(crate::global_lock::LockScope::Local, false).unwrap();
 }
-include!("mcp_tests_part2.rs");
+include!("lock_routines_unknown_scope_is_error_tests.rs");

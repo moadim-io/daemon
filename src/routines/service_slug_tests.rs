@@ -141,4 +141,4 @@ fn with_empty_path(body: impl FnOnce()) {
     }
     drop(guard);
 }
-include!("service_slug_tests_part3.rs");
+include!("svc_create_rejects_duplicate_slug_tests.rs");

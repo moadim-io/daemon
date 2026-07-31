@@ -8,9 +8,9 @@ use std::time::{Duration, SystemTime};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "system_part2.rs"]
-mod system_part2;
-pub(crate) use system_part2::*;
+#[path = "wait_until.rs"]
+mod wait_until;
+pub(crate) use wait_until::*;
 
 /// How long to wait when probing or signalling a running server over HTTP.
 const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
@@ -142,4 +142,4 @@ fn ensure_readme(path: &std::path::Path, content: &str) {
     }
     let _ = std::fs::write(path, content);
 }
-include!("system_part3.rs");
+include!("ensure_config_gitignore.rs");

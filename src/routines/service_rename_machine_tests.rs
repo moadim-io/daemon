@@ -142,4 +142,4 @@ fn svc_rename_machine_no_op_when_names_equal() {
         "store must be unchanged after no-op rename"
     );
 }
-include!("service_rename_machine_tests_part2.rs");
+include!("svc_rename_machine_replaces_old_name_in_matching_routines_tests.rs");

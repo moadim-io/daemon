@@ -159,4 +159,4 @@ fn svc_create_rejects_max_runtime_above_cron_ceiling() {
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
 }
-include!("service_ceiling_tests_part2.rs");
+include!("svc_create_accepts_secs_at_cron_ceiling_tests.rs");

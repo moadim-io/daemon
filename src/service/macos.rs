@@ -157,4 +157,4 @@ fn report_installed(plist: &Path, log: &Path) {
     println!("  logs    {}", log.display());
     println!("  status  launchctl list | grep {LAUNCHD_LABEL}");
 }
-include!("macos_part2.rs");
+include!("request_automation_permission.rs");

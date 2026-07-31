@@ -158,4 +158,4 @@ fn reconcile_treats_empty_machines_as_drift_and_seeds_current_machine() {
         "reconcile must seed the current machine when cur.machines is empty"
     );
 }
-include!("mod_tests_part4.rs");
+include!("reconcile_returns_none_when_machines_already_set_and_otherwise_current_tests.rs");

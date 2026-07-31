@@ -137,4 +137,4 @@ fn tmux_session_prefix_alive_false_when_tmux_bin_missing_or_fails() {
         }
     }
 }
-include!("cleanup_tmux_tests_part2.rs");
+include!("tmux_session_count_counts_every_session_starting_with_the_prefix_tests.rs");

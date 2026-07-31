@@ -168,4 +168,4 @@ fn substitute_replaces_placeholders() {
         r#"claude "$(cat prompt.md)""#
     );
 }
-include!("mod_tests_part3.rs");
+include!("shell_quote_wraps_and_escapes_tests.rs");

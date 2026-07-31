@@ -153,4 +153,4 @@ fn stop_running_and_wait_force_kills_then_succeeds_when_server_goes_down() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&home);
 }
-include!("restart_tests_part2.rs");
+include!("stop_running_and_wait_bails_when_server_never_stops_tests.rs");

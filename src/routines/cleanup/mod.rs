@@ -43,14 +43,14 @@ use session::{note_forced_kill, tmux_kill_session, tmux_session_alive};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part2;
-pub(crate) use linecheck_part2::*;
+mod watchdog_dir;
+pub(crate) use watchdog_dir::*;
 #[allow(
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part3;
-pub(crate) use linecheck_part3::*;
+mod kill_sessions_for_slug;
+pub(crate) use kill_sessions_for_slug::*;
 
 pub(crate) use counters::totals as cleanup_sweep_totals;
 pub(crate) use repo_cache_cap::total_bytes as repo_cache_total_bytes;
@@ -158,4 +158,4 @@ fn agent_log_finish_time(dir: &Path, trigger_ts: u64) -> u64 {
         .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(trigger_ts, |elapsed| elapsed.as_secs().max(trigger_ts))
 }
-include!("linecheck_part4.rs");
+include!("kill_if_hung.rs");

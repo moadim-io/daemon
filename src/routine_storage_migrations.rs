@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "routine_storage_migrations_part2.rs"]
-mod routine_storage_migrations_part2;
-pub(crate) use routine_storage_migrations_part2::*;
+#[path = "migrate_trigger_logs.rs"]
+mod migrate_trigger_logs;
+pub(crate) use migrate_trigger_logs::*;
 
 /// Minimal view of pre-sidecar `routine.toml` files that still carried the cron schedule.
 #[derive(Debug, Deserialize)]
@@ -156,4 +156,4 @@ pub(crate) fn migrate_prompts_to_subfolder_from_dir(dir: &std::path::Path) {
         }
     }
 }
-include!("routine_storage_migrations_part3.rs");
+include!("migrate_routine_dirs.rs");

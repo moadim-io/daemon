@@ -146,4 +146,4 @@ fn migrate_trigger_logs_from_dir_removes_scheduled_toml_when_no_timestamp() {
     assert!(!routine_dir.join("scheduled.local.toml").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
-include!("routine_storage_trigger_log_migration_tests_part2.rs");
+include!("migrate_trigger_logs_from_dir_logs_on_scheduled_write_failure_tests.rs");

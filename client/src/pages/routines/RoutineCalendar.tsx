@@ -112,14 +112,16 @@ export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarPr
                       let chipCls = "cal-chip clickable";
                       if (hit.snoozed) chipCls += " snoozed";
                       return (
-                        <div
+                        <button
+                          type="button"
                           className={chipCls}
+                          aria-label={`Edit ${hit.title}`}
                           title={label}
                           key={`${hit.id}-${idx}`}
                           onClick={() => onEdit(hit.id)}
                         >
                           {label}
-                        </div>
+                        </button>
                       );
                     })}
                     {hits.length > 4 && <div className="cal-more">+{hits.length - 4} more</div>}

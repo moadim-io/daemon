@@ -137,19 +137,31 @@ export function DayTimeline({ items, loading, onClick }: DayTimelineProps) {
                   let chipCls = "day-chip";
                   if (onClick && e.id) chipCls += " clickable";
                   if (e.snoozed) chipCls += " snoozed";
-                  return (
-                    <div
-                      className={chipCls}
-                      style={style}
-                      title={e.label}
-                      key={i}
-                      onClick={() => e.id && onClick?.(e.id)}
-                    >
+                  const clickable = onClick && e.id;
+                  const content = (
+                    <>
                       <span className="day-chip-time">
                         {String(e.time.getHours()).padStart(2, "0")}:{String(e.time.getMinutes()).padStart(2, "0")}
                       </span>
                       <span className="day-chip-label">{e.label}</span>
                       {e.flagCount > 0 && <span className="day-chip-flag">⚑{e.flagCount}</span>}
+                    </>
+                  );
+                  return clickable ? (
+                    <button
+                      type="button"
+                      className={chipCls}
+                      style={style}
+                      title={e.label}
+                      aria-label={`Edit ${e.label}`}
+                      key={i}
+                      onClick={() => onClick(e.id as string)}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div className={chipCls} style={style} title={e.label} key={i}>
+                      {content}
                     </div>
                   );
                 })}

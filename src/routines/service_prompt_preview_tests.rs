@@ -59,10 +59,12 @@ fn preview_matches_compose_prompt_with_repositories() {
             Repository {
                 repository: "https://github.com/octocat/Hello-World".to_string(),
                 branch: None,
+                auto_pull: true,
             },
             Repository {
                 repository: "https://github.com/octocat/Spoon-Knife".to_string(),
                 branch: Some("main".to_string()),
+                auto_pull: true,
             },
         ],
     );

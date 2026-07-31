@@ -20,6 +20,7 @@ fn make_routine(id: &str) -> Routine {
         repositories: vec![Repository {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
+            auto_pull: true,
         }],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -140,11 +141,13 @@ fn svc_list_filters_by_repository_substring() {
     alpha.repositories = vec![Repository {
         repository: "https://github.com/octocat/Alpha".to_string(),
         branch: None,
+        auto_pull: true,
     }];
     let mut beta = make_routine("beta");
     beta.repositories = vec![Repository {
         repository: "https://github.com/octocat/Beta".to_string(),
         branch: None,
+        auto_pull: true,
     }];
     write_routine_to(&dir, &alpha);
     write_routine_to(&dir, &beta);

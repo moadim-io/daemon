@@ -30,6 +30,7 @@ pub(super) fn validate_repositories(repos: &[Repository]) -> Result<Vec<Reposito
         normalized.push(Repository {
             repository: repository.to_string(),
             branch,
+            auto_pull: repo.auto_pull,
         });
     }
     Ok(normalized)

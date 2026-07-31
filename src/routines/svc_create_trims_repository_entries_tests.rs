@@ -28,6 +28,7 @@ fn svc_create_trims_repository_entries() {
             repositories: vec![Repository {
                 repository: "  https://github.com/octocat/Hello-World  ".into(),
                 branch: Some("  main  ".into()),
+                auto_pull: true,
             }],
             machines: vec![crate::machine::current_machine()],
             enabled: true,

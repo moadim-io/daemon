@@ -31,15 +31,22 @@ use super::command::{agent_command_available, setup_step_available, tmux_session
 use super::flags::list_flags;
 use crate::paths::routines_dir;
 
-/// A git repository the daemon pre-clones (via a persistent local mirror, see
+/// A git repository the daemon can pre-sync (via a persistent local mirror, see
 /// [`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "wire format keeps repository.repository key"
+)]
 pub struct Repository {
     /// Git remote URL.
     pub repository: String,
     /// Branch to use, or `None` for the remote default branch.
     #[serde(default)]
     pub branch: Option<String>,
+    /// Whether to fetch/materialize before each run; `false` leaves checkout state to the routine.
+    #[serde(default = "bool_true")]
+    pub auto_pull: bool,
 }
 
 /// Field to sort a routine listing by.

@@ -76,6 +76,7 @@ fn svc_logs_returns_newest_workbench_log() {
     routine.repositories = vec![Repository {
         repository: "https://example.com/r.git".into(),
         branch: None,
+        auto_pull: true,
     }];
     store.lock().unwrap().insert("logs-id".into(), routine);
 

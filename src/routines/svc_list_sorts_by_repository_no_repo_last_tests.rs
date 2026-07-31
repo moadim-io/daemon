@@ -6,11 +6,13 @@ fn svc_list_sorts_by_repository_no_repo_last() {
     zeta.repositories = vec![Repository {
         repository: "https://github.com/octocat/Zeta".to_string(),
         branch: None,
+        auto_pull: true,
     }];
     let mut apple = make_routine("apple");
     apple.repositories = vec![Repository {
         repository: "https://github.com/octocat/Apple".to_string(),
         branch: None,
+        auto_pull: true,
     }];
     let mut none = make_routine("none");
     none.repositories = vec![];

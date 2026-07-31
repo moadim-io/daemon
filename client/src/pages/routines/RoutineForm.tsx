@@ -211,12 +211,13 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
 
       <div className="form-group">
         <label className="form-label">
-          REPOSITORIES <span style={{ color: "var(--text-faint)" }}>(one url [branch] per line)</span>
+          REPOSITORIES <span style={{ color: "var(--text-faint)" }}>(one url [branch] [auto_pull=false] per line)</span>
         </label>
         <textarea
           className="form-textarea"
           rows={3}
-          placeholder="https://github.com/org/repo main"
+          placeholder="https://github.com/org/repo main
+https://github.com/org/pinned auto_pull=false"
           {...register("reposRaw")}
         />
       </div>

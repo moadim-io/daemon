@@ -43,6 +43,7 @@ fn svc_create_update_delete_lifecycle() {
             repositories: Some(vec![Repository {
                 repository: "r".into(),
                 branch: None,
+                auto_pull: true,
             }]),
             machines: None,
             enabled: Some(false),

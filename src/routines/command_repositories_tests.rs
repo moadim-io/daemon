@@ -59,6 +59,7 @@ fn clone_repository_stmts_caches_by_url_and_fails_loudly() {
     let repos = vec![Repository {
         repository: "https://github.com/octocat/Hello-World.git".to_string(),
         branch: Some("main".to_string()),
+        auto_pull: true,
     }];
     let stmts = clone_repository_stmts(&repos);
     assert_eq!(stmts.len(), 1);
@@ -115,6 +116,7 @@ fn clone_repository_stmts_no_branch_omits_dash_b() {
     let repos = vec![Repository {
         repository: "https://github.com/octocat/Hello-World.git".to_string(),
         branch: None,
+        auto_pull: true,
     }];
     let stmts = clone_repository_stmts(&repos);
     assert!(
@@ -130,10 +132,12 @@ fn clone_repository_stmts_one_entry_per_repository() {
         Repository {
             repository: "https://github.com/a/a.git".to_string(),
             branch: None,
+            auto_pull: true,
         },
         Repository {
             repository: "https://github.com/b/b.git".to_string(),
             branch: None,
+            auto_pull: true,
         },
     ];
     assert_eq!(clone_repository_stmts(&repos).len(), 2);
@@ -146,6 +150,7 @@ fn build_routine_command_embeds_repository_clone_stmts() {
         routine.repositories = vec![Repository {
             repository: "https://github.com/octocat/Hello-World.git".to_string(),
             branch: Some("main".to_string()),
+            auto_pull: true,
         }];
         routine
     };

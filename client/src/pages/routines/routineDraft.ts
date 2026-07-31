@@ -13,21 +13,29 @@ export function cloneTitle(title: string): string {
   return title.startsWith(CLONE_PREFIX) ? title : `${CLONE_PREFIX}${title}`;
 }
 
-/** One repository per line, as `"{url} {branch}"` (branch omitted when unset). */
+/** One repository per line, as `"{url} {branch} [auto_pull=false]"` (branch omitted when unset). */
 export function reposToText(repos: Repository[]): string {
   return repos
-    .map((r) => (r.branch && r.branch.trim() !== "" ? `${r.repository} ${r.branch}` : r.repository))
+    .map((r) => {
+      const parts = [r.repository];
+      if (r.branch && r.branch.trim() !== "") parts.push(r.branch);
+      if (r.auto_pull === false) parts.push("auto_pull=false");
+      return parts.join(" ");
+    })
     .join("\n");
 }
 
-/** Parses the repositories textarea: first token = url, second (optional) token = branch. */
+/** Parses the repositories textarea: first token = url, optional branch, optional `auto_pull=false`. */
 export function textToRepos(text: string): Repository[] {
   const out: Repository[] = [];
   for (const line of text.split("\n")) {
     const tokens = line.trim().split(/\s+/).filter(Boolean);
-    const repository = tokens[0];
+    const repository = tokens.shift();
     if (!repository) continue;
-    out.push({ repository, branch: tokens[1] ?? null });
+    const autoPullTokenIndex = tokens.findIndex((token) => token === "auto_pull=false" || token === "auto-pull=false");
+    const auto_pull = autoPullTokenIndex === -1;
+    if (autoPullTokenIndex !== -1) tokens.splice(autoPullTokenIndex, 1);
+    out.push({ repository, branch: tokens[0] ?? null, auto_pull });
   }
   return out;
 }

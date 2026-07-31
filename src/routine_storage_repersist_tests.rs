@@ -43,6 +43,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         repositories: vec![Repository {
             repository: "https://example.com/r.git".to_string(),
             branch: Some("main".to_string()),
+            auto_pull: true,
         }],
         machines: vec![crate::machine::current_machine()],
         enabled: true,

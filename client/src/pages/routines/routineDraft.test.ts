@@ -45,22 +45,35 @@ describe("ttl — formatTtl", () => {
 
 describe("routineDraft — repositories text <-> structured", () => {
   it("round-trips a repo with a branch", () => {
-    const repos = [{ repository: "https://github.com/org/repo", branch: "main" }];
+    const repos = [{ repository: "https://github.com/org/repo", branch: "main", auto_pull: true }];
     const text = reposToText(repos);
     expect(text).toBe("https://github.com/org/repo main");
     expect(textToRepos(text)).toEqual(repos);
   });
 
   it("round-trips a repo without a branch", () => {
-    const repos = [{ repository: "https://github.com/org/repo", branch: null }];
+    const repos = [{ repository: "https://github.com/org/repo", branch: null, auto_pull: true }];
     expect(reposToText(repos)).toBe("https://github.com/org/repo");
     expect(textToRepos("https://github.com/org/repo")).toEqual(repos);
   });
 
   it("skips blank lines", () => {
     expect(textToRepos("a\n\nb")).toEqual([
-      { repository: "a", branch: null },
-      { repository: "b", branch: null },
+      { repository: "a", branch: null, auto_pull: true },
+      { repository: "b", branch: null, auto_pull: true },
+    ]);
+  });
+
+  it("round-trips a repo with auto-pull disabled", () => {
+    const repos = [{ repository: "https://github.com/org/repo", branch: "release", auto_pull: false }];
+    const text = reposToText(repos);
+    expect(text).toBe("https://github.com/org/repo release auto_pull=false");
+    expect(textToRepos(text)).toEqual(repos);
+  });
+
+  it("parses auto-pull disabled without treating it as a branch", () => {
+    expect(textToRepos("https://github.com/org/pinned auto_pull=false")).toEqual([
+      { repository: "https://github.com/org/pinned", branch: null, auto_pull: false },
     ]);
   });
 });

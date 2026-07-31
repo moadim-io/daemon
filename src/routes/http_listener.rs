@@ -180,5 +180,16 @@ pub async fn run_with_listener_until(
     watchdog_task.abort();
     version_task.abort();
     log_rotation_task.abort();
+    // Drain routine agents still running in their own detached tmux sessions (#320): without this,
+    // `moadim stop` only stopped the daemon's HTTP/MCP server, leaving launched agents free to keep
+    // acting with no watchdog until they finished or a later daemon start reaped them. This shells
+    // out to `tmux`, so run it on a blocking thread; best-effort shutdown must not fail if `tmux` is
+    // missing or no sessions are live.
+    let killed = tokio::task::spawn_blocking(crate::routines::kill_all_routine_sessions)
+        .await
+        .unwrap_or(0);
+    if killed > 0 {
+        log::info!("shutdown: killed {killed} in-flight routine session(s)");
+    }
     Ok(())
 }

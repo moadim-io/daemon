@@ -241,11 +241,13 @@ recording the kill in the run's `agent.log`, after which the workbench is reaped
 `ttl_secs` rules.
 
 Because routine agents run in a **detached** tmux session (`tmux new-session -d`, independent of the
-daemon process), `moadim stop` / the UI STOP button / `POST /shutdown` only stop the daemon's own
-HTTP/MCP server — they do not touch any routine session already running. An in-flight agent keeps
-running (and can keep opening PRs, filing issues, pushing commits, etc.) until it finishes on its own
-or a later daemon start's cleanup sweep reaps it via the watchdog above (issue #320). There is
-currently no drain/kill-on-stop option.
+daemon process), `moadim stop` / the UI STOP button / `POST /shutdown` must drain them explicitly.
+After graceful HTTP/MCP shutdown completes, `run_with_listener_until` calls
+`routines::cleanup::kill_all_routine_sessions`, which force-kills every still-live
+`moadim-{workbench}` tmux session under `~/.moadim/workbenches/` regardless of which routine spawned
+it. This reuses the same `tmux_session_alive`/`tmux_kill_session` probes and naming convention as the
+watchdog and `kill_sessions_for_deleted_routine` (#333), rather than a separate mechanism. A missing
+`tmux` binary or no live sessions is a no-op; shutdown is never blocked or failed by it (#320).
 
 TTL reaping bounds age, not total size. `routines::cleanup::disk_cap` adds an optional safety valve
 on top of it: if `MOADIM_MAX_WORKBENCH_DISK_BYTES` is set and nonzero, the same sweep sums the whole

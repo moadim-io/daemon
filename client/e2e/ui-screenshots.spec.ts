@@ -32,6 +32,23 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
   await page.goto("/routines");
   await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
   await expect(page.getByText("Daily release digest")).toBeVisible();
+
+  const tableWrap = page.locator(".routine-table").locator("..");
+  if (testInfo.project.name === "chromium-phone") {
+    await expect
+      .poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+      .toBe(true);
+    await expect
+      .poll(async () => tableWrap.evaluate((el) => el.scrollWidth <= el.clientWidth + 1))
+      .toBe(true);
+  } else {
+    await expect
+      .poll(async () =>
+        page.locator(".routine-title-cell").first().evaluate((el) => el.getBoundingClientRect().width),
+      )
+      .toBeGreaterThan(140);
+  }
+
   await saveScreenshot(page, testInfo.project.name, "routines");
 });
 

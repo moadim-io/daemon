@@ -97,7 +97,7 @@ export function RoutineRow({
 
   return (
     <tr className={selected ? "row-selected" : ""}>
-      <td className="col-select">
+      <td className="col-select" data-label="Select">
         <input
           type="checkbox"
           checked={selected}
@@ -105,7 +105,7 @@ export function RoutineRow({
           aria-label={`Select ${r.title}`}
         />
       </td>
-      <td>
+      <td className="routine-title-cell" data-label="Title">
         <div className="cell-schedule" title={r.title}>
           <RoutineTitle title={r.title} />
         </div>
@@ -118,7 +118,7 @@ export function RoutineRow({
           </div>
         )}
       </td>
-      <td>
+      <td className="routine-schedule-cell" data-label="Schedule">
         <div className="cell-schedule">{schedules.join("\n")}</div>
         <div className="cell-schedule-human">{cronText}</div>
         <button
@@ -134,10 +134,10 @@ export function RoutineRow({
         </button>
         {previewOpen && <FiresPanel schedules={schedules} now={now} />}
       </td>
-      <td>
+      <td data-label="Next run">
         <NextRunCell routine={r} now={now} />
       </td>
-      <td>
+      <td data-label="Last fire">
         {lastFire === undefined ? (
           <span className="muted">—</span>
         ) : (
@@ -146,10 +146,10 @@ export function RoutineRow({
           </div>
         )}
       </td>
-      <td>
+      <td data-label="Run history">
         <RunHistorySparkline runs={runs} />
       </td>
-      <td>
+      <td data-label="Agent">
         <span
           className="cell-handler"
           title={r.agent_registered ? "agent registered" : "agent config missing"}
@@ -159,23 +159,23 @@ export function RoutineRow({
         </span>
         {r.model && <div className="cell-goal">{r.model}</div>}
       </td>
-      <td>
+      <td data-label="Repos">
         {repos.length === 0 ? (
           "—"
         ) : (
           <span title={repos.map((x) => x.repository).join("\n")}>{repos.length}</span>
         )}
       </td>
-      <td className={machines.length === 0 ? "cell-meta cell-no-machines" : "cell-meta"}>
+      <td data-label="Machines" className={machines.length === 0 ? "cell-meta cell-no-machines" : "cell-meta"}>
         {machines.length === 0 ? "—" : <span title={machines.join("\n")}>{machines.length}</span>}
       </td>
-      <td>{tags.length === 0 ? "—" : <span title={tags.join(", ")}>{tags.join(", ")}</span>}</td>
-      <td>
+      <td data-label="Tags">{tags.length === 0 ? "—" : <span title={tags.join(", ")}>{tags.join(", ")}</span>}</td>
+      <td data-label="TTL">
         <span className="cell-meta" title="workbench retention for finished runs">
           {formatTtl(r.ttl_secs)}
         </span>
       </td>
-      <td>
+      <td data-label="Health">
         <span className={healthBadgeClass(health)} title={healthTooltip(r, health)}>
           {healthBadge(health)}
         </span>
@@ -188,18 +188,18 @@ export function RoutineRow({
           </div>
         )}
       </td>
-      <td>
+      <td data-label="Enabled">
         <label className="toggle">
           <input type="checkbox" checked={r.enabled} onChange={(e) => onToggle(r.id, e.target.checked)} />
           <div className="toggle-track" />
         </label>
       </td>
-      <td>
+      <td data-label="Updated">
         <div className="cell-time" title={abstime(r.updated_at)}>
           {updated}
         </div>
       </td>
-      <td>
+      <td className="routine-actions-cell" data-label="Actions">
         <div className="row-actions">
           <button
             type="button"
@@ -209,7 +209,7 @@ export function RoutineRow({
             disabled={!r.enabled || r.power_saving}
             onClick={() => onTrigger(r.id)}
           >
-            ▶
+            RUN
           </button>
           <button type="button" className="act-btn logs" onClick={() => onLogs(r.id)}>
             LOGS
@@ -234,7 +234,7 @@ export function RoutineRow({
             aria-label="Duplicate routine"
             onClick={() => onClone(r.id)}
           >
-            ⧉
+            CLONE
           </button>
           <button
             type="button"
@@ -243,7 +243,7 @@ export function RoutineRow({
             aria-label="Delete routine"
             onClick={() => onDelete(r.id, r.title)}
           >
-            ✕
+            DELETE
           </button>
         </div>
       </td>

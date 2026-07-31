@@ -7,12 +7,14 @@
 )]
 use super::*;
 
-/// Force-kill every still-running session under `dir` whose workbench name parses to `slug`,
+/// Force-kill every still-running session under `dir` whose workbench slug satisfies `matches`,
 /// regardless of runtime. Returns the number of sessions killed. `is_alive`/`kill` are injected so
-/// the decision logic is unit-testable without a live tmux, mirroring [`watchdog_dir()`].
-pub(crate) fn kill_sessions_for_slug(
+/// the decision logic is unit-testable without a live tmux, mirroring [`watchdog_dir()`]. Shared by
+/// [`kill_sessions_for_slug()`] and [`kill_all_routine_sessions()`] so the session naming convention
+/// stays in one place.
+pub(crate) fn kill_matching_sessions(
     dir: &Path,
-    slug: &str,
+    matches: &dyn Fn(&str) -> bool,
     is_alive: &dyn Fn(&str) -> bool,
     kill: &dyn Fn(&str),
 ) -> usize {
@@ -28,7 +30,7 @@ pub(crate) fn kill_sessions_for_slug(
         let Some((dir_slug, _ts)) = parse_workbench_name(&name) else {
             continue;
         };
-        if dir_slug != slug {
+        if !matches(dir_slug) {
             continue;
         }
         let session = format!("moadim-{name}");
@@ -38,6 +40,18 @@ pub(crate) fn kill_sessions_for_slug(
         }
     }
     killed
+}
+
+/// Force-kill every still-running session under `dir` whose workbench name parses to `slug`,
+/// regardless of runtime. Returns the number of sessions killed. `is_alive`/`kill` are injected so
+/// the decision logic is unit-testable without a live tmux, mirroring [`watchdog_dir()`].
+pub(crate) fn kill_sessions_for_slug(
+    dir: &Path,
+    slug: &str,
+    is_alive: &dyn Fn(&str) -> bool,
+    kill: &dyn Fn(&str),
+) -> usize {
+    kill_matching_sessions(dir, &|dir_slug| dir_slug == slug, is_alive, kill)
 }
 
 /// Kill any still-running workbench session(s) belonging to a just-deleted routine's `slug`.
@@ -51,6 +65,22 @@ pub fn kill_sessions_for_deleted_routine(slug: &str) -> usize {
     kill_sessions_for_slug(
         &workbenches_dir(),
         slug,
+        &tmux_session_alive,
+        &tmux_kill_session,
+    )
+}
+
+/// Force-kill every still-live routine tmux session under `~/.moadim/workbenches/`, regardless of
+/// which routine it belongs to.
+///
+/// Called once from the shutdown path (`moadim stop`, the UI STOP button, or `POST /shutdown`) so an
+/// in-flight agent does not outlive the daemon that launched it. Routine agents run in detached tmux
+/// sessions, independent of the daemon process, so shutdown must drain them explicitly (#320).
+/// Returns the number of sessions killed.
+pub fn kill_all_routine_sessions() -> usize {
+    kill_matching_sessions(
+        &workbenches_dir(),
+        &|_dir_slug| true,
         &tmux_session_alive,
         &tmux_kill_session,
     )

@@ -138,3 +138,4 @@ fn reap_dir_uses_per_slug_ttl() {
     std::fs::remove_dir_all(&base).unwrap();
 }
 include!("reap_dir_measures_ttl_from_finish_not_trigger_tests.rs");
+include!("kill_all_routine_sessions_tests.rs");

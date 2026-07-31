@@ -94,7 +94,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("⚠ OS crontab sync needs attention")).toBeInTheDocument();
     expect(screen.getByText("crontab: crontab - timed out after 15s")).toBeInTheDocument();
     expect(screen.getByText(/Full Disk Access/)).toBeInTheDocument();
-    expect(screen.getByText(/Restart Moadim/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry sync now" })).toBeInTheDocument();
   });
 
   it("seeds the textarea from the loaded prompt and disables save until edited", () => {

@@ -21,6 +21,7 @@ pub mod metrics;
 pub mod move_routine;
 pub mod resolve_flag;
 pub mod restart;
+pub mod retry_crontab_sync;
 pub mod shutdown;
 pub mod trigger_routine;
 pub mod unlock_routines;

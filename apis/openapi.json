@@ -134,6 +134,28 @@
         }
       }
     },
+    "/crontab-sync/retry": {
+      "post": {
+        "tags": [
+          "crate::routes::retry_crontab_sync"
+        ],
+        "summary": "`POST /crontab-sync/retry` — retry writing the managed routines block to the OS crontab.",
+        "description": "Returns the same health payload shape as `GET /health` after the retry. Crontab command\nfailures are reported inside `crontab_sync` rather than as HTTP 500 so the client can render\nactionable recovery guidance and keep the daemon reachable.",
+        "operationId": "retry_crontab_sync",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [

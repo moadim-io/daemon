@@ -27,6 +27,14 @@ export function useHealth(refetchIntervalMs = 10_000) {
   });
 }
 
+export function useRetryCrontabSync() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => unwrap(await api.POST("/crontab-sync/retry")),
+    onSuccess: (data) => queryClient.setQueryData(["health"], data),
+  });
+}
+
 export function useShutdown() {
   return useMutation({
     mutationFn: async () => unwrap(await api.POST("/shutdown")),

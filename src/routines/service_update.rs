@@ -110,7 +110,7 @@ pub fn svc_update(
         .get_mut(id)
         .expect("id existence checked above, and the lock has been held continuously since");
     if let Some(schedules) = requested_schedules {
-        routine.schedule = schedules[0].clone();
+        routine.schedule.clone_from(&schedules[0]);
         routine.schedules = schedules;
     }
     if let Some(title) = req.title {

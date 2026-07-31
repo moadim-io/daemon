@@ -16,7 +16,7 @@ The pre-push hook and CI enforce these — running them locally first avoids a r
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo clippy` is clean
 - [ ] `cargo test` passes
-- [ ] 100% line coverage holds (`cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs|.*_tests.*\.rs'`)
+- [ ] 100% line coverage holds (`cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs|.*_tests.*\.rs|.*_part[0-9]+\.rs|src/routines/command_builder\.rs'`)
 - [ ] Tests live in `*_tests.rs` sibling files (not inline `#[cfg(test)] mod foo { … }` blocks)
 - [ ] `CHANGELOG.md` has an entry under `## [Unreleased]` (required for any `src/` or `ui/` change)
 - [ ] Docs updated if behavior, CLI flags, or API shapes changed

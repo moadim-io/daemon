@@ -10,7 +10,7 @@ By participating in this project you agree to abide by our
 | [Rust stable](https://rustup.rs/) | Build the daemon |
 | [`typos`](https://github.com/crate-ci/typos) | Spell check, run by the pre-commit hook (`make spell` installs it automatically) |
 | [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) + `llvm-tools-preview` | 100% line-coverage gate, enforced by the pre-push hook (`cargo install cargo-llvm-cov && rustup component add llvm-tools-preview`) |
-| [`linecheck`](https://crates.io/crates/linecheck) | 300-line-per-file gate over `src/`, enforced by the pre-push hook and CI's `linecheck` job (`cargo install linecheck`) |
+| [`linecheck`](https://crates.io/crates/linecheck) | 200-line-per-file gate over `src/`, enforced by the pre-push hook and CI's `linecheck` job (`cargo install linecheck`) |
 | [`direnv`](https://direnv.net/) | Auto-runs `.envrc` on `cd` so the bundled git hooks stay enabled (`core.hooksPath = .githooks`) |
 | [`actionlint`](https://github.com/rhysd/actionlint) (with `shellcheck` on `PATH`) | Validates `.github/workflows/*.yml` and the shell in their `run:` blocks; enforced in CI by [`actionlint.yml`](.github/workflows/actionlint.yml) |
 | [pnpm](https://pnpm.io/installation) | Builds the React UI (`client/`, `pnpm install` once at the repo root) and runs [Changesets](https://github.com/changesets/changesets) (`pnpm changeset`) — see [Workflow](#workflow) below |
@@ -40,7 +40,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
-linecheck --max-lines 300 $(find src -name '*.rs')
+linecheck --max-lines 200 $(find src -name '*.rs')
 pnpm --filter client typecheck
 pnpm --filter client lint
 pnpm --filter client test

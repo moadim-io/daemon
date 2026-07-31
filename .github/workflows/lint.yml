@@ -11,7 +11,7 @@ name: Lint
 # (build.rs falls back to it when pnpm is absent), so no pnpm step is needed
 # just to type-check and lint the server crate.
 #
-# The pre-push hook's file-size gate (`linecheck --max-lines 300` over `src/`)
+# The pre-push hook's file-size gate (`linecheck --max-lines 200` over `src/`)
 # has no CI equivalent, so it's a no-op for any contributor who hasn't opted
 # into `git config core.hooksPath .githooks` (see CONTRIBUTING.md) — a PR
 # could silently blow past the 500-line convention and still go fully green.
@@ -130,7 +130,7 @@ jobs:
         # Match the local pre-push hook exactly (same paths, same limit).
         run: |
           # shellcheck disable=SC2046
-          linecheck --max-lines 300 $(find src -name '*.rs')
+          linecheck --max-lines 200 $(find src -name '*.rs')
 
   readme-check:
     name: readme-check

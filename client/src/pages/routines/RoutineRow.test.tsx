@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RoutineResponse } from "../../api/hooks";
 import { RoutineRow } from "./RoutineRow";
@@ -41,6 +41,18 @@ function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
 }
 
 function renderRow(r: RoutineResponse) {
+  const handlers = {
+    onSelect: vi.fn(),
+    onEdit: vi.fn(),
+    onClone: vi.fn(),
+    onDelete: vi.fn(),
+    onMove: vi.fn(),
+    onToggle: vi.fn(),
+    onTrigger: vi.fn(),
+    onLogs: vi.fn(),
+    onHistory: vi.fn(),
+    onFlags: vi.fn(),
+  };
   render(
     <table>
       <tbody>
@@ -49,20 +61,12 @@ function renderRow(r: RoutineResponse) {
           now={new Date(2026, 0, 1, 12, 0, 0)}
           runs={[]}
           selected={false}
-          onSelect={vi.fn()}
-          onEdit={vi.fn()}
-          onClone={vi.fn()}
-          onDelete={vi.fn()}
-          onMove={vi.fn()}
-          onToggle={vi.fn()}
-          onTrigger={vi.fn()}
-          onLogs={vi.fn()}
-          onHistory={vi.fn()}
-          onFlags={vi.fn()}
+          {...handlers}
         />
       </tbody>
     </table>,
   );
+  return handlers;
 }
 
 describe("RoutineRow — failure circuit-breaker (issue #521)", () => {
@@ -93,5 +97,18 @@ describe("RoutineRow — failure circuit-breaker (issue #521)", () => {
     renderRow(routine({ consecutive_failures: 4, failure_threshold: 5 }));
     const chip = screen.getByText("4/5");
     expect(chip).toHaveClass("failure-chip", "critical");
+  });
+
+  it("groups secondary actions behind an actions dropdown", () => {
+    const handlers = renderRow(routine({ flag_count: 2 }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ACTIONS ▾" })).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "ACTIONS ▾" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Logs/ }));
+
+    expect(handlers.onLogs).toHaveBeenCalledWith("r1");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

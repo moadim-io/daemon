@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import type { FleetRunSummary, RoutineResponse } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtUntil, fmtWhen, nextFireAfterAny, nextFiresAny, scheduleList } from "../../lib/schedule";
@@ -78,6 +79,10 @@ export function RoutineRow({
   onFlags,
 }: RoutineRowProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsMenuStyle, setActionsMenuStyle] = useState<CSSProperties>({});
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   const schedules = scheduleList(r);
   const cronText = (r.schedule_descriptions ?? [r.schedule_description]).filter(Boolean).join(" · ") || "—";
@@ -94,6 +99,137 @@ export function RoutineRow({
 
   const health = routineHealth(r, now);
   const risk = failureRisk(r);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (actionsRef.current?.contains(target) || actionsMenuRef.current?.contains(target)) return;
+      setActionsOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActionsOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [actionsOpen]);
+
+  const closeActions = () => setActionsOpen(false);
+  const toggleActionsMenu = () => {
+    if (actionsOpen) {
+      setActionsOpen(false);
+      return;
+    }
+    const rect = actionsRef.current?.getBoundingClientRect();
+    if (rect !== undefined) {
+      const menuWidth = 168;
+      const menuHeight = 260;
+      const opensDown = rect.bottom + 6 + menuHeight <= window.innerHeight;
+      setActionsMenuStyle({
+        left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+        top: opensDown ? rect.bottom + 6 : Math.max(8, rect.top - menuHeight - 6),
+      });
+    }
+    setActionsOpen(true);
+  };
+
+  const actionsMenu = actionsOpen
+    ? createPortal(
+        <div
+          className="actions-menu"
+          id={`routine-actions-${r.id}`}
+          ref={actionsMenuRef}
+          role="menu"
+          style={actionsMenuStyle}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item"
+            onClick={() => {
+              closeActions();
+              onLogs(r.id);
+            }}
+          >
+            Logs
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item"
+            onClick={() => {
+              closeActions();
+              onHistory(r.id);
+            }}
+          >
+            History
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item"
+            onClick={() => {
+              closeActions();
+              onFlags(r.id);
+            }}
+          >
+            Flags
+            {(r.flag_count ?? 0) > 0 && <span className="flag-badge">{r.flag_count}</span>}
+          </button>
+          <div className="actions-menu-sep" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item"
+            onClick={() => {
+              closeActions();
+              onEdit(r.id);
+            }}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item"
+            onClick={() => {
+              closeActions();
+              onMove(r.id);
+            }}
+          >
+            Move folder
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item"
+            onClick={() => {
+              closeActions();
+              onClone(r.id);
+            }}
+          >
+            Clone
+          </button>
+          <div className="actions-menu-sep" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="actions-menu-item danger"
+            onClick={() => {
+              closeActions();
+              onDelete(r.id, r.title);
+            }}
+          >
+            Delete
+          </button>
+        </div>,
+        document.body,
+      )
+    : null;
 
   return (
     <tr className={selected ? "row-selected" : ""}>
@@ -211,40 +347,19 @@ export function RoutineRow({
           >
             RUN
           </button>
-          <button type="button" className="act-btn logs" onClick={() => onLogs(r.id)}>
-            LOGS
-          </button>
-          <button type="button" className="act-btn history" title="Run history" onClick={() => onHistory(r.id)}>
-            HISTORY
-          </button>
-          <button type="button" className="act-btn flags" title="Open flags" onClick={() => onFlags(r.id)}>
-            FLAGS
-            {(r.flag_count ?? 0) > 0 && <span className="flag-badge">{r.flag_count}</span>}
-          </button>
-          <button type="button" className="act-btn edit" onClick={() => onEdit(r.id)}>
-            EDIT
-          </button>
-          <button type="button" className="act-btn" title="Move folder" onClick={() => onMove(r.id)}>
-            MOVE
-          </button>
-          <button
-            type="button"
-            className="act-btn clone"
-            title="Duplicate routine"
-            aria-label="Duplicate routine"
-            onClick={() => onClone(r.id)}
-          >
-            CLONE
-          </button>
-          <button
-            type="button"
-            className="act-btn del"
-            title="Delete routine"
-            aria-label="Delete routine"
-            onClick={() => onDelete(r.id, r.title)}
-          >
-            DELETE
-          </button>
+          <div className="actions-menu-root" ref={actionsRef}>
+            <button
+              type="button"
+              className="act-btn actions-menu-trigger"
+              aria-haspopup="menu"
+              aria-expanded={actionsOpen}
+              aria-controls={`routine-actions-${r.id}`}
+              onClick={toggleActionsMenu}
+            >
+              ACTIONS ▾
+            </button>
+            {actionsMenu}
+          </div>
         </div>
       </td>
     </tr>

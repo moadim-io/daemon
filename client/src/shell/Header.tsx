@@ -30,6 +30,10 @@ export function Header(props: HeaderProps) {
   const uptime = health?.uptime_secs !== undefined && health.uptime_secs !== null ? `/ UP ${fmtUptime(health.uptime_secs)}` : "";
   const missingTmux = health?.dependencies ? !health.dependencies.tmux : false;
   const missingPython3 = health?.dependencies ? !health.dependencies.python3 : false;
+  const crontabSyncFailed = health?.crontab_sync ? !health.crontab_sync.ok : false;
+  const crontabSyncTitle = health?.crontab_sync?.last_error
+    ? `OS crontab sync failed: ${health.crontab_sync.last_error}`
+    : "OS crontab sync failed — scheduled routine changes may not be installed";
 
   return (
     <header className="app-header">
@@ -57,6 +61,11 @@ export function Header(props: HeaderProps) {
             title="python3 is not on the daemon's PATH — the claude agent setup step will fail silently"
           >
             ⚠ NO PYTHON3
+          </span>
+        )}
+        {crontabSyncFailed && (
+          <span className="dep-warn" title={crontabSyncTitle}>
+            ⚠ CRON STALE
           </span>
         )}
         <div className="health">

@@ -315,6 +315,11 @@ export function RoutineRow({
         <span className={healthBadgeClass(health)} title={healthTooltip(r, health)}>
           {healthBadge(health)}
         </span>
+        {r.power_saving_exempt && (
+          <div className="failure-chip low" title="Runs even when system power saving is active">
+            EXEMPT
+          </div>
+        )}
         {risk !== "none" && (
           <div
             className={`failure-chip ${risk}`}

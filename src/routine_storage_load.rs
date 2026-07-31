@@ -95,6 +95,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         repositories: toml.repositories,
         machines: toml.machines,
         enabled: toml.enabled.unwrap_or(true),
+        power_saving_exempt: toml.power_saving_exempt,
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),
         updated_at: toml.updated_at.unwrap_or(0),

@@ -21,6 +21,7 @@ export interface RoutineDraft {
   repositories: Repository[];
   machines: string[];
   enabled: boolean;
+  power_saving_exempt: boolean;
   ttl_secs: number | null;
   tags: string[];
 }
@@ -37,6 +38,7 @@ interface FormValues {
   tagsRaw: string;
   ttlRaw: string;
   enabled: boolean;
+  power_saving_exempt: boolean;
 }
 
 const nonBlank = z.string().trim().min(1);
@@ -65,6 +67,7 @@ function draftToValues(draft?: Partial<RoutineDraft>): FormValues {
     tagsRaw: tagsToText(draft?.tags ?? []),
     ttlRaw: draft?.ttl_secs != null ? String(draft.ttl_secs) : "",
     enabled: draft?.enabled ?? true,
+    power_saving_exempt: draft?.power_saving_exempt ?? false,
   };
 }
 
@@ -120,6 +123,7 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
       repositories: textToRepos(v.reposRaw),
       machines: v.machines,
       enabled: v.enabled,
+      power_saving_exempt: v.power_saving_exempt,
       ttl_secs: parseTtl(v.ttlRaw),
       tags: textToTags(v.tagsRaw),
     });
@@ -244,6 +248,16 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
         <span>ENABLED</span>
         <label className="toggle">
           <input type="checkbox" {...register("enabled")} />
+          <div className="toggle-track" />
+        </label>
+      </div>
+
+      <div className="toggle-row">
+        <span title="Allow this routine to launch while the host is on battery or Low Power Mode">
+          POWER-SAVING EXEMPT
+        </span>
+        <label className="toggle">
+          <input type="checkbox" {...register("power_saving_exempt")} />
           <div className="toggle-track" />
         </label>
       </div>

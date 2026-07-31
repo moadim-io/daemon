@@ -52,6 +52,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         tags: vec![],
         ttl_secs: None,
         max_runtime_secs: None,
@@ -148,3 +149,4 @@ fn svc_set_power_saving_missing_routine_not_found() {
     ));
 }
 include!("svc_set_power_saving_sets_and_clears_without_touching_enabled_tests.rs");
+include!("system_power_saving_policy_tests.rs");

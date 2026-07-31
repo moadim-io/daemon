@@ -38,6 +38,8 @@ mod routines;
 mod service;
 /// Forward sync of managed routines into the OS crontab.
 mod sync;
+/// Host power-state detector for conservative routine launch throttling.
+mod system_power;
 /// Shared utility functions.
 mod utils;
 

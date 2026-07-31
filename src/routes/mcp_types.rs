@@ -128,6 +128,8 @@ pub(super) struct UpdateRoutineInput {
     /// New failure-circuit-breaker threshold, or `None` to keep the existing value. `Some(0)`
     /// explicitly opts back out (#521); unlike `ttl_secs`/`max_runtime_secs`, `0` is accepted here.
     pub(super) failure_threshold: Option<u32>,
+    /// New system power-saving exemption flag, or `None` to keep the existing value.
+    pub(super) power_saving_exempt: Option<bool>,
     /// New tags list, or `None` to keep the existing value.
     pub(super) tags: Option<Vec<String>>,
     /// New tracked `[env]` map (replaces the whole map), or `None` to keep the existing value.

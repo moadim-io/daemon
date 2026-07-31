@@ -64,9 +64,10 @@ pub fn svc_create(
         last_scheduled_trigger_at: None,
         snoozed_until: None,
         skip_runs: None,
-        // Power saving is system-driven, never settable via create/update — see
-        // `svc_set_power_saving`.
+        // Power saving is system-driven, never settable via explicit state on create/update — see
+        // `svc_set_power_saving`. The exemption is user-owned config and may be set on create.
         power_saving: false,
+        power_saving_exempt: req.power_saving_exempt,
         // A brand-new routine has no run history yet; the circuit-breaker state (like
         // `power_saving`) starts clean regardless of `failure_threshold`.
         consecutive_failures: 0,

@@ -33,6 +33,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         snoozed_until: None,
         skip_runs: None,
         power_saving: false,
+        power_saving_exempt: false,
         machines: vec![],
         tags: vec![],
         ttl_secs: None,

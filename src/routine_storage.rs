@@ -60,6 +60,9 @@ struct RoutineToml {
     machines: Vec<String>,
     /// Whether the routine is enabled.
     enabled: Option<bool>,
+    /// Whether the routine may launch while the host is in system power saving.
+    #[serde(default)]
+    power_saving_exempt: bool,
     /// Unix creation timestamp.
     created_at: Option<u64>,
     /// Unix last-updated timestamp.

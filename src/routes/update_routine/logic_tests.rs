@@ -19,6 +19,7 @@ fn make_update_req() -> UpdateRoutineRequest {
         enabled: None,
         ttl_secs: None,
         max_runtime_secs: None,
+        power_saving_exempt: None,
         tags: None,
         env: None,
         failure_threshold: None,

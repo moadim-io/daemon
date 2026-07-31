@@ -101,6 +101,7 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
         repositories: routine.repositories.clone(),
         machines: routine.machines.clone(),
         enabled: Some(routine.enabled),
+        power_saving_exempt: routine.power_saving_exempt,
         created_at: Some(routine.created_at),
         updated_at: Some(routine.updated_at),
         // Runtime state is written to the sidecar below, never to the tracked `routine.toml`

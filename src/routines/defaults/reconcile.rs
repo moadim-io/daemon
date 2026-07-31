@@ -59,6 +59,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         skip_runs: cur.skip_runs,
         // Power saving is daemon/policy-owned, not spec-derived: carry it over like snooze state.
         power_saving: cur.power_saving,
+        power_saving_exempt: cur.power_saving_exempt,
         // Circuit-breaker runtime state is daemon-owned but not spec-derived either: carry it over
         // like power saving, so a reconcile doesn't silently clear an in-progress failure streak or
         // an auto-disable reason.

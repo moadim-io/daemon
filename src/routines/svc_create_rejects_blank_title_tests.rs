@@ -65,6 +65,7 @@ fn svc_create_rejects_zero_max_runtime_secs() {
             model: None,
             goal: None,
             max_runtime_secs: Some(0),
+            power_saving_exempt: false,
             tags: vec![],
             ..valid_create_request()
         },

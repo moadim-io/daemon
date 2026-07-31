@@ -190,10 +190,18 @@ whole tree — routine directories don't carry their own.
 | `repositories` | list   | no       | Git repos pre-cloned into the workbench before the agent launches (via a persistent local mirror cache under `~/.config/moadim/cache/`, reused across runs). A clone/fetch failure — bad URL, unreachable host, missing `branch` — aborts the run and is recorded in `agent.log`. |
 | `machines`     | list   | no       | Machine identities this routine runs on (matched against this install's resolved machine name — see below). An entry may be an exact name or a glob containing `*` (e.g. `"*"` for any machine, `"box-*"` for a family). Defaults to empty — **an empty list runs nowhere**, so a new routine is dormant until explicitly assigned. |
 | `enabled`      | bool   | no       | Defaults to `true`. Set `false` to pause without deleting.                                    |
+| `power_saving_exempt` | bool | no | Defaults to `false`. When `true`, this routine may still launch while the host is on battery or Low Power Mode. |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
 | `env`          | map    | no       | Environment variables injected into the agent's shell session at launch (see [Environment variables](#environment-variables) below). Defaults to empty. |
+
+### Power saving
+
+`enabled` remains the user's on/off intent. Power saving is a separate system throttle: on macOS,
+when the host is on battery or Low Power Mode, scheduled and manual launches are skipped with a
+clear `system power saving is active` reason unless the routine sets `power_saving_exempt = true`.
+There is no automatic catch-up when the host leaves power saving in v1.
 
 ### Environment variables
 

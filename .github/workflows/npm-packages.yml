@@ -1,0 +1,186 @@
+name: npm packages
+
+on:
+  pull_request:
+    paths:
+      - "npm/**"
+      - "scripts/release/*npm*.mjs"
+      - "scripts/release/version-and-sync.mjs"
+      - ".github/workflows/npm-packages.yml"
+      - "Cargo.toml"
+      - "package.json"
+  push:
+    branches: [main]
+    paths:
+      - "npm/**"
+      - "scripts/release/*npm*.mjs"
+      - "scripts/release/version-and-sync.mjs"
+      - ".github/workflows/npm-packages.yml"
+      - "Cargo.toml"
+      - "package.json"
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, e.g. v3.2.0
+        required: false
+        type: string
+      publish:
+        description: Publish npm packages after validation
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: npm package metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Verify package versions and pack contents
+        run: node scripts/release/verify-npm-packages.mjs
+
+      - name: Unit-test npm wrapper
+        run: node --test npm/moadim/test/*.test.mjs
+
+  build:
+    name: build npm binary (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            package_dir: daemon-linux-x64-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            package_dir: daemon-darwin-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            package_dir: daemon-darwin-x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Build binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke binary version
+        run: ./target/${{ matrix.target }}/release/moadim --version
+
+      - name: Stage binary into npm package
+        run: node scripts/release/stage-npm-binaries.mjs ${{ matrix.target }} target/${{ matrix.target }}/release/moadim
+
+      - name: Pack staged platform package
+        run: npm pack --json --dry-run
+        working-directory: npm/${{ matrix.package_dir }}
+
+      - uses: actions/upload-artifact@2848b2cda0e5190984587ec6bb1f36730ca78d50 # v4.6.2
+        with:
+          name: npm-${{ matrix.package_dir }}
+          path: npm/${{ matrix.package_dir }}/bin/moadim
+          if-no-files-found: error
+
+  pack-root:
+    name: npm root pack smoke
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: npm-*
+          path: /tmp/moadim-npm-binaries
+
+      - name: Generate npm platform package metadata
+        run: node scripts/release/generate-npm-packages.mjs
+
+      - name: Restore staged binaries
+        run: |
+          set -euo pipefail
+          cp /tmp/moadim-npm-binaries/npm-daemon-linux-x64-gnu/moadim npm/daemon-linux-x64-gnu/bin/moadim
+          cp /tmp/moadim-npm-binaries/npm-daemon-darwin-arm64/moadim npm/daemon-darwin-arm64/bin/moadim
+          cp /tmp/moadim-npm-binaries/npm-daemon-darwin-x64/moadim npm/daemon-darwin-x64/bin/moadim
+          chmod +x npm/daemon-*/bin/moadim
+
+      - name: Verify staged npm packages include binaries
+        run: node scripts/release/verify-npm-packages.mjs
+        env:
+          MOADIM_REQUIRE_NPM_BINARIES: "1"
+
+      - name: Pack all npm packages
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/moadim-npm-packs
+          for pkg in npm/*; do
+            [ -d "$pkg" ] || continue
+            (cd "$pkg" && npm pack --pack-destination /tmp/moadim-npm-packs)
+          done
+          ls -1 /tmp/moadim-npm-packs
+
+  publish-platforms:
+    name: publish npm platform packages
+    if: inputs.publish == true
+    needs: [pack-root]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - daemon-darwin-arm64
+          - daemon-darwin-x64
+          - daemon-linux-x64-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Generate npm platform package metadata
+        run: node scripts/release/generate-npm-packages.mjs
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: npm-${{ matrix.package }}
+          path: npm/${{ matrix.package }}/bin
+      - name: Restore executable bit
+        run: chmod +x npm/${{ matrix.package }}/bin/moadim
+      - name: Verify staged platform package includes binary
+        run: node scripts/release/verify-npm-packages.mjs
+        env:
+          MOADIM_REQUIRE_NPM_BINARIES: "1"
+          MOADIM_REQUIRED_NPM_PACKAGE: ${{ matrix.package }}
+      - name: Publish ${{ matrix.package }}
+        run: npm publish --provenance --access public
+        working-directory: npm/${{ matrix.package }}
+
+  publish-root:
+    name: publish npm root package
+    if: inputs.publish == true
+    needs: [publish-platforms]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Publish moadim
+        run: npm publish --provenance --access public
+        working-directory: npm/moadim

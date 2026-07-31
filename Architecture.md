@@ -26,10 +26,18 @@ Moadim is a Rust daemon that manages scheduled AI-agent routines and exposes the
                ~/.config/moadim/
                ├── .gitignore                            (generated; covers the whole tree, no per-routine copy)
                └── routines/
-                   ├── <uuid>/routine.toml                  (tracked; [env] = non-secret vars)
-                   ├── <uuid>/routine.local.toml             (gitignored, optional; secret env overrides)
-                   ├── <uuid>/prompts/prompt.pure.md         (tracked)
-                   └── <uuid>/prompts/prompt.compiled.local.md (gitignored)
+                   ├── <slug>/routine.toml                  (tracked; [env] = non-secret vars)
+                   ├── <slug>/routine.local.toml             (gitignored, optional; secret env overrides)
+                   ├── <slug>/prompts/prompt.pure.md         (tracked)
+                   └── <slug>/prompts/prompt.compiled.local.md (gitignored)
+```
+
+Folders are filesystem-derived, not UUID-named (see `routine_storage_location.rs`): a routine keeps
+whatever directory it already lives in — found by scanning `routines/` for a `routine.toml` whose
+`id` matches — and only a brand-new, never-persisted routine falls back to `slugify(title)`. Folders
+can nest arbitrarily (`routines/<folder>/<slug>/...`), and `write_routine` refuses to overwrite a
+directory whose `routine.toml` already holds a *different* routine's `id`, so a slug collision
+between distinct routines errors instead of silently clobbering one of them.
 ```
 
 ---

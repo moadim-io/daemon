@@ -67,6 +67,15 @@ test("settings refresh cadence screenshot stays reviewable", async ({ page }, te
   await saveScreenshot(page, testInfo.project.name, "settings");
 });
 
+test("crontab sync failure warning screenshot stays reviewable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "warning baseline is desktop-only");
+  await page.unroute("**/api/v1/**");
+  await installApiMocks(page, { crontabSyncOk: false });
+  await page.goto("/");
+  await expect(page.getByText("⚠ CRON STALE")).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "crontab-sync-warning");
+});
+
 test("reliability screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/reliability");
   await expect(page.getByRole("heading", { name: "Reliability" })).toBeVisible();

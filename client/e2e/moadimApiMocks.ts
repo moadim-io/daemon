@@ -45,7 +45,11 @@ const runs = [
   run({ routineId: "routine-learning-loop", title: "Skill learning loop", status: "success", startedAgo: 104_400, duration: 205 }),
 ];
 
-export async function installApiMocks(page: Page) {
+export interface ApiMockOptions {
+  crontabSyncOk?: boolean;
+}
+
+export async function installApiMocks(page: Page, options: ApiMockOptions = {}) {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/api/v1", "");
@@ -56,7 +60,7 @@ export async function installApiMocks(page: Page) {
     }
 
     if (path === "/health") {
-      await json(route, health());
+      await json(route, health(options));
       return;
     }
     if (path === "/machine") {
@@ -92,10 +96,13 @@ async function json(route: Route, body: unknown) {
   await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-function health() {
+function health(options: ApiMockOptions) {
   return {
     build_date: "2026-07-31",
     dependencies: { python3: true, tmux: true },
+    crontab_sync: options.crontabSyncOk === false
+      ? { ok: false, last_error: "crontab: crontab - timed out after 15s", last_error_at: NOW_SECS - 60 }
+      : { ok: true, last_error: null, last_error_at: null },
     git_sha: "e2e1234",
     machine: "m1",
     running: true,

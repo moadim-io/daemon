@@ -111,6 +111,7 @@ fn snapshot_repo_cache_names_maps_every_referenced_repository() {
     let repo = Repository {
         repository: "https://example.com/a/b.git".into(),
         branch: None,
+        auto_pull: true,
     };
     store.lock().unwrap().insert(
         "id".into(),

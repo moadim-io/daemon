@@ -18,6 +18,7 @@ fn make_routine(id: &str) -> Routine {
         repositories: vec![Repository {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
+            auto_pull: true,
         }],
         machines: vec![crate::machine::current_machine()],
         enabled: true,

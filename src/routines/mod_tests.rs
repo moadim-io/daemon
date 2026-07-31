@@ -18,6 +18,7 @@ fn make_routine(id: &str) -> Routine {
         repositories: vec![Repository {
             repository: "https://github.com/octocat/Hello-World".to_string(),
             branch: Some("master".to_string()),
+            auto_pull: true,
         }],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -90,6 +91,7 @@ fn compose_prompt_repo_without_branch() {
     routine.repositories = vec![Repository {
         repository: "git@example.com:a/b".to_string(),
         branch: None,
+        auto_pull: true,
     }];
     let prompt = compose_prompt(&routine);
     assert!(prompt.contains("- ./b — git@example.com:a/b\n"));

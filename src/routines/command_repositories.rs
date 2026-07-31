@@ -36,9 +36,9 @@ pub(crate) fn repo_dir_name(url: &str) -> String {
     }
 }
 
-/// Build the shell statements that materialize `repositories` into the workbench (`$WB`) before
-/// the agent launches, instead of leaving an empty directory and a "clone any you need" prose
-/// instruction for the agent to (re-)act on every single fire (#466).
+/// Build the shell statements that materialize auto-pulled `repositories` into the workbench
+/// (`$WB`) before the agent launches, instead of leaving an empty directory and a "clone any you
+/// need" prose instruction for the agent to (re-)act on every single fire (#466).
 ///
 /// Each repository is backed by a persistent local mirror at
 /// [`crate::paths::repo_cache_dir`], keyed by its exact URL: the first run clones the mirror with
@@ -54,6 +54,7 @@ pub(crate) fn repo_dir_name(url: &str) -> String {
 pub(crate) fn clone_repository_stmts(repositories: &[Repository]) -> Vec<String> {
     repositories
         .iter()
+        .filter(|repo| repo.auto_pull)
         .map(|repo| {
             let url = shell_quote(&repo.repository);
             let cache = shell_quote(&crate::paths::repo_cache_dir(&repo.repository).to_string_lossy());

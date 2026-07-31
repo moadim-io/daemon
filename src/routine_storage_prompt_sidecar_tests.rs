@@ -42,6 +42,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         repositories: vec![Repository {
             repository: "https://example.com/r.git".to_string(),
             branch: Some("main".to_string()),
+            auto_pull: true,
         }],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
@@ -93,10 +94,12 @@ fn write_routine_persists_composed_prompt_sidecar_with_repos() {
             Repository {
                 repository: "https://example.com/a.git".to_string(),
                 branch: Some("dev".to_string()),
+                auto_pull: true,
             },
             Repository {
                 repository: "https://example.com/b.git".to_string(),
                 branch: None,
+                auto_pull: true,
             },
         ];
 

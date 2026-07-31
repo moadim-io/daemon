@@ -123,6 +123,7 @@ fn svc_update_rejects_blank_repository_url() {
             repositories: Some(vec![Repository {
                 repository: " ".into(),
                 branch: None,
+                auto_pull: true,
             }]),
             machines: None,
             enabled: None,

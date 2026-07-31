@@ -18,24 +18,34 @@ pub(crate) fn compose_prompt(routine: &Routine) -> String {
     if routine.repositories.is_empty() {
         body.push_str("You are working in an empty directory.\n");
     } else {
-        // These repos are pre-cloned by `build_routine_command` (via `clone_repository_stmts`,
-        // #466) before the agent ever launches, so the preamble points at where they already
-        // live instead of instructing the agent to clone them itself.
-        body.push_str(
-            "These repositories are already cloned into the workbench — cd into them, don't re-clone:\n",
-        );
+        if routine.repositories.iter().any(|repo| repo.auto_pull) {
+            body.push_str(
+                "These repositories are already cloned into the workbench — cd into them, don't re-clone:\n",
+            );
+        } else {
+            body.push_str("These repositories are declared as context but are not auto-pulled; manage checkout state yourself:\n");
+        }
         for repo in &routine.repositories {
             let dir = repo_dir_name(&repo.repository);
+            let sync_note = if repo.auto_pull {
+                ""
+            } else {
+                " (auto-pull disabled)"
+            };
             // `write!` into the existing `String` directly rather than `format!` + `push_str`,
             // which would allocate a throwaway `String` per repository just to copy it into
             // `body` immediately after. Writing to a `String` is infallible, so the `Result` is
             // deliberately discarded.
             match &repo.branch {
                 Some(branch) => {
-                    let _ = writeln!(body, "- ./{dir} — {} (branch {branch})", repo.repository);
+                    let _ = writeln!(
+                        body,
+                        "- ./{dir} — {} (branch {branch}){sync_note}",
+                        repo.repository
+                    );
                 }
                 None => {
-                    let _ = writeln!(body, "- ./{dir} — {}", repo.repository);
+                    let _ = writeln!(body, "- ./{dir} — {}{sync_note}", repo.repository);
                 }
             }
         }

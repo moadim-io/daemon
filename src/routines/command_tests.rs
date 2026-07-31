@@ -4,7 +4,7 @@
 )]
 
 use super::*;
-use crate::routines::model::Routine;
+use crate::routines::model::{Repository, Routine};
 
 /// Build a minimal routine for command-construction tests.
 fn make_routine(title: &str) -> Routine {
@@ -153,4 +153,36 @@ fn build_routine_command_writes_daemon_preamble_before_prompt_copy() {
         "user-prompt append must remain best-effort in: {cmd}"
     );
 }
+#[test]
+fn clone_repository_stmts_skips_repositories_with_auto_pull_disabled() {
+    let stmts = clone_repository_stmts(&[
+        Repository {
+            repository: "https://github.com/org/synced".to_string(),
+            branch: Some("main".to_string()),
+            auto_pull: true,
+        },
+        Repository {
+            repository: "https://github.com/org/pinned".to_string(),
+            branch: None,
+            auto_pull: false,
+        },
+    ]);
+    let rendered = stmts.join("\n");
+    assert!(rendered.contains("https://github.com/org/synced"));
+    assert!(!rendered.contains("https://github.com/org/pinned"));
+}
+
+#[test]
+fn compose_prompt_marks_repositories_with_auto_pull_disabled() {
+    let mut routine = make_routine("Auto Pull Opt Out");
+    routine.repositories = vec![Repository {
+        repository: "https://github.com/org/pinned".to_string(),
+        branch: None,
+        auto_pull: false,
+    }];
+    let prompt = compose_prompt(&routine);
+    assert!(prompt.contains("not auto-pulled"));
+    assert!(prompt.contains("https://github.com/org/pinned (auto-pull disabled)"));
+}
+
 include!("build_routine_command_workbench_base_tracks_moadim_home_override_tests.rs");

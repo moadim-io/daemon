@@ -55,6 +55,7 @@ fn svc_create_rejects_blank_repository_url() {
                 repositories: vec![Repository {
                     repository: url.into(),
                     branch: None,
+                    auto_pull: true,
                 }],
                 machines: vec![crate::machine::current_machine()],
                 enabled: true,
@@ -91,6 +92,7 @@ fn svc_create_rejects_blank_repository_branch() {
             repositories: vec![Repository {
                 repository: "https://github.com/octocat/Hello-World".into(),
                 branch: Some("  ".into()),
+                auto_pull: true,
             }],
             machines: vec![crate::machine::current_machine()],
             enabled: true,

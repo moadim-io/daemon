@@ -1660,11 +1660,15 @@
       },
       "Repository": {
         "type": "object",
-        "description": "A git repository the daemon pre-clones (via a persistent local mirror, see\n[`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).",
+        "description": "A git repository the daemon can pre-sync (via a persistent local mirror, see\n[`crate::paths::repo_cache_dir`]) into the workbench before the agent launches (#466).",
         "required": [
           "repository"
         ],
         "properties": {
+          "auto_pull": {
+            "type": "boolean",
+            "description": "Whether to fetch/materialize before each run; `false` leaves checkout state to the routine."
+          },
           "branch": {
             "type": [
               "string",

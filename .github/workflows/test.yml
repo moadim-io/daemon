@@ -14,7 +14,12 @@ name: Test
 #
 # `client/` isn't a Cargo workspace member, so `cargo test` never runs its
 # Vitest suite. The `client-test` job below mirrors the pre-push hook's
-# `pnpm --filter client test` step in CI.
+# `pnpm --filter client test` step in CI. The `client-screenshots` job also
+# runs the mocked Playwright UI screenshot capture so PRs exercise the visual
+# baseline flow in CI. Exact binary PNG freshness stays in
+# `pnpm --dir client run test:e2e:screenshots:check` for developer machines,
+# because Linux runner fonts and antialiasing can legitimately differ from the
+# committed review baselines.
 
 # Restrict the default GITHUB_TOKEN to read-only; this workflow only needs to
 # read repository contents to check out and run the test suite.
@@ -119,3 +124,29 @@ jobs:
 
       - name: Run tests
         run: pnpm --filter client test
+
+  client-screenshots:
+    name: client (screenshot e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --dir client exec playwright install --with-deps chromium
+
+      - name: Run UI screenshot capture
+        run: pnpm --dir client run test:e2e:screenshots

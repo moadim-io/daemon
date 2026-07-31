@@ -12,13 +12,21 @@ test("overview dashboard screenshot stays reviewable", async ({ page }, testInfo
   await saveScreenshot(page, testInfo.project.name, "overview");
 });
 
-test("dark overview screenshot stays reviewable", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "one dark-mode desktop baseline is enough");
-  await forceDarkTheme(page);
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
-  await saveScreenshot(page, testInfo.project.name, "dark-overview");
-});
+const darkPages = [
+  { path: "/", heading: "Overview", name: "dark-overview" },
+  { path: "/routines", heading: "Routines", name: "dark-routines" },
+  { path: "/reliability", heading: "Reliability", name: "dark-reliability" },
+];
+
+for (const pageCase of darkPages) {
+  test(`dark ${pageCase.heading} screenshot stays reviewable`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop", "dark baselines are desktop-only");
+    await forceDarkTheme(page);
+    await page.goto(pageCase.path);
+    await expect(page.getByRole("heading", { name: pageCase.heading })).toBeVisible();
+    await saveScreenshot(page, testInfo.project.name, pageCase.name);
+  });
+}
 
 test("routines operations screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/routines");

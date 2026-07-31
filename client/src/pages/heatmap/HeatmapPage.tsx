@@ -1,13 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useRoutines } from "../../api/hooks";
-import {
-  loadRefreshToken,
-  refreshMs,
-  RefreshControl,
-  saveRefreshToken,
-  type RefreshToken,
-} from "../../components/RefreshControl";
+import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import { dateOnly } from "../../lib/schedule";
 import { DayTimeline } from "./DayTimeline";
 import { timelineItemsOf } from "./dayTimelineMath";
@@ -59,7 +53,7 @@ function cellBackground(level: number): string | undefined {
 }
 
 export function HeatmapPage() {
-  const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
+  const refreshToken = useRefreshToken();
   const {
     data: routines,
     isLoading,
@@ -70,10 +64,6 @@ export function HeatmapPage() {
   const [filter, setFilter] = useState<HeatFilter>("all");
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const onChangeRefresh = (next: RefreshToken) => {
-    saveRefreshToken(next);
-    setRefreshToken(next);
-  };
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), TICK_MS);
@@ -127,7 +117,7 @@ export function HeatmapPage() {
               </button>
             ))}
           </div>
-          <RefreshControl token={refreshToken} updatedAtMs={dataUpdatedAt} onChange={onChangeRefresh} />
+          <RefreshFreshness updatedAtMs={dataUpdatedAt} />
         </div>
       </div>
 

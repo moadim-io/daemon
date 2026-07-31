@@ -896,6 +896,26 @@ textarea {
   color: var(--text-faint);
 }
 
+/* ─── Settings ───────────────────────────────────────────────────────── */
+
+.settings-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.settings-card-title {
+  font-weight: 700;
+}
+
+.settings-card-copy {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+  max-width: 70ch;
+}
+
 /* ─── Heatmap: header + filter toggle ───────────────────────────────── */
 
 .hm-hd {

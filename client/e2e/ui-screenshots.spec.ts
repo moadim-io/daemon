@@ -32,6 +32,7 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
   await page.goto("/routines");
   await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
   await expect(page.getByText("Daily release digest")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Auto-refresh interval" })).toHaveCount(0);
 
   const tableWrap = page.locator(".routine-table").locator("..");
   if (testInfo.project.name === "chromium-phone") {
@@ -56,6 +57,14 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
     await expect(page.getByRole("menu")).toBeVisible();
     await saveScreenshot(page, testInfo.project.name, "routines-actions-menu");
   }
+});
+
+test("settings refresh cadence screenshot stays reviewable", async ({ page }, testInfo) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByText("Data refresh")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Auto-refresh interval" })).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "settings");
 });
 
 test("reliability screenshot stays reviewable", async ({ page }, testInfo) => {

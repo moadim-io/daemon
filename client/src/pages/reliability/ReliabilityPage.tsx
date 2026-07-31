@@ -1,14 +1,7 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAllRuns } from "../../api/hooks";
 import { fmtRunDuration } from "../../lib/runDisplay";
-import {
-  loadRefreshToken,
-  refreshMs,
-  RefreshControl,
-  saveRefreshToken,
-  type RefreshToken,
-} from "../../components/RefreshControl";
+import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import {
   computeReliability,
   fleetSummary,
@@ -39,7 +32,7 @@ function fmtSecs(secs: number | null): string {
  * HISTORY tab individually.
  */
 export function ReliabilityPage() {
-  const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
+  const refreshToken = useRefreshToken();
   const {
     data: runs,
     isLoading,
@@ -47,10 +40,6 @@ export function ReliabilityPage() {
     dataUpdatedAt,
   } = useAllRuns(FETCH_LIMIT, { refetchInterval: refreshMs(refreshToken) });
 
-  const onChangeRefresh = (next: RefreshToken) => {
-    saveRefreshToken(next);
-    setRefreshToken(next);
-  };
 
   const items = computeReliability(runs ?? []);
   const summary = fleetSummary(items);
@@ -62,7 +51,7 @@ export function ReliabilityPage() {
       <div className="section-hd">
         <h1 className="page-title">Reliability</h1>
         <div className="section-acts">
-          <RefreshControl token={refreshToken} updatedAtMs={dataUpdatedAt} onChange={onChangeRefresh} />
+          <RefreshFreshness updatedAtMs={dataUpdatedAt} />
         </div>
       </div>
 

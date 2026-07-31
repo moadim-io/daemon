@@ -1,14 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAllRuns, useMachine, useMachines, useRoutines } from "../../api/hooks";
 import { runStatusClass, runStatusLabel } from "../../lib/runDisplay";
-import {
-  loadRefreshToken,
-  refreshMs,
-  RefreshControl,
-  saveRefreshToken,
-  type RefreshToken,
-} from "../../components/RefreshControl";
+import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import { distinctMachines } from "../routines/filter";
 import { rateClass, rateLabel } from "../reliability/reliabilityStats";
 import {
@@ -29,7 +23,7 @@ const FETCH_LIMIT = 300;
  * Jenkins "Nodes"), built entirely from data the UI already fetches elsewhere.
  */
 export function MachinesPage() {
-  const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
+  const refreshToken = useRefreshToken();
   const ms = refreshMs(refreshToken);
 
   const machinesQuery = useMachines();
@@ -37,10 +31,6 @@ export function MachinesPage() {
   const routinesQuery = useRoutines({}, { refetchInterval: ms });
   const runsQuery = useAllRuns(FETCH_LIMIT, { refetchInterval: ms });
 
-  const onChangeRefresh = (next: RefreshToken) => {
-    saveRefreshToken(next);
-    setRefreshToken(next);
-  };
 
   const routines = useMemo(() => routinesQuery.data ?? [], [routinesQuery.data]);
   const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data]);
@@ -71,11 +61,7 @@ export function MachinesPage() {
       <div className="section-hd">
         <h1 className="page-title">Machines</h1>
         <div className="section-acts">
-          <RefreshControl
-            token={refreshToken}
-            updatedAtMs={Number.isFinite(updatedAtMs) ? updatedAtMs : 0}
-            onChange={onChangeRefresh}
-          />
+          <RefreshFreshness updatedAtMs={Number.isFinite(updatedAtMs) ? updatedAtMs : 0} />
         </div>
       </div>
 

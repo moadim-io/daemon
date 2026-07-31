@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAllRuns, useLockStatus, useRoutines, useTriggerRoutine, useUnlock } from "../../api/hooks";
 import { GlobalLockBanner } from "../../components/GlobalLockBanner";
-import { loadRefreshToken, refreshMs, RefreshControl, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
+import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import {
   fireFailureNotification,
   freshFailures,
@@ -45,7 +45,7 @@ export function OverviewPage() {
   const trigger = useTriggerRoutine();
 
   const [now, setNow] = useState(() => new Date());
-  const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
+  const refreshToken = useRefreshToken();
   const [notifyEnabled, setNotifyEnabled] = useState(loadNotifyFailures);
   const prevRunStatuses = useRef<RunStatusSnapshot | null>(null);
 
@@ -67,10 +67,6 @@ export function OverviewPage() {
     return () => clearInterval(id);
   }, [refreshToken, queryClient]);
 
-  const handleSetRefreshToken = useCallback((token: RefreshToken) => {
-    saveRefreshToken(token);
-    setRefreshToken(token);
-  }, []);
 
   // Watches each poll of the fleet's recent runs for fresh failures and fires a desktop
   // notification per run. Seeds a baseline snapshot on the first tick after enabling so
@@ -154,7 +150,7 @@ export function OverviewPage() {
       <div className="section-hd">
         <span className="section-label">UPCOMING RUNS</span>
         <div className="section-acts">
-          <RefreshControl token={refreshToken} updatedAtMs={updatedAtMs} onChange={handleSetRefreshToken} />
+          <RefreshFreshness updatedAtMs={updatedAtMs} />
         </div>
       </div>
       <UpcomingTable runs={runs} now={now} loading={routinesQuery.isLoading} error={loadError} onTrigger={handleTrigger} />

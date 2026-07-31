@@ -9,6 +9,9 @@ use super::*;
 
 #[test]
 fn svc_trigger_scheduled_skips_duplicate_fire_in_same_minute() {
+    while now_secs() % 60 > 54 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
     let _home = TempHome::set();
     let store = new_store();
     let mut routine = make_routine("trig-sched-dedupe-id", "Trig Sched Dedupe ZZZ", 1, 1);

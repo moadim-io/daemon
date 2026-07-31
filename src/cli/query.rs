@@ -155,9 +155,22 @@ pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
             .map(|process_id| format!(" (pid {process_id})"))
             .unwrap_or_default();
         println!("moadim is running{pid_suffix} at http://{}", bind_addr());
+        if let Some(health) = fetch_health() {
+            print_crontab_sync_warning(&health);
+        }
     } else {
         println!("moadim is not running");
     }
     Ok(liveness_exit_code(running))
+}
+
+/// Print an actionable warning when the daemon reports a stale OS crontab sync.
+fn print_crontab_sync_warning(health: &HealthInfo) {
+    let Some(sync) = health.crontab_sync.as_ref().filter(|sync| !sync.ok) else {
+        return;
+    };
+    let error = sync.last_error.as_deref().unwrap_or("unknown error");
+    println!("warning: routine OS crontab is stale: {error}");
+    println!("recovery: {CRONTAB_SYNC_RECOVERY_HINT}");
 }
 include!("status_json.rs");

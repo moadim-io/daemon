@@ -20,6 +20,7 @@ fn readme_status_json_shape_matches_actual_keys() {
     let health = HealthInfo {
         uptime_secs: 42,
         version: "0.1.0".to_string(),
+        crontab_sync: None,
     };
     assert_eq!(
         documented,

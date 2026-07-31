@@ -66,7 +66,8 @@ mod cli_query;
 pub use cli_query::{cleanup, logs, status, trigger};
 #[cfg(test)]
 use cli_query::{
-    cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, HealthInfo,
+    cleanup_json, fetch_health, humanize_bytes, parse_health, status_json, CrontabSyncInfo, HealthInfo,
+    CRONTAB_SYNC_RECOVERY_HINT,
 };
 
 #[path = "system.rs"]
@@ -115,6 +116,10 @@ mod cli_help_tests;
 #[cfg(test)]
 #[path = "json_tests.rs"]
 mod cli_json_tests;
+
+#[cfg(test)]
+#[path = "status_crontab_sync_tests.rs"]
+mod cli_status_crontab_sync_tests;
 
 #[cfg(test)]
 #[path = "spawn_tests.rs"]

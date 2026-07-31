@@ -182,7 +182,9 @@ Changeset files accumulate silently on `main` as PRs land (each one required
 by the `unreleased-entry` check above) until someone decides it's time to
 ship: trigger [`cut-release.yml`](.github/workflows/cut-release.yml) —
 `gh workflow run cut-release.yml`, or "Run workflow" on the Actions tab. It
-bumps `package.json`, syncs that version into `Cargo.toml`/`Cargo.lock`
+bumps `package.json`, syncs that version into `Cargo.toml`/`Cargo.lock` and
+`npm/moadim/package.json`, using [`npm/packages.json`](npm/packages.json) as
+the source manifest for generated platform-package metadata
 ([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
 rolls the pending changesets into a new dated `CHANGELOG.md` section, verifies
 the result through the same lint/test gates a PR would get, and pushes it
@@ -198,10 +200,11 @@ To cut one manually instead (e.g. a hotfix, or the workflow is unavailable):
 
 Either way, on landing on `main`, [`auto-release.yml`](.github/workflows/auto-release.yml)
 detects the new version, pushes the `vx.y.z` tag, then publishes to crates.io
-([`publish.yml`](.github/workflows/publish.yml)) and cuts the GitHub Release
-([`release.yml`](.github/workflows/release.yml)). No manual tag push. The tag
-must not already exist, and `Cargo.toml`'s version must match the topmost
-changelog heading. Pushing a `v*` tag by hand still works as a fallback.
+([`publish.yml`](.github/workflows/publish.yml)), cuts the GitHub Release
+([`release.yml`](.github/workflows/release.yml)), and publishes the npm binary
+packages via [`npm-packages.yml`](.github/workflows/npm-packages.yml). No manual
+tag push. The tag must not already exist, and `Cargo.toml`'s version must match
+the topmost changelog heading. Pushing a `v*` tag by hand still works as a fallback.
 
 `publish.yml` authenticates to crates.io via [Trusted Publishing](https://crates.io/docs/trusted-publishing)
 (OIDC) — no `CARGO_REGISTRY_TOKEN` secret involved.

@@ -21,6 +21,9 @@ const CHANGELOG_PATH = path.join(ROOT, "CHANGELOG.md");
 const PACKAGE_JSON_PATH = path.join(ROOT, "package.json");
 const CARGO_TOML_PATH = path.join(ROOT, "Cargo.toml");
 const MAN_PAGE_PATH = path.join(ROOT, "docs", "moadim.1");
+const NPM_DIR = path.join(ROOT, "npm");
+const NPM_MANIFEST_PATH = path.join(NPM_DIR, "packages.json");
+const NPM_ROOT_PACKAGE_PATH = path.join(NPM_DIR, "moadim", "package.json");
 const REPO_URL = "https://github.com/moadim-io/daemon";
 
 function readPendingChangesets() {
@@ -64,6 +67,24 @@ function bumpManPage(version) {
     throw new Error(`Could not find a .TH header line in ${MAN_PAGE_PATH}`);
   }
   writeFileSync(MAN_PAGE_PATH, next);
+}
+
+function readJson(file) {
+  return JSON.parse(readFileSync(file, "utf8"));
+}
+
+function writeJson(file, value) {
+  writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function syncNpmPackages(version) {
+  const manifest = readJson(NPM_MANIFEST_PATH);
+  const rootPackage = readJson(NPM_ROOT_PACKAGE_PATH);
+  rootPackage.version = version;
+  rootPackage.optionalDependencies = Object.fromEntries(
+    manifest.platforms.map((platform) => [platform.name, version]),
+  );
+  writeJson(NPM_ROOT_PACKAGE_PATH, rootPackage);
 }
 
 function todayIso() {
@@ -145,6 +166,7 @@ function main() {
   updateChangelog(version, combinedBody);
   bumpCargoToml(version);
   bumpManPage(version);
+  syncNpmPackages(version);
 
   execSync("cargo check -q", { cwd: ROOT, stdio: "inherit" });
 
@@ -163,7 +185,7 @@ function main() {
     );
   }
 
-  console.log(`Synced Cargo.toml, Cargo.lock, CHANGELOG.md, docs/moadim.1, and apis/openapi.json to ${version}.`);
+  console.log(`Synced Cargo.toml, Cargo.lock, CHANGELOG.md, docs/moadim.1, apis/openapi.json, and npm root package metadata to ${version}.`);
 }
 
 main();

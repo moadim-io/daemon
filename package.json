@@ -5,7 +5,9 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "changeset": "changeset",
-    "version-packages": "node scripts/release/version-and-sync.mjs"
+    "version-packages": "node scripts/release/version-and-sync.mjs",
+    "generate:npm-packages": "node scripts/release/generate-npm-packages.mjs",
+    "verify:npm-packages": "node scripts/release/verify-npm-packages.mjs && node --test npm/moadim/test/*.test.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",

@@ -66,6 +66,16 @@ and Linux x86_64. Install one with [`cargo binstall`](https://github.com/cargo-b
 cargo binstall moadim
 ```
 
+Node/npm users can install the same prebuilt binaries through npm. The npm
+package is a thin wrapper over per-platform optional binary packages; it does
+not run `cargo install` during installation, and every npm package version is
+kept in lockstep with the Rust crate version:
+
+```sh
+npm install -g moadim
+moadim --version
+```
+
 ...or download the archive for your platform directly from the
 [Releases page](https://github.com/moadim-io/daemon/releases).
 

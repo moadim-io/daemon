@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{Routine, RoutineStore};
+pub(crate) use crate::routines::{Routine, RoutineStore};
 
 /// Manually trigger the routine with the given UUID, recording `last_manual_trigger_at` and
 /// returning the updated record.

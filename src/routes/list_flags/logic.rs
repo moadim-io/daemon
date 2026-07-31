@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{Flag, RoutineStore};
+pub(crate) use crate::routines::{Flag, RoutineStore};
 
 /// List every open flag raised against routine `id`, oldest first.
 pub fn build(store: &RoutineStore, id: &str) -> Result<Vec<Flag>, AppError> {

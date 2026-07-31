@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{RoutineStore, RunSummary};
+pub(crate) use crate::routines::{RoutineStore, RunSummary};
 
 /// List every run for routine `id`, newest first (live workbenches plus durable history).
 pub fn build(routines: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, AppError> {

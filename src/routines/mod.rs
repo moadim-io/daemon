@@ -27,13 +27,13 @@ mod model;
 mod run_history;
 mod service;
 
-pub use agents::*;
-pub use cleanup::*;
-pub use defaults::*;
+pub(crate) use agents::*;
+pub(crate) use cleanup::*;
+pub(crate) use defaults::*;
 pub use flags::{Flag, FlagScope};
-pub use handlers::*;
-pub use model::*;
-pub use service::*;
+pub(crate) use handlers::*;
+pub(crate) use model::*;
+pub(crate) use service::*;
 // `command` holds only crate-internal helpers (slugify, compose_prompt, build_routine_command, …).
 pub(crate) use command::*;
 // `concurrency_cap` is a crate-internal config knob for `service_trigger::spawn_routine_command`.

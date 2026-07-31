@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{RoutineResponse, RoutineStore, UpdateRoutineRequest};
+pub(crate) use crate::routines::{RoutineResponse, RoutineStore, UpdateRoutineRequest};
 
 /// Apply `req` to the routine identified by `id`, returning the updated record.
 pub fn build(

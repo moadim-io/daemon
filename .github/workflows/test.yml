@@ -99,8 +99,8 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
 
-      - name: Enforce 100% line coverage (excluding main.rs)
-        run: cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
+      - name: Enforce 100% line coverage (excluding main.rs and test modules)
+        run: cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs|.*_tests.*\.rs'
 
   client-test:
     name: client (vitest)

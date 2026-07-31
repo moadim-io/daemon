@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{RoutineResponse, RoutineStore};
+pub(crate) use crate::routines::{RoutineResponse, RoutineStore};
 
 /// Look up a single routine by UUID, reloading the store from disk first.
 pub fn build(

@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::RoutineStore;
+pub(crate) use crate::routines::RoutineStore;
 
 /// Resolve (delete) flag `filename` on routine `id`, refreshing `prompt.compiled.local.md` so it
 /// stops appearing in the next run's prompt.

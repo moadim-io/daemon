@@ -66,8 +66,8 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Running coverage (100% line coverage required, excluding main.rs)..."
-cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs'
+echo "Running coverage (100% line coverage required, excluding main.rs and test modules)..."
+cargo llvm-cov --fail-under-lines 100 --ignore-filename-regex 'src/main\.rs|.*_tests.*\.rs'
 
 # ── 6. Line-count gate ────────────────────────────────────────────────────────
 # Requires: cargo install linecheck
@@ -78,9 +78,9 @@ if ! command -v linecheck >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Checking .rs files do not exceed 500 lines..."
+echo "Checking .rs files do not exceed 300 lines..."
 # shellcheck disable=SC2046
-linecheck --max-lines 500 $(find src -name '*.rs')
+linecheck --max-lines 300 $(find src -name '*.rs')
 echo "Line-count check passed."
 
 # ── 7. Client (React) checks ────────────────────────────────────────────────────

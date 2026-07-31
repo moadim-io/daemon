@@ -2,7 +2,7 @@
 //! (`http.rs`) and the MCP tool (`mcp.rs`) build on top of this.
 
 use crate::error::AppError;
-pub use crate::routines::{CreateRoutineRequest, RoutineResponse, RoutineStore};
+pub(crate) use crate::routines::{CreateRoutineRequest, RoutineResponse, RoutineStore};
 
 /// Validate and persist a new routine, returning the created record.
 pub fn build(store: &RoutineStore, req: CreateRoutineRequest) -> Result<RoutineResponse, AppError> {

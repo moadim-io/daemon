@@ -4,7 +4,7 @@
 use serde::Deserialize;
 
 use crate::error::AppError;
-pub use crate::routines::{Flag, RoutineStore};
+pub(crate) use crate::routines::{Flag, RoutineStore};
 
 /// Request body for `POST /routines/{id}/flags`.
 #[derive(Deserialize, utoipa::ToSchema)]

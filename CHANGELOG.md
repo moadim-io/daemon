@@ -11,6 +11,20 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-07-31
+
+Add a manual crontab sync retry endpoint and surface it from Settings system health.
+
+Add crontab sync staleness and macOS recovery guidance to `moadim status` output.
+
+Add npm binary distribution package scaffolding with platform optional packages, Rust/npm version lockstep checks, and parallel npm package CI/release jobs.
+
+Add a filesystem tree view for routines that groups by folder metadata and keeps routine actions available from each file node.
+
+Allow routine repositories to opt out of the default pre-run auto-pull/materialization flow.
+
+Show crontab sync recovery guidance in Settings system health.
+
 ## [3.2.1] - 2026-07-31
 
 Surface failed OS crontab sync status as a global header warning so stale schedule installs are visible in the UI.
@@ -4998,7 +5012,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.2...HEAD
+[3.2.2]: https://github.com/moadim-io/daemon/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/moadim-io/daemon/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/moadim-io/daemon/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/moadim-io/daemon/compare/v3.0.0...v3.1.0

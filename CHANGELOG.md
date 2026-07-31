@@ -11,6 +11,40 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-07-31
+
+Surface failed OS crontab sync status as a global header warning so stale schedule installs are visible in the UI.
+
+`RoutineResponse::from_routine` (built for every routine on each `GET /routines` poll) called `routine_rel_dir` three times per routine — once directly and once each inside `routine_slug`/`routine_folder` — and every call re-walked the whole `routines/` tree. It now computes the relative directory once and derives the slug/folder from it with pure string ops (`slug_from_rel_dir`/`folder_from_rel_dir`), cutting the list endpoint's filesystem walks by 3x with no behavior change.
+
+Enable `clippy::assigning_clones` and fix the one violation it surfaced: `svc_update` now uses `clone_from` instead of assigning a fresh `.clone()` onto the routine's existing `schedule` field.
+
+Kill in-flight routine tmux sessions during `moadim stop` so detached agents do not outlive daemon shutdown.
+
+Lower the Rust linecheck limit to 200 lines and split existing modules to satisfy it.
+
+Lower the Rust linecheck gate to 300 lines per file and split existing modules/tests to comply.
+
+Move the routine move CLI adapter next to the REST and MCP move route modules without changing behavior.
+
+Move routine secondary row actions into an opened dropdown menu instead of showing every action inline.
+
+Repair the routines table responsive layout and group row actions into clearer centered buttons.
+
+Replace mechanical Rust linecheck fragment filenames with semantic module names.
+
+Move the app data refresh cadence selector into Settings and keep page toolbars read-only.
+
+Move the light/dark theme selector into Settings and remove the global header toggle.
+
+Add macOS-aware system power-saving launch throttling for routines, with a `power_saving_exempt` flag for critical routines.
+
+Add unit tests for `nextFireAfterAny`/`nextFiresAny` (client `src/lib/schedule.ts`), the multi-schedule "next fire" merge logic backing the Routines table row and the Overview page's dead-schedule detection. Both were previously untested (0% coverage on that code path).
+
+Allow client tooling to run while testing the TypeScript 7 dev dependency update.
+
+Enforce committed UI E2E screenshots in CI and expand dark-mode screenshot baselines.
+
 ## [3.2.0] - 2026-07-31
 
 Add a `moadim routines move` CLI command for moving routines between filesystem-derived folders and slugs through the explicit move API.
@@ -4964,7 +4998,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/moadim-io/daemon/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/moadim-io/daemon/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/moadim-io/daemon/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/moadim-io/daemon/compare/v1.7.6...v3.0.0

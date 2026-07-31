@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSetUserPrompt, useUserPrompt } from "../../api/hooks";
+import { loadRefreshToken, RefreshControl, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
 import { useToasts } from "../../shell/toasts";
 
 export function SettingsPage() {
@@ -9,6 +10,7 @@ export function SettingsPage() {
 
   const [content, setContent] = useState("");
   const [loadedContent, setLoadedContent] = useState("");
+  const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
 
   // Seed the editable draft once the initial fetch resolves. Adjusting state during
   // render (rather than in an effect) on a tracked "previous prop" per
@@ -33,9 +35,23 @@ export function SettingsPage() {
     });
   };
 
+  const onSetRefreshToken = (next: RefreshToken) => {
+    saveRefreshToken(next);
+    setRefreshToken(next);
+    addToast("Refresh cadence saved", "ok");
+  };
+
   return (
     <div>
       <h1 className="page-title">Settings</h1>
+      <div className="card settings-card">
+        <div className="settings-card-title">Data refresh</div>
+        <p className="settings-card-copy">
+          Choose how often the app pulls fresh daemon data. The same cadence is used by overview,
+          routines, logs, heatmap, machines, and reliability views.
+        </p>
+        <RefreshControl token={refreshToken} updatedAtMs={0} onChange={onSetRefreshToken} />
+      </div>
       <div className="card" style={{ padding: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>Persistent prompt</div>
         <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 0 }}>

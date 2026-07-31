@@ -31,7 +31,7 @@ import {
   type RoutineResponse,
 } from "../../api/hooks";
 import { GlobalLockBanner } from "../../components/GlobalLockBanner";
-import { loadRefreshToken, RefreshControl, refreshMs, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
+import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import { scheduleList } from "../../lib/schedule";
 import { useToasts } from "../../shell/toasts";
 import { BulkBar, BulkDeleteDialog, ConfirmDeleteDialog } from "./BulkBar";
@@ -124,7 +124,7 @@ export function RoutinesPage() {
   const [groupBy, setGroupBy] = useState<RGroupBy>(initialDecoded?.groupBy ?? "none");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [savedViewsList, setSavedViewsList] = useState<SavedView[]>(loadSavedViews);
-  const [interval, setIntervalState] = useState<RefreshToken>(loadRefreshToken);
+  const refreshToken = useRefreshToken();
   const [now, setNow] = useState(() => new Date());
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -172,7 +172,7 @@ export function RoutinesPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [modal.kind]);
 
-  const refetchMs = refreshMs(interval);
+  const refetchMs = refreshMs(refreshToken);
   const routinesQuery = useRoutines({}, { refetchInterval: refetchMs });
   const allRunsQuery = useAllRuns(RUN_HISTORY_FETCH_LIMIT);
   const lockStatusQuery = useLockStatus();
@@ -423,10 +423,6 @@ export function RoutinesPage() {
     }
   };
 
-  const onSetInterval = (next: RefreshToken) => {
-    setIntervalState(next);
-    saveRefreshToken(next);
-  };
 
   const titleOf = (id: string) => routines.find((r) => r.id === id)?.title ?? "";
 
@@ -490,7 +486,7 @@ export function RoutinesPage() {
       <div className="section-hd">
         <div className="section-label">SCHEDULED ROUTINES</div>
         <div className="section-acts">
-          <RefreshControl token={interval} updatedAtMs={routinesQuery.dataUpdatedAt} onChange={onSetInterval} />
+          <RefreshFreshness updatedAtMs={routinesQuery.dataUpdatedAt} />
           {view === "table" && <GroupBySelector groupBy={groupBy} onChange={setGroupBy} />}
           <ViewToggle view={view} onSetView={setView} />
           <button

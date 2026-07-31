@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNow } from "../lib/useNow";
 
 /**
@@ -11,7 +12,7 @@ import { useNow } from "../lib/useNow";
  */
 export type RefreshToken = "off" | "5" | "15" | "30" | "60";
 
-const OPTIONS: { token: RefreshToken; label: string; ms: number | undefined }[] = [
+export const REFRESH_OPTIONS: { token: RefreshToken; label: string; ms: number | undefined }[] = [
   { token: "off", label: "Off", ms: undefined },
   { token: "5", label: "5s", ms: 5_000 },
   { token: "15", label: "15s", ms: 15_000 },
@@ -19,7 +20,8 @@ const OPTIONS: { token: RefreshToken; label: string; ms: number | undefined }[] 
   { token: "60", label: "60s", ms: 60_000 },
 ];
 
-const STORAGE_KEY = "moadim.refresh-interval";
+export const REFRESH_STORAGE_KEY = "moadim.refresh-interval";
+const REFRESH_CHANGE_EVENT = "moadim-refresh-interval-change";
 
 function isRefreshToken(v: string | null): v is RefreshToken {
   return v === "off" || v === "5" || v === "15" || v === "30" || v === "60";
@@ -27,13 +29,13 @@ function isRefreshToken(v: string | null): v is RefreshToken {
 
 /** The cadence in milliseconds, or `undefined` for "off" (no auto-refresh). */
 export function refreshMs(token: RefreshToken): number | undefined {
-  return OPTIONS.find((o) => o.token === token)?.ms;
+  return REFRESH_OPTIONS.find((o) => o.token === token)?.ms;
 }
 
 /** Read the persisted interval from `localStorage`, defaulting to "off" when unavailable/unrecognized. */
 export function loadRefreshToken(): RefreshToken {
   try {
-    const token = localStorage.getItem(STORAGE_KEY);
+    const token = localStorage.getItem(REFRESH_STORAGE_KEY);
     return isRefreshToken(token) ? token : "off";
   } catch {
     return "off";
@@ -43,7 +45,8 @@ export function loadRefreshToken(): RefreshToken {
 /** Persist the chosen interval. Best-effort: a storage error is silently ignored. */
 export function saveRefreshToken(token: RefreshToken): void {
   try {
-    localStorage.setItem(STORAGE_KEY, token);
+    localStorage.setItem(REFRESH_STORAGE_KEY, token);
+    window.dispatchEvent(new CustomEvent(REFRESH_CHANGE_EVENT));
   } catch {
     // ponytail: private-mode/quota errors are non-fatal — the in-memory choice still applies this session.
   }
@@ -54,6 +57,27 @@ export function fmtFreshness(secsAgo: number): string {
   if (secsAgo < 60) return "updated just now";
   if (secsAgo < 3_600) return `updated ${Math.floor(secsAgo / 60)}m ago`;
   return `updated ${Math.floor(secsAgo / 3_600)}h ago`;
+}
+
+
+/** Keep every route on the persisted auto-refresh cadence, including changes saved on Settings. */
+export function useRefreshToken(): RefreshToken {
+  const [token, setToken] = useState<RefreshToken>(loadRefreshToken);
+
+  useEffect(() => {
+    const sync = () => setToken(loadRefreshToken());
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === REFRESH_STORAGE_KEY) sync();
+    };
+    window.addEventListener(REFRESH_CHANGE_EVENT, sync);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(REFRESH_CHANGE_EVENT, sync);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  return token;
 }
 
 export interface RefreshControlProps {
@@ -85,7 +109,7 @@ export function RefreshControl({ token, updatedAtMs, onChange }: RefreshControlP
         aria-label="Auto-refresh interval"
         onChange={(e) => onChange(e.target.value as RefreshToken)}
       >
-        {OPTIONS.map((o) => (
+        {REFRESH_OPTIONS.map((o) => (
           <option key={o.token} value={o.token}>
             {o.label}
           </option>
@@ -97,5 +121,23 @@ export function RefreshControl({ token, updatedAtMs, onChange }: RefreshControlP
         </span>
       )}
     </div>
+  );
+}
+
+
+export interface RefreshFreshnessProps {
+  /** `dataUpdatedAt` (ms) of the freshest underlying query; `0` hides the freshness cue. */
+  updatedAtMs: number;
+}
+
+/** Read-only freshness cue for page toolbars; the cadence itself lives under Settings. */
+export function RefreshFreshness({ updatedAtMs }: RefreshFreshnessProps) {
+  const now = useNow();
+  if (updatedAtMs <= 0) return null;
+  const freshness = fmtFreshness(Math.max(0, Math.floor((now - updatedAtMs) / 1000)));
+  return (
+    <span className="refresh-fresh" title="Time since the list last refreshed">
+      {freshness}
+    </span>
   );
 }

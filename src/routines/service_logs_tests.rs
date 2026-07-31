@@ -160,4 +160,4 @@ fn svc_logs_missing_routine_not_found() {
         Err(AppError::NotFound)
     ));
 }
-include!("service_logs_tests_part2.rs");
+include!("read_log_tail_errors_when_file_is_missing_tests.rs");

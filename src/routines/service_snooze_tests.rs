@@ -144,4 +144,4 @@ fn svc_trigger_scheduled_clears_snoozed_until_once_elapsed_and_spawns() {
         None
     );
 }
-include!("service_snooze_tests_part3.rs");
+include!("svc_trigger_scheduled_returns_internal_on_write_failure_when_snooze_el_tests.rs");

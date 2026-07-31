@@ -160,4 +160,4 @@ pub fn status(json: bool, wait_secs: Option<u64>) -> anyhow::Result<i32> {
     }
     Ok(liveness_exit_code(running))
 }
-include!("query_part2.rs");
+include!("status_json.rs");

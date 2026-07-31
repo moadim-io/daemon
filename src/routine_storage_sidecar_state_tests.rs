@@ -150,4 +150,4 @@ fn power_saving_persists_to_sidecar_not_routine_toml() {
         assert!(load_routine_from_dir(&slug).unwrap().power_saving);
     });
 }
-include!("routine_storage_sidecar_state_tests_part2.rs");
+include!("load_routine_defaults_power_saving_false_for_legacy_sidecar_tests.rs");

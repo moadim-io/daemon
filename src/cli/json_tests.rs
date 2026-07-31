@@ -162,4 +162,4 @@ fn readme_json_shape(command: &str) -> String {
         .expect("shape literal ends with `}`");
     line[start..=end].to_string()
 }
-include!("json_tests_part3.rs");
+include!("actual_keys_tests.rs");

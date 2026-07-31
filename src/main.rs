@@ -106,4 +106,4 @@ fn uninstall() -> anyhow::Result<()> {
     }
     Ok(())
 }
-include!("main_part2.rs");
+include!("run_server.rs");

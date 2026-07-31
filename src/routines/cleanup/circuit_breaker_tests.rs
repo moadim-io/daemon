@@ -157,4 +157,4 @@ fn record_run_outcome_trips_at_threshold() {
         routine.auto_disabled_reason
     );
 }
-include!("circuit_breaker_tests_part3.rs");
+include!("record_run_outcome_does_not_retrip_or_overwrite_reason_once_disabled_tests.rs");

@@ -168,4 +168,4 @@ fn resolve_tmux_bin_from_falls_back_to_first_matching_fallback_dir() {
 
     let _ = std::fs::remove_dir_all(&base);
 }
-include!("command_bin_resolution_tests_part3.rs");
+include!("resolve_tmux_bin_from_returns_bare_name_when_nowhere_found_tests.rs");

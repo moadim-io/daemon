@@ -33,9 +33,9 @@ use crate::utils::lock::LockRecover;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "routines_part2.rs"]
-mod routines_part2;
-pub(crate) use routines_part2::*;
+#[path = "sync_routines_to_crontab.rs"]
+mod sync_routines_to_crontab;
+pub(crate) use sync_routines_to_crontab::*;
 
 /// Process-wide lock serializing the crontab read-modify-write sequence.
 ///
@@ -153,4 +153,4 @@ fn write_compailed_cron_sidecar(routine: &Routine, schedules: &[String]) {
         let _ = std::fs::remove_file(legacy_path);
     }
 }
-include!("routines_part3.rs");
+include!("build_block.rs");

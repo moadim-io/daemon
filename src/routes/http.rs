@@ -46,9 +46,9 @@ use utoipa_swagger_ui::SwaggerUi;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "http_part2.rs"]
-mod http_part2;
-pub(crate) use http_part2::*;
+#[path = "build_app_with_shutdown.rs"]
+mod build_app_with_shutdown;
+pub(crate) use build_app_with_shutdown::*;
 
 /// Maximum number of requests the server services at once, across every route.
 ///
@@ -163,4 +163,4 @@ async fn api_not_found() -> AppError {
 
 #[path = "http_settings_routes.rs"]
 mod http_settings_routes;
-include!("http_part3.rs");
+include!("build_app.rs");

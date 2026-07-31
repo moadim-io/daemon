@@ -153,4 +153,4 @@ async fn missing_origin_on_post_passes() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
-include!("host_validation_tests_part2.rs");
+include!("cross_origin_get_is_not_rejected_tests.rs");

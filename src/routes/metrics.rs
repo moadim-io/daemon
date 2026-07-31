@@ -119,4 +119,4 @@ fn escape_label_value(value: &str) -> String {
         .replace('"', "\\\"")
         .replace('\n', "\\n")
 }
-include!("metrics_part2.rs");
+include!("render.rs");

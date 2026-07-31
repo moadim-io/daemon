@@ -143,4 +143,4 @@ fn svc_create_rejects_unknown_agent() {
     // Nothing should have been persisted.
     assert!(store.lock().unwrap().is_empty());
 }
-include!("service_field_validation_create_tests_part3.rs");
+include!("svc_create_accepts_builtin_agent_tests.rs");

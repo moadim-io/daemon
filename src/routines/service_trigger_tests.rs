@@ -167,4 +167,4 @@ fn svc_trigger_skips_spawn_when_prompt_exceeds_inline_limit() {
     let triggered = svc_trigger(&store, "trig-oversized-id").unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());
 }
-include!("service_trigger_tests_part4.rs");
+include!("svc_trigger_scheduled_missing_routine_not_found_tests.rs");

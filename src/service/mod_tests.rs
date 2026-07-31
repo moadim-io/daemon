@@ -142,4 +142,4 @@ fn moadim_exe_errors_when_current_exe_resolution_fails() {
 
     assert!(result.is_err());
 }
-include!("mod_tests_part3.rs");
+include!("launchctl_bin_never_resolves_to_real_launchctl_in_test_builds_tests.rs");

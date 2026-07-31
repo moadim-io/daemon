@@ -138,4 +138,4 @@ fn svc_update_sets_ttl_secs() {
         assert_eq!(updated.routine.ttl_secs, Some(1800));
     });
 }
-include!("service_update_apply_tests_part3.rs");
+include!("svc_update_sets_max_runtime_secs_tests.rs");

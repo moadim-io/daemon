@@ -167,4 +167,4 @@ fn rotate_run_history_if_oversized_leaves_small_files_in_place() {
     assert!(!path.with_extension("log.1").exists());
     let _ = std::fs::remove_dir_all(&base);
 }
-include!("run_history_tests_part3.rs");
+include!("rotate_run_history_if_oversized_rolls_the_file_past_the_cap_tests.rs");

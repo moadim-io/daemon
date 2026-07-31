@@ -167,4 +167,4 @@ fn clear_on_a_crontab_without_managed_blocks_is_a_noop() {
     assert_eq!(clear_managed_crontab_blocks().unwrap(), 0);
     assert_eq!(shim.store_contents(), plain, "untouched");
 }
-include!("clear_crontab_tests_part2.rs");
+include!("clear_on_an_absent_crontab_succeeds_with_zero_tests.rs");

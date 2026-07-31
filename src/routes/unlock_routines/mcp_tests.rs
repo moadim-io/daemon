@@ -164,4 +164,4 @@ struct FailingCronShim {
     base: std::path::PathBuf,
     previous: Option<std::ffi::OsString>,
 }
-include!("mcp_tests_part2.rs");
+include!("drop_tests.rs");

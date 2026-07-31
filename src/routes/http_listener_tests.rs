@@ -158,4 +158,4 @@ async fn run_with_listener_until_exits_on_immediate_shutdown() {
     let result = run_with_listener_until(crate::routines::new_store(), listener, async {}).await;
     assert!(result.is_ok());
 }
-include!("http_listener_tests_part3.rs");
+include!("mcp_endpoint_triggers_factory_tests.rs");

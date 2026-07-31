@@ -152,4 +152,4 @@ fn svc_list_local_only_filters_non_matching_machines() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].routine.id, "list-local-id");
 }
-include!("service_coverage_tests_part3.rs");
+include!("svc_create_returns_internal_on_write_failure_tests.rs");

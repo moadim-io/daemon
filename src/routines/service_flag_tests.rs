@@ -164,4 +164,4 @@ fn svc_create_flag_returns_internal_on_write_failure_after_flag_created() {
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(matches!(result, Err(AppError::Internal)));
 }
-include!("service_flag_tests_part3.rs");
+include!("svc_list_flags_not_found_tests.rs");

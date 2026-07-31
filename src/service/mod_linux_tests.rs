@@ -155,4 +155,4 @@ fn install_errors_when_enable_unit_fails() {
     );
     let _ = std::fs::remove_dir_all(&base);
 }
-include!("mod_linux_tests_part3.rs");
+include!("uninstall_errors_when_remove_unit_fails_tests.rs");

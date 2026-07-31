@@ -24,9 +24,9 @@ use super::service_log_tail::{read_log_tail_with_meta, LogWithMeta};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "service_trigger_part2.rs"]
-mod service_trigger_part2;
-pub(crate) use service_trigger_part2::*;
+#[path = "spawn_routine_command.rs"]
+mod spawn_routine_command;
+pub(crate) use spawn_routine_command::*;
 
 /// Record a manual trigger for `id` and spawn the same command the crontab would run.
 ///
@@ -157,4 +157,4 @@ pub(crate) fn sh_bin() -> String {
     let fallback = "sh".to_string();
     fallback
 }
-include!("service_trigger_part3.rs");
+include!("svc_snooze.rs");

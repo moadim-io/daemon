@@ -26,8 +26,8 @@ use crate::utils::time::now_secs;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part2;
-pub(crate) use linecheck_part2::*;
+mod wait_for_crontab_write;
+pub(crate) use wait_for_crontab_write::*;
 
 /// Snapshot of the most recent OS crontab sync result.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -166,4 +166,4 @@ fn crontab_bin() -> String {
     let fallback = "crontab".to_string();
     fallback
 }
-include!("linecheck_part3.rs");
+include!("read_crontab.rs");

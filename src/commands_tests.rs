@@ -124,4 +124,4 @@ fn usage_errors_return_two() {
     assert_eq!(run(argv(&["nonsense"])), 2);
     assert_eq!(run(argv(&["routines"])), 2);
 }
-include!("commands_tests_part5.rs");
+include!("invalid_json_flags_return_two_without_a_server_tests.rs");

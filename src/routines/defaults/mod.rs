@@ -38,8 +38,8 @@ use super::model::{Routine, RoutineStore};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part2;
-pub(crate) use linecheck_part2::*;
+mod write_removed_defaults;
+pub(crate) use write_removed_defaults::*;
 
 /// "The 1 Percent" self-improving routines agent.
 mod the_1_percent;
@@ -104,4 +104,4 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         env: std::collections::HashMap::new(),
     }
 }
-include!("linecheck_part3.rs");
+include!("reconcile.rs");

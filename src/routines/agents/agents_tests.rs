@@ -165,4 +165,4 @@ fn ensure_default_agents_seeds_into_override_home() {
     }
     let _ = std::fs::remove_dir_all(&home);
 }
-include!("agents_tests_part3.rs");
+include!("ensure_default_agents_in_returns_early_when_dir_is_uncreatable_tests.rs");

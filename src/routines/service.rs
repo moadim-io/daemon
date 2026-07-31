@@ -17,16 +17,16 @@ use super::defaults::{clear_removed_default, is_default_slug, record_removed_def
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "service_part2.rs"]
-mod service_part2;
-pub(crate) use service_part2::*;
+#[path = "svc_list.rs"]
+mod svc_list;
+pub(crate) use svc_list::*;
 #[allow(
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "service_part3.rs"]
-mod service_part3;
-pub(crate) use service_part3::*;
+#[path = "svc_delete.rs"]
+mod svc_delete;
+pub(crate) use svc_delete::*;
 
 #[cfg(test)]
 use super::model::Repository;
@@ -168,4 +168,4 @@ mod service_trigger_tests;
 #[cfg(test)]
 #[path = "service_power_saving_tests.rs"]
 mod service_power_saving_tests;
-include!("service_part5.rs");
+include!("service_2.rs");

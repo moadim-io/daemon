@@ -158,4 +158,4 @@ fn with_working_crontab(body: impl FnOnce()) {
     let _ = std::fs::remove_dir_all(&base);
     drop(guard);
 }
-include!("service_tests_part4.rs");
+include!("svc_create_rejects_blank_title_tests.rs");

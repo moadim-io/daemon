@@ -154,4 +154,4 @@ fn prune_orphaned_removes_mirrors_no_routine_references() {
 
     std::fs::remove_dir_all(&base).unwrap();
 }
-include!("repo_cache_cap_tests_part3.rs");
+include!("prune_orphaned_skips_a_stray_file_tests.rs");

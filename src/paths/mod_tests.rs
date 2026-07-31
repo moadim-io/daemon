@@ -164,4 +164,4 @@ fn config_readme_path_in_config_dir() {
     assert_eq!(path.file_name().unwrap().to_str().unwrap(), "README.md");
     assert_eq!(path.parent().unwrap(), config_dir());
 }
-include!("mod_tests_part2.rs");
+include!("pid_file_ends_with_moadim_pid_tests.rs");

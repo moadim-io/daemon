@@ -166,4 +166,4 @@ fn from_routine_agent_setup_available_true_when_no_setup_step() {
     assert!(resp.agent_registered);
     assert!(resp.agent_setup_available);
 }
-include!("model_tests_part3.rs");
+include!("from_routine_agent_setup_available_true_when_setup_interpreter_resolve_tests.rs");

@@ -142,4 +142,4 @@ fn build_block_skips_invalid_multi_cron_entries_and_falls_back_if_none_valid() {
     let _ = std::fs::remove_dir_all(valid_dir);
     let _ = std::fs::remove_dir_all(invalid_dir);
 }
-include!("routines_sync_multi_cron_tests_part2.rs");
+include!("build_block_keeps_valid_schedules_when_cron_union_cannot_simplify_them_tests.rs");

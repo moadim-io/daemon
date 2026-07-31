@@ -141,4 +141,4 @@ fn svc_move_moves_routine_directory_and_derives_new_location() {
     assert!(crate::paths::routine_toml_path("team/ops/nightly-check").exists());
     assert!(!crate::paths::routine_toml_path("original-title").exists());
 }
-include!("service_move_tests_part3.rs");
+include!("svc_move_rejects_absolute_or_parent_folder_paths_tests.rs");

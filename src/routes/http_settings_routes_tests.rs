@@ -146,4 +146,4 @@ async fn user_prompt_get_returns_500_on_non_not_found_read_error() {
     let _ = std::fs::remove_dir_all(&dir);
     std::env::remove_var("MOADIM_HOME_OVERRIDE");
 }
-include!("http_settings_routes_tests_part3.rs");
+include!("user_prompt_put_then_get_round_trips_tests.rs");

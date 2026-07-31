@@ -15,16 +15,16 @@ use serde_json::{Map, Value};
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "commands_part2.rs"]
-mod commands_part2;
-pub(crate) use commands_part2::*;
+#[path = "routine_cmd.rs"]
+mod routine_cmd;
+pub(crate) use routine_cmd::*;
 #[allow(
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "commands_part3.rs"]
-mod commands_part3;
-pub(crate) use commands_part3::*;
+#[path = "dispatch_routine.rs"]
+mod dispatch_routine;
+pub(crate) use dispatch_routine::*;
 
 /// Top-level parser for the data-plane subcommands, parsed from argv with the leading `moadim`
 /// binary name already stripped (`no_binary_name`), so the first token is the subcommand keyword.

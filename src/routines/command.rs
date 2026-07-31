@@ -12,9 +12,9 @@ use super::model::Routine;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-#[path = "command_part2.rs"]
-mod command_part2;
-pub(crate) use command_part2::*;
+#[path = "slugify.rs"]
+mod slugify;
+pub(crate) use slugify::*;
 
 #[path = "command_prompt.rs"]
 mod command_prompt;

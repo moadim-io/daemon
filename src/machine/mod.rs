@@ -25,8 +25,8 @@ use crate::utils::lock::LockRecover;
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
 )]
-mod linecheck_part2;
-pub(crate) use linecheck_part2::*;
+mod glob_match;
+pub(crate) use glob_match::*;
 
 /// On-disk shape of `machine.local.toml`.
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -162,4 +162,4 @@ fn machine_toml_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
-include!("linecheck_part3.rs");
+include!("write_machine_toml.rs");

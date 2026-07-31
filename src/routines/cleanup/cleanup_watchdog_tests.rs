@@ -137,4 +137,4 @@ fn reap_dir_returns_zero_when_dir_unreadable() {
         ReapStats::default()
     );
 }
-include!("cleanup_watchdog_tests_part3.rs");
+include!("reap_dir_counts_zero_when_remove_fails_tests.rs");

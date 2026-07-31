@@ -164,4 +164,4 @@ fn svc_list_runs_derives_status_newest_first() {
     assert!(runs[2].finished_at.is_some());
     assert!(runs[0].finished_at.is_none());
 }
-include!("service_runs_tests_part4.rs");
+include!("svc_list_runs_reports_running_when_session_alive_and_no_exit_code_tests.rs");

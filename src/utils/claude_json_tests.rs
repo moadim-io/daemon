@@ -165,4 +165,4 @@ fn lock_path_for_appends_dot_lock() {
     let path = lock_path_for(Path::new("/home/u/.claude.json"));
     assert_eq!(path, PathBuf::from("/home/u/.claude.json.lock"));
 }
-include!("claude_json_tests_part2.rs");
+include!("lock_exclusive_and_unlock_round_trip_on_a_real_file_tests.rs");

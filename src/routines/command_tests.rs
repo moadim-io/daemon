@@ -152,4 +152,4 @@ fn build_routine_command_writes_daemon_preamble_before_prompt_copy() {
         "user-prompt append must remain best-effort in: {cmd}"
     );
 }
-include!("command_tests_part4.rs");
+include!("build_routine_command_workbench_base_tracks_moadim_home_override_tests.rs");

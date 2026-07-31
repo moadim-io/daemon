@@ -148,4 +148,4 @@ async fn build_app_serves_root_with_etag() {
         "no-cache"
     );
 }
-include!("http_tests_part3.rs");
+include!("build_app_returns_304_when_if_none_match_matches_tests.rs");

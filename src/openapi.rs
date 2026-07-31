@@ -14,6 +14,7 @@
         crate::routes::metrics::metrics,
         crate::routes::shutdown::shutdown,
         crate::routes::restart::restart,
+        crate::routes::retry_crontab_sync::retry_crontab_sync,
         crate::routes::http::get_current_machine,
         crate::routes::http::put_machine,
         crate::routes::http::list_machines,

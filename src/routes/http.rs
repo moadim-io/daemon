@@ -17,6 +17,7 @@ use super::metrics;
 use super::move_routine;
 use super::resolve_flag;
 use super::restart;
+use super::retry_crontab_sync;
 use super::shutdown;
 use super::trigger_routine;
 use super::unlock_routines;

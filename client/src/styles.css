@@ -971,6 +971,12 @@ textarea {
   padding-left: 20px;
 }
 
+.settings-health-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ─── Heatmap: header + filter toggle ───────────────────────────────── */
 
 .hm-hd {

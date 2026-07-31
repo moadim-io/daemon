@@ -1,14 +1,21 @@
 import { useState } from "react";
-import { useHealth, useSetUserPrompt, useUserPrompt, type HealthResponse } from "../../api/hooks";
+import {
+  useHealth,
+  useRetryCrontabSync,
+  useSetUserPrompt,
+  useUserPrompt
+} from "../../api/hooks";
 import { loadRefreshToken, RefreshControl, saveRefreshToken, type RefreshToken } from "../../components/RefreshControl";
 import { loadThemeLight, saveThemeLight } from "../../lib/theme";
 import { useToasts } from "../../shell/toasts";
+import { CrontabSyncStatus } from "./CrontabSyncStatus";
 
 export function SettingsPage() {
   const { addToast } = useToasts();
   const userPrompt = useUserPrompt();
   const setUserPrompt = useSetUserPrompt();
   const health = useHealth(30_000);
+  const retryCrontabSync = useRetryCrontabSync();
 
   const [content, setContent] = useState("");
   const [loadedContent, setLoadedContent] = useState("");
@@ -87,7 +94,24 @@ export function SettingsPage() {
       </div>
       <div className="card settings-card settings-health-card">
         <div className="settings-card-title">System health</div>
-        <CrontabSyncStatus health={health.data} loading={health.isLoading} onRefresh={() => void health.refetch()} />
+        <CrontabSyncStatus
+          health={health.data}
+          loading={health.isLoading}
+          retrying={retryCrontabSync.isPending}
+          onRefresh={() => void health.refetch()}
+          onRetry={() => {
+            retryCrontabSync.mutate(undefined, {
+              onSuccess: (data) => {
+                if (data.crontab_sync.ok) {
+                  addToast("Crontab sync recovered", "ok");
+                } else {
+                  addToast("Crontab sync still needs attention", "err");
+                }
+              },
+              onError: (err) => addToast(`Retry failed: ${err.message}`, "err"),
+            });
+          }}
+        />
       </div>
       <div className="card" style={{ padding: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>Persistent prompt</div>
@@ -121,67 +145,4 @@ export function SettingsPage() {
       </div>
     </div>
   );
-}
-
-
-interface CrontabSyncStatusProps {
-  health: HealthResponse | undefined;
-  loading: boolean;
-  onRefresh: () => void;
-}
-
-function CrontabSyncStatus({ health, loading, onRefresh }: CrontabSyncStatusProps) {
-  const sync = health?.crontab_sync;
-  if (loading && !sync) {
-    return <p className="settings-card-copy">Checking OS crontab sync…</p>;
-  }
-
-  if (!sync) {
-    return (
-      <div className="settings-health settings-health-unknown">
-        <div className="settings-health-main">Health details unavailable</div>
-        <p className="settings-card-copy">Refresh status once the daemon is reachable.</p>
-        <button type="button" className="btn btn-secondary" onClick={onRefresh}>
-          Refresh status
-        </button>
-      </div>
-    );
-  }
-
-  if (sync.ok) {
-    return (
-      <div className="settings-health settings-health-ok">
-        <div className="settings-health-main">OS crontab sync is healthy</div>
-        <p className="settings-card-copy">Scheduled routine changes are installed in the OS crontab.</p>
-        <button type="button" className="btn btn-secondary" onClick={onRefresh}>
-          Refresh status
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="settings-health settings-health-warn">
-      <div className="settings-health-main">⚠ OS crontab sync needs attention</div>
-      <p className="settings-card-copy">
-        Scheduled routine changes may not fire until macOS allows Moadim to write the crontab again.
-      </p>
-      {sync.last_error && <div className="settings-health-error">{sync.last_error}</div>}
-      {sync.last_error_at && (
-        <div className="settings-health-meta">Last failed: {formatUnixTime(sync.last_error_at)}</div>
-      )}
-      <ol className="settings-recovery-list" aria-label="Crontab sync recovery steps">
-        <li>Open macOS System Settings → Privacy & Security → Full Disk Access.</li>
-        <li>Allow the Moadim daemon or the launcher that starts it.</li>
-        <li>Restart Moadim, then update or save a routine to retry crontab sync.</li>
-      </ol>
-      <button type="button" className="btn btn-secondary" onClick={onRefresh}>
-        Refresh status
-      </button>
-    </div>
-  );
-}
-
-function formatUnixTime(unixSecs: number): string {
-  return new Date(unixSecs * 1000).toLocaleString();
 }

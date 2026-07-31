@@ -52,6 +52,10 @@ pub(crate) fn build_app_with_shutdown(
         .route("/metrics", get(metrics::metrics))
         .route("/shutdown", post(shutdown::shutdown))
         .route("/restart", post(restart::restart))
+        .route(
+            "/crontab-sync/retry",
+            post(retry_crontab_sync::retry_crontab_sync),
+        )
         .route("/machine", get(get_current_machine).put(put_machine))
         .route("/machines", get(list_machines))
         .route(

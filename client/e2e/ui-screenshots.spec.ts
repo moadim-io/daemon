@@ -67,8 +67,15 @@ test("settings refresh cadence screenshot stays reviewable", async ({ page }, te
   await expect(page.getByRole("button", { name: "Dark" })).toBeVisible();
   await expect(page.getByText("Data refresh")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Auto-refresh interval" })).toBeVisible();
+  await expect(page.getByText("System health")).toBeVisible();
+  await expect(page.getByText("OS crontab sync is healthy")).toBeVisible();
   await expect(page.locator('button[title="Switch to dark mode"]')).toHaveCount(0);
   await expect(page.locator('button[title="Switch to light mode"]')).toHaveCount(0);
+  if (testInfo.project.name === "chromium-phone") {
+    await expect
+      .poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+      .toBe(true);
+  }
   await saveScreenshot(page, testInfo.project.name, "settings");
 });
 
@@ -79,6 +86,16 @@ test("crontab sync failure warning screenshot stays reviewable", async ({ page }
   await page.goto("/");
   await expect(page.getByText("⚠ CRON STALE")).toBeVisible();
   await saveScreenshot(page, testInfo.project.name, "crontab-sync-warning");
+});
+
+test("settings crontab recovery guidance screenshot stays reviewable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "recovery baseline is desktop-only");
+  await page.unroute("**/api/v1/**");
+  await installApiMocks(page, { crontabSyncOk: false });
+  await page.goto("/settings");
+  await expect(page.getByText("⚠ OS crontab sync needs attention")).toBeVisible();
+  await expect(page.getByText(/Full Disk Access/)).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "settings-crontab-recovery");
 });
 
 test("reliability screenshot stays reviewable", async ({ page }, testInfo) => {

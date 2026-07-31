@@ -923,6 +923,54 @@ textarea {
   flex-wrap: wrap;
 }
 
+.settings-health {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.settings-health-ok {
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+}
+
+.settings-health-warn {
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+}
+
+.settings-health-unknown {
+  background: var(--surface-2);
+}
+
+.settings-health-main {
+  font-weight: 700;
+}
+
+.settings-health-error {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.settings-health-meta {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.settings-recovery-list {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+  padding-left: 20px;
+}
+
 /* ─── Heatmap: header + filter toggle ───────────────────────────────── */
 
 .hm-hd {

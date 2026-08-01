@@ -1,6 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { icalFeedUrl, type RoutineResponse } from "../../api/hooks";
-import { CAL_MONTHS, GRID_CELLS, WEEKDAYS, monthStart, occurrencesPerDay, scheduleList } from "../../lib/schedule";
+import {
+  CAL_MONTHS,
+  GRID_CELLS,
+  WEEKDAYS,
+  dateOnly,
+  fireTimesOnDay,
+  monthStart,
+  occurrencesPerDay,
+  scheduleList,
+} from "../../lib/schedule";
 import { isRoutineSnoozed } from "./filter";
 import { useToasts } from "../../shell/toasts";
 
@@ -8,6 +17,7 @@ export interface RoutineCalendarProps {
   routines: RoutineResponse[];
   loading: boolean;
   onEdit: (id: string) => void;
+  onTrigger: (id: string) => void;
 }
 
 interface Hit {
@@ -17,10 +27,55 @@ interface Hit {
   snoozed: boolean;
 }
 
+interface DayFire {
+  id: string;
+  title: string;
+  times: Date[];
+  snoozed: boolean;
+}
+
+function fmtDateLabel(day: Date): string {
+  return day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtHm(dt: Date): string {
+  return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+}
+
+function firesForDay(routines: RoutineResponse[], day: Date, now: Date): DayFire[] {
+  return routines
+    .filter((r) => r.enabled)
+    .map((r) => {
+      const seen = new Set<number>();
+      const times = scheduleList(r)
+        .flatMap((schedule) => fireTimesOnDay(schedule, day))
+        .sort((a, b) => a.getTime() - b.getTime())
+        .filter((fire) => {
+          const ms = fire.getTime();
+          if (seen.has(ms)) return false;
+          seen.add(ms);
+          return true;
+        });
+      return { id: r.id, title: r.title, times, snoozed: isRoutineSnoozed(r, now) };
+    })
+    .filter((fire) => fire.times.length > 0)
+    .sort((a, b) => (a.times[0]?.getTime() ?? 0) - (b.times[0]?.getTime() ?? 0) || a.title.localeCompare(b.title));
+}
+
 /** Month-calendar view of upcoming routine fire times. */
-export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarProps) {
+export function RoutineCalendar({ routines, loading, onEdit, onTrigger }: RoutineCalendarProps) {
   const [offset, setOffset] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<Date | undefined>(undefined);
   const { addToast } = useToasts();
+
+  useEffect(() => {
+    if (selectedDay === undefined) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedDay(undefined);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedDay]);
 
   if (loading) {
     return (
@@ -63,6 +118,7 @@ export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarPr
   }
 
   const monthLabel = `${CAL_MONTHS[first.getMonth()]} ${first.getFullYear()}`;
+  const dayFires = selectedDay ? firesForDay(routines, selectedDay, calNow) : [];
 
   return (
     <div className="cal-wrap">
@@ -100,11 +156,26 @@ export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarPr
             {cells.map((hits, i) => {
               const date = new Date(gridStart);
               date.setDate(date.getDate() + i);
+              const day = dateOnly(date);
               let cls = "cal-day";
               if (date.getMonth() !== first.getMonth()) cls += " other-month";
               if (date.getTime() === today.getTime()) cls += " today";
+              const dateLabel = fmtDateLabel(day);
               return (
-                <div className={cls} key={i}>
+                <div
+                  className={cls}
+                  key={i}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open schedule details for ${dateLabel}`}
+                  onClick={() => setSelectedDay(day)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedDay(day);
+                    }
+                  }}
+                >
                   <div className="cal-daynum">{date.getDate()}</div>
                   <div className="cal-hits">
                     {hits.slice(0, 4).map((hit, idx) => {
@@ -118,7 +189,10 @@ export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarPr
                           aria-label={`Edit ${hit.title}`}
                           title={label}
                           key={`${hit.id}-${idx}`}
-                          onClick={() => onEdit(hit.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(hit.id);
+                          }}
                         >
                           {label}
                         </button>
@@ -131,6 +205,50 @@ export function RoutineCalendar({ routines, loading, onEdit }: RoutineCalendarPr
             })}
           </div>
         </>
+      )}
+
+      {selectedDay && (
+        <div className="overlay" onClick={() => setSelectedDay(undefined)}>
+          <div className="dialog cal-day-dialog" role="dialog" aria-modal="true" aria-label="Calendar day details" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-title">{fmtDateLabel(selectedDay)}</div>
+            <div className="dialog-msg">Scheduled routine fires for this local day.</div>
+            {dayFires.length === 0 ? (
+              <div className="cal-day-empty">No routine fires on this day.</div>
+            ) : (
+              <div className="cal-day-fire-list">
+                {dayFires.map((fire) => (
+                  <div className="cal-day-fire" key={fire.id}>
+                    <div className="cal-day-fire-main">
+                      <div className="cal-day-fire-title">{fire.title}</div>
+                      <div className="cal-day-fire-times">
+                        {fire.times.map((time) => (
+                          <span className="cal-time-chip" key={time.getTime()}>
+                            {fmtHm(time)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="act-btn run"
+                      aria-label={`Run ${fire.title} now`}
+                      disabled={fire.snoozed}
+                      title={fire.snoozed ? "Routine is snoozed" : "Trigger this routine now"}
+                      onClick={() => onTrigger(fire.id)}
+                    >
+                      RUN NOW
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setSelectedDay(undefined)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

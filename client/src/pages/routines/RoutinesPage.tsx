@@ -596,6 +596,7 @@ export function RoutinesPage() {
           routines={visible}
           loading={routinesQuery.isLoading}
           onEdit={(id) => setModal({ kind: "edit", id })}
+          onTrigger={onTrigger}
         />
       )}
       {view === "day" && (

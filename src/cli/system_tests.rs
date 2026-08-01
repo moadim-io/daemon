@@ -147,6 +147,38 @@ fn http_request_core_rejects_an_unparsable_bind_override() {
 }
 
 #[test]
+fn http_request_core_sends_bearer_token_when_configured() {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let (tx, rx) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0_u8; 2048];
+        let n = stream.read(&mut buf).unwrap();
+        tx.send(String::from_utf8_lossy(&buf[..n]).to_string()).unwrap();
+        let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        stream.write_all(response.as_bytes()).unwrap();
+    });
+    let _addr = EnvGuard::set(crate::cli::BIND_ADDR_ENV, &addr);
+    let _token = EnvGuard::set(crate::cli::API_TOKEN_ENV, "secret");
+
+    let (status, _) = http_request_core("GET", "/api/v1/health", None, Duration::from_secs(1))
+        .unwrap();
+
+    assert_eq!(status, 200);
+    let request = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert!(
+        request.contains("Authorization: Bearer secret\r\n"),
+        "request lacked bearer token: {request:?}"
+    );
+    handle.join().unwrap();
+}
+
+#[test]
 fn ensure_readme_returns_early_when_the_path_has_no_parent() {
     // `Path::new("<bare-name>").parent()` is `Some("")`, not `None` — a relative
     // single-component path still "has a parent" (the empty/current-dir path), so it

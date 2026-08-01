@@ -10,6 +10,23 @@ pub const BIND_ADDR: &str = "127.0.0.1:5784";
 /// it on an ephemeral port instead of the fixed default, so they never collide with a real daemon.
 pub(crate) const BIND_ADDR_ENV: &str = "MOADIM_BIND_ADDR";
 
+/// Environment variable holding the optional shared-secret API token. When set, first-party CLI
+/// requests send it as `Authorization: Bearer ***` and the server enforces it on REST/MCP.
+pub(crate) const API_TOKEN_ENV: &str = "MOADIM_API_TOKEN";
+
+/// Return the configured API token, trimming surrounding whitespace and treating blank as disabled.
+pub(crate) fn api_token() -> Option<String> {
+    std::env::var(API_TOKEN_ENV)
+        .ok()
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
+}
+
+/// Whether API/MCP authentication is enabled for this process.
+pub fn api_token_configured() -> bool {
+    api_token().is_some()
+}
+
 /// The socket address to bind/probe, honoring the [`BIND_ADDR_ENV`] override when set.
 pub fn bind_addr() -> String {
     std::env::var(BIND_ADDR_ENV).unwrap_or_else(|_| BIND_ADDR.to_string())
@@ -50,9 +67,9 @@ pub enum BindDecision {
     RemoteRefused,
 }
 
-/// Pure decision function for the startup bind-address gate (issue #253): the unauthenticated
-/// REST/MCP API must never end up reachable off-host by accident, so a non-loopback bind requires
-/// an explicit opt-in (`allow_remote`, sourced from [`remote_bind_allowed`]) or startup is refused.
+/// Pure decision function for the startup bind-address gate (issues #253/#504): REST/MCP must
+/// never end up reachable off-host by accident. A non-loopback bind requires either an explicit
+/// legacy/dev opt-in (`allow_remote`) or a configured API token.
 pub fn classify_bind(addr: &str, allow_remote: bool) -> BindDecision {
     if bind_addr_is_loopback(addr) {
         BindDecision::Loopback
@@ -60,5 +77,19 @@ pub fn classify_bind(addr: &str, allow_remote: bool) -> BindDecision {
         BindDecision::RemoteAllowed
     } else {
         BindDecision::RemoteRefused
+    }
+}
+
+/// Resolve the daemon bind address and refuse accidental unauthenticated non-loopback exposure.
+pub fn validated_bind_addr() -> Result<String, String> {
+    let addr = bind_addr();
+    let allow_remote = remote_bind_allowed() || api_token_configured();
+    match classify_bind(&addr, allow_remote) {
+        BindDecision::Loopback | BindDecision::RemoteAllowed => Ok(addr),
+        BindDecision::RemoteRefused => Err(format!(
+            "refusing to bind to {addr}: it is not loopback-only and MOADIM_API_TOKEN is not set. \
+             Set MOADIM_API_TOKEN to protect REST/MCP with a bearer token, or set \
+             MOADIM_ALLOW_REMOTE=1 to start without auth if you understand and accept the RCE risk."
+        )),
     }
 }

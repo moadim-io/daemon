@@ -29,6 +29,10 @@ use http_listener::{
 mod http_tests;
 
 #[cfg(test)]
+#[path = "http_auth_tests.rs"]
+mod http_auth_tests;
+
+#[cfg(test)]
 #[path = "http_routing_tests.rs"]
 mod http_routing_tests;
 

@@ -57,9 +57,13 @@ fn wants_json(rest: &[String]) -> bool {
 
 #[path = "bind.rs"]
 mod cli_bind;
-pub use cli_bind::{bind_addr, classify_bind, remote_bind_allowed, BindDecision, BIND_ADDR};
+pub use cli_bind::{bind_addr, validated_bind_addr, BIND_ADDR};
+pub(crate) use cli_bind::api_token;
 #[cfg(test)]
-pub(crate) use cli_bind::{bind_addr_is_loopback, BIND_ADDR_ENV};
+pub(crate) use cli_bind::{
+    bind_addr_is_loopback, classify_bind, remote_bind_allowed, BindDecision, API_TOKEN_ENV,
+    BIND_ADDR_ENV,
+};
 
 #[path = "query.rs"]
 mod cli_query;

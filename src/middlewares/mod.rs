@@ -1,3 +1,5 @@
+/// Middleware that enforces optional shared-secret API/MCP authentication.
+pub mod api_token;
 /// Middleware that rejects browser-borne cross-origin requests (DNS rebinding, CSRF-style abuse).
 pub mod host_validation;
 /// Middleware that logs request method, path, status, and latency.

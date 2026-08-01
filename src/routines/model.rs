@@ -24,6 +24,13 @@ pub(crate) use local_timezone::*;
 #[path = "next_run_at.rs"]
 mod next_run_at;
 pub(crate) use next_run_at::*;
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "split-out module keeps the file under the linecheck limit"
+)]
+#[path = "missed_run_alert.rs"]
+mod missed_run_alert;
+pub(crate) use missed_run_alert::*;
 
 #[cfg(test)]
 use super::command::slugify;
@@ -122,29 +129,11 @@ pub struct RoutineResponse {
     /// The underlying routine.
     #[serde(flatten)]
     pub routine: Routine,
-    /// `true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses
-    /// successfully. A present-but-malformed config is silently dropped at crontab-sync time, so
-    /// it reports `false` here too — file existence alone is not "registered".
+    /// `true` if the agent config exists and parses; malformed configs report `false` too.
     pub agent_registered: bool,
-    /// `true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable
-    /// on the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a
-    /// present, well-formed agent config yet reference a binary that isn't installed, in which
-    /// case the cron firing launches a tmux session that dies immediately with "command not
-    /// found" — a silent no-op indistinguishable from a healthy routine by `agent_registered`
-    /// alone. `false` whenever the agent config is missing, unreadable, or malformed, since no
-    /// `command` can be resolved in that case either.
+    /// `true` if the agent config's `command` resolves on the daemon `PATH`.
     pub agent_command_available: bool,
-    /// `true` if the agent config has no `setup` step, or that step's first whitespace-delimited
-    /// token (the interpreter/binary it shells out to, e.g. `python3` for the built-in `claude`
-    /// agent's workspace-trust seeding) resolves on the daemon's `PATH`. Distinct from
-    /// [`Self::agent_command_available`]: the agent's own `command` can be installed while its
-    /// `setup` step still shells out to something that isn't — in which case the launch command's
-    /// fail-fast guard (`build_routine_command`) aborts the run before the agent ever starts, a
-    /// failure otherwise invisible to anything checking only `agent_command_available`. `false`
-    /// here means the run is expected to abort in `setup` rather than actually launch the agent.
-    /// `false` whenever the agent config is missing, unreadable, or malformed too (mirrors
-    /// `agent_command_available`'s pessimistic default) — `agent_registered` is the field that
-    /// distinguishes that case. See issue #404.
+    /// `true` if the agent config has no `setup` step or its setup binary resolves on `PATH`.
     pub agent_setup_available: bool,
     /// Absolute path to the routine's `routine.toml` file on disk.
     pub file_path: String,
@@ -174,6 +163,8 @@ pub struct RoutineResponse {
     /// fire (e.g. `@reboot`). See issue #369. For multi-schedule routines this is the earliest
     /// upcoming fire across all schedules.
     pub next_run_at: Option<u64>,
+    /// Latest missed scheduled fire, if any. Alert-only: never launches catch-up runs.
+    pub missed_scheduled_run_at: Option<u64>,
     /// `true` if any fire of this routine currently has a live tmux session — i.e. an agent is
     /// running right now. Derived by probing for a session under the routine's
     /// `moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not

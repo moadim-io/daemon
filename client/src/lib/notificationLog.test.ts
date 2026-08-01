@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { FleetRunSummary } from "../api/hooks";
+import type { FleetRunSummary, RoutineResponse } from "../api/hooks";
 import {
   entriesForFailures,
+  entriesForMissedScheduledRuns,
   loadNotificationLog,
   markAllRead,
   MAX_ENTRIES,
@@ -21,6 +22,52 @@ function run(overrides: Partial<FleetRunSummary> = {}): FleetRunSummary {
     finished_at_local: null,
     exit_code: 1,
     status: "failed",
+    ...overrides,
+  };
+}
+
+function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
+  return {
+    id: "r1",
+    schedule: "0 6 * * *",
+    schedules: [],
+    title: "Morning review",
+    agent: "claude",
+    model: null,
+    goal: null,
+    repositories: [],
+    machines: ["box"],
+    enabled: true,
+    source: "managed",
+    created_at: 1,
+    updated_at: 1,
+    last_manual_trigger_at: null,
+    last_scheduled_trigger_at: 1000,
+    snoozed_until: null,
+    skip_runs: null,
+    power_saving: false,
+    power_saving_exempt: false,
+    consecutive_failures: 0,
+    auto_disabled_reason: null,
+    ttl_secs: null,
+    max_runtime_secs: null,
+    failure_threshold: null,
+    tags: [],
+    agent_registered: true,
+    agent_command_available: true,
+    agent_setup_available: true,
+    file_path: "/tmp/routine.toml",
+    folder: null,
+    slug: "morning-review",
+    rel_path: "morning-review",
+    schedule_description: "At 06:00",
+    schedule_descriptions: ["At 06:00"],
+    timezone: "UTC",
+    flag_count: 0,
+    next_run_at: 2000,
+    missed_scheduled_run_at: 1500,
+    is_running: false,
+    env_keys: [],
     ...overrides,
   };
 }
@@ -111,6 +158,45 @@ describe("entriesForFailures", () => {
     expect(result).toHaveLength(MAX_ENTRIES);
     expect(result[0]?.id).toBe("nightly-backup-1000");
     expect(result.some((e) => e.id === `old-${MAX_ENTRIES - 1}`)).toBe(false);
+  });
+});
+
+describe("entriesForMissedScheduledRuns", () => {
+  it("builds an unread entry for a missed scheduled fire", () => {
+    const result = entriesForMissedScheduledRuns([], [routine()]);
+    expect(result).toEqual([
+      {
+        id: "missed:r1:1500",
+        routineId: "r1",
+        routineTitle: "Morning review",
+        message: "Scheduled run was missed — review or run manually",
+        atSecs: 1500,
+        read: false,
+      },
+    ]);
+  });
+
+  it("dedupes repeated polls for the same missed fire", () => {
+    const existing: NotificationEntry[] = [
+      {
+        id: "missed:r1:1500",
+        routineId: "r1",
+        routineTitle: "Morning review",
+        message: "Scheduled run was missed — review or run manually",
+        atSecs: 1500,
+        read: true,
+      },
+    ];
+    expect(entriesForMissedScheduledRuns(existing, [routine()])).toBe(existing);
+  });
+
+  it("returns the same reference when there are no missed runs", () => {
+    const existing: NotificationEntry[] = [];
+    expect(
+      entriesForMissedScheduledRuns(existing, [
+        routine({ missed_scheduled_run_at: null }),
+      ]),
+    ).toBe(existing);
   });
 });
 

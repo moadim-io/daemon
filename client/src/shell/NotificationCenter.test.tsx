@@ -47,7 +47,7 @@ describe("NotificationCenter", () => {
   it("panel is closed until the bell is clicked", () => {
     renderCenter([entry()]);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /unread failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: /unread notification/ }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
@@ -59,14 +59,14 @@ describe("NotificationCenter", () => {
 
   it("lists entries with routine title and message", () => {
     renderCenter([entry()]);
-    fireEvent.click(screen.getByRole("button", { name: /unread failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: /unread notification/ }));
     expect(screen.getByText("Nightly backup")).toBeInTheDocument();
     expect(screen.getByText("Run failed (exit 1)")).toBeInTheDocument();
   });
 
   it("calls onMarkAllRead when MARK READ is clicked", () => {
     const { onMarkAllRead } = renderCenter([entry()]);
-    fireEvent.click(screen.getByRole("button", { name: /unread failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: /unread notification/ }));
     fireEvent.click(screen.getByText("MARK READ"));
     expect(onMarkAllRead).toHaveBeenCalledTimes(1);
   });
@@ -79,14 +79,14 @@ describe("NotificationCenter", () => {
 
   it("calls onClear when CLEAR is clicked", () => {
     const { onClear } = renderCenter([entry()]);
-    fireEvent.click(screen.getByRole("button", { name: /unread failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: /unread notification/ }));
     fireEvent.click(screen.getByText("CLEAR"));
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
   it("closes the panel on Escape", () => {
     renderCenter([entry()]);
-    fireEvent.click(screen.getByRole("button", { name: /unread failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: /unread notification/ }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -94,7 +94,7 @@ describe("NotificationCenter", () => {
 
   it("closes the panel on outside click", () => {
     renderCenter([entry()]);
-    fireEvent.click(screen.getByRole("button", { name: /unread failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: /unread notification/ }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
     fireEvent.mouseDown(document.body);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();

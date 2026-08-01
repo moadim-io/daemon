@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAllRuns, useHealth, useMachine, useRenameMachine, useShutdown } from "../api/hooks";
+import { useAllRuns, useHealth, useMachine, useRenameMachine, useRoutines, useShutdown } from "../api/hooks";
 import { freshFailures, snapshotRunStatuses, type RunStatusSnapshot } from "../lib/failureNotify";
 import {
   entriesForFailures,
+  entriesForMissedScheduledRuns,
   loadNotificationLog,
   markAllRead,
   saveNotificationLog,
@@ -46,6 +47,7 @@ export function Shell() {
   const shutdown = useShutdown();
   const renameMachine = useRenameMachine();
   const notifRuns = useAllRuns(NOTIF_POLL_LIMIT, { refetchInterval: NOTIF_POLL_MS });
+  const notifRoutines = useRoutines({ local_only: true }, { refetchInterval: NOTIF_POLL_MS });
 
   const [notifLog, setNotifLog] = useState<NotificationEntry[]>(loadNotificationLog);
   const prevRunStatuses = useRef<RunStatusSnapshot | null>(null);
@@ -71,6 +73,20 @@ export function Shell() {
       return next;
     });
   }, [notifRuns.data]);
+
+  // Missed scheduled fires have no run record, so surface them immediately in the persistent inbox.
+  // The backend only exposes an alert timestamp; it does not launch a catch-up run.
+  useEffect(() => {
+    const routinesData = notifRoutines.data;
+    if (routinesData === undefined) return;
+    queueMicrotask(() => {
+      setNotifLog((prev) => {
+        const next = entriesForMissedScheduledRuns(prev, routinesData);
+        if (next !== prev) saveNotificationLog(next);
+        return next;
+      });
+    });
+  }, [notifRoutines.data]);
 
   const markNotificationsRead = () => {
     setNotifLog((prev) => {

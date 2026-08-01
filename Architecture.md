@@ -222,6 +222,12 @@ spawning — if one is still running. This overlap guard prevents a run that out
 interval from piling up concurrent agent sessions against the same target (duplicate PRs/issues,
 racing pushes); see `routines::service_trigger::spawn_routine_command`.
 
+Routine API responses also derive `missed_scheduled_run_at`: the latest elapsed schedule time since
+`last_scheduled_trigger_at` (or creation time for never-scheduled routines) that this machine appears
+to have missed. This is an operator alert only; startup/read paths never launch a catch-up run. The
+React shell polls local routines, writes one persistent Notification Center entry per missed fire,
+and leaves remediation to a manual `Run now` decision.
+
 `GET /routines.ics` returns an iCalendar (RFC 5545) feed of every enabled routine's upcoming fire
 times (next 30 days, capped per routine), evaluated in the host local timezone. When that zone can
 be named, each event's `DTSTART` is `TZID`-qualified with the local wall-clock time against an

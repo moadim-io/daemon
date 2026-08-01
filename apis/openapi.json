@@ -1906,15 +1906,15 @@
             "properties": {
               "agent_command_available": {
                 "type": "boolean",
-                "description": "`true` if the agent config's `command` (e.g. `claude`, `codex`) resolves to an executable\non the daemon's `PATH`. Distinct from [`Self::agent_registered`]: a routine can have a\npresent, well-formed agent config yet reference a binary that isn't installed, in which\ncase the cron firing launches a tmux session that dies immediately with \"command not\nfound\" — a silent no-op indistinguishable from a healthy routine by `agent_registered`\nalone. `false` whenever the agent config is missing, unreadable, or malformed, since no\n`command` can be resolved in that case either."
+                "description": "`true` if the agent config's `command` resolves on the daemon `PATH`."
               },
               "agent_registered": {
                 "type": "boolean",
-                "description": "`true` if an agent config exists at `~/.config/moadim/agents/<agent>.toml` *and* parses\nsuccessfully. A present-but-malformed config is silently dropped at crontab-sync time, so\nit reports `false` here too — file existence alone is not \"registered\"."
+                "description": "`true` if the agent config exists and parses; malformed configs report `false` too."
               },
               "agent_setup_available": {
                 "type": "boolean",
-                "description": "`true` if the agent config has no `setup` step, or that step's first whitespace-delimited\ntoken (the interpreter/binary it shells out to, e.g. `python3` for the built-in `claude`\nagent's workspace-trust seeding) resolves on the daemon's `PATH`. Distinct from\n[`Self::agent_command_available`]: the agent's own `command` can be installed while its\n`setup` step still shells out to something that isn't — in which case the launch command's\nfail-fast guard (`build_routine_command`) aborts the run before the agent ever starts, a\nfailure otherwise invisible to anything checking only `agent_command_available`. `false`\nhere means the run is expected to abort in `setup` rather than actually launch the agent.\n`false` whenever the agent config is missing, unreadable, or malformed too (mirrors\n`agent_command_available`'s pessimistic default) — `agent_registered` is the field that\ndistinguishes that case. See issue #404."
+                "description": "`true` if the agent config has no `setup` step or its setup binary resolves on `PATH`."
               },
               "env_keys": {
                 "type": "array",
@@ -1942,6 +1942,15 @@
               "is_running": {
                 "type": "boolean",
                 "description": "`true` if any fire of this routine currently has a live tmux session — i.e. an agent is\nrunning right now. Derived by probing for a session under the routine's\n`moadim-{slug}-` prefix (the same overlap-guard check `svc_trigger` uses, #514), not\npersisted. `false` whenever no `tmux` binary is available, mirroring the probe's existing\nbest-effort \"no tmux, nothing running\" stance. See issue #438."
+              },
+              "missed_scheduled_run_at": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Latest missed scheduled fire, if any. Alert-only: never launches catch-up runs.",
+                "minimum": 0
               },
               "next_run_at": {
                 "type": [

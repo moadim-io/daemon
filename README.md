@@ -350,14 +350,21 @@ X-Moadim-Token: <secret>
 
 First-party CLI commands (`moadim status`, `stop`, `cleanup`, `routines ...`,
 `agents`, `trigger`, `logs`) read `MOADIM_API_TOKEN` from their environment and
-send `Authorization: Bearer ...` automatically. The served browser UI also adds
+send `Authorization: Bearer ***` automatically. The served browser UI also adds
 that header when the operator stores the token in browser storage:
 
 ```js
 localStorage.setItem("moadim.apiToken", "<secret>")
 ```
 
-Blank or unset `MOADIM_API_TOKEN` disables auth. A non-loopback bind is refused
+Routine list/get responses include `missed_scheduled_run_at` when the current
+machine appears to have missed an elapsed cron fire since the last recorded
+scheduled trigger. This is **alert-only**: the daemon does not launch a catch-up
+agent run. The web Notification Center turns that field into a persistent bell
+notification so the operator can review the routine and choose `Run now`
+manually if appropriate.
+
+Blank or unset `MOADIM_API_TOKEN` disables auth.
 unless either `MOADIM_API_TOKEN` is set (protected remote use) or
 `MOADIM_ALLOW_REMOTE=1` is set (explicit unauthenticated override; logs a loud
 RCE warning). Prefer a token plus firewall/VPN/reverse-proxy restrictions for

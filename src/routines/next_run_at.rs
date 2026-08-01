@@ -69,6 +69,7 @@ impl RoutineResponse {
             .collect();
         let flag_count = list_flags(&slug).len();
         let next_run_at = next_run_at(&schedules, routine.enabled);
+        let missed_scheduled_run_at = missed_scheduled_run_at(&routine, &schedules);
         let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
         // Key names only — never values. `local_env_keys` reads `routine.local.toml` (if any) and
         // drops the values immediately, so a secret override never survives past this call. See
@@ -91,6 +92,7 @@ impl RoutineResponse {
             timezone,
             flag_count,
             next_run_at,
+            missed_scheduled_run_at,
             is_running,
             env_keys,
         }

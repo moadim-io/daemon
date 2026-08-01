@@ -40,8 +40,8 @@ export function NotificationCenter({ entries, onMarkAllRead, onClear }: Notifica
       <button
         type="button"
         className="icon-btn notif-bell"
-        title={unread > 0 ? `${unread} unread failure${unread === 1 ? "" : "s"}` : "Notifications"}
-        aria-label={unread > 0 ? `${unread} unread failure${unread === 1 ? "" : "s"}` : "Notifications"}
+        title={unread > 0 ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Notifications"}
+        aria-label={unread > 0 ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Notifications"}
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}

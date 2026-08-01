@@ -5,7 +5,7 @@
  * always-on and survives navigation/reload via `localStorage` — the standard bell-icon +
  * unread-badge + dropdown-inbox pattern (GitHub, Slack, Grafana alerting).
  */
-import type { FleetRunSummary } from "../api/hooks";
+import type { FleetRunSummary, RoutineResponse } from "../api/hooks";
 
 export interface NotificationEntry {
   /** The failed run's `workbench` id — stable and unique, doubles as the dedupe key. */
@@ -78,6 +78,42 @@ export function entriesForFailures(
       read: false,
     }));
   if (fresh.length === 0) return existing;
+  return [...fresh, ...existing].slice(0, MAX_ENTRIES);
+}
+
+function missedEntryId(routine: RoutineResponse): string | undefined {
+  return routine.missed_scheduled_run_at == null
+    ? undefined
+    : `missed:${routine.id}:${routine.missed_scheduled_run_at}`;
+}
+
+/**
+ * Prepends one entry per routine with an alert-only missed scheduled fire. Unlike failed-run
+ * notifications, this intentionally surfaces already-present misses on page load because no run
+ * record exists elsewhere. Existing IDs dedupe repeated polls until the routine records a later
+ * scheduled trigger or the operator clears the inbox.
+ */
+export function entriesForMissedScheduledRuns(
+  existing: NotificationEntry[],
+  routines: RoutineResponse[],
+): NotificationEntry[] {
+  const known = new Set(existing.map((e) => e.id));
+  const fresh: NotificationEntry[] = routines.flatMap((routine) => {
+    const id = missedEntryId(routine);
+    if (id === undefined || known.has(id)) return [];
+    return [
+      {
+        id,
+        routineId: routine.id,
+        routineTitle: routine.title,
+        message: "Scheduled run was missed — review or run manually",
+        atSecs: routine.missed_scheduled_run_at ?? 0,
+        read: false,
+      },
+    ];
+  });
+  if (fresh.length === 0) return existing;
+  fresh.sort((a, b) => b.atSecs - a.atSecs || a.routineTitle.localeCompare(b.routineTitle));
   return [...fresh, ...existing].slice(0, MAX_ENTRIES);
 }
 

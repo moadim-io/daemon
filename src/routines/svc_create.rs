@@ -75,6 +75,7 @@ pub fn svc_create(
         ttl_secs: req.ttl_secs,
         max_runtime_secs: req.max_runtime_secs,
         failure_threshold: req.failure_threshold,
+        notifications: req.notifications,
         tags,
         env: req.env,
     };

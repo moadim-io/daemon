@@ -29,6 +29,7 @@ fn from_routine_counts_open_flags() {
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     };
     let slug = slugify(&routine.title);
     crate::routines::flags::create_flag(

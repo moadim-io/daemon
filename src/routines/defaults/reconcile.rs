@@ -69,6 +69,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         max_runtime_secs: cur.max_runtime_secs,
         // The circuit-breaker threshold is user-owned, like `tags`: never overridden by the spec.
         failure_threshold: cur.failure_threshold,
+        notifications: cur.notifications.clone(),
         // Tags are user-owned, like `enabled`: never overridden by the spec.
         tags: cur.tags.clone(),
         // Env vars are user-owned, like `tags`: never overridden by the spec.

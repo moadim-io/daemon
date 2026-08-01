@@ -35,6 +35,7 @@ fn svc_update_sets_max_runtime_secs() {
                 tags: None,
                 env: None,
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();
@@ -92,6 +93,7 @@ fn svc_update_sets_failure_threshold() {
             "threshold-id",
             UpdateRoutineRequest {
                 failure_threshold: Some(5),
+        notifications: Default::default(),
                 ..empty_update_request()
             },
         )

@@ -25,6 +25,7 @@ fn svc_create_trims_and_persists_goal() {
                 tags: vec![],
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();
@@ -75,6 +76,7 @@ fn svc_update_clears_goal_with_empty_string() {
                 tags: None,
                 env: None,
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();
@@ -112,6 +114,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 tags: None,
                 env: None,
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();

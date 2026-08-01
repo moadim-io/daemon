@@ -30,6 +30,7 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
                 Some(_) => RunStatus::Failed,
                 None => RunStatus::Unknown,
             };
+            let routine_for_notify = store.lock().ok().and_then(|lock| lock.get(routine_id).cloned());
             append_persisted_run(
                 routine_id,
                 &PersistedRun {
@@ -43,6 +44,11 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
             // Feed the same, already-deduplicated outcome into the failure circuit-breaker (#521);
             // see `circuit_breaker`'s doc comment for why this hook point (not `svc_list_runs`) was
             // chosen.
+            let _ = routine_for_notify.map(|routine| {
+                crate::routines::notify_finished_run(
+                    &routine, name, workbench_path, started_at, finished_at, status, exit_code,
+                );
+            });
             circuit_breaker::record_run_outcome(store, routine_id, status);
         };
     let ttl_stats = reap_dir(

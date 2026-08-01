@@ -2,7 +2,7 @@
 
 use super::health::logic::{self, HealthResponse};
 use super::http::AppState;
-use crate::error::{run_blocking, AppError};
+use crate::error::AppError;
 use axum::{extract::State, Json};
 
 /// `POST /crontab-sync/retry` — retry writing the managed routines block to the OS crontab.
@@ -17,11 +17,8 @@ pub async fn retry_crontab_sync(
 ) -> Result<Json<HealthResponse>, AppError> {
     let store = state.routines.clone();
     let uptime_start = state.uptime_start;
-    let response = run_blocking(move || {
-        let _ = crate::sync::routines::sync_routines_to_crontab(&store);
-        Ok(logic::build(uptime_start))
-    })
-    .await?;
+    let _ = crate::sync::routines::sync_routines_to_crontab(&store);
+    let response = logic::build(uptime_start);
     Ok(Json(response))
 }
 

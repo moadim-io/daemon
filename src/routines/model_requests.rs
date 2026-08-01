@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::{bool_true, Repository};
+use super::{bool_true, FailureNotificationConfig, Repository};
 
 /// Request body for creating a new routine.
 #[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -53,6 +53,9 @@ pub struct CreateRoutineRequest {
     /// `max_runtime_secs`, `0` is a meaningful opt-out value here, not rejected.
     #[serde(default)]
     pub failure_threshold: Option<u32>,
+    /// Per-routine failure hooks; empty means use the global notification hooks, if any.
+    #[serde(default)]
+    pub notifications: FailureNotificationConfig,
     /// Whether this routine may run while the host is in system power saving. Defaults to `false`.
     #[serde(default)]
     pub power_saving_exempt: bool,
@@ -103,6 +106,8 @@ pub struct UpdateRoutineRequest {
     /// New failure-circuit-breaker threshold, or `None` to keep the existing value. `Some(0)`
     /// explicitly opts back out (#521); unlike `ttl_secs`/`max_runtime_secs`, `0` is accepted here.
     pub failure_threshold: Option<u32>,
+    /// Replace per-routine failure hooks; `None` keeps the existing hook config.
+    pub notifications: Option<FailureNotificationConfig>,
     /// New system power-saving exemption flag, or `None` to keep the existing value.
     pub power_saving_exempt: Option<bool>,
     /// New tags list, or `None` to keep the existing value.

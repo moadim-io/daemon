@@ -21,6 +21,7 @@ fn svc_create_update_delete_lifecycle() {
             tags: vec![],
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     )
     .unwrap();
@@ -53,6 +54,7 @@ fn svc_create_update_delete_lifecycle() {
             tags: None,
             env: None,
             failure_threshold: None,
+        notifications: Default::default(),
         },
     )
     .unwrap();
@@ -85,6 +87,7 @@ fn svc_update_not_found() {
         tags: None,
         env: None,
         failure_threshold: None,
+        notifications: Default::default(),
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -113,6 +116,7 @@ fn svc_update_invalid_cron_rejected() {
         tags: None,
         env: None,
         failure_threshold: None,
+        notifications: Default::default(),
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

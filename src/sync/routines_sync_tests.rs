@@ -35,6 +35,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 

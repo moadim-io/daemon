@@ -38,6 +38,7 @@ fn make_routine(id: &str) -> Routine {
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -128,6 +129,7 @@ fn svc_create_invalid_cron_rejected() {
         tags: vec![],
         env: std::collections::HashMap::new(),
         failure_threshold: None,
+        notifications: Default::default(),
     };
     assert!(svc_create(&store, req).is_err());
 }

@@ -62,6 +62,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -95,6 +96,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         tags: vec![],
         env: std::collections::HashMap::new(),
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -116,6 +118,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         tags: None,
         env: None,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 

@@ -127,3 +127,22 @@ async fn x_moadim_token_authorizes_request() {
 
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn malformed_authorization_header_falls_back_to_x_token() {
+    let _token = EnvGuard::set(Some("secret"));
+
+    let resp = app()
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header(header::AUTHORIZATION, vec![0xff])
+                .header(TOKEN_HEADER, "secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}

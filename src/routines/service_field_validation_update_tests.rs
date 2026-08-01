@@ -44,6 +44,7 @@ fn svc_update_rejects_blank_and_punctuation_titles() {
                 tags: None,
                 env: None,
                 failure_threshold: None,
+                notifications: Default::default(),
             },
         );
         assert!(
@@ -88,6 +89,7 @@ fn svc_update_rejects_unknown_agent() {
             tags: None,
             env: None,
             failure_threshold: None,
+            notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -133,6 +135,7 @@ fn svc_update_rejects_blank_repository_url() {
             tags: None,
             env: None,
             failure_threshold: None,
+            notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -182,6 +185,7 @@ fn svc_update_rejects_invalid_env_key() {
                 "x".to_string(),
             )])),
             failure_threshold: None,
+            notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

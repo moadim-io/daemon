@@ -31,6 +31,9 @@ pub(crate) use next_run_at::*;
 #[path = "missed_run_alert.rs"]
 mod missed_run_alert;
 pub(crate) use missed_run_alert::*;
+#[path = "failure_notification_config.rs"]
+mod failure_notification_config;
+pub use failure_notification_config::FailureNotificationConfig;
 
 #[cfg(test)]
 use super::command::slugify;

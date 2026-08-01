@@ -37,6 +37,7 @@ fn svc_create_rejects_malformed_agent_config() {
             tags: vec![],
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     match result {
@@ -75,6 +76,7 @@ fn svc_create_rejects_unreadable_agent_config() {
             max_runtime_secs: None,
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     match result {
@@ -120,6 +122,7 @@ fn svc_update_rejects_malformed_agent_config() {
             tags: None,
             env: None,
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     match result {

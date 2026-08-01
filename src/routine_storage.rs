@@ -23,7 +23,9 @@ use crate::paths::{
     routine_prompts_dir, routine_pure_prompt_path, routine_script_path, routine_skip_log_path,
     routine_state_path, routine_toml_path,
 };
-use crate::routines::{compose_prompt, slugify, Repository, Routine, RoutineStore};
+use crate::routines::{
+    compose_prompt, slugify, FailureNotificationConfig, Repository, Routine, RoutineStore,
+};
 use crate::utils::atomic::atomic_write;
 
 /// TOML representation of a routine on disk.
@@ -89,6 +91,9 @@ struct RoutineToml {
     /// [`crate::routines::Routine::failure_threshold`] (#521).
     #[serde(default)]
     failure_threshold: Option<u32>,
+    /// Failure notification hook config.
+    #[serde(default, skip_serializing_if = "FailureNotificationConfig::is_empty")]
+    notifications: FailureNotificationConfig,
     /// Free-form labels for the routine; absent means no tags.
     #[serde(default)]
     tags: Vec<String>,

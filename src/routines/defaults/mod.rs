@@ -101,6 +101,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         failure_threshold: None,
+        notifications: Default::default(),
         tags: Vec::new(),
         env: std::collections::HashMap::new(),
     }

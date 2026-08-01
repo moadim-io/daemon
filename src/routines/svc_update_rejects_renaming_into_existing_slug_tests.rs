@@ -42,6 +42,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
                 tags: None,
                 env: None,
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));

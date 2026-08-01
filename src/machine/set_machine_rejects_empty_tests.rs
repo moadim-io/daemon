@@ -77,6 +77,7 @@ fn referenced_machines_unions_routines() {
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
 
@@ -153,6 +154,7 @@ fn run_list_with_referenced_machine() {
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
     assert_eq!(run(&["list".to_string()]), 0);

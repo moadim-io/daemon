@@ -247,6 +247,14 @@ the same sweep includes a watchdog that force-kills any session whose run has ex
 recording the kill in the run's `agent.log`, after which the workbench is reaped under the normal
 `ttl_secs` rules.
 
+When a non-success outcome is persisted (`Failed` from a non-zero exit code or `Unknown`, including
+the watchdog's `killed` sentinel), `routines::failure_notify` resolves the routine's
+`notifications` override or the global `notifications.toml` config and dispatches the configured
+command/webhook once for that workbench. Dispatch is best-effort and non-blocking for daemon
+correctness: command/webhook failures are logged, while the cleanup sweep still records the run and
+continues. Payloads include routine id/title, workbench id, started/finished timestamps, an exit
+reason (`exit_code_N`, `timeout`, or `unknown`), the `agent.log` path, and a bounded log tail.
+
 Because routine agents run in a **detached** tmux session (`tmux new-session -d`, independent of the
 daemon process), `moadim stop` / the UI STOP button / `POST /shutdown` must drain them explicitly.
 After graceful HTTP/MCP shutdown completes, `run_with_listener_until` calls

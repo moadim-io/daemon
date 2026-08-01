@@ -26,6 +26,7 @@ fn svc_create_accepts_builtin_agent() {
             tags: vec![],
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     )
     .unwrap();
@@ -65,6 +66,7 @@ fn svc_create_rejects_blank_repository_url() {
                 tags: vec![],
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         );
         assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -102,6 +104,7 @@ fn svc_create_rejects_blank_repository_branch() {
             tags: vec![],
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

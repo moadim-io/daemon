@@ -69,6 +69,12 @@ pub fn config_dir() -> PathBuf {
     config_root().join("moadim")
 }
 
+/// Returns the path to `{config_dir}/notifications.toml`, the optional global failure-hook config.
+#[must_use]
+pub fn notifications_toml_path() -> PathBuf {
+    config_dir().join("notifications.toml")
+}
+
 // ─── Routines ────────────────────────────────────────────────────────────────
 
 /// Returns the path to `{config_dir}/routines/` (default `~/.config/moadim/routines/`).

@@ -11,6 +11,18 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.3] - 2026-08-01
+
+Protect REST/MCP with optional MOADIM_API_TOKEN authentication and send that token from the CLI/UI.
+
+Make routine calendar and day-timeline chips keyboard-accessible edit buttons.
+
+Surface missed scheduled routine fires as alert-only notifications without launching catch-up runs.
+
+Add a routine calendar day-detail popover with exact fire times and per-routine Run now actions.
+
+Include the daemon's repo mirror cache in the generated config .gitignore so cached clones don't show up as untracked files.
+
 ## [3.2.2] - 2026-07-31
 
 Add a manual crontab sync retry endpoint and surface it from Settings system health.
@@ -5012,7 +5024,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.2...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.3...HEAD
+[3.2.3]: https://github.com/moadim-io/daemon/compare/v3.2.2...v3.2.3
 [3.2.2]: https://github.com/moadim-io/daemon/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/moadim-io/daemon/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/moadim-io/daemon/compare/v3.1.0...v3.2.0

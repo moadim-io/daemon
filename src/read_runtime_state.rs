@@ -110,6 +110,7 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
         ttl_secs: routine.ttl_secs,
         max_runtime_secs: routine.max_runtime_secs,
         failure_threshold: routine.failure_threshold,
+        notifications: routine.notifications.clone(),
         tags: routine.tags.clone(),
         env: routine.env.clone(),
     };

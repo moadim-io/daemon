@@ -65,6 +65,7 @@ fn make_routine(
         ttl_secs: None,
         max_runtime_secs: None,
         failure_threshold,
+        notifications: Default::default(),
         env: std::collections::HashMap::new(),
     }
 }

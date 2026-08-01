@@ -28,6 +28,7 @@ fn svc_create_rejects_duplicate_slug() {
                 tags: vec![],
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();
@@ -52,6 +53,7 @@ fn svc_create_rejects_duplicate_slug() {
                 tags: vec![],
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));

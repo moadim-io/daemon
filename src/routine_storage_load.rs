@@ -109,6 +109,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         ttl_secs: toml.ttl_secs,
         max_runtime_secs: toml.max_runtime_secs,
         failure_threshold: toml.failure_threshold,
+        notifications: toml.notifications,
         tags: toml.tags,
         env: toml.env,
     })

@@ -26,6 +26,7 @@ fn svc_create_syncs_crontab_on_success() {
                 tags: vec![],
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();
@@ -65,6 +66,7 @@ fn svc_update_syncs_crontab_on_success() {
                 tags: None,
                 env: None,
                 failure_threshold: None,
+        notifications: Default::default(),
             },
         )
         .unwrap();

@@ -158,6 +158,9 @@ pub fn svc_update(
     if let Some(threshold) = req.failure_threshold {
         routine.failure_threshold = Some(threshold);
     }
+    if let Some(notifications) = req.notifications {
+        routine.notifications = notifications;
+    }
     if let Some(power_saving_exempt) = req.power_saving_exempt {
         routine.power_saving_exempt = power_saving_exempt;
     }

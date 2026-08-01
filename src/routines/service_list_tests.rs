@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 /// other disk-touching paths off the developer's real `~/.moadim`, so a panicking assertion can never
 /// leak test routines into the real home. Tests in this crate run single-threaded
 /// (`RUST_TEST_THREADS=1`), so the global env mutation is safe.
-///
 /// `svc_list`/`svc_get` reload the store from disk before serving (see [`crate::routine_storage`]),
 /// so every test here needs a `TempHome` regardless of whether it also builds an in-memory store —
 /// otherwise the reload would either wipe the in-memory fixture or, worse, read the developer's real
@@ -72,6 +71,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 

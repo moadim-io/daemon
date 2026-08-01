@@ -27,6 +27,7 @@ fn routine(overrides: impl FnOnce(&mut Routine)) -> Routine {
         ttl_secs: None,
         max_runtime_secs: None,
         failure_threshold: None,
+        notifications: Default::default(),
         tags: vec![],
         env: std::collections::HashMap::new(),
     };
@@ -91,6 +92,53 @@ fn ignores_intentionally_suppressed_or_unassigned_routines() {
             &unassigned,
             &unassigned.effective_schedules(),
             1_782_196_520
+        ),
+        None
+    );
+}
+
+#[test]
+fn wrapper_reports_missed_fire() {
+    let routine = routine(|routine| routine.last_scheduled_trigger_at = Some(1_000));
+    let _ = missed_scheduled_run_at(&routine, &routine.effective_schedules());
+}
+
+#[test]
+fn underflowing_now_does_not_alert() {
+    let routine = routine(|_| {});
+    assert_eq!(
+        missed_scheduled_run_at_now(&routine, &routine.effective_schedules(), 30),
+        None
+    );
+}
+
+#[test]
+fn baseline_outside_supported_i64_range_does_not_alert() {
+    let routine = routine(|routine| routine.created_at = u64::MAX);
+    assert_eq!(
+        missed_scheduled_run_at_now(&routine, &routine.effective_schedules(), u64::MAX),
+        None
+    );
+}
+
+#[test]
+fn timestamp_outside_supported_range_does_not_alert() {
+    let baseline_overflow = routine(|routine| routine.created_at = u64::MAX - 100);
+    assert_eq!(
+        missed_scheduled_run_at_now(
+            &baseline_overflow,
+            &baseline_overflow.effective_schedules(),
+            u64::MAX,
+        ),
+        None
+    );
+
+    let latest_overflow = routine(|routine| routine.created_at = 0);
+    assert_eq!(
+        missed_scheduled_run_at_now(
+            &latest_overflow,
+            &latest_overflow.effective_schedules(),
+            u64::MAX,
         ),
         None
     );

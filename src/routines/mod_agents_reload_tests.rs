@@ -40,6 +40,7 @@ fn make_routine(id: &str) -> Routine {
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 

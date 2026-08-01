@@ -203,6 +203,7 @@ whole tree — routine directories don't carry their own.
 | `power_saving_exempt` | bool | no | Defaults to `false`. When `true`, this routine may still launch while the host is on battery or Low Power Mode. |
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
+| `notifications` | table | no       | Optional per-routine failure hooks. When empty, the daemon falls back to `~/.config/moadim/notifications.toml`. |
 | `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
 | `env`          | map    | no       | Environment variables injected into the agent's shell session at launch (see [Environment variables](#environment-variables) below). Defaults to empty. |
 
@@ -275,6 +276,31 @@ to a total byte ceiling for the whole `~/.moadim/workbenches/` tree; once
 exceeded, the sweep also evicts finished workbenches oldest-first (regardless
 of their individual TTL) until back under it. A live session is never evicted.
 Unset or `0` (the default) keeps today's unbounded-by-size behavior.
+
+**Failure notifications:** a run that finishes non-zero, with an unknown outcome, or after a
+max-runtime watchdog kill can fire an opt-in command and/or webhook exactly once when its outcome is
+persisted into `runs.log`. With no config, nothing fires and behavior is unchanged.
+
+Global config lives at `~/.config/moadim/notifications.toml`:
+
+```toml
+[notifications]
+on_failure_command = "hermes send --to discord:#ops \"moadim failure: $MOADIM_ROUTINE_TITLE ($MOADIM_EXIT_REASON)\""
+on_failure_webhook = "https://example.invalid/moadim/failures"
+```
+
+Per-routine config in `routine.toml` overrides the global config for that routine:
+
+```toml
+[notifications]
+on_failure_command = "notify-send \"moadim failed\" \"$MOADIM_ROUTINE_TITLE: $MOADIM_EXIT_REASON\""
+```
+
+Command hooks run under `sh -lc` with context env vars: `MOADIM_ROUTINE`,
+`MOADIM_ROUTINE_TITLE`, `MOADIM_RUN_ID`, `MOADIM_EXIT_REASON` (`exit_code_N`, `timeout`, or
+`unknown`), `MOADIM_LOG_PATH`, `MOADIM_STARTED_AT`, and `MOADIM_FINISHED_AT`. Webhook hooks POST JSON
+with the same routine/run fields plus a bounded `agent.log` tail. Hook failures are logged and do
+not block cleanup, retry forever, or crash the daemon.
 
 A routine already refuses to overlap with its own still-running fire, but
 nothing on its own bounds how many *different* routines run at once — the OS

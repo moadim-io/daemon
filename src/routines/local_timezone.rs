@@ -146,6 +146,9 @@ pub struct Routine {
     /// `crate::routines::cleanup::circuit_breaker` for where it's enforced.
     #[serde(default)]
     pub failure_threshold: Option<u32>,
+    /// Optional per-routine failure notification hooks. Empty means use the global hooks, if any.
+    #[serde(default)]
+    pub notifications: FailureNotificationConfig,
     /// Free-form labels for grouping and filtering routines (e.g. `"triage"`, `"nightly"`).
     /// Defaults to empty; each entry is trimmed and must be non-blank.
     #[serde(default)]

@@ -78,6 +78,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         tags: vec![],
         env: std::collections::HashMap::new(),
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -99,6 +100,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         tags: None,
         env: None,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 

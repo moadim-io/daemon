@@ -18,11 +18,8 @@ const MISSED_RUN_GRACE_SECS: u64 = 60;
 /// trigger when present, otherwise the routine creation timestamp, so existing never-run routines
 /// can still surface missed windows without inventing a run record.
 pub(crate) fn missed_scheduled_run_at(routine: &Routine, schedules: &[String]) -> Option<u64> {
-    missed_scheduled_run_at_now(
-        routine,
-        schedules,
-        Local::now().timestamp().try_into().ok()?,
-    )
+    let now_secs = Local::now().timestamp().max(0).cast_unsigned();
+    missed_scheduled_run_at_now(routine, schedules, now_secs)
 }
 
 pub(crate) fn missed_scheduled_run_at_now(
@@ -33,15 +30,17 @@ pub(crate) fn missed_scheduled_run_at_now(
     if !eligible_for_missed_run_alert(routine, now_secs) {
         return None;
     }
-    let latest_allowed = now_secs.checked_sub(MISSED_RUN_GRACE_SECS)?;
+    let latest_allowed = now_secs.saturating_sub(MISSED_RUN_GRACE_SECS);
     let baseline = routine
         .last_scheduled_trigger_at
         .unwrap_or(routine.created_at);
     if baseline >= latest_allowed {
         return None;
     }
-    let baseline_i64 = i64::try_from(baseline).ok()?;
-    let latest_i64 = i64::try_from(latest_allowed).ok()?.checked_add(1)?;
+    let baseline_i64 = i64::try_from(baseline).unwrap_or(i64::MAX);
+    let latest_i64 = i64::try_from(latest_allowed)
+        .unwrap_or(i64::MAX)
+        .saturating_add(1);
     let baseline_dt = Local.timestamp_opt(baseline_i64, 0).single()?;
     let latest_dt = Local.timestamp_opt(latest_i64, 0).single()?;
     schedules

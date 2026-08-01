@@ -60,6 +60,7 @@ pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -82,6 +83,7 @@ pub(super) fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         tags: vec![],
         env: std::collections::HashMap::new(),
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -140,6 +142,7 @@ fn svc_create_rejects_unknown_agent() {
             tags: vec![],
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+            notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

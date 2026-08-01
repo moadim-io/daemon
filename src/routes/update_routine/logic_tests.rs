@@ -23,6 +23,7 @@ fn make_update_req() -> UpdateRoutineRequest {
         tags: None,
         env: None,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 

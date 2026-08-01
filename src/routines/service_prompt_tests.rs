@@ -36,6 +36,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,
+        notifications: Default::default(),
     }
 }
 
@@ -63,6 +64,7 @@ fn svc_create_rejects_empty_prompt() {
             max_runtime_secs: None,
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -93,6 +95,7 @@ fn svc_create_rejects_whitespace_prompt() {
             max_runtime_secs: None,
             env: std::collections::HashMap::new(),
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -133,6 +136,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
             max_runtime_secs: None,
             env: None,
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

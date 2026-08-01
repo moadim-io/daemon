@@ -42,6 +42,7 @@ async fn build_app_serves_machines() {
             auto_disabled_reason: None,
             consecutive_failures: 0,
             failure_threshold: None,
+        notifications: Default::default(),
         },
     );
     let resp = build_app(routines)

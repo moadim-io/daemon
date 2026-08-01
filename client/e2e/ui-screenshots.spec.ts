@@ -9,6 +9,13 @@ test.beforeEach(async ({ page }) => {
 test("overview dashboard screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  if (testInfo.project.name === "chromium-phone") {
+    await expect
+      .poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+      .toBe(true);
+    await expect(page.locator(".overview-card-table thead").first()).toBeHidden();
+    await expect(page.locator(".overview-card-table td[data-label]").first()).toBeVisible();
+  }
   await saveScreenshot(page, testInfo.project.name, "overview");
 });
 

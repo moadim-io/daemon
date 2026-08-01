@@ -31,8 +31,8 @@ export function RecentRunsTable({ runs, loading }: { runs: FleetRunSummary[]; lo
   }
 
   return (
-    <div className="table-wrap">
-      <table>
+    <div className="table-wrap overview-table-wrap">
+      <table className="overview-card-table recent-runs-table">
         <thead>
           <tr>
             <th>ROUTINE</th>
@@ -45,23 +45,23 @@ export function RecentRunsTable({ runs, loading }: { runs: FleetRunSummary[]; lo
         <tbody>
           {runs.map((run) => (
             <tr key={run.workbench}>
-              <td>
+              <td data-label="Routine">
                 <Link to={`/routines?history=${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
               </td>
-              <td>
+              <td data-label="Started">
                 <div className="cell-time" title={abstime(run.started_at)}>
                   {reltime(run.started_at)}
                 </div>
               </td>
-              <td>
+              <td data-label="Duration">
                 <span className="cell-meta">
                   {run.finished_at == null ? "—" : fmtRunDuration(run.started_at, run.finished_at)}
                 </span>
               </td>
-              <td>
+              <td data-label="Status">
                 <span className={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
               </td>
-              <td>{run.exit_code == null ? "—" : run.exit_code}</td>
+              <td data-label="Exit code">{run.exit_code == null ? "—" : run.exit_code}</td>
             </tr>
           ))}
         </tbody>

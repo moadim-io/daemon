@@ -48,8 +48,8 @@ export function UpcomingTable({ runs, now, loading, error, onTrigger }: Upcoming
   }
 
   return (
-    <div className="table-wrap">
-      <table>
+    <div className="table-wrap overview-table-wrap">
+      <table className="overview-card-table upcoming-table">
         <thead>
           <tr>
             <th>TYPE</th>
@@ -62,10 +62,10 @@ export function UpcomingTable({ runs, now, loading, error, onTrigger }: Upcoming
         <tbody>
           {runs.map((run, i) => (
             <tr key={i}>
-              <td>
+              <td data-label="Type">
                 <span className="kind-badge routine">ROUTINE</span>
               </td>
-              <td>
+              <td data-label="Name">
                 <Link className="ov-name-link" to="/routines">
                   {run.label}
                 </Link>
@@ -78,14 +78,14 @@ export function UpcomingTable({ runs, now, loading, error, onTrigger }: Upcoming
                   </span>
                 )}
               </td>
-              <td>
+              <td data-label="Schedule">
                 <div className="cell-schedule-human">{run.human ?? run.schedule}</div>
               </td>
-              <td className="cell-next">
+              <td className="cell-next" data-label="Next run">
                 <div className="cell-next-when">{fmtWhen(now, run.at)}</div>
                 <div className={run.soon ? "cell-next-until soon" : "cell-next-until"}>{fmtUntil(now, run.at)}</div>
               </td>
-              <td className="cell-act">
+              <td className="cell-act" data-label="Action">
                 <button className="btn btn-sm btn-ghost run-now-btn" title="Trigger now" onClick={() => onTrigger(run.id)}>
                   ▶ RUN
                 </button>

@@ -1,6 +1,6 @@
 {
   "name": "moadim",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "description": "Moadim daemon CLI binary distributed through npm platform packages",
   "license": "MIT",
   "repository": {
@@ -24,9 +24,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@moadim/daemon-darwin-arm64": "3.2.2",
-    "@moadim/daemon-darwin-x64": "3.2.2",
-    "@moadim/daemon-linux-x64-gnu": "3.2.2"
+    "@moadim/daemon-darwin-arm64": "3.2.3",
+    "@moadim/daemon-darwin-x64": "3.2.3",
+    "@moadim/daemon-linux-x64-gnu": "3.2.3"
   },
   "publishConfig": {
     "access": "public",

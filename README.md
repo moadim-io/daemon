@@ -338,6 +338,31 @@ PUT    /config/max-concurrent-runs # set/clear the persisted override
 `lock_routines`, `unlock_routines`, plus server-control tools `health`,
 `shutdown`, and `restart`.
 
+**API authentication:** local zero-config use stays unchanged: with the default
+loopback bind (`127.0.0.1:5784`) and no `MOADIM_API_TOKEN`, REST/MCP accept
+same-host requests. Set `MOADIM_API_TOKEN=<secret>` to require a shared token on
+all REST and MCP requests. Clients can send either:
+
+```http
+Authorization: Bearer <secret>
+X-Moadim-Token: <secret>
+```
+
+First-party CLI commands (`moadim status`, `stop`, `cleanup`, `routines ...`,
+`agents`, `trigger`, `logs`) read `MOADIM_API_TOKEN` from their environment and
+send `Authorization: Bearer ...` automatically. The served browser UI also adds
+that header when the operator stores the token in browser storage:
+
+```js
+localStorage.setItem("moadim.apiToken", "<secret>")
+```
+
+Blank or unset `MOADIM_API_TOKEN` disables auth. A non-loopback bind is refused
+unless either `MOADIM_API_TOKEN` is set (protected remote use) or
+`MOADIM_ALLOW_REMOTE=1` is set (explicit unauthenticated override; logs a loud
+RCE warning). Prefer a token plus firewall/VPN/reverse-proxy restrictions for
+any remote deployment.
+
 **Agents:** the `agent` field resolves to a config at
 `~/.config/moadim/agents/<agent>.toml`. API responses include
 `agent_registered` so callers can tell whether the named agent is configured on

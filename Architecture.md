@@ -80,6 +80,7 @@ src/
 │
 ├── middlewares/
 │   ├── host_validation.rs    guards against DNS-rebinding / cross-origin abuse of the loopback API
+│   ├── api_token.rs          optional `MOADIM_API_TOKEN` auth for REST/MCP
 │   ├── logger.rs             request/response logger
 │   ├── security_headers.rs   adds CSP and related response headers
 │   └── timeout.rs            per-request deadline for the REST API (/api/v1 only)

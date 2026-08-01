@@ -14,6 +14,8 @@ pub enum AppError {
     Internal,
     /// 400 Bad Request with a human-readable description.
     BadRequest(String),
+    /// 401 Unauthorized with a human-readable description.
+    Unauthorized(String),
     /// 404 Not Found.
     NotFound,
     /// 409 Conflict with a human-readable description.
@@ -29,6 +31,7 @@ impl fmt::Display for AppError {
         match self {
             Self::Internal => write!(f, "internal server error"),
             Self::BadRequest(msg) => write!(f, "bad request: {msg}"),
+            Self::Unauthorized(msg) => write!(f, "unauthorized: {msg}"),
             Self::NotFound => write!(f, "not found"),
             Self::Conflict(msg) => write!(f, "conflict: {msg}"),
             Self::Locked(msg) => write!(f, "locked: {msg}"),
@@ -42,6 +45,7 @@ impl IntoResponse for AppError {
         let status = match &self {
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Locked(_) => StatusCode::LOCKED,

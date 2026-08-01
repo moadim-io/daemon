@@ -131,7 +131,15 @@ pub(crate) fn build_app_with_shutdown(
         // `/mcp` SSE stream (nested separately below) is never subject to it.
         .layer(middleware::from_fn(middlewares::timeout::request_timeout(
             middlewares::timeout::API_REQUEST_TIMEOUT,
-        )));
+        )))
+        // Optional shared-secret auth (issue #504): scoped to REST API routes so the embedded UI can
+        // still load and prompt for a token, while every API mutation/read fails closed when a token
+        // is configured.
+        .layer(middleware::from_fn(middlewares::api_token::api_token_auth));
+
+    let mcp = Router::new()
+        .nest_service("/mcp", mcp_service)
+        .layer(middleware::from_fn(middlewares::api_token::api_token_auth));
 
     Router::new()
         .route("/", get(index))
@@ -145,7 +153,7 @@ pub(crate) fn build_app_with_shutdown(
         .route("/client", get(redirect_client_to_root))
         .route("/client/{*rest}", get(redirect_client_to_root))
         .nest("/api/v1", api)
-        .nest_service("/mcp", mcp_service)
+        .merge(mcp)
         .merge({
             use utoipa::OpenApi as _;
             SwaggerUi::new("/docs").url("/docs/openapi.json", crate::openapi::ApiDoc::openapi())

@@ -41,11 +41,16 @@ is understood.
 can schedule and trigger real agent runs. A few things are **by design** and
 therefore out of scope as vulnerabilities:
 
-- **Loopback by default.** The daemon binds to `127.0.0.1` and has no built-in
-  authentication. Binding it to a non-loopback interface via `MOADIM_BIND_ADDR`
-  exposes an unauthenticated API to the network — that is an operator-accepted
-  risk, not a daemon vulnerability. Hardening of that surface is tracked
-  separately (see issues #253 and #266).
+- **Loopback by default, token for remote use.** The daemon binds to
+  `127.0.0.1` by default. With no `MOADIM_API_TOKEN`, REST/MCP are intended for
+  same-host loopback use. Setting `MOADIM_API_TOKEN=<secret>` enables
+  shared-secret authentication for REST/MCP (`Authorization: Bearer ***` or
+  `X-Moadim-Token: <secret>`). A non-loopback `MOADIM_BIND_ADDR` is refused
+  unless either that token is configured, or the operator explicitly sets
+  `MOADIM_ALLOW_REMOTE=1` to accept unauthenticated network exposure. Treat an
+  unauthenticated non-loopback daemon as RCE-equivalent: anyone who can reach it
+  can create/trigger routines that launch agents with the operator's
+  credentials.
 
 In scope, and very much worth reporting: memory-safety issues, authentication
 or authorization bypasses within the intended loopback model, command or path

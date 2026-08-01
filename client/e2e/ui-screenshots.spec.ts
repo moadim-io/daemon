@@ -59,6 +59,17 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
   }
 });
 
+test("routine calendar day details screenshot stays reviewable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "calendar popover baseline is desktop-only");
+  await page.goto("/routines");
+  await expect(page.getByRole("heading", { name: "Routines" })).toBeVisible();
+  await page.getByRole("button", { name: "CALENDAR" }).click();
+  await page.locator(".cal-day").first().click({ position: { x: 12, y: 12 } });
+  await expect(page.getByRole("dialog", { name: "Calendar day details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Run .* now/ }).first()).toBeVisible();
+  await saveScreenshot(page, testInfo.project.name, "routines-calendar-day-details");
+});
+
 test("routines filesystem screenshot stays reviewable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop", "filesystem tree baseline is desktop-only");
   await page.goto("/routines");
@@ -131,9 +142,10 @@ async function freezeBrowserClock(page: Page) {
   await page.addInitScript((fixedNow: number) => {
     const RealDate = Date;
     class FrozenDate extends RealDate {
-      constructor(value?: string | number | Date) {
-        if (value === undefined) super(fixedNow);
-        else super(value);
+      constructor(...args: ConstructorParameters<DateConstructor>) {
+        if (args.length === 0) super(fixedNow);
+        else if (args.length === 1) super(args[0]);
+        else super(args[0], args[1], args[2] ?? 1, args[3] ?? 0, args[4] ?? 0, args[5] ?? 0, args[6] ?? 0);
       }
       static now() {
         return fixedNow;

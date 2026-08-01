@@ -1,4 +1,3 @@
-
 /// Ensure the config dir `.gitignore` contains all required patterns on every start.
 ///
 /// This is the single `.gitignore` for the whole config tree — its patterns apply recursively, so
@@ -6,8 +5,8 @@
 /// generated): `*.local.*` catches the machine-local sidecars (`state.local.toml`,
 /// `routine.local.toml`, `prompt.compiled.local.md`), `*.log` the trigger logs, `*.compiled.*`
 /// the legacy `prompts/prompt.compiled.md`, `schedule.compailed.cron` the cron-union output,
-/// `.compailed.cron` the legacy cron-union output name, and `run.sh` the obsolete per-routine
-/// launch script.
+/// `.compailed.cron` the legacy cron-union output name, `run.sh` the obsolete per-routine launch
+/// script, and `cache/` the persistent repository mirror cache.
 ///
 /// Reads the existing file (if any), appends any missing patterns, and writes back only when
 /// something changed. Preserves user-added entries. Best-effort: failure is not fatal.
@@ -20,6 +19,7 @@ fn ensure_config_gitignore() {
         "schedule.compailed.cron",
         ".compailed.cron",
         "run.sh",
+        "cache/",
     ];
     let gitignore = crate::paths::config_gitignore_path();
     let existing = std::fs::read_to_string(&gitignore).unwrap_or_default();

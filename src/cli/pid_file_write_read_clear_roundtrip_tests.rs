@@ -17,6 +17,10 @@ fn pid_file_write_read_clear_roundtrip() {
         "gitignore must cover cron-union output"
     );
     assert!(
+        content.contains("cache/"),
+        "gitignore must cover repo cache"
+    );
+    assert!(
         content.contains(".compailed.cron"),
         "gitignore must keep covering legacy cron-union output"
     );
@@ -32,6 +36,10 @@ fn pid_file_write_read_clear_roundtrip() {
     assert!(
         content.contains("schedule.compailed.cron"),
         "missing cron-union pattern must be re-added"
+    );
+    assert!(
+        content.contains("cache/"),
+        "missing repo cache pattern must be re-added"
     );
     assert!(
         content.contains(".compailed.cron"),

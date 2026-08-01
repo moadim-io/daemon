@@ -85,6 +85,7 @@ routines and agents across machines.
 - `agents/` — the agent registry referenced by routines; see its own `README.md`.
 - `machine.local.toml` — this machine's identity, used to match a routine's `machines`
   targeting list. Gitignored: it's per-machine, not shared.
+- `cache/` — persistent local git mirror cache for declared repositories. Gitignored.
 - `moadim.pid`, `daemon.log` — daemon-managed runtime files. Gitignored.
 - `.gitignore` — seeded and kept up to date by the daemon; append your own patterns freely.
 

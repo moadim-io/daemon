@@ -136,7 +136,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │           └── prompt.compiled.local.md  # gitignored — derived, rendered prompt
 ├── agents/                    # registered coding agents referenced by routines
 │   └── claude.toml
-├── .gitignore                 # generated — excludes *.compiled.*, *.local.*, *.log, … for the whole tree
+├── .gitignore                 # generated — excludes *.compiled.*, *.local.*, *.log, cache/, … for the whole tree
 └── user_prompt.md             # optional — appended to every routine's prompt (see ## Routines)
 
 ~/.moadim/                     # runtime tree, separate from the config dir above

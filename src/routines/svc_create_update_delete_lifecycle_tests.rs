@@ -5,6 +5,7 @@ fn svc_create_update_delete_lifecycle() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],
@@ -34,6 +35,7 @@ fn svc_create_update_delete_lifecycle() {
         &store,
         &id,
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: Some("@weekly".into()),
             schedules: None,
@@ -71,6 +73,7 @@ fn svc_create_update_delete_lifecycle() {
 #[test]
 fn svc_update_not_found() {
     let req = UpdateRoutineRequest {
+        disabled_reason: None,
         schedule: None,
         schedules: None,
         title: Some("x".into()),
@@ -100,6 +103,7 @@ fn svc_update_invalid_cron_rejected() {
         .unwrap()
         .insert("id".into(), make_routine("id"));
     let req = UpdateRoutineRequest {
+        disabled_reason: None,
         schedule: Some("bad".into()),
         schedules: None,
         title: None,

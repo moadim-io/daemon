@@ -62,6 +62,7 @@ fn with_working_crontab(body: impl FnOnce()) {
 
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         goal: None,
         schedule: "@daily".into(),
@@ -84,6 +85,7 @@ fn valid_create_request() -> CreateRoutineRequest {
 
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        disabled_reason: None,
         model: None,
         goal: None,
         schedule: None,
@@ -120,6 +122,7 @@ fn svc_create_accepts_multiple_schedules_and_persists_sidecar_lines() {
         let resp = svc_create(
             &store,
             CreateRoutineRequest {
+                disabled_reason: None,
                 schedule: "@daily".into(),
                 schedules: vec!["@hourly".into(), "0 9 * * *".into()],
                 title: "Multi Schedule Create".into(),

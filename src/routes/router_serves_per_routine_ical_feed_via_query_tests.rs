@@ -25,6 +25,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         goal: None,
         repositories: vec![],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,

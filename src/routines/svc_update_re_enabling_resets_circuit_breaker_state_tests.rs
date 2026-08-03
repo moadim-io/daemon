@@ -27,6 +27,7 @@ fn svc_update_re_enabling_resets_circuit_breaker_state() {
             &store,
             "reenable-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 enabled: Some(true),
                 ..empty_update_request()
             },
@@ -55,6 +56,7 @@ fn svc_update_disabling_does_not_touch_circuit_breaker_state() {
             &store,
             "disable-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 enabled: Some(false),
                 ..empty_update_request()
             },
@@ -80,6 +82,7 @@ fn svc_update_trims_title_before_persisting() {
             &store,
             "trim-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 // Same slug, padded: applies the rename branch without a conflict.
                 title: Some("  Svc Update Trim ZZZ  ".into()),
                 ..empty_update_request()
@@ -118,6 +121,7 @@ fn svc_update_title_does_not_move_filesystem_owned_folder() {
             &store,
             "stable-dir-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 title: Some("New Display Title".into()),
                 prompt: Some("new prompt".into()),
                 ..empty_update_request()

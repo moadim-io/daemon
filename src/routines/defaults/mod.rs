@@ -87,6 +87,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         // reassign it with `moadim routines update`.
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,

@@ -19,6 +19,7 @@ fn make_handler() -> MoadimMcp {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],

@@ -9,6 +9,7 @@ use crate::routines::{new_store, slugify};
 
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],
@@ -41,6 +42,7 @@ fn svc_create_trims_and_stores_tags() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            disabled_reason: None,
             model: None,
             power_saving_exempt: false,
             tags: vec!["  triage  ".into(), "nightly".into()],
@@ -67,6 +69,7 @@ fn svc_create_dedupes_tags() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+            disabled_reason: None,
             power_saving_exempt: false,
             tags: vec!["  nightly  ".into(), "nightly".into(), "triage".into()],
             ..create_req_with_title(title)

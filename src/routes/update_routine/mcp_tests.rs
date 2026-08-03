@@ -21,6 +21,7 @@ fn update_routine_tool_not_found_is_error() {
     let handler = make_handler();
     let result = handler
         .update_routine(Parameters(UpdateRoutineInput {
+            disabled_reason: None,
             id: "no-such".into(),
             schedule: None,
             schedules: None,

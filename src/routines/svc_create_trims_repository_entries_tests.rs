@@ -18,6 +18,7 @@ fn svc_create_trims_repository_entries() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],

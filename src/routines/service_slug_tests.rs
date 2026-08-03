@@ -51,6 +51,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at,
         updated_at,
@@ -83,6 +84,7 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],
@@ -106,6 +108,7 @@ fn valid_create_request() -> CreateRoutineRequest {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: None,
         schedules: None,

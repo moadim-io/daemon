@@ -40,6 +40,7 @@ fn make_handler() -> MoadimMcp {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],
@@ -86,6 +87,7 @@ fn trigger_routine_tool_returns_error_when_disabled() {
 
     let result = handler
         .create_routine(Parameters(crate::routines::CreateRoutineRequest {
+            disabled_reason: None,
             enabled: false,
             ..make_create_routine_req()
         }))

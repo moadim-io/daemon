@@ -12,6 +12,7 @@ fn svc_create_rejects_duplicate_slug() {
         let first = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: "@daily".into(),
                 schedules: vec![],
@@ -36,6 +37,7 @@ fn svc_create_rejects_duplicate_slug() {
         let conflict = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: "@daily".into(),
                 schedules: vec![],
@@ -73,6 +75,7 @@ fn svc_create_trims_title_before_persisting() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 title: "   Svc Create Trim ZZZ   ".into(),
                 ..valid_create_request()
             },

@@ -65,6 +65,7 @@ fn err_helper_is_error() {
 
 fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
     crate::routines::CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],
@@ -122,6 +123,7 @@ fn create_get_update_trigger_delete_routine_success() {
     // `trigger_routine_tool_returns_error_when_disabled`)
     let result = handler
         .update_routine(Parameters(UpdateRoutineInput {
+                disabled_reason: None,
             id: id.clone(),
             schedule: None,
             schedules: None,

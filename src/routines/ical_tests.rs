@@ -20,6 +20,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         repositories: vec![],
         machines: vec![],
         enabled,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,

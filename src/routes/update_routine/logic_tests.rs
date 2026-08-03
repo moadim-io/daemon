@@ -7,6 +7,7 @@ use super::{build, UpdateRoutineRequest};
 
 fn make_update_req() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        disabled_reason: None,
         schedule: None,
         schedules: None,
         title: None,

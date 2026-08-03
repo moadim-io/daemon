@@ -11,7 +11,10 @@ use crate::paths::routines_dir;
 use crate::routines::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
 
-use super::{read_enabled_state, read_routine_crons, read_routine_toml, read_runtime_state};
+use super::{
+    read_disabled_reason, read_enabled_state, read_routine_crons, read_routine_toml,
+    read_runtime_state,
+};
 
 #[path = "routine_storage_walk.rs"]
 mod routine_storage_walk;
@@ -95,6 +98,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         repositories: toml.repositories,
         machines: toml.machines,
         enabled: read_enabled_state(base, dir_name, toml.enabled),
+        disabled_reason: read_disabled_reason(base, dir_name),
         power_saving_exempt: toml.power_saving_exempt,
         source: "managed".to_string(),
         created_at: toml.created_at.unwrap_or(0),

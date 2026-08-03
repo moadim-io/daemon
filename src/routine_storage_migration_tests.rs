@@ -19,6 +19,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         repositories: vec![],
         machines: vec![],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,

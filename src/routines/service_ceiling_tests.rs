@@ -52,6 +52,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at,
         updated_at,
@@ -84,6 +85,7 @@ fn store_with(routines: Vec<Routine>) -> RoutineStore {
 /// Build a minimal valid create request; callers tweak the field under test.
 fn valid_create_request() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         goal: None,
         schedule: "@daily".into(),
@@ -107,6 +109,7 @@ fn valid_create_request() -> CreateRoutineRequest {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        disabled_reason: None,
         model: None,
         goal: None,
         schedule: None,
@@ -136,6 +139,7 @@ fn svc_create_rejects_ttl_above_cron_ceiling() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             schedule: "*/5 * * * *".into(),
@@ -155,6 +159,7 @@ fn svc_create_rejects_max_runtime_above_cron_ceiling() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             schedule: "*/5 * * * *".into(),

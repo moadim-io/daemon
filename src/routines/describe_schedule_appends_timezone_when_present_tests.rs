@@ -73,6 +73,7 @@ fn from_routine_populates_derived_fields() {
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,

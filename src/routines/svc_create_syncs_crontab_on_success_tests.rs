@@ -10,6 +10,7 @@ fn svc_create_syncs_crontab_on_success() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: "@daily".into(),
                 schedules: vec![],
@@ -50,6 +51,7 @@ fn svc_update_syncs_crontab_on_success() {
             &store,
             "upd-sync-ok-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: None,
                 schedules: None,

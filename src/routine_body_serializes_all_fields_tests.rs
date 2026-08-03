@@ -23,6 +23,7 @@ fn routine_body_serializes_all_fields() {
             Some(60),
             vec!["triage".to_string(), "nightly".to_string()],
             false,
+            None,
         )
         .unwrap(),
     )
@@ -50,6 +51,53 @@ fn routine_body_serializes_all_fields() {
 }
 
 #[test]
+fn routine_body_serializes_disabled_reason_only_when_disabled() {
+    let disabled: Value = serde_json::from_str(
+        &routine_body(
+            vec!["* * * * *".to_string()],
+            "title".into(),
+            "agent".into(),
+            None,
+            "prompt".into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            true,
+            Some("maintenance".to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(disabled["enabled"], Value::Bool(false));
+    assert_eq!(disabled["disabled_reason"], Value::String("maintenance".to_string()));
+
+    let enabled: Value = serde_json::from_str(
+        &routine_body(
+            vec!["* * * * *".to_string()],
+            "title".into(),
+            "agent".into(),
+            None,
+            "prompt".into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            false,
+            Some("ignored".to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(enabled["enabled"], Value::Bool(true));
+    assert!(enabled.get("disabled_reason").is_none());
+}
+
+#[test]
 fn routine_body_rejects_bad_repositories() {
     assert_eq!(
         routine_body(
@@ -65,6 +113,7 @@ fn routine_body_rejects_bad_repositories() {
             None,
             vec![],
             false,
+            None,
         ),
         Err(2)
     );
@@ -87,6 +136,7 @@ fn routine_body_rejects_bad_machines() {
             None,
             vec![],
             false,
+            None,
         ),
         Err(2)
     );

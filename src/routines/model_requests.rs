@@ -38,6 +38,9 @@ pub struct CreateRoutineRequest {
     /// Whether to create the routine enabled (defaults to `true`).
     #[serde(default = "bool_true")]
     pub enabled: bool,
+    /// Optional reason to persist when creating the routine disabled. Ignored for enabled creates.
+    #[serde(default)]
+    pub disabled_reason: Option<String>,
     /// Workbench retention in seconds for finished runs; caps the cron-derived
     /// retention lower. `None` uses `min(MAX_TTL_SECS, cron interval)`. Must be
     /// greater than zero when set; `0` is rejected (#233).
@@ -73,7 +76,7 @@ pub struct CreateRoutineRequest {
 }
 
 /// Request body for partially updating an existing routine.
-#[derive(Deserialize, JsonSchema, utoipa::ToSchema)]
+#[derive(Deserialize, JsonSchema, utoipa::ToSchema, Default)]
 pub struct UpdateRoutineRequest {
     /// New primary cron expression, or `None` to keep the existing value. Evaluated in the
     /// host's local system timezone (the OS crontab timezone), not UTC.
@@ -97,6 +100,11 @@ pub struct UpdateRoutineRequest {
     pub machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub enabled: Option<bool>,
+    /// Optional reason to persist when this update disables the routine.
+    ///
+    /// Only applied together with `enabled: false`; enabling clears the stored reason, and updates
+    /// that omit `enabled` leave any existing reason unchanged.
+    pub disabled_reason: Option<String>,
     /// New workbench TTL (seconds), or `None` to keep the existing value. Must be
     /// greater than zero when set; `0` is rejected (#233).
     pub ttl_secs: Option<u64>,

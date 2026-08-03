@@ -19,6 +19,7 @@ fn svc_update_sets_max_runtime_secs() {
             &store,
             "max-runtime-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: None,
                 schedules: None,
@@ -58,6 +59,7 @@ fn svc_update_sets_env() {
             &store,
             "env-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 env: Some(std::collections::HashMap::from([(
                     "MODEL_OVERRIDE".to_string(),
                     "gpt-x".to_string(),
@@ -92,6 +94,7 @@ fn svc_update_sets_failure_threshold() {
             &store,
             "threshold-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 failure_threshold: Some(5),
         notifications: Default::default(),
                 ..empty_update_request()

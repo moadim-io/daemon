@@ -20,6 +20,7 @@ fn make_routine(title: &str) -> Routine {
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,

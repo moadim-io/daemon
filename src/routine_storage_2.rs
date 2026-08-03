@@ -79,6 +79,10 @@ mod routine_storage_slug_collision_tests;
 mod routine_storage_gitignore_tests;
 
 #[cfg(test)]
+#[path = "routine_storage_disabled_reason_tests.rs"]
+mod routine_storage_disabled_reason_tests;
+
+#[cfg(test)]
 #[path = "routine_storage_env_tests.rs"]
 mod routine_storage_env_tests;
 

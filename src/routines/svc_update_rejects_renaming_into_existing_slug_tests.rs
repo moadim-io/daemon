@@ -25,6 +25,7 @@ fn svc_update_rejects_renaming_into_existing_slug() {
             &store,
             "other-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: None,
                 schedules: None,
@@ -70,6 +71,7 @@ fn svc_update_title_keeps_existing_workbench_slug() {
             &store,
             "rename-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 title: Some(new_title.into()),
                 ..empty_update_request()
             },

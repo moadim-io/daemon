@@ -60,6 +60,7 @@ fn routine_with(schedule: &str, ttl_secs: Option<u64>) -> super::super::model::R
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".into(),
         created_at: 0,
         updated_at: 0,

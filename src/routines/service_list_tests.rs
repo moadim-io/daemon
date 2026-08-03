@@ -8,8 +8,7 @@ use super::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for the duration of a test, removing the
-/// env var and the temp dir on drop. This keeps `svc_create`/`svc_update`/`write_routine` and the
+/// Point `MOADIM_HOME_OVERRIDE` at a fresh, empty temp home for a test, cleaning up afterward.
 /// other disk-touching paths off the developer's real `~/.moadim`, so a panicking assertion can never
 /// leak test routines into the real home. Tests in this crate run single-threaded
 /// (`RUST_TEST_THREADS=1`), so the global env mutation is safe.
@@ -55,6 +54,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at,
         updated_at,

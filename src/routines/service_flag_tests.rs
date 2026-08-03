@@ -38,6 +38,7 @@ impl Drop for TempHome {
 
 fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],

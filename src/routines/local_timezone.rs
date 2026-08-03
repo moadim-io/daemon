@@ -51,6 +51,13 @@ pub struct Routine {
     pub machines: Vec<String>,
     /// Whether the routine is active.
     pub enabled: bool,
+    /// Optional user-provided reason captured when the routine was manually disabled.
+    ///
+    /// Persisted in the tracked `disabled.json` marker, not `routine.toml`. `None` for enabled
+    /// routines, disabled routines whose marker predates reason metadata, and malformed markers
+    /// whose presence still disables the routine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
     /// `"managed"` for routines owned by this server.
     pub source: String,
     /// Unix timestamp (seconds) when the routine was created.

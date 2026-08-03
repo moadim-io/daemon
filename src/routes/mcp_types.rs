@@ -119,6 +119,8 @@ pub(super) struct UpdateRoutineInput {
     pub(super) machines: Option<Vec<String>>,
     /// New enabled state, or `None` to keep the existing value.
     pub(super) enabled: Option<bool>,
+    /// Optional reason to record when setting `enabled` to `false`.
+    pub(super) disabled_reason: Option<String>,
     /// New workbench TTL (seconds) for finished runs, or `None` to keep the existing value. Must
     /// be greater than zero when set; `0` is rejected (#233).
     pub(super) ttl_secs: Option<u64>,

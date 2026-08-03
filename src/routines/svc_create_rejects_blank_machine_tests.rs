@@ -10,6 +10,7 @@ fn svc_create_rejects_blank_machine() {
         let result = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 machines: vec![machine.to_string()],
                 ..valid_create_request()
             },
@@ -29,6 +30,7 @@ fn svc_create_trims_and_dedupes_machines() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             machines: vec!["  laptop  ".into(), "laptop".into(), "server".into()],
             ..create_req_with_title(title)
             power_saving_exempt: false,
@@ -62,6 +64,7 @@ fn svc_update_rejects_and_sets_machines() {
         &store,
         "upd-machines-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             machines: Some(vec![" ".into()]),
             ..empty_update_request()
         },
@@ -72,6 +75,7 @@ fn svc_update_rejects_and_sets_machines() {
         &store,
         "upd-machines-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             machines: Some(vec!["  laptop  ".into(), "laptop".into()]),
             ..empty_update_request()
         },

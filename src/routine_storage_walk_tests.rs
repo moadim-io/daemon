@@ -31,37 +31,10 @@ fn with_home(body: &dyn Fn()) {
 }
 
 fn make_routine(id: &str, title: &str) -> Routine {
-    Routine {
-        model: None,
-        id: id.to_string(),
-        schedule: "@daily".to_string(),
-        schedules: vec![],
-        title: title.to_string(),
-        agent: "claude".to_string(),
-        prompt: "task".to_string(),
-        goal: None,
-        repositories: vec![],
-        machines: vec![crate::machine::current_machine()],
-        enabled: true,
-        disabled_reason: None,
-        source: "managed".to_string(),
-        created_at: 1,
-        updated_at: 2,
-        last_manual_trigger_at: None,
-        last_scheduled_trigger_at: None,
-        snoozed_until: None,
-        skip_runs: None,
-        power_saving: false,
-        power_saving_exempt: false,
-        ttl_secs: None,
-        max_runtime_secs: None,
-        tags: vec![],
-        env: std::collections::HashMap::new(),
-        auto_disabled_reason: None,
-        consecutive_failures: 0,
-        failure_threshold: None,
-        notifications: Default::default(),
-    }
+    crate::test_fixtures::routine_fixture(id, title)
+        .no_repositories()
+        .times(1, 2)
+        .build()
 }
 
 #[test]

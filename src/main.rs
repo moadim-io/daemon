@@ -40,6 +40,8 @@ mod service;
 mod sync;
 /// Host power-state detector for conservative routine launch throttling.
 mod system_power;
+#[cfg(test)]
+mod test_fixtures;
 /// Shared utility functions.
 mod utils;
 

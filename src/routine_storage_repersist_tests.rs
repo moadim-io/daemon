@@ -7,7 +7,7 @@
 )]
 
 use super::*;
-use crate::routines::{slugify, Repository, Routine};
+use crate::routines::{slugify, Routine};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -31,41 +31,7 @@ fn with_override_home(body: impl FnOnce(&std::path::Path)) {
 }
 
 fn make_routine(id: &str, title: &str) -> Routine {
-    Routine {
-        model: None,
-        id: id.to_string(),
-        schedule: "@daily".to_string(),
-        schedules: vec![],
-        title: title.to_string(),
-        agent: "claude".to_string(),
-        prompt: "task".to_string(),
-        goal: None,
-        repositories: vec![Repository {
-            repository: "https://example.com/r.git".to_string(),
-            branch: Some("main".to_string()),
-            auto_pull: true,
-        }],
-        machines: vec![crate::machine::current_machine()],
-        enabled: true,
-        disabled_reason: None,
-        source: "managed".to_string(),
-        created_at: 5,
-        updated_at: 6,
-        last_manual_trigger_at: None,
-        last_scheduled_trigger_at: None,
-        snoozed_until: None,
-        skip_runs: None,
-        power_saving: false,
-        power_saving_exempt: false,
-        tags: vec![],
-        ttl_secs: None,
-        max_runtime_secs: None,
-        env: std::collections::HashMap::new(),
-        auto_disabled_reason: None,
-        consecutive_failures: 0,
-        failure_threshold: None,
-        notifications: Default::default(),
-    }
+    crate::test_fixtures::routine_fixture(id, title).build()
 }
 
 #[test]

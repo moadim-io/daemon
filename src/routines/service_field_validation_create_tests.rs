@@ -44,6 +44,7 @@ pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at,
         updated_at,
@@ -67,6 +68,7 @@ pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u
 /// Build a create request with the given title and an otherwise-valid body.
 pub(super) fn create_req_with_title(title: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "@daily".into(),
         schedules: vec![],
@@ -126,6 +128,7 @@ fn svc_create_rejects_unknown_agent() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+            disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],

@@ -1243,6 +1243,13 @@
             "type": "string",
             "description": "Agent registry key to launch."
           },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional reason to persist when creating the routine disabled. Ignored for enabled creates."
+          },
           "enabled": {
             "type": "boolean",
             "description": "Whether to create the routine enabled (defaults to `true`)."
@@ -1763,6 +1770,13 @@
             "description": "Unix timestamp (seconds) when the routine was created.",
             "minimum": 0
           },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional user-provided reason captured when the routine was manually disabled.\n\nPersisted in the tracked `disabled.json` marker, not `routine.toml`. `None` for enabled\nroutines, disabled routines whose marker predates reason metadata, and malformed markers\nwhose presence still disables the routine."
+          },
           "enabled": {
             "type": "boolean",
             "description": "Whether the routine is active."
@@ -2177,6 +2191,13 @@
               "null"
             ],
             "description": "New agent key, or `None` to keep the existing value."
+          },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional reason to persist when this update disables the routine.\n\nOnly applied together with `enabled: false`; enabling clears the stored reason, and updates\nthat omit `enabled` leave any existing reason unchanged."
           },
           "enabled": {
             "type": [

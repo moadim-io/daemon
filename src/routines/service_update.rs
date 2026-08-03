@@ -137,6 +137,11 @@ pub fn svc_update(
     }
     if let Some(enabled) = req.enabled {
         routine.enabled = enabled;
+        if enabled {
+            routine.disabled_reason = None;
+        } else {
+            routine.disabled_reason = req.disabled_reason;
+        }
     }
     // Manually re-enabling clears the failure circuit-breaker's state (#521): an operator flipping
     // a routine back on is a deliberate "give it another chance" signal, so it starts that chance

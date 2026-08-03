@@ -44,6 +44,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         repositories: vec![],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at,
         updated_at,
@@ -66,6 +67,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
 
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: None,
         schedules: None,
@@ -121,6 +123,7 @@ fn svc_update_sets_ttl_secs() {
             &store,
             "ttl-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: None,
                 schedules: None,
@@ -144,4 +147,9 @@ fn svc_update_sets_ttl_secs() {
         assert_eq!(updated.routine.ttl_secs, Some(1800));
     });
 }
+
+#[cfg(test)]
+#[path = "service_update_disabled_reason_tests.rs"]
+mod service_update_disabled_reason_tests;
+
 include!("svc_update_sets_max_runtime_secs_tests.rs");

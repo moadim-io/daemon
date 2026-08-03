@@ -21,6 +21,7 @@ fn svc_update_rejects_and_sets_tags() {
         &store,
         "upd-tags-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             power_saving_exempt: None,
             tags: Some(vec![" ".into()]),
@@ -33,6 +34,7 @@ fn svc_update_rejects_and_sets_tags() {
         &store,
         "upd-tags-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             power_saving_exempt: None,
             tags: Some(vec!["  ops  ".into()]),
@@ -55,6 +57,7 @@ fn svc_create_trims_model_and_blank_normalizes_to_none() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: Some("  claude-sonnet-4-6  ".into()),
             ..create_req_with_title(title)
             power_saving_exempt: false,
@@ -69,6 +72,7 @@ fn svc_create_trims_model_and_blank_normalizes_to_none() {
     let created2 = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: Some("   ".into()),
             ..create_req_with_title(title2)
             power_saving_exempt: false,
@@ -94,6 +98,7 @@ fn svc_update_sets_and_clears_model() {
         &store,
         "upd-model-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: Some("  claude-opus-4-8  ".into()),
             ..empty_update_request()
         },
@@ -105,6 +110,7 @@ fn svc_update_sets_and_clears_model() {
         &store,
         "upd-model-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: Some("  ".into()),
             ..empty_update_request()
         },

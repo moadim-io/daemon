@@ -5,8 +5,13 @@ use serde_json::Value;
 use super::routine_path;
 
 /// Flip a single routine's `enabled` flag via `PATCH /routines/{routine}`.
-pub(super) fn set_routine_enabled(routine: &str, enabled: bool, json: bool) -> i32 {
-    let body = serde_json::json!({ "enabled": enabled }).to_string();
+pub(super) fn set_routine_enabled(
+    routine: &str,
+    enabled: bool,
+    reason: Option<String>,
+    json: bool,
+) -> i32 {
+    let body = enabled_patch_body(enabled, reason);
     match crate::cli::http_request_json("PATCH", &routine_path(routine), Some(&body)) {
         Ok((status, resp)) if (200..300).contains(&status) => {
             report_enabled(routine, enabled, &resp, json);
@@ -15,6 +20,20 @@ pub(super) fn set_routine_enabled(routine: &str, enabled: bool, json: bool) -> i
         Ok((status, resp)) => report_http_error(status, &resp),
         Err(_) => not_running(),
     }
+}
+
+/// Build the routine enablement PATCH body.
+fn enabled_patch_body(enabled: bool, reason: Option<String>) -> String {
+    if enabled {
+        serde_json::json!({ "enabled": true })
+    } else {
+        let mut body = serde_json::json!({ "enabled": false });
+        if let Some(reason) = reason {
+            body["disabled_reason"] = serde_json::Value::String(reason);
+        }
+        body
+    }
+    .to_string()
 }
 
 /// Report the outcome of an enable/disable request.
@@ -52,3 +71,7 @@ fn not_running() -> i32 {
     eprintln!("moadim is not running");
     crate::cli::EXIT_NOT_RUNNING
 }
+
+#[cfg(test)]
+#[path = "commands_routine_actions_tests.rs"]
+mod commands_routine_actions_tests;

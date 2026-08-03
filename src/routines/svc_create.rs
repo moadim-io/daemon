@@ -57,6 +57,7 @@ pub fn svc_create(
         repositories,
         machines,
         enabled: req.enabled,
+        disabled_reason: (!req.enabled).then_some(req.disabled_reason).flatten(),
         source: "managed".to_string(),
         created_at: now,
         updated_at: now,

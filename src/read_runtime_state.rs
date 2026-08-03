@@ -85,7 +85,7 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(rel_dir))?;
     if !routine.enabled {
-        write_disabled_state(rel_dir, false)?;
+        write_disabled_state(rel_dir, false, routine.disabled_reason.as_deref())?;
     }
 
     // Remove any stale `run.sh` left by an older daemon that generated per-routine launch scripts;
@@ -137,7 +137,7 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
     )?;
     write_runtime_state(rel_dir, routine)?;
     if routine.enabled {
-        write_disabled_state(rel_dir, true)?;
+        write_disabled_state(rel_dir, true, None)?;
     }
     Ok(())
 }

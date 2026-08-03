@@ -17,6 +17,7 @@ fn svc_create_returns_internal_on_write_failure() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             title: title.into(),
             ..valid_create_request()
@@ -40,6 +41,7 @@ fn svc_create_rejects_blank_tag() {
         let result = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 power_saving_exempt: false,
                 tags: vec![tag.to_string()],
@@ -68,6 +70,7 @@ fn svc_update_none_schedule_uses_existing_schedule() {
             &store,
             "upd-none-sched-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 prompt: Some("updated prompt".into()),
                 goal: None,

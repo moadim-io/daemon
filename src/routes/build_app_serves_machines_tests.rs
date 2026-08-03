@@ -27,6 +27,7 @@ async fn build_app_serves_machines() {
             machines: vec!["alpha-box".to_string(), "shared".to_string()],
             tags: vec![],
             enabled: true,
+        disabled_reason: None,
             source: "managed".to_string(),
             created_at: 0,
             updated_at: 0,

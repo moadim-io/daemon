@@ -96,6 +96,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         repositories: Vec::<Repository>::new(),
         machines: Vec::new(),
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 1,
         updated_at: 1,

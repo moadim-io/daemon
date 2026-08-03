@@ -22,6 +22,7 @@ fn make_routine(id: &str) -> Routine {
         }],
         machines: vec![crate::machine::current_machine()],
         enabled: true,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 0,
         updated_at: 0,
@@ -113,6 +114,7 @@ fn routine_response_schedule_description_includes_timezone() {
 fn svc_create_invalid_cron_rejected() {
     let store = new_store();
     let req = CreateRoutineRequest {
+        disabled_reason: None,
         schedule: "not-a-cron".into(),
         schedules: vec![],
         title: "t".into(),

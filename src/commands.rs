@@ -66,6 +66,9 @@ pub(crate) enum DataCommand {
     Disable {
         /// Routine id or slug to disable.
         routine: String,
+        /// Optional reason to persist into disabled.json.
+        #[arg(long)]
+        reason: Option<String>,
         /// Emit a machine-readable `{"routine","enabled"}` object instead of a status line.
         #[arg(long)]
         json: bool,

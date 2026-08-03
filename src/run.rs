@@ -27,8 +27,12 @@ pub(crate) fn dispatch(command: DataCommand) -> i32 {
             &format!("{}/scheduled-trigger", routine_path(&id)),
             None,
         ),
-        DataCommand::Enable { routine, json } => set_routine_enabled(&routine, true, json),
-        DataCommand::Disable { routine, json } => set_routine_enabled(&routine, false, json),
+        DataCommand::Enable { routine, json } => set_routine_enabled(&routine, true, None, json),
+        DataCommand::Disable {
+            routine,
+            reason,
+            json,
+        } => set_routine_enabled(&routine, false, reason, json),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
     }
 }

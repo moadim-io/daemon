@@ -8,6 +8,7 @@ fn svc_create_rejects_blank_title() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             title: "   ".into(),
@@ -26,6 +27,7 @@ fn svc_create_rejects_blank_prompt() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             prompt: String::new(),
@@ -44,6 +46,7 @@ fn svc_create_rejects_zero_ttl_secs() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             ttl_secs: Some(0),
@@ -62,6 +65,7 @@ fn svc_create_rejects_zero_max_runtime_secs() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             max_runtime_secs: Some(0),

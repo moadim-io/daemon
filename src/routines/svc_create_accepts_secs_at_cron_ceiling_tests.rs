@@ -16,6 +16,7 @@ fn svc_create_accepts_secs_at_cron_ceiling() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             schedule: "*/5 * * * *".into(),
@@ -44,6 +45,7 @@ fn svc_update_rejects_ttl_above_current_schedule_ceiling() {
         &store,
         "upd-ttl-ceiling",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             ttl_secs: Some(1800),
@@ -73,6 +75,7 @@ fn svc_update_rejects_secs_above_new_schedule_ceiling() {
         &store,
         "upd-new-sched",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             schedule: Some("*/5 * * * *".into()),

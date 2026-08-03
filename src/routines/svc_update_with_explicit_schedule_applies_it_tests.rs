@@ -25,6 +25,7 @@ fn svc_update_with_explicit_schedule_applies_it() {
             &store,
             "upd-expl-sched-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: Some("@daily".into()),
                 schedules: None,
@@ -61,6 +62,7 @@ fn svc_update_returns_internal_on_write_failure() {
         &store,
         "upd-write-fail-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             prompt: Some("changed".into()),
             goal: None,
@@ -147,6 +149,7 @@ fn svc_update_not_found_when_id_missing() {
                 &store,
                 "nonexistent-id",
                 UpdateRoutineRequest {
+        disabled_reason: None,
                     schedule,
                     ..empty_update_request()
                 },

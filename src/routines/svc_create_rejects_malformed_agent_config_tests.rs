@@ -21,6 +21,7 @@ fn svc_create_rejects_malformed_agent_config() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],
@@ -60,6 +61,7 @@ fn svc_create_rejects_unreadable_agent_config() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],
@@ -106,6 +108,7 @@ fn svc_update_rejects_malformed_agent_config() {
         &store,
         "upd-mal-id",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: None,
             schedules: None,

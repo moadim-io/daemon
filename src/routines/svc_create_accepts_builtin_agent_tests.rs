@@ -10,6 +10,7 @@ fn svc_create_accepts_builtin_agent() {
     let created = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],
@@ -46,6 +47,7 @@ fn svc_create_rejects_blank_repository_url() {
         let result = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: "@daily".into(),
                 schedules: vec![],
@@ -84,6 +86,7 @@ fn svc_create_rejects_blank_repository_branch() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],

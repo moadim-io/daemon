@@ -23,6 +23,7 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             max_runtime_secs,
             tags,
             disabled,
+            disabled_reason,
         } => match routine_body(
             schedule,
             title,
@@ -36,6 +37,7 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             max_runtime_secs,
             tags,
             disabled,
+            disabled_reason,
         ) {
             Ok(body) => request("POST", "/api/v1/routines", Some(&body)),
             Err(code) => code,
@@ -53,6 +55,7 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             repositories,
             machines,
             enabled,
+            disabled_reason,
             ttl_secs,
             max_runtime_secs,
             tags,
@@ -76,6 +79,13 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
                 Err(code) => return code,
             }
             insert_opt(&mut map, "enabled", enabled.map(Value::Bool));
+            if enabled == Some(false) {
+                insert_opt(
+                    &mut map,
+                    "disabled_reason",
+                    disabled_reason.map(Value::String),
+                );
+            }
             insert_opt(&mut map, "ttl_secs", ttl_secs.map(Value::from));
             insert_opt(
                 &mut map,
@@ -104,6 +114,7 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             max_runtime_secs,
             tags,
             disabled,
+            disabled_reason,
         } => match routine_body(
             schedule,
             title,
@@ -117,6 +128,7 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
             max_runtime_secs,
             tags,
             disabled,
+            disabled_reason,
         ) {
             Ok(body) => request("PUT", &routine_path(&id), Some(&body)),
             Err(code) => code,
@@ -149,6 +161,7 @@ pub(crate) fn routine_body(
     max_runtime_secs: Option<u64>,
     tags: Vec<String>,
     disabled: bool,
+    disabled_reason: Option<String>,
 ) -> Result<String, i32> {
     let mut map = Map::new();
     let primary = schedule.first().cloned().unwrap_or_default();
@@ -169,5 +182,12 @@ pub(crate) fn routine_body(
     );
     map.insert("tags".to_string(), tags_value(tags));
     map.insert("enabled".to_string(), Value::Bool(!disabled));
+    if disabled {
+        insert_opt(
+            &mut map,
+            "disabled_reason",
+            disabled_reason.map(Value::String),
+        );
+    }
     Ok(to_body(map))
 }

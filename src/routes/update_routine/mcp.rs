@@ -18,6 +18,7 @@ impl MoadimMcp {
         Parameters(input): Parameters<UpdateRoutineInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let req = UpdateRoutineRequest {
+            disabled_reason: input.disabled_reason,
             schedule: input.schedule,
             schedules: input.schedules,
             title: input.title,

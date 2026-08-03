@@ -46,6 +46,7 @@ fn make_routine(id: &str, title: &str, enabled: bool) -> Routine {
         }],
         machines: vec![crate::machine::current_machine()],
         enabled,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: 5,
         updated_at: 6,
@@ -142,7 +143,7 @@ fn write_disabled_state_reports_remove_failure_when_marker_path_is_directory() {
         let slug = "disabled-marker-directory";
         std::fs::create_dir_all(crate::paths::routine_disabled_json_path(slug)).unwrap();
 
-        let err = write_disabled_state(slug, true).unwrap_err();
+        let err = write_disabled_state(slug, true, None).unwrap_err();
 
         assert!(matches!(
             err.kind(),
@@ -157,7 +158,7 @@ fn write_disabled_state_reports_atomic_write_failure_when_marker_path_is_directo
         let slug = "disabled-marker-write-directory";
         std::fs::create_dir_all(crate::paths::routine_disabled_json_path(slug)).unwrap();
 
-        let err = write_disabled_state(slug, false).unwrap_err();
+        let err = write_disabled_state(slug, false, None).unwrap_err();
 
         assert!(matches!(
             err.kind(),

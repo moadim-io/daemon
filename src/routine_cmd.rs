@@ -50,6 +50,9 @@ pub(crate) enum RoutineCmd {
         /// Create the routine disabled instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
+        /// Optional reason to record when creating the routine disabled.
+        #[arg(long = "disabled-reason")]
+        disabled_reason: Option<String>,
     },
     /// List all routines.
     List,
@@ -89,6 +92,9 @@ pub(crate) enum RoutineCmd {
         /// New enabled state (`true`/`false`).
         #[arg(long)]
         enabled: Option<bool>,
+        /// Optional reason to record when setting `--enabled false`.
+        #[arg(long = "disabled-reason")]
+        disabled_reason: Option<String>,
         /// New workbench TTL in seconds.
         #[arg(long)]
         ttl_secs: Option<u64>,
@@ -141,6 +147,9 @@ pub(crate) enum RoutineCmd {
         /// Replace into a disabled state instead of enabled (the default).
         #[arg(long)]
         disabled: bool,
+        /// Optional reason to record when replacing into a disabled state.
+        #[arg(long = "disabled-reason")]
+        disabled_reason: Option<String>,
     },
     /// Delete a routine by ID.
     Delete {

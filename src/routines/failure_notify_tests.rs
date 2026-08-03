@@ -55,6 +55,7 @@ fn routine(config: FailureNotificationConfig) -> Routine {
         repositories: vec![],
         machines: vec![],
         enabled: true,
+        disabled_reason: None,
         source: "managed".into(),
         created_at: 1,
         updated_at: 1,

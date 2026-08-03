@@ -48,6 +48,7 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
             cur.machines.clone()
         },
         enabled: cur.enabled,
+        disabled_reason: None,
         source: "managed".to_string(),
         created_at: cur.created_at,
         updated_at: now,

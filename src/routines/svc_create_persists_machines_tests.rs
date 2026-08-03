@@ -15,6 +15,7 @@ fn svc_create_persists_machines() {
     let resp = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             machines: vec!["alpha".into(), "beta".into()],
@@ -34,6 +35,7 @@ fn svc_update_sets_machines() {
         &store,
         "upd-machines",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             machines: Some(vec!["server".into()]),
@@ -53,6 +55,7 @@ fn svc_update_rejects_blank_title() {
         &store,
         "upd-blank-title",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             title: Some("  ".into()),
@@ -71,6 +74,7 @@ fn svc_update_rejects_blank_prompt() {
         &store,
         "upd-blank-prompt",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             prompt: Some("\t\n".into()),
@@ -90,6 +94,7 @@ fn svc_update_rejects_goal_over_max_lines() {
         &store,
         "missing",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: Some("l1\nl2\nl3\nl4\nl5\nl6".into()),
             ..empty_update_request()
@@ -107,6 +112,7 @@ fn svc_update_rejects_zero_durations() {
         &store,
         "upd-zero-secs",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             ttl_secs: Some(0),
@@ -118,6 +124,7 @@ fn svc_update_rejects_zero_durations() {
         &store,
         "upd-zero-secs",
         UpdateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             max_runtime_secs: Some(0),
@@ -143,6 +150,7 @@ fn svc_create_rejects_agent_config_without_prompt_placeholder() {
     let result = svc_create(
         &store,
         CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             goal: None,
             title: "Svc Create NoPrompt ZZZ".into(),

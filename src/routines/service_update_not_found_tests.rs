@@ -43,6 +43,7 @@ impl Drop for TempHome {
 /// Build a no-op update request (every field `None`); callers set one field.
 fn empty_update_request() -> UpdateRoutineRequest {
     UpdateRoutineRequest {
+        disabled_reason: None,
         model: None,
         goal: None,
         schedule: None,
@@ -96,6 +97,7 @@ fn svc_update_not_found_when_no_schedule_and_id_missing() {
             &store,
             "nonexistent-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 goal: None,
                 schedule: None,
@@ -118,6 +120,7 @@ fn svc_update_not_found_when_schedule_provided_and_id_missing() {
             &store,
             "nonexistent-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 goal: None,
                 schedule: Some("@daily".into()),

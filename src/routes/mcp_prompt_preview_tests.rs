@@ -72,6 +72,7 @@ fn preview_routine_prompt_success_contains_prompt() {
 
     let create_result = handler
         .create_routine(Parameters(crate::routines::CreateRoutineRequest {
+        disabled_reason: None,
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],

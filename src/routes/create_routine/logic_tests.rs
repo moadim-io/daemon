@@ -7,6 +7,7 @@ use super::{build, CreateRoutineRequest};
 
 fn make_req() -> CreateRoutineRequest {
     CreateRoutineRequest {
+        disabled_reason: None,
         model: None,
         schedule: "not-a-cron".into(),
         schedules: vec![],

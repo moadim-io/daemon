@@ -9,6 +9,7 @@ fn svc_create_trims_and_persists_goal() {
         let created = svc_create(
             &store,
             CreateRoutineRequest {
+        disabled_reason: None,
                 schedule: "@daily".into(),
                 schedules: vec![],
                 title: title.into(),
@@ -60,6 +61,7 @@ fn svc_update_clears_goal_with_empty_string() {
             &store,
             "upd-goal-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 schedule: None,
                 schedules: None,
                 title: None,
@@ -98,6 +100,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
             &store,
             "upd-sync-id",
             UpdateRoutineRequest {
+        disabled_reason: None,
                 model: None,
                 schedule: None,
                 schedules: None,

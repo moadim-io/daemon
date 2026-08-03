@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+Store routine disable intent in a tracked `disabled.json` marker with basic audit metadata while keeping legacy `enabled = false` TOML configs loadable.
+
 ## [3.2.3] - 2026-08-01
 
 Protect REST/MCP with optional MOADIM_API_TOKEN authentication and send that token from the CLI/UI.

@@ -85,3 +85,7 @@ mod routine_storage_env_tests;
 #[cfg(test)]
 #[path = "routine_storage_location_tests.rs"]
 mod routine_storage_location_tests;
+
+#[cfg(test)]
+#[path = "routine_storage_disabled_json_tests.rs"]
+mod routine_storage_disabled_json_tests;

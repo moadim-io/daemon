@@ -108,6 +108,13 @@ pub fn routine_cron_path(id: &str) -> PathBuf {
     routine_dir(id).join("schedule.cron")
 }
 
+/// Returns the path to `{routines_dir}/{id}/disabled.json`, the tracked marker whose presence
+/// disables the routine while carrying basic audit metadata.
+#[must_use]
+pub fn routine_disabled_json_path(id: &str) -> PathBuf {
+    routine_dir(id).join("disabled.json")
+}
+
 /// Returns the path to `{routines_dir}/{id}/schedule.compailed.cron`, the gitignored cron-union output.
 ///
 /// `schedule.cron` stays the human-authored source; this derived file is rewritten by crontab

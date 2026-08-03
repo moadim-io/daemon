@@ -10,6 +10,9 @@ use crate::utils::lock::LockRecover;
 #[path = "read_runtime_state.rs"]
 mod read_runtime_state;
 pub(crate) use read_runtime_state::*;
+#[path = "routine_disabled_state.rs"]
+mod routine_disabled_state;
+pub(crate) use routine_disabled_state::*;
 
 // Re-exported (as `super::routines_dir`) for `routine_storage_migrations`; not called directly
 // in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
@@ -61,6 +64,12 @@ struct RoutineToml {
     #[serde(default)]
     machines: Vec<String>,
     /// Whether the routine is enabled.
+    ///
+    /// **Read-only / legacy.** Disable intent now lives in the tracked `disabled.json` marker:
+    /// marker present means disabled, marker absent means enabled. This field is still parsed so
+    /// older routine.toml files with `enabled = false` continue to load during migration, but it is
+    /// never written back.
+    #[serde(default, skip_serializing)]
     enabled: Option<bool>,
     /// Whether the routine may launch while the host is in system power saving.
     #[serde(default)]

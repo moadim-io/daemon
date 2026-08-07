@@ -18,6 +18,7 @@ import {
 const ROUTE_PATH: Record<string, string> = {
   home: "/",
   routines: "/routines",
+  runs: "/runs",
   heatmap: "/heatmap",
   reliability: "/reliability",
   machines: "/machines",

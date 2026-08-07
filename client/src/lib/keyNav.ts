@@ -16,6 +16,7 @@ export interface NavChord {
 export const NAV_CHORDS: NavChord[] = [
   { key: "o", route: "/", label: "Overview" },
   { key: "r", route: "/routines", label: "Routines" },
+  { key: "u", route: "/runs", label: "Runs" },
   { key: "h", route: "/heatmap", label: "Heatmap" },
   { key: "l", route: "/reliability", label: "Reliability" },
   { key: "m", route: "/machines", label: "Machines" },

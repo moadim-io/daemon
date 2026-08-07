@@ -5,6 +5,7 @@ import { scheduleList } from "../lib/schedule";
 export type CmdKind =
   | "nav-overview"
   | "nav-routines"
+  | "nav-runs"
   | "nav-heatmap"
   | "nav-reliability"
   | "nav-machines"
@@ -14,7 +15,7 @@ export type CmdKind =
   | "action-stop"
   | "action-shortcuts";
 
-export type RouteKind = "home" | "routines" | "heatmap" | "reliability" | "machines" | "settings";
+export type RouteKind = "home" | "routines" | "runs" | "heatmap" | "reliability" | "machines" | "settings";
 
 export interface Command {
   kind: CmdKind;
@@ -34,6 +35,8 @@ export function routeFor(kind: CmdKind): RouteKind | undefined {
     case "nav-routines":
     case "routine":
       return "routines";
+    case "nav-runs":
+      return "runs";
     case "nav-heatmap":
       return "heatmap";
     case "nav-reliability":
@@ -52,6 +55,7 @@ export function badgeFor(kind: CmdKind): string {
   switch (kind) {
     case "nav-overview":
     case "nav-routines":
+    case "nav-runs":
     case "nav-heatmap":
     case "nav-reliability":
     case "nav-machines":
@@ -159,6 +163,12 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
       title: "Routines",
       subtitle: "Manage agent-driven routines",
       keywords: "agents automation",
+    },
+    {
+      kind: "nav-runs",
+      title: "Runs",
+      subtitle: "Fleet-wide filterable run history",
+      keywords: "history activity feed builds jobs log runs",
     },
     {
       kind: "nav-heatmap",

@@ -141,10 +141,11 @@ describe("buildCommands", () => {
 
   it("lists pages then actions then routines", () => {
     const commands = buildCommands([routine({ title: "Nightly Audit", schedule: "0 0 * * *" })]);
-    expect(commands).toHaveLength(10); // 6 nav + 3 action + 1 routine
+    expect(commands).toHaveLength(11); // 7 nav + 3 action + 1 routine
     expect(commands.map((c) => c.kind)).toEqual([
       "nav-overview",
       "nav-routines",
+      "nav-runs",
       "nav-heatmap",
       "nav-reliability",
       "nav-machines",
@@ -154,11 +155,11 @@ describe("buildCommands", () => {
       "action-shortcuts",
       "routine",
     ]);
-    expect(commands[5]!.keywords).toContain("theme");
-    expect(commands[8]!.keywords).toContain("chord");
-    expect(commands[9]!.title).toBe("Nightly Audit");
-    expect(commands[9]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
-    expect(commands[9]!.keywords).toContain("claude");
+    expect(commands[6]!.keywords).toContain("theme");
+    expect(commands[9]!.keywords).toContain("chord");
+    expect(commands[10]!.title).toBe("Nightly Audit");
+    expect(commands[10]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
+    expect(commands[10]!.keywords).toContain("claude");
   });
 });
 
@@ -214,6 +215,7 @@ describe("routeFor / badgeFor", () => {
   it("maps every kind to its route", () => {
     expect(routeFor("nav-overview")).toBe("home");
     expect(routeFor("nav-routines")).toBe("routines");
+    expect(routeFor("nav-runs")).toBe("runs");
     expect(routeFor("nav-heatmap")).toBe("heatmap");
     expect(routeFor("nav-reliability")).toBe("reliability");
     expect(routeFor("nav-machines")).toBe("machines");
@@ -226,6 +228,7 @@ describe("routeFor / badgeFor", () => {
   it("maps every kind to its badge", () => {
     expect(badgeFor("nav-overview")).toBe("GO");
     expect(badgeFor("nav-routines")).toBe("GO");
+    expect(badgeFor("nav-runs")).toBe("GO");
     expect(badgeFor("nav-heatmap")).toBe("GO");
     expect(badgeFor("nav-reliability")).toBe("GO");
     expect(badgeFor("nav-machines")).toBe("GO");

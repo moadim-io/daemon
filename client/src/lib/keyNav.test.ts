@@ -5,6 +5,7 @@ describe("routeForChordKey", () => {
   it("resolves every bound chord letter to its route", () => {
     expect(routeForChordKey("o")).toBe("/");
     expect(routeForChordKey("r")).toBe("/routines");
+    expect(routeForChordKey("u")).toBe("/runs");
     expect(routeForChordKey("h")).toBe("/heatmap");
     expect(routeForChordKey("l")).toBe("/reliability");
     expect(routeForChordKey("m")).toBe("/machines");

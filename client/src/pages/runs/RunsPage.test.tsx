@@ -60,6 +60,11 @@ describe("RunsPage", () => {
     expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();
   });
 
+  it("links each run to its own deep-linkable detail page", () => {
+    renderPage([run({ workbench: "wb1", routine_title: "Nightly Audit" })]);
+    expect(screen.getByRole("link", { name: "VIEW RUN" })).toHaveAttribute("href", "/runs/r1/wb1");
+  });
+
   it("filters the list by status", () => {
     renderPage([
       run({ workbench: "wb1", routine_title: "Nightly Audit", status: "success" }),

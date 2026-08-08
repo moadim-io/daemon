@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useRoutineRuns, useRunLog } from "../../api/hooks";
 import { fmtFreshness } from "../../components/RefreshControl";
 import { abstime, reltime } from "../../lib/cronUtils";
@@ -110,6 +111,9 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
                         >
                           {isSelected ? "HIDE LOG" : "VIEW LOG"}
                         </button>
+                        <Link to={`/runs/${encodeURIComponent(id)}/${encodeURIComponent(run.workbench)}`} className="act-btn">
+                          PERMALINK
+                        </Link>
                       </td>
                     </tr>
                   );

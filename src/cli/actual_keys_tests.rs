@@ -51,6 +51,31 @@ fn readme_stop_json_shape_matches_actual_keys() {
     );
 }
 
+// README's "Scripting" section sells `--json` output as safe to pipe straight into `jq` without
+// buffering (e.g. `moadim status --json | jq -r .pid`); a formatter that ever emitted pretty-printed
+// (multi-line) JSON would silently break that documented pipeline. `serde_json::json!(...).to_string()`
+// always emits compact JSON, but these guard the promise directly at the formatter boundary rather
+// than relying on that being true forever.
+#[test]
+fn status_json_is_a_single_line() {
+    let health = HealthInfo {
+        uptime_secs: 42,
+        version: "0.1.0".to_string(),
+        crontab_sync: None,
+    };
+    assert!(!status_json(true, Some(7), Some(&health)).contains('\n'));
+}
+
+#[test]
+fn cleanup_json_is_a_single_line() {
+    assert!(!cleanup_json(3, 12345, true).contains('\n'));
+}
+
+#[test]
+fn stop_json_is_a_single_line() {
+    assert!(!stop_json(true, Some(7)).contains('\n'));
+}
+
 #[test]
 fn print_help_and_version_emit_without_panicking() {
     print_help();

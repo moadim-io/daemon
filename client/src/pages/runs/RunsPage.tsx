@@ -157,6 +157,7 @@ export function RunsPage() {
                 <th>DURATION</th>
                 <th>STATUS</th>
                 <th>EXIT CODE</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -179,6 +180,14 @@ export function RunsPage() {
                     <span className={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
                   </td>
                   <td>{run.exit_code == null ? "—" : run.exit_code}</td>
+                  <td>
+                    <Link
+                      to={`/runs/${encodeURIComponent(run.routine_id)}/${encodeURIComponent(run.workbench)}`}
+                      className="act-btn logs"
+                    >
+                      VIEW RUN
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

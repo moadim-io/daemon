@@ -542,3 +542,13 @@ struct_excessive_bools = "deny"
 # the routine's existing `schedule: String` field. The rest of the codebase is already clean, so
 # `deny` locks that in.
 assigning_clones = "deny"
+# Reject manual bounds-checking before a numeric `as` cast (e.g. checking a value fits `u32`'s
+# range, then casting) in favour of `TryFrom`/`TryInto`. This codebase already denies
+# `cast_lossless`, `cast_sign_loss`, `cast_possible_wrap`, and `cast_precision_loss` to keep every
+# numeric cast honest about the invariants it relies on; a hand-rolled range check before an `as`
+# cast is the same problem those lints guard against, just written out manually — easy to get the
+# boundary condition wrong (off-by-one, wrong comparison operator, forgetting a bound), and the
+# compiler can't verify it for you. `TryFrom`/`TryInto` express the same check as a single call the
+# compiler validates, with the failure path made explicit via `Result`. The codebase is already
+# clean, so `deny` locks that in.
+checked_conversions = "deny"

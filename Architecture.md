@@ -201,7 +201,14 @@ failure (bad URL, unreachable host, missing `branch`) aborts the run and is reco
 the same as a failed prompt copy or `setup` step.
 
 The spawned script runs under a *login* shell (`sh -lc`) so the user's `~/.profile` is sourced and
-the agent inherits their environment (`GH_TOKEN`, API keys, …). Everything after the workbench
+the agent inherits their environment (`GH_TOKEN`, API keys, …). A routine's own `[env]` values
+(`routine.toml`, overlaid with the untracked `routine.local.toml` secrets sidecar) reach the agent
+the same way, but never as a literal in that `sh -lc` command string: `spawn_routine_command` sets
+them on the spawned process's own environment (`Command::envs`, `/proc/<pid>/environ`, owner-only)
+under private carrier names, and the command string only contains an `export KEY="$carrier"`
+indirection naming the variable, not its value — the command string becomes this process's argv,
+which is world-readable via `ps`/`/proc/<pid>/cmdline` for as long as the launcher shell runs (#1515).
+Everything after the workbench
 `mkdir` is redirected into `$WB/launch.log`, so a failure in the prompt copy, the agent's `setup`
 step, or the `tmux` launch itself is captured next to the run's other artifacts instead of being
 lost. `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's

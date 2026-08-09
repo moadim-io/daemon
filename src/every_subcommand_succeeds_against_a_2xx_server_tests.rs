@@ -101,6 +101,12 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
         &["sched", "trigger", "sid"],
         // top-level
         &["agents"],
+        // global routine lock
+        &["lock"],
+        &["lock", "--scope", "local"],
+        &["unlock"],
+        &["unlock", "--scope", "shared"],
+        &["lock-status"],
     ];
     for call in calls {
         assert_eq!(run(argv(call)), 0, "call {call:?}");
@@ -162,5 +168,15 @@ fn no_server_returns_not_running_exit_code() {
         run(argv(&["schedule", "trigger", "sid"])),
         crate::cli::EXIT_NOT_RUNNING
     );
+    // `lock-status` reaches the same not-running path.
+    assert_eq!(run(argv(&["lock-status"])), crate::cli::EXIT_NOT_RUNNING);
+}
+
+#[test]
+fn lock_rejects_unknown_scope() {
+    // The server validates `scope` and answers 400; the CLI just surfaces the non-2xx as exit 1.
+    let server = FakeServer::start(400, "{\"error\":\"unknown scope\"}");
+    let _addr = EnvGuard::set(BIND_ENV, &server.addr);
+    assert_eq!(run(argv(&["lock", "--scope", "bogus"])), 1);
 }
 include!("enable_disable_report_server_echoed_state_tests.rs");

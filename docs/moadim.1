@@ -122,6 +122,18 @@ Turn a routine off (set enabled=false) by id or slug.
 .TP
 .B agents
 List available agent keys.
+.TP
+.BR "lock " [ \-\-scope " " shared | local ]
+Create a lock sentinel, halting all routine scheduling and triggers without touching any
+individual routine's enabled state. Scope defaults to
+.BR shared .
+.TP
+.BR "unlock " [ \-\-scope " " shared | local | all ]
+Remove lock sentinel(s), restoring prior scheduling. Scope defaults to
+.BR all .
+.TP
+.B lock-status
+Show the current global lock status (whether the shared and/or local sentinel is present).
 .SH OPTIONS
 .TP
 .B \-\-json

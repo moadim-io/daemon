@@ -48,7 +48,7 @@ pnpm --filter client test
 
 `cargo llvm-cov` runs the test suite with instrumentation and enforces 100%
 line coverage (excluding `main.rs`). `linecheck` keeps any single `.rs` file
-under `src/` from growing past 500 lines — a convention two independently
+under `src/` from growing past 200 lines — a convention two independently
 green PRs can each respect yet still blow past together, since it isn't a
 required branch-protection check (see the `linecheck` job in
 [`lint.yml`](.github/workflows/lint.yml)). `client/` isn't a Cargo workspace

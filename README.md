@@ -390,7 +390,8 @@ agent run. The web Notification Center turns that field into a persistent bell
 notification so the operator can review the routine and choose `Run now`
 manually if appropriate.
 
-Blank or unset `MOADIM_API_TOKEN` disables auth.
+Blank or unset `MOADIM_API_TOKEN` disables auth. A non-loopback bind address
+(see [Bind address](#bind-address)) is refused at startup
 unless either `MOADIM_API_TOKEN` is set (protected remote use) or
 `MOADIM_ALLOW_REMOTE=1` is set (explicit unauthenticated override; logs a loud
 RCE warning). Prefer a token plus firewall/VPN/reverse-proxy restrictions for
@@ -659,8 +660,8 @@ MOADIM_BIND_ADDR=127.0.0.1:7000 moadim
 MOADIM_BIND_ADDR=127.0.0.1:7000 moadim status
 ```
 
-> **⚠️ Keep the bind address on loopback.** The REST API and the MCP endpoint are
-> **unauthenticated** — there is no token, password, or per-client check. Anyone who
+> **⚠️ Keep the bind address on loopback.** Unless `MOADIM_API_TOKEN` is set, the REST
+> API and the MCP endpoint are **unauthenticated** — no token, password, or per-client check. Anyone who
 > can reach the bind address can create, edit, and trigger routines, and a triggered
 > routine launches an agent on your machine with your credentials. Binding to a
 > routable interface therefore hands that control surface — effectively remote code
@@ -673,14 +674,15 @@ MOADIM_BIND_ADDR=127.0.0.1:7000 moadim status
 
 Because that risk is easy to hit by accident (a copy-pasted `0.0.0.0` to "just get it
 working" on a container/VM), the daemon **refuses to start** if `MOADIM_BIND_ADDR` resolves
-to a non-loopback address, unless you explicitly opt in:
+to a non-loopback address, unless `MOADIM_API_TOKEN` is set or you explicitly opt in:
 
 ```sh
-# Refused at startup — 0.0.0.0 is not loopback and MOADIM_ALLOW_REMOTE isn't set:
+# Refused at startup — 0.0.0.0 is not loopback, and neither MOADIM_API_TOKEN nor
+# MOADIM_ALLOW_REMOTE is set:
 MOADIM_BIND_ADDR=0.0.0.0:5784 moadim
-# moadim: refusing to bind to 0.0.0.0:5784: it is not loopback-only, and the REST/MCP API
-# has no authentication — ... Set MOADIM_ALLOW_REMOTE=1 to start anyway if you understand
-# and accept that risk.
+# moadim: refusing to bind to 0.0.0.0:5784: it is not loopback-only and MOADIM_API_TOKEN
+# is not set. Set MOADIM_API_TOKEN to protect REST/MCP with a bearer token, or set
+# MOADIM_ALLOW_REMOTE=1 to start without auth if you understand and accept the RCE risk.
 
 # Starts, but logs a prominent warning every time, because you opted in:
 MOADIM_ALLOW_REMOTE=1 MOADIM_BIND_ADDR=0.0.0.0:5784 moadim

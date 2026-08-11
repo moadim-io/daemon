@@ -589,12 +589,26 @@ moadim routines delete <id>
 moadim enable <routine>       # set enabled = true
 moadim disable <routine>      # set enabled = false  (--json for a {routine,enabled} object)
 
+# Backup / migration (offline — works without a running daemon)
+moadim export                          # print a JSON bundle of every tracked config file
+moadim export --out moadim-backup.json # write the bundle to a file instead
+moadim import moadim-backup.json --dry-run  # preview what would be created/overwritten/skipped
+moadim import moadim-backup.json       # restore; existing files are skipped unless --force
+
 # Misc
 moadim agents                 # list available agent keys
 moadim machine show           # print this install's resolved machine name + where it came from
 moadim machine set <name>     # persist a machine name to machine.local.toml
 moadim machine list           # list distinct machine names referenced by any routine's `machines`
 ```
+
+`moadim export` captures the tracked config only — per-routine `routine.toml`, `schedule.cron`,
+`disabled.json`, and `prompts/prompt.pure.md`, the agent registry's `agents/*.toml`, plus
+`notifications.toml` and `user_prompt.md`. Gitignored runtime files (`*.local.*` sidecars —
+including secret env overrides — `*.pid`, `*.log`, compiled cron/prompt outputs) are never
+exported. `moadim import` validates the bundle (paths and `routine.toml` syntax) before writing
+anything, writes atomically, and skips existing files unless `--force` is given; run
+`moadim restart` afterwards so imported routines are resynced into the crontab.
 
 Pass `--help` to any subcommand (e.g. `moadim routines create --help`) for the full flag list.
 `--repositories` (routines) takes raw JSON. Optional flags map to a PATCH so

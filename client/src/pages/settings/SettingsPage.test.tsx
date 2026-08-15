@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { HealthResponse } from "../../api/hooks";
+import type { HealthResponse, MaxConcurrentRunsResponse } from "../../api/hooks";
 import { ToastProvider } from "../../shell/toasts";
 import { SettingsPage } from "./SettingsPage";
 
@@ -22,12 +22,17 @@ function health(overrides: Partial<HealthResponse> = {}): HealthResponse {
   };
 }
 
-function renderPage(seedPrompt?: string, healthData = health()) {
+function renderPage(
+  seedPrompt?: string,
+  healthData = health(),
+  maxConcurrentRuns: MaxConcurrentRunsResponse = { value: 4, override_value: null },
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (seedPrompt !== undefined) {
     queryClient.setQueryData(["config", "user-prompt"], seedPrompt);
   }
   queryClient.setQueryData(["health"], healthData);
+  queryClient.setQueryData(["config", "max-concurrent-runs"], maxConcurrentRuns);
   render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
@@ -97,10 +102,15 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("button", { name: "Retry sync now" })).toBeInTheDocument();
   });
 
+  function promptSaveButton() {
+    const saveButtons = screen.getAllByRole("button", { name: "Save" });
+    return saveButtons[saveButtons.length - 1];
+  }
+
   it("seeds the textarea from the loaded prompt and disables save until edited", () => {
     renderPage("existing prompt");
     expect(screen.getByPlaceholderText(/always run/)).toHaveValue("existing prompt");
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(promptSaveButton()).toBeDisabled();
     expect(screen.queryByText("unsaved changes")).not.toBeInTheDocument();
   });
 
@@ -109,7 +119,53 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByPlaceholderText(/always run/), {
       target: { value: "existing prompt, edited" },
     });
-    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+    expect(promptSaveButton()).not.toBeDisabled();
     expect(screen.getByText("unsaved changes")).toBeInTheDocument();
+  });
+
+  describe("concurrency cap", () => {
+    it("shows the effective cap and seeds the input from the saved override", () => {
+      renderPage("existing prompt", health(), { value: 6, override_value: 6 });
+      expect(screen.getByText("6", { selector: "strong" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Max concurrent runs override")).toHaveValue(6);
+    });
+
+    it("shows unbounded when the effective cap is 0", () => {
+      renderPage("existing prompt", health(), { value: 0, override_value: null });
+      expect(screen.getByText("unbounded")).toBeInTheDocument();
+    });
+
+    it("leaves the override input blank when no override is saved", () => {
+      renderPage("existing prompt", health(), { value: 4, override_value: null });
+      expect(screen.getByLabelText("Max concurrent runs override")).toHaveValue(null);
+    });
+
+    it("disables save until the override is edited, and rejects non-numeric input", () => {
+      renderPage("existing prompt", health(), { value: 4, override_value: null });
+      const saveButtons = screen.getAllByRole("button", { name: "Save" });
+      const concurrencySave = saveButtons[0];
+      expect(concurrencySave).toBeDisabled();
+
+      const input = screen.getByLabelText("Max concurrent runs override");
+      fireEvent.change(input, { target: { value: "-1" } });
+      expect(screen.getByText("must be a whole number ≥ 0")).toBeInTheDocument();
+      expect(concurrencySave).toBeDisabled();
+
+      fireEvent.change(input, { target: { value: "8" } });
+      expect(concurrencySave).not.toBeDisabled();
+      expect(screen.getByText("unsaved changes")).toBeInTheDocument();
+    });
+
+    it("only shows Clear once an override value is entered", () => {
+      renderPage("existing prompt", health(), { value: 4, override_value: null });
+      expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText("Max concurrent runs override"), { target: { value: "8" } });
+      expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+      expect(screen.getByLabelText("Max concurrent runs override")).toHaveValue(null);
+      expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+    });
   });
 });

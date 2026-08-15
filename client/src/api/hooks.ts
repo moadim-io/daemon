@@ -109,6 +109,29 @@ export function useSetUserPrompt() {
   });
 }
 
+// ─── Max concurrent runs config ────────────────────────────────────────────
+
+export type MaxConcurrentRunsResponse = Schemas["MaxConcurrentRunsResponse"];
+
+export function useMaxConcurrentRuns() {
+  return useQuery({
+    queryKey: ["config", "max-concurrent-runs"],
+    queryFn: async () => unwrap(await api.GET("/config/max-concurrent-runs")),
+  });
+}
+
+/** `value: null` clears the override, falling back to the env var/default. */
+export function useSetMaxConcurrentRuns() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (value: number | null) =>
+      unwrap(await api.PUT("/config/max-concurrent-runs", { body: { value } })),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["config", "max-concurrent-runs"], data);
+    },
+  });
+}
+
 // ─── Routines ───────────────────────────────────────────────────────────────
 
 export interface ListRoutinesParams {

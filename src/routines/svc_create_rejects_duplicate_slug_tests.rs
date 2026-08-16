@@ -30,6 +30,7 @@ fn svc_create_rejects_duplicate_slug() {
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();
@@ -56,6 +57,7 @@ fn svc_create_rejects_duplicate_slug() {
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         );
         assert!(matches!(conflict, Err(AppError::Conflict(_))));

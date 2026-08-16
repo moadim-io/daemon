@@ -75,6 +75,8 @@ fn reconcile(spec: &DefaultRoutine, cur: &Routine, now: u64) -> Option<Routine> 
         tags: cur.tags.clone(),
         // Env vars are user-owned, like `tags`: never overridden by the spec.
         env: cur.env.clone(),
+        // Timezone is user-owned, like `tags`/`env`: never overridden by the spec.
+        timezone: cur.timezone.clone(),
     })
 }
 

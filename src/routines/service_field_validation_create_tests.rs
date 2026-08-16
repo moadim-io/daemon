@@ -62,6 +62,7 @@ pub(super) fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -86,6 +87,7 @@ pub(super) fn create_req_with_title(title: &str) -> CreateRoutineRequest {
         env: std::collections::HashMap::new(),
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -146,10 +148,97 @@ fn svc_create_rejects_unknown_agent() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
             notifications: Default::default(),
+            timezone: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
     // Nothing should have been persisted.
+    assert!(store.lock().unwrap().is_empty());
+}
+
+/// Build a create request with the given title and `timezone`, otherwise valid.
+fn create_req_with_timezone(title: &str, timezone: Option<&str>) -> CreateRoutineRequest {
+    CreateRoutineRequest {
+        timezone: timezone.map(str::to_string),
+        ..create_req_with_title(title)
+    }
+}
+
+#[test]
+fn svc_create_rejects_an_unknown_timezone_name() {
+    let _home = TempHome::set();
+    // Covers `validate_timezone`'s IANA-lookup reject branch: a string that merely looks like a
+    // zone name, but is not present in the on-disk zoneinfo database, 400s rather than being
+    // persisted and silently never applied (issue #405).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        create_req_with_timezone(
+            "Svc Create Unknown Timezone ZZZ",
+            Some("Definitely/Not_A_Zone"),
+        ),
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_rejects_a_path_traversal_timezone_value() {
+    let _home = TempHome::set();
+    // A crafted value must not reach the filesystem check at all (issue #405).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        create_req_with_timezone(
+            "Svc Create Traversal Timezone ZZZ",
+            Some("../../etc/passwd"),
+        ),
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
+    assert!(store.lock().unwrap().is_empty());
+}
+
+#[test]
+fn svc_create_treats_a_blank_timezone_as_unset() {
+    let _home = TempHome::set();
+    // Mirrors `model`: a blank/whitespace-only value is not an error, it just means "no override".
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        create_req_with_timezone("Svc Create Blank Timezone ZZZ", Some("   ")),
+    )
+    .expect("blank timezone should not be rejected");
+    assert_eq!(result.routine.timezone, None);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn svc_create_accepts_a_valid_iana_timezone_on_linux() {
+    let _home = TempHome::set();
+    // The accept path only runs on Linux — `CRON_TZ` is a vixie-cron/cronie (Linux) extension,
+    // so the same request must 400 on any other host (see
+    // `svc_create_rejects_timezone_override_on_non_linux_hosts` below).
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        create_req_with_timezone("Svc Create Valid Timezone ZZZ", Some("Asia/Jerusalem")),
+    )
+    .expect("a real IANA zone name should be accepted on Linux");
+    assert_eq!(result.routine.timezone.as_deref(), Some("Asia/Jerusalem"));
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn svc_create_rejects_timezone_override_on_non_linux_hosts() {
+    let _home = TempHome::set();
+    // `CRON_TZ` is not honored by BSD `cron` (macOS); even a real IANA zone name must be rejected
+    // outright here rather than accepted and then silently ignored at crontab-sync time.
+    let store = new_store();
+    let result = svc_create(
+        &store,
+        create_req_with_timezone("Svc Create Timezone Non-Linux ZZZ", Some("Asia/Jerusalem")),
+    );
+    assert!(matches!(result, Err(AppError::BadRequest(_))));
     assert!(store.lock().unwrap().is_empty());
 }
 include!("svc_create_accepts_builtin_agent_tests.rs");

@@ -61,6 +61,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         env: None,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

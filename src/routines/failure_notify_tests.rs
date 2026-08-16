@@ -73,6 +73,7 @@ fn routine(config: FailureNotificationConfig) -> Routine {
         notifications: config,
         tags: vec![],
         env: std::collections::HashMap::new(),
+        timezone: None,
     }
 }
 

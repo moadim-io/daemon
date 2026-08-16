@@ -158,4 +158,56 @@ pub(super) fn validate_title(title: &str) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+/// Directory containing the system IANA timezone database, used to check a submitted `timezone`
+/// name actually exists rather than accepting any string that merely looks plausible. Present on
+/// every mainstream Linux distribution.
+#[cfg(target_os = "linux")]
+const ZONEINFO_DIR: &str = "/usr/share/zoneinfo";
+
+/// Validate and normalize an optional routine `timezone` override (issue #405): a
+/// blank/whitespace-only value clears it back to the host crontab's own zone (`None`), mirroring
+/// `normalize_model`; a non-blank value must name a real IANA zone, checked against the on-disk
+/// zoneinfo database rather than any hand-rolled list, so the accepted set always matches what the
+/// host's own `cron`/`libc` would resolve.
+///
+/// `#[cfg(target_os = "linux")]`, not a runtime check: `CRON_TZ` (the mechanism
+/// `crate::sync::routines` uses to apply the override) is a vixie-cron/cronie extension that BSD
+/// `cron` (macOS) does not honor, so a non-Linux build never even offers the accept path — see the
+/// sibling `#[cfg(not(target_os = "linux"))]` definition below, which rejects unconditionally.
+#[cfg(target_os = "linux")]
+pub(super) fn validate_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(trimmed) = timezone.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    // Reject path traversal / absolute-path-looking input before it ever touches the filesystem
+    // (e.g. `"../../etc/passwd"`) — a valid IANA name never contains `..` or starts with `/`.
+    if trimmed.starts_with('/') || trimmed.split('/').any(|segment| segment == "..") {
+        return Err(AppError::BadRequest(format!(
+            "unknown timezone {trimmed:?}"
+        )));
+    }
+    if !std::path::Path::new(ZONEINFO_DIR).join(trimmed).is_file() {
+        return Err(AppError::BadRequest(format!(
+            "unknown timezone {trimmed:?}; expected an IANA name (e.g. \"Asia/Jerusalem\")"
+        )));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+/// Non-Linux counterpart of [`validate_timezone`]: a blank/whitespace-only value is still a no-op
+/// (`Ok(None)`), but any real value is rejected outright — `CRON_TZ` is not honored by BSD `cron`
+/// (macOS), so silently accepting and then never applying it would be worse than refusing it.
+#[cfg(not(target_os = "linux"))]
+pub(super) fn validate_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
+    if timezone.map(str::trim).is_none_or(str::is_empty) {
+        return Ok(None);
+    }
+    Err(AppError::BadRequest(
+        "routine timezone is only supported on Linux hosts: CRON_TZ is not honored by BSD cron \
+         (macOS)"
+            .to_string(),
+    ))
+}
+
 include!("validate_repositories.rs");

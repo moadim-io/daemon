@@ -1340,6 +1340,13 @@
             },
             "description": "Free-form labels for the routine (defaults to empty). Each entry is trimmed\nand must be non-blank."
           },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) to pin the schedule to, or `None` to use the\nhost crontab's own zone (today's behavior). Only accepted on Linux, since `CRON_TZ` is not\nhonored by BSD `cron` (macOS) — see `Routine::timezone`."
+          },
           "title": {
             "type": "string",
             "description": "Human name for the routine."
@@ -1905,6 +1912,13 @@
             },
             "description": "Free-form labels for grouping and filtering routines (e.g. `\"triage\"`, `\"nightly\"`).\nDefaults to empty; each entry is trimmed and must be non-blank."
           },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) this routine's schedule is interpreted in,\noverriding the host's local system timezone. `None` (the default) preserves today's\nbehavior: the schedule runs in whatever zone the host crontab itself uses, which silently\nchanges if the host's zone ever changes (issue #405).\n\nEmitted as a `CRON_TZ=<tz>` directive ahead of this routine's line(s) in the managed\ncrontab block ([`crate::sync::routines`]). Only vixie-cron/cronie (Linux) honor `CRON_TZ`;\nBSD `cron` (macOS) does not, so setting this field is rejected outright on non-Linux hosts\n(see `service_validate::validate_timezone`) rather than silently doing nothing."
+          },
           "title": {
             "type": "string",
             "description": "Human name; slugified to name the workbench and tmux session."
@@ -2322,6 +2336,13 @@
               "type": "string"
             },
             "description": "New tags list, or `None` to keep the existing value."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New timezone override, or `None` to keep the existing value. A blank/whitespace-only value\nclears the override back to the host crontab's own zone. See\n[`CreateRoutineRequest::timezone`] for validation rules."
           },
           "title": {
             "type": [

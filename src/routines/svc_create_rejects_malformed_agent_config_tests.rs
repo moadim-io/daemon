@@ -39,6 +39,7 @@ fn svc_create_rejects_malformed_agent_config() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     match result {
@@ -79,6 +80,7 @@ fn svc_create_rejects_unreadable_agent_config() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     match result {
@@ -126,6 +128,7 @@ fn svc_update_rejects_malformed_agent_config() {
             env: None,
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     match result {

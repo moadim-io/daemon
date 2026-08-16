@@ -86,6 +86,43 @@ pub(crate) fn format_routine_line_for_schedule(routine: &Routine, schedule: &str
     )
 }
 
+/// Build the `CRON_TZ=<tz>` directive line to place immediately ahead of `routine`'s crontab
+/// line(s), or `None` when nothing needs to be emitted (issue #405).
+///
+/// Emitted unconditionally ahead of *every* routine's line group — rather than only on a
+/// zone change from the previous routine — because `CRON_TZ` persists in the crontab file until
+/// reassigned: without a directive of its own, a routine with no override would silently inherit
+/// whatever zone the previous routine in the (deterministically sorted) block happened to set.
+///
+/// - On Linux, a routine with a (validated — see `service_validate::validate_timezone`) override
+///   emits that zone.
+/// - Otherwise (no override, or a non-Linux build where an override can never be set in the first
+///   place) emits the host's own resolvable local zone, making the otherwise implicit "runs in the
+///   host's zone" explicit and immune to the previous routine's directive. Emits nothing when the
+///   host zone can't be named ([`crate::routines::local_timezone`] returns `None`), exactly
+///   preserving pre-#405 behavior (no `CRON_TZ` line at all) for that case.
+///
+/// `#[cfg(target_os = "linux")]`-gated below, not a runtime check: `CRON_TZ` is a vixie-cron/cronie
+/// (Linux) extension that BSD `cron` (macOS) does not honor, so a non-Linux build has no accept
+/// path for `Routine::timezone` to begin with (`service_validate::validate_timezone` rejects it at
+/// create/update time) and this function's non-Linux definition never looks at the field at all.
+#[cfg(target_os = "linux")]
+fn cron_tz_line_for(routine: &Routine) -> Option<String> {
+    match routine.timezone.as_deref() {
+        Some(tz) => Some(format!("CRON_TZ={tz}")),
+        None => crate::routines::local_timezone().map(|host_tz| format!("CRON_TZ={host_tz}")),
+    }
+}
+
+/// Non-Linux counterpart of [`cron_tz_line_for`]: `Routine::timezone` can never be set on this
+/// platform (rejected at create/update time), so this always emits the host's own zone — see the
+/// `#[cfg(target_os = "linux")]` definition above for the override-aware behavior.
+#[cfg(not(target_os = "linux"))]
+fn cron_tz_line_for(routine: &Routine) -> Option<String> {
+    let _ = routine;
+    crate::routines::local_timezone().map(|host_tz| format!("CRON_TZ={host_tz}"))
+}
+
 /// Format a single routine using its public schedule field.
 #[cfg(test)]
 pub(crate) fn format_routine_line(routine: &Routine) -> String {

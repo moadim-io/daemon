@@ -44,6 +44,7 @@ async fn build_app_serves_machines() {
             consecutive_failures: 0,
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     let resp = build_app(routines)

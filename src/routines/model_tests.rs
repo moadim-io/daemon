@@ -85,6 +85,7 @@ fn make_routine(agent: &str) -> Routine {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -168,5 +169,31 @@ fn from_routine_agent_setup_available_true_when_no_setup_step() {
     let resp = RoutineResponse::from_routine(make_routine("model-test-no-setup"));
     assert!(resp.agent_registered);
     assert!(resp.agent_setup_available);
+}
+
+#[test]
+fn from_routine_timezone_reports_the_routine_override_not_the_host_zone() {
+    // Issue #405: `RoutineResponse.timezone` must reflect the routine's own override when set,
+    // not always the host's zone — otherwise a client has no way to see the effective zone a
+    // pinned routine actually fires in.
+    let _home = TempHome::set();
+    let mut routine = make_routine("model-test-tz-override");
+    routine.timezone = Some("Asia/Jerusalem".to_string());
+    let resp = RoutineResponse::from_routine(routine);
+    assert_eq!(resp.timezone.as_deref(), Some("Asia/Jerusalem"));
+    // The schedule description is annotated with the *effective* (overridden) zone too.
+    assert!(resp
+        .schedule_description
+        .as_deref()
+        .is_some_and(|desc| desc.contains("Asia/Jerusalem")));
+}
+
+#[test]
+fn from_routine_timezone_falls_back_to_host_zone_when_unset() {
+    // The pre-#405 behavior — no override — is unchanged: an unset `Routine::timezone` still
+    // reports whatever the host's own zone resolves to (`None` on a host where it can't be named).
+    let _home = TempHome::set();
+    let resp = RoutineResponse::from_routine(make_routine("model-test-tz-default"));
+    assert_eq!(resp.timezone, crate::routines::local_timezone());
 }
 include!("from_routine_agent_setup_available_true_when_setup_interpreter_resolve_tests.rs");

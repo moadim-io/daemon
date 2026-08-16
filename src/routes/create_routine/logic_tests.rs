@@ -25,6 +25,7 @@ fn make_req() -> CreateRoutineRequest {
         env: std::collections::HashMap::new(),
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

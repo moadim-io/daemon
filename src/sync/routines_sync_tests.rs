@@ -37,6 +37,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -136,3 +137,4 @@ struct CronShim {
     previous: Option<std::ffi::OsString>,
 }
 include!("new_with_write_delay_tests.rs");
+include!("cron_tz_directive_tests.rs");

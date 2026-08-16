@@ -105,6 +105,7 @@ fn materialize(spec: &DefaultRoutine, now: u64) -> Routine {
         notifications: Default::default(),
         tags: Vec::new(),
         env: std::collections::HashMap::new(),
+        timezone: None,
     }
 }
 include!("reconcile.rs");

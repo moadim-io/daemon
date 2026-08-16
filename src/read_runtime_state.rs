@@ -116,6 +116,7 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
         notifications: routine.notifications.clone(),
         tags: routine.tags.clone(),
         env: routine.env.clone(),
+        timezone: routine.timezone.clone(),
     };
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —

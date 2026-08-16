@@ -80,6 +80,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         env: std::collections::HashMap::new(),
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -103,6 +104,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         env: None,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

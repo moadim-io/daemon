@@ -79,6 +79,7 @@ fn referenced_machines_unions_routines() {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
 
@@ -157,6 +158,7 @@ fn run_list_with_referenced_machine() {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     crate::routine_storage::write_routine(&routine).expect("write routine");
     assert_eq!(run(&["list".to_string()]), 0);

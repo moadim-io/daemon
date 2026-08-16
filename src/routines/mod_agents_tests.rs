@@ -40,6 +40,7 @@ fn make_routine(id: &str) -> Routine {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -132,6 +133,7 @@ fn svc_create_invalid_cron_rejected() {
         env: std::collections::HashMap::new(),
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     assert!(svc_create(&store, req).is_err());
 }

@@ -173,6 +173,17 @@ pub struct Routine {
     /// `service_validate::validate_env`).
     #[serde(default, skip_serializing)]
     pub env: std::collections::HashMap<String, String>,
+    /// IANA timezone name (e.g. `"Asia/Jerusalem"`) this routine's schedule is interpreted in,
+    /// overriding the host's local system timezone. `None` (the default) preserves today's
+    /// behavior: the schedule runs in whatever zone the host crontab itself uses, which silently
+    /// changes if the host's zone ever changes (issue #405).
+    ///
+    /// Emitted as a `CRON_TZ=<tz>` directive ahead of this routine's line(s) in the managed
+    /// crontab block ([`crate::sync::routines`]). Only vixie-cron/cronie (Linux) honor `CRON_TZ`;
+    /// BSD `cron` (macOS) does not, so setting this field is rejected outright on non-Linux hosts
+    /// (see `service_validate::validate_timezone`) rather than silently doing nothing.
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).

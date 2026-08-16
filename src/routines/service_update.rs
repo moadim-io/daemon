@@ -4,8 +4,9 @@ use super::{
     map_write_routine_err, max_runtime_ceiling_secs, min_schedule_ceiling, normalize_model,
     now_secs, reject_blank, reject_over_ceiling, reject_zero_secs, slugify, ttl_ceiling_secs,
     validate_agent, validate_and_normalize_schedules, validate_env, validate_goal,
-    validate_machines, validate_prompt, validate_repositories, validate_tags, validate_title,
-    write_routine, AppError, LockRecover, RoutineResponse, RoutineStore, UpdateRoutineRequest,
+    validate_machines, validate_prompt, validate_repositories, validate_tags, validate_timezone,
+    validate_title, write_routine, AppError, LockRecover, RoutineResponse, RoutineStore,
+    UpdateRoutineRequest,
 };
 
 /// Apply non-`None` fields from `req` to the routine identified by `id`.
@@ -58,6 +59,13 @@ pub fn svc_update(
     if let Some(ref env) = req.env {
         validate_env(env)?;
     }
+    // `Some(_)` (even a blank string) applies the change, clearing the override back to the host
+    // zone on blank input; `None` (the field omitted) leaves the existing value untouched —
+    // mirrors `model`, not the `Some(None)`-clears convention `goal` uses.
+    let timezone = match req.timezone {
+        Some(ref timezone) => Some(validate_timezone(Some(timezone))?),
+        None => None,
+    };
     let mut lock = store.lock_recover();
     let old_slug = slugify(&lock.get(id).ok_or(AppError::NotFound)?.title);
     // Check slug conflict before mutating.
@@ -174,6 +182,9 @@ pub fn svc_update(
     }
     if let Some(env) = req.env {
         routine.env = env;
+    }
+    if let Some(timezone) = timezone {
+        routine.timezone = timezone;
     }
     routine.updated_at = now_secs();
     let routine = routine.clone();

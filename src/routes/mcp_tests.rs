@@ -83,6 +83,7 @@ fn make_create_routine_req() -> crate::routines::CreateRoutineRequest {
         env: std::collections::HashMap::new(),
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -141,6 +142,7 @@ fn create_get_update_trigger_delete_routine_success() {
             tags: None,
             env: None,
             failure_threshold: None,
+            timezone: None,
         }))
         .unwrap();
     assert!(!result.is_error.unwrap_or(false));

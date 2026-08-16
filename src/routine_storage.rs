@@ -111,6 +111,10 @@ struct RoutineToml {
     /// gitignored `routine.local.toml` sidecar instead ([`RoutineLocalToml`]).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     env: HashMap<String, String>,
+    /// IANA timezone override the schedule is interpreted in; absent means the host crontab's own
+    /// zone (see [`crate::routines::Routine::timezone`], issue #405).
+    #[serde(default)]
+    timezone: Option<String>,
 }
 
 /// TOML representation of a routine's untracked `routine.local.toml` sidecar: secret or

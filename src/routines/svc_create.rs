@@ -31,6 +31,7 @@ pub fn svc_create(
     let goal = validate_goal(req.goal.as_deref())?;
     let machines = validate_machines(&req.machines)?;
     validate_env(&req.env)?;
+    let timezone = validate_timezone(req.timezone.as_deref())?;
     let slug = slugify(&req.title);
     {
         let lock = store.lock_recover();
@@ -79,6 +80,7 @@ pub fn svc_create(
         notifications: req.notifications,
         tags,
         env: req.env,
+        timezone,
     };
     write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     store

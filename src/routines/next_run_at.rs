@@ -11,6 +11,13 @@ use super::*;
 /// crontab semantics), reusing the same compiled schedule path as the TTL sweep
 /// (`cleanup::ttl::cron_interval_secs`).
 ///
+/// **Known gap (#405):** this always projects against the host's own zone via [`Local::now`],
+/// even for a routine with a [`Routine::timezone`] override — unlike the actual crontab firing
+/// (`crate::sync::routines::cron_tz_line_for`), which does honor it via `CRON_TZ`. Projecting a
+/// preview in an arbitrary IANA zone correctly (DST-aware, not just a fixed UTC offset) needs a
+/// zone database this crate does not depend on; left as a follow-up rather than risking a
+/// DST-wrong "next fire" preview shipping alongside the real (correct) crontab behavior.
+///
 /// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
 /// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
 pub(crate) fn next_run_at(schedules: &[String], enabled: bool) -> Option<u64> {
@@ -58,7 +65,10 @@ impl RoutineResponse {
             .join("routine.toml")
             .to_string_lossy()
             .into_owned();
-        let timezone = local_timezone();
+        // The routine's own override, when set, is the *effective* zone its schedule is
+        // interpreted in (see `Routine::timezone`); only fall back to the host's zone when unset,
+        // so this reflects reality instead of always reporting the host's zone (issue #405).
+        let timezone = routine.timezone.clone().or_else(local_timezone);
         let schedules = routine.effective_schedules();
         let schedule_description = schedules
             .first()

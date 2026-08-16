@@ -41,10 +41,13 @@ fn build_block(store: &RoutineStore) -> String {
                 let pure_schedules = pure_schedules_for_crontab(routine);
                 let compailed_schedules = compailed_schedules_for_crontab(routine, &pure_schedules);
                 write_compailed_cron_sidecar(routine, &compailed_schedules);
-                compailed_schedules
-                    .iter()
-                    .map(|schedule| format_routine_line_for_schedule(routine, schedule))
-                    .collect::<Vec<_>>()
+                let mut group: Vec<String> = cron_tz_line_for(routine).into_iter().collect();
+                group.extend(
+                    compailed_schedules
+                        .iter()
+                        .map(|schedule| format_routine_line_for_schedule(routine, schedule)),
+                );
+                group
             }),
             Err(err) => {
                 log::warn!(

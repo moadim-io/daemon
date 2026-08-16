@@ -73,6 +73,11 @@ pub struct CreateRoutineRequest {
     /// over the API.
     #[serde(default)]
     pub env: std::collections::HashMap<String, String>,
+    /// IANA timezone name (e.g. `"Asia/Jerusalem"`) to pin the schedule to, or `None` to use the
+    /// host crontab's own zone (today's behavior). Only accepted on Linux, since `CRON_TZ` is not
+    /// honored by BSD `cron` (macOS) — see `Routine::timezone`.
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 /// Request body for partially updating an existing routine.
@@ -124,4 +129,8 @@ pub struct UpdateRoutineRequest {
     /// merged); send the full desired set. See [`CreateRoutineRequest::env`] for validation rules
     /// and the `routine.local.toml` secrets sidecar.
     pub env: Option<std::collections::HashMap<String, String>>,
+    /// New timezone override, or `None` to keep the existing value. A blank/whitespace-only value
+    /// clears the override back to the host crontab's own zone. See
+    /// [`CreateRoutineRequest::timezone`] for validation rules.
+    pub timezone: Option<String>,
 }

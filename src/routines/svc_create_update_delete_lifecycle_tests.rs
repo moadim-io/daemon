@@ -23,6 +23,7 @@ fn svc_create_update_delete_lifecycle() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     )
     .unwrap();
@@ -57,6 +58,7 @@ fn svc_create_update_delete_lifecycle() {
             env: None,
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     )
     .unwrap();
@@ -91,6 +93,7 @@ fn svc_update_not_found() {
         env: None,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     assert!(svc_update(&new_store(), "missing", req).is_err());
 }
@@ -121,6 +124,7 @@ fn svc_update_invalid_cron_rejected() {
         env: None,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     assert!(svc_update(&store, "id", req).is_err());
 }

@@ -91,6 +91,7 @@ fn from_routine_populates_derived_fields() {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     let resp = RoutineResponse::from_routine(routine);
     assert!(resp.schedule_description.is_some());

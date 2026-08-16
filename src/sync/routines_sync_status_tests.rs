@@ -37,6 +37,7 @@ fn make_routine(id: &str, title: &str, agent: &str) -> Routine {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

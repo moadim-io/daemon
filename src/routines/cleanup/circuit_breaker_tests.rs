@@ -68,6 +68,7 @@ fn make_routine(
         failure_threshold,
         notifications: Default::default(),
         env: std::collections::HashMap::new(),
+        timezone: None,
     }
 }
 

@@ -44,6 +44,7 @@ async fn router_serves_per_routine_ical_feed_via_query() {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     };
     crate::routine_storage::write_routine(&mk("a", "Routine A")).unwrap();
     crate::routine_storage::write_routine(&mk("b", "Routine B")).unwrap();

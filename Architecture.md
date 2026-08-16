@@ -183,6 +183,21 @@ At create/update time moadim writes the raw prompt to `prompts/prompt.pure.md` a
 # END MOADIM-ROUTINES
 ```
 
+A routine's `schedule` is interpreted in the host's local system timezone (the OS crontab's own
+zone) by default. An optional per-routine `timezone` (IANA name, e.g. `"Asia/Jerusalem"`, validated
+against the on-disk zoneinfo database) pins it instead, so the schedule keeps firing at the intended
+wall-clock time regardless of what zone the host itself is in or later moves to (issue #405). This
+is emitted as a `CRON_TZ=<tz>` directive immediately ahead of the routine's line(s) in the managed
+block — `crate::sync::routines::cron_tz_line_for` emits one such directive ahead of *every* routine
+(falling back to the host's own resolvable zone when a routine has no override), because `CRON_TZ`
+persists in the crontab file until reassigned and would otherwise leak into the next routine's line.
+`CRON_TZ` is a vixie-cron/cronie (Linux) extension that BSD `cron` (macOS) does not honor, so setting
+`timezone` is rejected outright at create/update time on any non-Linux host
+(`routines::service_validate::validate_timezone`) rather than silently doing nothing. `next_run_at`
+and the `.ics` feed (below) still project fire times in the host's own local timezone regardless of
+a routine's override — only the actual crontab firing (via `CRON_TZ`) honors it; this is a known gap
+tracked for a follow-up.
+
 That crontab line does **not** launch the agent by itself — it invokes the `moadim` binary directly
 (`moadim schedule trigger <id>`, a thin HTTP client), which calls `POST
 /routines/{id}/scheduled-trigger` on the **running daemon**. Scheduled routines therefore require

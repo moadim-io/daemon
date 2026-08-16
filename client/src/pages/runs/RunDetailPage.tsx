@@ -1,9 +1,10 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useRoutine, useRoutineRuns, useRunLog } from "../../api/hooks";
+import { useRoutine, useRoutineRuns, useRunLog, useRunSummary } from "../../api/hooks";
 import { fmtFreshness } from "../../components/RefreshControl";
 import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
+import { AgentRunSummary } from "../routines/AgentRunSummary";
 import { LogViewer } from "../routines/LogViewer";
 
 /**
@@ -23,6 +24,7 @@ export function RunDetailPage() {
   const routineQuery = useRoutine(routineId);
   const runsQuery = useRoutineRuns(routineId);
   const logQuery = useRunLog(routineId, workbench);
+  const summaryQuery = useRunSummary(routineId, workbench);
 
   const runs = runsQuery.data ?? [];
   const index = runs.findIndex((r) => r.workbench === workbench);
@@ -122,6 +124,12 @@ export function RunDetailPage() {
               Newer run →
             </button>
           </div>
+
+          <AgentRunSummary
+            content={summaryQuery.data}
+            loading={summaryQuery.isLoading}
+            err={summaryQuery.isError ? summaryQuery.error.message : undefined}
+          />
 
           <LogViewer
             content={logQuery.data}

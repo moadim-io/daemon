@@ -277,6 +277,14 @@ exceeded, the sweep also evicts finished workbenches oldest-first (regardless
 of their individual TTL) until back under it. A live session is never evicted.
 Unset or `0` (the default) keeps today's unbounded-by-size behavior.
 
+**Repo cache and cleanup:** each routine's declared `repositories` are backed by a persistent
+local mirror cache under `{config_dir}/cache/`. A periodic sweep prunes any mirror no
+currently-stored routine references anymore (orphaned by deletion, a URL edit, or a one-off
+typo). Set `MOADIM_MAX_REPO_CACHE_DISK_BYTES` to a total byte ceiling for that cache tree; once
+exceeded, the sweep also evicts the least-recently-fetched mirrors still in use until back under
+it, the same convention as `MOADIM_MAX_WORKBENCH_DISK_BYTES`. Unset or `0` (the default) keeps
+today's unbounded-by-size behavior.
+
 **Failure notifications:** a run that finishes non-zero, with an unknown outcome, or after a
 max-runtime watchdog kill can fire an opt-in command and/or webhook exactly once when its outcome is
 persisted into `runs.log`. With no config, nothing fires and behavior is unchanged.

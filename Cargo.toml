@@ -552,3 +552,10 @@ assigning_clones = "deny"
 # compiler validates, with the failure path made explicit via `Result`. The codebase is already
 # clean, so `deny` locks that in.
 checked_conversions = "deny"
+# Reject a collection that is populated (pushed/inserted/extended into) but never read back — the
+# writes are dead code, and dead writes to a collection usually mean a logic bug: either the
+# result was supposed to be returned/logged/asserted and the read got lost in a refactor, or the
+# loop exists only for its side effects and the collection obscures that. Like
+# `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
+# results), not a style preference. The codebase is already clean, so `deny` locks that in.
+collection_is_never_read = "deny"

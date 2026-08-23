@@ -59,7 +59,12 @@ fn hermes_default_config_uses_oneshot_prompt_argument() {
         vec![
             "-z".to_string(),
             "{prompt}".to_string(),
-            "--ignore-rules".to_string()
+            "--ignore-rules".to_string(),
+            "--safe-mode".to_string(),
+            "--model".to_string(),
+            "gpt-5.6-luna".to_string(),
+            "--provider".to_string(),
+            "openai-codex".to_string()
         ]
     );
 }

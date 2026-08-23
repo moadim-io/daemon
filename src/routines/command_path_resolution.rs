@@ -31,9 +31,7 @@ pub(crate) fn tmux_available_in(path: &str) -> bool {
 
 /// Whether `tmux` resolves on the daemon's live `PATH`. Returns `false` when `PATH` is unset.
 pub(crate) fn tmux_available() -> bool {
-    std::env::var("PATH")
-        .ok()
-        .is_some_and(|path| tmux_available_in(&path))
+    std::env::var("PATH").is_ok_and(|path| tmux_available_in(&path))
 }
 
 /// Whether `command` resolves to a file on the given `:`-separated `path` list.
@@ -49,9 +47,7 @@ pub(crate) fn agent_command_available_in(path: &str, command: &str) -> bool {
 
 /// Whether `command` resolves on the daemon's live `PATH`. Returns `false` when `PATH` is unset.
 pub(crate) fn agent_command_available(command: &str) -> bool {
-    std::env::var("PATH")
-        .ok()
-        .is_some_and(|path| agent_command_available_in(&path, command))
+    std::env::var("PATH").is_ok_and(|path| agent_command_available_in(&path, command))
 }
 
 /// The first whitespace-delimited token of an agent's `setup` step — the interpreter or binary it

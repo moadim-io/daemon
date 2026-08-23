@@ -2,6 +2,9 @@
 #[test]
 fn svc_create_update_delete_lifecycle() {
     let store = new_store();
+    let suffix = uuid::Uuid::new_v4().to_string();
+    let created_title = format!("Cov Routine {suffix}");
+    let renamed_title = format!("Renamed {suffix}");
     let created = svc_create(
         &store,
         CreateRoutineRequest {
@@ -9,7 +12,7 @@ fn svc_create_update_delete_lifecycle() {
             model: None,
             schedule: "@daily".into(),
             schedules: vec![],
-            title: "Cov Routine".into(),
+            title: created_title.clone(),
             agent: "claude".into(),
             prompt: "p".into(),
             goal: None,
@@ -28,8 +31,9 @@ fn svc_create_update_delete_lifecycle() {
     .unwrap();
     let id = created.routine.id;
     // folder is slug of the title, not the UUID
-    assert!(crate::paths::routine_toml_path("cov-routine").exists());
-    assert!(crate::paths::routine_compiled_prompt_path("cov-routine").exists());
+    let created_slug = slugify(&created_title);
+    assert!(crate::paths::routine_toml_path(&created_slug).exists());
+    assert!(crate::paths::routine_compiled_prompt_path(&created_slug).exists());
 
     let updated = svc_update(
         &store,
@@ -39,7 +43,7 @@ fn svc_create_update_delete_lifecycle() {
             model: None,
             schedule: Some("@weekly".into()),
             schedules: None,
-            title: Some("Renamed".into()),
+            title: Some(renamed_title.clone()),
             agent: Some("codex".into()),
             prompt: Some("p2".into()),
             goal: None,
@@ -61,13 +65,13 @@ fn svc_create_update_delete_lifecycle() {
     )
     .unwrap();
     assert_eq!(updated.routine.schedule, "@weekly");
-    assert_eq!(updated.routine.title, "Renamed");
+    assert_eq!(updated.routine.title, renamed_title);
     assert_eq!(updated.routine.agent, "codex");
     assert!(!updated.routine.enabled);
 
     svc_delete(&store, &id).unwrap();
     // after rename to "Renamed" and delete, the slug dir is gone
-    assert!(!crate::paths::routine_dir("renamed").exists());
+    assert!(!crate::paths::routine_dir(&slugify(&format!("Renamed {suffix}"))).exists());
 }
 
 #[test]

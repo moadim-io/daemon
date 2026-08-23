@@ -30,11 +30,7 @@ fn ensure_default_agents_writes_parsable_configs() {
             "-z".to_string(),
             "{prompt}".to_string(),
             "--ignore-rules".to_string(),
-            "--safe-mode".to_string(),
-            "--model".to_string(),
-            "gpt-5.6-luna".to_string(),
-            "--provider".to_string(),
-            "openai-codex".to_string()
+            "--safe-mode".to_string()
         ]
     );
 

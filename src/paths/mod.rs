@@ -9,6 +9,9 @@ use std::path::PathBuf;
 )]
 mod agent_toml_path;
 pub(crate) use agent_toml_path::*;
+/// Default-home resolution with a per-test temporary fallback.
+mod default_home;
+pub(crate) use default_home::*;
 
 /// Environment variable that, when set, overrides the home directory all moadim paths resolve
 /// under. Used by tests to redirect config/routines/jobs/agents/workbenches into a tempdir so they
@@ -27,33 +30,6 @@ pub(crate) fn home() -> Option<PathBuf> {
         Some(dir) => Some(PathBuf::from(dir)),
         None => default_home(),
     }
-}
-
-/// Resolve the process's real home directory outside test builds.
-#[cfg(not(test))]
-fn default_home() -> Option<PathBuf> {
-    dirs::home_dir()
-}
-
-/// Isolate every test from the developer's home even when an individual fixture forgets to install
-/// `MOADIM_HOME_OVERRIDE`. The Rust harness names each test thread, so the fallback also prevents
-/// one unisolated fixture from leaving state that changes another test. Explicit overrides still
-/// take precedence for tests that need a custom root or a failure-injection path.
-#[cfg(test)]
-fn default_home() -> Option<PathBuf> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    std::thread::current()
-        .name()
-        .unwrap_or("unnamed-test-thread")
-        .hash(&mut hasher);
-    Some(
-        std::env::temp_dir()
-            .join(format!("moadim-test-home-{}", std::process::id()))
-            .join(format!("{:016x}", hasher.finish())),
-    )
 }
 
 /// Resolve the config root the moadim config tree nests under, honoring the XDG Base Directory

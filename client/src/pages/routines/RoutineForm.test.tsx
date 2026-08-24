@@ -1,7 +1,25 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { RoutineForm } from "./RoutineForm";
+import { RoutineForm, updateRequestFromDraft, type RoutineDraft } from "./RoutineForm";
+
+function routineDraft(): RoutineDraft {
+  return {
+    schedule: "@daily",
+    schedules: ["@daily", "@hourly"],
+    title: "My routine",
+    agent: "claude",
+    model: null,
+    prompt: "Do the thing",
+    goal: null,
+    repositories: [],
+    machines: [],
+    enabled: true,
+    power_saving_exempt: false,
+    ttl_secs: null,
+    tags: [],
+  };
+}
 
 function renderForm(props: Partial<React.ComponentProps<typeof RoutineForm>> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -16,6 +34,13 @@ function renderForm(props: Partial<React.ComponentProps<typeof RoutineForm>> = {
 }
 
 describe("RoutineForm validation", () => {
+  it("sends schedules, not the legacy schedule field, when editing", () => {
+    const request = updateRequestFromDraft(routineDraft());
+
+    expect(request).not.toHaveProperty("schedule");
+    expect(request).toMatchObject({ schedules: ["@daily", "@hourly"], title: "My routine" });
+  });
+
   it("disables save until title, schedule, agent, and prompt are all non-blank", () => {
     renderForm();
     const save = screen.getByRole("button", { name: "CREATE ROUTINE" });

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { useAgents } from "../../api/hooks";
+import { useAgents, type UpdateRoutineRequest } from "../../api/hooks";
 import type { components } from "../../api/schema.gen";
 import { describeCronLive } from "../../lib/cronUtils";
 import { MachinesPicker } from "./MachinesPicker";
@@ -24,6 +24,14 @@ export interface RoutineDraft {
   power_saving_exempt: boolean;
   ttl_secs: number | null;
   tags: string[];
+}
+
+/**
+ * Updates must send one schedule representation. The form retains `schedule` for create-route
+ * compatibility, while edits send only the canonical multi-schedule field.
+ */
+export function updateRequestFromDraft({ schedule: _legacySchedule, ...draft }: RoutineDraft): UpdateRoutineRequest {
+  return draft;
 }
 
 interface FormValues {

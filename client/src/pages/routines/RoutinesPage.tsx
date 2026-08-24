@@ -57,7 +57,7 @@ import { FilterBar } from "./FilterBar";
 import { GroupBySelector } from "./GroupBySelector";
 import { RoutineCalendar } from "./RoutineCalendar";
 import { RoutineFlags } from "./RoutineFlags";
-import { RoutineForm, type RoutineDraft } from "./RoutineForm";
+import { RoutineForm, type RoutineDraft, updateRequestFromDraft } from "./RoutineForm";
 import { RoutineHistory } from "./RoutineHistory";
 import { RoutineLogs } from "./RoutineLogs";
 import { MoveRoutineDialog } from "./MoveRoutineDialog";
@@ -248,7 +248,7 @@ export function RoutinesPage() {
 
   const onSaveEdit = (id: string, draft: RoutineDraft) => {
     updateRoutine.mutate(
-      { id, body: { ...draft } },
+      { id, body: updateRequestFromDraft(draft) },
       {
         onSuccess: () => {
           closeModal();

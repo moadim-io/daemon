@@ -35,14 +35,12 @@ fn routines_dir_ends_with_routines() {
 
 #[test]
 fn default_test_config_dir_stays_under_the_system_temp_directory() {
-    if std::env::var_os("MOADIM_HOME_OVERRIDE").is_none() {
-        let config_dir = config_dir();
-        assert!(
-            config_dir.starts_with(std::env::temp_dir()),
-            "test config dir must not resolve under the developer home: {}",
-            config_dir.display()
-        );
-    }
+    let home = default_home().expect("test fallback home");
+    assert!(
+        home.starts_with(std::env::temp_dir()),
+        "test fallback home must not resolve under the developer home: {}",
+        home.display()
+    );
 }
 
 #[test]

@@ -66,6 +66,7 @@ async fn run_server() -> anyhow::Result<()> {
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup routine scheduler sync failed: {err}");
     }
+    #[cfg(not(test))]
     let _routine_scheduler = routine_scheduler::spawn(routines.clone());
     let bind_addr = cli::validated_bind_addr().map_err(anyhow::Error::msg)?;
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;

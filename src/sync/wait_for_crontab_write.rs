@@ -118,7 +118,22 @@ pub(crate) fn replace_block_with(
 ///
 /// Best-effort and idempotent: a crontab with no managed block (or no crontab at all)
 /// removes nothing and returns `0` without rewriting the crontab.
+#[cfg(all(target_os = "macos", not(test)))]
+pub const fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
+    // Production macOS never installs managed routine crontab lines; leave any legacy user
+    // crontab untouched rather than invoking the TCC-protected crontab command during uninstall.
+    Ok(0)
+}
+
+/// Clear managed routine entries from the OS crontab.
+#[cfg(not(all(target_os = "macos", not(test))))]
 pub fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
+    clear_managed_os_crontab_blocks()
+}
+
+/// Remove the routine block from the OS crontab where that scheduler is active.
+#[cfg(not(all(target_os = "macos", not(test))))]
+fn clear_managed_os_crontab_blocks() -> Result<usize, SyncError> {
     let current = read_crontab()?;
 
     // Count managed schedule lines before removal for the user-facing report.

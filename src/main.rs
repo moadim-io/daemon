@@ -30,6 +30,8 @@ mod paths;
 mod restart;
 /// HTTP and MCP route definitions.
 mod routes;
+/// macOS-native in-process routine scheduler.
+mod routine_scheduler;
 /// TOML-backed routine persistence.
 mod routine_storage;
 /// Routine (agent-driven job) data model, service layer, and handlers.

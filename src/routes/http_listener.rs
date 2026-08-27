@@ -157,6 +157,10 @@ pub async fn run_with_listener_until(
             .await;
         }
     });
+    // macOS blocks crontab mutation behind TCC in some installations. Schedule directly from the
+    // long-lived daemon instead; the scheduler reuses `svc_trigger_scheduled` for deduplication.
+    #[cfg(target_os = "macos")]
+    let routine_scheduler_task = crate::routine_scheduler::spawn(routines.clone());
     let app = build_app_with_shutdown(routines, signal.clone());
     crate::utils::startup_print::print(&addr);
     // Fires the instant a shutdown is requested, so the grace watchdog below can start its clock
@@ -180,6 +184,8 @@ pub async fn run_with_listener_until(
     watchdog_task.abort();
     version_task.abort();
     log_rotation_task.abort();
+    #[cfg(target_os = "macos")]
+    routine_scheduler_task.abort();
     // Drain routine agents still running in their own detached tmux sessions (#320): without this,
     // `moadim stop` only stopped the daemon's HTTP/MCP server, leaving launched agents free to keep
     // acting with no watchdog until they finished or a later daemon start reaped them. This shells

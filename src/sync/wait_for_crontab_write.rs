@@ -118,7 +118,14 @@ pub(crate) fn replace_block_with(
 ///
 /// Best-effort and idempotent: a crontab with no managed block (or no crontab at all)
 /// removes nothing and returns `0` without rewriting the crontab.
-pub fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
+#[cfg(all(target_os = "macos", not(test)))]
+pub(crate) const fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
+    Ok(0)
+}
+
+/// Clear managed routine entries from the OS crontab.
+#[cfg(not(all(target_os = "macos", not(test))))]
+pub(crate) fn clear_managed_crontab_blocks() -> Result<usize, SyncError> {
     let current = read_crontab()?;
 
     // Count managed schedule lines before removal for the user-facing report.

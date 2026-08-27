@@ -20,6 +20,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::utils::lock::LockRecover;
+#[cfg(any(not(target_os = "macos"), test))]
 use crate::utils::time::now_secs;
 
 #[allow(
@@ -67,6 +68,7 @@ pub(crate) fn record_crontab_sync_success() {
 }
 
 /// Mark the OS crontab sync state unhealthy after a failed sync attempt.
+#[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn record_crontab_sync_failure(err: &SyncError) {
     *crontab_sync_state().lock_recover() = CrontabSyncStatus {
         ok: false,

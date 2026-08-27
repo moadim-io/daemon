@@ -30,8 +30,7 @@ mod paths;
 mod restart;
 /// HTTP and MCP route definitions.
 mod routes;
-/// macOS in-process routine scheduler backed by `tokio-cron-scheduler`.
-#[cfg(target_os = "macos")]
+/// Library-backed in-process routine scheduler.
 mod routine_scheduler;
 /// TOML-backed routine persistence.
 mod routine_storage;

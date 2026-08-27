@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+Record every accepted in-process scheduled routine fire in the durable per-routine
+`scheduled.log` before attempting its detached launcher. This gives macOS scheduler runs explicit
+evidence that survives daemon restarts even when shell or agent setup fails.
+
 ## [3.2.5] - 2026-08-27
 
 Run routine cron schedules inside the daemon with `tokio-cron-scheduler` across platforms, preserving the existing scheduled-trigger safety policies.

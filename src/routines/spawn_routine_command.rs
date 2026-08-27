@@ -14,9 +14,8 @@ use super::*;
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
-/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths, which pass `source`
-/// through to [`build_routine_command`] so only a genuine scheduled fire appends to
-/// `scheduled.log` — a manual "run now" must never masquerade as one (#478).
+/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths. Those services record
+/// their durable trigger evidence before reaching this best-effort detached launcher.
 pub(crate) fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {

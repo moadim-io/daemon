@@ -6,10 +6,10 @@
 use super::*;
 
 #[test]
-fn build_routine_command_appends_scheduled_trigger_log() {
-    // The generated launch script records each scheduled firing by appending `$TS` to the
-    // routine's `scheduled.log` (best-effort, before the prompt-copy guard), since the OS crontab
-    // runs this script directly without the daemon observing the fire.
+fn build_routine_command_does_not_duplicate_scheduled_trigger_evidence() {
+    // The trigger service records a scheduled fire before this detached launcher is attempted.
+    // Keeping the launcher free of a second append yields exactly one durable record per accepted
+    // in-process scheduler fire.
     let routine = make_routine("Cmd Scheduled Stamp Routine");
     let agent = AgentCommand {
         command: "claude".to_string(),
@@ -22,16 +22,9 @@ fn build_routine_command_appends_scheduled_trigger_log() {
         .to_string_lossy()
         .into_owned();
     assert!(
-        cmd.contains(&format!(
-            r#"printf '%s\n' "$TS" >> {} || true"#,
-            shell_quote(&log)
-        )),
-        "expected scheduled-trigger log append in: {cmd}"
+        !cmd.contains(&log),
+        "trigger service, not launcher, must record the scheduled fire: {cmd}"
     );
-    // It must run before the prompt-copy guard so an aborted run still records the firing.
-    let stamp = cmd.find("scheduled.log").unwrap();
-    let copy = cmd.find("/prompt.md\"").unwrap();
-    assert!(stamp < copy, "log append must precede the prompt copy");
 }
 
 #[test]

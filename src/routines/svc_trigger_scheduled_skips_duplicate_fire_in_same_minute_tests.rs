@@ -53,6 +53,14 @@ fn svc_trigger_scheduled_spawns_without_recording_manual_trigger() {
     with_empty_path(|| {
         let triggered = svc_trigger_scheduled(&store, "trig-sched-id").unwrap();
         assert!(triggered.last_manual_trigger_at.is_none());
+        let scheduled_log = crate::paths::routine_scheduled_log_path(&slugify(title));
+        let timestamp = std::fs::read_to_string(&scheduled_log)
+            .expect("accepted scheduled fire is durable even when launch fails");
+        assert!(
+            timestamp.trim().parse::<u64>().is_ok(),
+            "expected a Unix timestamp in {}: {timestamp:?}",
+            scheduled_log.display()
+        );
     });
 }
 

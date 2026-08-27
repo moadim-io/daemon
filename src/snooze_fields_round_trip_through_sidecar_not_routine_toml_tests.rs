@@ -107,6 +107,27 @@ fn append_manual_trigger_log_warns_on_write_failure() {
 }
 
 #[test]
+fn append_scheduled_trigger_log_warns_on_write_failure() {
+    // A scheduler must still attempt the launcher when its best-effort evidence write fails.
+    let dir = scratch_dir("scheduled-log-fail");
+    let slug = "rs-scheduled-log-fail-routine";
+    let blocker = dir.join(slug).join("scheduled.log");
+    std::fs::create_dir_all(&blocker).unwrap();
+    let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
+    // SAFETY: single-threaded test execution.
+    unsafe { std::env::set_var("MOADIM_HOME_OVERRIDE", &dir) };
+    append_scheduled_trigger_log(slug, 42);
+    // SAFETY: restore the process-wide test seam.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),
+            None => std::env::remove_var("MOADIM_HOME_OVERRIDE"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn append_skip_log_creates_and_appends() {
     // Each call appends one `{ts}\t{reason}` line; the log grows across calls (#1145).
     with_override_home(|_home| {

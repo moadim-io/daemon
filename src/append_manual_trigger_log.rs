@@ -20,6 +20,29 @@ pub fn append_manual_trigger_log(slug: &str, ts: u64) {
     }
 }
 
+/// Append a Unix-timestamp entry to a routine's `scheduled.log`, recording an accepted scheduled
+/// fire before its launcher process is attempted.
+///
+/// The in-process scheduler cannot rely on the detached launcher to leave this evidence: an agent
+/// setup or shell failure would otherwise make a real scheduler fire indistinguishable from a
+/// missed tick. Best-effort like [`append_manual_trigger_log`], so a disk hiccup never blocks the
+/// scheduler from attempting the routine.
+pub fn append_scheduled_trigger_log(slug: &str, ts: u64) {
+    let path = crate::paths::routine_scheduled_log_path(slug);
+    let line = format!("{ts}\n");
+    if let Err(err) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()))
+    {
+        log::warn!(
+            "append_scheduled_trigger_log: failed to write {}: {err}",
+            path.display()
+        );
+    }
+}
+
 /// Append a `{ts}\t{reason}` entry to a routine's `skip.log`, recording why a trigger did not
 /// spawn a workbench.
 ///

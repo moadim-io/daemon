@@ -112,6 +112,11 @@ pub(crate) fn build_routine_command(
         format!(r#"WB={}/"$SLUG-$RID""#, shell_quote(&workbenches_base)),
         format!(r#"SESS="{TMUX_SESSION_PREFIX}$SLUG-$RID""#),
         r#"mkdir -p "$WB""#.to_string(),
+        // The daemon can outlive a previous workbench that cleanup removed. In that case its
+        // inherited cwd no longer exists, and Git's checkout step fails even though the new
+        // workbench and repository cache are valid. Anchor the launcher in the fresh workbench
+        // before any prompt, repository, or agent setup command runs.
+        r#"cd "$WB" || exit 1"#.to_string(),
     ]);
 
     // Everything from here on runs with stdout/stderr redirected into the workbench itself, so a

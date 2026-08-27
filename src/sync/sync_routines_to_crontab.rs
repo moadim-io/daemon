@@ -33,21 +33,21 @@ pub(crate) const ROUTINE_LINE_MARKER: &str = "# moadim-routine:";
 /// with none running), so both are checked first; either falls back to running inline exactly as
 /// before.
 pub fn sync_routines_to_crontab(store: &RoutineStore) -> Result<(), SyncError> {
-    #[cfg(all(target_os = "macos", not(test)))]
+    #[cfg(not(test))]
     {
         let _ = store;
         crate::routine_scheduler::request_resync();
         crate::sync::record_crontab_sync_success();
         Ok(())
     }
-    #[cfg(not(all(target_os = "macos", not(test))))]
+    #[cfg(test)]
     {
         sync_routines_to_os_crontab(store)
     }
 }
 
 /// Synchronize the OS crontab where it is the active routine scheduler.
-#[cfg(not(all(target_os = "macos", not(test))))]
+#[cfg(test)]
 fn sync_routines_to_os_crontab(store: &RoutineStore) -> Result<(), SyncError> {
     let on_multi_thread_runtime = tokio::runtime::Handle::try_current()
         .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);

@@ -1,4 +1,4 @@
-//! macOS in-process routine scheduling backed by `tokio-cron-scheduler`.
+//! Cross-platform in-process routine scheduling backed by `tokio-cron-scheduler`.
 //!
 //! Jobs are rebuilt after each routine mutation, while each actual fire goes through
 //! [`crate::routines::svc_trigger_scheduled`] so the established global-lock, routine-lock,
@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::routines::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
 
-/// Request that the running macOS scheduler rebuild its library-managed jobs.
+/// Request that the running scheduler rebuild its library-managed jobs.
 #[cfg(not(test))]
 pub(crate) fn request_resync() {
     if let Some(sender) = scheduler_resync_sender().get() {
@@ -25,7 +25,7 @@ pub(crate) fn request_resync() {
 pub(crate) fn spawn(store: RoutineStore) -> tokio::task::JoinHandle<()> {
     let (sender, receiver) = mpsc::unbounded_channel();
     if scheduler_resync_sender().set(sender).is_err() {
-        log::warn!("macOS routine scheduler is already running; ignoring duplicate start");
+        log::warn!("routine scheduler is already running; ignoring duplicate start");
     }
     tokio::spawn(async move { run(store, receiver).await })
 }
@@ -41,14 +41,14 @@ async fn run(store: RoutineStore, mut receiver: UnboundedReceiver<()>) {
     let scheduler = match JobScheduler::new().await {
         Ok(scheduler) => scheduler,
         Err(err) => {
-            log::error!("macOS routine scheduler initialization failed: {err}");
+            log::error!("routine scheduler initialization failed: {err}");
             return;
         }
     };
     let mut job_ids = Vec::new();
     rebuild(&scheduler, &mut job_ids, &store).await;
     if let Err(err) = scheduler.start().await {
-        log::error!("macOS routine scheduler failed to start: {err}");
+        log::error!("routine scheduler failed to start: {err}");
         return;
     }
     while receiver.recv().await.is_some() {

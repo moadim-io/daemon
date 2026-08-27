@@ -97,6 +97,8 @@ pub(crate) use service_log_tail::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_
 #[path = "service_log_tail_tests.rs"]
 mod service_log_tail_tests;
 
+#[path = "scheduled_trigger_claim.rs"]
+mod scheduled_trigger_claim;
 #[path = "service_trigger.rs"]
 mod service_trigger;
 #[cfg(test)]

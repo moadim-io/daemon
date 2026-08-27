@@ -1539,6 +1539,7 @@
           "machine",
           "dependencies",
           "crontab_sync",
+          "scheduler_resync",
           "version",
           "git_sha",
           "build_date"
@@ -1567,6 +1568,10 @@
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."
+          },
+          "scheduler_resync": {
+            "$ref": "#/components/schemas/SchedulerResyncHealth",
+            "description": "Whether the in-process scheduler last rebuilt routine jobs successfully after a mutation."
           },
           "server_exe_dir": {
             "type": [
@@ -2117,6 +2122,44 @@
           "workbench": {
             "type": "string",
             "description": "Workbench directory name (`{slug}-{unix_secs}`); pass to `GET /routines/{id}/runs/{workbench}/log`."
+          }
+        }
+      },
+      "SchedulerResyncHealth": {
+        "type": "object",
+        "description": "In-process scheduler resynchronization state surfaced by health endpoints.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "last_completed_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp of the most recently completed in-process scheduler rebuild.",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last in-process scheduler rebuild error, when any schedule could not be applied."
+          },
+          "last_error_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp of the most recent in-process scheduler rebuild error.",
+            "minimum": 0
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "Whether the most recently completed in-process scheduler rebuild had no failures."
           }
         }
       },

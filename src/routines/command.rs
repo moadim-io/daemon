@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::paths::{routine_compiled_prompt_path, routine_scheduled_log_path};
+use crate::paths::routine_compiled_prompt_path;
 use crate::routine_storage::read_local_env;
 
 use super::agents::AgentCommand;

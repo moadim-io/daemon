@@ -52,6 +52,20 @@ either is missing, so a misconfigured host is easy to spot. See the built-in
 cargo install --locked moadim
 ```
 
+### Homebrew (from this repository)
+
+To build and install the current `main` branch with Homebrew, add this repository
+as a tap and install its formula with `--HEAD`:
+
+```sh
+brew tap moadim-io/daemon https://github.com/moadim-io/daemon.git
+brew install --build-from-source --HEAD moadim-io/daemon/moadim
+```
+
+The formula installs the `moadim` binary, its `moadim(1)` man page, and the
+required `tmux` runtime dependency. Homebrew builds the Rust binary from the
+repository checkout; it is not a prebuilt package.
+
 `--locked` installs the exact dependency graph published and tested with this
 release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
 to the newest semver-compatible version at install time — so a bad or breaking

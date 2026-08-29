@@ -82,7 +82,8 @@ to stdout.
 Register moadim as an OS service (launchd / systemd user).
 .TP
 .B uninstall
-Remove the OS service registration and the managed crontab block.
+Remove the OS service registration. Routine schedules are owned by the running
+daemon, not by the host crontab.
 .TP
 .B machine <show|set|list>
 Show or set this machine's identity, or list the machines referenced by
@@ -111,8 +112,8 @@ Manage routines (alias:
 .BR routine ).
 .TP
 .B schedule trigger <id>
-Trigger a routine by ID (invoked directly from the routine's crontab
-entry).
+Trigger a routine by ID through the daemon's scheduled-fire path. This is a
+compatibility command; routine schedules are dispatched by the daemon itself.
 .TP
 .BR "enable <routine> " [ \-\-json ]
 Turn a routine on (set enabled=true) by id or slug.

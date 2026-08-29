@@ -25,7 +25,8 @@ exposing them over three interfaces simultaneously:
 - **MCP** (`http://localhost:5784/mcp`) — [Model Context Protocol](https://modelcontextprotocol.io) for AI agents (Claude, etc.)
 
 All three share the same port. Routines created through any interface are
-automatically synced to the OS crontab so they actually run on schedule. See
+registered with the daemon's cross-platform scheduler so they run on schedule
+without depending on an OS cron service. See
 [Routines](#routines) for the agent-loop engine, or
 [`docs/comparison.md`](docs/comparison.md) for how moadim compares to cron,
 GitHub Actions, and other agent runners.
@@ -39,7 +40,6 @@ building and installing:
 | ---------- | ------------ | ------- |
 | Rust/Cargo | building and installing moadim | <https://rustup.rs> |
 | `tmux`     | launching routine agents — every scheduled routine starts its agent inside a tmux session. **Without `tmux`, routine runs silently fail to launch.** | `brew install tmux` (macOS) · `apt install tmux` (Debian/Ubuntu) |
-| `crontab`  | scheduling — moadim writes managed routines into the OS crontab so they fire on schedule | preinstalled on macOS; `apt install cron` (Debian/Ubuntu) |
 
 The daemon reports whether `tmux` and `python3` resolve on its `PATH` in
 `GET /api/v1/health` (under `dependencies`) and logs a warning at startup when
@@ -129,7 +129,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 
 > _Close the loop. Skip the keyboard. Loop engineering, shipped as a daemon._
 
-- Routines created via REST or MCP are written into your OS crontab automatically
+- Routines created via REST or MCP are registered with the daemon's in-process scheduler automatically
 - **Routines** schedule an AI agent — a prompt + schedule + agent, stored in `~/.config/moadim/routines/` (see [Routines](#routines)) — git-trackable, diff-friendly
 - **Agents** are a registry of coding agents (`claude`, …) under `~/.config/moadim/agents/<name>.toml`, referenced by routines
 - Each routine run executes in a throwaway **workbench** under `~/.moadim/workbenches/` (a separate tree from the config dir), reaped on a periodic (5-minute) cleanup sweep
@@ -157,26 +157,29 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 └── workbenches/               # per-run throwaway dirs, reaped on the periodic sweep
 ```
 
-## Crontab sync
+## Daemon scheduler
 
-> _Your crontab, your rules — moadim keeps its own block in sync._
+> _One daemon owns routine schedules on every supported platform._
 
-Moadim owns a single block inside your crontab for routines. Everything outside that block is untouched.
+Moadim evaluates enabled routines with an in-process scheduler backed by
+[`tokio-cron-scheduler`](https://crates.io/crates/tokio-cron-scheduler). Creating,
+updating, enabling, disabling, moving, or deleting a routine asks that scheduler
+to rebuild its jobs; no routine entry is written to the host's `crontab`.
 
-```
-# BEGIN MOADIM-ROUTINES
-# Managed by moadim — routines (agent tmux sessions)
-* * * * * /…/moadim schedule trigger '<id>' # moadim-routine:<id>
-# END MOADIM-ROUTINES
-```
+Each scheduled fire goes through the same daemon-side safety path as a manual
+trigger. Global locks, machine targeting, power-saving state, snoozes,
+per-routine overlap protection, the global concurrency cap, and same-minute
+deduplication therefore apply consistently on macOS, Linux, and other supported
+platforms.
 
-**Forward sync (moadim → crontab):** any time you create, update, or delete a routine via the UI, REST, or MCP, the crontab block is rewritten immediately. Disabled routines are excluded from the block.
+**Schedule format:** standard 5-field cron (`min hour dom month dow`). `@keyword`
+shortcuts (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`) are
+also accepted. `@reboot` and `@midnight` are **not** supported via the API and are
+rejected with `400 Bad Request`.
 
-**Reverse sync (crontab → moadim) is not implemented.** Edit routines through the UI, REST, or MCP rather than by hand: manual changes inside the block do **not** sync back into moadim and are overwritten by the next forward sync.
-
-**Schedule format:** standard 5-field cron (`min hour dom month dow`), same as the OS crontab. `@keyword` shortcuts (`@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`) are also accepted. `@reboot` and `@midnight` are **not** supported via the API and are rejected with `400 Bad Request`.
-
-**Timezone:** because routines run via the OS crontab, schedules are evaluated in the host's **local system timezone**, not UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular should not pre-convert times to UTC.
+**Timezone:** schedules are evaluated in the host's **local system timezone**, not
+UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular
+should not pre-convert times to UTC.
 
 ## Routines
 
@@ -206,7 +209,7 @@ whole tree — routine directories don't carry their own.
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
-| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated in the host's local timezone — **not** UTC. Mirrored into `schedule.cron`, which is not functional yet. |
+| `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated by the daemon scheduler in the host's local timezone — **not** UTC. Mirrored into `schedule.cron`, which is not functional yet. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |
@@ -263,7 +266,7 @@ are untouched.
 
 **Validation:** keys must be POSIX-portable shell identifiers (`[A-Za-z_][A-Za-z0-9_]*`); values
 must not contain newlines. `routine.toml`'s `env` table is validated on create/update (REST/MCP) and
-rejected outright if invalid — nothing bad reaches the crontab. `routine.local.toml` is a file you
+rejected outright before it can be registered with the scheduler. `routine.local.toml` is a file you
 edit by hand, so it isn't validated over the API; a malformed entry there is simply skipped (with a
 warning in the daemon log) rather than breaking the launch.
 
@@ -317,8 +320,8 @@ with the same routine/run fields plus a bounded `agent.log` tail. Hook failures 
 not block cleanup, retry forever, or crash the daemon.
 
 A routine already refuses to overlap with its own still-running fire, but
-nothing on its own bounds how many *different* routines run at once — the OS
-crontab naturally aligns fires from separate routines onto the same minute
+nothing on its own bounds how many *different* routines run at once — the daemon
+scheduler can align fires from separate routines onto the same minute
 boundary (e.g. `*/5 * * * *`), so a shared tick can otherwise launch an
 unbounded thundering herd of agent sessions. Set `MOADIM_MAX_CONCURRENT_RUNS`
 to cap how many routine agent sessions may be alive at once. Unset or `0`
@@ -345,7 +348,7 @@ PUT    /routines/{id}         # replace
 PATCH  /routines/{id}         # update fields
 DELETE /routines/{id}         # delete
 POST   /routines/{id}/trigger # run now, outside the schedule
-POST   /routines/{id}/scheduled-trigger # daemon-side endpoint the generated crontab line invokes
+POST   /routines/{id}/scheduled-trigger # daemon-side scheduled-fire path
 GET    /routines/{id}/prompt-preview # composed prompt body a run would receive, no run
 GET    /routines/{id}/logs    # newest workbench's agent.log as plain text
 POST   /routines/cleanup      # reap expired workbenches now
@@ -524,7 +527,7 @@ moadim cleanup --json  # same, as a machine-readable JSON object
 moadim trigger <id>    # trigger a routine to run now, outside its schedule
 moadim logs <id>       # print a routine's newest run log (agent.log) to stdout
 moadim install         # register moadim as an OS service (launchd / systemd user)
-moadim uninstall       # remove the OS service registration and the managed crontab block
+moadim uninstall       # remove the OS service registration
 moadim restart         # stop a running server (if any) and start a fresh one
 moadim restart --quiet # same, printing only the `restarted: pid <old> -> <new>` line
 moadim restart -i      # same, but bring the fresh instance up in the foreground
@@ -540,7 +543,7 @@ moadim stop --json     # same, as a machine-readable JSON object
 | `moadim restart`   | background    | Stops the running server (if any) and spawns a fresh detached instance, so you get a clean process without a separate stop/start. Prints the PID rotation as `restarted: pid <old> -> <new>` (old reads `none` when nothing was running) so scripts/logs can confirm the process actually changed. Add `--quiet`/`-q` to print only that rotation line, suppressing the preamble and the reach/manage hint block. Add `--json` for `{"old":N\|null,"new":M,"address":"127.0.0.1:5784"}`. |
 | `moadim restart -i`, `--interactive` | interactive | Stops the running server (if any), same as `moadim restart`, but brings the fresh instance up in the foreground instead of backgrounding it — mirrors `moadim -i`. |
 | `moadim stop`      | —             | Sends `POST /api/v1/shutdown` to the running server for a graceful stop. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` (the `pid` is read before the shutdown request, since a graceful stop clears the pid file). Exits `0` when a running server was asked to shut down, `3` when none was reachable. Also force-kills every routine agent tmux session still running at that point, so an in-flight agent does not keep acting on your behalf after `stop` reports success (#320). |
-| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null,"crontab_sync":object\|null}` — `uptime_secs`/`version`/`crontab_sync` come from the server's `GET /api/v1/health`, so a single call returns liveness, age/version, and stale OS-crontab state (`null` when no server answers). If `crontab_sync.ok` is false, human output also prints the last error plus recovery guidance: grant Full Disk Access to the `moadim` binary or its launcher, then restart/update a routine to retry sync. Add `--wait[=SECS]` to poll `GET /api/v1/health` every 200ms until it answers or `SECS` elapse (default 30) instead of checking once, so a launch script can block on startup rather than sleeping blindly. Exits `0` when running, `3` when not (including a `--wait` timeout). |
+| `moadim status`    | —             | Prints whether a server is reachable on `127.0.0.1:5784`. Add `--json` for `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null,"crontab_sync":object\|null}`. `uptime_secs` and `version` come from `GET /api/v1/health`; `crontab_sync` remains a legacy compatibility field and is no longer an OS-cron health signal. Add `--wait[=SECS]` to poll `GET /api/v1/health` every 200ms until it answers or `SECS` elapse (default 30) instead of checking once, so a launch script can block on startup rather than sleeping blindly. Exits `0` when running, `3` when not (including a `--wait` timeout). |
 | `moadim cleanup`   | —             | Sends `POST /api/v1/routines/cleanup` to the running server and prints how many finished, expired routine workbenches were reaped and the disk space freed, e.g. `cleanup removed 3 workbenches (freed 12.4 MB)` (the on-demand version of the periodic sweep). Add `--json` for `{"running":bool,"removed":N,"freed_bytes":N,"address":"127.0.0.1:5784"}` (matching `status`/`stop --json`'s shape). Exits `0` when running, `3` when not. |
 | `moadim trigger <id>` | —          | Sends `POST /api/v1/routines/{id}/trigger` to the running server, launching the routine immediately outside its schedule (the terminal equivalent of the REST/MCP on-demand trigger). Prints `triggered routine <id>` on success. Exits `0` when triggered, `3` when no server is reachable, and `1` with `no routine with id <id>` on a `404`. (`moadim run <id>` is kept as a hidden back-compat alias.) |
 
@@ -621,7 +624,7 @@ on stdout. Paired with the exit codes above, a caller gets the full contract wit
 
 | Command            | `--json` shape | Exit codes |
 |--------------------|----------------|------------|
-| `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null,"crontab_sync":object\|null}` — `pid` is `null` when no pid file is present; `uptime_secs`/`version`/`crontab_sync` are folded in from the server's `GET /api/v1/health` and are `null` when no server answers; failed crontab sync objects include a `recovery_hint` | `0` running, `3` not |
+| `moadim status --json`  | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784","uptime_secs":N\|null,"version":S\|null,"crontab_sync":object\|null}` — `pid` is `null` when no pid file is present; `uptime_secs`/`version`/the legacy `crontab_sync` compatibility field are folded in from the server's `GET /api/v1/health` and are `null` when no server answers | `0` running, `3` not |
 | `moadim cleanup --json` | `{"running":bool,"removed":N,"freed_bytes":N,"address":"127.0.0.1:5784"}` — `removed`/`freed_bytes` are `0` when no server is running; `address` is the bound endpoint (matching `status`/`stop --json`) | `0` running, `3` not |
 | `moadim stop --json`    | `{"running":bool,"pid":N\|null,"address":"127.0.0.1:5784"}` — `running` is `true` when a running server was asked to shut down; `pid` is the stopped server's PID (read before shutdown) or `null` when none was reachable | `0` running, `3` not |
 
@@ -654,11 +657,9 @@ press the **STOP** button in the UI header, run `moadim stop`, or send
 the foreground.)
 
 Starts on `http://127.0.0.1:5784`. On startup the server loads all routines,
-seeds any missing built-in default routines, and rewrites the **routines**
-crontab block — so a block that went stale while the server was stopped (e.g.
-emptied by an earlier run) is regenerated and scheduled routines keep firing.
-Reverse sync (crontab → moadim) is not run, so manual edits inside the managed
-block are never imported — they are overwritten by the next forward sync.
+seeds any missing built-in default routines, and registers eligible local
+routines with its in-process scheduler. The daemon must remain running for
+scheduled fires; use `moadim install` to have the OS supervise the daemon.
 
 ### Bind address
 
@@ -756,7 +757,7 @@ The server exposes an MCP endpoint at `http://localhost:5784/mcp`. Connect any M
 
 ### Claude Code
 
-Add moadim at **user scope** so it's available across all your projects. moadim is a global daemon (one local server, one crontab) — there's no per-project state, so project scope would only force you to re-add it in every repo.
+Add moadim at **user scope** so it's available across all your projects. moadim is a global daemon (one local server and scheduler) — there's no per-project state, so project scope would only force you to re-add it in every repo.
 
 ```sh
 claude mcp add --scope user --transport http moadim http://localhost:5784/mcp

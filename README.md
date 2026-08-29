@@ -1,7 +1,7 @@
 # moadim
 
 [![crates.io](https://img.shields.io/crates/v/moadim.svg)](https://crates.io/crates/moadim)
-[![docs.rs](https://img.shields.io/docsrs/moadim)](https://docs.rs/moadim)
+[![Docs](https://img.shields.io/github/actions/workflow/status/moadim-io/daemon/doc.yml?branch=main&label=docs)](https://github.com/moadim-io/daemon/actions/workflows/doc.yml)
 [![CI](https://img.shields.io/github/actions/workflow/status/moadim-io/daemon/test.yml?branch=main&label=CI)](https://github.com/moadim-io/daemon/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/crates/l/moadim.svg)](https://opensource.org/licenses/MIT)
 

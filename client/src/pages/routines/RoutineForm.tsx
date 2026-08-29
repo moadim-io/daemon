@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useAgents, type UpdateRoutineRequest } from "../../api/hooks";
 import type { components } from "../../api/schema.gen";
@@ -36,7 +36,7 @@ export function updateRequestFromDraft({ schedule: _legacySchedule, ...draft }: 
 
 interface FormValues {
   title: string;
-  schedule: string;
+  schedules: Array<{ expression: string }>;
   agent: string;
   model: string;
   prompt: string;
@@ -63,9 +63,10 @@ const CRON_PRESETS: [string, string][] = [
 ];
 
 function draftToValues(draft?: Partial<RoutineDraft>): FormValues {
+  const schedules = draft?.schedules && draft.schedules.length > 0 ? draft.schedules : draft?.schedule ? [draft.schedule] : [""];
   return {
     title: draft?.title ?? "",
-    schedule: (draft?.schedules && draft.schedules.length > 0 ? draft.schedules : draft?.schedule ? [draft.schedule] : []).join("\n"),
+    schedules: schedules.map((expression) => ({ expression })),
     agent: draft?.agent ?? "claude",
     model: draft?.model ?? "",
     prompt: draft?.prompt ?? "",
@@ -95,6 +96,7 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
   const { register, control, setValue, handleSubmit, reset } = useForm<FormValues>({
     defaultValues: draftToValues(initial),
   });
+  const { fields, append, remove } = useFieldArray({ control, name: "schedules" });
 
   // Re-seed the form whenever the routine being edited/cloned changes identity.
   useEffect(() => {
@@ -103,8 +105,8 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
   }, [initial]);
 
   const title = useWatch({ control, name: "title" });
-  const schedule = useWatch({ control, name: "schedule" });
-  const schedules = schedule.split("\n").map((line) => line.trim()).filter(Boolean);
+  const scheduleRows = useWatch({ control, name: "schedules" }) ?? [];
+  const schedules = scheduleRows.map((row) => row.expression.trim()).filter(Boolean);
   const agent = useWatch({ control, name: "agent" });
   const prompt = useWatch({ control, name: "prompt" });
   const machines = useWatch({ control, name: "machines" });
@@ -114,10 +116,13 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
     nonBlank.safeParse(agent).success &&
     nonBlank.safeParse(prompt).success;
 
-  const cronPreviews = schedules.map((line) => describeCronLive(line));
-  const cronOk = schedules.length > 0 && cronPreviews.every(([ok]) => ok);
-  const cronText = schedules.length === 0 ? "" : cronPreviews.map(([, text]) => text).join(" · ");
-  const previewClass = schedule.trim() === "" ? "cron-preview" : cronOk ? "cron-preview ok" : "cron-preview bad";
+  const addSchedule = (expression = "") => {
+    if (fields.length === 1 && (scheduleRows[0]?.expression ?? "").trim() === "") {
+      setValue("schedules.0.expression", expression);
+      return;
+    }
+    append({ expression });
+  };
 
   const submit = handleSubmit((v) => {
     onSave({
@@ -156,25 +161,49 @@ export function RoutineForm({ initial, mode, saving, onCancel, onSave }: Routine
 
       <div className="form-group">
         <label className="form-label">SCHEDULES*</label>
-        <textarea
-          className="form-textarea"
-          rows={3}
-          placeholder="one cron per line"
-          {...register("schedule")}
-        />
+        <div className="cron-schedule-list">
+          {fields.map((field, index) => {
+            const expression = scheduleRows[index]?.expression ?? "";
+            const [valid, description] = describeCronLive(expression);
+            const previewClass = expression.trim() === "" ? "cron-preview" : valid ? "cron-preview ok" : "cron-preview bad";
+            return (
+              <div className="cron-schedule-row" key={field.id}>
+                <div className="cron-schedule-input">
+                  <input
+                    className="form-input"
+                    placeholder="cron expression"
+                    aria-label={`Cron expression ${index + 1}`}
+                    {...register(`schedules.${index}.expression`)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    aria-label={`Remove cron expression ${index + 1}`}
+                    onClick={() => remove(index)}
+                  >
+                    REMOVE
+                  </button>
+                </div>
+                <div className={previewClass}>{description}</div>
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" className="btn btn-ghost btn-sm add-cron-btn" onClick={() => addSchedule()}>
+          + ADD CRON EXPRESSION
+        </button>
         <div className="cron-presets">
           {CRON_PRESETS.map(([value, label]) => (
             <button
               type="button"
               key={value}
               className="preset-btn"
-              onClick={() => setValue("schedule", value)}
+              onClick={() => addSchedule(value)}
             >
               {label}
             </button>
           ))}
         </div>
-        <div className={previewClass}>{cronText}</div>
       </div>
 
       <div className="form-group">

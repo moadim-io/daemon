@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.6] - 2026-08-29
+
+Keep scheduled-fire deduplication process-local so reloaded current-minute execution history does not suppress the scheduler's current fire.
+
+Expose each routine cron expression as an independently editable UI field, with per-expression validation, removal, and appendable presets.
+
 ## [3.2.5] - 2026-08-27
 
 Run routine cron schedules inside the daemon with `tokio-cron-scheduler` across platforms, preserving the existing scheduled-trigger safety policies.
@@ -5057,7 +5063,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.5...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.6...HEAD
+[3.2.6]: https://github.com/moadim-io/daemon/compare/v3.2.5...v3.2.6
 [3.2.5]: https://github.com/moadim-io/daemon/compare/v3.2.4...v3.2.5
 [3.2.4]: https://github.com/moadim-io/daemon/compare/v3.2.3...v3.2.4
 [3.2.3]: https://github.com/moadim-io/daemon/compare/v3.2.2...v3.2.3

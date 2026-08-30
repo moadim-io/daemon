@@ -554,3 +554,12 @@ assigning_clones = "deny"
 # compiler validates, with the failure path made explicit via `Result`. The codebase is already
 # clean, so `deny` locks that in.
 checked_conversions = "deny"
+# Reject `for` loops over `HashMap`/`HashSet`: their iteration order is unspecified and varies
+# between runs, so any ordering-sensitive work inside such a loop (rendering output, writing a
+# file, choosing which validation error to report first) silently becomes nondeterministic. Each
+# site must either iterate deterministically (sort the keys first, or use a `BTreeMap`/`BTreeSet`)
+# or carry an `#[allow]` whose reason explains why order genuinely cannot matter there. Fixed the
+# one order-sensitive violation this surfaced (`routines::validate_repositories::validate_env`
+# reported a nondeterministic *first* error when several env entries were invalid); the two
+# remaining sites only feed a `BTreeSet` and are allowed with reasons.
+iter_over_hash_type = "deny"

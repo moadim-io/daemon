@@ -168,3 +168,6 @@ fn svc_list_runs_derives_status_newest_first() {
     assert!(runs[0].finished_at.is_none());
 }
 include!("svc_list_runs_reports_running_when_session_alive_and_no_exit_code_tests.rs");
+
+#[path = "svc_list_runs_deduplicates_live_persisted_workbenches_tests.rs"]
+mod svc_list_runs_deduplicates_live_persisted_workbenches_tests;

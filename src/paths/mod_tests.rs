@@ -34,6 +34,16 @@ fn routines_dir_ends_with_routines() {
 }
 
 #[test]
+fn default_test_config_dir_stays_under_the_system_temp_directory() {
+    let home = default_home().expect("test fallback home");
+    assert!(
+        home.starts_with(std::env::temp_dir()),
+        "test fallback home must not resolve under the developer home: {}",
+        home.display()
+    );
+}
+
+#[test]
 fn routine_dir_is_child_of_routines_dir() {
     assert_eq!(routine_dir("xyz").parent().unwrap(), routines_dir());
 }

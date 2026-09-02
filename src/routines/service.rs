@@ -105,6 +105,7 @@ mod service_trigger;
 pub(crate) use service_trigger::sh_bin;
 pub(crate) use service_trigger::{
     svc_cleanup, svc_logs, svc_set_power_saving, svc_snooze, svc_trigger, svc_trigger_scheduled,
+    svc_trigger_with_system_power_saving_override,
 };
 
 #[path = "service_runs.rs"]

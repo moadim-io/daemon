@@ -36,6 +36,15 @@ pub(crate) use spawn_routine_command::*;
 /// independent signals, checked in that order so the response names whichever one is actually
 /// responsible.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
+    svc_trigger_with_system_power_saving_override(store, id, false)
+}
+
+/// Record a manual trigger, optionally bypassing host-level power saving for this one run.
+pub fn svc_trigger_with_system_power_saving_override(
+    store: &RoutineStore,
+    id: &str,
+    override_system_power_saving: bool,
+) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
@@ -47,6 +56,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     if let Some(reason) = power_saving_block_reason(
         routine,
         crate::system_power::is_system_power_saving_active(),
+        override_system_power_saving,
     ) {
         return Err(AppError::Locked(reason.into()));
     }
@@ -91,6 +101,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
     if let Some(reason) = power_saving_block_reason(
         routine,
         crate::system_power::is_system_power_saving_active(),
+        false,
     ) {
         let ts = now_secs();
         let rel_dir = crate::routine_storage::routine_rel_dir(routine);
@@ -170,11 +181,12 @@ pub(crate) fn sh_bin() -> String {
 pub(super) const fn power_saving_block_reason(
     routine: &Routine,
     system_active: bool,
+    override_system_power_saving: bool,
 ) -> Option<&'static str> {
     if routine.power_saving {
         return Some("routine is in power-saving mode");
     }
-    if system_active && !routine.power_saving_exempt {
+    if system_active && !routine.power_saving_exempt && !override_system_power_saving {
         return Some("system power saving is active");
     }
     None

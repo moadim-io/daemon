@@ -5,7 +5,7 @@ fn system_power_saving_blocks_non_exempt_routine() {
     let mut routine = make_routine("system-power-saving-id", "System Power Saving Test", 1, 1);
     routine.power_saving_exempt = false;
 
-    let reason = power_saving_block_reason(&routine, true);
+    let reason = power_saving_block_reason(&routine, true, false);
 
     assert_eq!(reason, Some("system power saving is active"));
 }
@@ -20,7 +20,7 @@ fn system_power_saving_does_not_block_exempt_routine() {
     );
     routine.power_saving_exempt = true;
 
-    let reason = power_saving_block_reason(&routine, true);
+    let reason = power_saving_block_reason(&routine, true, false);
 
     assert_eq!(reason, None);
 }
@@ -36,7 +36,16 @@ fn explicit_per_routine_power_saving_still_blocks_exempt_routine() {
     routine.power_saving_exempt = true;
     routine.power_saving = true;
 
-    let reason = power_saving_block_reason(&routine, true);
+    let reason = power_saving_block_reason(&routine, true, false);
 
     assert_eq!(reason, Some("routine is in power-saving mode"));
+}
+
+#[test]
+fn explicit_confirmation_bypasses_only_system_power_saving() {
+    let routine = make_routine("system-power-saving-override-id", "System Power Saving Override", 1, 1);
+
+    let reason = power_saving_block_reason(&routine, true, true);
+
+    assert_eq!(reason, None);
 }

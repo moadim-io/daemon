@@ -17,7 +17,7 @@ impl MoadimMcp {
         &self,
         Parameters(IdInput { id }): Parameters<IdInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        Ok(match logic::build(&self.routines, &id) {
+        Ok(match logic::build(&self.routines, &id, false) {
             Ok(routine) => ok(routine),
             Err(error) => err(error),
         })

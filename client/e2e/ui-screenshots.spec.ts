@@ -59,6 +59,20 @@ test("routines operations screenshot stays reviewable", async ({ page }, testInf
   }
 });
 
+test("routine editor exposes independent multi-cron inputs", async ({ page }, testInfo) => {
+  await page.goto("/routines");
+  await page.getByRole("button", { name: "+ NEW ROUTINE" }).click();
+  await expect(page.getByText("NEW ROUTINE")).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Cron expression 1" }).fill("@daily");
+  await page.getByRole("button", { name: "+ ADD CRON EXPRESSION" }).click();
+  await page.getByRole("textbox", { name: "Cron expression 2" }).fill("@hourly");
+  await expect(page.getByText("At 12:00 AM")).toBeVisible();
+  await expect(page.locator(".cron-preview", { hasText: "Every hour" })).toBeVisible();
+
+  await saveScreenshot(page, testInfo.project.name, "routine-editor-multi-cron");
+});
+
 test("routine calendar day details screenshot stays reviewable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop", "calendar popover baseline is desktop-only");
   await page.goto("/routines");

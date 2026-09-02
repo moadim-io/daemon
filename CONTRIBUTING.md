@@ -126,7 +126,8 @@ exposes the same routine (agent-scheduling) functionality over three interfaces 
 - **UI** — a React/TypeScript app in `client/`, served at `/`, embedded at
   build time (see `src/build/client.rs`)
 
-Routines are persisted to the OS crontab so they run on schedule. See
+Routines are registered with the daemon's cross-platform in-process scheduler
+so they run on schedule without an OS cron dependency. See
 [`Architecture.md`](Architecture.md) for the full picture.
 
 ## Tests

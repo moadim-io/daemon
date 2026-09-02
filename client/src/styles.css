@@ -2298,6 +2298,25 @@ textarea {
   margin-top: 6px;
 }
 
+.cron-schedule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cron-schedule-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cron-schedule-input .form-input {
+  min-width: 0;
+}
+
+.add-cron-btn {
+  margin-top: 8px;
+}
+
 .preset-btn {
   border: 1px solid var(--border-strong);
   background: var(--surface);
@@ -2323,6 +2342,13 @@ textarea {
 
 .cron-preview.bad {
   color: var(--err);
+}
+
+@media (max-width: 560px) {
+  .cron-schedule-input {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .machine-chips {

@@ -11,8 +11,44 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.6] - 2026-08-29
+
+Keep scheduled-fire deduplication process-local so reloaded current-minute execution history does not suppress the scheduler's current fire.
+
+Expose each routine cron expression as an independently editable UI field, with per-expression validation, removal, and appendable presets.
+
+## [3.2.5] - 2026-08-27
+
+Run routine cron schedules inside the daemon with `tokio-cron-scheduler` across platforms, preserving the existing scheduled-trigger safety policies.
+
+## [3.2.4] - 2026-08-27
+
 Store routine disable intent in a tracked `disabled.json` marker with basic audit metadata while keeping legacy `enabled = false` TOML configs loadable.
 - Support optional user-provided disabled reasons in `disabled.json` across CLI/API/MCP disable surfaces.
+
+Add regression coverage for single-line JSON CLI output.
+
+Keep Hermes model and provider selection configurable while retaining headless-safe routine launches.
+
+Run built-in Hermes routines in explicit headless mode with a pinned model/provider, preventing interactive customization and MCP startup from blocking unattended runs.
+
+Store routine disabled state in a tracked `disabled.json` marker while keeping legacy `enabled = false` routine TOML files loadable.
+
+Support optional user-provided disabled reasons in `disabled.json` across CLI, API, and MCP disable surfaces.
+
+Add configurable routine failure notification hooks with global and per-routine command/webhook targets.
+
+Start every routine launcher from its new workbench so a daemon that inherited a deleted workbench directory can still materialize repository checkouts.
+
+Centralize routine test fixture construction so activation metadata changes do not require repeated struct-literal updates across storage tests.
+
+Add a Concurrency card to the Settings page: view the effective fleet-wide run cap and set or clear the persisted override, backed by the existing `/config/max-concurrent-runs` endpoint.
+
+Add a deep-linkable Run Detail page (`/runs/:routineId/:workbench`): run metadata, the full log, and Prev/Next navigation between a routine's runs. Linked from the fleet Runs page and each routine's history table, and works standalone from a bookmarked or shared URL.
+
+Add a fleet-wide Runs page to the web UI: search, filter by status and time range, and browse run history across every routine instead of only the last 8 shown on Overview.
+
+Send only the canonical `schedules` field when editing a routine, preventing update requests from being rejected for including both schedule representations.
 
 ## [3.2.3] - 2026-08-01
 
@@ -5027,7 +5063,10 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.3...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.6...HEAD
+[3.2.6]: https://github.com/moadim-io/daemon/compare/v3.2.5...v3.2.6
+[3.2.5]: https://github.com/moadim-io/daemon/compare/v3.2.4...v3.2.5
+[3.2.4]: https://github.com/moadim-io/daemon/compare/v3.2.3...v3.2.4
 [3.2.3]: https://github.com/moadim-io/daemon/compare/v3.2.2...v3.2.3
 [3.2.2]: https://github.com/moadim-io/daemon/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/moadim-io/daemon/compare/v3.2.0...v3.2.1

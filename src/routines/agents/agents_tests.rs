@@ -59,7 +59,8 @@ fn hermes_default_config_uses_oneshot_prompt_argument() {
         vec![
             "-z".to_string(),
             "{prompt}".to_string(),
-            "--ignore-rules".to_string()
+            "--ignore-rules".to_string(),
+            "--safe-mode".to_string()
         ]
     );
 }

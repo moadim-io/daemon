@@ -29,7 +29,8 @@ fn ensure_default_agents_writes_parsable_configs() {
         vec![
             "-z".to_string(),
             "{prompt}".to_string(),
-            "--ignore-rules".to_string()
+            "--ignore-rules".to_string(),
+            "--safe-mode".to_string()
         ]
     );
 

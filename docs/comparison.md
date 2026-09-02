@@ -32,8 +32,8 @@ standalone, n8n, Temporal, Airflow, etc.
 ## Where each wins
 
 - **cron / systemd timers** — bedrock for scripts. Zero deps, everywhere. No
-  agent concept, no isolation, no API, no UI. moadim *sits on top* (syncs to the
-  OS crontab) rather than replacing it.
+  agent concept, no isolation, no API, no UI. moadim uses its own portable
+  in-process scheduler so agent routines do not depend on a host cron service.
 - **GitHub Actions (cron)** — best when work is already CI-shaped and cloud is
   fine: fresh runners, secrets, repo-tracked YAML. Weak for local/offline,
   interactive agents, and sub-hour reliability; minute-billed.
@@ -46,11 +46,11 @@ standalone, n8n, Temporal, Airflow, etc.
 ## Where moadim wins
 
 - **Purpose-built for agent routines** — a prompt + schedule + coding agent,
-  synced to the OS crontab, on the same daemon and port as the REST/MCP/UI surface.
+  scheduled inside the same cross-platform daemon that serves the REST/MCP/UI surface.
 - **Agent-agnostic** — `claude`, `codex`, `hermes`, `pi` built in; any CLI via a
   `<name>.toml`. Swap the agent without touching the schedule.
 - **Local-first, self-hosted, free** — no cloud, no per-minute billing, runs
-  offline against the host crontab.
+  offline without requiring the host crontab.
 - **Three interfaces, one port** — UI + REST + MCP with no logic duplication. MCP
   means an agent can read, schedule, and re-fire its **own** routines.
 - **Unattended by design** — per-run throwaway workbench (reaped on a 5-minute sweep), tmux

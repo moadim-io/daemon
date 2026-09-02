@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.7] - 2026-09-02
+
+### Fixed
+
+Allow an operator to confirm and manually run a routine from the web UI while system power saving is active. Scheduled runs and explicit per-routine power-saving remain protected.
+
 ## [3.2.6] - 2026-08-29
 
 Keep scheduled-fire deduplication process-local so reloaded current-minute execution history does not suppress the scheduler's current fire.
@@ -5063,7 +5069,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.6...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.7...HEAD
+[3.2.7]: https://github.com/moadim-io/daemon/compare/v3.2.6...v3.2.7
 [3.2.6]: https://github.com/moadim-io/daemon/compare/v3.2.5...v3.2.6
 [3.2.5]: https://github.com/moadim-io/daemon/compare/v3.2.4...v3.2.5
 [3.2.4]: https://github.com/moadim-io/daemon/compare/v3.2.3...v3.2.4

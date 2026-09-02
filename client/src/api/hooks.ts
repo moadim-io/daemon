@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
-import { api, unwrap, unwrapVoid } from "./client";
+import { ApiError, api, unwrap, unwrapVoid } from "./client";
 import type { components } from "./schema.gen";
 
 type Schemas = components["schemas"];
@@ -206,10 +206,31 @@ export function useDeleteRoutine() {
 export function useTriggerRoutine() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) =>
-      unwrap(await api.POST("/routines/{id}/trigger", { params: { path: { id } } })),
+    mutationFn: async (id: string) => {
+      try {
+        return await triggerRoutine(id, false);
+      } catch (error) {
+        if (!isSystemPowerSavingError(error) || !window.confirm("System power saving is active. Run this routine anyway?")) {
+          throw error;
+        }
+        return triggerRoutine(id, true);
+      }
+    },
     onSuccess: (_data, id) => invalidateRoutines(queryClient, id),
   });
+}
+
+async function triggerRoutine(id: string, overrideSystemPowerSaving: boolean) {
+  return unwrap(
+    await api.POST("/routines/{id}/trigger", {
+      params: { path: { id } },
+      body: { override_system_power_saving: overrideSystemPowerSaving },
+    }),
+  );
+}
+
+function isSystemPowerSavingError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 423 && error.message === "locked: system power saving is active";
 }
 
 export function useScheduledTriggerRoutine() {

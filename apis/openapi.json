@@ -1130,7 +1130,7 @@
           "crate::routes::trigger_routine"
         ],
         "summary": "`POST /routines/{id}/trigger` — manually trigger a routine outside its schedule.",
-        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`crate::routines::svc_trigger`].",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. A\nconfirmed UI request may bypass host-level power saving for that one manual run. See\n[`crate::routines::svc_trigger`].",
         "operationId": "trigger_routine",
         "parameters": [
           {
@@ -1143,6 +1143,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2180,6 +2190,16 @@
           "asc",
           "desc"
         ]
+      },
+      "TriggerRoutineRequest": {
+        "type": "object",
+        "description": "An explicit operator confirmation to run despite host-level power saving.",
+        "properties": {
+          "override_system_power_saving": {
+            "type": "boolean",
+            "description": "Bypass only host-level power saving for this manual run. It does not bypass a routine's\nexplicit power-saving state, disabled state, or the global lock."
+          }
+        }
       },
       "UpdateRoutineRequest": {
         "type": "object",

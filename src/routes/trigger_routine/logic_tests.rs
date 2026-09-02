@@ -8,6 +8,6 @@ use super::build;
 #[test]
 fn build_returns_not_found_for_unknown_id() {
     let store = crate::routines::new_store();
-    let result = build(&store, "no-such");
+    let result = build(&store, "no-such", false);
     assert!(result.is_err());
 }

@@ -35,7 +35,6 @@ pub(crate) use spawn_routine_command::*;
 /// user-disabled (`enabled: false`) or in power-saving mode — `enabled` and `power_saving` are
 /// independent signals, checked in that order so the response names whichever one is actually
 /// responsible.
-#[cfg(test)]
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
     svc_trigger_with_system_power_saving_override(store, id, false)
 }

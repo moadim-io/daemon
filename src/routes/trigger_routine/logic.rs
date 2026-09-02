@@ -22,6 +22,9 @@ pub fn build(
     id: &str,
     override_system_power_saving: bool,
 ) -> Result<Routine, AppError> {
+    if !override_system_power_saving {
+        return crate::routines::svc_trigger(store, id);
+    }
     crate::routines::svc_trigger_with_system_power_saving_override(
         store,
         id,

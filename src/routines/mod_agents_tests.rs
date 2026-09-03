@@ -72,6 +72,7 @@ fn available_agents_falls_back_to_builtins_when_missing() {
             "claude".to_string(),
             "codex".to_string(),
             "hermes".to_string(),
+            "nanoclaw".to_string(),
             "pi".to_string()
         ]
     );

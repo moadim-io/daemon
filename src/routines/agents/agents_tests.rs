@@ -24,6 +24,7 @@ fn available_agents_in_falls_back_when_dir_has_no_toml() {
             "claude".to_string(),
             "codex".to_string(),
             "hermes".to_string(),
+            "nanoclaw".to_string(),
             "pi".to_string()
         ]
     );
@@ -63,6 +64,21 @@ fn hermes_default_config_uses_oneshot_prompt_argument() {
             "--safe-mode".to_string()
         ]
     );
+}
+
+#[test]
+fn nanoclaw_default_config_queues_a_one_shot_task_for_the_configured_group() {
+    let cmd: AgentCommand = toml::from_str(super::nanoclaw::CONFIG)
+        .expect("nanoclaw default config must be valid TOML");
+    assert_eq!(cmd.command, "sh");
+    assert_eq!(
+        cmd.args,
+        vec![
+            "-c".to_string(),
+            "exec ncl tasks create --group \"${NANOCLAW_AGENT_GROUP_ID:?set NANOCLAW_AGENT_GROUP_ID}\" --name moadim --process-after \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" --prompt \"$(cat {prompt_file})\"".to_string()
+        ]
+    );
+    assert_eq!(cmd.instructions_file, DEFAULT_INSTRUCTIONS_FILE);
 }
 
 #[test]

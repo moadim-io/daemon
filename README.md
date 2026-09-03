@@ -459,7 +459,7 @@ built-in `claude` agent.
 Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
 `<name>` is the registry key a routine's `agent` field references (the filename
 stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
-defaults (`claude`, `codex`, `hermes`, `pi`) into this directory **only if the file is
+defaults (`claude`, `codex`, `hermes`, `nanoclaw`, `pi`) into this directory **only if the file is
 absent** — your edits are never overwritten — so you can both tweak a default and
 register a brand-new agent by dropping in another `<name>.toml`.
 
@@ -507,6 +507,22 @@ args = ["--permission-mode", "auto", "{prompt}"]
 command = "pi"
 args = ["--approve", "-p", "@{prompt_file}"]
 ```
+
+```toml
+# ~/.config/moadim/agents/nanoclaw.toml
+# Queue a one-shot NanoClaw task. Set NANOCLAW_AGENT_GROUP_ID in the routine's
+# environment to the NanoClaw group that should own the task.
+command = "sh"
+args = ["-c", "exec ncl tasks create --group \"${NANOCLAW_AGENT_GROUP_ID:?set NANOCLAW_AGENT_GROUP_ID}\" --name moadim --process-after \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" --prompt \"$(cat {prompt_file})\""]
+```
+
+The built-in `nanoclaw` agent requires the NanoClaw `ncl` launcher on `PATH`
+and a routine environment value such as
+`NANOCLAW_AGENT_GROUP_ID = "<agent-group-id>"`. It queues a one-shot task in
+that NanoClaw group; NanoClaw then executes and delivers the task asynchronously.
+Moadim records successful queueing, not the later NanoClaw task result. Omit a
+routine-level `model` override: NanoClaw selects the provider and model from the
+target agent group's own configuration.
 
 A routine whose `agent` names a file that is missing or whose TOML is malformed
 fails to launch; `GET /routines` reports `agent_registered: false` for the former

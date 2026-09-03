@@ -64,6 +64,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify Changesets versions the private daemon package
+        run: node --test scripts/release/private-package-versioning.test.mjs
+
       - name: Bump version and sync Cargo/CHANGELOG
         run: pnpm version-packages
 

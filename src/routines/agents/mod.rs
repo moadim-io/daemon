@@ -27,6 +27,8 @@ mod claude_code;
 mod codex;
 #[path = "hermes/setup.rs"]
 mod hermes;
+#[path = "nanoclaw/setup.rs"]
+mod nanoclaw;
 #[path = "pi/setup.rs"]
 mod pi;
 
@@ -111,6 +113,7 @@ const DEFAULT_AGENT_CONFIGS: &[(&str, &str)] = &[
     (claude_code::NAME, claude_code::CONFIG),
     (codex::NAME, codex::CONFIG),
     (hermes::NAME, hermes::CONFIG),
+    (nanoclaw::NAME, nanoclaw::CONFIG),
     (pi::NAME, pi::CONFIG),
 ];
 

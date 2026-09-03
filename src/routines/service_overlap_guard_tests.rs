@@ -134,3 +134,54 @@ fn svc_trigger_skips_spawn_when_a_previous_run_is_still_alive() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn svc_trigger_spawns_when_overlap_policy_allows_a_live_previous_run() {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let _home = TempHome::set();
+    let title = "Svc Trigger Allow Overlap ZZZ";
+    let slug = slugify(title);
+    let agent_name = "svc-trigger-allow-overlap-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    std::fs::write(
+        crate::paths::agent_toml_path(agent_name),
+        "command = \"true\"\nargs = []\n",
+    )
+    .unwrap();
+    let dir = std::env::temp_dir().join(format!("moadim-svc-allow-overlap-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tmux = dir.join("tmux");
+    std::fs::write(
+        &tmux,
+        format!("#!/bin/sh\nprintf 'moadim-{slug}-1730000000_4821\\n'\n"),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut routine = make_routine("trig-allow-overlap-id", title, 1, 1);
+    routine.agent = agent_name.into();
+    crate::routine_storage::write_routine(&routine).unwrap();
+    crate::routine_storage::write_overlap_policy(&slug, true).unwrap();
+    let store = new_store();
+    store.lock().unwrap().insert(routine.id.clone(), routine);
+    let old_tmux = std::env::var_os("MOADIM_TMUX_BIN");
+    let old_shell = std::env::var_os("MOADIM_SH_BIN");
+    // SAFETY: tests in this crate run single-threaded.
+    unsafe {
+        std::env::set_var("MOADIM_TMUX_BIN", &tmux);
+        std::env::set_var("MOADIM_SH_BIN", "/usr/bin/true");
+    }
+    svc_trigger(&store, "trig-allow-overlap-id").unwrap();
+    assert!(
+        !crate::paths::routine_skip_log_path(&slug).exists(),
+        "allow-overlap policy must bypass the per-routine overlap skip"
+    );
+    // SAFETY: restore the process-wide test seams.
+    unsafe {
+        match old_tmux { Some(value) => std::env::set_var("MOADIM_TMUX_BIN", value), None => std::env::remove_var("MOADIM_TMUX_BIN") }
+        match old_shell { Some(value) => std::env::set_var("MOADIM_SH_BIN", value), None => std::env::remove_var("MOADIM_SH_BIN") }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

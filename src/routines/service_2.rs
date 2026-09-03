@@ -20,6 +20,10 @@ mod service_update_apply_tests;
 mod service_overlap_guard_tests;
 
 #[cfg(test)]
+#[path = "service_overlap_policy_error_tests.rs"]
+mod service_overlap_policy_error_tests;
+
+#[cfg(test)]
 #[path = "service_update_not_found_tests.rs"]
 mod service_update_not_found_tests;
 

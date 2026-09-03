@@ -144,6 +144,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │   └── nightly-triage/
 │       ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
 │       ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
+│       ├── overlap.json       # tracked, optional — permits concurrent fires when enabled
 │       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
 │       └── prompts/
 │           ├── prompt.pure.md      # tracked — the raw, user-authored prompt
@@ -206,6 +207,22 @@ git-trackable:
 The gitignored files are covered by the single generated `.gitignore` at the
 config-dir root (`~/.config/moadim/.gitignore`), whose patterns apply to the
 whole tree — routine directories don't carry their own.
+
+### Overlap policy
+
+By default, a fire is skipped and recorded in `skip.log` when a previous run of the same routine
+is still alive. To explicitly allow independent manual or scheduled fires to overlap, commit this
+optional sibling file (not a `routine.toml` field):
+
+```json
+{"version":1,"allow_overlapping_runs":true}
+```
+
+Save it as `routines/<slug>/overlap.json`. Deleting the file, or setting the boolean to `false`,
+restores the default. Invalid JSON or an unsupported version fails closed: the daemon records the
+policy error in `skip.log` and does not start the new run. This opt-in bypasses only the
+per-routine overlap guard; global locks, snoozes, power-saving rules, same-minute schedule
+deduplication, and the fleet-wide concurrency cap remain in force.
 
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |

@@ -115,6 +115,13 @@ pub fn routine_disabled_json_path(id: &str) -> PathBuf {
     routine_dir(id).join("disabled.json")
 }
 
+/// Returns the path to `{routines_dir}/{id}/overlap.json`, the tracked policy that controls
+/// whether a routine may launch while one of its earlier fires is still running.
+#[must_use]
+pub fn routine_overlap_json_path(id: &str) -> PathBuf {
+    routine_dir(id).join("overlap.json")
+}
+
 /// Returns the path to `{routines_dir}/{id}/schedule.compailed.cron`, the gitignored cron-union output.
 ///
 /// `schedule.cron` stays the human-authored source; this derived file is rewritten by crontab

@@ -64,6 +64,11 @@ fn write_then_load_round_trips() {
         assert!(crate::paths::routine_cron_path(&slug).exists());
         assert!(crate::paths::routine_pure_prompt_path(&slug).exists());
         assert!(crate::paths::routine_compiled_prompt_path(&slug).exists());
+        assert_eq!(
+            std::fs::read_to_string(crate::paths::routine_overlap_json_path(&slug)).unwrap(),
+            "{\"version\":1,\"allow_overlapping_runs\":false}",
+            "every persisted routine must carry an explicit disabled overlap policy"
+        );
         assert!(
             !crate::paths::routine_gitignore_path(&slug).exists(),
             "per-routine .gitignore is no longer generated"

@@ -84,6 +84,7 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
     }
     crate::utils::fs_perms::create_private_dir_all(&dir)?;
     crate::utils::fs_perms::create_private_dir_all(&routine_prompts_dir(rel_dir))?;
+    crate::routine_storage::routine_overlap_policy::ensure_overlap_policy(rel_dir)?;
     if !routine.enabled {
         write_disabled_state(rel_dir, false, routine.disabled_reason.as_deref())?;
     }

@@ -1,9 +1,7 @@
 //! Read/write support for a routine's tracked overlap policy sidecar.
 
-use serde::{Deserialize, Serialize};
-
-#[cfg(test)]
 use crate::utils::atomic::atomic_write;
+use serde::{Deserialize, Serialize};
 
 /// Current on-disk schema version for a routine overlap policy.
 const OVERLAP_POLICY_VERSION: u32 = 1;
@@ -40,10 +38,34 @@ pub(crate) fn read_overlap_policy(rel_dir: &str) -> Result<bool, String> {
     Ok(policy.allow_overlapping_runs)
 }
 
+/// Create a missing policy sidecar with the safe default without replacing an explicit policy.
+///
+/// Routine writes run on creation, updates, and startup re-persistence, so this also materializes
+/// the policy file for routines created by older daemon versions.
+pub(crate) fn ensure_overlap_policy(rel_dir: &str) -> std::io::Result<()> {
+    let path = crate::paths::routine_overlap_json_path(rel_dir);
+    if path.exists() {
+        return Ok(());
+    }
+    write_overlap_policy_file(&path, false)
+}
+
+/// Serialize and atomically replace one explicit overlap policy file.
+fn write_overlap_policy_file(
+    path: &std::path::Path,
+    allow_overlapping_runs: bool,
+) -> std::io::Result<()> {
+    let policy = OverlapPolicy {
+        version: OVERLAP_POLICY_VERSION,
+        allow_overlapping_runs,
+    };
+    let bytes = serde_json::to_vec(&policy).map_err(std::io::Error::other)?;
+    atomic_write(path, &bytes)
+}
+
 /// Persist the overlap policy for a routine directory.
 ///
-/// `false` removes the optional sidecar, retaining the default-deny behavior without durable
-/// configuration churn.
+/// `false` removes the sidecar only in tests that need to exercise the legacy missing-file path.
 #[cfg(test)]
 pub(crate) fn write_overlap_policy(
     rel_dir: &str,
@@ -56,10 +78,5 @@ pub(crate) fn write_overlap_policy(
         }
         return Ok(());
     }
-    let policy = OverlapPolicy {
-        version: OVERLAP_POLICY_VERSION,
-        allow_overlapping_runs,
-    };
-    let bytes = serde_json::to_vec(&policy).map_err(std::io::Error::other)?;
-    atomic_write(&path, &bytes)
+    write_overlap_policy_file(&path, allow_overlapping_runs)
 }

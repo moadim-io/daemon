@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.8] - 2026-09-03
+
+Add a built-in NanoClaw agent bridge for queuing routine work in an agent group.
+
+Add opt-in `overlap.json` sidecars so a routine can allow concurrent fires.
+
+Create a disabled `overlap.json` sidecar for every persisted routine.
+
 ## [3.2.7] - 2026-09-02
 
 ### Fixed
@@ -5069,7 +5077,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.7...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.8...HEAD
+[3.2.8]: https://github.com/moadim-io/daemon/compare/v3.2.7...v3.2.8
 [3.2.7]: https://github.com/moadim-io/daemon/compare/v3.2.6...v3.2.7
 [3.2.6]: https://github.com/moadim-io/daemon/compare/v3.2.5...v3.2.6
 [3.2.5]: https://github.com/moadim-io/daemon/compare/v3.2.4...v3.2.5

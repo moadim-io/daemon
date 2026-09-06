@@ -67,7 +67,10 @@ impl RoutineResponse {
             .iter()
             .filter_map(|schedule| describe_schedule(schedule, timezone.as_deref()))
             .collect();
-        let flag_count = list_flags(&slug).len();
+        // Keyed by `rel_path` (the routine's actual on-disk directory), not the bare `slug`: for a
+        // routine inside a folder those differ, and the flags/ dir lives under the full rel_path
+        // (see #1514).
+        let flag_count = list_flags(&rel_path).len();
         let next_run_at = next_run_at(&schedules, routine.enabled);
         let missed_scheduled_run_at = missed_scheduled_run_at(&routine, &schedules);
         let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));

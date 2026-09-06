@@ -83,14 +83,14 @@ pub(crate) fn is_valid_env_key(key: &str) -> bool {
 /// the tracked `routine.toml` `[env]` table, overlaid with the untracked `routine.local.toml`
 /// sidecar (secrets) — whose keys win on conflict (#408).
 ///
-/// A `BTreeMap` merge keeps the emitted statements in a deterministic, sorted-by-key order (stable
-/// test assertions, stable output for anyone reading `launch.log`). Every entry — from either
-/// source — is re-checked with [`is_valid_env_key`] and scanned for newlines: `routine.toml` was
-/// already validated at create/update time (`service_validate::validate_env`), but
-/// `routine.local.toml` is a file a human edits directly on disk and never passes through that
-/// check, so a malformed entry there is dropped (with a warning) rather than corrupting the
-/// single-line, `;`-joined launch command.
-pub(crate) fn env_export_stmts(routine: &Routine) -> Vec<String> {
+/// A `BTreeMap` merge keeps the merged set in a deterministic, sorted-by-key order (stable test
+/// assertions, stable output for anyone reading `launch.log`). Every entry — from either source —
+/// is re-checked with [`is_valid_env_key`] and scanned for newlines: `routine.toml` was already
+/// validated at create/update time (`service_validate::validate_env`), but `routine.local.toml` is
+/// a file a human edits directly on disk and never passes through that check, so a malformed entry
+/// there is dropped (with a warning) rather than corrupting the single-line, `;`-joined launch
+/// command.
+fn merged_env_vars(routine: &Routine) -> BTreeMap<String, String> {
     let rel_dir = crate::routine_storage::routine_rel_dir(routine);
     let local_env = read_local_env(&rel_dir);
     let mut merged: BTreeMap<String, String> = BTreeMap::new();
@@ -106,8 +106,46 @@ pub(crate) fn env_export_stmts(routine: &Routine) -> Vec<String> {
         }
     }
     merged
+}
+
+/// The process-environment carrier name [`routine_env_carrier_vars`] sets `key`'s value under, so
+/// [`env_export_stmts`]'s indirection line can read it back without the value ever appearing in
+/// the composed command string (#1515). Prefixed so it cannot collide with a routine's own `[env]`
+/// key of the same name; [`is_valid_env_key`] already restricts `key` to a shell identifier, so
+/// the prefixed result is always a valid one too.
+fn carrier_env_var(key: &str) -> String {
+    format!("MOADIM_ROUTINE_ENV__{key}")
+}
+
+/// Build the `export KEY="$MOADIM_ROUTINE_ENV__KEY"` indirection statements for `routine`'s
+/// resolved environment (see [`merged_env_vars`]).
+///
+/// The statement names each variable but never embeds its *value*: the value instead travels
+/// privately on the spawned process's own environment (`Command::envs`, set by
+/// [`routine_env_carrier_vars`] in `spawn_routine_command`), which the kernel keeps in
+/// `/proc/<pid>/environ` (owner-only, `0400`) rather than in the world-readable `ps`/
+/// `/proc/<pid>/cmdline` argv this statement is inlined into (#1515). Immediately `unset`ting the
+/// carrier after copying it to the real name limits how long the redundant copy lives in the
+/// process environment. Placed after `sh -l`'s profile sourcing (see `build_routine_command`), so
+/// a routine env var still overrides a same-named profile-inherited one, exactly as before.
+pub(crate) fn env_export_stmts(routine: &Routine) -> Vec<String> {
+    merged_env_vars(routine)
+        .into_keys()
+        .map(|key| {
+            let carrier = carrier_env_var(&key);
+            format!("export {key}=\"${carrier}\"; unset {carrier}")
+        })
+        .collect()
+}
+
+/// The carrier environment variables (name -> value, see [`carrier_env_var`]) that must be set on
+/// the spawned launcher process's own environment (via `Command::envs` in
+/// `spawn_routine_command`) so the indirection statements [`env_export_stmts`] embeds in the
+/// command string can resolve them without ever inlining a value into that string (#1515).
+pub(crate) fn routine_env_carrier_vars(routine: &Routine) -> BTreeMap<String, String> {
+    merged_env_vars(routine)
         .into_iter()
-        .map(|(key, value)| format!("export {key}={}", shell_quote(&value)))
+        .map(|(key, value)| (carrier_env_var(&key), value))
         .collect()
 }
 

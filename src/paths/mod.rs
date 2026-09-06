@@ -9,6 +9,9 @@ use std::path::PathBuf;
 )]
 mod agent_toml_path;
 pub(crate) use agent_toml_path::*;
+/// Default-home resolution with a per-test temporary fallback.
+mod default_home;
+pub(crate) use default_home::*;
 
 /// Environment variable that, when set, overrides the home directory all moadim paths resolve
 /// under. Used by tests to redirect config/routines/jobs/agents/workbenches into a tempdir so they
@@ -25,7 +28,7 @@ const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 pub(crate) fn home() -> Option<PathBuf> {
     match std::env::var_os(HOME_OVERRIDE_ENV) {
         Some(dir) => Some(PathBuf::from(dir)),
-        None => dirs::home_dir(),
+        None => default_home(),
     }
 }
 

@@ -39,6 +39,7 @@ function renderPage(opts: { routineId?: string; workbench?: string; runs?: RunSu
   if (runs !== undefined) queryClient.setQueryData(["routines", routineId, "runs"], runs);
   if (routineData !== undefined) queryClient.setQueryData(["routines", routineId], routineData);
   queryClient.setQueryData(["routines", routineId, "runs", workbench, "log"], "hello from the log\n");
+  queryClient.setQueryData(["routines", routineId, "runs", workbench, "summary"], "did the thing\n");
 
   render(
     <QueryClientProvider client={queryClient}>
@@ -76,10 +77,11 @@ describe("RunDetailPage", () => {
     expect(screen.getByRole("link", { name: "← r1" })).toBeInTheDocument();
   });
 
-  it("renders run metadata and the log", () => {
+  it("renders run metadata, the agent's summary, and the log", () => {
     renderPage({ runs: [run({ status: "failed", exit_code: 42 })] });
     expect(screen.getByText("FAILED")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("did the thing")).toBeInTheDocument();
     expect(screen.getByText("hello from the log")).toBeInTheDocument();
   });
 

@@ -28,19 +28,25 @@ pub(super) async fn run<S: Scheduler>(
     let scheduler = match scheduler {
         Ok(scheduler) => scheduler,
         Err(err) => {
-            log::error!("routine scheduler initialization failed: {err}");
+            let error = format!("routine scheduler initialization failed: {err}");
+            log::error!("{error}");
+            crate::routine_scheduler::record_resync_result(Some(error));
             return;
         }
     };
     let mut job_ids = Vec::new();
-    rebuild(&scheduler, &mut job_ids, &store).await;
+    crate::routine_scheduler::record_resync_result(rebuild(&scheduler, &mut job_ids, &store).await);
     if let Err(err) = scheduler.start().await {
-        log::error!("routine scheduler failed to start: {err}");
+        let error = format!("routine scheduler failed to start: {err}");
+        log::error!("{error}");
+        crate::routine_scheduler::record_resync_result(Some(error));
         return;
     }
     while receiver.recv().await.is_some() {
         while receiver.try_recv().is_ok() {}
-        rebuild(&scheduler, &mut job_ids, &store).await;
+        crate::routine_scheduler::record_resync_result(
+            rebuild(&scheduler, &mut job_ids, &store).await,
+        );
     }
 }
 
@@ -49,21 +55,24 @@ pub(super) async fn rebuild<S: Scheduler>(
     scheduler: &S,
     job_ids: &mut Vec<Uuid>,
     store: &RoutineStore,
-) {
+) -> Option<String> {
+    let mut last_error = None;
     for job_id in job_ids.drain(..) {
-        match scheduler.remove(&job_id).await {
-            Ok(()) => {}
-            Err(err) => log::warn!("routine scheduler could not remove job {job_id}: {err}"),
+        if let Err(err) = scheduler.remove(&job_id).await {
+            let error = format!("could not remove job {job_id}: {err}");
+            log::warn!("routine scheduler {error}");
+            last_error = Some(error);
         }
     }
     for routine in selected_routines(store) {
         for schedule in routine.effective_schedules() {
             let Ok(schedule) = to_scheduler_schedule(&schedule) else {
-                log::warn!(
-                    "routine scheduler skipped invalid schedule {:?} for routine {:?}",
-                    schedule,
-                    routine.id
+                let error = format!(
+                    "skipped invalid schedule {:?} for routine {:?}",
+                    schedule, routine.id
                 );
+                log::warn!("routine scheduler {error}");
+                last_error = Some(error);
                 continue;
             };
             match scheduler
@@ -71,14 +80,18 @@ pub(super) async fn rebuild<S: Scheduler>(
                 .await
             {
                 Ok(job_id) => job_ids.push(job_id),
-                Err(err) => log::warn!(
-                    "routine scheduler could not add schedule {:?} for routine {:?}: {err}",
-                    schedule,
-                    routine.id
-                ),
+                Err(err) => {
+                    let error = format!(
+                        "could not add schedule {:?} for routine {:?}: {err}",
+                        schedule, routine.id
+                    );
+                    log::warn!("routine scheduler {error}");
+                    last_error = Some(error);
+                }
             }
         }
     }
+    last_error
 }
 
 /// Select only the routines that are eligible to execute on this daemon.

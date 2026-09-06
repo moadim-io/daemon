@@ -16,6 +16,19 @@ pub struct CrontabSyncHealth {
     pub last_error_at: Option<u64>,
 }
 
+/// In-process scheduler resynchronization state surfaced by health endpoints.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SchedulerResyncHealth {
+    /// Whether the most recently completed in-process scheduler rebuild had no failures.
+    pub ok: bool,
+    /// Unix timestamp of the most recently completed in-process scheduler rebuild.
+    pub last_completed_at: Option<u64>,
+    /// Last in-process scheduler rebuild error, when any schedule could not be applied.
+    pub last_error: Option<String>,
+    /// Unix timestamp of the most recent in-process scheduler rebuild error.
+    pub last_error_at: Option<u64>,
+}
+
 /// External-binary dependencies the daemon relies on at runtime, and whether each is resolvable on
 /// the daemon's `PATH`. Surfaced in [`HealthResponse`] so the UI/CLI can flag a missing dependency
 /// instead of having routine runs silently no-op.
@@ -44,6 +57,8 @@ pub struct HealthResponse {
     pub dependencies: DependencyHealth,
     /// Whether the managed routine block was last synced into the OS crontab successfully.
     pub crontab_sync: CrontabSyncHealth,
+    /// Whether the in-process scheduler last rebuilt routine jobs successfully after a mutation.
+    pub scheduler_resync: SchedulerResyncHealth,
     /// Daemon version (from `CARGO_PKG_VERSION`).
     pub version: String,
     /// Short git commit SHA the daemon was built from, or `"unknown"` outside a git checkout.
@@ -74,6 +89,15 @@ pub fn build(uptime_start: u64) -> HealthResponse {
             let status = crate::sync::crontab_sync_status();
             CrontabSyncHealth {
                 ok: status.ok,
+                last_error: status.last_error,
+                last_error_at: status.last_error_at,
+            }
+        },
+        scheduler_resync: {
+            let status = crate::routine_scheduler::scheduler_resync_status();
+            SchedulerResyncHealth {
+                ok: status.ok,
+                last_completed_at: status.last_completed_at,
                 last_error: status.last_error,
                 last_error_at: status.last_error_at,
             }

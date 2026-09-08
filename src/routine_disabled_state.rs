@@ -64,8 +64,10 @@ pub(crate) fn write_disabled_state(
         .as_ref()
         .and_then(|marker| marker.get("disabled_at"))
         .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .unwrap_or_else(|| Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
+        .map_or_else(
+            || Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            str::to_owned,
+        );
     let mut marker = serde_json::json!({
         "version": 1,
         "disabled_at": disabled_at,

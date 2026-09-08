@@ -76,6 +76,27 @@ fn enabling_routine_removes_disabled_json() {
 }
 
 #[test]
+fn repersisting_disabled_routine_preserves_disabled_at_timestamp() {
+    with_override_home(|_home| {
+        let title = "Rs Disabled Json Stable Timestamp";
+        let slug = slugify(title);
+        let routine = make_routine("rs-disabled-json-stable-timestamp-id", title, false);
+
+        write_routine(&routine).unwrap();
+        let path = crate::paths::routine_disabled_json_path(&slug);
+        let first: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        write_routine(&routine).unwrap();
+        let second: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(first["disabled_at"], second["disabled_at"]);
+    });
+}
+
+#[test]
 fn disabled_json_presence_wins_over_legacy_toml_enabled_true_even_when_invalid() {
     with_override_home(|_home| {
         let title = "Rs Disabled Json Wins";

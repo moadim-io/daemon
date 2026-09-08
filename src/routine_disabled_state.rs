@@ -41,9 +41,36 @@ pub(crate) fn write_disabled_state(
         return Ok(());
     }
     let reason = reason.and_then(normalize_reason);
+    let existing = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path))
+        .transpose()?
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    if existing
+        .as_ref()
+        .and_then(|marker| marker.get("reason"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(normalize_reason)
+        == reason
+        && existing
+            .as_ref()
+            .and_then(|marker| marker.get("disabled_at"))
+            .and_then(serde_json::Value::as_str)
+            .is_some()
+    {
+        return Ok(());
+    }
+    let disabled_at = existing
+        .as_ref()
+        .and_then(|marker| marker.get("disabled_at"))
+        .and_then(serde_json::Value::as_str)
+        .map_or_else(
+            || Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            str::to_owned,
+        );
     let mut marker = serde_json::json!({
         "version": 1,
-        "disabled_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        "disabled_at": disabled_at,
         "disabled_by_machine": crate::machine::current_machine(),
         "disabled_by_user": current_user(),
         "source": "daemon",

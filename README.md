@@ -360,44 +360,10 @@ crash/restart. The cap can also be set per-machine (persisted in
 the environment; `MOADIM_MAX_CONCURRENT_RUNS` takes precedence over that
 override when both are set.
 
-**REST** — under the `/api/v1` prefix:
-
-```
-GET    /health                 # liveness + uptime/version, used by status/--wait and the UI health badge
-GET    /metrics                # Prometheus text-exposition metrics: run counts/failures/durations, active sessions, workbench disk usage
-POST   /shutdown               # graceful stop, used by `moadim stop` and the UI STOP button
-POST   /restart                # stop this server and start a fresh instance, used by `moadim restart`
-GET    /routines              # list (filter by ?repository=, sort by ?sort=/&order=)
-POST   /routines              # create
-GET    /routines/{id}         # fetch one
-PUT    /routines/{id}         # replace
-PATCH  /routines/{id}         # update fields
-DELETE /routines/{id}         # delete
-POST   /routines/{id}/trigger # run now, outside the schedule
-POST   /routines/{id}/scheduled-trigger # daemon-side scheduled-fire path
-GET    /routines/{id}/prompt-preview # composed prompt body a run would receive, no run
-GET    /routines/{id}/logs    # newest workbench's agent.log as plain text
-POST   /routines/cleanup      # reap expired workbenches now
-GET    /routines/runs          # most recent runs across every routine, newest first (?limit=)
-GET    /routines/{id}/runs     # every run workbench for one routine, newest first
-GET    /routines/{id}/runs/{workbench}/log     # one specific run's agent.log
-GET    /routines/{id}/runs/{workbench}/summary # one specific run's agent-authored summary.md
-GET    /routines/{id}/flags    # list open flags raised against a routine
-POST   /routines/{id}/flags    # raise a new flag
-DELETE /routines/{id}/flags/{filename} # resolve (delete) a flag
-GET    /routines/lock          # current global lock status
-POST   /routines/lock          # create a lock sentinel, halting all scheduling/triggers
-DELETE /routines/lock          # remove lock sentinel(s), restoring scheduling
-GET    /agents                # list registered agents
-GET    /routines.ics          # subscribe to fire times as a calendar feed
-GET    /machine                # this machine's resolved identity
-PUT    /machine                # rename this machine's identity
-GET    /machines               # known machine names (union of routines' machines[] targets)
-GET    /config/user-prompt     # persistent system prompt appended to every routine
-PUT    /config/user-prompt     # replace it
-GET    /config/max-concurrent-runs # global routine concurrency cap
-PUT    /config/max-concurrent-runs # set/clear the persisted override
-```
+**REST** — all handlers live under the `/api/v1` prefix. The endpoint
+inventory, request/response schemas, and per-operation details have a single
+source of truth: see the [API](#api) section for the Swagger UI and the
+checked-in [`apis/openapi.json`](apis/openapi.json) snapshot.
 
 **MCP** — the same operations are exposed as tools: `list_routines`,
 `get_routine`, `preview_routine_prompt`, `create_routine`, `update_routine`,

@@ -19,15 +19,15 @@ const SAVED_VIEWS_KEY = "moadim.routines.saved_views";
 const LAST_VIEW_KEY = "moadim.routines.last_view";
 
 /**
- * Portable snapshot of the Routines page's filter, sort, and group-by state. Every field is a
- * plain string token, so this round-trips through JSON without depending on internal
- * representations.
+ * Portable snapshot of the Routines page's filter, sort, and group-by state.
+ * Fields use plain string tokens; machine also accepts an array for multiple
+ * selections. Legacy scalar snapshots retain their meaning.
  */
 export interface ViewSnapshot {
   query: string;
   status: string;
   agent: string;
-  machine: string;
+  machine: string | string[];
   repository: string;
   tag: string;
   sortCol: string | undefined;

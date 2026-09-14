@@ -74,3 +74,37 @@ test("legacy machine links support keyboard selection, None and other facets", a
   await expect(summary).toHaveText("None");
   await expect(page.getByText("Showing 0 of 3")).toBeVisible();
 });
+
+test("machine popup dismisses without obscuring adjacent controls", async ({ page, isMobile }, testInfo) => {
+  await installApiMocks(page);
+  await page.goto("/routines");
+  const summary = page.getByLabel("Machine filter", { exact: true });
+  const details = page.locator("details.machine-filter");
+  const first = page.getByRole("checkbox", { name: "m1", exact: true });
+  const second = page.getByRole("checkbox", { name: "mini-lab", exact: true });
+  await summary.click();
+  await first.check();
+  await second.check();
+  await expect(details).toHaveAttribute("open", "");
+  await expect(summary).toHaveText("2 selected");
+  await second.focus();
+  await page.keyboard.press("Escape");
+  await expect(details).not.toHaveAttribute("open");
+  await expect(summary).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("dismiss-escape.png"), fullPage: true });
+  await page.keyboard.press("Enter");
+  await first.focus();
+  await page.keyboard.press("Tab");
+  await expect(second).toBeFocused();
+  await expect(details).toHaveAttribute("open", "");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Repository filter", { exact: true })).toBeFocused();
+  await expect(details).not.toHaveAttribute("open");
+  await summary.click();
+  const heading = page.getByRole("heading", { name: "Routines", exact: true });
+  if (isMobile) await heading.tap();
+  else await heading.click();
+  await expect(details).not.toHaveAttribute("open");
+  await expect(summary).toHaveText("2 selected");
+  await page.screenshot({ path: testInfo.outputPath("dismiss-outside.png"), fullPage: true });
+});

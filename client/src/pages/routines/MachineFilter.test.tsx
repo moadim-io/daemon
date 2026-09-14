@@ -40,3 +40,34 @@ it("keeps absent machines from old views removable and distinguishes special nam
   fireEvent.click(screen.getByLabelText("None"));
   expect(screen.getByLabelText("Machine filter")).toHaveTextContent("Any");
 });
+
+it("dismisses on Escape with summary focus, outside pointers, and focus leaving", () => {
+  render(<><MachineFilter facet={{ kind: "any" }} machines={["a", "b"]} onChange={() => {}} /><button>Outside</button></>);
+  const summary = screen.getByLabelText("Machine filter");
+  const details = summary.closest("details")!;
+  const a = screen.getByLabelText("a");
+  const outside = screen.getByRole("button", { name: "Outside" });
+  fireEvent.click(summary);
+  a.focus();
+  fireEvent.keyDown(a, { key: "Escape" });
+  expect(details.open).toBe(false);
+  expect(summary).toHaveFocus();
+  for (const pointerType of ["mouse", "touch", "pen"]) {
+    fireEvent.click(summary);
+    fireEvent.pointerDown(a, { pointerType });
+    expect(details.open).toBe(true);
+    fireEvent.pointerDown(outside, { pointerType });
+    expect(details.open).toBe(false);
+  }
+  fireEvent.click(summary);
+  a.focus();
+  screen.getByLabelText("b").focus();
+  expect(details.open).toBe(true);
+  outside.focus();
+  expect(details.open).toBe(false);
+  expect(outside).toHaveFocus();
+  fireEvent.click(summary);
+  a.focus();
+  a.blur();
+  expect(details.open).toBe(false);
+});

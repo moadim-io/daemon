@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { machineFacetValue, parseMachineFacet, type RoutineMachineFacet } from "./filter";
 import "./MachineFilter.css";
 
@@ -7,6 +8,18 @@ export function MachineFilter({ facet, machines, onChange }: {
   machines: string[];
   onChange: (facet: RoutineMachineFacet) => void;
 }) {
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  const summary = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const details = disclosure.current;
+      if (details?.open && event.target instanceof Node && !details.contains(event.target)) {
+        details.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
   const value = machineFacetValue(facet);
   const selected = facet.kind === "any" ? [] : Array.isArray(value) ? value : [value];
   const none = "\0unassigned";
@@ -16,8 +29,22 @@ export function MachineFilter({ facet, machines, onChange }: {
     selected.includes(machine) ? selected.filter((m) => m !== machine) : [...selected, machine],
   ));
   return (
-    <details className="machine-filter">
-      <summary className="filter-select" aria-label="Machine filter">
+    <details
+      ref={disclosure}
+      className="machine-filter"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && event.currentTarget.open) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.currentTarget.open = false;
+          summary.current?.focus();
+        }
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+      }}
+    >
+      <summary ref={summary} className="filter-select" aria-label="Machine filter">
         {selected.length === 0 ? "Any" : selected.length === 1
           ? selected[0] === none ? "None" : selected[0] : `${selected.length} selected`}
       </summary>

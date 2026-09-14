@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/moadim.svg)](https://crates.io/crates/moadim)
 [![Docs](https://img.shields.io/github/actions/workflow/status/moadim-io/daemon/doc.yml?branch=main&label=docs)](https://github.com/moadim-io/daemon/actions/workflows/doc.yml)
 [![CI](https://img.shields.io/github/actions/workflow/status/moadim-io/daemon/test.yml?branch=main&label=CI)](https://github.com/moadim-io/daemon/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/crates/l/moadim.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/crates/l/moadim.svg)](LICENSE)
 
 > **Loop engineering, on a schedule.** Stop prompting your agents — design the loop that prompts them.
 >

@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.9] - 2026-09-14
+
+Filter routines by any of multiple selected machines, including unassigned routines, and preserve selections in shared links and saved views.
+
+Avoid rewriting disabled routine markers during routine persistence.
+
 ## [3.2.8] - 2026-09-03
 
 Add a built-in NanoClaw agent bridge for queuing routine work in an agent group.
@@ -5077,7 +5083,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.8...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.9...HEAD
+[3.2.9]: https://github.com/moadim-io/daemon/compare/v3.2.8...v3.2.9
 [3.2.8]: https://github.com/moadim-io/daemon/compare/v3.2.7...v3.2.8
 [3.2.7]: https://github.com/moadim-io/daemon/compare/v3.2.6...v3.2.7
 [3.2.6]: https://github.com/moadim-io/daemon/compare/v3.2.5...v3.2.6

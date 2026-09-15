@@ -10,6 +10,7 @@ export function MachineFilter({ facet, machines, onChange }: {
 }) {
   const disclosure = useRef<HTMLDetailsElement>(null);
   const summary = useRef<HTMLElement>(null);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       const details = disclosure.current;
@@ -18,7 +19,10 @@ export function MachineFilter({ facet, machines, onChange }: {
       }
     };
     document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      clearTimeout(blurTimer.current);
+    };
   }, []);
   const value = machineFacetValue(facet);
   const selected = facet.kind === "any" ? [] : Array.isArray(value) ? value : [value];
@@ -40,8 +44,15 @@ export function MachineFilter({ facet, machines, onChange }: {
           summary.current?.focus();
         }
       }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+      onBlur={() => {
+        // A label click briefly blurs to the body before focusing its checkbox.
+        // Closing native details during that focus transition can crash Chromium.
+        // Let the default action finish, then check where focus actually landed.
+        clearTimeout(blurTimer.current);
+        blurTimer.current = setTimeout(() => {
+          const details = disclosure.current;
+          if (details && !details.contains(document.activeElement)) details.open = false;
+        }, 0);
       }}
     >
       <summary ref={summary} className="filter-select" aria-label="Machine filter">

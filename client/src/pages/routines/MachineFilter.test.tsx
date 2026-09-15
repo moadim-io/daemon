@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { MachineFilter } from "./MachineFilter";
 import type { RoutineMachineFacet } from "./filter";
@@ -41,7 +41,7 @@ it("keeps absent machines from old views removable and distinguishes special nam
   expect(screen.getByLabelText("Machine filter")).toHaveTextContent("Any");
 });
 
-it("dismisses on Escape with summary focus, outside pointers, and focus leaving", () => {
+it("dismisses on Escape with summary focus, outside pointers, and focus leaving", async () => {
   render(<><MachineFilter facet={{ kind: "any" }} machines={["a", "b"]} onChange={() => {}} /><button>Outside</button></>);
   const summary = screen.getByLabelText("Machine filter");
   const details = summary.closest("details")!;
@@ -64,10 +64,25 @@ it("dismisses on Escape with summary focus, outside pointers, and focus leaving"
   screen.getByLabelText("b").focus();
   expect(details.open).toBe(true);
   outside.focus();
-  expect(details.open).toBe(false);
+  await waitFor(() => expect(details.open).toBe(false));
   expect(outside).toHaveFocus();
   fireEvent.click(summary);
   a.focus();
   a.blur();
-  expect(details.open).toBe(false);
+  await waitFor(() => expect(details.open).toBe(false));
+});
+
+it("waits for label focus to settle before deciding whether to dismiss", async () => {
+  render(<MachineFilter facet={{ kind: "any" }} machines={["a"]} onChange={() => {}} />);
+  const summary = screen.getByLabelText("Machine filter");
+  const details = summary.closest("details")!;
+  fireEvent.click(summary);
+  summary.focus();
+  summary.blur();
+  expect(details.open).toBe(true);
+  const checkbox = screen.getByLabelText("a");
+  checkbox.focus();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(details.open).toBe(true);
+  expect(checkbox).toHaveFocus();
 });

@@ -1209,7 +1209,7 @@ dependencies = [
 
 [[package]]
 name = "moadim"
-version = "3.2.9"
+version = "3.2.10"
 dependencies = [
  "anyhow",
  "axum",

@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.2.10] - 2026-09-15
+
+Fix a Chromium renderer crash when clicking machine filter labels by waiting for checkbox focus before dismissing the popup.
+
+Surface the agent-authored `summary.md` for a run in the UI (Run Detail page and a routine's History panel), above the raw log — the same "headline result before full output" pattern CI tools like GitHub Actions job summaries use. The daemon already writes this file per run and serves it at `GET /routines/{id}/runs/{workbench}/summary`, but no page ever rendered it.
+
 ## [3.2.9] - 2026-09-14
 
 Filter routines by any of multiple selected machines, including unassigned routines, and preserve selections in shared links and saved views.
@@ -5083,7 +5089,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.9...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.10...HEAD
+[3.2.10]: https://github.com/moadim-io/daemon/compare/v3.2.9...v3.2.10
 [3.2.9]: https://github.com/moadim-io/daemon/compare/v3.2.8...v3.2.9
 [3.2.8]: https://github.com/moadim-io/daemon/compare/v3.2.7...v3.2.8
 [3.2.7]: https://github.com/moadim-io/daemon/compare/v3.2.6...v3.2.7

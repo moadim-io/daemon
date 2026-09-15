@@ -2493,6 +2493,34 @@ textarea {
   word-break: break-word;
 }
 
+.run-compare {
+  margin-top: 16px;
+}
+
+.run-compare-body {
+  margin-top: 10px;
+}
+
+.run-compare-summary {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.run-diff-add {
+  background: var(--ok-bg);
+}
+
+.run-diff-remove {
+  background: var(--err-bg);
+}
+
+.run-diff-marker {
+  color: var(--text-faint);
+  user-select: none;
+  min-width: 1em;
+}
+
 .log-hl {
   background: var(--warn-bg);
   color: var(--warn);

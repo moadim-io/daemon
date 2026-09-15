@@ -6,6 +6,7 @@ import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "..
 import { useNow } from "../../lib/useNow";
 import { AgentRunSummary } from "../routines/AgentRunSummary";
 import { LogViewer } from "../routines/LogViewer";
+import { RunCompare } from "./RunCompare";
 
 /**
  * A single run's own addressable page: `/runs/:routineId/:workbench`. Deep-linkable
@@ -135,6 +136,12 @@ export function RunDetailPage() {
             content={logQuery.data}
             loading={logQuery.isLoading}
             err={logQuery.isError ? logQuery.error.message : undefined}
+          />
+
+          <RunCompare
+            routineId={routineId}
+            current={run}
+            candidates={runs.filter((r) => r.workbench !== run.workbench)}
           />
         </>
       )}

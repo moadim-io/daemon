@@ -130,5 +130,7 @@ pub enum Command {
 
 /// First-argument keywords that select a data-plane subcommand handled by [`crate::commands`]
 /// rather than the lifecycle commands parsed here. Kept in sync with the clap subcommands.
-pub(crate) const DATA_COMMANDS: &[&str] = &["routines", "schedule", "agents", "enable", "disable"];
+pub(crate) const DATA_COMMANDS: &[&str] = &[
+    "routines", "schedule", "agents", "enable", "disable", "export", "import",
+];
 include!("wants_json.rs");

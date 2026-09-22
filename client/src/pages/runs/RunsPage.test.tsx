@@ -107,4 +107,34 @@ describe("RunsPage", () => {
     renderPage([run()]);
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
+
+  it("narrows the list to a histogram bucket and clears it again", () => {
+    const now = Math.floor(Date.now() / 1000);
+    renderPage([
+      run({ workbench: "wb1", routine_title: "Nightly Audit", started_at: now - 10 }),
+      run({ workbench: "wb2", routine_title: "Weekly Digest", status: "failed", started_at: now - 3 * 86_400 }),
+    ]);
+    expect(screen.getByRole("group", { name: "Run activity over time" })).toBeInTheDocument();
+
+    const failedBar = screen.getByRole("button", { name: /1 failed/ });
+    fireEvent.click(failedBar);
+    expect(failedBar).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
+    expect(screen.queryByText("Nightly Audit")).not.toBeInTheDocument();
+
+    fireEvent.click(failedBar);
+    expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();
+
+    fireEvent.click(failedBar);
+    fireEvent.click(screen.getByRole("button", { name: /Clear time selection/ }));
+    expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();
+  });
+
+  it("resets the bucket selection when the time window changes", () => {
+    const now = Math.floor(Date.now() / 1000);
+    renderPage([run({ workbench: "wb1", started_at: now - 10 })]);
+    fireEvent.click(screen.getByRole("button", { name: /1 success/ }));
+    fireEvent.change(screen.getByLabelText("Time range filter"), { target: { value: "24h" } });
+    expect(screen.queryByRole("button", { name: /Clear time selection/ })).not.toBeInTheDocument();
+  });
 });

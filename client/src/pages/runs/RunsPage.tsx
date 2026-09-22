@@ -5,7 +5,16 @@ import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
 import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
-import { DEFAULT_RUNS_FILTER, filterRuns, statusCounts, type RunStatusFacet, type RunTimeFacet } from "./runsFilter";
+import {
+  DEFAULT_RUNS_FILTER,
+  TIME_FACET_SECS,
+  filterRuns,
+  statusCounts,
+  type RunStatusFacet,
+  type RunTimeFacet,
+} from "./runsFilter";
+import { RunsHistogram } from "./RunsHistogram";
+import { buildHistogram, runsInRange } from "./histogramMath";
 
 const INITIAL_LIMIT = 100;
 const LOAD_MORE_STEP = 100;
@@ -44,7 +53,13 @@ export function RunsPage() {
 
   const runsQuery = useAllRuns(limit, { refetchInterval: ms });
   const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data]);
-  const shown = useMemo(() => filterRuns(runs, filter, nowSecs), [runs, filter, nowSecs]);
+  const [range, setRange] = useState<{ from: number; to: number } | null>(null);
+  const filtered = useMemo(() => filterRuns(runs, filter, nowSecs), [runs, filter, nowSecs]);
+  const histogram = useMemo(
+    () => buildHistogram(filtered, nowSecs, filter.time === "all" ? undefined : nowSecs - TIME_FACET_SECS[filter.time]),
+    [filtered, filter.time, nowSecs],
+  );
+  const shown = useMemo(() => (range === null ? filtered : runsInRange(filtered, range)), [filtered, range]);
   const counts = useMemo(() => statusCounts(runs), [runs]);
 
   const canLoadMore = runs.length >= limit && limit < MAX_LIMIT;
@@ -107,7 +122,10 @@ export function RunsPage() {
             className="filter-select"
             aria-label="Time range filter"
             value={filter.time}
-            onChange={(e) => setFilter({ ...filter, time: e.target.value as RunTimeFacet })}
+            onChange={(e) => {
+              setFilter({ ...filter, time: e.target.value as RunTimeFacet });
+              setRange(null);
+            }}
           >
             {TIME_OPTIONS.map(([value, label]) => (
               <option key={value} value={value}>
@@ -120,8 +138,21 @@ export function RunsPage() {
           <span className="filter-count">
             Showing {shown.length} of {runs.length} fetched
           </span>
+          {range !== null && (
+            <button type="button" className="btn btn-ghost" onClick={() => setRange(null)}>
+              Clear time selection ({abstime(range.from)} – {abstime(range.to)}) ✕
+            </button>
+          )}
         </div>
       </div>
+
+      {runsQuery.data !== undefined && (
+        <RunsHistogram
+          histogram={histogram}
+          selected={range?.from ?? null}
+          onSelect={(b) => setRange(b === null ? null : { from: b.from, to: b.to })}
+        />
+      )}
 
       {runsQuery.error ? (
         <div className="table-wrap">

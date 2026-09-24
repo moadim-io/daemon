@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAllRuns } from "../../api/hooks";
+import { useAllRuns, useMaxConcurrentRuns } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
@@ -15,6 +15,8 @@ import {
 } from "./runsFilter";
 import { RunsHistogram } from "./RunsHistogram";
 import { buildHistogram, runsInRange } from "./histogramMath";
+import { RunsGantt } from "./RunsGantt";
+import { buildGantt } from "./ganttMath";
 
 const INITIAL_LIMIT = 100;
 const LOAD_MORE_STEP = 100;
@@ -55,11 +57,11 @@ export function RunsPage() {
   const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data]);
   const [range, setRange] = useState<{ from: number; to: number } | null>(null);
   const filtered = useMemo(() => filterRuns(runs, filter, nowSecs), [runs, filter, nowSecs]);
-  const histogram = useMemo(
-    () => buildHistogram(filtered, nowSecs, filter.time === "all" ? undefined : nowSecs - TIME_FACET_SECS[filter.time]),
-    [filtered, filter.time, nowSecs],
-  );
+  const windowFrom = filter.time === "all" ? undefined : nowSecs - TIME_FACET_SECS[filter.time];
+  const histogram = useMemo(() => buildHistogram(filtered, nowSecs, windowFrom), [filtered, nowSecs, windowFrom]);
   const shown = useMemo(() => (range === null ? filtered : runsInRange(filtered, range)), [filtered, range]);
+  const gantt = useMemo(() => buildGantt(shown, nowSecs, range?.from ?? windowFrom), [shown, nowSecs, range, windowFrom]);
+  const cap = useMaxConcurrentRuns().data?.value;
   const counts = useMemo(() => statusCounts(runs), [runs]);
 
   const canLoadMore = runs.length >= limit && limit < MAX_LIMIT;
@@ -153,6 +155,8 @@ export function RunsPage() {
           onSelect={(b) => setRange(b === null ? null : { from: b.from, to: b.to })}
         />
       )}
+
+      <RunsGantt gantt={gantt} cap={cap} />
 
       {runsQuery.error ? (
         <div className="table-wrap">

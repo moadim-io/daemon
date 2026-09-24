@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import type { FleetRunSummary } from "../../api/hooks";
 import { RunsPage } from "./RunsPage";
 
+/** Match run-list text only, not the timeline's lane labels. */
+const LIST_ONLY = { ignore: ".runs-gantt *" };
+
 function run(overrides: Partial<FleetRunSummary> = {}): FleetRunSummary {
   return {
     routine_id: "r1",
@@ -74,8 +77,8 @@ describe("RunsPage", () => {
     fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "failed" } });
 
     expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
-    expect(screen.queryByText("Nightly Audit")).not.toBeInTheDocument();
-    expect(screen.getByText("Weekly Digest")).toBeInTheDocument();
+    expect(screen.queryByText("Nightly Audit", LIST_ONLY)).not.toBeInTheDocument();
+    expect(screen.getByText("Weekly Digest", LIST_ONLY)).toBeInTheDocument();
   });
 
   it("filters the list by routine title search", () => {
@@ -87,7 +90,7 @@ describe("RunsPage", () => {
     fireEvent.change(screen.getByLabelText("Search runs"), { target: { value: "weekly" } });
 
     expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
-    expect(screen.getByText("Weekly Digest")).toBeInTheDocument();
+    expect(screen.getByText("Weekly Digest", LIST_ONLY)).toBeInTheDocument();
   });
 
   it("shows a no-matches empty state distinct from no-runs-yet", () => {
@@ -120,7 +123,7 @@ describe("RunsPage", () => {
     fireEvent.click(failedBar);
     expect(failedBar).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
-    expect(screen.queryByText("Nightly Audit")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nightly Audit", LIST_ONLY)).not.toBeInTheDocument();
 
     fireEvent.click(failedBar);
     expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();

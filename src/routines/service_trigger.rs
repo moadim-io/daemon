@@ -12,8 +12,8 @@ use crate::routines::cleanup::{
     tmux_session_prefix_alive,
 };
 use crate::routines::command::{
-    build_routine_command, inline_prompt_overflow, tmux_session_prefix, TriggerSource,
-    TMUX_SESSION_PREFIX,
+    build_routine_command, inline_prompt_overflow, routine_env_carrier_vars, tmux_session_prefix,
+    TriggerSource, TMUX_SESSION_PREFIX,
 };
 use crate::routines::model::{CleanupResponse, Routine, RoutineStore};
 use crate::routines::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};

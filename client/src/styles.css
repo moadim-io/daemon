@@ -3644,3 +3644,15 @@ tr:last-child td {
   .runs-gantt-name { flex-basis: 72px; }
   .runs-gantt-axis { margin-left: 80px; }
 }
+
+/* Heatmap page capacity forecast — reuses the runs Gantt layout. */
+.cap-forecast { margin-top: 12px; }
+.runs-gantt-level.over { background: var(--err); }
+.runs-gantt-bar.est { background: var(--text-faint); opacity: 0.6; }
+.cap-forecast-windows {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cap-forecast-windows .c-amber { font-family: var(--mono); }

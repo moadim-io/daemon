@@ -43,7 +43,7 @@ export function ReliabilityPage() {
     dataUpdatedAt,
   } = useAllRuns(FETCH_LIMIT, { refetchInterval: refreshMs(refreshToken) });
   const { data: routines } = useRoutines({}, { refetchInterval: refreshMs(refreshToken) });
-  const { data: machine } = useMachine();
+  const { data: machine, isLoading: machineLoading } = useMachine();
   const nowMs = useNow(60_000);
 
   const items = computeReliability(runs ?? []);
@@ -90,7 +90,8 @@ export function ReliabilityPage() {
         </div>
       </div>
 
-      {!errorMessage && !isLoading && <ScheduleAdherence adherence={adherence} />}
+      {/* Wait for `/machine`: until then every machine's routines would be audited as local. */}
+      {!errorMessage && !isLoading && !machineLoading && <ScheduleAdherence adherence={adherence} />}
 
       {errorMessage ? (
         <div className="table-wrap">

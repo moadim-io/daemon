@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { useAllRuns } from "../../api/hooks";
+import { useAllRuns, useMachine, useRoutines } from "../../api/hooks";
+import { useNow } from "../../lib/useNow";
 import { fmtRunDuration } from "../../lib/runDisplay";
 import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import {
@@ -13,6 +14,8 @@ import {
   successRate,
   type RoutineReliability,
 } from "./reliabilityStats";
+import { computeAdherence } from "./adherenceMath";
+import { ScheduleAdherence } from "./ScheduleAdherence";
 
 /**
  * Fleet-wide runs fetched to build the reliability sample. Mirrors the Routines table's
@@ -39,12 +42,15 @@ export function ReliabilityPage() {
     error,
     dataUpdatedAt,
   } = useAllRuns(FETCH_LIMIT, { refetchInterval: refreshMs(refreshToken) });
-
+  const { data: routines } = useRoutines({}, { refetchInterval: refreshMs(refreshToken) });
+  const { data: machine } = useMachine();
+  const nowMs = useNow(60_000);
 
   const items = computeReliability(runs ?? []);
   const summary = fleetSummary(items);
   const fleetRate = summary.sampleSize === 0 ? null : summary.successes / summary.sampleSize;
   const errorMessage = error?.message;
+  const adherence = computeAdherence(routines ?? [], runs ?? [], machine?.name, Math.floor(nowMs / 1000), FETCH_LIMIT);
 
   return (
     <div className="page">
@@ -83,6 +89,8 @@ export function ReliabilityPage() {
           </div>
         </div>
       </div>
+
+      {!errorMessage && !isLoading && <ScheduleAdherence adherence={adherence} />}
 
       {errorMessage ? (
         <div className="table-wrap">

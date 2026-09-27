@@ -148,7 +148,8 @@ test("settings crontab recovery guidance screenshot stays reviewable", async ({ 
 test("reliability screenshot stays reviewable", async ({ page }, testInfo) => {
   await page.goto("/reliability");
   await expect(page.getByRole("heading", { name: "Reliability" })).toBeVisible();
-  await expect(page.getByText("Skill learning loop")).toBeVisible();
+  await expect(page.getByText("Skill learning loop").first()).toBeVisible();
+  await expect(page.getByText("FAILURE INCIDENTS")).toBeVisible();
   await saveScreenshot(page, testInfo.project.name, "reliability");
 });
 

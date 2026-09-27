@@ -16,6 +16,8 @@ import {
 } from "./reliabilityStats";
 import { computeAdherence } from "./adherenceMath";
 import { ScheduleAdherence } from "./ScheduleAdherence";
+import { computeIncidents } from "./incidentMath";
+import { FailureIncidents } from "./FailureIncidents";
 
 /**
  * Fleet-wide runs fetched to build the reliability sample. Mirrors the Routines table's
@@ -51,6 +53,7 @@ export function ReliabilityPage() {
   const fleetRate = summary.sampleSize === 0 ? null : summary.successes / summary.sampleSize;
   const errorMessage = error?.message;
   const adherence = computeAdherence(routines ?? [], runs ?? [], machine?.name, Math.floor(nowMs / 1000), FETCH_LIMIT);
+  const incidents = computeIncidents(runs ?? [], Math.floor(nowMs / 1000));
 
   return (
     <div className="page">
@@ -92,6 +95,7 @@ export function ReliabilityPage() {
 
       {/* Wait for `/machine`: until then every machine's routines would be audited as local. */}
       {!errorMessage && !isLoading && !machineLoading && <ScheduleAdherence adherence={adherence} />}
+      {!errorMessage && !isLoading && <FailureIncidents report={incidents} />}
 
       {errorMessage ? (
         <div className="table-wrap">

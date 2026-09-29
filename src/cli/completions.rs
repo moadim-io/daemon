@@ -86,14 +86,18 @@ pub(super) fn build_cli() -> ClapCommand {
                         .required(true),
                 ),
         )
-        // Data-plane subcommands (`routines`, `agents`, `enable`, `disable`, `schedule`) are a
-        // separate clap parser already (`crate::commands::DataCli`); listing their bare names
-        // here (with no further flag detail) is enough for top-level tab-completion to find them.
+        // Data-plane subcommands (`routines`, `agents`, `enable`, `disable`, `schedule`, `lock`,
+        // `unlock`, `lock-status`) are a separate clap parser already
+        // (`crate::commands::DataCli`); listing their bare names here (with no further flag
+        // detail) is enough for top-level tab-completion to find them.
         .subcommand(ClapCommand::new("routines").visible_alias("routine"))
         .subcommand(ClapCommand::new("schedule").visible_alias("sched"))
         .subcommand(ClapCommand::new("enable").arg(Arg::new("routine")))
         .subcommand(ClapCommand::new("disable").arg(Arg::new("routine")))
         .subcommand(ClapCommand::new("agents"))
+        .subcommand(ClapCommand::new("lock").arg(Arg::new("scope").long("scope")))
+        .subcommand(ClapCommand::new("unlock").arg(Arg::new("scope").long("scope")))
+        .subcommand(ClapCommand::new("lock-status"))
 }
 
 /// Write the completion script for `shell_name` to `out`.

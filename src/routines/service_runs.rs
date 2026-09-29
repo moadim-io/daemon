@@ -6,6 +6,7 @@ use crate::error::AppError;
 use crate::paths::workbenches_dir;
 use crate::utils::lock::LockRecover;
 use crate::utils::time::format_local;
+use std::collections::HashSet;
 
 use crate::routines::cleanup::{parse_workbench_name, run_session_alive};
 use crate::routines::command::slugify;
@@ -26,6 +27,7 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
         .ok_or(AppError::NotFound)?;
     let slug = slugify(&routine.title);
     let mut runs = Vec::new();
+    let mut seen_workbenches = HashSet::new();
     if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -35,10 +37,14 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             if dir_slug != slug {
                 continue;
             }
+            seen_workbenches.insert(name.clone());
             runs.push(run_summary(&name, ts, Some(routine.effective_ttl_secs())));
         }
     }
     for persisted in read_persisted_runs(id) {
+        if !seen_workbenches.insert(persisted.workbench.clone()) {
+            continue;
+        }
         runs.push(RunSummary {
             workbench: persisted.workbench,
             started_at: persisted.started_at,
@@ -80,6 +86,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
         .map(|(id, title)| (slugify(title), (id.clone(), title.clone())))
         .collect();
     let mut runs = Vec::new();
+    let mut seen_workbenches = HashSet::new();
     if let Ok(entries) = std::fs::read_dir(workbenches_dir()) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -89,6 +96,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
             let Some((routine_id, routine_title)) = by_slug.get(dir_slug).cloned() else {
                 continue;
             };
+            seen_workbenches.insert(name.clone());
             let run = run_summary(&name, ts, None);
             runs.push(FleetRunSummary {
                 routine_id,
@@ -105,6 +113,9 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
     }
     for (routine_id, routine_title) in &routines {
         for persisted in read_persisted_runs(routine_id) {
+            if !seen_workbenches.insert(persisted.workbench.clone()) {
+                continue;
+            }
             runs.push(FleetRunSummary {
                 routine_id: routine_id.clone(),
                 routine_title: routine_title.clone(),

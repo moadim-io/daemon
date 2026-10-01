@@ -20,6 +20,8 @@ import { computeIncidents } from "./incidentMath";
 import { FailureIncidents } from "./FailureIncidents";
 import { computeFailureCauses } from "./exitCodeMath";
 import { FailureCauses } from "./FailureCauses";
+import { SortableTh } from "../../components/SortableTh";
+import { sortRows, usePersistedSort, type SortAccessors } from "../../lib/tableSort";
 
 /**
  * Fleet-wide runs fetched to build the reliability sample. Mirrors the Routines table's
@@ -28,6 +30,19 @@ import { FailureCauses } from "./FailureCauses";
  * `SAMPLE_LEN`-sized window without an unbounded payload.
  */
 const FETCH_LIMIT = 300;
+
+const REL_SORT_KEYS = ["routine", "streak", "rate", "p50", "p95", "trend"] as const;
+type RelSortKey = (typeof REL_SORT_KEYS)[number];
+
+/** Streak sorts failing-longest lowest, so ascending surfaces what's most broken first. */
+const REL_SORT: SortAccessors<RoutineReliability, RelSortKey> = {
+  routine: (i) => i.routineTitle,
+  streak: (i) => (i.streak.kind === "failure" ? -i.streak.count : i.streak.kind === "success" ? i.streak.count : 0),
+  rate: (i) => successRate(i),
+  p50: (i) => i.p50Secs,
+  p95: (i) => i.p95Secs,
+  trend: (i) => (i.regressing ? 1 : 0),
+};
 
 function fmtSecs(secs: number | null): string {
   return secs === null ? "—" : fmtRunDuration(0, secs);
@@ -51,6 +66,7 @@ export function ReliabilityPage() {
   const nowMs = useNow(60_000);
 
   const items = computeReliability(runs ?? []);
+  const { sort, toggle: toggleSort } = usePersistedSort("moadim.client.reliability.sort", REL_SORT_KEYS);
   const summary = fleetSummary(items);
   const fleetRate = summary.sampleSize === 0 ? null : summary.successes / summary.sampleSize;
   const errorMessage = error?.message;
@@ -128,16 +144,16 @@ export function ReliabilityPage() {
           <table>
             <thead>
               <tr>
-                <th>ROUTINE</th>
-                <th>STREAK</th>
-                <th>SUCCESS RATE</th>
-                <th>P50</th>
-                <th>P95</th>
-                <th>TREND</th>
+                <SortableTh label="ROUTINE" col="routine" sort={sort} defaultDir="asc" onSort={toggleSort} />
+                <SortableTh label="STREAK" col="streak" sort={sort} defaultDir="asc" onSort={toggleSort} />
+                <SortableTh label="SUCCESS RATE" col="rate" sort={sort} defaultDir="asc" onSort={toggleSort} />
+                <SortableTh label="P50" col="p50" sort={sort} defaultDir="desc" onSort={toggleSort} />
+                <SortableTh label="P95" col="p95" sort={sort} defaultDir="desc" onSort={toggleSort} />
+                <SortableTh label="TREND" col="trend" sort={sort} defaultDir="desc" onSort={toggleSort} />
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {sortRows(items, sort, REL_SORT).map((item) => (
                 <ReliabilityRow key={item.routineId} item={item} />
               ))}
             </tbody>

@@ -117,52 +117,8 @@ fn read_log_tail_of_len(path: &std::path::Path, len: u64) -> std::io::Result<Str
 /// escape codes as literal garbage and every redraw frame of a spinner/progress bar as a separate
 /// line instead of the final, overwritten state a real terminal would display.
 pub(crate) fn strip_ansi_noise(input: &str) -> String {
-    let without_escapes = strip_escape_sequences(input);
+    let without_escapes = anstream::adapter::strip_str(input).to_string();
     collapse_carriage_returns(&without_escapes)
-}
-
-/// Remove ANSI escape sequences: CSI (`ESC [ … final-byte`), OSC (`ESC ] … BEL` or `ESC ] … ESC \`),
-/// and bare two-character escapes (e.g. `ESC c` full reset). A lone trailing `ESC` with no
-/// follow-up byte is dropped as-is.
-fn strip_escape_sequences(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(current) = chars.next() {
-        if current != '\u{1B}' {
-            out.push(current);
-            continue;
-        }
-        match chars.peek() {
-            Some('[') => {
-                chars.next();
-                for pc in chars.by_ref() {
-                    if ('@'..='~').contains(&pc) {
-                        break;
-                    }
-                }
-            }
-            Some(']') => {
-                chars.next();
-                loop {
-                    match chars.next() {
-                        Some('\u{7}') | None => break,
-                        Some('\u{1B}') => {
-                            if chars.peek() == Some(&'\\') {
-                                chars.next();
-                            }
-                            break;
-                        }
-                        Some(_) => {}
-                    }
-                }
-            }
-            Some(_) => {
-                chars.next();
-            }
-            None => {}
-        }
-    }
-    out
 }
 
 /// Collapse `\r`-based redraw overwrites: within each `\n`-delimited line, keep only the text

@@ -21,10 +21,11 @@ fn build_routine_command_contains_expected_pieces() {
     assert!(cmd.contains("tmux new-session -d -s \"$SESS\" -c \"$WB\""));
     // bakes a PATH export so cron's minimal PATH does not hide tmux/claude
     assert!(cmd.contains("export PATH="));
-    // sanity-check: command must stay in a reasonable range; the PATH export and system-prompt
-    // setup add several hundred chars, so the limit is higher than the raw cron-line minimum
+    // The managed preamble and explicit failure diagnostics make the command longer than the old
+    // 3 KiB budget; retain a conservative bound that catches accidental command bloat while
+    // accommodating the current complete launch contract.
     assert!(
-        cmd.len() < 3000,
+        cmd.len() < 4_000,
         "crontab line unexpectedly long: {} chars",
         cmd.len()
     );

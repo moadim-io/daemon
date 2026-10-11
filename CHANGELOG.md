@@ -11,6 +11,24 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-11
+
+Add a 24h capacity forecast to the Heatmap page: projects each enabled routine's upcoming fires sized by its median historical run duration, draws the projected concurrency against the `max_concurrent_runs` cap, and lists the windows where runs would exceed it and queue.
+
+Add a failure causes panel to the Reliability page: groups failed runs by exit code with a plain-language meaning (timeout, OOM kill, command not found, signal N…), each code's share of failures, the routines it hit and a link to its newest run — showing why runs fail, not only that they do.
+
+Add a failure incidents panel to the Reliability page: groups each routine's consecutive failed runs into one incident, resolved when its next run succeeds, and reports open incidents, time to recover per incident and the fleet MTTR — showing how long things stay broken, which success rates and streaks can't.
+
+Add a schedule adherence panel to the Reliability page: replays each enabled routine's cron schedule(s) over the last 24h, matches every expected fire to the run it produced, and reports missed fires, adherence % and median start lag per routine — surfacing jobs that never ran, which success rates can't see.
+
+Add a "Compare against another run" panel to the run-detail page: diff a run's log against another run of the same routine (defaulting to the last known-good run), with added/removed lines highlighted.
+
+Add a status-stacked run-activity histogram to the Runs page: see run volume and failures over time at a glance, and click a bar to narrow the run list to that time bucket.
+
+Add a Gantt-style run timeline to the Runs page: one lane per routine with each run drawn from start to finish, plus a fleet concurrency strip and peak concurrency compared against the `max_concurrent_runs` cap.
+
+Make the Runs and Reliability tables sortable: click (or Tab + Enter) any column header to sort by routine, start time, duration, status, exit code, streak, success rate, p50/p95 or trend. Headers expose `aria-sort`, missing values always sort last, a third click restores the natural order, and each table's sort is remembered across reloads.
+
 ## [3.2.10] - 2026-09-15
 
 Fix a Chromium renderer crash when clicking machine filter labels by waiting for checkbox focus before dismissing the popup.
@@ -5089,7 +5107,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.10...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/moadim-io/daemon/compare/v3.2.10...v3.3.0
 [3.2.10]: https://github.com/moadim-io/daemon/compare/v3.2.9...v3.2.10
 [3.2.9]: https://github.com/moadim-io/daemon/compare/v3.2.8...v3.2.9
 [3.2.8]: https://github.com/moadim-io/daemon/compare/v3.2.7...v3.2.8

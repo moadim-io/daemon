@@ -48,7 +48,7 @@ tokio-cron-scheduler = "0.15.1"
 tower = { version = "0.5", features = ["limit", "util"] }
 tower-http = { version = "0.7", features = ["catch-panic", "compression-gzip"] }
 utoipa = { version = "5", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"] }
+utoipa-swagger-ui = { version = "10", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
 gethostname = "1"
 

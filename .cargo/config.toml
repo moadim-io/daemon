@@ -1,7 +1,5 @@
 [env]
-# Test isolation: several tests mutate process-global state — the `PATH`, the `MOADIM_*` env
-# seams (home/bind-address/crontab overrides), and the crontab binary — to exercise the
-# daemon, crontab, and config-path code against tempdirs and ephemeral ports. Pin the test
-# harness to a single thread so those mutations cannot leak across concurrently-running tests.
-# Only the test harness honors `RUST_TEST_THREADS`; the shipped binary ignores it.
-RUST_TEST_THREADS = "1"
+# Moadim tests intentionally exercise process-wide environment seams such as
+# `MOADIM_HOME_OVERRIDE` and `MOADIM_CRONTAB_BIN`. Run Rust test cases serially
+# so one fixture cannot leak a transient override into another.
+RUST_TEST_THREADS = { value = "1", force = true }

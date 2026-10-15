@@ -37,12 +37,29 @@ fn strip_ansi_noise_removes_osc_sequence_terminated_by_escape_backslash() {
 #[test]
 fn strip_ansi_noise_removes_osc_sequence_terminated_by_bare_escape() {
     // A lone ESC not followed by `\` (a malformed/unusual string terminator) must still end
-    // the OSC sequence, and — unlike the ESC-backslash case above — the character right after
-    // that ESC is not part of the terminator, so it must survive in the output untouched.
+    // the OSC sequence; the ESC then starts the next escape sequence (here a CSI reset), and the
+    // text after it survives untouched.
     assert_eq!(
-        strip_ansi_noise("\u{1B}]0;window title\u{1B}Xafter\n"),
-        "Xafter\n"
+        strip_ansi_noise("\u{1B}]0;window title\u{1B}[0mafter\n"),
+        "after\n"
     );
+}
+
+#[test]
+fn strip_ansi_noise_drops_charset_designation() {
+    // `tput sgr0` emits `ESC ( B` (designate G0 as US-ASCII); the `B` must not leak.
+    assert_eq!(strip_ansi_noise("x\u{1B}(By\u{1B}[m\n"), "xy\n");
+}
+
+#[test]
+fn strip_ansi_noise_drops_dcs_payload() {
+    // DCS (`ESC P … ESC \`), e.g. sixel/tmux passthrough: the payload must not leak.
+    assert_eq!(strip_ansi_noise("p\u{1B}Pq#0;2\u{1B}\\q\n"), "pq\n");
+}
+
+#[test]
+fn strip_ansi_noise_keeps_tabs() {
+    assert_eq!(strip_ansi_noise("a\tb\n"), "a\tb\n");
 }
 
 #[test]

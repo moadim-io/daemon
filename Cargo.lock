@@ -1211,6 +1211,7 @@ dependencies = [
 name = "moadim"
 version = "3.3.0"
 dependencies = [
+ "anstream",
  "anyhow",
  "axum",
  "chrono",

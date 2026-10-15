@@ -20,6 +20,8 @@ import { computeIncidents } from "./incidentMath";
 import { FailureIncidents } from "./FailureIncidents";
 import { computeFailureCauses } from "./exitCodeMath";
 import { FailureCauses } from "./FailureCauses";
+import { computeOverruns } from "./overrunMath";
+import { LongRunning } from "./LongRunning";
 import { SortableTh } from "../../components/SortableTh";
 import { sortRows, usePersistedSort, type SortAccessors } from "../../lib/tableSort";
 
@@ -63,7 +65,7 @@ export function ReliabilityPage() {
   } = useAllRuns(FETCH_LIMIT, { refetchInterval: refreshMs(refreshToken) });
   const { data: routines } = useRoutines({}, { refetchInterval: refreshMs(refreshToken) });
   const { data: machine, isLoading: machineLoading } = useMachine();
-  const nowMs = useNow(60_000);
+  const nowMs = useNow(15_000);
 
   const items = computeReliability(runs ?? []);
   const { sort, toggle: toggleSort } = usePersistedSort("moadim.client.reliability.sort", REL_SORT_KEYS);
@@ -73,6 +75,7 @@ export function ReliabilityPage() {
   const adherence = computeAdherence(routines ?? [], runs ?? [], machine?.name, Math.floor(nowMs / 1000), FETCH_LIMIT);
   const incidents = computeIncidents(runs ?? [], Math.floor(nowMs / 1000));
   const causes = computeFailureCauses(runs ?? []);
+  const overruns = computeOverruns(runs ?? [], items, Math.floor(nowMs / 1000));
 
   return (
     <div className="page">
@@ -105,6 +108,10 @@ export function ReliabilityPage() {
           <div className="stat-val stat-val-sm">{fmtSecs(summary.p95Secs)}</div>
         </div>
         <div className="stat-card">
+          <div className="stat-label">OVERRUNNING</div>
+          <div className={overruns.overruns.length > 0 ? "stat-val c-red" : "stat-val"}>{overruns.overruns.length}</div>
+        </div>
+        <div className="stat-card">
           <div className="stat-label">SLOWER TREND</div>
           <div className={summary.regressingCount > 0 ? "stat-val c-amber" : "stat-val"}>
             {summary.regressingCount}
@@ -112,6 +119,7 @@ export function ReliabilityPage() {
         </div>
       </div>
 
+      {!errorMessage && !isLoading && <LongRunning report={overruns} />}
       {/* Wait for `/machine`: until then every machine's routines would be audited as local. */}
       {!errorMessage && !isLoading && !machineLoading && <ScheduleAdherence adherence={adherence} />}
       {!errorMessage && !isLoading && <FailureIncidents report={incidents} />}

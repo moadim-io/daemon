@@ -168,6 +168,10 @@ pub async fn list_machines(State(state): State<AppState>) -> Json<Vec<String>> {
     use crate::utils::lock::LockRecover;
     let mut names = std::collections::BTreeSet::new();
     names.insert(crate::machine::current_machine());
+    #[allow(
+        clippy::iter_over_hash_type,
+        reason = "every name lands in the sorted BTreeSet, so hash-map iteration order is irrelevant"
+    )]
     for routine in state.routines.lock_recover().values() {
         names.extend(routine.machines.iter().cloned());
     }

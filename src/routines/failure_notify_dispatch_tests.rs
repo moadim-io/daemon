@@ -6,7 +6,7 @@
 
 use super::super::{
     dispatch_command, dispatch_webhook, exit_reason, notify_finished_run, post_webhook,
-    FailureNotificationConfig, RunStatus, CURL_BIN_ENV,
+    FailureNotificationConfig, RunStatus, CURL_BIN_ENV, WEBHOOK_MAX_ATTEMPTS,
 };
 use super::{temp_dir, EnvGuard};
 
@@ -156,3 +156,6 @@ fn dispatch_webhook_uses_default_curl_binary() {
         }
     }
 }
+
+#[path = "failure_notify_retry_tests.rs"]
+mod retry;

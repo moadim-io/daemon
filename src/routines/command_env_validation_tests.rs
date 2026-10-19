@@ -71,3 +71,35 @@ fn is_valid_env_key_accepts_shell_identifiers_and_rejects_the_rest() {
     assert!(!is_valid_env_key("FOO BAR"));
     assert!(!is_valid_env_key("FOO=BAR"));
 }
+
+#[test]
+fn env_export_stmts_deliver_tricky_values_byte_exact_through_a_real_shell() {
+    // The indirection `export KEY="$carrier"` must hand the agent shell the exact value, with no
+    // re-parsing: quotes, `$`, backticks, globs, backslashes, spaces and non-ASCII all survive.
+    let values = [
+        ("V_SPACES", "  two  spaces  "),
+        ("V_QUOTES", r#"it's "quoted""#),
+        ("V_DOLLAR", "$HOME and ${PATH}"),
+        ("V_BACKTICK", "`id` $(id)"),
+        ("V_GLOB_BS", r"* ? [a] back\slash"),
+        ("V_UNICODE", "ünïcødé ✓ שלום"),
+    ];
+    with_home_override(|_| {
+        let mut routine = make_routine("Cmd Env Tricky Values Routine");
+        routine.env = values
+            .iter()
+            .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
+            .collect();
+        let stmts = env_export_stmts(&routine).join("; ");
+        for (key, expected) in values {
+            let output = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(format!(r#"{stmts}; printf '%s' "${key}""#))
+                .envs(routine_env_carrier_vars(&routine))
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "sh failed for {key}: {output:?}");
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), expected, "value of {key}");
+        }
+    });
+}

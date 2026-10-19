@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-10-19
+
+Stop leaking per-routine env secrets through process arguments. Values from `routine.toml` `[env]` and `routine.local.toml` used to be inlined into the launch command as `export KEY='value'`, readable by any local user via `ps` while the wrapper shell ran. They now reach the routine through the spawned process's own environment, and the command only names the variable.
+
 ## [3.3.0] - 2026-10-11
 
 Add a 24h capacity forecast to the Heatmap page: projects each enabled routine's upcoming fires sized by its median historical run duration, draws the projected concurrency against the `max_concurrent_runs` cap, and lists the windows where runs would exceed it and queue.
@@ -5107,7 +5111,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/moadim-io/daemon/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/moadim-io/daemon/compare/v3.2.10...v3.3.0
 [3.2.10]: https://github.com/moadim-io/daemon/compare/v3.2.9...v3.2.10
 [3.2.9]: https://github.com/moadim-io/daemon/compare/v3.2.8...v3.2.9

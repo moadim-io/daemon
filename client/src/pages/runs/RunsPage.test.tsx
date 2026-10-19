@@ -103,7 +103,9 @@ describe("RunsPage", () => {
   it("offers a load-more action once the fetch limit is hit", () => {
     const runs = Array.from({ length: 100 }, (_, i) => run({ workbench: `wb${i}`, started_at: 1_000 + i }));
     renderPage(runs);
-    expect(screen.getByRole("button", { name: "Load more" })).toBeInTheDocument();
+    // getByText, not getByRole: a role query walks the accessibility tree of all 100 rows
+    // (1.4-2.3s idle), which hit the 5s timeout under load.
+    expect(screen.getByText("Load more").closest("button")).toBeInTheDocument();
   });
 
   it("does not offer load-more under the fetch limit", () => {

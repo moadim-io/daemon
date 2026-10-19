@@ -7,9 +7,9 @@ no-default-features = false
 
 [advisories]
 ignore = [
-    { id = "RUSTSEC-2026-0367", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once utoipa-swagger-ui allows zip >= 9" },
-    { id = "RUSTSEC-2026-0368", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once utoipa-swagger-ui allows zip >= 9" },
-    { id = "RUSTSEC-2026-0369", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once utoipa-swagger-ui allows zip >= 9" },
+    { id = "RUSTSEC-2026-0367", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once a utoipa-swagger-ui release ships juhaku/utoipa#1645 (zip 9, merged 2026-10-17)" },
+    { id = "RUSTSEC-2026-0368", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once a utoipa-swagger-ui release ships juhaku/utoipa#1645 (zip 9, merged 2026-10-17)" },
+    { id = "RUSTSEC-2026-0369", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once a utoipa-swagger-ui release ships juhaku/utoipa#1645 (zip 9, merged 2026-10-17)" },
 ]
 
 [licenses]

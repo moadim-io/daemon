@@ -14,12 +14,16 @@ fn svc_trigger_scheduled_skips_duplicate_fire_in_same_minute() {
     }
     let _home = TempHome::set();
     let store = new_store();
-    let mut routine = make_routine("trig-sched-dedupe-id", "Trig Sched Dedupe ZZZ", 1, 1);
-    routine.last_scheduled_trigger_at = Some(now_secs());
+    let routine = make_routine("trig-sched-dedupe-id", "Trig Sched Dedupe ZZZ", 1, 1);
     store
         .lock()
         .unwrap()
         .insert("trig-sched-dedupe-id".into(), routine);
+    let first = svc_trigger_scheduled(&store, "trig-sched-dedupe-id");
+    assert!(
+        first.is_ok(),
+        "first scheduled fire should claim the minute: {first:?}"
+    );
 
     let result = svc_trigger_scheduled(&store, "trig-sched-dedupe-id");
 
@@ -27,6 +31,36 @@ fn svc_trigger_scheduled_skips_duplicate_fire_in_same_minute() {
         matches!(result, Err(AppError::Locked(ref msg)) if msg.contains("already fired this minute")),
         "expected same-minute scheduled fire dedupe, got {result:?}"
     );
+}
+
+#[test]
+fn svc_trigger_scheduled_allows_a_new_fire_after_reloading_current_minute_history() {
+    let _home = TempHome::set();
+    let agent_name = "svc-trigger-scheduled-history-agent-zzz";
+    std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
+    std::fs::write(
+        crate::paths::agent_toml_path(agent_name),
+        "command = \"true\"\nargs = []\n",
+    )
+    .unwrap();
+
+    let store = new_store();
+    let mut routine = make_routine("trig-sched-history-id", "Trig Sched History ZZZ", 1, 1);
+    routine.agent = agent_name.into();
+    // `last_scheduled_trigger_at` is durable execution history loaded from scheduled.log. A daemon
+    // restart in the same minute must not confuse that completed/current record with an in-process
+    // duplicate claim for this scheduler fire.
+    routine.last_scheduled_trigger_at = Some(now_secs());
+    crate::routine_storage::write_routine(&routine).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("trig-sched-history-id".into(), routine);
+
+    with_empty_path(|| {
+        let triggered = svc_trigger_scheduled(&store, "trig-sched-history-id").unwrap();
+        assert!(triggered.last_manual_trigger_at.is_none());
+    });
 }
 
 #[test]

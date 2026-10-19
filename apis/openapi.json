@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "3.2.5"
+    "version": "3.3.1"
   },
   "servers": [
     {
@@ -49,7 +49,6 @@
         "operationId": "get_max_concurrent_runs",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -79,7 +78,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -144,7 +142,6 @@
         "operationId": "retry_crontab_sync",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -165,7 +162,6 @@
         "operationId": "health",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -187,7 +183,6 @@
         "operationId": "get_current_machine",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -217,7 +212,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -291,7 +285,6 @@
         "operationId": "restart",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -362,7 +355,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -394,7 +386,6 @@
         },
         "responses": {
           "201": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -465,7 +456,6 @@
         "operationId": "get_lock_status",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -494,7 +484,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -530,7 +519,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -572,7 +560,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -607,7 +594,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -651,7 +637,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -687,7 +672,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -730,7 +714,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -768,7 +751,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -814,7 +796,6 @@
         },
         "responses": {
           "201": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -927,7 +908,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -996,7 +976,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1109,7 +1088,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1130,7 +1108,7 @@
           "crate::routes::trigger_routine"
         ],
         "summary": "`POST /routines/{id}/trigger` — manually trigger a routine outside its schedule.",
-        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`crate::routines::svc_trigger`].",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. A\nconfirmed UI request may bypass host-level power saving for that one manual run. See\n[`crate::routines::svc_trigger`].",
         "operationId": "trigger_routine",
         "parameters": [
           {
@@ -1143,9 +1121,18 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1170,7 +1157,6 @@
         "operationId": "shutdown",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -2224,6 +2210,16 @@
           "desc"
         ]
       },
+      "TriggerRoutineRequest": {
+        "type": "object",
+        "description": "An explicit operator confirmation to run despite host-level power saving.",
+        "properties": {
+          "override_system_power_saving": {
+            "type": "boolean",
+            "description": "Bypass only host-level power saving for this manual run. It does not bypass a routine's\nexplicit power-saving state, disabled state, or the global lock."
+          }
+        }
+      },
       "UpdateRoutineRequest": {
         "type": "object",
         "description": "Request body for partially updating an existing routine.",
@@ -2307,11 +2303,11 @@
           "notifications": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/FailureNotificationConfig",
                 "description": "Replace per-routine failure hooks; `None` keeps the existing hook config."
+              },
+              {
+                "type": "null"
               }
             ]
           },

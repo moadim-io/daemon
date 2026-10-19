@@ -1,8 +1,9 @@
 //! Data-plane CLI subcommands.
 //!
 //! These mirror the daemon's `/api/v1` REST routes (and the MCP tools) so most actions are
-//! reachable from the command line too — routine flags and the global routine lock are
-//! REST/MCP-only for now. Each subcommand is a thin client: it serializes its flags into the
+//! reachable from the command line too — routine flags and per-routine snooze are REST/MCP-only
+//! for now (#1516 tracks closing that gap). The global routine lock (`lock`/`unlock`/
+//! `lock-status`) has full CLI parity below. Each subcommand is a thin client: it serializes its flags into the
 //! same JSON the REST API expects, sends it to the running server over the loopback HTTP client in
 //! [`crate::cli`], and prints the server's response. The daemon must already be running
 //! (`moadim` / `moadim -i`); when it is not, these commands report that and exit
@@ -75,6 +76,22 @@ pub(crate) enum DataCommand {
     },
     /// List the available agent registry keys.
     Agents,
+    /// Create a lock sentinel, halting all routine scheduling and triggers without touching any
+    /// individual routine's `enabled` state (the "pause everything" escape hatch, #683).
+    Lock {
+        /// Which sentinel to create: `shared` (committed `.lock`, shareable via git) or `local`
+        /// (gitignored `.local.lock`, machine-local).
+        #[arg(long, default_value = "shared")]
+        scope: String,
+    },
+    /// Remove lock sentinel(s), restoring prior routine scheduling.
+    Unlock {
+        /// Which sentinel(s) to remove: `shared`, `local`, or `all` (both, the default).
+        #[arg(long, default_value = "all")]
+        scope: String,
+    },
+    /// Show the current global lock status (whether the shared and/or local sentinel is present).
+    LockStatus,
 }
 
 /// Schedule operations driven by the OS crontab, keyed only by ID.

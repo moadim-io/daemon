@@ -4,8 +4,7 @@
 //! [`crate::routines::svc_trigger_scheduled`] so the established global-lock, routine-lock,
 //! snooze, power-saving, and same-minute deduplication rules remain authoritative.
 
-#[cfg(not(test))]
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 #[cfg(not(test))]
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -16,6 +15,8 @@ use uuid::Uuid;
 
 #[cfg(not(test))]
 use crate::routines::RoutineStore;
+use crate::utils::lock::LockRecover;
+use crate::utils::time::now_secs;
 
 #[allow(
     clippy::missing_docs_in_private_items,
@@ -24,11 +25,60 @@ use crate::routines::RoutineStore;
 #[path = "routine_scheduler_lifecycle.rs"]
 mod lifecycle;
 
+/// Process-local state for the most recent in-process scheduler rebuild.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SchedulerResyncStatus {
+    /// Whether the most recently completed rebuild had no invalid schedules or backend failures.
+    pub ok: bool,
+    /// Unix timestamp of the most recently completed rebuild.
+    pub last_completed_at: Option<u64>,
+    /// Description of the most recent rebuild problem, if any.
+    pub last_error: Option<String>,
+    /// Unix timestamp of the most recent rebuild problem, if any.
+    pub last_error_at: Option<u64>,
+}
+
+/// Return the latest in-process scheduler rebuild status for health reporting.
+pub(crate) fn scheduler_resync_status() -> SchedulerResyncStatus {
+    scheduler_resync_state().lock_recover().clone()
+}
+
+/// Record the outcome of a completed in-process scheduler rebuild.
+pub(super) fn record_resync_result(error: Option<String>) {
+    let now = now_secs();
+    let failed = error.is_some();
+    *scheduler_resync_state().lock_recover() = SchedulerResyncStatus {
+        ok: !failed,
+        last_completed_at: Some(now),
+        last_error: error,
+        last_error_at: failed.then_some(now),
+    };
+}
+
+/// Hold in-process scheduler status independently of the OS-crontab health state.
+fn scheduler_resync_state() -> &'static Mutex<SchedulerResyncStatus> {
+    static STATE: OnceLock<Mutex<SchedulerResyncStatus>> = OnceLock::new();
+    STATE.get_or_init(|| {
+        Mutex::new(SchedulerResyncStatus {
+            ok: true,
+            ..SchedulerResyncStatus::default()
+        })
+    })
+}
+
 /// Request that the running scheduler rebuild its library-managed jobs.
 #[cfg(not(test))]
 pub(crate) fn request_resync() {
-    if let Some(sender) = scheduler_resync_sender().get() {
-        let _ = sender.send(());
+    let Some(sender) = scheduler_resync_sender().get() else {
+        let error = "routine scheduler is not running".to_string();
+        log::warn!("routine scheduler resync request failed: {error}");
+        record_resync_result(Some(error));
+        return;
+    };
+    if sender.send(()).is_err() {
+        let error = "routine scheduler actor has stopped".to_string();
+        log::warn!("routine scheduler resync request failed: {error}");
+        record_resync_result(Some(error));
     }
 }
 

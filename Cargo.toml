@@ -1,6 +1,6 @@
 [package]
 name = "moadim"
-version = "3.2.5"
+version = "3.3.1"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -27,9 +27,9 @@ axum = "0.8"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
-croner = "3"
+croner = "4"
 cron-union = "1.0.2"
-dirs = "6"
+dirs = "7"
 env_logger = "0.11"
 iana-time-zone = "0.1"
 log = "0.4"
@@ -47,8 +47,8 @@ tokio = { version = "1", features = ["full"] }
 tokio-cron-scheduler = "0.15.1"
 tower = { version = "0.5", features = ["limit", "util"] }
 tower-http = { version = "0.7", features = ["catch-panic", "compression-gzip"] }
-utoipa = { version = "5", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"] }
+utoipa = { version = "6", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "10", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
 gethostname = "1"
 
@@ -136,6 +136,11 @@ wildcard_imports = "deny"
 # already covered by another pattern, or the duplication is an unintentional
 # bug where the bodies were meant to differ.
 match_same_arms = "deny"
+# Reject a `_ =>` wildcard arm that only ever matches a single remaining enum variant — name the
+# variant instead. A wildcard there silently absorbs any variant added to the enum later, so the
+# new case falls into an arm written for something else instead of failing to compile and forcing
+# a deliberate decision. The codebase is already clean, so `deny` locks that in.
+match_wildcard_for_single_variants = "deny"
 # Prefer `Self`/`Self::Variant` over spelling out the concrete type name
 # inside its own `impl` block. `Self` always tracks the current type, so
 # renaming the type requires zero edits inside the `impl` block, and it's
@@ -554,3 +559,10 @@ assigning_clones = "deny"
 # compiler validates, with the failure path made explicit via `Result`. The codebase is already
 # clean, so `deny` locks that in.
 checked_conversions = "deny"
+# Reject a collection that is populated (pushed/inserted/extended into) but never read back — the
+# writes are dead code, and dead writes to a collection usually mean a logic bug: either the
+# result was supposed to be returned/logged/asserted and the read got lost in a refactor, or the
+# loop exists only for its side effects and the collection obscures that. Like
+# `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
+# results), not a style preference. The codebase is already clean, so `deny` locks that in.
+collection_is_never_read = "deny"

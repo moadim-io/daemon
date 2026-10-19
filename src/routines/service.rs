@@ -97,12 +97,15 @@ pub(crate) use service_log_tail::{read_log_tail, strip_ansi_noise, MAX_LOG_TAIL_
 #[path = "service_log_tail_tests.rs"]
 mod service_log_tail_tests;
 
+#[path = "scheduled_trigger_claim.rs"]
+mod scheduled_trigger_claim;
 #[path = "service_trigger.rs"]
 mod service_trigger;
 #[cfg(test)]
 pub(crate) use service_trigger::sh_bin;
 pub(crate) use service_trigger::{
     svc_cleanup, svc_logs, svc_set_power_saving, svc_snooze, svc_trigger, svc_trigger_scheduled,
+    svc_trigger_with_system_power_saving_override,
 };
 
 #[path = "service_runs.rs"]

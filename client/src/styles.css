@@ -1600,6 +1600,17 @@ textarea {
   color: var(--accent) !important;
 }
 
+.th-sort-btn {
+  all: unset;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th-sort-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .row-selected td {
   background: var(--surface-2);
 }
@@ -2298,6 +2309,25 @@ textarea {
   margin-top: 6px;
 }
 
+.cron-schedule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cron-schedule-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cron-schedule-input .form-input {
+  min-width: 0;
+}
+
+.add-cron-btn {
+  margin-top: 8px;
+}
+
 .preset-btn {
   border: 1px solid var(--border-strong);
   background: var(--surface);
@@ -2323,6 +2353,13 @@ textarea {
 
 .cron-preview.bad {
   color: var(--err);
+}
+
+@media (max-width: 560px) {
+  .cron-schedule-input {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .machine-chips {
@@ -2399,6 +2436,20 @@ textarea {
   color: var(--err);
 }
 
+.run-summary {
+  margin-bottom: 16px;
+}
+
+.run-summary-wrap {
+  max-height: none;
+}
+
+.run-summary-text {
+  padding: 16px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 .log-search {
   display: flex;
   align-items: center;
@@ -2451,6 +2502,34 @@ textarea {
 .log-lc {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.run-compare {
+  margin-top: 16px;
+}
+
+.run-compare-body {
+  margin-top: 10px;
+}
+
+.run-compare-summary {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.run-diff-add {
+  background: var(--ok-bg);
+}
+
+.run-diff-remove {
+  background: var(--err-bg);
+}
+
+.run-diff-marker {
+  color: var(--text-faint);
+  user-select: none;
+  min-width: 1em;
 }
 
 .log-hl {
@@ -3395,4 +3474,213 @@ tr:last-child td {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ─── Runs: status-stacked activity histogram ────────────────────────── */
+
+.runs-hist {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.runs-hist-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 72px;
+}
+
+.runs-hist-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.runs-hist-bar:disabled {
+  cursor: default;
+}
+
+.runs-hist-bar:hover:not(:disabled),
+.runs-hist-bar.selected {
+  background: var(--grid-line);
+}
+
+.runs-hist-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.runs-hist-bar.selected .runs-hist-stack {
+  outline: 2px solid var(--text);
+}
+
+.runs-hist-stack {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.runs-hist-seg {
+  flex-basis: 0;
+  min-height: 2px;
+}
+
+.runs-hist-seg.success { background: var(--ok); }
+.runs-hist-seg.failed { background: var(--err); }
+.runs-hist-seg.running { background: var(--warn); }
+.runs-hist-seg.unknown { background: var(--text-faint); }
+
+.runs-hist-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ─── Runs page: Gantt run timeline ─────────────────────────────────────── */
+.runs-gantt {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.runs-gantt-hd {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.runs-gantt-peak {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.runs-gantt-lanes {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.runs-gantt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 18px;
+  margin-bottom: 2px;
+}
+
+.runs-gantt-name {
+  flex: 0 0 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.runs-gantt-track {
+  position: relative;
+  flex: 1 1 0;
+  height: 100%;
+  background: var(--grid-line);
+  border-radius: 2px;
+}
+
+.runs-gantt-strip {
+  height: 32px;
+  background: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.runs-gantt-row:has(.runs-gantt-strip) {
+  height: 32px;
+  margin-bottom: 6px;
+}
+
+.runs-gantt-level {
+  position: absolute;
+  bottom: 0;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.runs-gantt-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--err);
+}
+
+.runs-gantt-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+
+.runs-gantt-bar.success { background: var(--ok); }
+.runs-gantt-bar.failed { background: var(--err); }
+.runs-gantt-bar.running { background: var(--warn); }
+
+.runs-gantt-bar:hover,
+.runs-gantt-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.runs-gantt-axis {
+  margin-left: 148px;
+}
+
+@media (max-width: 640px) {
+  .runs-gantt-name { flex-basis: 72px; }
+  .runs-gantt-axis { margin-left: 80px; }
+}
+
+/* Heatmap page capacity forecast — reuses the runs Gantt layout. */
+.cap-forecast { margin-top: 12px; }
+.runs-gantt-level.over { background: var(--err); }
+.runs-gantt-bar.est { background: var(--text-faint); opacity: 0.6; }
+.cap-forecast-windows {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cap-forecast-windows .c-amber { font-family: var(--mono); }
+
+/* Reliability page: schedule adherence (expected fires vs actual runs). */
+.adherence { margin-bottom: 16px; }
+.adherence-hd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.adherence-note {
+  margin: 0 12px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
 }

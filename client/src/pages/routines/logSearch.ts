@@ -7,7 +7,7 @@
  * Splits like Rust's `str::lines()`: empty input yields zero lines, and a trailing `\n` doesn't
  * produce a phantom empty final line (unlike a bare `String.split("\n")`).
  */
-function linesOf(content: string): string[] {
+export function linesOf(content: string): string[] {
   if (content === "") return [];
   const parts = content.split("\n");
   if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();

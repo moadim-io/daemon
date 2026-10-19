@@ -34,7 +34,9 @@ export function snapshotToParams(snapshot: ViewSnapshot): URLSearchParams {
   for (const key of Object.keys(PARAM_KEYS) as (keyof ViewSnapshot)[]) {
     const value = snapshot[key];
     if (value === undefined || value === DEFAULT_SNAPSHOT[key]) continue;
-    params.set(PARAM_KEYS[key], value);
+    if (Array.isArray(value)) {
+      for (const machine of value) params.append(PARAM_KEYS[key], machine);
+    } else params.set(PARAM_KEYS[key], value);
   }
   return params;
 }
@@ -46,7 +48,7 @@ export function snapshotToParams(snapshot: ViewSnapshot): URLSearchParams {
 export function applyViewToParams(prev: URLSearchParams, snapshot: ViewSnapshot): URLSearchParams {
   const next = new URLSearchParams(prev);
   for (const name of VIEW_PARAM_NAMES) next.delete(name);
-  for (const [k, v] of snapshotToParams(snapshot)) next.set(k, v);
+  for (const [k, v] of snapshotToParams(snapshot)) next.append(k, v);
   return next;
 }
 
@@ -60,7 +62,9 @@ export function paramsToSnapshot(params: URLSearchParams): ViewSnapshot | undefi
     query: params.get(PARAM_KEYS.query) ?? DEFAULT_SNAPSHOT.query,
     status: params.get(PARAM_KEYS.status) ?? DEFAULT_SNAPSHOT.status,
     agent: params.get(PARAM_KEYS.agent) ?? DEFAULT_SNAPSHOT.agent,
-    machine: params.get(PARAM_KEYS.machine) ?? DEFAULT_SNAPSHOT.machine,
+    machine: params.getAll(PARAM_KEYS.machine).length > 1
+      ? params.getAll(PARAM_KEYS.machine)
+      : params.get(PARAM_KEYS.machine) ?? DEFAULT_SNAPSHOT.machine,
     repository: params.get(PARAM_KEYS.repository) ?? DEFAULT_SNAPSHOT.repository,
     tag: params.get(PARAM_KEYS.tag) ?? DEFAULT_SNAPSHOT.tag,
     sortCol: params.get(PARAM_KEYS.sortCol) ?? undefined,

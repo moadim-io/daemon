@@ -1,9 +1,8 @@
 import type { RefObject } from "react";
+import { MachineFilter } from "./MachineFilter";
 import {
 	isFilterActive,
-	machineFacetValue,
 	namedFacetValue,
-	parseMachineFacet,
 	parseNamedFacet,
 	parseStatusFacet,
 	type NamedFacet,
@@ -103,22 +102,7 @@ export function FilterBar({
 				</select>
 
 				<span className="filter-label">MACHINE</span>
-				<select
-					className="filter-select"
-					aria-label="Machine filter"
-					value={machineFacetValue(filter.machine)}
-					onChange={(e) => onMachine(parseMachineFacet(e.target.value))}
-				>
-					<option value={machineFacetValue({ kind: "any" })}>Any</option>
-					<option value={machineFacetValue({ kind: "unassigned" })}>
-						None
-					</option>
-					{machines.map((m) => (
-						<option key={m} value={m}>
-							{m}
-						</option>
-					))}
-				</select>
+				<MachineFilter facet={filter.machine} machines={machines} onChange={onMachine} />
 
 				<span className="filter-label">REPOSITORY</span>
 				<select

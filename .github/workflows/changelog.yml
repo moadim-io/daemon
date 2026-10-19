@@ -36,7 +36,7 @@ jobs:
 
       - name: Detect src/ or client/ changes
         id: filter
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             code:
@@ -45,11 +45,11 @@ jobs:
 
       - name: Install pnpm
         if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Install Node.js
         if: steps.filter.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm

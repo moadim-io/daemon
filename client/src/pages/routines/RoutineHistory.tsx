@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useRoutineRuns, useRunLog } from "../../api/hooks";
+import { Link } from "react-router-dom";
+import { useRoutineRuns, useRunLog, useRunSummary } from "../../api/hooks";
 import { fmtFreshness } from "../../components/RefreshControl";
 import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
+import { AgentRunSummary } from "./AgentRunSummary";
 import { LogViewer } from "./LogViewer";
 import { RunDurationChart } from "./RunDurationChart";
 
@@ -18,6 +20,7 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
   const runsQuery = useRoutineRuns(id);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const logQuery = useRunLog(id, selected ?? "", selected !== undefined);
+  const summaryQuery = useRunSummary(id, selected ?? "", selected !== undefined);
 
   const runs = runsQuery.data ?? [];
   const now = useNow();
@@ -110,6 +113,9 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
                         >
                           {isSelected ? "HIDE LOG" : "VIEW LOG"}
                         </button>
+                        <Link to={`/runs/${encodeURIComponent(id)}/${encodeURIComponent(run.workbench)}`} className="act-btn">
+                          PERMALINK
+                        </Link>
                       </td>
                     </tr>
                   );
@@ -121,11 +127,18 @@ export function RoutineHistory({ id, title, onBack }: RoutineHistoryProps) {
       )}
 
       {selected !== undefined && (
-        <LogViewer
-          content={logQuery.data}
-          loading={logQuery.isLoading}
-          err={logQuery.isError ? logQuery.error.message : undefined}
-        />
+        <>
+          <AgentRunSummary
+            content={summaryQuery.data}
+            loading={summaryQuery.isLoading}
+            err={summaryQuery.isError ? summaryQuery.error.message : undefined}
+          />
+          <LogViewer
+            content={logQuery.data}
+            loading={logQuery.isLoading}
+            err={logQuery.isError ? logQuery.error.message : undefined}
+          />
+        </>
       )}
     </main>
   );

@@ -45,9 +45,18 @@ pub(crate) fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // all acting on the same target — duplicate PRs/issues, racing pushes. Every fire's tmux
             // session name shares the same `moadim-{slug}-` prefix (see `build_routine_command`); if
             // any of them is still alive, skip this fire instead of launching a second one.
+            let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+            let allows_overlap = match crate::routine_storage::read_overlap_policy(&rel_dir) {
+                Ok(allows_overlap) => allows_overlap,
+                Err(reason) => {
+                    log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                    append_skip_log(&rel_dir, now_secs(), &reason);
+                    return;
+                }
+            };
             let session_prefix =
                 tmux_session_prefix(&crate::routine_storage::routine_slug(routine));
-            if tmux_session_prefix_alive(&session_prefix) {
+            if !allows_overlap && tmux_session_prefix_alive(&session_prefix) {
                 let reason = format!(
                     "a previous run (tmux session prefix {session_prefix:?}) is still active \
                      (overlap guard)"

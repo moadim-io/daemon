@@ -1,15 +1,39 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAllRuns } from "../../api/hooks";
+import { useAllRuns, useMaxConcurrentRuns, type FleetRunSummary } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
 import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
-import { DEFAULT_RUNS_FILTER, filterRuns, statusCounts, type RunStatusFacet, type RunTimeFacet } from "./runsFilter";
+import {
+  DEFAULT_RUNS_FILTER,
+  TIME_FACET_SECS,
+  filterRuns,
+  statusCounts,
+  type RunStatusFacet,
+  type RunTimeFacet,
+} from "./runsFilter";
+import { RunsHistogram } from "./RunsHistogram";
+import { buildHistogram, runsInRange } from "./histogramMath";
+import { RunsGantt } from "./RunsGantt";
+import { SortableTh } from "../../components/SortableTh";
+import { sortRows, usePersistedSort, type SortAccessors } from "../../lib/tableSort";
+import { buildGantt } from "./ganttMath";
 
 const INITIAL_LIMIT = 100;
 const LOAD_MORE_STEP = 100;
 const MAX_LIMIT = 1_000;
+
+const RUN_SORT_KEYS = ["routine", "started", "duration", "status", "exit"] as const;
+type RunSortKey = (typeof RUN_SORT_KEYS)[number];
+
+const RUN_SORT: SortAccessors<FleetRunSummary, RunSortKey> = {
+  routine: (r) => r.routine_title,
+  started: (r) => r.started_at,
+  duration: (r) => (r.finished_at == null ? null : r.finished_at - r.started_at),
+  status: (r) => r.status,
+  exit: (r) => r.exit_code ?? null,
+};
 
 const STATUS_OPTIONS: [RunStatusFacet, string][] = [
   ["all", "All"],
@@ -44,8 +68,16 @@ export function RunsPage() {
 
   const runsQuery = useAllRuns(limit, { refetchInterval: ms });
   const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data]);
-  const shown = useMemo(() => filterRuns(runs, filter, nowSecs), [runs, filter, nowSecs]);
+  const [range, setRange] = useState<{ from: number; to: number } | null>(null);
+  const filtered = useMemo(() => filterRuns(runs, filter, nowSecs), [runs, filter, nowSecs]);
+  const windowFrom = filter.time === "all" ? undefined : nowSecs - TIME_FACET_SECS[filter.time];
+  const histogram = useMemo(() => buildHistogram(filtered, nowSecs, windowFrom), [filtered, nowSecs, windowFrom]);
+  const shown = useMemo(() => (range === null ? filtered : runsInRange(filtered, range)), [filtered, range]);
+  const gantt = useMemo(() => buildGantt(shown, nowSecs, range?.from ?? windowFrom), [shown, nowSecs, range, windowFrom]);
+  const cap = useMaxConcurrentRuns().data?.value;
   const counts = useMemo(() => statusCounts(runs), [runs]);
+  const { sort, toggle: toggleSort } = usePersistedSort("moadim.client.runs.sort", RUN_SORT_KEYS);
+  const sorted = useMemo(() => sortRows(shown, sort, RUN_SORT), [shown, sort]);
 
   const canLoadMore = runs.length >= limit && limit < MAX_LIMIT;
 
@@ -107,7 +139,10 @@ export function RunsPage() {
             className="filter-select"
             aria-label="Time range filter"
             value={filter.time}
-            onChange={(e) => setFilter({ ...filter, time: e.target.value as RunTimeFacet })}
+            onChange={(e) => {
+              setFilter({ ...filter, time: e.target.value as RunTimeFacet });
+              setRange(null);
+            }}
           >
             {TIME_OPTIONS.map(([value, label]) => (
               <option key={value} value={value}>
@@ -120,8 +155,23 @@ export function RunsPage() {
           <span className="filter-count">
             Showing {shown.length} of {runs.length} fetched
           </span>
+          {range !== null && (
+            <button type="button" className="btn btn-ghost" onClick={() => setRange(null)}>
+              Clear time selection ({abstime(range.from)} – {abstime(range.to)}) ✕
+            </button>
+          )}
         </div>
       </div>
+
+      {runsQuery.data !== undefined && (
+        <RunsHistogram
+          histogram={histogram}
+          selected={range?.from ?? null}
+          onSelect={(b) => setRange(b === null ? null : { from: b.from, to: b.to })}
+        />
+      )}
+
+      <RunsGantt gantt={gantt} cap={cap} />
 
       {runsQuery.error ? (
         <div className="table-wrap">
@@ -152,15 +202,16 @@ export function RunsPage() {
           <table>
             <thead>
               <tr>
-                <th>ROUTINE</th>
-                <th>STARTED</th>
-                <th>DURATION</th>
-                <th>STATUS</th>
-                <th>EXIT CODE</th>
+                <SortableTh label="ROUTINE" col="routine" sort={sort} defaultDir="asc" onSort={toggleSort} />
+                <SortableTh label="STARTED" col="started" sort={sort} defaultDir="desc" onSort={toggleSort} />
+                <SortableTh label="DURATION" col="duration" sort={sort} defaultDir="desc" onSort={toggleSort} />
+                <SortableTh label="STATUS" col="status" sort={sort} defaultDir="asc" onSort={toggleSort} />
+                <SortableTh label="EXIT CODE" col="exit" sort={sort} defaultDir="desc" onSort={toggleSort} />
+                <th />
               </tr>
             </thead>
             <tbody>
-              {shown.map((run) => (
+              {sorted.map((run) => (
                 <tr key={run.workbench}>
                   <td>
                     <Link to={`/routines?history=${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
@@ -179,6 +230,14 @@ export function RunsPage() {
                     <span className={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
                   </td>
                   <td>{run.exit_code == null ? "—" : run.exit_code}</td>
+                  <td>
+                    <Link
+                      to={`/runs/${encodeURIComponent(run.routine_id)}/${encodeURIComponent(run.workbench)}`}
+                      className="act-btn logs"
+                    >
+                      VIEW RUN
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

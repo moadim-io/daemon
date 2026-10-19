@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import type { FleetRunSummary } from "../../api/hooks";
 import { RunsPage } from "./RunsPage";
 
+/** Match run-list text only, not the timeline's lane labels. */
+const LIST_ONLY = { ignore: ".runs-gantt *" };
+
 function run(overrides: Partial<FleetRunSummary> = {}): FleetRunSummary {
   return {
     routine_id: "r1",
@@ -60,6 +63,11 @@ describe("RunsPage", () => {
     expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();
   });
 
+  it("links each run to its own deep-linkable detail page", () => {
+    renderPage([run({ workbench: "wb1", routine_title: "Nightly Audit" })]);
+    expect(screen.getByRole("link", { name: "VIEW RUN" })).toHaveAttribute("href", "/runs/r1/wb1");
+  });
+
   it("filters the list by status", () => {
     renderPage([
       run({ workbench: "wb1", routine_title: "Nightly Audit", status: "success" }),
@@ -69,8 +77,8 @@ describe("RunsPage", () => {
     fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "failed" } });
 
     expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
-    expect(screen.queryByText("Nightly Audit")).not.toBeInTheDocument();
-    expect(screen.getByText("Weekly Digest")).toBeInTheDocument();
+    expect(screen.queryByText("Nightly Audit", LIST_ONLY)).not.toBeInTheDocument();
+    expect(screen.getByText("Weekly Digest", LIST_ONLY)).toBeInTheDocument();
   });
 
   it("filters the list by routine title search", () => {
@@ -82,7 +90,7 @@ describe("RunsPage", () => {
     fireEvent.change(screen.getByLabelText("Search runs"), { target: { value: "weekly" } });
 
     expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
-    expect(screen.getByText("Weekly Digest")).toBeInTheDocument();
+    expect(screen.getByText("Weekly Digest", LIST_ONLY)).toBeInTheDocument();
   });
 
   it("shows a no-matches empty state distinct from no-runs-yet", () => {
@@ -101,5 +109,35 @@ describe("RunsPage", () => {
   it("does not offer load-more under the fetch limit", () => {
     renderPage([run()]);
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("narrows the list to a histogram bucket and clears it again", () => {
+    const now = Math.floor(Date.now() / 1000);
+    renderPage([
+      run({ workbench: "wb1", routine_title: "Nightly Audit", started_at: now - 10 }),
+      run({ workbench: "wb2", routine_title: "Weekly Digest", status: "failed", started_at: now - 3 * 86_400 }),
+    ]);
+    expect(screen.getByRole("group", { name: "Run activity over time" })).toBeInTheDocument();
+
+    const failedBar = screen.getByRole("button", { name: /1 failed/ });
+    fireEvent.click(failedBar);
+    expect(failedBar).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Showing 1 of 2 fetched")).toBeInTheDocument();
+    expect(screen.queryByText("Nightly Audit", LIST_ONLY)).not.toBeInTheDocument();
+
+    fireEvent.click(failedBar);
+    expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();
+
+    fireEvent.click(failedBar);
+    fireEvent.click(screen.getByRole("button", { name: /Clear time selection/ }));
+    expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();
+  });
+
+  it("resets the bucket selection when the time window changes", () => {
+    const now = Math.floor(Date.now() / 1000);
+    renderPage([run({ workbench: "wb1", started_at: now - 10 })]);
+    fireEvent.click(screen.getByRole("button", { name: /1 success/ }));
+    fireEvent.change(screen.getByLabelText("Time range filter"), { target: { value: "24h" } });
+    expect(screen.queryByRole("button", { name: /Clear time selection/ })).not.toBeInTheDocument();
   });
 });

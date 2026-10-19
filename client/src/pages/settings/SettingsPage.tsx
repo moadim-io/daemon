@@ -1,7 +1,9 @@
 import { useState } from "react";
 import {
   useHealth,
+  useMaxConcurrentRuns,
   useRetryCrontabSync,
+  useSetMaxConcurrentRuns,
   useSetUserPrompt,
   useUserPrompt
 } from "../../api/hooks";
@@ -16,11 +18,14 @@ export function SettingsPage() {
   const setUserPrompt = useSetUserPrompt();
   const health = useHealth(30_000);
   const retryCrontabSync = useRetryCrontabSync();
+  const maxConcurrentRuns = useMaxConcurrentRuns();
+  const setMaxConcurrentRuns = useSetMaxConcurrentRuns();
 
   const [content, setContent] = useState("");
   const [loadedContent, setLoadedContent] = useState("");
   const [refreshToken, setRefreshToken] = useState<RefreshToken>(loadRefreshToken);
   const [lightTheme, setLightTheme] = useState(loadThemeLight);
+  const [concurrencyInput, setConcurrencyInput] = useState("");
 
   // Seed the editable draft once the initial fetch resolves. Adjusting state during
   // render (rather than in an effect) on a tracked "previous prop" per
@@ -34,6 +39,26 @@ export function SettingsPage() {
   }
 
   const dirty = content !== loadedContent;
+
+  const [seededConcurrencyFrom, setSeededConcurrencyFrom] = useState<number | null | undefined>(undefined);
+  if (maxConcurrentRuns.data !== undefined && maxConcurrentRuns.data.override_value !== seededConcurrencyFrom) {
+    setSeededConcurrencyFrom(maxConcurrentRuns.data.override_value);
+    setConcurrencyInput(
+      maxConcurrentRuns.data.override_value === null ? "" : String(maxConcurrentRuns.data.override_value),
+    );
+  }
+
+  const concurrencyDirty = concurrencyInput !== (seededConcurrencyFrom === null ? "" : String(seededConcurrencyFrom ?? ""));
+  const concurrencyValid = concurrencyInput.trim() === "" || /^\d+$/.test(concurrencyInput.trim());
+
+  const saveConcurrency = () => {
+    const trimmed = concurrencyInput.trim();
+    const value = trimmed === "" ? null : Number.parseInt(trimmed, 10);
+    setMaxConcurrentRuns.mutate(value, {
+      onSuccess: () => addToast("Concurrency cap saved", "ok"),
+      onError: (err) => addToast(`Save failed: ${err.message}`, "err"),
+    });
+  };
 
   const save = () => {
     setUserPrompt.mutate(content, {
@@ -91,6 +116,63 @@ export function SettingsPage() {
           routines, logs, heatmap, machines, and reliability views.
         </p>
         <RefreshControl token={refreshToken} updatedAtMs={0} onChange={onSetRefreshToken} />
+      </div>
+      <div className="card settings-card">
+        <div className="settings-card-title">Concurrency</div>
+        <p className="settings-card-copy">
+          The most routines this daemon will run at once fleet-wide. Extra due routines wait for a
+          slot instead of starting immediately. Takes effect on the next trigger check — no restart
+          required. Leave blank to fall back to the <code>MOADIM_MAX_CONCURRENT_RUNS</code> env var,
+          or the built-in default if that isn&apos;t set either.
+        </p>
+        {maxConcurrentRuns.isLoading ? (
+          <div>Loading…</div>
+        ) : (
+          <>
+            <div className="settings-card-copy">
+              Effective cap right now:{" "}
+              <strong>
+                {maxConcurrentRuns.data?.value === 0 ? "unbounded" : maxConcurrentRuns.data?.value}
+              </strong>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className="form-input"
+                style={{ width: 120 }}
+                placeholder="unset"
+                aria-label="Max concurrent runs override"
+                value={concurrencyInput}
+                onChange={(e) => setConcurrencyInput(e.target.value)}
+              />
+              <button
+                className="btn btn-primary"
+                disabled={!concurrencyDirty || !concurrencyValid || setMaxConcurrentRuns.isPending}
+                onClick={saveConcurrency}
+              >
+                {setMaxConcurrentRuns.isPending ? "Saving…" : "Save"}
+              </button>
+              {concurrencyInput.trim() !== "" && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={setMaxConcurrentRuns.isPending}
+                  onClick={() => setConcurrencyInput("")}
+                >
+                  Clear
+                </button>
+              )}
+              {concurrencyDirty && concurrencyValid && (
+                <span style={{ color: "var(--text-faint)", fontSize: 12 }}>unsaved changes</span>
+              )}
+              {!concurrencyValid && (
+                <span style={{ color: "var(--err)", fontSize: 12 }}>must be a whole number ≥ 0</span>
+              )}
+            </div>
+          </>
+        )}
       </div>
       <div className="card settings-card settings-health-card">
         <div className="settings-card-title">System health</div>

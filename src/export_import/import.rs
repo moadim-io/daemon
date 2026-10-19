@@ -140,7 +140,7 @@ fn apply(root: &Path, plan: &[(&str, &str, Action)]) -> i32 {
 /// Every import target is `config_dir().join(rel)` with a non-empty relative path, so `parent()`
 /// is always present; the `.` fallback only guards against a bare-filename `target`.
 fn write_file(target: &Path, content: &str) -> std::io::Result<()> {
-    std::fs::create_dir_all(target.parent().unwrap_or(Path::new(".")))?;
+    std::fs::create_dir_all(target.parent().unwrap_or_else(|| Path::new(".")))?;
     crate::utils::atomic::atomic_write(target, content.as_bytes())
 }
 

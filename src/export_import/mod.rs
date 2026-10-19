@@ -3,7 +3,7 @@
 //! `moadim export` snapshots every *tracked* config file — per-routine `routine.toml`,
 //! `schedule.cron`, `disabled.json`, and `prompts/prompt.pure.md`, the agent registry's
 //! `agents/*.toml`, plus the global `notifications.toml` and `user_prompt.md` — into a single
-//! portable JSON bundle ([`bundle::Bundle`]). Gitignored runtime sidecars (`*.local.*`, `*.pid`,
+//! portable JSON bundle (`bundle::Bundle`). Gitignored runtime sidecars (`*.local.*`, `*.pid`,
 //! `*.log`, compiled cron/prompt outputs) are excluded, mirroring the tracked-vs-local split the
 //! config `.gitignore` already encodes, so secrets and machine-local state never leak into a
 //! bundle.

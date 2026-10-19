@@ -61,11 +61,14 @@ async fn run_server() -> anyhow::Result<()> {
     // cron file (otherwise the launch command's `cp prompt.compiled.local.md` fails and the agent
     // launches with an empty prompt).
     routine_storage::repersist_routines(&routines);
-    // Re-sync routines to the crontab on startup; otherwise a block that went stale (e.g. emptied
-    // by an earlier run before agent configs existed) would never be regenerated until the next
-    // create/update/delete, leaving scheduled routines silently un-fired.
+    // Start the daemon-owned scheduler first: it rebuilds from the store on start, and the
+    // startup sync below then finds its resync channel instead of recording "routine scheduler
+    // is not running" on every boot. Routine mutations request the same library scheduler to
+    // rebuild its jobs, so no platform relies on OS crontab.
+    #[cfg(not(test))]
+    let _routine_scheduler = routine_scheduler::spawn(routines.clone());
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
-        log::warn!("startup crontab sync failed: {err}");
+        log::warn!("startup routine scheduler sync failed: {err}");
     }
     let bind_addr = cli::validated_bind_addr().map_err(anyhow::Error::msg)?;
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;

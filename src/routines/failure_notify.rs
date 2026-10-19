@@ -158,39 +158,7 @@ fn dispatch_webhook(webhook: &str, payload: &FailurePayload<'_>) {
     std::thread::spawn(move || post_webhook(&curl_bin, &webhook, &body));
 }
 
-#[allow(clippy::expect_used, reason = "spawned curl child should wait")]
-fn post_webhook(curl_bin: &str, webhook: &str, body: &[u8]) {
-    let mut child = match std::process::Command::new(curl_bin)
-        .arg("-fsS")
-        .arg("--max-time")
-        .arg("10")
-        .arg("-X")
-        .arg("POST")
-        .arg("-H")
-        .arg("content-type: application/json")
-        .arg("--data-binary")
-        .arg("@-")
-        .arg(webhook)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(err) => {
-            log::warn!("failure notification webhook: failed to spawn curl: {err}");
-            return;
-        }
-    };
-    let _ = child.stdin.take().map(|mut stdin| stdin.write_all(body));
-    let out = child.wait_with_output().expect("curl child exits");
-    if !out.status.success() {
-        log::warn!(
-            "failure notification webhook failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-}
+include!("failure_notify_webhook_retry.rs");
 
 #[cfg(test)]
 #[path = "failure_notify_tests.rs"]

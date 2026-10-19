@@ -1,9 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useRoutines } from "../../api/hooks";
+import { useAllRuns, useMaxConcurrentRuns, useRoutines } from "../../api/hooks";
 import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import { dateOnly } from "../../lib/schedule";
+import { CapacityForecast } from "./CapacityForecast";
 import { DayTimeline } from "./DayTimeline";
+import { buildForecast } from "./forecastMath";
+import { RUN_HISTORY_FETCH_LIMIT } from "../routines/sparkline";
 import { timelineItemsOf } from "./dayTimelineMath";
 import {
   computeHeatmap,
@@ -90,6 +93,13 @@ export function HeatmapPage() {
       return next;
     });
   };
+
+  const { data: runs } = useAllRuns(RUN_HISTORY_FETCH_LIMIT, { refetchInterval: refreshMs(refreshToken) });
+  const cap = useMaxConcurrentRuns().data?.value;
+  const forecast = useMemo(
+    () => buildForecast(routines ?? [], runs ?? [], Math.floor(now.getTime() / 1000), cap ?? 0),
+    [routines, runs, now, cap],
+  );
 
   const timelineItems = useMemo(() => timelineItemsOf(routines ?? [], now), [routines, now]);
 
@@ -250,6 +260,8 @@ export function HeatmapPage() {
           </div>
         </>
       )}
+
+      {!errorMessage && !isLoading && <CapacityForecast forecast={forecast} cap={cap} />}
 
       {selectedDay && (
         <DayTimeline

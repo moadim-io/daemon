@@ -99,7 +99,9 @@ impl Drop for CronShim {
 #[test]
 fn failed_routine_sync_is_reported_in_crontab_sync_status() {
     crate::sync::reset_crontab_sync_status_for_tests();
-    let agent_name = "test-sync-agent-status-failure";
+    // Unique per call: `successful_routine_sync_clears_previous_crontab_sync_error` reuses this
+    // test while nextest runs it in a parallel process, and both delete this config file.
+    let agent_name = &format!("test-sync-agent-status-failure-{}", uuid::Uuid::new_v4());
     std::fs::create_dir_all(crate::paths::agents_dir()).unwrap();
     let cfg = crate::paths::agent_toml_path(agent_name);
     std::fs::write(&cfg, "command = \"claude\"\nargs = []\n").unwrap();

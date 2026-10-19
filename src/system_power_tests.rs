@@ -116,14 +116,14 @@ fn macos_detector_reads_low_power_mode_from_pmset() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn pmset_bin_defaults_to_pmset_when_unset() {
+fn pmset_bin_defaults_to_a_missing_guard_in_tests_when_unset() {
     let _guard = EnvGuard::set_pmset_bin("temporary");
     // SAFETY: this test owns the serialized environment guard.
     unsafe {
         std::env::remove_var("MOADIM_PMSET_BIN");
     }
 
-    assert_eq!(super::pmset_bin(), "pmset");
+    assert_eq!(super::pmset_bin(), "/nonexistent/moadim-test-pmset-guard");
 }
 
 #[cfg(target_os = "macos")]

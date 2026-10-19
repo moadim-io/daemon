@@ -37,7 +37,7 @@ fn svc_create_trims_and_stores_tags() {
     // Covers the normalize/Ok path of `validate_tags` and the `tags` assignment in
     // `svc_create`: surrounding whitespace is trimmed and the tags are stored.
     crate::routines::ensure_default_agents();
-    let title = "Svc Create Tags ZZZ";
+    let title = format!("Svc Create Tags {}", uuid::Uuid::new_v4());
     let store = new_store();
     let created = svc_create(
         &store,
@@ -46,7 +46,7 @@ fn svc_create_trims_and_stores_tags() {
             model: None,
             power_saving_exempt: false,
             tags: vec!["  triage  ".into(), "nightly".into()],
-            ..create_req_with_title(title)
+            ..create_req_with_title(&title)
         },
     )
     .unwrap();
@@ -56,7 +56,7 @@ fn svc_create_trims_and_stores_tags() {
     );
 
     svc_delete(&store, &created.routine.id).unwrap();
-    let _ = crate::routine_storage::remove_routine_dir(&slugify(title));
+    let _ = crate::routine_storage::remove_routine_dir(&slugify(&title));
 }
 
 #[test]

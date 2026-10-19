@@ -24,3 +24,26 @@ fn build_routine_command_sets_owner_only_umask_before_creating_files() {
         "umask must precede the first mkdir so the workbench tree is owner-only: {cmd}"
     );
 }
+
+#[test]
+fn build_routine_command_enters_new_workbench_before_running_setup() {
+    let routine = make_routine("Cmd Workbench Cwd Routine");
+    let agent = AgentCommand {
+        command: "claude".to_string(),
+        args: vec![],
+        instructions_file: "CLAUDE.md".to_string(),
+        setup: None,
+    };
+    let cmd = build_routine_command(&routine, &agent, TriggerSource::Scheduled);
+    let mkdir_at = cmd
+        .find(r#"mkdir -p "$WB""#)
+        .expect("workbench mkdir present");
+    let cd_at = cmd
+        .find(r#"cd "$WB" || exit 1"#)
+        .expect("workbench cd present");
+    let prompt_at = cmd.find("prompt.md").expect("prompt setup present");
+    assert!(
+        mkdir_at < cd_at && cd_at < prompt_at,
+        "the launcher must enter the fresh workbench before setup or repository commands: {cmd}"
+    );
+}

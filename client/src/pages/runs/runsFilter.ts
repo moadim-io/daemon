@@ -11,7 +11,7 @@ export interface RunsFilter {
 
 export const DEFAULT_RUNS_FILTER: RunsFilter = { query: "", status: "all", time: "all" };
 
-const TIME_FACET_SECS: Record<Exclude<RunTimeFacet, "all">, number> = {
+export const TIME_FACET_SECS: Record<Exclude<RunTimeFacet, "all">, number> = {
   "1h": 3_600,
   "24h": 86_400,
   "7d": 604_800,

@@ -136,6 +136,11 @@ wildcard_imports = "deny"
 # already covered by another pattern, or the duplication is an unintentional
 # bug where the bodies were meant to differ.
 match_same_arms = "deny"
+# Reject a `_ =>` wildcard arm that only ever matches a single remaining enum variant — name the
+# variant instead. A wildcard there silently absorbs any variant added to the enum later, so the
+# new case falls into an arm written for something else instead of failing to compile and forcing
+# a deliberate decision. The codebase is already clean, so `deny` locks that in.
+match_wildcard_for_single_variants = "deny"
 # Prefer `Self`/`Self::Variant` over spelling out the concrete type name
 # inside its own `impl` block. `Self` always tracks the current type, so
 # renaming the type requires zero edits inside the `impl` block, and it's

@@ -11,6 +11,16 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-10-20
+
+The `.ics` calendar feed now places a timezone-pinned routine's events at the times it really fires, instead of evaluating its schedule in the host's zone.
+
+Lock status now reports when each global lock sentinel appeared (`shared_since`, `local_since`, Unix seconds), so a lock that blocks routines can be dated (#1567).
+
+Add `moadim doctor`: a one-shot local check that `tmux` and `python3` are on `PATH`, that each agent config parses and its command resolves, and that the daemon is running. It prints one line per check and exits 1 if any check fails.
+
+A timezone-pinned routine's next run time (`next_run_at`) is now computed in its own zone, so the UI shows when it really fires.
+
 ## [3.5.0] - 2026-10-20
 
 Add an optional per-routine `timezone` (IANA name) so a schedule can pin to a zone instead of always running in the host's own zone. The in-process scheduler fires the routine in that zone on every OS.
@@ -5141,7 +5151,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/moadim-io/daemon/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/moadim-io/daemon/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/moadim-io/daemon/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/moadim-io/daemon/compare/v3.3.0...v3.3.1

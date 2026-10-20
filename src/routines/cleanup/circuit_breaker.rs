@@ -33,7 +33,7 @@
 //! responsive enough to stop the bleed within a few extra fires — a world away from "forever" — at
 //! the cost of no new per-workbench marker files or a second background sweep.
 
-use crate::routine_storage::write_routine;
+use crate::routine_storage::persist_existing_routine;
 use crate::routines::model::{RoutineStore, RunStatus};
 use crate::utils::lock::LockRecover;
 
@@ -77,7 +77,7 @@ pub(super) fn record_run_outcome(store: &RoutineStore, id: &str, status: RunStat
         }
         routine.clone()
     };
-    if let Err(err) = write_routine(&routine) {
+    if let Err(err) = persist_existing_routine(&routine) {
         log::warn!("circuit breaker: failed to persist routine {id:?}: {err}");
     }
     if just_disabled {

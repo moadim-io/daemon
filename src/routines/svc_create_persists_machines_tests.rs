@@ -30,7 +30,9 @@ fn svc_create_persists_machines() {
 fn svc_update_sets_machines() {
     let _home = TempHome::set();
     // Covers the `if let Some(machines) = req.machines` branch in `svc_update`.
-    let store = store_with(vec![make_routine("upd-machines", "Keep", 1, 1)]);
+    let routine = make_routine("upd-machines", "Keep", 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    let store = store_with(vec![routine]);
     let resp = svc_update(
         &store,
         "upd-machines",

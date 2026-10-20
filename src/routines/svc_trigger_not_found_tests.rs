@@ -18,6 +18,7 @@ fn svc_trigger_records_time_without_agent_config() {
     let store = new_store();
     let mut routine = make_routine("trig-id");
     routine.agent = "no-such-agent-xyz".into();
+    crate::routine_storage::write_routine(&routine).unwrap();
     store.lock().unwrap().insert("trig-id".into(), routine);
     let triggered = svc_trigger(&store, "trig-id").unwrap();
     assert!(triggered.last_manual_trigger_at.is_some());

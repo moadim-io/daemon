@@ -64,6 +64,23 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     write_routine_to_rel_dir(routine, &rel_dir)
 }
 
+/// Write an already-persisted `routine` back to its existing `routine.toml` directory.
+///
+/// Update-path counterpart of [`write_routine`]: it never falls back to the title slug. A routine
+/// whose `routine.toml` was deleted from disk while the daemon runs (for example by a git pull
+/// after it moved to another folder) yields `NotFound` instead of being recreated at its old path.
+pub fn persist_existing_routine(routine: &Routine) -> std::io::Result<()> {
+    let Some(rel_dir) = routine_storage_location::routine_rel_dir_by_id(&routine.id) else {
+        let msg = format!(
+            "routine {} has no routine.toml on disk any more; not recreating it",
+            routine.id
+        );
+        log::warn!("{msg}");
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
+    };
+    write_routine_to_rel_dir(routine, &rel_dir)
+}
+
 /// Write `routine` to an explicit directory relative to `routines/`.
 ///
 /// Used only by migrations that deliberately move legacy on-disk layouts; normal updates should use

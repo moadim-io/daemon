@@ -93,3 +93,7 @@ mod routine_storage_location_tests;
 #[cfg(test)]
 #[path = "routine_storage_disabled_json_tests.rs"]
 mod routine_storage_disabled_json_tests;
+
+#[cfg(test)]
+#[path = "persist_existing_routine_tests.rs"]
+mod persist_existing_routine_tests;

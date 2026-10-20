@@ -106,6 +106,7 @@ fn svc_snooze_sets_and_clears() {
     let _home = TempHome::set();
     let store = new_store();
     let routine = make_routine("snooze-set-clear-id", "Snooze Set Clear ZZZ", 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
     store
         .lock()
         .unwrap()

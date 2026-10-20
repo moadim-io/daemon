@@ -1,7 +1,7 @@
 //! Flag CRUD for routines: raise, list, and resolve flags raised against a routine.
 
 use crate::error::AppError;
-use crate::routine_storage::{routine_rel_dir, write_routine};
+use crate::routine_storage::{persist_existing_routine, routine_rel_dir};
 use crate::routines::flags::{self, Flag, FlagScope};
 use crate::routines::model::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
@@ -62,7 +62,7 @@ pub fn svc_create_flag(
     let (routine, rel_dir) = routine_and_rel_dir(store, id)?;
     let flag = flags::create_flag(&rel_dir, flag_type, description, scope)
         .map_err(|_| AppError::Internal)?;
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
     Ok(flag)
 }
 
@@ -83,6 +83,6 @@ pub fn svc_resolve_flag(store: &RoutineStore, id: &str, filename: &str) -> Resul
     if !resolved {
         return Err(AppError::NotFound);
     }
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
     Ok(())
 }

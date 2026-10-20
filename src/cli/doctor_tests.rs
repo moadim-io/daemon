@@ -174,3 +174,5 @@ fn unreadable_agent_config_fails() {
     let checks = run_checks(&fx.path(), &fx.agents(), true);
     assert!(!find(&checks, "agent broken").passed());
 }
+
+include!("doctor_setup_tests.rs");

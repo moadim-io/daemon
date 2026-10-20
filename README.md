@@ -71,19 +71,26 @@ release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
 to the newest semver-compatible version at install time — so a bad or breaking
 transitive bump can't fail an otherwise-unchanged install.
 
-Prefer a prebuilt binary over compiling from source? Each release publishes
-binary archives (with a SHA256 checksum) for macOS (Apple Silicon and Intel)
-and Linux x86_64. Install one with [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall)
-(no Rust toolchain compile required):
+Prefer a prebuilt binary over compiling from source? Releases are meant to
+publish binary archives (with a SHA256 checksum) for macOS (Apple Silicon and
+Intel) and Linux x86_64, for [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall).
+
+> **Status:** current releases have no binary archives yet (the release workflow
+> skipped that job; the fix is in [#1664](https://github.com/moadim-io/daemon/pull/1664)),
+> so `cargo binstall` falls back to a source compile. Use `cargo install --locked moadim`
+> above until a release lists the archives.
 
 ```sh
 cargo binstall moadim
 ```
 
-Node/npm users can install the same prebuilt binaries through npm. The npm
-package is a thin wrapper over per-platform optional binary packages; it does
-not run `cargo install` during installation, and every npm package version is
-kept in lockstep with the Rust crate version:
+Node/npm users will be able to install the same prebuilt binaries through npm.
+The npm package is a thin wrapper over per-platform optional binary packages; it
+does not run `cargo install` during installation, and every npm package version
+is kept in lockstep with the Rust crate version.
+
+> **Status:** `moadim` is not on npm yet (`npm install -g moadim` returns 404).
+> Use `cargo install --locked moadim` until it is published.
 
 ```sh
 npm install -g moadim

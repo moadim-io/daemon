@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.6.2] - 2026-10-20
+
+When two routine directories share one routine id, the daemon now loads the first in path order, skips the other with a warning naming it, and writes back to that same directory. Before, it silently loaded one copy and could write it into the other copy's directory, overwriting it.
+
+Stop recreating a routine's `routine.toml` after it was deleted from disk while the daemon runs (for example by a git pull after the routine moved into a folder on another machine). Triggers, snoozes, flags, updates and the circuit breaker now refuse to write a routine whose file is gone instead of resurrecting a stale copy at its old path.
+
 ## [3.6.1] - 2026-10-20
 
 `moadim doctor` now flags an active global lock (which file, since when) with the `moadim unlock` hint, since a forgotten lock silently halts every routine.
@@ -5155,7 +5161,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.2...HEAD
+[3.6.2]: https://github.com/moadim-io/daemon/compare/v3.6.1...v3.6.2
 [3.6.1]: https://github.com/moadim-io/daemon/compare/v3.6.0...v3.6.1
 [3.6.0]: https://github.com/moadim-io/daemon/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/moadim-io/daemon/compare/v3.4.0...v3.5.0

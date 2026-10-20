@@ -4,40 +4,58 @@ use std::collections::HashMap;
 
 use crate::routines::Routine;
 
+/// List the entries of `dir` sorted by file name.
+///
+/// Every walker uses this order, so the first routine dir found for an id is the same one in the
+/// loader and in the write-location lookup.
+fn sorted_dir_entries(dir: &std::path::Path) -> Vec<std::fs::DirEntry> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().collect();
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    entries
+}
+
 /// Walk `dir` recursively, loading any child folder that contains a `routine.toml`.
 ///
 /// `base` stays fixed at the scan root so nested routine folders load from a coherent relative
 /// path. `load` is injected so the recursive walk stays testable without tying the helper to the
 /// surrounding module's private loader.
+///
+/// Entries are visited in sorted order. When two routine dirs share an id, the first one wins and
+/// later ones are skipped with a warning, so the loaded copy matches the one writes resolve to.
 pub(super) fn walk_routines(
     base: &std::path::Path,
     dir: &std::path::Path,
     routines: &mut HashMap<String, Routine>,
     load: &dyn Fn(&std::path::Path, &str) -> Option<Routine>,
 ) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-                continue;
-            }
-            let path = entry.path();
-            if path.join("routine.toml").exists() {
-                let rel = path.strip_prefix(base).unwrap_or(&path);
-                let rel = rel.to_string_lossy().to_string();
-                match load(base, &rel) {
-                    Some(routine) => {
-                        routines.insert(routine.id.clone(), routine);
-                    }
-                    None => {
-                        log::warn!(
-                            "load_store: skipping routine dir {rel:?}: its routine.toml is \
-                             unparsable or missing a required field (title, schedule, or agent)"
-                        );
-                    }
+    for entry in sorted_dir_entries(dir) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            continue;
+        }
+        let path = entry.path();
+        if path.join("routine.toml").exists() {
+            let rel = path.strip_prefix(base).unwrap_or(&path);
+            let rel = rel.to_string_lossy().to_string();
+            match load(base, &rel) {
+                Some(routine) if routines.contains_key(&routine.id) => {
+                    log::warn!(
+                        "load_store: skipping routine dir {rel:?}: id {} is already loaded from \
+                         another routine dir (duplicate routine id; the first in path order wins)",
+                        routine.id
+                    );
                 }
-            } else {
-                walk_routines(base, &path, routines, load);
+                Some(routine) => {
+                    routines.insert(routine.id.clone(), routine);
+                }
+                None => {
+                    log::warn!(
+                        "load_store: skipping routine dir {rel:?}: its routine.toml is \
+                         unparsable or missing a required field (title, schedule, or agent)"
+                    );
+                }
             }
+        } else {
+            walk_routines(base, &path, routines, load);
         }
     }
 }

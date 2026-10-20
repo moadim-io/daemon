@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use super::is_running;
 use crate::paths::agents_dir;
-use crate::routines::{agent_command_available_in, AgentCommand};
+use crate::routines::{agent_command_available_in, setup_step_interpreter, AgentCommand};
 
 /// One diagnostic result: a short `label` and, when the check failed, the reason it failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,7 +95,9 @@ fn agent_checks(path: &str, dir: &Path) -> Vec<Check> {
 }
 
 /// Parse one agent config the same way [`crate::routines::load_agent_command`] does, then check
-/// its `command` resolves on `path`. A config that does not parse fails with its first error line.
+/// its `command` resolves on `path`. When the command resolves, a `setup` step whose interpreter
+/// (first token) does not resolve on `path` also fails the check. A config that does not parse
+/// fails with its first error line.
 fn agent_check(path: &str, file: &Path) -> Check {
     let name = file.file_stem().and_then(|stem| stem.to_str());
     let label = format!("agent {}", name.unwrap_or_default());
@@ -103,11 +105,19 @@ fn agent_check(path: &str, file: &Path) -> Check {
         .map_err(|err| err.to_string())
         .and_then(|text| toml::from_str::<AgentCommand>(&text).map_err(|err| err.to_string()));
     match loaded {
-        Ok(agent) => Check::require(
-            label,
-            agent_command_available_in(path, &agent.command),
-            &format!("`{}` not found on PATH", agent.command),
-        ),
+        Ok(agent) => {
+            let failure = if agent_command_available_in(path, &agent.command) {
+                agent
+                    .setup
+                    .as_deref()
+                    .and_then(setup_step_interpreter)
+                    .filter(|bin| !agent_command_available_in(path, bin))
+                    .map(|bin| format!("setup step needs `{bin}`, not found on PATH"))
+            } else {
+                Some(format!("`{}` not found on PATH", agent.command))
+            };
+            Check { label, failure }
+        }
         Err(err) => {
             let first_line = err.lines().next().unwrap_or_default();
             Check::fail(label, first_line)

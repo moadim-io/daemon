@@ -152,15 +152,15 @@ pub(crate) fn routine_env_carrier_vars(routine: &Routine) -> BTreeMap<String, St
 /// Who is launching the routine command — which decides whether the run records a *scheduled*
 /// firing.
 ///
-/// Only the OS crontab firing on schedule should append to `scheduled.log`; a manual (on-demand)
-/// trigger reuses the very same launch script but must not masquerade as a scheduled fire, or
+/// Only a scheduled fire appends to `scheduled.log` (written by `svc_trigger_scheduled`); a manual
+/// (on-demand) trigger reuses the very same launch script but must not masquerade as one, or
 /// `last_scheduled_trigger_at` would be overwritten every time an operator hits "run now".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TriggerSource {
-    /// The OS crontab firing on schedule — records the fire time into `scheduled.log`.
+    /// A scheduler firing on schedule — `svc_trigger_scheduled` records it in `scheduled.log`.
     Scheduled,
     /// An on-demand trigger (UI/API/CLI) — runs the agent but leaves `scheduled.log` untouched, so
     /// the manual run is tracked only via `last_manual_trigger_at` (recorded in-process by
-    /// `svc_trigger`, not by this script).
+    /// `svc_trigger`).
     Manual,
 }

@@ -151,7 +151,6 @@ fn svc_update_sets_ttl_secs() {
     });
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn svc_update_sets_timezone_override() {
     let _home = TempHome::set();
@@ -178,9 +177,7 @@ fn svc_update_sets_timezone_override() {
 #[test]
 fn svc_update_clears_an_existing_timezone_override_via_blank_string() {
     let _home = TempHome::set();
-    // Mirrors `model`'s clear-on-blank convention. Sets the override directly on the persisted
-    // routine (bypassing create-time platform validation) so this exercises the *clear* path on
-    // every host, not just Linux.
+    // Mirrors `model`'s clear-on-blank convention.
     let title = "Svc Update Timezone Clear ZZZ";
     let store = new_store();
     let mut routine = make_routine("tz-clear-id", title, 1, 1);

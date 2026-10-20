@@ -11,8 +11,92 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-10-19
+
+Stop leaking per-routine env secrets through process arguments. Values from `routine.toml` `[env]` and `routine.local.toml` used to be inlined into the launch command as `export KEY='value'`, readable by any local user via `ps` while the wrapper shell ran. They now reach the routine through the spawned process's own environment, and the command only names the variable.
+
+## [3.3.0] - 2026-10-11
+
+Add a 24h capacity forecast to the Heatmap page: projects each enabled routine's upcoming fires sized by its median historical run duration, draws the projected concurrency against the `max_concurrent_runs` cap, and lists the windows where runs would exceed it and queue.
+
+Add a failure causes panel to the Reliability page: groups failed runs by exit code with a plain-language meaning (timeout, OOM kill, command not found, signal N…), each code's share of failures, the routines it hit and a link to its newest run — showing why runs fail, not only that they do.
+
+Add a failure incidents panel to the Reliability page: groups each routine's consecutive failed runs into one incident, resolved when its next run succeeds, and reports open incidents, time to recover per incident and the fleet MTTR — showing how long things stay broken, which success rates and streaks can't.
+
+Add a schedule adherence panel to the Reliability page: replays each enabled routine's cron schedule(s) over the last 24h, matches every expected fire to the run it produced, and reports missed fires, adherence % and median start lag per routine — surfacing jobs that never ran, which success rates can't see.
+
+Add a "Compare against another run" panel to the run-detail page: diff a run's log against another run of the same routine (defaulting to the last known-good run), with added/removed lines highlighted.
+
+Add a status-stacked run-activity histogram to the Runs page: see run volume and failures over time at a glance, and click a bar to narrow the run list to that time bucket.
+
+Add a Gantt-style run timeline to the Runs page: one lane per routine with each run drawn from start to finish, plus a fleet concurrency strip and peak concurrency compared against the `max_concurrent_runs` cap.
+
+Make the Runs and Reliability tables sortable: click (or Tab + Enter) any column header to sort by routine, start time, duration, status, exit code, streak, success rate, p50/p95 or trend. Headers expose `aria-sort`, missing values always sort last, a third click restores the natural order, and each table's sort is remembered across reloads.
+
+## [3.2.10] - 2026-09-15
+
+Fix a Chromium renderer crash when clicking machine filter labels by waiting for checkbox focus before dismissing the popup.
+
+Surface the agent-authored `summary.md` for a run in the UI (Run Detail page and a routine's History panel), above the raw log — the same "headline result before full output" pattern CI tools like GitHub Actions job summaries use. The daemon already writes this file per run and serves it at `GET /routines/{id}/runs/{workbench}/summary`, but no page ever rendered it.
+
+## [3.2.9] - 2026-09-14
+
+Filter routines by any of multiple selected machines, including unassigned routines, and preserve selections in shared links and saved views.
+
+Avoid rewriting disabled routine markers during routine persistence.
+
+## [3.2.8] - 2026-09-03
+
+Add a built-in NanoClaw agent bridge for queuing routine work in an agent group.
+
+Add opt-in `overlap.json` sidecars so a routine can allow concurrent fires.
+
+Create a disabled `overlap.json` sidecar for every persisted routine.
+
+## [3.2.7] - 2026-09-02
+
+### Fixed
+
+Allow an operator to confirm and manually run a routine from the web UI while system power saving is active. Scheduled runs and explicit per-routine power-saving remain protected.
+
+## [3.2.6] - 2026-08-29
+
+Keep scheduled-fire deduplication process-local so reloaded current-minute execution history does not suppress the scheduler's current fire.
+
+Expose each routine cron expression as an independently editable UI field, with per-expression validation, removal, and appendable presets.
+
+## [3.2.5] - 2026-08-27
+
+Run routine cron schedules inside the daemon with `tokio-cron-scheduler` across platforms, preserving the existing scheduled-trigger safety policies.
+
+## [3.2.4] - 2026-08-27
+
 Store routine disable intent in a tracked `disabled.json` marker with basic audit metadata while keeping legacy `enabled = false` TOML configs loadable.
 - Support optional user-provided disabled reasons in `disabled.json` across CLI/API/MCP disable surfaces.
+
+Add regression coverage for single-line JSON CLI output.
+
+Keep Hermes model and provider selection configurable while retaining headless-safe routine launches.
+
+Run built-in Hermes routines in explicit headless mode with a pinned model/provider, preventing interactive customization and MCP startup from blocking unattended runs.
+
+Store routine disabled state in a tracked `disabled.json` marker while keeping legacy `enabled = false` routine TOML files loadable.
+
+Support optional user-provided disabled reasons in `disabled.json` across CLI, API, and MCP disable surfaces.
+
+Add configurable routine failure notification hooks with global and per-routine command/webhook targets.
+
+Start every routine launcher from its new workbench so a daemon that inherited a deleted workbench directory can still materialize repository checkouts.
+
+Centralize routine test fixture construction so activation metadata changes do not require repeated struct-literal updates across storage tests.
+
+Add a Concurrency card to the Settings page: view the effective fleet-wide run cap and set or clear the persisted override, backed by the existing `/config/max-concurrent-runs` endpoint.
+
+Add a deep-linkable Run Detail page (`/runs/:routineId/:workbench`): run metadata, the full log, and Prev/Next navigation between a routine's runs. Linked from the fleet Runs page and each routine's history table, and works standalone from a bookmarked or shared URL.
+
+Add a fleet-wide Runs page to the web UI: search, filter by status and time range, and browse run history across every routine instead of only the last 8 shown on Overview.
+
+Send only the canonical `schedules` field when editing a routine, preventing update requests from being rejected for including both schedule representations.
 
 ## [3.2.3] - 2026-08-01
 
@@ -5027,7 +5111,16 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.2.3...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/moadim-io/daemon/compare/v3.3.0...v3.3.1
+[3.3.0]: https://github.com/moadim-io/daemon/compare/v3.2.10...v3.3.0
+[3.2.10]: https://github.com/moadim-io/daemon/compare/v3.2.9...v3.2.10
+[3.2.9]: https://github.com/moadim-io/daemon/compare/v3.2.8...v3.2.9
+[3.2.8]: https://github.com/moadim-io/daemon/compare/v3.2.7...v3.2.8
+[3.2.7]: https://github.com/moadim-io/daemon/compare/v3.2.6...v3.2.7
+[3.2.6]: https://github.com/moadim-io/daemon/compare/v3.2.5...v3.2.6
+[3.2.5]: https://github.com/moadim-io/daemon/compare/v3.2.4...v3.2.5
+[3.2.4]: https://github.com/moadim-io/daemon/compare/v3.2.3...v3.2.4
 [3.2.3]: https://github.com/moadim-io/daemon/compare/v3.2.2...v3.2.3
 [3.2.2]: https://github.com/moadim-io/daemon/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/moadim-io/daemon/compare/v3.2.0...v3.2.1

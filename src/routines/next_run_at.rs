@@ -12,11 +12,9 @@ use super::*;
 /// (`cleanup::ttl::cron_interval_secs`).
 ///
 /// **Known gap (#405):** this always projects against the host's own zone via [`Local::now`],
-/// even for a routine with a [`Routine::timezone`] override — unlike the actual crontab firing
-/// (`crate::sync::routines::cron_tz_line_for`), which does honor it via `CRON_TZ`. Projecting a
-/// preview in an arbitrary IANA zone correctly (DST-aware, not just a fixed UTC offset) needs a
-/// zone database this crate does not depend on; left as a follow-up rather than risking a
-/// DST-wrong "next fire" preview shipping alongside the real (correct) crontab behavior.
+/// even for a routine with a [`Routine::timezone`] override — unlike the actual fire
+/// (`crate::routine_scheduler`), which does honor it. Projecting the preview in the routine's
+/// zone is left as a follow-up.
 ///
 /// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
 /// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
@@ -77,7 +75,10 @@ impl RoutineResponse {
             .iter()
             .filter_map(|schedule| describe_schedule(schedule, timezone.as_deref()))
             .collect();
-        let flag_count = list_flags(&slug).len();
+        // Keyed by `rel_path` (the routine's actual on-disk directory), not the bare `slug`: for a
+        // routine inside a folder those differ, and the flags/ dir lives under the full rel_path
+        // (see #1514).
+        let flag_count = list_flags(&rel_path).len();
         let next_run_at = next_run_at(&schedules, routine.enabled);
         let missed_scheduled_run_at = missed_scheduled_run_at(&routine, &schedules);
         let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));

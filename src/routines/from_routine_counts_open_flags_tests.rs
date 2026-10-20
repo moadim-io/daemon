@@ -1,11 +1,12 @@
 
 #[test]
 fn from_routine_counts_open_flags() {
+    let title = format!("Flag Count Model Test {}", uuid::Uuid::new_v4());
     let routine = Routine {
         id: "rid2".into(),
         schedule: "@daily".into(),
         schedules: vec![],
-        title: "Flag Count Model Test ZZZ".into(),
+        title,
         agent: "claude".into(),
         model: None,
         prompt: "p".into(),

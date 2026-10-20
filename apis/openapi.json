@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "3.2.3"
+    "version": "3.3.1"
   },
   "servers": [
     {
@@ -49,7 +49,6 @@
         "operationId": "get_max_concurrent_runs",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -79,7 +78,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -144,7 +142,6 @@
         "operationId": "retry_crontab_sync",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -165,7 +162,6 @@
         "operationId": "health",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -187,7 +183,6 @@
         "operationId": "get_current_machine",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -217,7 +212,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -291,7 +285,6 @@
         "operationId": "restart",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -362,7 +355,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -394,7 +386,6 @@
         },
         "responses": {
           "201": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -465,7 +456,6 @@
         "operationId": "get_lock_status",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -494,7 +484,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -530,7 +519,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -572,7 +560,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -607,7 +594,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -651,7 +637,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -687,7 +672,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -730,7 +714,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -768,7 +751,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -814,7 +796,6 @@
         },
         "responses": {
           "201": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -927,7 +908,6 @@
         },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -996,7 +976,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1109,7 +1088,6 @@
         ],
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1130,7 +1108,7 @@
           "crate::routes::trigger_routine"
         ],
         "summary": "`POST /routines/{id}/trigger` — manually trigger a routine outside its schedule.",
-        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. See\n[`crate::routines::svc_trigger`].",
+        "description": "Refuses (423, distinct message) when the routine is disabled or in power-saving mode. A\nconfirmed UI request may bypass host-level power saving for that one manual run. See\n[`crate::routines::svc_trigger`].",
         "operationId": "trigger_routine",
         "parameters": [
           {
@@ -1143,9 +1121,18 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1170,7 +1157,6 @@
         "operationId": "shutdown",
         "responses": {
           "200": {
-            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1345,7 +1331,7 @@
               "string",
               "null"
             ],
-            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) to pin the schedule to, or `None` to use the\nhost crontab's own zone (today's behavior). Only accepted on Linux, since `CRON_TZ` is not\nhonored by BSD `cron` (macOS) — see `Routine::timezone`."
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) to pin the schedule to, or `None` to use the\nhost's own zone (today's behavior) — see `Routine::timezone`."
           },
           "title": {
             "type": "string",
@@ -1546,6 +1532,7 @@
           "machine",
           "dependencies",
           "crontab_sync",
+          "scheduler_resync",
           "version",
           "git_sha",
           "build_date"
@@ -1574,6 +1561,10 @@
           "running": {
             "type": "boolean",
             "description": "Whether the server is running."
+          },
+          "scheduler_resync": {
+            "$ref": "#/components/schemas/SchedulerResyncHealth",
+            "description": "Whether the in-process scheduler last rebuilt routine jobs successfully after a mutation."
           },
           "server_exe_dir": {
             "type": [
@@ -1823,7 +1814,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The host OS crontab\nline runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends\nthe Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last\nline back on load. The daemon never writes this field directly (it is absent from\n`routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't\nclobber the log.",
+            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The host OS crontab\nline runs `moadim schedule trigger <id>`, and `svc_trigger_scheduled` appends the Unix\ntimestamp to the gitignored `scheduled.log` before launching; the daemon reads the last\nline back on load. The daemon never writes this field directly (it is absent from\n`routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't\nclobber the log.",
             "minimum": 0
           },
           "machines": {
@@ -1917,7 +1908,7 @@
               "string",
               "null"
             ],
-            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) this routine's schedule is interpreted in,\noverriding the host's local system timezone. `None` (the default) preserves today's\nbehavior: the schedule runs in whatever zone the host crontab itself uses, which silently\nchanges if the host's zone ever changes (issue #405).\n\nEmitted as a `CRON_TZ=<tz>` directive ahead of this routine's line(s) in the managed\ncrontab block ([`crate::sync::routines`]). Only vixie-cron/cronie (Linux) honor `CRON_TZ`;\nBSD `cron` (macOS) does not, so setting this field is rejected outright on non-Linux hosts\n(see `service_validate::validate_timezone`) rather than silently doing nothing."
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) this routine's schedule is interpreted in,\noverriding the host's local system timezone. `None` (the default) preserves today's\nbehavior: the schedule runs in the host's own zone, which silently changes if the host's\nzone ever changes (issue #405).\n\nThe in-process scheduler ([`crate::routine_scheduler`]) builds this routine's jobs in this\nzone; `service_validate::validate_timezone` accepts only names `chrono_tz` knows."
           },
           "title": {
             "type": "string",
@@ -2134,6 +2125,44 @@
           }
         }
       },
+      "SchedulerResyncHealth": {
+        "type": "object",
+        "description": "In-process scheduler resynchronization state surfaced by health endpoints.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "last_completed_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp of the most recently completed in-process scheduler rebuild.",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last in-process scheduler rebuild error, when any schedule could not be applied."
+          },
+          "last_error_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix timestamp of the most recent in-process scheduler rebuild error.",
+            "minimum": 0
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "Whether the most recently completed in-process scheduler rebuild had no failures."
+          }
+        }
+      },
       "SetMachineRequest": {
         "type": "object",
         "description": "Request body for `PUT /machine`.",
@@ -2194,6 +2223,16 @@
           "asc",
           "desc"
         ]
+      },
+      "TriggerRoutineRequest": {
+        "type": "object",
+        "description": "An explicit operator confirmation to run despite host-level power saving.",
+        "properties": {
+          "override_system_power_saving": {
+            "type": "boolean",
+            "description": "Bypass only host-level power saving for this manual run. It does not bypass a routine's\nexplicit power-saving state, disabled state, or the global lock."
+          }
+        }
       },
       "UpdateRoutineRequest": {
         "type": "object",
@@ -2278,11 +2317,11 @@
           "notifications": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/FailureNotificationConfig",
                 "description": "Replace per-routine failure hooks; `None` keeps the existing hook config."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -2342,7 +2381,7 @@
               "string",
               "null"
             ],
-            "description": "New timezone override, or `None` to keep the existing value. A blank/whitespace-only value\nclears the override back to the host crontab's own zone. See\n[`CreateRoutineRequest::timezone`] for validation rules."
+            "description": "New timezone override, or `None` to keep the existing value. A blank/whitespace-only value\nclears the override back to the host's own zone. See\n[`CreateRoutineRequest::timezone`] for validation rules."
           },
           "title": {
             "type": [

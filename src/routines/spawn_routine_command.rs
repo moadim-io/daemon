@@ -14,9 +14,8 @@ use super::*;
 ///
 /// `sh -lc` sources the user's `~/.profile`, so the agent inherits their environment (`GH_TOKEN`,
 /// API keys, …) regardless of the minimal environment the daemon (or cron) runs under. Shared by the
-/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths, which pass `source`
-/// through to [`build_routine_command`] so only a genuine scheduled fire appends to
-/// `scheduled.log` — a manual "run now" must never masquerade as one (#478).
+/// manual ([`svc_trigger`]) and scheduled ([`svc_trigger_scheduled`]) paths. Those services record
+/// their durable trigger evidence before reaching this best-effort detached launcher.
 pub(crate) fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
     match load_agent_command(&routine.agent) {
         Ok(agent) => {
@@ -45,9 +44,18 @@ pub(crate) fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // all acting on the same target — duplicate PRs/issues, racing pushes. Every fire's tmux
             // session name shares the same `moadim-{slug}-` prefix (see `build_routine_command`); if
             // any of them is still alive, skip this fire instead of launching a second one.
+            let rel_dir = crate::routine_storage::routine_rel_dir(routine);
+            let allows_overlap = match crate::routine_storage::read_overlap_policy(&rel_dir) {
+                Ok(allows_overlap) => allows_overlap,
+                Err(reason) => {
+                    log::warn!("trigger: routine {:?} skipped — {reason}", routine.id);
+                    append_skip_log(&rel_dir, now_secs(), &reason);
+                    return;
+                }
+            };
             let session_prefix =
                 tmux_session_prefix(&crate::routine_storage::routine_slug(routine));
-            if tmux_session_prefix_alive(&session_prefix) {
+            if !allows_overlap && tmux_session_prefix_alive(&session_prefix) {
                 let reason = format!(
                     "a previous run (tmux session prefix {session_prefix:?}) is still active \
                      (overlap guard)"
@@ -93,6 +101,13 @@ pub(crate) fn spawn_routine_command(routine: &Routine, source: TriggerSource) {
             // environment whether fired by cron or on demand.
             let mut command = std::process::Command::new(sh_bin());
             command.arg("-lc").arg(&cmd);
+            // Carry the routine's `[env]` values on the spawned process's own environment rather
+            // than inlining them into `cmd` above: `cmd` becomes this process's argv, which is
+            // world-readable via `ps`/`/proc/<pid>/cmdline` for as long as the launcher shell runs
+            // (mkdir, repo clone, agent setup, tmux launch), while `Command::envs` values land in
+            // `/proc/<pid>/environ` (owner-only, `0400`) instead (#1515). `cmd`'s own
+            // `export KEY="$carrier"` indirection lines read these back under their real names.
+            command.envs(routine_env_carrier_vars(routine));
             // Reap the child in the background so the short-lived launcher shell does not
             // linger as a zombie for the daemon's lifetime (the trigger stays non-blocking).
             crate::utils::process::spawn_and_reap(command, "routine command");

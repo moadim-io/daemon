@@ -74,8 +74,8 @@ pub struct Routine {
     ///
     /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
     /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
-    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends
-    /// the Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last
+    /// line runs `moadim schedule trigger <id>`, and `svc_trigger_scheduled` appends the Unix
+    /// timestamp to the gitignored `scheduled.log` before launching; the daemon reads the last
     /// line back on load. The daemon never writes this field directly (it is absent from
     /// `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't
     /// clobber the log.
@@ -175,13 +175,11 @@ pub struct Routine {
     pub env: std::collections::HashMap<String, String>,
     /// IANA timezone name (e.g. `"Asia/Jerusalem"`) this routine's schedule is interpreted in,
     /// overriding the host's local system timezone. `None` (the default) preserves today's
-    /// behavior: the schedule runs in whatever zone the host crontab itself uses, which silently
-    /// changes if the host's zone ever changes (issue #405).
+    /// behavior: the schedule runs in the host's own zone, which silently changes if the host's
+    /// zone ever changes (issue #405).
     ///
-    /// Emitted as a `CRON_TZ=<tz>` directive ahead of this routine's line(s) in the managed
-    /// crontab block ([`crate::sync::routines`]). Only vixie-cron/cronie (Linux) honor `CRON_TZ`;
-    /// BSD `cron` (macOS) does not, so setting this field is rejected outright on non-Linux hosts
-    /// (see `service_validate::validate_timezone`) rather than silently doing nothing.
+    /// The in-process scheduler ([`crate::routine_scheduler`]) builds this routine's jobs in this
+    /// zone; `service_validate::validate_timezone` accepts only names `chrono_tz` knows.
     #[serde(default)]
     pub timezone: Option<String>,
 }

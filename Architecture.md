@@ -89,7 +89,8 @@ src/
 ├── paths/mod.rs         path builders for ~/.config/moadim/routines/
 ├── machine/mod.rs       machine identity resolution (env/file/hostname)
 ├── service/             `moadim install`/`uninstall` OS-service registration (linux/macos)
-├── sync/                forward sync of managed routines into the OS crontab
+├── routine_scheduler.rs cross-platform in-process scheduler (`tokio-cron-scheduler`)
+├── sync/                compatibility-named scheduler resync entry point
 ├── routines/            routine data model, service layer, command builder, handlers, iCal feed
 │
 ├── utils/
@@ -151,8 +152,8 @@ Middleware stack (outermost first): `GlobalConcurrencyLimitLayer` → `CatchPani
 | `routine_logs` | `routines::svc_logs` |
 | `list_routine_runs` | `routines::svc_list_runs` |
 | `get_lock_status` | `global_lock::lock_status` |
-| `lock_routines` | `global_lock::set_lock` + crontab resync |
-| `unlock_routines` | `global_lock::set_lock` + crontab resync |
+| `lock_routines` | `global_lock::set_lock` + scheduler resync |
+| `unlock_routines` | `global_lock::set_lock` + scheduler resync |
 | `shutdown` | notifies the server's `ShutdownSignal` |
 | `restart` | `cli::spawn_restart` |
 
@@ -170,39 +171,24 @@ claude mcp add --transport http moadim http://localhost:5784/mcp
 A **routine** is a scheduled job whose payload is an AI agent (claude code, codex, …).
 It carries `agent`, `prompt`, `repositories` (`{ repository, branch }`),
 and a `title`. Routines have their own store (`RoutineStore`), REST endpoints
-(`/routines`), MCP tools (`create_routine`, …), and crontab block.
+(`/routines`), MCP tools (`create_routine`, …), and daemon-managed scheduler jobs.
 
 At create/update time moadim writes the raw prompt to `prompts/prompt.pure.md` and composes
 `prompts/prompt.compiled.local.md` (a repositories-as-context preamble + the prompt) into
-`~/.config/moadim/routines/<id>/`, then writes a single line into a dedicated crontab block:
+`~/.config/moadim/routines/<id>/`, then asks `routine_scheduler` to rebuild its jobs.
+The scheduler selects enabled, managed routines targeted at the current machine and registers each
+effective cron expression with `tokio-cron-scheduler` in the host's local timezone. It is started
+once with the daemon and does not write a host `crontab` block.
 
-```
-# BEGIN MOADIM-ROUTINES
-# Managed by moadim — routines (agent tmux sessions)
-<sched> '<moadim-exe-path>' schedule trigger '<id>' # moadim-routine:<id>
-# END MOADIM-ROUTINES
-```
+A routine's `schedule` runs in the host's local timezone by default. An optional per-routine
+`timezone` (IANA name, e.g. `"Asia/Jerusalem"`, validated with `chrono_tz`) pins it instead, so the
+schedule keeps its wall-clock time whatever zone the host is in (issue #405): the scheduler builds
+that routine's jobs in that zone. `next_run_at` and the `.ics` feed still project in the host's
+zone; that gap is tracked for a follow-up.
 
-A routine's `schedule` is interpreted in the host's local system timezone (the OS crontab's own
-zone) by default. An optional per-routine `timezone` (IANA name, e.g. `"Asia/Jerusalem"`, validated
-against the on-disk zoneinfo database) pins it instead, so the schedule keeps firing at the intended
-wall-clock time regardless of what zone the host itself is in or later moves to (issue #405). This
-is emitted as a `CRON_TZ=<tz>` directive immediately ahead of the routine's line(s) in the managed
-block — `crate::sync::routines::cron_tz_line_for` emits one such directive ahead of *every* routine
-(falling back to the host's own resolvable zone when a routine has no override), because `CRON_TZ`
-persists in the crontab file until reassigned and would otherwise leak into the next routine's line.
-`CRON_TZ` is a vixie-cron/cronie (Linux) extension that BSD `cron` (macOS) does not honor, so setting
-`timezone` is rejected outright at create/update time on any non-Linux host
-(`routines::service_validate::validate_timezone`) rather than silently doing nothing. `next_run_at`
-and the `.ics` feed (below) still project fire times in the host's own local timezone regardless of
-a routine's override — only the actual crontab firing (via `CRON_TZ`) honors it; this is a known gap
-tracked for a follow-up.
-
-That crontab line does **not** launch the agent by itself — it invokes the `moadim` binary directly
-(`moadim schedule trigger <id>`, a thin HTTP client), which calls `POST
-/routines/{id}/scheduled-trigger` on the **running daemon**. Scheduled routines therefore require
-the daemon to be running (it is installed as an OS service — launchd/systemd user — for exactly
-this reason). That handler (`routines::service_trigger::svc_trigger_scheduled`) and the manual
+Each fire calls `routines::service_trigger::svc_trigger_scheduled` through a blocking task. That
+keeps the established global-lock, routine-lock, snooze, power-saving, machine-targeting, and
+same-minute deduplication policies authoritative. The scheduled handler and the manual
 `POST /routines/{id}/trigger` handler both funnel into `spawn_routine_command`, which builds the
 launch script (`routines::command::build_routine_command`) and spawns it in-process: it makes a fresh
 workbench under `~/.moadim/workbenches/`, pre-clones each declared repository into it
@@ -216,7 +202,14 @@ failure (bad URL, unreachable host, missing `branch`) aborts the run and is reco
 the same as a failed prompt copy or `setup` step.
 
 The spawned script runs under a *login* shell (`sh -lc`) so the user's `~/.profile` is sourced and
-the agent inherits their environment (`GH_TOKEN`, API keys, …). Everything after the workbench
+the agent inherits their environment (`GH_TOKEN`, API keys, …). A routine's own `[env]` values
+(`routine.toml`, overlaid with the untracked `routine.local.toml` secrets sidecar) reach the agent
+the same way, but never as a literal in that `sh -lc` command string: `spawn_routine_command` sets
+them on the spawned process's own environment (`Command::envs`, `/proc/<pid>/environ`, owner-only)
+under private carrier names, and the command string only contains an `export KEY="$carrier"`
+indirection naming the variable, not its value — the command string becomes this process's argv,
+which is world-readable via `ps`/`/proc/<pid>/cmdline` for as long as the launcher shell runs (#1515).
+Everything after the workbench
 `mkdir` is redirected into `$WB/launch.log`, so a failure in the prompt copy, the agent's `setup`
 step, or the `tmux` launch itself is captured next to the run's other artifacts instead of being
 lost. `agent.log` remains the agent's own output (via `pipe-pane`); `launch.log` is the wrapper's
@@ -288,8 +281,9 @@ age. Unset or `0` preserves the unbounded-by-size behavior above.
 The agent command is resolved from a configurable registry at `~/.config/moadim/agents/<name>.toml`
 (`command`, `args`; placeholders `{prompt_file}` → `prompt.md`, `{workbench}` → `.`,
 `{prompt}` → `"$(cat prompt.md)"`).
-The resolved values are baked into the crontab line at sync time, so editing an agent config requires
-re-syncing routines that use it. Routines with no matching agent config are skipped (with a warning).
+The agent command is resolved when a routine launches. A missing or invalid agent configuration
+causes the scheduled fire to be skipped with a warning rather than preventing the scheduler from
+managing other routines.
 
 The daemon **owns** the content of a built-in agent config (`claude.toml`, `codex.toml`,
 `hermes.toml`), refreshing it from the built-in on every start — the same guarantee
@@ -307,10 +301,11 @@ Creating or updating a routine validates the referenced agent's `args` against b
 (typo'd) placeholder token or a missing prompt placeholder is rejected with `400 Bad Request` at edit
 time, rather than silently launching the agent with a garbage or empty task at fire time.
 
-Modules: `src/routines/` (model + service + command builder + handlers), `src/routine_storage.rs`
-(`routine.toml` + `prompts/prompt.pure.md` + `prompts/prompt.compiled.local.md` persistence),
-`src/sync/routines.rs` (the `MOADIM-ROUTINES` block).
-Reverse sync (crontab → store) is not implemented for routines.
+Modules: `src/routines/` (model + service + command builder + handlers),
+`src/routine_storage.rs` (`routine.toml` + `prompts/prompt.pure.md` +
+`prompts/prompt.compiled.local.md` persistence), and `src/routine_scheduler.rs`
+(job registration and scheduled-fire dispatch). `src/sync/routines.rs` retains its
+compatibility name but requests a scheduler resync in production.
 
 ## Error handling (`src/error.rs`)
 
@@ -358,7 +353,8 @@ main()
   routine_storage::load_store()          scan ~/.config/moadim/routines/ → RoutineStore
   routines::ensure_default_routines()    seed missing built-in default routines
   routine_storage::repersist_routines()  heal any dirs missing a prompts/ sidecar
-  sync::routines::sync_routines_to_crontab()   re-sync the MOADIM-ROUTINES crontab block
+  sync::routines::sync_routines_to_crontab()   request routine-scheduler resync (legacy name)
+  routine_scheduler::spawn()                   register and dispatch daemon-owned routine jobs
   TcpListener::bind(:5784)
   cli::write_pid_file()
   routes::http::run_with_listener_until(routines, listener, termination_signal())
@@ -383,8 +379,8 @@ fires its `ShutdownSignal`, whichever comes first.
 - **MCP sessions** each get a cloned `Arc` of the same store, so mutations from REST and MCP are immediately visible to both.
 - **Global routine concurrency cap** (`routines::concurrency_cap`, #335): the per-routine overlap
   guard described above only stops one routine from stacking on its own still-running fire — it
-  does nothing to bound how many *different* routines run at once. Since routines fire off the OS
-  crontab, many routines' schedules naturally align on the same minute boundary (e.g. `*/5 * * * *`,
+  does nothing to bound how many *different* routines run at once. Since the daemon scheduler can
+  align many routines on the same minute boundary (e.g. `*/5 * * * *`,
   `0 * * * *`), so without a cap a shared tick can launch an unbounded thundering herd of agent
   sessions (CPU/RAM exhaustion, provider API rate-limit bursts). `spawn_routine_command` counts live
   sessions sharing the `moadim-` prefix (`cleanup::tmux_session_count` — derived from actual tmux

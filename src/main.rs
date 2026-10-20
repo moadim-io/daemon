@@ -12,6 +12,8 @@ mod cli;
 /// Data-plane CLI subcommands (clap) that drive the running server over HTTP.
 mod commands;
 mod error;
+/// Offline `moadim export`/`import`: back up and restore the tracked config as a JSON bundle.
+mod export_import;
 /// Server filesystem location helpers.
 mod filesystem;
 /// Global lock sentinel that halts all routine scheduling and triggers without modifying routine
@@ -30,6 +32,8 @@ mod paths;
 mod restart;
 /// HTTP and MCP route definitions.
 mod routes;
+/// Library-backed in-process routine scheduler.
+mod routine_scheduler;
 /// TOML-backed routine persistence.
 mod routine_storage;
 /// Routine (agent-driven job) data model, service layer, and handlers.

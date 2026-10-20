@@ -13,6 +13,12 @@ pub(crate) use read_runtime_state::*;
 #[path = "routine_disabled_state.rs"]
 mod routine_disabled_state;
 pub(crate) use routine_disabled_state::*;
+#[path = "routine_overlap_policy.rs"]
+mod routine_overlap_policy;
+pub(crate) use routine_overlap_policy::*;
+#[cfg(test)]
+#[path = "routine_overlap_policy_tests.rs"]
+mod routine_overlap_policy_tests;
 
 // Re-exported (as `super::routines_dir`) for `routine_storage_migrations`; not called directly
 // in this file since `load_store`/`load_store_from_dir` moved to `routine_storage_load`.
@@ -111,7 +117,7 @@ struct RoutineToml {
     /// gitignored `routine.local.toml` sidecar instead ([`RoutineLocalToml`]).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     env: HashMap<String, String>,
-    /// IANA timezone override the schedule is interpreted in; absent means the host crontab's own
+    /// IANA timezone override the schedule is interpreted in; absent means the host's own
     /// zone (see [`crate::routines::Routine::timezone`], issue #405).
     #[serde(default)]
     timezone: Option<String>,

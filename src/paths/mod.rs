@@ -9,6 +9,9 @@ use std::path::PathBuf;
 )]
 mod agent_toml_path;
 pub(crate) use agent_toml_path::*;
+/// Default-home resolution with a per-test temporary fallback.
+mod default_home;
+pub(crate) use default_home::*;
 
 /// Environment variable that, when set, overrides the home directory all moadim paths resolve
 /// under. Used by tests to redirect config/routines/jobs/agents/workbenches into a tempdir so they
@@ -25,7 +28,7 @@ const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 pub(crate) fn home() -> Option<PathBuf> {
     match std::env::var_os(HOME_OVERRIDE_ENV) {
         Some(dir) => Some(PathBuf::from(dir)),
-        None => dirs::home_dir(),
+        None => default_home(),
     }
 }
 
@@ -113,6 +116,13 @@ pub fn routine_cron_path(id: &str) -> PathBuf {
 #[must_use]
 pub fn routine_disabled_json_path(id: &str) -> PathBuf {
     routine_dir(id).join("disabled.json")
+}
+
+/// Returns the path to `{routines_dir}/{id}/overlap.json`, the tracked policy that controls
+/// whether a routine may launch while one of its earlier fires is still running.
+#[must_use]
+pub fn routine_overlap_json_path(id: &str) -> PathBuf {
+    routine_dir(id).join("overlap.json")
 }
 
 /// Returns the path to `{routines_dir}/{id}/schedule.compailed.cron`, the gitignored cron-union output.

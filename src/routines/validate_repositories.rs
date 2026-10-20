@@ -76,7 +76,11 @@ pub(super) fn validate_tags(tags: &[String]) -> Result<Vec<String>, AppError> {
 pub(super) fn validate_env(
     env: &std::collections::HashMap<String, String>,
 ) -> Result<(), AppError> {
-    for (key, value) in env {
+    // Iterate in sorted key order so the *first* error reported is deterministic when several
+    // entries are invalid (`HashMap` iteration order varies between runs).
+    let mut entries: Vec<_> = env.iter().collect();
+    entries.sort_by_key(|&(key, _)| key);
+    for (key, value) in entries {
         if !is_valid_env_key(key) {
             return Err(AppError::BadRequest(format!(
                 "env key {key:?} is invalid; keys must match [A-Za-z_][A-Za-z0-9_]*"

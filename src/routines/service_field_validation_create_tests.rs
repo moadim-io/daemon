@@ -211,34 +211,16 @@ fn svc_create_treats_a_blank_timezone_as_unset() {
     assert_eq!(result.routine.timezone, None);
 }
 
-#[cfg(target_os = "linux")]
 #[test]
-fn svc_create_accepts_a_valid_iana_timezone_on_linux() {
+fn svc_create_accepts_a_valid_iana_timezone() {
     let _home = TempHome::set();
-    // The accept path only runs on Linux — `CRON_TZ` is a vixie-cron/cronie (Linux) extension,
-    // so the same request must 400 on any other host (see
-    // `svc_create_rejects_timezone_override_on_non_linux_hosts` below).
+    // The in-process scheduler applies the override on every host, so every host accepts it.
     let store = new_store();
     let result = svc_create(
         &store,
         create_req_with_timezone("Svc Create Valid Timezone ZZZ", Some("Asia/Jerusalem")),
     )
-    .expect("a real IANA zone name should be accepted on Linux");
+    .expect("a real IANA zone name should be accepted");
     assert_eq!(result.routine.timezone.as_deref(), Some("Asia/Jerusalem"));
-}
-
-#[cfg(not(target_os = "linux"))]
-#[test]
-fn svc_create_rejects_timezone_override_on_non_linux_hosts() {
-    let _home = TempHome::set();
-    // `CRON_TZ` is not honored by BSD `cron` (macOS); even a real IANA zone name must be rejected
-    // outright here rather than accepted and then silently ignored at crontab-sync time.
-    let store = new_store();
-    let result = svc_create(
-        &store,
-        create_req_with_timezone("Svc Create Timezone Non-Linux ZZZ", Some("Asia/Jerusalem")),
-    );
-    assert!(matches!(result, Err(AppError::BadRequest(_))));
-    assert!(store.lock().unwrap().is_empty());
 }
 include!("svc_create_accepts_builtin_agent_tests.rs");

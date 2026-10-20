@@ -11,6 +11,7 @@ function health(overrides: Partial<HealthResponse> = {}): HealthResponse {
     machine: "box-1",
     dependencies: { tmux: true, python3: true },
     crontab_sync: { ok: true },
+    scheduler_resync: { ok: true },
     version: "3.2.0",
     git_sha: "abc1234",
     build_date: "2026-07-31",

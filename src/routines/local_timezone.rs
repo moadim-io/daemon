@@ -74,8 +74,8 @@ pub struct Routine {
     ///
     /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
     /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
-    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends
-    /// the Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last
+    /// line runs `moadim schedule trigger <id>`, and `svc_trigger_scheduled` appends the Unix
+    /// timestamp to the gitignored `scheduled.log` before launching; the daemon reads the last
     /// line back on load. The daemon never writes this field directly (it is absent from
     /// `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't
     /// clobber the log.

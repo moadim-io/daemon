@@ -64,6 +64,7 @@ pub(super) fn build_cli() -> ClapCommand {
                 .arg(Arg::new("wait").long("wait").num_args(0..=1)),
         )
         .subcommand(ClapCommand::new("cleanup").arg(json_flag()))
+        .subcommand(ClapCommand::new("doctor"))
         .subcommand(ClapCommand::new("trigger").alias("run").arg(Arg::new("id")))
         .subcommand(ClapCommand::new("logs").arg(Arg::new("id")))
         .subcommand(ClapCommand::new("install"))

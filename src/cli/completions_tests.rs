@@ -12,6 +12,7 @@ const EXPECTED_VERBS: &[&str] = &[
     "stop",
     "status",
     "cleanup",
+    "doctor",
     "trigger",
     "logs",
     "install",

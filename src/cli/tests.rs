@@ -78,6 +78,11 @@ fn cleanup_command() {
 }
 
 #[test]
+fn doctor_command() {
+    assert_eq!(parse(argv(&["doctor"])), Command::Doctor);
+}
+
+#[test]
 fn json_flag_sets_machine_readable_output() {
     assert_eq!(
         parse(argv(&["status", "--json"])),

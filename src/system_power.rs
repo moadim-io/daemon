@@ -61,9 +61,19 @@ fn pmset_low_power_mode() -> bool {
 }
 
 /// Resolve the `pmset` binary, allowing tests to inject a fake implementation.
+///
+/// Test builds never fall back to the real `pmset`: the host's battery state would otherwise leak
+/// into every trigger test and fail them with "system power saving is active" off AC power.
 #[cfg(target_os = "macos")]
 fn pmset_bin() -> String {
-    std::env::var("MOADIM_PMSET_BIN").unwrap_or_else(|_| "pmset".to_string())
+    if let Ok(bin) = std::env::var("MOADIM_PMSET_BIN") {
+        return bin;
+    }
+    #[cfg(test)]
+    let fallback = "/nonexistent/moadim-test-pmset-guard".to_string();
+    #[cfg(not(test))]
+    let fallback = "pmset".to_string();
+    fallback
 }
 
 /// Run `program args...` and return stdout on success.

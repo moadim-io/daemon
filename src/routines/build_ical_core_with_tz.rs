@@ -65,7 +65,7 @@ pub(crate) fn build_ical_core_with_tz(
         let mut all_fires: Vec<DateTime<Local>> = schedules
             .iter()
             .filter_map(|schedule| schedule.parse::<Cron>().ok())
-            .flat_map(|cron| cron.iter_after(now).take_while(|dt| *dt <= horizon))
+            .flat_map(|cron| routine_fires(&cron, routine, now, horizon))
             .collect();
         all_fires.sort();
         all_fires.dedup();

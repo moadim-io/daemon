@@ -3,7 +3,7 @@
 ///
 /// Each enabled routine with a parseable schedule contributes one `VEVENT` per fire time in
 /// `(now, now + HORIZON_DAYS]`, capped at [`MAX_EVENTS_PER_ROUTINE`]. Fire times are evaluated in
-/// the host's local timezone (matching crontab semantics). When that zone can be named (see
+/// the routine's own `timezone` when set, else the host's local timezone. When that zone can be named (see
 /// [`super::model::local_timezone`]), each `DTSTART` is `TZID`-qualified with the local wall-clock
 /// time, backed by one `VTIMEZONE` component (issue #387) — so a subscriber whose calendar
 /// defaults to a different zone still sees the routine's actual configured local time. When the

@@ -60,6 +60,17 @@ impl Drop for Fixture {
     }
 }
 
+/// A global lock status with no sentinel present.
+fn unlocked() -> crate::global_lock::LockStatus {
+    crate::global_lock::LockStatus {
+        shared: false,
+        local: false,
+        locked: false,
+        shared_since: None,
+        local_since: None,
+    }
+}
+
 fn find<'a>(checks: &'a [Check], label: &str) -> &'a Check {
     checks
         .iter()
@@ -70,7 +81,7 @@ fn find<'a>(checks: &'a [Check], label: &str) -> &'a Check {
 #[test]
 fn all_checks_pass_on_healthy_host() {
     let fixture = Fixture::healthy();
-    let checks = run_checks(&fixture.path(), &fixture.agents(), true);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), true, &unlocked());
     assert!(checks.iter().all(Check::passed), "{checks:?}");
     assert_eq!(exit_code(&checks), 0);
     assert_eq!(find(&checks, "tmux").render(), "ok   tmux");
@@ -81,7 +92,7 @@ fn all_checks_pass_on_healthy_host() {
 fn tmux_missing_fails_with_message() {
     let fixture = Fixture::healthy();
     std::fs::remove_file(fixture.root.join("bin").join("tmux")).unwrap();
-    let checks = run_checks(&fixture.path(), &fixture.agents(), true);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), true, &unlocked());
     assert_eq!(
         find(&checks, "tmux").render(),
         "FAIL tmux — not found on PATH (routine runs cannot launch)"
@@ -93,7 +104,7 @@ fn tmux_missing_fails_with_message() {
 fn python3_missing_fails() {
     let fixture = Fixture::healthy();
     std::fs::remove_file(fixture.root.join("bin").join("python3")).unwrap();
-    let checks = run_checks(&fixture.path(), &fixture.agents(), true);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), true, &unlocked());
     assert!(!find(&checks, "python3").passed());
     assert_eq!(exit_code(&checks), 1);
 }
@@ -102,7 +113,7 @@ fn python3_missing_fails() {
 fn agent_command_missing_fails() {
     let fixture = Fixture::healthy();
     fixture.agent("codex", "command = \"codex\"\n");
-    let checks = run_checks(&fixture.path(), &fixture.agents(), true);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), true, &unlocked());
     assert_eq!(
         find(&checks, "agent codex").render(),
         "FAIL agent codex — `codex` not found on PATH"
@@ -115,7 +126,7 @@ fn agent_command_missing_fails() {
 fn unparseable_agent_toml_fails_with_error() {
     let fixture = Fixture::healthy();
     fixture.agent("broken", "command = [\n");
-    let checks = run_checks(&fixture.path(), &fixture.agents(), true);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), true, &unlocked());
     let broken = find(&checks, "agent broken");
     assert!(!broken.passed());
     assert!(broken.render().starts_with("FAIL agent broken — "));
@@ -125,7 +136,7 @@ fn unparseable_agent_toml_fails_with_error() {
 #[test]
 fn daemon_unreachable_fails_with_hint() {
     let fixture = Fixture::healthy();
-    let checks = run_checks(&fixture.path(), &fixture.agents(), false);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), false, &unlocked());
     assert_eq!(
         find(&checks, "daemon").render(),
         "FAIL daemon — not running; start it with: moadim"
@@ -137,9 +148,9 @@ fn daemon_unreachable_fails_with_hint() {
 fn missing_agents_dir_adds_no_agent_checks() {
     let fixture = Fixture::healthy();
     let absent = fixture.root.join("no-such-agents-dir");
-    let checks = run_checks(&fixture.path(), &absent, true);
+    let checks = run_checks(&fixture.path(), &absent, true, &unlocked());
     let labels: Vec<&str> = checks.iter().map(|check| check.label.as_str()).collect();
-    assert_eq!(labels, ["tmux", "python3", "daemon"]);
+    assert_eq!(labels, ["tmux", "python3", "global lock", "daemon"]);
     assert_eq!(exit_code(&checks), 0);
 }
 
@@ -147,7 +158,7 @@ fn missing_agents_dir_adds_no_agent_checks() {
 fn non_toml_files_in_agents_dir_are_ignored() {
     let fixture = Fixture::healthy();
     std::fs::write(fixture.agents().join("notes.txt"), "not a config").unwrap();
-    let checks = run_checks(&fixture.path(), &fixture.agents(), true);
+    let checks = run_checks(&fixture.path(), &fixture.agents(), true, &unlocked());
     assert!(checks.iter().all(|check| !check.label.contains("notes")));
     assert_eq!(exit_code(&checks), 0);
 }
@@ -171,6 +182,8 @@ fn unreadable_agent_config_fails() {
     let fx = Fixture::healthy();
     // A directory named like a config cannot be read as a file.
     std::fs::create_dir(fx.agents().join("broken.toml")).expect("create dir");
-    let checks = run_checks(&fx.path(), &fx.agents(), true);
+    let checks = run_checks(&fx.path(), &fx.agents(), true, &unlocked());
     assert!(!find(&checks, "agent broken").passed());
 }
+
+include!("doctor_lock_tests.rs");

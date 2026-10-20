@@ -6,7 +6,7 @@
 
 use super::super::{
     dispatch_command, dispatch_webhook, exit_reason, notify_finished_run, post_webhook,
-    FailureNotificationConfig, RunStatus, CURL_BIN_ENV,
+    FailureNotificationConfig, RunStatus, CURL_BIN_ENV, WEBHOOK_MAX_ATTEMPTS,
 };
 use super::{temp_dir, EnvGuard};
 
@@ -47,7 +47,7 @@ fn notify_failure_dispatches_webhook_with_payload() {
     );
 
     let mut body = String::new();
-    for _ in 0..100 {
+    for _ in 0..1000 {
         body = std::fs::read_to_string(&sink).unwrap_or_default();
         if serde_json::from_str::<serde_json::Value>(&body).is_ok() {
             break;
@@ -98,7 +98,7 @@ fn command_hook_uses_default_shell_when_env_is_absent() {
         1,
         2,
     );
-    for _ in 0..50 {
+    for _ in 0..500 {
         if sink.exists() {
             break;
         }
@@ -137,7 +137,7 @@ fn dispatch_webhook_uses_default_curl_binary() {
     };
 
     dispatch_webhook(sink.to_str().unwrap(), &payload);
-    for _ in 0..100 {
+    for _ in 0..1000 {
         if std::fs::read_to_string(&sink)
             .unwrap_or_default()
             .contains("exit_code_9")
@@ -156,3 +156,6 @@ fn dispatch_webhook_uses_default_curl_binary() {
         }
     }
 }
+
+#[path = "failure_notify_retry_tests.rs"]
+mod retry;

@@ -12,12 +12,13 @@ use crate::routines::cleanup::{
     tmux_session_prefix_alive,
 };
 use crate::routines::command::{
-    build_routine_command, inline_prompt_overflow, tmux_session_prefix, TriggerSource,
-    TMUX_SESSION_PREFIX,
+    build_routine_command, inline_prompt_overflow, routine_env_carrier_vars, tmux_session_prefix,
+    TriggerSource, TMUX_SESSION_PREFIX,
 };
 use crate::routines::model::{CleanupResponse, Routine, RoutineStore};
 use crate::routines::{max_concurrent_runs, MAX_CONCURRENT_RUNS_ENV};
 
+use super::scheduled_trigger_claim::claim_current_minute;
 use super::service_log_tail::{read_log_tail_with_meta, LogWithMeta};
 
 #[allow(
@@ -35,6 +36,15 @@ pub(crate) use spawn_routine_command::*;
 /// independent signals, checked in that order so the response names whichever one is actually
 /// responsible.
 pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> {
+    svc_trigger_with_system_power_saving_override(store, id, false)
+}
+
+/// Record a manual trigger, optionally bypassing host-level power saving for this one run.
+pub fn svc_trigger_with_system_power_saving_override(
+    store: &RoutineStore,
+    id: &str,
+    override_system_power_saving: bool,
+) -> Result<Routine, AppError> {
     if crate::global_lock::is_globally_locked() {
         return Err(AppError::Locked("routines are globally locked".into()));
     }
@@ -46,6 +56,7 @@ pub fn svc_trigger(store: &RoutineStore, id: &str) -> Result<Routine, AppError> 
     if let Some(reason) = power_saving_block_reason(
         routine,
         crate::system_power::is_system_power_saving_active(),
+        override_system_power_saving,
     ) {
         return Err(AppError::Locked(reason.into()));
     }
@@ -90,6 +101,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
     if let Some(reason) = power_saving_block_reason(
         routine,
         crate::system_power::is_system_power_saving_active(),
+        false,
     ) {
         let ts = now_secs();
         let rel_dir = crate::routine_storage::routine_rel_dir(routine);
@@ -123,21 +135,18 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
     }
 
     let ts = now_secs();
-    if routine
-        .last_scheduled_trigger_at
-        .is_some_and(|last| last / 60 == ts / 60)
-    {
+    if !claim_current_minute(id, ts) {
         let reason = "routine already fired this minute; skipping duplicate scheduled trigger";
         let rel_dir = crate::routine_storage::routine_rel_dir(routine);
         drop(lock);
         append_skip_log(&rel_dir, ts, reason);
         return Err(AppError::Locked(reason.into()));
     }
-    // Same-minute claim (#795): multiple crontab lines can target the same routine when a
-    // multi-schedule routine has overlapping expressions. Claim the current minute while holding the
-    // store mutex so a second scheduled-trigger request observes the in-memory timestamp and no-ops
-    // instead of launching a duplicate workbench. The spawned scheduled command still appends the
-    // durable `scheduled.log` entry for load-after-restart history.
+    // Same-minute claim (#795): multiple scheduler jobs can target the same routine when a
+    // multi-schedule routine has overlapping expressions. Claim the current minute in process while
+    // holding the store mutex so a second scheduled-trigger request observes the claim and no-ops
+    // instead of launching a duplicate workbench. The durable scheduled timestamp remains execution
+    // history, and the spawned scheduled command still appends its entry to `scheduled.log`.
     routine.last_scheduled_trigger_at = Some(ts);
     let routine = routine.clone();
     drop(lock);
@@ -172,11 +181,12 @@ pub(crate) fn sh_bin() -> String {
 pub(super) const fn power_saving_block_reason(
     routine: &Routine,
     system_active: bool,
+    override_system_power_saving: bool,
 ) -> Option<&'static str> {
     if routine.power_saving {
         return Some("routine is in power-saving mode");
     }
-    if system_active && !routine.power_saving_exempt {
+    if system_active && !routine.power_saving_exempt && !override_system_power_saving {
         return Some("system power saving is active");
     }
     None

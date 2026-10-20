@@ -1,0 +1,29 @@
+name: Enable Dependabot auto-merge
+
+# This workflow never checks out or executes pull-request code. It only asks
+# GitHub to queue Dependabot PRs for the repository's configured auto-merge
+# policy. Required status checks and review rules remain the merge gate.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-automerge:
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Queue the Dependabot PR for squash auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --auto
+          --match-head-commit "$PR_HEAD_SHA"

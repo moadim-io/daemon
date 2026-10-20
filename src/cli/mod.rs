@@ -139,5 +139,7 @@ pub(crate) const DATA_COMMANDS: &[&str] = &[
     "lock",
     "unlock",
     "lock-status",
+    "export",
+    "import",
 ];
 include!("wants_json.rs");

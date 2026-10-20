@@ -76,6 +76,30 @@ pub(crate) enum DataCommand {
     },
     /// List the available agent registry keys.
     Agents,
+    /// Export every tracked routine, agent, and global config file as one portable JSON bundle.
+    ///
+    /// Runs offline against the config directory — no daemon needed. Gitignored runtime files
+    /// (`*.local.*`, `*.pid`, `*.log`, compiled outputs) are excluded, so the bundle is safe to
+    /// share or commit.
+    Export {
+        /// Write the bundle to this file (atomically) instead of stdout.
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
+    /// Restore a bundle produced by `moadim export` into the config directory.
+    ///
+    /// Runs offline; existing files are skipped unless `--force` is given. Run `moadim restart`
+    /// afterwards so the imported routines are resynced into the scheduler.
+    Import {
+        /// Path of the bundle file to import.
+        file: std::path::PathBuf,
+        /// Print what would be created/overwritten/skipped without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Overwrite files that already exist (default: skip them).
+        #[arg(long)]
+        force: bool,
+    },
     /// Create a lock sentinel, halting all routine scheduling and triggers without touching any
     /// individual routine's `enabled` state (the "pause everything" escape hatch, #683).
     Lock {

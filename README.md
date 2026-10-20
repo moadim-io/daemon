@@ -180,7 +180,13 @@ rejected with `400 Bad Request`.
 
 **Timezone:** schedules are evaluated in the host's **local system timezone**, not
 UTC. A schedule of `0 9 * * *` fires at 09:00 local time. AI agents in particular
-should not pre-convert times to UTC.
+should not pre-convert times to UTC. To pin one routine to another zone, set its
+`timezone` to an IANA name; the schedule then fires at that wall-clock time there:
+
+```toml
+schedule = "0 9 * * *"
+timezone = "Asia/Tokyo" # fires at 09:00 Tokyo time, whatever the host's zone
+```
 
 ## Routines
 
@@ -236,6 +242,7 @@ deduplication, and the fleet-wide concurrency cap remain in force.
 | Field          | Type   | Required | Description                                                                                  |
 | -------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
 | `schedule`     | string | yes      | Cron expression (`min hour dom month dow` or `@daily`, …), evaluated by the daemon scheduler in the host's local timezone — **not** UTC. Mirrored into `schedule.cron`, which is not functional yet. |
+| `timezone`     | string | no       | IANA zone name (e.g. `Asia/Tokyo`) to evaluate `schedule` in instead of the host's local timezone. Unknown names are rejected with `400 Bad Request`. Omitted or blank uses the host's zone. |
 | `title`        | string | yes      | Human name; slugified to name the run workbench and tmux session.                            |
 | `agent`        | string | yes      | Agent registry key (e.g. `claude`), resolved from `~/.config/moadim/agents/<agent>.toml`.    |
 | `model`        | string | no       | Model ID to run the agent with (e.g. `claude-sonnet-4-6`), passed as `--model` on the agent invocation. `None`/omitted uses the agent's own default. |

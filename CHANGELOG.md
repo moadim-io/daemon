@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-10-20
+
+`moadim doctor` now flags an active global lock (which file, since when) with the `moadim unlock` hint, since a forgotten lock silently halts every routine.
+
 ## [3.6.0] - 2026-10-20
 
 The `.ics` calendar feed now places a timezone-pinned routine's events at the times it really fires, instead of evaluating its schedule in the host's zone.
@@ -5151,7 +5155,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.1...HEAD
+[3.6.1]: https://github.com/moadim-io/daemon/compare/v3.6.0...v3.6.1
 [3.6.0]: https://github.com/moadim-io/daemon/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/moadim-io/daemon/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/moadim-io/daemon/compare/v3.3.1...v3.4.0

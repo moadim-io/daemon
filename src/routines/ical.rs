@@ -35,6 +35,31 @@ const EVENT_DURATION: &str = "PT15M";
 /// Calendar display name (`X-WR-CALNAME`) for the unfiltered, all-routines feed.
 const DEFAULT_CAL_NAME: &str = "Moadim Routines";
 
+/// Fire times of `cron` in `(now, horizon]`, evaluated in the routine's own `timezone` when set
+/// (the zone `routine_scheduler` fires it in), else in host local time.
+fn routine_fires(
+    cron: &Cron,
+    routine: &Routine,
+    now: DateTime<Local>,
+    horizon: DateTime<Local>,
+) -> Vec<DateTime<Local>> {
+    match routine
+        .timezone
+        .as_deref()
+        .and_then(|tz| tz.parse::<chrono_tz::Tz>().ok())
+    {
+        Some(tz) => cron
+            .iter_after(now.with_timezone(&tz))
+            .map(|dt| dt.with_timezone(&Local))
+            .take_while(|dt| *dt <= horizon)
+            .collect(),
+        None => cron
+            .iter_after(now)
+            .take_while(|dt| *dt <= horizon)
+            .collect(),
+    }
+}
+
 /// Escape a text value for an iCalendar property per RFC 5545 §3.3.11.
 fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());

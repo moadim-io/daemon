@@ -31,24 +31,24 @@ fn describe_schedule_returns_none_for_unparseable() {
 
 #[test]
 fn next_run_at_some_for_enabled_parseable_schedule() {
-    assert!(next_run_at(&["@daily".to_string()], true).is_some());
+    assert!(next_run_at(&["@daily".to_string()], true, None).is_some());
 }
 
 #[test]
 fn next_run_at_uses_cron_union_for_standard_crons() {
-    assert!(next_run_at(&["*/5 * * * *".to_string()], true).is_some());
+    assert!(next_run_at(&["*/5 * * * *".to_string()], true, None).is_some());
 }
 
 #[test]
 fn next_run_at_none_when_disabled() {
-    assert!(next_run_at(&["@daily".to_string()], false).is_none());
+    assert!(next_run_at(&["@daily".to_string()], false, None).is_none());
 }
 
 #[test]
 fn next_run_at_none_for_unparseable_schedule() {
-    assert!(next_run_at(&["@reboot".to_string()], true).is_none());
-    assert!(next_run_at(&["@midnight".to_string()], true).is_none());
-    assert!(next_run_at(&["not a cron".to_string()], true).is_none());
+    assert!(next_run_at(&["@reboot".to_string()], true, None).is_none());
+    assert!(next_run_at(&["@midnight".to_string()], true, None).is_none());
+    assert!(next_run_at(&["not a cron".to_string()], true, None).is_none());
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn next_run_at_none_for_impossible_calendar_date() {
     // Feb 30 never occurs, so a schedule pinned to it parses fine but has no upcoming fire —
     // covers `next_run_at`'s "no upcoming fire" branch, distinct from the unparseable-schedule
     // case above.
-    assert!(next_run_at(&["0 0 30 2 *".to_string()], true).is_none());
+    assert!(next_run_at(&["0 0 30 2 *".to_string()], true, None).is_none());
 }
 
 #[test]
@@ -146,3 +146,10 @@ fn from_routine_is_running_true_when_a_fire_has_a_live_tmux_session() {
     assert!(resp.is_running);
 }
 include!("from_routine_counts_open_flags_tests.rs");
+
+#[test]
+fn next_run_at_projects_a_pinned_routine_in_its_own_timezone() {
+    // 09:00 in Tokyo (UTC+9, no DST) is always 00:00 UTC, whatever zone the host runs in.
+    let next = next_run_at(&["0 9 * * *".to_string()], true, Some("Asia/Tokyo")).unwrap();
+    assert_eq!(next % 86_400, 0, "{next}");
+}

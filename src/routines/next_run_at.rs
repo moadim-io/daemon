@@ -7,25 +7,31 @@
 )]
 use super::*;
 
-/// Unix epoch seconds of `schedule`'s next fire after now, in the host's local timezone (matching
-/// crontab semantics), reusing the same compiled schedule path as the TTL sweep
+/// Unix epoch seconds of `schedule`'s next fire after now, evaluated in `timezone` (a routine's
+/// [`Routine::timezone`], the zone `crate::routine_scheduler` fires it in) or the host's local
+/// timezone when unset, reusing the same compiled schedule path as the TTL sweep
 /// (`cleanup::ttl::cron_interval_secs`).
-///
-/// **Known gap (#405):** this always projects against the host's own zone via [`Local::now`],
-/// even for a routine with a [`Routine::timezone`] override — unlike the actual fire
-/// (`crate::routine_scheduler`), which does honor it. Projecting the preview in the routine's
-/// zone is left as a follow-up.
 ///
 /// `None` when `enabled` is `false`, the daemon is globally locked (see [`crate::global_lock`]),
 /// `schedule` cannot be parsed (e.g. `@reboot`), or it has no upcoming fire.
-pub(crate) fn next_run_at(schedules: &[String], enabled: bool) -> Option<u64> {
+pub(crate) fn next_run_at(
+    schedules: &[String],
+    enabled: bool,
+    timezone: Option<&str>,
+) -> Option<u64> {
     if !enabled || crate::global_lock::is_globally_locked() {
         return None;
     }
     let union = crate::utils::cron::compiled_union_many(schedules)?;
     let cron = union.iter().next()?.schedule();
-    let next = cron.after(&Local::now()).next()?;
-    u64::try_from(next.timestamp()).ok()
+    let next = match timezone.and_then(|tz| tz.parse::<chrono_tz::Tz>().ok()) {
+        Some(tz) => cron
+            .after(&chrono::Utc::now().with_timezone(&tz))
+            .next()?
+            .timestamp(),
+        None => cron.after(&Local::now()).next()?.timestamp(),
+    };
+    u64::try_from(next).ok()
 }
 
 impl Routine {
@@ -79,7 +85,7 @@ impl RoutineResponse {
         // routine inside a folder those differ, and the flags/ dir lives under the full rel_path
         // (see #1514).
         let flag_count = list_flags(&rel_path).len();
-        let next_run_at = next_run_at(&schedules, routine.enabled);
+        let next_run_at = next_run_at(&schedules, routine.enabled, routine.timezone.as_deref());
         let missed_scheduled_run_at = missed_scheduled_run_at(&routine, &schedules);
         let is_running = tmux_session_prefix_alive(&tmux_session_prefix(&slug));
         // Key names only — never values. `local_env_keys` reads `routine.local.toml` (if any) and

@@ -16,6 +16,14 @@ use serde::{Deserialize, Serialize};
 mod migrate_trigger_logs;
 pub(crate) use migrate_trigger_logs::*;
 
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "split-out module keeps the file under the linecheck limit"
+)]
+#[path = "migrate_phantom_flags.rs"]
+mod migrate_phantom_flags;
+pub(crate) use migrate_phantom_flags::*;
+
 /// Minimal view of pre-sidecar `routine.toml` files that still carried the cron schedule.
 #[derive(Debug, Deserialize)]
 struct LegacyRoutineSchedule {

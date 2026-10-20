@@ -51,6 +51,10 @@ pub fn set_max_concurrent_runs_override(value: Option<usize>) -> std::io::Result
 pub fn referenced_machines() -> std::collections::BTreeSet<String> {
     let mut names = std::collections::BTreeSet::new();
     let routines = crate::routine_storage::load_store();
+    #[allow(
+        clippy::iter_over_hash_type,
+        reason = "every name lands in the sorted BTreeSet, so hash-map iteration order is irrelevant"
+    )]
     for routine in routines.lock_recover().values() {
         names.extend(routine.machines.iter().cloned());
     }

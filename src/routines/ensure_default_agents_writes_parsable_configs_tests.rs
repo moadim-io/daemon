@@ -34,6 +34,19 @@ fn ensure_default_agents_writes_parsable_configs() {
         ]
     );
 
+    // NanoClaw queues the one-shot task in the agent group supplied at runtime.
+    let nanoclaw: AgentCommand =
+        toml::from_str(&std::fs::read_to_string(dir.join("nanoclaw.toml")).unwrap()).unwrap();
+    assert_eq!(nanoclaw.command, "sh");
+    assert!(nanoclaw.args.iter().any(|arg| arg.contains("ncl tasks create")));
+    assert!(
+        nanoclaw
+            .args
+            .iter()
+            .any(|arg| arg.contains("NANOCLAW_AGENT_GROUP_ID"))
+    );
+    assert!(nanoclaw.args.iter().any(|arg| arg.contains("{prompt_file}")));
+
     // pi default parses and runs print mode against the composed prompt file
     let pi: AgentCommand =
         toml::from_str(&std::fs::read_to_string(dir.join("pi.toml")).unwrap()).unwrap();
@@ -60,6 +73,7 @@ fn ensure_default_agents_does_not_overwrite_existing() {
         "command = \"mine\"\nargs = []\n"
     );
     assert!(dir.join("codex.toml").exists());
+    assert!(dir.join("nanoclaw.toml").exists());
     assert!(dir.join("pi.toml").exists());
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -54,6 +54,7 @@ async fn router_serves_routines_ical_feed() {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     })
     .unwrap();
     let resp = build_app(crate::routines::new_store())

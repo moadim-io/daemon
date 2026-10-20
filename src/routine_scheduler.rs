@@ -133,26 +133,34 @@ impl lifecycle::Scheduler for ProductionScheduler {
     async fn add(
         &self,
         schedule: &str,
+        timezone: Option<chrono_tz::Tz>,
         routine_id: String,
         store: RoutineStore,
     ) -> anyhow::Result<Uuid> {
-        let job = Job::new_async_tz(schedule, chrono::Local, move |_job_id, _scheduler| {
-            let store = store.clone();
-            let routine_id = routine_id.clone();
-            Box::pin(async move {
-                let result = tokio::task::spawn_blocking(move || {
-                    crate::routines::svc_trigger_scheduled(&store, &routine_id)
-                })
-                .await;
-                match result {
-                    Ok(Ok(_routine)) => {}
-                    Ok(Err(err)) => {
-                        log::debug!("routine scheduler skipped scheduled trigger: {err}");
+        let fire =
+            move |_job_id: Uuid,
+                  _scheduler: JobScheduler|
+                  -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+                let store = store.clone();
+                let routine_id = routine_id.clone();
+                Box::pin(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        crate::routines::svc_trigger_scheduled(&store, &routine_id)
+                    })
+                    .await;
+                    match result {
+                        Ok(Ok(_routine)) => {}
+                        Ok(Err(err)) => {
+                            log::debug!("routine scheduler skipped scheduled trigger: {err}");
+                        }
+                        Err(err) => log::warn!("routine scheduler trigger task failed: {err}"),
                     }
-                    Err(err) => log::warn!("routine scheduler trigger task failed: {err}"),
-                }
-            })
-        })?;
+                })
+            };
+        let job = match timezone {
+            Some(timezone) => Job::new_async_tz(schedule, timezone, fire)?,
+            None => Job::new_async_tz(schedule, chrono::Local, fire)?,
+        };
         Ok(self.scheduler.add(job).await?)
     }
 }

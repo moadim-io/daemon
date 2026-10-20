@@ -31,6 +31,7 @@ fn routine(overrides: impl FnOnce(&mut Routine)) -> Routine {
         notifications: Default::default(),
         tags: vec![],
         env: std::collections::HashMap::new(),
+        timezone: None,
     };
     overrides(&mut routine);
     routine

@@ -91,6 +91,7 @@ impl RoutineFixture {
             consecutive_failures: 0,
             failure_threshold: None,
             notifications: Default::default(),
+            timezone: None,
         }
     }
 }

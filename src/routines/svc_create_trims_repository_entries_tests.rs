@@ -40,6 +40,7 @@ fn svc_create_trims_repository_entries() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     )
     .unwrap();

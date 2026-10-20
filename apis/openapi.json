@@ -1326,6 +1326,13 @@
             },
             "description": "Free-form labels for the routine (defaults to empty). Each entry is trimmed\nand must be non-blank."
           },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) to pin the schedule to, or `None` to use the\nhost's own zone (today's behavior) — see `Routine::timezone`."
+          },
           "title": {
             "type": "string",
             "description": "Human name for the routine."
@@ -1896,6 +1903,13 @@
             },
             "description": "Free-form labels for grouping and filtering routines (e.g. `\"triage\"`, `\"nightly\"`).\nDefaults to empty; each entry is trimmed and must be non-blank."
           },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) this routine's schedule is interpreted in,\noverriding the host's local system timezone. `None` (the default) preserves today's\nbehavior: the schedule runs in the host's own zone, which silently changes if the host's\nzone ever changes (issue #405).\n\nThe in-process scheduler ([`crate::routine_scheduler`]) builds this routine's jobs in this\nzone; `service_validate::validate_timezone` accepts only names `chrono_tz` knows."
+          },
           "title": {
             "type": "string",
             "description": "Human name; slugified to name the workbench and tmux session."
@@ -2361,6 +2375,13 @@
               "type": "string"
             },
             "description": "New tags list, or `None` to keep the existing value."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New timezone override, or `None` to keep the existing value. A blank/whitespace-only value\nclears the override back to the host's own zone. See\n[`CreateRoutineRequest::timezone`] for validation rules."
           },
           "title": {
             "type": [

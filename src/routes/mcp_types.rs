@@ -138,4 +138,8 @@ pub(super) struct UpdateRoutineInput {
     /// Non-secret only — keys must match `[A-Za-z_][A-Za-z0-9_]*` and values must not contain
     /// newlines. For secrets, edit the gitignored `routine.local.toml` sidecar on disk instead.
     pub(super) env: Option<std::collections::HashMap<String, String>>,
+    /// New timezone override (IANA name, e.g. `"Asia/Jerusalem"`), or `None` to keep the existing
+    /// value. A blank/whitespace-only value clears the override back to the host crontab's own
+    /// zone. Only accepted on Linux hosts — `CRON_TZ` is not honored by BSD `cron` (macOS).
+    pub(super) timezone: Option<String>,
 }

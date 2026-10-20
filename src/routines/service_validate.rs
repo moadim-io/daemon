@@ -158,4 +158,21 @@ pub(super) fn validate_title(title: &str) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+/// Validate and normalize an optional routine `timezone` override (issue #405): a
+/// blank/whitespace-only value clears it back to the host's own zone (`None`), mirroring
+/// `normalize_model`; a non-blank value must be an IANA zone name `chrono_tz` knows, the same type
+/// the in-process scheduler fires the routine in (`routine_scheduler`).
+pub(super) fn validate_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(trimmed) = timezone.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if trimmed.parse::<chrono_tz::Tz>().is_err() {
+        return Err(AppError::BadRequest(format!(
+            "unknown timezone {trimmed:?}; expected an IANA name (e.g. \"Asia/Jerusalem\")"
+        )));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 include!("validate_repositories.rs");

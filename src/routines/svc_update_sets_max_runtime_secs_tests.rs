@@ -37,6 +37,7 @@ fn svc_update_sets_max_runtime_secs() {
                 env: None,
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();

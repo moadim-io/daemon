@@ -38,6 +38,7 @@ fn routine_with(id: &str, schedule: &str, enabled: bool) -> Routine {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

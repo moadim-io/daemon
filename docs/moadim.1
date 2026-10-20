@@ -1,7 +1,7 @@
 .\" Man page for moadim.
 .\" Mirrors the built-in `moadim --help` output (src/cli/mod.rs::print_help).
 .\" View with:  man ./docs/moadim.1   or install into share/man/man1/.
-.TH MOADIM 1 "2026-07-31" "moadim 3.2.10" "Moadim Manual"
+.TH MOADIM 1 "2026-10-11" "moadim 3.3.1" "Moadim Manual"
 .SH NAME
 moadim \- routine scheduler with an MCP/REST API and a web control panel
 .SH SYNOPSIS
@@ -123,6 +123,18 @@ Turn a routine off (set enabled=false) by id or slug.
 .TP
 .B agents
 List available agent keys.
+.TP
+.BR "lock " [ \-\-scope " " shared | local ]
+Create a lock sentinel, halting all routine scheduling and triggers without touching any
+individual routine's enabled state. Scope defaults to
+.BR shared .
+.TP
+.BR "unlock " [ \-\-scope " " shared | local | all ]
+Remove lock sentinel(s), restoring prior scheduling. Scope defaults to
+.BR all .
+.TP
+.B lock-status
+Show the current global lock status (whether the shared and/or local sentinel is present).
 .SH OPTIONS
 .TP
 .B \-\-json

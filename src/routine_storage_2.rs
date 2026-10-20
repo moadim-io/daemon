@@ -17,7 +17,7 @@ pub(crate) use routine_storage_location::{
 mod routine_storage_migrations;
 pub(crate) use routine_storage_migrations::{
     migrate_compiled_prompt_filename, migrate_prompt_files, migrate_prompts_to_subfolder,
-    migrate_routine_dirs, migrate_trigger_logs,
+    migrate_phantom_flags, migrate_routine_dirs, migrate_trigger_logs,
 };
 #[cfg(test)]
 pub(crate) use routine_storage_migrations::{

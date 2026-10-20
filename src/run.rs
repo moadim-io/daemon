@@ -34,5 +34,22 @@ pub(crate) fn dispatch(command: DataCommand) -> i32 {
             json,
         } => set_routine_enabled(&routine, false, reason, json),
         DataCommand::Agents => request("GET", "/api/v1/agents", None),
+        DataCommand::Export { out } => crate::export_import::run_export(out),
+        DataCommand::Import {
+            file,
+            dry_run,
+            force,
+        } => crate::export_import::run_import(&file, dry_run, force),
+        DataCommand::Lock { scope } => request(
+            "POST",
+            "/api/v1/routines/lock",
+            Some(&serde_json::json!({ "scope": scope }).to_string()),
+        ),
+        DataCommand::Unlock { scope } => request(
+            "DELETE",
+            &format!("/api/v1/routines/lock?scope={scope}"),
+            None,
+        ),
+        DataCommand::LockStatus => request("GET", "/api/v1/routines/lock", None),
     }
 }

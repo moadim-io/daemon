@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-20
+
+Add an optional per-routine `timezone` (IANA name) so a schedule can pin to a zone instead of always running in the host's own zone. The in-process scheduler fires the routine in that zone on every OS.
+
+Served run logs now strip ANSI escapes with `anstream`'s VT parser instead of a hand-rolled one, so charset designations (`ESC ( B` from `tput sgr0`) and DCS payloads no longer leak into `svc_logs` / `svc_run_log` output.
+
 ## [3.4.0] - 2026-10-20
 
 Add offline `moadim export` / `moadim import` CLI commands to back up and restore the tracked config (routines, agents, `notifications.toml`, `user_prompt.md`) as a single portable JSON bundle, excluding gitignored runtime/local files. Import validates paths and `routine.toml` syntax before writing, writes atomically, skips existing files unless `--force`, and supports `--dry-run`.
@@ -5135,7 +5141,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/moadim-io/daemon/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/moadim-io/daemon/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/moadim-io/daemon/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/moadim-io/daemon/compare/v3.2.10...v3.3.0

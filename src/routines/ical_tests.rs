@@ -152,3 +152,4 @@ fn power_saving_routine_contributes_nothing() {
     assert_eq!(count(&ics, "BEGIN:VEVENT"), 0);
 }
 include!("snoozed_routine_skips_fires_before_the_deadline_tests.rs");
+include!("ical_routine_timezone_tests.rs");

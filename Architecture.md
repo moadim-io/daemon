@@ -183,8 +183,8 @@ once with the daemon and does not write a host `crontab` block.
 A routine's `schedule` runs in the host's local timezone by default. An optional per-routine
 `timezone` (IANA name, e.g. `"Asia/Jerusalem"`, validated with `chrono_tz`) pins it instead, so the
 schedule keeps its wall-clock time whatever zone the host is in (issue #405): the scheduler builds
-that routine's jobs in that zone. `next_run_at` and the `.ics` feed still project in the host's
-zone; that gap is tracked for a follow-up.
+that routine's jobs in that zone, and the `.ics` feed projects its fires in that zone too.
+`next_run_at` still projects in the host's zone; that gap is tracked for a follow-up.
 
 Each fire calls `routines::service_trigger::svc_trigger_scheduled` through a blocking task. That
 keeps the established global-lock, routine-lock, snooze, power-saving, machine-targeting, and

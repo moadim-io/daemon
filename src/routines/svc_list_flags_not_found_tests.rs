@@ -70,3 +70,12 @@ fn svc_resolve_flag_deletes_and_refreshes_prompt() {
 )]
 #[path = "svc_resolve_flag_returns_internal_on_resolve_flag_failure_tests.rs"]
 mod svc_resolve_flag_returns_internal_on_resolve_flag_failure_tests;
+
+// ─── flags keyed by on-disk rel_dir, not title slug (issue #1514) ─────────
+
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "split-out module keeps the file under the linecheck limit"
+)]
+#[path = "svc_flag_folder_rel_dir_tests.rs"]
+mod svc_flag_folder_rel_dir_tests;

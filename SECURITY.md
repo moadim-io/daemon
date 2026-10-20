@@ -54,5 +54,6 @@ therefore out of scope as vulnerabilities:
 
 In scope, and very much worth reporting: memory-safety issues, authentication
 or authorization bypasses within the intended loopback model, command or path
-injection, crontab/launchd manipulation beyond a routine's own entries, and
+injection, OS-service registration manipulation beyond Moadim's own daemon,
+and
 similar flaws that violate the daemon's documented behavior.

@@ -68,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(cli::status(json, wait_secs)?)
         }
         cli::Command::Cleanup { json } => std::process::exit(cli::cleanup(json)?),
+        cli::Command::Doctor => std::process::exit(cli::doctor::run()),
         cli::Command::Stop { json, quiet } => std::process::exit(cli::stop(json, quiet)?),
         cli::Command::Trigger { id } => std::process::exit(cli::trigger(&id)?),
         cli::Command::Logs { id } => std::process::exit(cli::logs(&id)?),

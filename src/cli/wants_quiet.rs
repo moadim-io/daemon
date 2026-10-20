@@ -65,6 +65,7 @@ pub fn help_text() -> String {
          \x20   status [--json] [--wait[=SECS]] show whether a server is running (--wait: poll until\n\
          \x20                          reachable or SECS elapse, default 30, instead of checking once)\n\
          \x20   cleanup [--json]       reap finished, expired routine workbenches now\n\
+         \x20   doctor                 check tmux/python3, agent commands, and daemon reachability\n\
          \x20   trigger <id>           trigger a routine to run now, outside its schedule\n\
          \x20   logs <id>              print a routine's newest run log (agent.log) to stdout\n\
          \x20   install                register moadim as an OS service (launchd / systemd user)\n\

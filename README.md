@@ -547,6 +547,7 @@ moadim status --json   # same, as a machine-readable JSON object
 moadim status --wait   # poll until a server answers (or 30s elapse) instead of checking once
 moadim cleanup         # reap finished, expired routine workbenches now
 moadim cleanup --json  # same, as a machine-readable JSON object
+moadim doctor        # check tmux/python3, agent commands, and daemon reachability (exit 0 if all pass)
 moadim trigger <id>    # trigger a routine to run now, outside its schedule
 moadim logs <id>       # print a routine's newest run log (agent.log) to stdout
 moadim install         # register moadim as an OS service (launchd / systemd user)

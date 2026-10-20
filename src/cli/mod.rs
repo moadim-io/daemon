@@ -7,6 +7,9 @@
 
 use std::time::Duration;
 
+/// Local, one-shot host diagnostics behind `moadim doctor`. Needs no running daemon.
+pub mod doctor;
+
 #[allow(
     clippy::missing_docs_in_private_items,
     reason = "split-out module keeps the file under the linecheck limit"
@@ -89,6 +92,10 @@ pub enum Command {
         /// Emit machine-readable JSON output instead of human-readable text.
         json: bool,
     },
+    /// Run local, one-shot host diagnostics (tmux and python3 on `PATH`, each agent config's
+    /// command, and whether the daemon answers), print one line per check, and exit `0` only when
+    /// every check passed. Needs no running daemon.
+    Doctor,
     /// Trigger a routine to run immediately, outside its schedule, by UUID.
     Trigger {
         /// UUID of the routine to trigger.

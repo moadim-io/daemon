@@ -38,6 +38,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
             Some(id) => Command::Logs { id: id.clone() },
             None => Command::Help,
         },
+        Some("doctor") => Command::Doctor,
         Some("install") => Command::Install,
         Some("uninstall") => Command::Uninstall,
         Some("completions") => Command::Completions(args.get(1).cloned()),

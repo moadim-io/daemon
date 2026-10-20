@@ -43,38 +43,15 @@ fn temp_dir(name: &str) -> PathBuf {
 }
 
 fn routine(config: FailureNotificationConfig) -> Routine {
-    Routine {
-        id: "routine-1".into(),
-        schedule: "@daily".into(),
-        schedules: vec!["@daily".into()],
-        title: "Failure Hook Routine".into(),
-        agent: "claude".into(),
-        model: None,
-        prompt: "do work".into(),
-        goal: None,
-        repositories: vec![],
-        machines: vec![],
-        enabled: true,
-        disabled_reason: None,
-        source: "managed".into(),
-        created_at: 1,
-        updated_at: 1,
-        last_manual_trigger_at: None,
-        last_scheduled_trigger_at: None,
-        snoozed_until: None,
-        skip_runs: None,
-        power_saving: false,
-        power_saving_exempt: false,
-        consecutive_failures: 0,
-        auto_disabled_reason: None,
-        ttl_secs: None,
-        max_runtime_secs: None,
-        failure_threshold: None,
-        notifications: config,
-        tags: vec![],
-        env: std::collections::HashMap::new(),
-        timezone: None,
-    }
+    let mut routine = crate::test_fixtures::routine_fixture("routine-1", "Failure Hook Routine")
+        .prompt("do work")
+        .no_repositories()
+        .times(1, 1)
+        .build();
+    routine.schedules = vec!["@daily".into()];
+    routine.machines = vec![];
+    routine.notifications = config;
+    routine
 }
 
 #[test]

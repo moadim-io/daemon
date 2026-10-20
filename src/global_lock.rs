@@ -10,6 +10,8 @@
 //! prior scheduling state without changing any routine's `enabled` flag.
 
 use std::io;
+use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 /// Which lock sentinel to create or remove.
 ///
@@ -33,6 +35,10 @@ pub struct LockStatus {
     pub local: bool,
     /// `true` if either sentinel is present (all routine scheduling and triggers halted).
     pub locked: bool,
+    /// Modification time of the `.lock` file as Unix seconds; `None` when absent or unreadable.
+    pub shared_since: Option<u64>,
+    /// Modification time of the `.local.lock` file as Unix seconds; `None` when absent or unreadable.
+    pub local_since: Option<u64>,
 }
 
 /// Returns `true` if either the shared (`.lock`) or local (`.local.lock`) sentinel exists.
@@ -48,7 +54,19 @@ pub fn lock_status() -> LockStatus {
         shared,
         local,
         locked: shared || local,
+        shared_since: since(&crate::paths::global_lock_path()),
+        local_since: since(&crate::paths::global_local_lock_path()),
     }
+}
+
+/// Unix seconds of `path`'s modification time, or `None` when it is absent or unreadable.
+fn since(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_secs())
 }
 
 /// Create or remove a lock sentinel.

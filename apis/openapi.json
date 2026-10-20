@@ -1622,6 +1622,15 @@
             "type": "boolean",
             "description": "Whether the gitignored `.local.lock` file is present."
           },
+          "local_since": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Modification time of the `.local.lock` file as Unix seconds; `None` when absent or unreadable.",
+            "minimum": 0
+          },
           "locked": {
             "type": "boolean",
             "description": "`true` if either sentinel is present (all routine scheduling and triggers halted)."
@@ -1629,6 +1638,15 @@
           "shared": {
             "type": "boolean",
             "description": "Whether the committed `.lock` file is present."
+          },
+          "shared_since": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Modification time of the `.lock` file as Unix seconds; `None` when absent or unreadable.",
+            "minimum": 0
           }
         }
       },

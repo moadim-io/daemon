@@ -61,6 +61,44 @@ fn local_lock_detected() {
     assert!(status.locked);
 }
 
+fn assert_recent(since: Option<u64>) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let secs = since.expect("since set for a present lock");
+    assert!(
+        secs.abs_diff(now) <= 60,
+        "since {secs} not within 60s of {now}"
+    );
+}
+
+#[test]
+fn since_is_none_when_unlocked() {
+    let _home = TempHome::set();
+    let status = lock_status();
+    assert_eq!(status.shared_since, None);
+    assert_eq!(status.local_since, None);
+}
+
+#[test]
+fn shared_since_set_when_shared_locked() {
+    let _home = TempHome::set();
+    set_lock(LockScope::Shared, true).unwrap();
+    let status = lock_status();
+    assert_recent(status.shared_since);
+    assert_eq!(status.local_since, None);
+}
+
+#[test]
+fn local_since_set_when_local_locked() {
+    let _home = TempHome::set();
+    set_lock(LockScope::Local, true).unwrap();
+    let status = lock_status();
+    assert_recent(status.local_since);
+    assert_eq!(status.shared_since, None);
+}
+
 #[test]
 fn unlock_removes_sentinel() {
     let _home = TempHome::set();

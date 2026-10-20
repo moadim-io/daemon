@@ -90,6 +90,7 @@ fn preview_routine_prompt_success_contains_prompt() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         }))
         .unwrap();
     assert!(!create_result.is_error.unwrap_or(false));

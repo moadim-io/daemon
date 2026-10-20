@@ -2,7 +2,7 @@
 /// Returns the path to `{routines_dir}/{id}/scheduled.log`, the gitignored append-only log that
 /// records every scheduled (cron) firing as one Unix-timestamp line.
 ///
-/// The cron shell command appends a line (`printf '%s\n' "$TS" >> scheduled.log`) at each firing;
+/// `svc_trigger_scheduled` appends a line at each accepted fire, before launching the routine;
 /// the daemon reads only the last line to derive `last_scheduled_trigger_at`. The `.log` suffix
 /// matches the `*.log` pattern seeded into the config `.gitignore`.
 #[must_use]

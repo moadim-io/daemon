@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "3.3.1"
+    "version": "3.4.0"
   },
   "servers": [
     {
@@ -1326,6 +1326,13 @@
             },
             "description": "Free-form labels for the routine (defaults to empty). Each entry is trimmed\nand must be non-blank."
           },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) to pin the schedule to, or `None` to use the\nhost's own zone (today's behavior) — see `Routine::timezone`."
+          },
           "title": {
             "type": "string",
             "description": "Human name for the routine."
@@ -1807,7 +1814,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The host OS crontab\nline runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends\nthe Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last\nline back on load. The daemon never writes this field directly (it is absent from\n`routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't\nclobber the log.",
+            "description": "Unix timestamp (seconds) when the routine was last fired by its cron schedule, if ever.\n\nThe mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger\nupdates only the manual field, a scheduled firing updates only this one. The host OS crontab\nline runs `moadim schedule trigger <id>`, and `svc_trigger_scheduled` appends the Unix\ntimestamp to the gitignored `scheduled.log` before launching; the daemon reads the last\nline back on load. The daemon never writes this field directly (it is absent from\n`routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't\nclobber the log.",
             "minimum": 0
           },
           "machines": {
@@ -1895,6 +1902,13 @@
               "type": "string"
             },
             "description": "Free-form labels for grouping and filtering routines (e.g. `\"triage\"`, `\"nightly\"`).\nDefaults to empty; each entry is trimmed and must be non-blank."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "IANA timezone name (e.g. `\"Asia/Jerusalem\"`) this routine's schedule is interpreted in,\noverriding the host's local system timezone. `None` (the default) preserves today's\nbehavior: the schedule runs in the host's own zone, which silently changes if the host's\nzone ever changes (issue #405).\n\nThe in-process scheduler ([`crate::routine_scheduler`]) builds this routine's jobs in this\nzone; `service_validate::validate_timezone` accepts only names `chrono_tz` knows."
           },
           "title": {
             "type": "string",
@@ -2361,6 +2375,13 @@
               "type": "string"
             },
             "description": "New tags list, or `None` to keep the existing value."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New timezone override, or `None` to keep the existing value. A blank/whitespace-only value\nclears the override back to the host's own zone. See\n[`CreateRoutineRequest::timezone`] for validation rules."
           },
           "title": {
             "type": [

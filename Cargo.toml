@@ -1,6 +1,6 @@
 [package]
 name = "moadim"
-version = "3.3.1"
+version = "3.4.0"
 edition = "2021"
 # Floor set by the transitive proc-macro build dependency `darling 0.23`
 # (pulled in via `rmcp-macros` <- `rmcp`), which itself declares
@@ -26,6 +26,7 @@ anyhow = "1"
 anstream = "1"
 axum = "0.8"
 chrono = "0.4"
+chrono-tz = "0.10"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 croner = "4"

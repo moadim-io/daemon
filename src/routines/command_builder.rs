@@ -5,22 +5,20 @@
 /// reaches the agent as a process argument (not keystrokes), so there is no readiness race. The
 /// command is `;`-joined (no newlines) so it fits one crontab line.
 ///
-/// `source` controls whether the script records a scheduled firing: a [`TriggerSource::Scheduled`]
-/// run (the crontab) appends to `scheduled.log`, while a [`TriggerSource::Manual`] run omits the
-/// append so an on-demand trigger never clobbers `last_scheduled_trigger_at`.
+/// The trigger service records durable manual or scheduled-fire evidence before invoking this
+/// launcher. `source` remains part of the command contract so callers explicitly declare why a
+/// run was requested, while both paths share the same launcher mechanics.
 pub(crate) fn build_routine_command(
     routine: &Routine,
     agent: &AgentCommand,
-    source: TriggerSource,
+    _source: TriggerSource,
 ) -> String {
     let rel_dir = crate::routine_storage::routine_rel_dir(routine);
     let slug = crate::routine_storage::routine_slug(routine);
     let prompt_path = routine_compiled_prompt_path(&rel_dir)
         .to_string_lossy()
         .into_owned();
-    let scheduled_log_path = routine_scheduled_log_path(&rel_dir)
-        .to_string_lossy()
-        .into_owned();
+
     // Resolve through the same seam the reaper (`cleanup/mod.rs`) and the LOGS view
     // (`routines/service.rs`) use, rather than hardcoding `$HOME/.moadim/workbenches`: honoring
     // `MOADIM_HOME_OVERRIDE` here keeps the path a run is launched at in sync with the paths those
@@ -78,22 +76,7 @@ pub(crate) fn build_routine_command(
     // shell environment.
     stmts.extend(env_export_stmts(routine));
     stmts.push(r#"TS="$(date +%s)""#.to_string());
-    if source == TriggerSource::Scheduled {
-        // Record this scheduled firing. Appends the Unix timestamp as one line to the routine's
-        // gitignored `scheduled.log`; the daemon reads the last line back as
-        // `last_scheduled_trigger_at` on load. Using `>>` (append) preserves the full run history.
-        // Written before the prompt-copy guard below so an aborted run still records that the
-        // schedule fired, and best-effort (`|| true`) so a log write failure never blocks launching.
-        //
-        // A manual ([`TriggerSource::Manual`]) trigger deliberately omits this append: it shares
-        // the exact same launch script but is tracked via `last_manual_trigger_at` (recorded
-        // in-process by `svc_trigger`), so appending here would conflate an on-demand "run now"
-        // with a genuine scheduled fire.
-        stmts.push(format!(
-            r#"printf '%s\n' "$TS" >> {} || true"#,
-            shell_quote(&scheduled_log_path)
-        ));
-    }
+
     stmts.extend([
         format!("SLUG={}", shell_quote(&slug)),
         // Collision-resistant run id. `$TS` alone has one-second granularity, so two runs of the

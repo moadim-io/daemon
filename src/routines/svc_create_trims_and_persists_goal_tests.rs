@@ -27,6 +27,7 @@ fn svc_create_trims_and_persists_goal() {
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();
@@ -79,6 +80,7 @@ fn svc_update_clears_goal_with_empty_string() {
                 env: None,
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();
@@ -118,6 +120,7 @@ fn svc_update_warns_when_crontab_sync_fails() {
                 env: None,
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();

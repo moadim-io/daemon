@@ -28,6 +28,7 @@ fn svc_create_accepts_builtin_agent() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     )
     .unwrap();
@@ -69,6 +70,7 @@ fn svc_create_rejects_blank_repository_url() {
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         );
         assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -108,6 +110,7 @@ fn svc_create_rejects_blank_repository_branch() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

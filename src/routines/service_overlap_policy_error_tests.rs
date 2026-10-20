@@ -60,6 +60,7 @@ fn svc_trigger_fails_closed_when_overlap_policy_cannot_be_read() {
         ttl_secs: None,
         max_runtime_secs: None,
         env: Default::default(),
+        timezone: None,
         auto_disabled_reason: None,
         consecutive_failures: 0,
         failure_threshold: None,

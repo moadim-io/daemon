@@ -28,6 +28,7 @@ fn svc_create_syncs_crontab_on_success() {
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();
@@ -69,6 +70,7 @@ fn svc_update_syncs_crontab_on_success() {
                 env: None,
                 failure_threshold: None,
         notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();

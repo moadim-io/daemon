@@ -116,6 +116,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         notifications: toml.notifications,
         tags: toml.tags,
         env: toml.env,
+        timezone: toml.timezone,
     })
 }
 

@@ -74,8 +74,8 @@ pub struct Routine {
     ///
     /// The mirror of [`Routine::last_manual_trigger_at`] for scheduled runs: a manual trigger
     /// updates only the manual field, a scheduled firing updates only this one. The host OS crontab
-    /// line runs `moadim schedule trigger <id>`, and the launch command the daemon spawns appends
-    /// the Unix timestamp to the gitignored `scheduled.log` at fire time; the daemon reads the last
+    /// line runs `moadim schedule trigger <id>`, and `svc_trigger_scheduled` appends the Unix
+    /// timestamp to the gitignored `scheduled.log` before launching; the daemon reads the last
     /// line back on load. The daemon never writes this field directly (it is absent from
     /// `routine.toml` and the daemon-owned `state.local.toml`), so re-persisting a routine can't
     /// clobber the log.
@@ -173,6 +173,15 @@ pub struct Routine {
     /// `service_validate::validate_env`).
     #[serde(default, skip_serializing)]
     pub env: std::collections::HashMap<String, String>,
+    /// IANA timezone name (e.g. `"Asia/Jerusalem"`) this routine's schedule is interpreted in,
+    /// overriding the host's local system timezone. `None` (the default) preserves today's
+    /// behavior: the schedule runs in the host's own zone, which silently changes if the host's
+    /// zone ever changes (issue #405).
+    ///
+    /// The in-process scheduler ([`crate::routine_scheduler`]) builds this routine's jobs in this
+    /// zone; `service_validate::validate_timezone` accepts only names `chrono_tz` knows.
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 /// The IANA name of the host's local timezone (e.g. `"Asia/Jerusalem"`).
@@ -184,15 +193,4 @@ pub fn local_timezone() -> Option<String> {
     iana_time_zone::get_timezone().ok()
 }
 
-/// Render a human-readable schedule description for `schedule`, appending the
-/// timezone in parentheses when known. Returns `None` when the cron expression
-/// cannot be parsed.
-pub(crate) fn describe_schedule(schedule: &str, timezone: Option<&str>) -> Option<String> {
-    schedule.parse::<Cron>().ok().map(|cron| {
-        let desc = cron.describe();
-        match timezone {
-            Some(tz) => format!("{desc} ({tz})"),
-            None => desc,
-        }
-    })
-}
+include!("describe_schedule.rs");

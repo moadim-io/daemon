@@ -114,6 +114,7 @@ fn make_routine(id: &str, title: &str) -> Routine {
         notifications: Default::default(),
         tags: Vec::new(),
         env: std::collections::HashMap::new(),
+        timezone: None,
     }
 }
 

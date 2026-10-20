@@ -38,6 +38,7 @@ fn make_routine(title: &str) -> Routine {
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

@@ -36,6 +36,7 @@ impl MoadimMcp {
             power_saving_exempt: input.power_saving_exempt,
             tags: input.tags,
             env: input.env,
+            timezone: input.timezone,
         };
         Ok(match logic::build(&self.routines, &input.id, req) {
             Ok(resp) => ok(resp),

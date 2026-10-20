@@ -69,6 +69,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -102,6 +103,7 @@ fn valid_create_request() -> CreateRoutineRequest {
         env: std::collections::HashMap::new(),
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -126,6 +128,7 @@ fn empty_update_request() -> UpdateRoutineRequest {
         env: None,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

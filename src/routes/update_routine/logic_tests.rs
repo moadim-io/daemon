@@ -25,6 +25,7 @@ fn make_update_req() -> UpdateRoutineRequest {
         env: None,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 

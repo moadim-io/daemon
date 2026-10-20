@@ -38,6 +38,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -67,6 +68,7 @@ fn svc_create_rejects_empty_prompt() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -99,6 +101,7 @@ fn svc_create_rejects_whitespace_prompt() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));
@@ -141,6 +144,7 @@ fn svc_update_rejects_clearing_prompt_to_empty() {
             env: None,
             failure_threshold: None,
         notifications: Default::default(),
+            timezone: None,
         },
     );
     assert!(matches!(result, Err(AppError::BadRequest(_))));

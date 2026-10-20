@@ -63,6 +63,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -135,6 +136,12 @@ fn svc_trigger_scheduled_clears_snoozed_until_once_elapsed_and_spawns() {
     with_empty_path(|| {
         let triggered = svc_trigger_scheduled(&store, "sched-snooze-elapsed-id").unwrap();
         assert_eq!(triggered.snoozed_until, None);
+        // The fire that ends a snooze is a real scheduled fire, so it leaves durable evidence too.
+        let log = crate::paths::routine_scheduled_log_path(&crate::routine_storage::routine_rel_dir(
+            &triggered,
+        ));
+        let line = std::fs::read_to_string(&log).expect("snooze-ending fire writes scheduled.log");
+        assert!(line.trim().parse::<u64>().is_ok(), "{line:?}");
     });
     // The in-memory store reflects the clear too, not just the returned value.
     assert_eq!(

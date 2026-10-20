@@ -10,10 +10,12 @@ pub(super) trait Scheduler {
     async fn start(&self) -> anyhow::Result<()>;
     /// Remove a job that belonged to the previous routine snapshot.
     async fn remove(&self, job_id: &Uuid) -> anyhow::Result<()>;
-    /// Register a trigger for one converted routine schedule.
+    /// Register a trigger for one converted routine schedule, in `timezone` (host local when
+    /// `None`).
     async fn add(
         &self,
         schedule: &str,
+        timezone: Option<chrono_tz::Tz>,
         routine_id: String,
         store: RoutineStore,
     ) -> anyhow::Result<Uuid>;
@@ -65,6 +67,19 @@ pub(super) async fn rebuild<S: Scheduler>(
         }
     }
     for routine in selected_routines(store) {
+        let timezone = match routine.timezone.as_deref().map(str::parse::<chrono_tz::Tz>) {
+            None => None,
+            Some(Ok(timezone)) => Some(timezone),
+            Some(Err(_)) => {
+                let error = format!(
+                    "skipped routine {:?} with unknown timezone {:?}",
+                    routine.id, routine.timezone
+                );
+                log::warn!("routine scheduler {error}");
+                last_error = Some(error);
+                continue;
+            }
+        };
         for schedule in routine.effective_schedules() {
             let Ok(schedule) = to_scheduler_schedule(&schedule) else {
                 let error = format!(
@@ -76,7 +91,7 @@ pub(super) async fn rebuild<S: Scheduler>(
                 continue;
             };
             match scheduler
-                .add(&schedule, routine.id.clone(), store.clone())
+                .add(&schedule, timezone, routine.id.clone(), store.clone())
                 .await
             {
                 Ok(job_id) => job_ids.push(job_id),

@@ -42,7 +42,7 @@ use service_validate::MAX_TITLE_LEN;
 use service_validate::{
     map_write_routine_err, normalize_model, reject_blank, reject_over_ceiling, reject_zero_secs,
     validate_agent, validate_env, validate_goal, validate_machines, validate_prompt,
-    validate_repositories, validate_tags, validate_title,
+    validate_repositories, validate_tags, validate_timezone, validate_title,
 };
 
 /// Validate and normalize all schedules, requiring at least one non-blank expression.

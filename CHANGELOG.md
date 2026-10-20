@@ -11,6 +11,30 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-20
+
+Add offline `moadim export` / `moadim import` CLI commands to back up and restore the tracked config (routines, agents, `notifications.toml`, `user_prompt.md`) as a single portable JSON bundle, excluding gitignored runtime/local files. Import validates paths and `routine.toml` syntax before writing, writes atomically, skips existing files unless `--force`, and supports `--dry-run`.
+
+Add `moadim lock [--scope shared|local]`, `moadim unlock [--scope shared|local|all]` and `moadim lock-status`, so the CLI can pause and resume all routine scheduling the same way the REST API and MCP tools already can.
+
+Avoid duplicate routine run-history entries when a live workbench already has a persisted cleanup record.
+
+When a routine has several invalid `env` entries, the validation error now always reports the first invalid key in sorted order, instead of one that varied between runs.
+
+Persist explicit scheduled-fire evidence before in-process scheduler launch attempts.
+
+Fix flags being written to and read from a phantom title-slug directory for routines that live in a folder or have been renamed/moved, by keying all flag operations (create, list, resolve) and `flag_count` on the routine's actual on-disk relative directory instead of `slugify(title)`. On first start, flags already stranded in such a title-slug directory are moved into the routine's real directory (a flag whose name already exists there is left in place), so none disappear.
+
+Keep test routine storage under isolated temporary homes when a fixture omits its explicit home override.
+
+Expose in-process routine-scheduler resync health, completion time, and rebuild failures after routine mutations.
+
+Add a long-running-now panel and OVERRUNNING tile to the Reliability page: flags live runs whose elapsed time already exceeds 1.5× their routine's own p95 duration, worst overrun first with a link to the live run — catching a hung agent while it's still running.
+
+Stop logging `routine scheduler resync request failed: routine scheduler is not running` on every daemon start. The routine scheduler now starts before the startup sync requests its first resync.
+
+Retry the `on_failure` webhook on transient delivery failures. A failed `curl` POST is now tried up to 3 times with exponential backoff (100 ms, then 200 ms) before the failure is logged, so one dropped request no longer loses a routine's failure notification.
+
 ## [3.3.1] - 2026-10-19
 
 Stop leaking per-routine env secrets through process arguments. Values from `routine.toml` `[env]` and `routine.local.toml` used to be inlined into the launch command as `export KEY='value'`, readable by any local user via `ps` while the wrapper shell ran. They now reach the routine through the spawned process's own environment, and the command only names the variable.
@@ -5111,7 +5135,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.3.1...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/moadim-io/daemon/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/moadim-io/daemon/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/moadim-io/daemon/compare/v3.2.10...v3.3.0
 [3.2.10]: https://github.com/moadim-io/daemon/compare/v3.2.9...v3.2.10

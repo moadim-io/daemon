@@ -63,6 +63,7 @@ fn make_routine(id: &str, title: &str, created_at: u64, updated_at: u64) -> Rout
         consecutive_failures: 0,
         failure_threshold: None,
         notifications: Default::default(),
+        timezone: None,
     }
 }
 
@@ -112,6 +113,7 @@ fn svc_create_warns_when_crontab_sync_fails() {
                 env: std::collections::HashMap::new(),
                 failure_threshold: None,
                 notifications: Default::default(),
+                timezone: None,
             },
         )
         .unwrap();
@@ -146,6 +148,7 @@ fn svc_create_rejects_goal_over_five_lines() {
             env: std::collections::HashMap::new(),
             failure_threshold: None,
             notifications: Default::default(),
+            timezone: None,
         },
     );
     match result {

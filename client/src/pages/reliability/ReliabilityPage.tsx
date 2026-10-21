@@ -22,6 +22,8 @@ import { computeFailureCauses } from "./exitCodeMath";
 import { FailureCauses } from "./FailureCauses";
 import { computeOverruns } from "./overrunMath";
 import { LongRunning } from "./LongRunning";
+import { computeWeekOverWeek } from "./weekOverWeekMath";
+import { WeekOverWeek } from "./WeekOverWeek";
 import { SortableTh } from "../../components/SortableTh";
 import { sortRows, usePersistedSort, type SortAccessors } from "../../lib/tableSort";
 
@@ -76,6 +78,7 @@ export function ReliabilityPage() {
   const incidents = computeIncidents(runs ?? [], Math.floor(nowMs / 1000));
   const causes = computeFailureCauses(runs ?? []);
   const overruns = computeOverruns(runs ?? [], items, Math.floor(nowMs / 1000));
+  const weekOverWeek = computeWeekOverWeek(runs ?? [], Math.floor(nowMs / 1000), FETCH_LIMIT);
 
   return (
     <div className="page">
@@ -124,6 +127,7 @@ export function ReliabilityPage() {
       {!errorMessage && !isLoading && !machineLoading && <ScheduleAdherence adherence={adherence} />}
       {!errorMessage && !isLoading && <FailureIncidents report={incidents} />}
       {!errorMessage && !isLoading && <FailureCauses report={causes} />}
+      {!errorMessage && !isLoading && <WeekOverWeek report={weekOverWeek} />}
 
       {errorMessage ? (
         <div className="table-wrap">

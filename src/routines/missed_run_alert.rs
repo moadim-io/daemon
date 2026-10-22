@@ -66,7 +66,7 @@ fn eligible_for_missed_run_alert(routine: &Routine, now_secs: u64) -> bool {
     if routine.snoozed_until.is_some_and(|until| now_secs < until) {
         return false;
     }
-    !routine.skip_runs.is_some_and(|runs| runs > 0)
+    routine.skip_runs.is_none_or(|runs| runs == 0)
 }
 
 #[cfg(test)]

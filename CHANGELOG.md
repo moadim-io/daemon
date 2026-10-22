@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-10-22
+
+Add a week-over-week panel to the Reliability page: compares each routine's last 7 days of finished runs against the 7 days before — runs, failures, success-rate change in percentage points and p50 duration change — with a WORSE / QUIET / NEW / BETTER / STEADY verdict, worst first, and flags when the fetched sample does not reach back 14 days.
+
 ## [3.6.2] - 2026-10-20
 
 When two routine directories share one routine id, the daemon now loads the first in path order, skips the other with a warning naming it, and writes back to that same directory. Before, it silently loaded one copy and could write it into the other copy's directory, overwriting it.
@@ -5161,7 +5165,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.2...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/moadim-io/daemon/compare/v3.6.2...v3.7.0
 [3.6.2]: https://github.com/moadim-io/daemon/compare/v3.6.1...v3.6.2
 [3.6.1]: https://github.com/moadim-io/daemon/compare/v3.6.0...v3.6.1
 [3.6.0]: https://github.com/moadim-io/daemon/compare/v3.5.0...v3.6.0

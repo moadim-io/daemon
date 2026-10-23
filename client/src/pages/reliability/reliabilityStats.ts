@@ -101,7 +101,7 @@ function countFlips(statuses: FleetRunSummary["status"][]): number {
 }
 
 /** Sample percentile via nearest-rank on an ascending-sorted array (empty input yields `null`). */
-function percentile(sortedAsc: number[], p: number): number | null {
+export function percentile(sortedAsc: number[], p: number): number | null {
   if (sortedAsc.length === 0) return null;
   const idx = Math.min(sortedAsc.length - 1, Math.max(0, Math.ceil(p * sortedAsc.length) - 1));
   return sortedAsc[idx] ?? null;

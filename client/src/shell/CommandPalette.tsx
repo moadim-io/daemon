@@ -22,6 +22,7 @@ const ROUTE_PATH: Record<string, string> = {
   heatmap: "/heatmap",
   reliability: "/reliability",
   machines: "/machines",
+  agents: "/agents",
   settings: "/settings",
 };
 

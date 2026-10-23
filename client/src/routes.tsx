@@ -6,12 +6,13 @@ import { RunsPage } from "./pages/runs/RunsPage";
 import { RunDetailPage } from "./pages/runs/RunDetailPage";
 import { HeatmapPage } from "./pages/heatmap/HeatmapPage";
 import { ReliabilityPage } from "./pages/reliability/ReliabilityPage";
+import { AgentsPage } from "./pages/agents/AgentsPage";
 import { MachinesPage } from "./pages/machines/MachinesPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 
 /**
  * Route paths are resolved from the server root — the daemon serves this SPA at `GET /`:
- * `/`, `/routines`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/machines`,
+ * `/`, `/routines`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/machines`, `/agents`,
  * `/settings` — an unknown path redirects home.
  */
 export function AppRoutes() {
@@ -25,6 +26,7 @@ export function AppRoutes() {
         <Route path="heatmap" element={<HeatmapPage />} />
         <Route path="reliability" element={<ReliabilityPage />} />
         <Route path="machines" element={<MachinesPage />} />
+        <Route path="agents" element={<AgentsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

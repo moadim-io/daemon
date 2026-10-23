@@ -141,7 +141,7 @@ describe("buildCommands", () => {
 
   it("lists pages then actions then routines", () => {
     const commands = buildCommands([routine({ title: "Nightly Audit", schedule: "0 0 * * *" })]);
-    expect(commands).toHaveLength(11); // 7 nav + 3 action + 1 routine
+    expect(commands).toHaveLength(12); // 8 nav + 3 action + 1 routine
     expect(commands.map((c) => c.kind)).toEqual([
       "nav-overview",
       "nav-routines",
@@ -149,17 +149,18 @@ describe("buildCommands", () => {
       "nav-heatmap",
       "nav-reliability",
       "nav-machines",
+      "nav-agents",
       "nav-settings",
       "action-refresh",
       "action-stop",
       "action-shortcuts",
       "routine",
     ]);
-    expect(commands[6]!.keywords).toContain("theme");
-    expect(commands[9]!.keywords).toContain("chord");
-    expect(commands[10]!.title).toBe("Nightly Audit");
-    expect(commands[10]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
-    expect(commands[10]!.keywords).toContain("claude");
+    expect(commands[7]!.keywords).toContain("theme");
+    expect(commands[10]!.keywords).toContain("chord");
+    expect(commands[11]!.title).toBe("Nightly Audit");
+    expect(commands[11]!.subtitle).toBe("0 0 * * * — AGENT MISSING");
+    expect(commands[11]!.keywords).toContain("claude");
   });
 });
 
@@ -219,6 +220,7 @@ describe("routeFor / badgeFor", () => {
     expect(routeFor("nav-heatmap")).toBe("heatmap");
     expect(routeFor("nav-reliability")).toBe("reliability");
     expect(routeFor("nav-machines")).toBe("machines");
+    expect(routeFor("nav-agents")).toBe("agents");
     expect(routeFor("nav-settings")).toBe("settings");
     expect(routeFor("routine")).toBe("routines");
     expect(routeFor("action-refresh")).toBeUndefined();
@@ -232,6 +234,7 @@ describe("routeFor / badgeFor", () => {
     expect(badgeFor("nav-heatmap")).toBe("GO");
     expect(badgeFor("nav-reliability")).toBe("GO");
     expect(badgeFor("nav-machines")).toBe("GO");
+    expect(badgeFor("nav-agents")).toBe("GO");
     expect(badgeFor("nav-settings")).toBe("GO");
     expect(badgeFor("routine")).toBe("ROUTINE");
     expect(badgeFor("action-refresh")).toBe("ACTION");

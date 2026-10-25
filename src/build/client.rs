@@ -35,7 +35,9 @@ pub fn build(manifest_dir: &str) {
                 std::fs::copy(&dist_index, &output).expect("failed to copy client dist/index.html");
                 // Write to the package root so CI can commit it and `cargo install` (no pnpm
                 // available) still ships a working UI.
-                std::fs::copy(&output, &prebuilt).ok();
+                // Best-effort: failing to refresh the prebuilt copy must not fail the build, since
+                // `output` above is already in place and is what this build actually serves.
+                let _ = std::fs::copy(&output, &prebuilt);
                 return;
             }
         }

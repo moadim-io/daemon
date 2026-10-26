@@ -149,6 +149,8 @@ describe("SloBudget", () => {
     expect(screen.getByText("2 / 0.5 of 10 runs")).toBeInTheDocument();
     expect(screen.getByText("0 / 1.0 of 20 runs")).toBeInTheDocument();
     expect(screen.getByLabelText("GONE budget left")).toHaveAttribute("value", "0");
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.queryByText(/-\d+%/)).not.toBeInTheDocument();
     expect(screen.getAllByText("4.0×")).toHaveLength(2);
     expect(screen.getAllByText("—")).toHaveLength(1);
     expect(screen.getByText(/window is incomplete/)).toBeInTheDocument();

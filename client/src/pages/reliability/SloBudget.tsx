@@ -96,7 +96,8 @@ export function SloBudget({ report, target, onTargetChange }: SloBudgetProps) {
 }
 
 function BudgetRow({ budget: b }: { budget: RoutineBudget }) {
-  const leftPct = Math.round(b.budgetLeft * 100);
+  // Overspend shows as EXHAUSTED and in the burn rates; a negative share (-900% on a 2-run routine) only confuses.
+  const left = Math.max(0, b.budgetLeft);
   return (
     <tr>
       <td>
@@ -115,10 +116,10 @@ function BudgetRow({ budget: b }: { budget: RoutineBudget }) {
           low={AT_RISK_LEFT}
           high={0.5}
           optimum={1}
-          value={Math.max(0, b.budgetLeft)}
+          value={left}
           aria-label={`${b.routineTitle} budget left`}
         />{" "}
-        {leftPct}%
+        {Math.round(left * 100)}%
       </td>
       <td className="cell-meta">{fmtBurn(b.burn24h)}</td>
       <td className="cell-meta">{fmtBurn(b.burn7d)}</td>

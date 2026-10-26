@@ -11,6 +11,14 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-10-27
+
+Add an Agents page to the web client: a per-agent breakdown with registry/CLI/setup health, routine and model rollups, recent success rate, p50 duration and last activity — reachable from the nav, `g a`, and the command palette.
+
+Show an overspent SLO error budget as 0% left instead of a negative share; the EXHAUSTED status and burn rates already carry the overspend.
+
+Add an SLO error-budget panel to the Reliability page of the web client: pick a success-rate target (saved per browser) and see each routine's 7-day budget left, failures against the allowance, and 24h/7d burn rates, with exhausted and fast-burning routines first and a BUDGET EXHAUSTED stat card.
+
 ## [3.7.0] - 2026-10-22
 
 Add a week-over-week panel to the Reliability page: compares each routine's last 7 days of finished runs against the 7 days before — runs, failures, success-rate change in percentage points and p50 duration change — with a WORSE / QUIET / NEW / BETTER / STEADY verdict, worst first, and flags when the fetched sample does not reach back 14 days.
@@ -5165,7 +5173,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/moadim-io/daemon/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/moadim-io/daemon/compare/v3.6.2...v3.7.0
 [3.6.2]: https://github.com/moadim-io/daemon/compare/v3.6.1...v3.6.2
 [3.6.1]: https://github.com/moadim-io/daemon/compare/v3.6.0...v3.6.1

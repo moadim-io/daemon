@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAllRuns, useMachine, useRoutines } from "../../api/hooks";
 import { useNow } from "../../lib/useNow";
@@ -24,6 +25,8 @@ import { computeOverruns } from "./overrunMath";
 import { LongRunning } from "./LongRunning";
 import { computeWeekOverWeek } from "./weekOverWeekMath";
 import { WeekOverWeek } from "./WeekOverWeek";
+import { computeSlo, loadSloTarget, saveSloTarget } from "./sloMath";
+import { SloBudget } from "./SloBudget";
 import { SortableTh } from "../../components/SortableTh";
 import { sortRows, usePersistedSort, type SortAccessors } from "../../lib/tableSort";
 
@@ -79,6 +82,12 @@ export function ReliabilityPage() {
   const causes = computeFailureCauses(runs ?? []);
   const overruns = computeOverruns(runs ?? [], items, Math.floor(nowMs / 1000));
   const weekOverWeek = computeWeekOverWeek(runs ?? [], Math.floor(nowMs / 1000), FETCH_LIMIT);
+  const [sloTarget, setSloTarget] = useState(loadSloTarget);
+  const slo = computeSlo(runs ?? [], Math.floor(nowMs / 1000), sloTarget, FETCH_LIMIT);
+  const changeSloTarget = (target: number) => {
+    setSloTarget(target);
+    saveSloTarget(target);
+  };
 
   return (
     <div className="page">
@@ -120,6 +129,10 @@ export function ReliabilityPage() {
             {summary.regressingCount}
           </div>
         </div>
+        <div className="stat-card">
+          <div className="stat-label">BUDGET EXHAUSTED</div>
+          <div className={slo.exhaustedCount > 0 ? "stat-val c-red" : "stat-val"}>{slo.exhaustedCount}</div>
+        </div>
       </div>
 
       {!errorMessage && !isLoading && <LongRunning report={overruns} />}
@@ -127,6 +140,7 @@ export function ReliabilityPage() {
       {!errorMessage && !isLoading && !machineLoading && <ScheduleAdherence adherence={adherence} />}
       {!errorMessage && !isLoading && <FailureIncidents report={incidents} />}
       {!errorMessage && !isLoading && <FailureCauses report={causes} />}
+      {!errorMessage && !isLoading && <SloBudget report={slo} target={sloTarget} onTargetChange={changeSloTarget} />}
       {!errorMessage && !isLoading && <WeekOverWeek report={weekOverWeek} />}
 
       {errorMessage ? (

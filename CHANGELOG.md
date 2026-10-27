@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-10-27
+
+The Overview page gains a SINCE YOUR LAST VISIT digest: how many runs failed and succeeded while you were away, and one row per routine that failed — badged RECOVERED once its newest run succeeds — linking to the failed run. "Mark as seen" moves the remembered baseline to now.
+
 ## [3.8.0] - 2026-10-27
 
 Add an Agents page to the web client: a per-agent breakdown with registry/CLI/setup health, routine and model rollups, recent success rate, p50 duration and last activity — reachable from the nav, `g a`, and the command palette.
@@ -5173,7 +5177,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.8.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.9.0...HEAD
+[3.9.0]: https://github.com/moadim-io/daemon/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/moadim-io/daemon/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/moadim-io/daemon/compare/v3.6.2...v3.7.0
 [3.6.2]: https://github.com/moadim-io/daemon/compare/v3.6.1...v3.6.2

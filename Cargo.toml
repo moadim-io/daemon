@@ -577,3 +577,12 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject `some_fallible_call().ok();` used as a statement purely to throw a `Result` away. The
+# trailing `.ok()` reads like a conversion, not a decision, so a discarded failure is invisible at
+# a glance and indistinguishable from a `Result` the author forgot to handle — exactly the class of
+# silently dropped error this daemon cannot afford, since a swallowed filesystem or I/O failure
+# surfaces later as missing state rather than as a reported error. `let _ = ...;` says "ignoring
+# this on purpose" explicitly, keeping a deliberate best-effort call distinguishable from an
+# oversight. The three sites this surfaced are all genuinely best-effort (a non-fatal prebuilt-asset
+# copy, and two test cleanups) and are rewritten to the explicit form, so `deny` locks that in.
+unused_result_ok = "deny"

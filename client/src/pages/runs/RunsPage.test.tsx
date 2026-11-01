@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FleetRunSummary } from "../../api/hooks";
 import { RunsPage } from "./RunsPage";
 
@@ -23,12 +23,12 @@ function run(overrides: Partial<FleetRunSummary> = {}): FleetRunSummary {
   };
 }
 
-function renderPage(runs?: FleetRunSummary[]) {
+function renderPage(runs?: FleetRunSummary[], url = "/runs") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (runs !== undefined) queryClient.setQueryData(["routines", "runs", 100], runs);
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[url]}>
         <RunsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -141,5 +141,47 @@ describe("RunsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /1 success/ }));
     fireEvent.change(screen.getByLabelText("Time range filter"), { target: { value: "24h" } });
     expect(screen.queryByRole("button", { name: /Clear time selection/ })).not.toBeInTheDocument();
+  });
+  it("restores filters and a histogram range from the URL", () => {
+    const now = Math.floor(Date.now() / 1000);
+    renderPage(
+      [
+        run({ workbench: "wb1", routine_title: "Nightly Audit", status: "failed", started_at: now - 10 }),
+        run({ workbench: "wb2", routine_title: "Weekly Digest", status: "failed", started_at: now - 10 }),
+        run({ workbench: "wb3", routine_title: "Weekly Report", status: "success", started_at: now - 10 }),
+      ],
+      `/runs?q=weekly&status=failed&when=24h&from=${now - 60}&to=${now}`,
+    );
+    expect(screen.getByLabelText("Search runs")).toHaveValue("weekly");
+    expect(screen.getByLabelText("Status filter")).toHaveValue("failed");
+    expect(screen.getByLabelText("Time range filter")).toHaveValue("24h");
+    expect(screen.getByRole("button", { name: /Clear time selection/ })).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 3 fetched")).toBeInTheDocument();
+  });
+
+  it("exports the shown runs as a CSV download", () => {
+    const createObjectURL = vi.fn((blob: Blob) => (blob.type === "text/csv;charset=utf-8" ? "blob:runs" : "blob:wrong"));
+    const revokeObjectURL = vi.fn();
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      renderPage([run({ workbench: "wb1" })]);
+      fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      expect(click).toHaveBeenCalledOnce();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:runs");
+    } finally {
+      click.mockRestore();
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
+  it("disables CSV export when no runs are shown", () => {
+    renderPage([]);
+    expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
   });
 });

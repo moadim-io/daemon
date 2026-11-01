@@ -1,18 +1,32 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAllRuns, useMaxConcurrentRuns, type FleetRunSummary } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
 import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
 import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import {
-  DEFAULT_RUNS_FILTER,
   TIME_FACET_SECS,
   filterRuns,
+  runsToCsv,
   statusCounts,
+  viewFromParams,
+  viewToParams,
+  type RunsFilter,
+  type RunsRange,
   type RunStatusFacet,
   type RunTimeFacet,
 } from "./runsFilter";
+
+/** Downloads `csv` as a file; ponytail: Blob + anchor click, no file-saver dependency. */
+function downloadCsv(csv: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 import { RunsHistogram } from "./RunsHistogram";
 import { buildHistogram, runsInRange } from "./histogramMath";
 import { RunsGantt } from "./RunsGantt";
@@ -64,11 +78,17 @@ export function RunsPage() {
   const nowSecs = Math.floor(useNow(30_000) / 1000);
 
   const [limit, setLimit] = useState(INITIAL_LIMIT);
-  const [filter, setFilter] = useState(DEFAULT_RUNS_FILTER);
+  // The view lives in the URL (`?q=&status=&when=&from=&to=`) so it survives reloads, works with
+  // the back button, and can be bookmarked or shared — same contract as the Routines page.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { filter, range } = useMemo(() => viewFromParams(searchParams), [searchParams]);
+  const setView = (next: RunsFilter, nextRange: RunsRange | null) =>
+    setSearchParams(viewToParams(next, nextRange), { replace: true });
+  const setFilter = (next: RunsFilter) => setView(next, range);
+  const setRange = (nextRange: RunsRange | null) => setView(filter, nextRange);
 
   const runsQuery = useAllRuns(limit, { refetchInterval: ms });
   const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data]);
-  const [range, setRange] = useState<{ from: number; to: number } | null>(null);
   const filtered = useMemo(() => filterRuns(runs, filter, nowSecs), [runs, filter, nowSecs]);
   const windowFrom = filter.time === "all" ? undefined : nowSecs - TIME_FACET_SECS[filter.time];
   const histogram = useMemo(() => buildHistogram(filtered, nowSecs, windowFrom), [filtered, nowSecs, windowFrom]);
@@ -139,10 +159,7 @@ export function RunsPage() {
             className="filter-select"
             aria-label="Time range filter"
             value={filter.time}
-            onChange={(e) => {
-              setFilter({ ...filter, time: e.target.value as RunTimeFacet });
-              setRange(null);
-            }}
+            onChange={(e) => setView({ ...filter, time: e.target.value as RunTimeFacet }, null)}
           >
             {TIME_OPTIONS.map(([value, label]) => (
               <option key={value} value={value}>
@@ -160,6 +177,15 @@ export function RunsPage() {
               Clear time selection ({abstime(range.from)} – {abstime(range.to)}) ✕
             </button>
           )}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={sorted.length === 0}
+            title="Download the runs shown below, in their current order"
+            onClick={() => downloadCsv(runsToCsv(sorted), `moadim-runs-${nowSecs}.csv`)}
+          >
+            Export CSV
+          </button>
         </div>
       </div>
 

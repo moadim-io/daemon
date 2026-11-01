@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-11-01
+
+Runs page: filters and the selected histogram range now live in the URL (`?q=&status=&when=&from=&to=`), so a view survives reloads and can be bookmarked or shared. New "Export CSV" button downloads the shown runs.
+
 ## [3.9.0] - 2026-10-27
 
 The Overview page gains a SINCE YOUR LAST VISIT digest: how many runs failed and succeeded while you were away, and one row per routine that failed — badged RECOVERED once its newest run succeeds — linking to the failed run. "Mark as seen" moves the remembered baseline to now.
@@ -5177,7 +5181,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.9.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/moadim-io/daemon/compare/v3.9.0...v3.10.0
 [3.9.0]: https://github.com/moadim-io/daemon/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/moadim-io/daemon/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/moadim-io/daemon/compare/v3.6.2...v3.7.0

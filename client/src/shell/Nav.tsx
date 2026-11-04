@@ -8,6 +8,7 @@ const TABS = [
   { to: "/reliability", label: "Reliability", end: false },
   { to: "/machines", label: "Machines", end: false },
   { to: "/agents", label: "Agents", end: false },
+  { to: "/flags", label: "Flags", end: false },
   { to: "/settings", label: "Settings", end: false },
 ];
 

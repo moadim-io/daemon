@@ -55,6 +55,13 @@ fn ensure_default_agents_writes_parsable_configs() {
     assert!(pi.args.contains(&"-p".to_string()));
     assert!(pi.args.contains(&"@{prompt_file}".to_string()));
 
+    // dsh default runs the one-shot headless profile and reads AGENTS.md
+    let dsh: AgentCommand =
+        toml::from_str(&std::fs::read_to_string(dir.join("dsh.toml")).unwrap()).unwrap();
+    assert_eq!(dsh.command, "dsh");
+    assert_eq!(dsh.args, vec!["--profile", "headless", "{prompt}"]);
+    assert_eq!(dsh.instructions_file, "AGENTS.md");
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -75,6 +82,7 @@ fn ensure_default_agents_does_not_overwrite_existing() {
     assert!(dir.join("codex.toml").exists());
     assert!(dir.join("nanoclaw.toml").exists());
     assert!(dir.join("pi.toml").exists());
+    assert!(dir.join("dsh.toml").exists());
 
     let _ = std::fs::remove_dir_all(&dir);
 }

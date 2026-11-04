@@ -456,7 +456,7 @@ built-in `claude` agent.
 Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
 `<name>` is the registry key a routine's `agent` field references (the filename
 stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
-defaults (`claude`, `codex`, `hermes`, `nanoclaw`, `pi`) into this directory **only if the file is
+defaults (`claude`, `codex`, `dsh`, `hermes`, `nanoclaw`, `pi`) into this directory **only if the file is
 absent** — your edits are never overwritten — so you can both tweak a default and
 register a brand-new agent by dropping in another `<name>.toml`.
 
@@ -482,7 +482,7 @@ scope, so it can prepare per-run state before the agent starts:
 - `$WB` — absolute workbench path.
 - `$SESS` — the tmux session name for the run.
 
-Examples — the headless `codex`/`hermes`/`pi` form, and the interactive `claude` form
+Examples — the headless `codex`/`dsh`/`hermes`/`pi` form, and the interactive `claude` form
 (the real default's `setup` step also pre-seeds `~/.claude.json`; see the
 prerequisites above):
 
@@ -503,6 +503,14 @@ args = ["--permission-mode", "auto", "{prompt}"]
 # ~/.config/moadim/agents/pi.toml
 command = "pi"
 args = ["--approve", "-p", "@{prompt_file}"]
+```
+
+```toml
+# ~/.config/moadim/agents/dsh.toml
+# One-shot run of the DeepSeek Harness headless profile; dsh reads AGENTS.md.
+command = "dsh"
+args = ["--profile", "headless", "{prompt}"]
+instructions_file = "AGENTS.md"
 ```
 
 ```toml

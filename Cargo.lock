@@ -1147,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "moadim"
-version = "3.10.0"
+version = "3.11.0"
 dependencies = [
  "anstream",
  "anyhow",

@@ -4,17 +4,20 @@ name: Cut Release
 # package.json/Cargo.toml/Cargo.lock/CHANGELOG.md and consume pending
 # .changeset/*.md files — the same script that always ran, just no longer
 # behind a PR), verify the result via the same lint/test gates a PR would
-# give it (workflow_call into lint.yml/test.yml, see PR #853), then fast-
-# forward that verified commit straight onto `main`. No PR is opened.
+# give it (workflow_call into lint.yml/test.yml, see PR #853), then leave
+# that verified commit on a `ci/version-bump-<run_id>` branch and print a
+# one-click "open PR" link in the job summary. A maintainer opens and merges
+# that PR.
 #
 # Why no PR: this org has "Allow GitHub Actions to create and approve pull
 # requests" disabled, and changesets/action (the previous approach, see the
 # old changeset-release.yml) is fundamentally PR-only with no direct-commit
 # mode — so that workflow never actually succeeded, ever, since changesets
-# was introduced (see issue #849's investigation). Skipping the PR entirely
-# sidesteps that org policy for good and needs nothing beyond the default
-# GITHUB_TOKEN's `contents: write`, already granted below — no PAT, no
-# GitHub App, no org-admin access required, now or in the future.
+# was introduced (see issue #849's investigation). A direct push to `main`
+# does not work either: the `main` ruleset requires a pull request and has no
+# bypass actors, so the push fails with GH013. A maintainer-opened PR runs the
+# normal required checks; the default GITHUB_TOKEN's `contents: write` is all
+# this workflow needs to push the bump branch.
 #
 # Run this whenever the currently-pending changesets are ready to ship:
 # `gh workflow run cut-release.yml`, or the Actions tab's "Run workflow".
@@ -109,17 +112,21 @@ jobs:
       ref: ${{ needs.version.outputs.bump-branch }}
 
   land:
-    name: Land on main
+    name: Release PR link
     needs: [version, lint, test]
     if: needs.version.outputs.had-changes == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Fast-forward main to the verified bump commit
+      - name: Link the verified bump branch for a release PR
+        env:
+          BRANCH: ${{ needs.version.outputs.bump-branch }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          git fetch origin "${{ needs.version.outputs.bump-branch }}"
-          git push origin "${{ needs.version.outputs.bump-sha }}:main"
-
-      - name: Delete throwaway branch
-        run: git push origin --delete "${{ needs.version.outputs.bump-branch }}"
+          {
+            echo "## Release bump verified"
+            echo ""
+            echo "Lint and tests passed on \`$BRANCH\`."
+            echo "Open and merge the release PR: $REPO_URL/compare/main...$BRANCH?expand=1"
+            echo ""
+            echo "Or run: \`gh pr create --base main --head $BRANCH --fill\`"
+          } >> "$GITHUB_STEP_SUMMARY"

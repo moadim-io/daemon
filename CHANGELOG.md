@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-11-04
+
+Add a fleet-wide Flags inbox page (`/flags`) to the dashboard: every open flag across all routines in one table, oldest first, with stat cards, search, a type filter, sortable columns and an inline RESOLVE.
+
 ## [3.11.0] - 2026-11-04
 
 New built-in `dsh` agent: routines can run DeepSeek Harness (`dsh --profile headless "<prompt>"`), with the moadim system prompt written to `AGENTS.md`.
@@ -5185,7 +5189,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.11.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.12.0...HEAD
+[3.12.0]: https://github.com/moadim-io/daemon/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/moadim-io/daemon/compare/v3.10.0...v3.11.0
 [3.10.0]: https://github.com/moadim-io/daemon/compare/v3.9.0...v3.10.0
 [3.9.0]: https://github.com/moadim-io/daemon/compare/v3.8.0...v3.9.0

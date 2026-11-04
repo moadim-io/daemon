@@ -23,6 +23,7 @@ fn available_agents_in_falls_back_when_dir_has_no_toml() {
         vec![
             "claude".to_string(),
             "codex".to_string(),
+            "dsh".to_string(),
             "hermes".to_string(),
             "nanoclaw".to_string(),
             "pi".to_string()

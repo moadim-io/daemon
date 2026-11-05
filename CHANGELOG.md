@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-11-05
+
+Add a kiosk / TV-mode Wallboard (`/wall`, nav **Wall**, `g w`): one big colour-coded tile per routine sorted worst-first, per-state counts, a live clock, a recent-run strip per tile, and self-refreshing data. `Esc` exits.
+
 ## [3.12.0] - 2026-11-04
 
 Add a fleet-wide Flags inbox page (`/flags`) to the dashboard: every open flag across all routines in one table, oldest first, with stat cards, search, a type filter, sortable columns and an inline RESOLVE.
@@ -5189,7 +5193,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.12.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.13.0...HEAD
+[3.13.0]: https://github.com/moadim-io/daemon/compare/v3.12.0...v3.13.0
 [3.12.0]: https://github.com/moadim-io/daemon/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/moadim-io/daemon/compare/v3.10.0...v3.11.0
 [3.10.0]: https://github.com/moadim-io/daemon/compare/v3.9.0...v3.10.0

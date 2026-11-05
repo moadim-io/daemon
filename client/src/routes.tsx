@@ -10,15 +10,17 @@ import { AgentsPage } from "./pages/agents/AgentsPage";
 import { FlagsPage } from "./pages/flags/FlagsPage";
 import { MachinesPage } from "./pages/machines/MachinesPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
+import { WallboardPage } from "./pages/wall/WallboardPage";
 
 /**
  * Route paths are resolved from the server root — the daemon serves this SPA at `GET /`:
  * `/`, `/routines`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/machines`, `/agents`, `/flags`,
- * `/settings` — an unknown path redirects home.
+ * `/settings` — an unknown path redirects home. `/wall` (kiosk wallboard) renders outside the shell.
  */
 export function AppRoutes() {
   return (
     <Routes>
+      <Route path="wall" element={<WallboardPage />} />
       <Route element={<Shell />}>
         <Route index element={<OverviewPage />} />
         <Route path="routines" element={<RoutinesPage />} />

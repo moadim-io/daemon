@@ -22,6 +22,7 @@ export const NAV_CHORDS: NavChord[] = [
   { key: "m", route: "/machines", label: "Machines" },
   { key: "a", route: "/agents", label: "Agents" },
   { key: "s", route: "/settings", label: "Settings" },
+  { key: "w", route: "/wall", label: "Wallboard" },
 ];
 
 /** The route a `g <key>` chord jumps to, or `undefined` if `key` isn't bound. */

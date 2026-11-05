@@ -3684,3 +3684,166 @@ tr:last-child td {
   font-size: 12px;
   color: var(--text-dim);
 }
+
+/* ─── Wallboard (kiosk / TV mode, `/wall`) ─────────────────────────────── */
+.wall {
+  min-height: 100vh;
+  padding: 16px clamp(16px, 2vw, 32px);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+.wall-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  border-bottom: 3px solid var(--border);
+  padding-bottom: 12px;
+}
+.wall-brand {
+  font-family: var(--mono);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.wall-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  flex: 1;
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.1vw, 18px);
+}
+.wall-count b {
+  font-size: clamp(22px, 2.4vw, 40px);
+}
+.wall-count.zero {
+  opacity: 0.4;
+}
+.wall-count.failing b {
+  color: var(--err);
+}
+.wall-count.attention b,
+.wall-count.running b {
+  color: var(--warn);
+}
+.wall-count.ok b {
+  color: var(--ok);
+}
+.wall-clock {
+  font-family: var(--mono);
+  font-size: clamp(20px, 2vw, 34px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.wall-acts {
+  display: flex;
+  gap: 8px;
+}
+.wall-meta {
+  margin: 8px 0 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.wall-error {
+  color: var(--err);
+}
+.wall-empty {
+  font-size: 24px;
+  color: var(--text-dim);
+}
+.wall-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+}
+.wall-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 3px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  min-width: 0;
+}
+a.wall-tile:hover,
+a.wall-tile:focus-visible {
+  box-shadow: var(--shadow-hover);
+}
+.wall-tile.failing {
+  background: var(--err-bg);
+  border-color: var(--err);
+}
+.wall-tile.attention {
+  background: var(--warn-bg);
+  border-color: var(--warn);
+}
+.wall-tile.running {
+  background: var(--surface-2);
+  border-style: dashed;
+}
+.wall-tile.ok {
+  background: var(--ok-bg);
+}
+.wall-tile.idle,
+.wall-tile.snoozed {
+  opacity: 0.65;
+}
+.wall-tile-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.wall-tile.failing .wall-tile-state {
+  color: var(--err);
+}
+.wall-tile.ok .wall-tile-state {
+  color: var(--ok);
+}
+.wall-tile.attention .wall-tile-state,
+.wall-tile.running .wall-tile-state {
+  color: var(--warn);
+}
+.wall-tile-history {
+  display: flex;
+  gap: 3px;
+}
+.wall-dot {
+  width: 9px;
+  height: 9px;
+  background: var(--text-faint);
+}
+.wall-dot.success {
+  background: var(--ok);
+}
+.wall-dot.failed {
+  background: var(--err);
+}
+.wall-dot.running {
+  background: var(--warn);
+}
+.wall-tile-title {
+  font-size: clamp(16px, 1.4vw, 24px);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.wall-tile-reason {
+  color: var(--text-dim);
+}
+.wall-tile-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}

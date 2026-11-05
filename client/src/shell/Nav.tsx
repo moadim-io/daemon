@@ -10,6 +10,7 @@ const TABS = [
   { to: "/agents", label: "Agents", end: false },
   { to: "/flags", label: "Flags", end: false },
   { to: "/settings", label: "Settings", end: false },
+  { to: "/wall", label: "Wall", end: false },
 ];
 
 export function Nav() {

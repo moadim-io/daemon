@@ -577,3 +577,16 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject passing a zero-length `Vec` (e.g. a fresh `Vec::with_capacity(n)`) as the destination
+# buffer of a length-driven `io::Read` method — `read`/`read_exact` fill the slice the `&mut Vec`
+# derefs to, which for `len() == 0` is empty, so the call returns `Ok(0)` and the buffer stays
+# empty. No error, no panic: the data is silently never read. `read_log_tail_of_len`
+# (`routines/service_log_tail.rs`) and `routines/cleanup/log_cap.rs` both hand-roll a
+# seek-then-read over a `Vec::with_capacity` buffer — the same two sites already exempted from
+# `verbose_file_reads` above — and are correct today only because they use `read_to_end`, which
+# grows the vector itself. Swapping in `read_exact` to cap the read at exactly the tail size, a
+# natural-looking edit, would make the log-tail endpoint serve an empty body with a `200`. Like
+# `collection_is_never_read` and `suspicious_operation_groupings` above, this is a correctness
+# lint (it catches a silent wrong answer), not a style preference. The codebase is already clean,
+# so `deny` locks that in.
+read_zero_byte_vec = "deny"

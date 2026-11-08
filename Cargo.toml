@@ -577,3 +577,9 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject reading a binding whose name starts with `_` (e.g. `fn f(_req: Request) { log(&_req) }`).
+# A leading underscore is the convention for "intentionally unused" and silences `unused_variables`,
+# so reading it anyway makes the name lie to every reader. The usual cause is a parameter that got
+# the `_` prefix while unused and later started being read without the rename — this lint catches
+# that drift. The codebase is already clean, so `deny` locks that in.
+used_underscore_binding = "deny"

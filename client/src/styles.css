@@ -2504,6 +2504,69 @@ textarea {
   word-break: break-word;
 }
 
+.log-triage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 47px;
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.log-sev-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.log-sev-chip-error {
+  background: var(--err-bg);
+  color: var(--err);
+}
+
+.log-sev-chip-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.log-sev-chip.is-zero {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.log-triage-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.log-line {
+  border-left: 3px solid transparent;
+}
+
+.log-sev-error {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err-bg) 60%, transparent);
+}
+
+.log-sev-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn-bg) 60%, transparent);
+}
+
+.log-line-current {
+  outline: 2px solid var(--accent, var(--warn));
+  outline-offset: -2px;
+}
+
 .run-compare {
   margin-top: 16px;
 }

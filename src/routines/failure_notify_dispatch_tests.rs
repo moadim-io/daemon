@@ -6,7 +6,7 @@
 
 use super::super::{
     dispatch_command, dispatch_webhook, exit_reason, notify_finished_run, post_webhook,
-    FailureNotificationConfig, RunStatus, CURL_BIN_ENV, WEBHOOK_MAX_ATTEMPTS,
+    FailureNotificationConfig, RunContext, RunStatus, CURL_BIN_ENV, WEBHOOK_MAX_ATTEMPTS,
 };
 use super::{temp_dir, EnvGuard};
 
@@ -97,6 +97,11 @@ fn command_hook_uses_default_shell_when_env_is_absent() {
         sink.to_str().unwrap(),
         1,
         2,
+        &RunContext {
+            machine: "host".into(),
+            exit_code: Some(1),
+            run_url: "http://127.0.0.1:5784/runs/r/run".into(),
+        },
     );
     for _ in 0..500 {
         if sink.exists() {
@@ -134,6 +139,9 @@ fn dispatch_webhook_uses_default_curl_binary() {
         finished_at: 2,
         log_path: "log",
         log_tail: "tail",
+        machine: "host",
+        exit_code: Some(9),
+        run_url: "http://127.0.0.1:5784/runs/routine/run",
     };
 
     dispatch_webhook(sink.to_str().unwrap(), &payload);

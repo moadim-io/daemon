@@ -20,8 +20,8 @@
     "test:e2e:screenshots:check": "pnpm run test:e2e:screenshots && (test -z \"$(git -C .. status --porcelain -- docs/screenshots/ui-e2e)\" || (git -C .. status --short -- docs/screenshots/ui-e2e && exit 1))"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.105.1",
-    "cron-parser": "^5.10.3",
+    "@tanstack/react-query": "^5.107.1",
+    "cron-parser": "^5.10.4",
     "cronstrue": "^3.38.0",
     "openapi-fetch": "^0.17.0",
     "react": "^19.3.1",
@@ -32,22 +32,22 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@typescript/typescript6": "6.0.2",
-    "@vitejs/plugin-react": "^6.1.2",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitejs/plugin-react": "^6.2.1",
+    "@vitest/coverage-v8": "5.1.0",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^31.0.0",
     "openapi-typescript": "^7.5.0",
     "typescript": "^7.0.2",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vite-plugin-singlefile": "^2.3.4",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }

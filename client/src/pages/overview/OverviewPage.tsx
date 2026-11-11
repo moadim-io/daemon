@@ -13,10 +13,12 @@ import {
   type RunStatusSnapshot,
 } from "../../lib/failureNotify";
 import { useToasts } from "../../shell/toasts";
+import { groupRecentRuns } from "../routines/sparkline";
 import { AttentionTable } from "./AttentionTable";
 import { NotifyToggle } from "./NotifyToggle";
 import { attentionItems, computeKpis, nextRunSummary, sourcesOf, upcomingRuns } from "./overviewLogic";
 import { OverviewStats } from "./OverviewStats";
+import { PinnedPanel } from "./PinnedPanel";
 import { RecentRunsTable } from "./RecentRunsTable";
 import { SinceLastVisit } from "./SinceLastVisit";
 import { computeDigest, loadOrSeedLastSeen, saveLastSeen } from "./visitDigest";
@@ -166,6 +168,14 @@ export function OverviewPage() {
           </div>
           <AttentionTable items={attention} />
         </>
+      )}
+      {!routinesQuery.isLoading && loadError === undefined && (
+        <PinnedPanel
+          routines={routinesQuery.data ?? []}
+          runHistory={groupRecentRuns(digestRunsQuery.data ?? [])}
+          now={now}
+          onTrigger={handleTrigger}
+        />
       )}
       <div className="section-hd">
         <span className="section-label">UPCOMING RUNS</span>

@@ -3910,3 +3910,27 @@ a.wall-tile:focus-visible {
   font-size: 12px;
   color: var(--text-faint);
 }
+
+/* Pin toggle (Routines title cell, Overview PINNED panel). */
+.pin-btn {
+  float: right;
+  margin-left: 6px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pin-btn:hover,
+.pin-btn:focus-visible {
+  color: var(--text);
+}
+.pin-btn.pinned {
+  color: var(--warn);
+}
+.cell-act .pin-btn {
+  float: none;
+}

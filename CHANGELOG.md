@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.15.0] - 2026-11-11
+
+Pin routines with ☆ on the Routines page and watch them in a new PINNED section on the Overview page — health, next run, recent-run sparkline and a one-click RUN, saved per browser.
+
 ## [3.14.0] - 2026-11-11
 
 Log viewer severity triage: error and warning lines are color-coded and counted, a "Problems only" toggle filters to them, and Prev / Next buttons jump between them — on the Run Detail page and routine Logs.
@@ -5197,7 +5201,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.14.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.15.0...HEAD
+[3.15.0]: https://github.com/moadim-io/daemon/compare/v3.14.0...v3.15.0
 [3.14.0]: https://github.com/moadim-io/daemon/compare/v3.13.0...v3.14.0
 [3.13.0]: https://github.com/moadim-io/daemon/compare/v3.12.0...v3.13.0
 [3.12.0]: https://github.com/moadim-io/daemon/compare/v3.11.0...v3.12.0

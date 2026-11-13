@@ -577,3 +577,9 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject `.get(key).unwrap()` / `.get_mut(key).unwrap()` on slices, `Vec`, `VecDeque`, `HashMap`
+# and `BTreeMap` in favour of plain indexing (`map[key]`, `&mut vec[i]`). Both forms panic on a
+# missing key, so the `.get()` call adds noise without adding safety, and it hides the panic behind
+# an `unwrap` instead of the indexing every reader already knows can panic. Fixed the one violation
+# this surfaced (a test assertion in `export_import/export_tests.rs`).
+get_unwrap = "deny"

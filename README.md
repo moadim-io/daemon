@@ -363,9 +363,22 @@ on_failure_command = "notify-send \"moadim failed\" \"$MOADIM_ROUTINE_TITLE: $MO
 
 Command hooks run under `sh -lc` with context env vars: `MOADIM_ROUTINE`,
 `MOADIM_ROUTINE_TITLE`, `MOADIM_RUN_ID`, `MOADIM_EXIT_REASON` (`exit_code_N`, `timeout`, or
-`unknown`), `MOADIM_LOG_PATH`, `MOADIM_STARTED_AT`, and `MOADIM_FINISHED_AT`. Webhook hooks POST JSON
-with the same routine/run fields plus a bounded `agent.log` tail. Hook failures are logged and do
-not block cleanup, retry forever, or crash the daemon.
+`unknown`), `MOADIM_EXIT_CODE` (the numeric exit code; unset for `timeout`/`unknown`),
+`MOADIM_MACHINE` (this host's machine name), `MOADIM_RUN_URL` (the run's Run Detail page),
+`MOADIM_LOG_PATH`, `MOADIM_STARTED_AT`, and `MOADIM_FINISHED_AT`. Webhook hooks POST JSON with the
+same routine/run fields (`machine`, `exit_code` — `null` when not numeric — and `run_url` included)
+plus a bounded `agent.log` tail. Hook failures are logged and do not block cleanup, retry forever, or
+crash the daemon.
+
+`run_url` points at the daemon's bind address (`http://127.0.0.1:5784/runs/<routine>/<run>` by
+default). When several machines post to one shared channel, set `public_base_url` in the global
+`[notifications]` table so the link opens from other devices, e.g. behind a reverse proxy or tailnet:
+
+```toml
+[notifications]
+on_failure_webhook = "https://example.invalid/moadim/failures"
+public_base_url = "https://moadim-mac-mini.example.ts.net"
+```
 
 A routine already refuses to overlap with its own still-running fire, but
 nothing on its own bounds how many *different* routines run at once — the daemon

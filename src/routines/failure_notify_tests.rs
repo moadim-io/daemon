@@ -5,6 +5,8 @@
 )]
 
 use super::*;
+#[path = "failure_notify_context_tests.rs"]
+mod context;
 #[path = "failure_notify_dispatch_tests.rs"]
 mod dispatch;
 use std::path::PathBuf;
@@ -161,6 +163,9 @@ fn webhook_post_uses_curl_shim_and_stdin_json() {
         exit_reason: "unknown",
         log_path: "/tmp/agent.log",
         log_tail: "tail",
+        machine: "host",
+        exit_code: None,
+        run_url: "http://127.0.0.1:5784/runs/r1/run1",
     };
     let body = serde_json::to_vec(&payload).unwrap();
     post_webhook(

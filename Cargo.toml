@@ -577,3 +577,10 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject boolean expressions that can be written more simply — double negations, a `!` wrapped
+# around a method that has a direct positive counterpart (`!opt.is_some_and(f)` vs
+# `opt.is_none_or(!f)`), or terms that De Morgan's laws collapse. Each `!` a reader has to mentally
+# push through is a chance to misread a branch condition, and guard logic (eligibility checks,
+# early returns) is exactly where an inverted condition becomes a silent bug. Fixed the one
+# violation this surfaced (`routines::missed_run_alert::eligible_for_missed_run_alert`).
+nonminimal_bool = "deny"

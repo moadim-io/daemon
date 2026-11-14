@@ -152,11 +152,7 @@ fn agent_check(path: &str, file: &Path) -> Check {
 
 /// Process exit code for `checks`: `0` when every check passed, `1` when any failed.
 pub fn exit_code(checks: &[Check]) -> i32 {
-    if checks.iter().all(Check::passed) {
-        0
-    } else {
-        1
-    }
+    i32::from(!checks.iter().all(Check::passed))
 }
 
 /// Run `moadim doctor` against the live `PATH`, agents dir, and daemon. Prints one line per check

@@ -11,6 +11,12 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-11-15
+
+Add a Repositories page (`/repos`) to the dashboard: one row per repository the fleet's routines work on, with routine/enabled/running counts, branches, agents, `auto_pull`-off count, failing routines, recent success rate, p50 duration and last activity. Includes search, sortable columns, a link to the filtered Routines view and a `g p` go-to shortcut.
+
+
+
 ## [3.15.0] - 2026-11-11
 
 Pin routines with ☆ on the Routines page and watch them in a new PINNED section on the Overview page — health, next run, recent-run sparkline and a one-click RUN, saved per browser.
@@ -5201,7 +5207,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.15.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.16.0...HEAD
+[3.16.0]: https://github.com/moadim-io/daemon/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/moadim-io/daemon/compare/v3.14.0...v3.15.0
 [3.14.0]: https://github.com/moadim-io/daemon/compare/v3.13.0...v3.14.0
 [3.13.0]: https://github.com/moadim-io/daemon/compare/v3.12.0...v3.13.0

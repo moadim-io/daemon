@@ -21,7 +21,7 @@ fn read_log_tail_is_lossy_on_invalid_utf8_when_under_the_cap() {
 
     let result = read_log_tail(&path);
 
-    std::fs::remove_file(&path).ok();
+    let _ = std::fs::remove_file(&path);
     let content = result.expect("invalid UTF-8 in a small log must not error the whole read");
     assert!(content.contains("before"));
     assert!(content.contains("after"));
@@ -34,6 +34,6 @@ fn read_log_tail_still_reads_valid_utf8_when_under_the_cap() {
 
     let result = read_log_tail(&path);
 
-    std::fs::remove_file(&path).ok();
+    let _ = std::fs::remove_file(&path);
     assert_eq!(result.expect("valid UTF-8 read"), "hello world\n");
 }

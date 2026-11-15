@@ -38,7 +38,6 @@ whatever directory it already lives in — found by scanning `routines/` for a `
 can nest arbitrarily (`routines/<folder>/<slug>/...`), and `write_routine` refuses to overwrite a
 directory whose `routine.toml` already holds a *different* routine's `id`, so a slug collision
 between distinct routines errors instead of silently clobbering one of them.
-```
 
 ---
 

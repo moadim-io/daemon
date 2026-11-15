@@ -577,3 +577,15 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject `PathBuf::push` with an argument that starts with a path separator (e.g.
+# `dir.push("/etc/hosts")`). `push` is not "append a segment": given an absolute path it *replaces*
+# the entire buffer, silently discarding the base directory that was built up before it. In a
+# daemon that composes every routine directory, run-log path and lock file out of a configurable
+# base, that turns one stray leading slash into a read or write at an unintended absolute location
+# instead of a compile error — the same class of silent-wrong-target bug as
+# `case_sensitive_file_extension_comparisons` above, and a correctness lint rather than a style
+# preference. The fix is to push the segment without its leading separator, or to use
+# `Path::join`/`PathBuf::from` when an absolute path really is intended. The codebase is already
+# clean (every `push` call site appends a relative suffix such as `".lock"` or `".1"`), so `deny`
+# locks that in.
+path_buf_push_overwrite = "deny"

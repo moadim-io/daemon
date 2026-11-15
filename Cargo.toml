@@ -577,3 +577,8 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Prefer `i32::from(flag)` / `u8::from(flag)` over `if flag { 1 } else { 0 }`. The `From<bool>`
+# conversion is lossless and states the intent ("this number *is* the boolean") in one expression,
+# while the hand-written `if`/`else` hides it behind two literal arms that a reader has to check are
+# really `0`/`1` (and not, say, swapped). Fixed the one violation (`cli::doctor::exit_code`).
+bool_to_int_with_if = "deny"

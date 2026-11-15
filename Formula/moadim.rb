@@ -1,7 +1,7 @@
 class Moadim < Formula
   desc "Loop engine for AI agents"
   homepage "https://moadim.io"
-  url "https://github.com/moadim-io/daemon.git", tag: "v3.2.5", revision: "28e3f67994d78e0d94ec6e74216f59051d0ccb5b"
+  url "https://github.com/moadim-io/daemon.git", tag: "v3.6.0", revision: "f867b3eef21684f5616b5441af9693dceb94b006"
   license "MIT"
   head "https://github.com/moadim-io/daemon.git", branch: "main"
 

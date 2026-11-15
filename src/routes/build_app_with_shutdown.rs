@@ -20,7 +20,7 @@ pub(crate) fn build_app_with_shutdown(
     // (via `app_state`) and the MCP service closure, so exactly one clone is required. Cloning from
     // `app_state` afterward (as this used to do) produced an extra, immediately-dropped clone of the
     // `Arc` per call.
-    let mcp_routines = routines.clone();
+    let mcp_routines = Arc::clone(&routines);
 
     let app_state = AppState {
         routines,
@@ -31,14 +31,14 @@ pub(crate) fn build_app_with_shutdown(
 
     let mcp_routines_dir = app_state.routines_dir.clone();
     let uptime_start = app_state.uptime_start;
-    let mcp_shutdown = app_state.shutdown.clone();
+    let mcp_shutdown = Arc::clone(&app_state.shutdown);
     let mcp_service = StreamableHttpService::new(
         move || {
             Ok(MoadimMcp::new(
-                mcp_routines.clone(),
+                Arc::clone(&mcp_routines),
                 mcp_routines_dir.clone(),
                 uptime_start,
-                mcp_shutdown.clone(),
+                Arc::clone(&mcp_shutdown),
             ))
         },
         LocalSessionManager::default().into(),

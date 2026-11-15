@@ -101,12 +101,12 @@ pub async fn run_with_listener_until(
     // Periodically reap finished, expired run workbenches so triggered routines do not accumulate
     // forever (see `routines::cleanup`). The first tick fires immediately, sweeping leftovers from
     // before this process started.
-    let cleanup_store = routines.clone();
+    let cleanup_store = Arc::clone(&routines);
     let cleanup_task = tokio::spawn(async move {
         let mut tick = tokio::time::interval(crate::routines::CLEANUP_INTERVAL);
         loop {
             tick.tick().await;
-            let store = cleanup_store.clone();
+            let store = Arc::clone(&cleanup_store);
             let _ = tokio::task::spawn_blocking(move || {
                 crate::routines::cleanup_expired_workbenches(&store)
             })
@@ -117,12 +117,12 @@ pub async fn run_with_listener_until(
     // `max_runtime_secs` is enforced near its bound instead of waiting for the next sweep.
     // This tick only evaluates the kill branch; TTL reaping of the killed workbench still happens in
     // the sweep above.
-    let watchdog_store = routines.clone();
+    let watchdog_store = Arc::clone(&routines);
     let watchdog_task = tokio::spawn(async move {
         let mut tick = tokio::time::interval(crate::routines::WATCHDOG_INTERVAL);
         loop {
             tick.tick().await;
-            let store = watchdog_store.clone();
+            let store = Arc::clone(&watchdog_store);
             let _ =
                 tokio::task::spawn_blocking(move || crate::routines::kill_hung_sessions(&store))
                     .await;
@@ -157,12 +157,12 @@ pub async fn run_with_listener_until(
             .await;
         }
     });
-    let app = build_app_with_shutdown(routines, signal.clone());
+    let app = build_app_with_shutdown(routines, Arc::clone(&signal));
     crate::utils::startup_print::print(&addr);
     // Fires the instant a shutdown is requested, so the grace watchdog below can start its clock
     // independently of how long the in-flight connections take to drain.
     let shutdown_started: ShutdownSignal = Arc::new(tokio::sync::Notify::new());
-    let started = shutdown_started.clone();
+    let started = Arc::clone(&shutdown_started);
     // Shut down when either the caller-supplied future resolves (e.g. a SIGINT/SIGTERM handler) or
     // the `/shutdown` route fires `signal` (the UI "STOP" button / `moadim stop`).
     let combined = async move {

@@ -141,7 +141,7 @@ impl lifecycle::Scheduler for ProductionScheduler {
             move |_job_id: Uuid,
                   _scheduler: JobScheduler|
                   -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
-                let store = store.clone();
+                let store = std::sync::Arc::clone(&store);
                 let routine_id = routine_id.clone();
                 Box::pin(async move {
                     let result = tokio::task::spawn_blocking(move || {

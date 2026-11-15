@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::sync::mpsc::UnboundedReceiver;
 use uuid::Uuid;
 
@@ -91,7 +93,7 @@ pub(super) async fn rebuild<S: Scheduler>(
                 continue;
             };
             match scheduler
-                .add(&schedule, timezone, routine.id.clone(), store.clone())
+                .add(&schedule, timezone, routine.id.clone(), Arc::clone(store))
                 .await
             {
                 Ok(job_id) => job_ids.push(job_id),

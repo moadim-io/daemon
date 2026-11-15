@@ -577,3 +577,8 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject a `continue` that does nothing (the last statement of a loop body) and an `else` block
+# that only follows an `if` ending in `continue`. Both add a branch the reader must trace for no
+# effect; dropping them keeps loop bodies flat and the real control flow visible. The codebase is
+# already clean, so `deny` locks that in.
+needless_continue = "deny"

@@ -11,6 +11,10 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.17.0] - 2026-11-16
+
+Add an Uptime page to the web client: Statuspage-style daily status bars per routine over 7, 30 or 90 days, with uptime %, fleet KPIs, and one-click links from each day into that day's runs.
+
 ## [3.16.0] - 2026-11-15
 
 Add a Repositories page (`/repos`) to the dashboard: one row per repository the fleet's routines work on, with routine/enabled/running counts, branches, agents, `auto_pull`-off count, failing routines, recent success rate, p50 duration and last activity. Includes search, sortable columns, a link to the filtered Routines view and a `g p` go-to shortcut.
@@ -5207,7 +5211,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.16.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.17.0...HEAD
+[3.17.0]: https://github.com/moadim-io/daemon/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/moadim-io/daemon/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/moadim-io/daemon/compare/v3.14.0...v3.15.0
 [3.14.0]: https://github.com/moadim-io/daemon/compare/v3.13.0...v3.14.0

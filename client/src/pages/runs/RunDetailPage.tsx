@@ -40,7 +40,7 @@ export function RunDetailPage() {
   return (
     <main className="logs-page">
       <div className="page-hd">
-        <Link to={`/routines?history=${encodeURIComponent(routineId)}`} className="btn btn-ghost btn-sm">
+        <Link to={`/routines/${encodeURIComponent(routineId)}`} className="btn btn-ghost btn-sm">
           ← {title}
         </Link>
         <div className="page-title">RUN / {workbench}</div>

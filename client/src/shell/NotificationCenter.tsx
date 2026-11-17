@@ -72,7 +72,7 @@ export function NotificationCenter({ entries, onMarkAllRead, onClear }: Notifica
             <ul className="notif-list">
               {entries.map((e) => (
                 <li key={e.id} className={e.read ? "notif-item" : "notif-item unread"}>
-                  <Link to={`/routines?history=${encodeURIComponent(e.routineId)}`} onClick={() => setOpen(false)}>
+                  <Link to={`/routines/${encodeURIComponent(e.routineId)}`} onClick={() => setOpen(false)}>
                     <span className="notif-item-title">{e.routineTitle}</span>
                     <span className="notif-item-msg">{e.message}</span>
                     <span className="notif-item-time">{reltime(e.atSecs)}</span>

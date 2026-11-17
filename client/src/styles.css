@@ -4011,3 +4011,63 @@ a.uptime-cell:focus-visible {
   border-bottom: 2px solid var(--border);
 }
 
+
+/* ─── Routine detail page ────────────────────────────────────────────── */
+
+.rd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rd-goal {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  margin: 0 0 16px;
+}
+
+.rd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.rd-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.rd-h {
+  display: block;
+  margin: 0 0 10px;
+}
+
+.rd-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.rd-fields dt {
+  color: var(--text-faint);
+}
+
+.rd-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rd-upcoming {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+}

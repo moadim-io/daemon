@@ -78,9 +78,8 @@ export function CommandPalette({
   const order = rank(commands, query);
   const sel = clampSelection(selected, order.length);
 
-  // A routine result opens straight into its history — the same `?history=<id>`
-  // deep link the Overview page's recent-runs panel uses — rather than the bare
-  // routines list, so picking a specific routine actually lands on it.
+  // A routine result opens straight into its Routine Detail page (`/routines/<id>`)
+  // rather than the bare routines list, so picking a specific routine actually lands on it.
   const launch = (row: number) => {
     const command = commands[order[row] ?? -1];
     if (command) {
@@ -95,7 +94,7 @@ export function CommandPalette({
           onShortcuts();
           break;
         case "routine":
-          navigate(`/routines?history=${encodeURIComponent(command.routineId ?? "")}`);
+          navigate(`/routines/${encodeURIComponent(command.routineId ?? "")}`);
           break;
         default: {
           const routeKind = routeFor(command.kind);

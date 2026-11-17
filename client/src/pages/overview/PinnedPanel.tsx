@@ -58,7 +58,7 @@ export function PinnedPanel({ routines, runHistory, now, onTrigger }: PinnedPane
                 return (
                   <tr key={r.id}>
                     <td>
-                      <Link className="ov-name-link" to={`/routines?history=${encodeURIComponent(r.id)}`}>
+                      <Link className="ov-name-link" to={`/routines/${encodeURIComponent(r.id)}`}>
                         {r.title}
                       </Link>
                     </td>

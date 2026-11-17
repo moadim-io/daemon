@@ -194,7 +194,7 @@ function ReliabilityRow({ item }: { item: RoutineReliability }) {
   return (
     <tr>
       <td>
-        <Link to={`/routines?history=${encodeURIComponent(item.routineId)}`}>{item.routineTitle}</Link>
+        <Link to={`/routines/${encodeURIComponent(item.routineId)}`}>{item.routineTitle}</Link>
         {isFlaky(item) ? (
           <span className="run-status running" title="Alternating pass/fail over the recent sample">
             {" "}

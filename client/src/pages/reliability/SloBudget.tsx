@@ -101,7 +101,7 @@ function BudgetRow({ budget: b }: { budget: RoutineBudget }) {
   return (
     <tr>
       <td>
-        <Link to={`/routines?history=${encodeURIComponent(b.routineId)}`}>{b.routineTitle}</Link>
+        <Link to={`/routines/${encodeURIComponent(b.routineId)}`}>{b.routineTitle}</Link>
       </td>
       <td>
         <span className={STATUS_CLASS[b.status]}>{STATUS_LABEL[b.status]}</span>

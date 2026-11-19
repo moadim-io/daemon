@@ -15,7 +15,7 @@ impl HomeGuard {
     fn set(home: &std::path::Path) -> Self {
         let lock = HOME_LOCK
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
         // SAFETY: env changes are serialized by HOME_LOCK, held for the guard's lifetime.
         unsafe { std::env::set_var("MOADIM_HOME_OVERRIDE", home) }

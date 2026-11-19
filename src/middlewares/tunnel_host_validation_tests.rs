@@ -1,0 +1,122 @@
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "test helpers and fixtures do not need doc comments"
+)]
+
+use axum::{
+    body::Body,
+    http::{header, Request, StatusCode},
+    middleware,
+    routing::{get, post},
+    Router,
+};
+use tower::ServiceExt;
+
+use super::host_validation;
+
+const TUNNEL_HOST: &str = "fancy-dev-run.trycloudflare.com";
+
+/// App guarded by `example.com` exact-match plus the `trycloudflare.com` tunnel suffix.
+fn app() -> Router {
+    Router::new()
+        .route("/", get(|| async { "ok" }))
+        .route("/", post(|| async { "ok" }))
+        .layer(middleware::from_fn(host_validation(
+            vec!["localhost".to_string()],
+            || vec!["trycloudflare.com".to_string()],
+        )))
+}
+
+/// App with no tunnel suffix configured, as on a machine where the operator opted in to nothing.
+fn app_without_tunnel_suffix() -> Router {
+    Router::new()
+        .route("/", get(|| async { "ok" }))
+        .route("/", post(|| async { "ok" }))
+        .layer(middleware::from_fn(host_validation(
+            vec!["localhost".to_string()],
+            Vec::new,
+        )))
+}
+
+async fn send(app: Router, method: &str, host: &str, origin: Option<&str>) -> StatusCode {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri("/")
+        .header(header::HOST, host);
+    if let Some(origin) = origin {
+        builder = builder.header(header::ORIGIN, origin);
+    }
+    app.oneshot(builder.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+        .status()
+}
+
+#[tokio::test]
+async fn allowed_tunnel_host_passes() {
+    let status = send(app(), "GET", TUNNEL_HOST, None).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn unknown_host_still_403_with_tunnel_suffix_configured() {
+    let status = send(app(), "GET", "attacker.example", None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn bare_tunnel_suffix_host_is_still_403() {
+    let status = send(app(), "GET", "trycloudflare.com", None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn tunnel_host_is_403_when_no_suffix_configured() {
+    let status = send(app_without_tunnel_suffix(), "GET", TUNNEL_HOST, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn mutation_from_tunnel_origin_passes() {
+    let origin = format!("https://{TUNNEL_HOST}");
+    let status = send(app(), "POST", TUNNEL_HOST, Some(&origin)).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn mutation_from_exact_allowed_origin_passes_on_tunnel_host() {
+    let status = send(app(), "POST", TUNNEL_HOST, Some("http://localhost")).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn mutation_from_other_tunnel_origin_is_403() {
+    // A page on a different quick-tunnel subdomain must not drive mutations on this tunnel.
+    let status = send(
+        app(),
+        "POST",
+        TUNNEL_HOST,
+        Some("https://attacker-tunnel.trycloudflare.com"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn mutation_from_foreign_origin_on_tunnel_host_is_403() {
+    let status = send(app(), "DELETE", TUNNEL_HOST, Some("https://evil.example")).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn mutation_from_tunnel_origin_is_403_without_suffix_configured() {
+    let origin = format!("https://{TUNNEL_HOST}");
+    let status = send(
+        app_without_tunnel_suffix(),
+        "POST",
+        TUNNEL_HOST,
+        Some(&origin),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

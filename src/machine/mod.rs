@@ -36,6 +36,10 @@ struct MachineToml {
     /// UI/REST-configured override for the global routine concurrency cap (issue #1155).
     /// `MAX_CONCURRENT_RUNS_ENV` takes precedence over this when set; `None` means no override.
     max_concurrent_runs: Option<usize>,
+    /// Public dev-tunnel domain suffixes (e.g. `trycloudflare.com`) whose subdomains the API
+    /// accepts as `Host`/`Origin`. Re-read on every request, so no daemon restart is needed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tunnel_host_suffixes: Vec<String>,
 }
 
 /// Where a resolved machine identity came from, for `moadim machine show` to report.
@@ -149,6 +153,12 @@ fn read_machine_file() -> Option<String> {
     read_machine_toml().name
 }
 
+/// Public dev-tunnel domain suffixes from `machine.local.toml` (`tunnel_host_suffixes`), or empty
+/// when unset. Read from disk on each call, so an edit applies to the next request.
+pub fn tunnel_host_suffixes() -> Vec<String> {
+    read_machine_toml().tunnel_host_suffixes
+}
+
 /// Process-wide lock serializing the `machine.local.toml` read-modify-write sequence.
 ///
 /// [`set_machine`] and [`set_max_concurrent_runs_override`] each read the whole file, mutate one
@@ -163,3 +173,7 @@ fn machine_toml_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 include!("write_machine_toml.rs");
+
+#[cfg(test)]
+#[path = "tunnel_host_suffixes_tests.rs"]
+mod tunnel_host_suffixes_tests;

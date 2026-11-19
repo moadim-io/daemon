@@ -3,7 +3,7 @@
 //! A quick tunnel gives every run a new random subdomain, so an exact `Host` entry cannot follow
 //! it. The operator names the tunnel's domain suffix once in `machine.local.toml` instead
 //! (`tunnel_host_suffixes`). Only a strict subdomain of a listed suffix passes, so the bare
-//! suffix and look-alikes such as `eviltrycloudflare.com` stay rejected.
+//! suffix and look-alike such as `eviltrycloudflare.com` stay rejected.
 
 /// `true` when `host` (a `Host` header value, optionally `name:port`) is a strict subdomain of one
 /// of `suffixes`. Comparison ignores ASCII case and a leading `.` on each configured suffix.

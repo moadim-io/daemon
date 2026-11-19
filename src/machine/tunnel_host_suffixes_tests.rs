@@ -2,23 +2,33 @@
 
 use super::*;
 
+/// Serializes tests that change `MOADIM_HOME_OVERRIDE`, since the tests run in parallel.
+static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Point `MOADIM_HOME_OVERRIDE` at a temp home for one test, restoring the prior value on drop.
 struct HomeGuard {
     previous: Option<std::ffi::OsString>,
+    _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 impl HomeGuard {
     fn set(home: &std::path::Path) -> Self {
+        let lock = HOME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous = std::env::var_os("MOADIM_HOME_OVERRIDE");
-        // SAFETY: single-threaded test execution.
+        // SAFETY: env changes are serialized by HOME_LOCK, held for the guard's lifetime.
         unsafe { std::env::set_var("MOADIM_HOME_OVERRIDE", home) }
-        Self { previous }
+        Self {
+            previous,
+            _lock: lock,
+        }
     }
 }
 
 impl Drop for HomeGuard {
     fn drop(&mut self) {
-        // SAFETY: single-threaded test execution.
+        // SAFETY: env changes are serialized by HOME_LOCK, still held here.
         unsafe {
             match self.previous.take() {
                 Some(value) => std::env::set_var("MOADIM_HOME_OVERRIDE", value),

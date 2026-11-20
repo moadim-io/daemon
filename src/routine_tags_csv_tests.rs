@@ -102,9 +102,7 @@ fn seed_writes_missing_sidecar_from_legacy_tags() {
         "title = \"Legacy\"\nagent = \"claude\"\ntags = [\"x\"]\n",
     )
     .unwrap();
-
     seed_tags_csv_from_legacy_toml(&dir);
-
     assert_eq!(
         std::fs::read_to_string(dir.join("tags.csv")).unwrap(),
         "x\n"
@@ -121,9 +119,7 @@ fn seed_preserves_existing_sidecar() {
         "title = \"Legacy\"\nagent = \"claude\"\ntags = [\"x\"]\n",
     )
     .unwrap();
-
     seed_tags_csv_from_legacy_toml(&dir);
-
     assert_eq!(
         std::fs::read_to_string(dir.join("tags.csv")).unwrap(),
         "keep\n"
@@ -141,7 +137,6 @@ fn seed_skips_absent_or_empty_legacy_tags() {
     .unwrap();
     seed_tags_csv_from_legacy_toml(&dir);
     assert!(!dir.join("tags.csv").exists());
-
     std::fs::write(
         dir.join("routine.toml"),
         "title = \"Legacy\"\nagent = \"claude\"\n",
@@ -173,9 +168,7 @@ fn seed_logs_write_failure_and_writes_nothing() {
     .unwrap();
     let original_perms = std::fs::metadata(&dir).unwrap().permissions();
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-
     seed_tags_csv_from_legacy_toml(&dir);
-
     std::fs::set_permissions(&dir, original_perms).unwrap();
     assert!(!dir.join("tags.csv").exists());
     let _ = std::fs::remove_dir_all(dir);
@@ -186,6 +179,14 @@ fn resolve_prefers_tags_csv_over_legacy_on_mismatch() {
     assert_eq!(
         resolve_tags("r", Some(strings(&["b"])), strings(&["a"])),
         strings(&["b"])
+    );
+}
+
+#[test]
+fn resolve_does_not_warn_for_padded_legacy_tags() {
+    assert_eq!(
+        resolve_tags("r", Some(strings(&["a"])), strings(&[" a ", ""])),
+        strings(&["a"])
     );
 }
 

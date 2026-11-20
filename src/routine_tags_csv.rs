@@ -55,7 +55,13 @@ pub(crate) fn resolve_tags(
 ) -> Vec<String> {
     match csv {
         Some(csv) => {
-            if !legacy.is_empty() && csv != legacy {
+            let normalised: Vec<String> = legacy
+                .iter()
+                .map(|tag| tag.trim())
+                .filter(|tag| !tag.is_empty())
+                .map(ToString::to_string)
+                .collect();
+            if !normalised.is_empty() && csv != normalised {
                 log::warn!(
                     "routine {dir_name}: tags.csv {csv:?} differs from routine.toml tags {legacy:?}; using tags.csv"
                 );

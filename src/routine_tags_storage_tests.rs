@@ -86,6 +86,26 @@ fn tags_round_trip_through_tags_csv_sidecar() {
 }
 
 #[test]
+fn single_tag_is_written_to_sidecar_and_absent_from_routine_toml() {
+    with_override_home(|| {
+        let title = "Tags Csv Single";
+        let slug = slugify(title);
+        write_routine(&make_routine("tags-csv-single", title, &["a"])).unwrap();
+
+        let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
+        assert!(
+            !toml_text.lines().any(|line| line.trim_start().starts_with("tags")),
+            "routine.toml must have no tags key: {toml_text}"
+        );
+        assert_eq!(
+            load_routine_from_dir(&slug).unwrap().tags,
+            vec!["a".to_string()]
+        );
+        remove_routine_dir(&slug).unwrap();
+    });
+}
+
+#[test]
 fn empty_tags_write_empty_sidecar_and_ignore_legacy_toml_key() {
     with_override_home(|| {
         let title = "Tags Csv Empty";

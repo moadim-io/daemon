@@ -792,8 +792,8 @@ tunnel_host_suffixes = ["dev.example.com"]
 - Use a named tunnel on a domain you control. This is the recommended setup.
 - `trycloudflare.com` (Cloudflare Quick Tunnel) is shared by all Quick Tunnel users, so any Quick
   Tunnel can reach the daemon's `Host` check. Use it only as a short-lived dev option.
-- A suffix needs two or more labels. A `*.` prefix, a trailing dot, or a single label such as `com`
-  is ignored.
+- A suffix needs two or more labels. An entry with a `*.` prefix, a trailing dot, or a single label
+  such as `com` is dropped.
 - A `Host` that is a strict subdomain of a listed suffix is accepted, and the file is re-read on
   every request, so no daemon restart is needed. The bare suffix, lookalike hosts such as
   `eviltrycloudflare.com`, and a `Host` with a trailing dot (`a.dev.example.com.`) stay rejected.

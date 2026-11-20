@@ -57,3 +57,10 @@ fn trailing_dot_host_does_not_match() {
     assert!(!is_tunnel_host("abc.trycloudflare.com.:443", &suffixes()));
     assert!(!is_tunnel_host("trycloudflare.com.", &suffixes()));
 }
+
+#[test]
+fn empty_label_before_suffix_does_not_match() {
+    assert!(!is_tunnel_host("..abc.trycloudflare.com", &suffixes()));
+    assert!(!is_tunnel_host("a..trycloudflare.com", &suffixes()));
+    assert!(!is_tunnel_host(".abc.trycloudflare.com", &suffixes()));
+}

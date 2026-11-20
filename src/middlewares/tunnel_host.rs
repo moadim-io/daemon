@@ -23,7 +23,7 @@ pub(crate) fn is_tunnel_host(host: &str, suffixes: &[String]) -> bool {
         }
         name.strip_suffix(suffix.as_str())
             .and_then(|rest| rest.strip_suffix('.'))
-            .is_some_and(|label| !label.is_empty())
+            .is_some_and(|label| !label.split('.').any(str::is_empty))
     })
 }
 

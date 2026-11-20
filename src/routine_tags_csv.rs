@@ -19,14 +19,24 @@ struct LegacyRoutineTags {
 /// legacy `routine.toml` key. An empty file yields `Some(vec![])`. Every field is trimmed and blank
 /// fields are dropped.
 pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let bytes = std::fs::read(path).ok()?;
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
-        .from_reader(text.as_bytes());
+        .from_reader(bytes.as_slice());
     let mut tags = Vec::new();
     for record in reader.records() {
-        for field in &record.ok()? {
+        let record = match record {
+            Ok(record) => record,
+            Err(err) => {
+                log::warn!(
+                    "routine_tags_csv: ignoring malformed tags.csv {}: {err}",
+                    path.display()
+                );
+                return None;
+            }
+        };
+        for field in &record {
             let tag = field.trim();
             if !tag.is_empty() {
                 tags.push(tag.to_string());

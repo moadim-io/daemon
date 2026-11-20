@@ -115,3 +115,23 @@ async fn valid_suffixes_are_kept_next_to_unsafe_ones() {
         vec!["trycloudflare.com".to_string(), ".example.dev".to_string()]
     );
 }
+
+#[tokio::test]
+async fn malformed_toml_yields_no_suffixes() {
+    let home = temp_home("malformed");
+    let _home = HomeGuard::set(&home);
+    let config = machine_config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "tunnel_host_suffixes = [\"trycloudflare.com\"\n").unwrap();
+    assert!(tunnel_host_suffixes().await.is_empty());
+}
+
+#[tokio::test]
+async fn string_instead_of_array_yields_no_suffixes() {
+    let home = temp_home("wrong-type");
+    let _home = HomeGuard::set(&home);
+    let config = machine_config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "tunnel_host_suffixes = \"trycloudflare.com\"\n").unwrap();
+    assert!(tunnel_host_suffixes().await.is_empty());
+}

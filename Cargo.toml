@@ -577,3 +577,9 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject `Option<Option<T>>`. A nested option encodes three states (`None`, `Some(None)`,
+# `Some(Some(v))`) whose meaning is invisible at the type level: readers must guess which `None`
+# means "absent" and which means "explicitly cleared", and a stray `.flatten()` silently merges
+# them. A dedicated enum with named variants states the intent and makes every match exhaustive
+# and self-documenting. The codebase is already clean, so `deny` locks that in.
+option_option = "deny"

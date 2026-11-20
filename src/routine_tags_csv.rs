@@ -19,14 +19,24 @@ struct LegacyRoutineTags {
 /// legacy `routine.toml` key. An empty file yields `Some(vec![])`. Every field is trimmed and blank
 /// fields are dropped.
 pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let bytes = std::fs::read(path).ok()?;
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
-        .from_reader(text.as_bytes());
+        .from_reader(bytes.as_slice());
     let mut tags = Vec::new();
     for record in reader.records() {
-        for field in &record.ok()? {
+        let record = match record {
+            Ok(record) => record,
+            Err(err) => {
+                log::warn!(
+                    "routine_tags_csv: ignoring malformed tags.csv {}: {err}",
+                    path.display()
+                );
+                return None;
+            }
+        };
+        for field in &record {
             let tag = field.trim();
             if !tag.is_empty() {
                 tags.push(tag.to_string());
@@ -36,17 +46,42 @@ pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
     Some(tags)
 }
 
+/// Pick a routine's tags: `tags.csv` wins when present, and the legacy `routine.toml` tags are the
+/// fallback. Warn when both are set and disagree, so a stale file is visible in the logs.
+pub(crate) fn resolve_tags(
+    dir_name: &str,
+    csv: Option<Vec<String>>,
+    legacy: Vec<String>,
+) -> Vec<String> {
+    match csv {
+        Some(csv) => {
+            if !legacy.is_empty() && csv != legacy {
+                log::warn!(
+                    "routine {dir_name}: tags.csv {csv:?} differs from routine.toml tags {legacy:?}; using tags.csv"
+                );
+            }
+            csv
+        }
+        None => legacy,
+    }
+}
+
 /// Format `tags` as the `tags.csv` content: one CSV record holding every tag in order, ending with
-/// `\n`. Tags containing a comma or quote are quoted so they round-trip. No tags yields an empty
-/// string.
+/// `\n`. Each tag is trimmed and blank tags are dropped, matching [`read_routine_tags`]. Tags
+/// containing a comma or quote are quoted so they round-trip. No tags yields an empty string.
 pub(crate) fn format_routine_tags(tags: &[String]) -> String {
-    if tags.is_empty() {
+    let kept: Vec<&str> = tags
+        .iter()
+        .map(|tag| tag.trim())
+        .filter(|tag| !tag.is_empty())
+        .collect();
+    if kept.is_empty() {
         return String::new();
     }
     let mut writer = csv::WriterBuilder::new()
         .terminator(csv::Terminator::Any(b'\n'))
         .from_writer(Vec::new());
-    writer.write_record(tags).ok();
+    writer.write_record(kept).ok();
     writer
         .into_inner()
         .ok()

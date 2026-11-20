@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::paths::routines_dir;
-use crate::routine_tags_csv::read_routine_tags;
+use crate::routine_tags_csv::{read_routine_tags, resolve_tags};
 use crate::routines::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
 
@@ -87,6 +87,11 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         .or(toml.last_manual_trigger_at);
     let last_scheduled_trigger_at = read_scheduled_state(base, dir_name);
     let prompt = read_pure_prompt(base, dir_name, toml.prompt);
+    let tags = resolve_tags(
+        dir_name,
+        read_routine_tags(&base.join(dir_name).join("tags.csv")),
+        toml.tags,
+    );
     Some(Routine {
         id,
         schedule,
@@ -115,7 +120,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         max_runtime_secs: toml.max_runtime_secs,
         failure_threshold: toml.failure_threshold,
         notifications: toml.notifications,
-        tags: read_routine_tags(&base.join(dir_name).join("tags.csv")).unwrap_or(toml.tags),
+        tags,
         env: toml.env,
         timezone: toml.timezone,
     })

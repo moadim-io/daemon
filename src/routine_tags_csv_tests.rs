@@ -4,7 +4,7 @@
 )]
 
 use crate::routine_tags_csv::{
-    format_routine_tags, read_routine_tags, seed_tags_csv_from_legacy_toml,
+    format_routine_tags, read_routine_tags, resolve_tags, seed_tags_csv_from_legacy_toml,
 };
 
 fn scratch_dir(tag: &str) -> std::path::PathBuf {
@@ -45,6 +45,14 @@ fn read_trims_fields_and_drops_blank_ones() {
 }
 
 #[test]
+fn read_returns_none_for_malformed_record() {
+    let dir = scratch_dir("malformed");
+    std::fs::write(dir.join("tags.csv"), b"\xff\n").unwrap();
+    assert_eq!(read_routine_tags(&dir.join("tags.csv")), None);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn read_keeps_quoted_comma_inside_one_tag() {
     let dir = scratch_dir("quoted");
     std::fs::write(dir.join("tags.csv"), "nightly,\"a,b\"\n").unwrap();
@@ -74,6 +82,16 @@ fn format_quotes_commas_and_quotes() {
 #[test]
 fn format_empty_list_is_empty_string() {
     assert_eq!(format_routine_tags(&[]), "");
+}
+
+#[test]
+fn format_trims_tags_and_drops_blank_ones() {
+    assert_eq!(format_routine_tags(&strings(&[" a ", " "])), "a\n");
+}
+
+#[test]
+fn format_blank_only_list_is_empty_string() {
+    assert_eq!(format_routine_tags(&strings(&["  ", ""])), "");
 }
 
 #[test]
@@ -160,5 +178,22 @@ fn seed_logs_write_failure_and_writes_nothing() {
 
     std::fs::set_permissions(&dir, original_perms).unwrap();
     assert!(!dir.join("tags.csv").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn resolve_prefers_tags_csv_over_legacy_on_mismatch() {
+    assert_eq!(
+        resolve_tags("r", Some(strings(&["b"])), strings(&["a"])),
+        strings(&["b"])
+    );
+}
+
+#[test]
+fn resolve_uses_tags_csv_when_legacy_key_is_absent() {
+    let dir = scratch_dir("resolve-no-legacy");
+    std::fs::write(dir.join("tags.csv"), "a\n").unwrap();
+    let csv = read_routine_tags(&dir.join("tags.csv"));
+    assert_eq!(resolve_tags("r", csv, Vec::new()), strings(&["a"]));
     let _ = std::fs::remove_dir_all(dir);
 }

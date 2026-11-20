@@ -100,3 +100,21 @@ mod persist_existing_routine_tests;
 #[cfg(test)]
 #[path = "routine_tags_storage_tests.rs"]
 mod routine_tags_storage_tests;
+
+/// Write a routine's `tags.csv` at `path`, atomically.
+///
+/// Leaves an existing but malformed `tags.csv` untouched and logs a warning, so a corrupt sidecar
+/// is never silently replaced with an empty list.
+pub(crate) fn persist_routine_tags(
+    path: &std::path::Path,
+    tags: &[String],
+) -> std::io::Result<()> {
+    if path.exists() && crate::routine_tags_csv::read_routine_tags(path).is_none() {
+        log::warn!(
+            "routine_tags_csv: leaving malformed tags.csv {} unchanged",
+            path.display()
+        );
+        return Ok(());
+    }
+    atomic_write(path, crate::routine_tags_csv::format_routine_tags(tags).as_bytes())
+}

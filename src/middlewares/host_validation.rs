@@ -156,3 +156,7 @@ mod host_validation_tests;
 #[cfg(test)]
 #[path = "tunnel_host_validation_tests.rs"]
 mod tunnel_host_validation_tests;
+
+#[cfg(test)]
+#[path = "tunnel_host_reload_tests.rs"]
+mod tunnel_host_reload_tests;

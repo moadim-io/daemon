@@ -149,3 +149,37 @@ async fn trailing_dot_tunnel_host_is_403() {
     let status = send(app(), "GET", &host, None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn lookalike_and_attacker_suffix_hosts_are_403() {
+    for host in [
+        "eviltrycloudflare.com",
+        "trycloudflare.com.attacker.example",
+        "fancy.trycloudflare.com.attacker.example",
+    ] {
+        let status = send(app(), "GET", host, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "host {host}");
+    }
+}
+
+#[tokio::test]
+async fn mutation_origin_differing_only_in_case_passes() {
+    let origin = "https://FANCY-DEV-RUN.TryCloudflare.com";
+    let status = send(app(), "POST", TUNNEL_HOST, Some(origin)).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn mutation_origin_with_different_port_is_403() {
+    let origin = format!("https://{TUNNEL_HOST}:8443");
+    let status = send(app(), "POST", TUNNEL_HOST, Some(&origin)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn mutation_origin_without_port_when_host_has_port_is_403() {
+    let host = format!("{TUNNEL_HOST}:8443");
+    let origin = format!("https://{TUNNEL_HOST}");
+    let status = send(app(), "POST", &host, Some(&origin)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

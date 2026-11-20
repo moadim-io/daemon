@@ -2,4 +2,4 @@
 "moadim": minor
 ---
 
-feat(routines): store routine tags in a tracked tags.csv sidecar instead of routine.toml
+feat(routines): stop writing routine tags to routine.toml; tags.csv is now the only tags store

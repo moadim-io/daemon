@@ -77,7 +77,7 @@ fn export_to_file_includes_tracked_and_excludes_local_files() {
             ]
         );
         assert_eq!(
-            bundle.files.get("routines/daily/routine.toml").unwrap(),
+            &bundle.files["routines/daily/routine.toml"],
             "title = 'Daily'\n"
         );
     });

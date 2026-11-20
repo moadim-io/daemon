@@ -7,6 +7,7 @@ use axum::{
     body::Body,
     http::{header::CONTENT_TYPE, Request, StatusCode},
 };
+use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::routes::http::build_app;
@@ -43,7 +44,7 @@ impl Drop for TempHome {
 async fn router_flag_create_rejects_bad_scope() {
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
-    let resp = build_app(routines.clone())
+    let resp = build_app(Arc::clone(&routines))
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -64,7 +65,7 @@ async fn router_flag_create_rejects_bad_scope() {
         .unwrap()
         .to_string();
 
-    let resp = build_app(routines.clone())
+    let resp = build_app(Arc::clone(&routines))
         .oneshot(
             Request::builder()
                 .method("POST")

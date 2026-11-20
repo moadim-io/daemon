@@ -4,7 +4,7 @@ async fn lifecycle_handles_initialization_and_start_failures() {
     let (_sender, receiver) = mpsc::unbounded_channel();
     run::<FakeScheduler>(
         Err(anyhow::anyhow!("initialization failed")),
-        store.clone(),
+        Arc::clone(&store),
         receiver,
     )
     .await;

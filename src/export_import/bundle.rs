@@ -49,7 +49,7 @@ fn is_tracked_routine_file(middle: &[&str], file: &str) -> bool {
     match file {
         // Tracked routine metadata lives directly in a routine directory, so at least one
         // intermediate directory (the routine's folder) must be present.
-        "routine.toml" | "schedule.cron" | "disabled.json" => !middle.is_empty(),
+        "routine.toml" | "schedule.cron" | "disabled.json" | "tags.csv" => !middle.is_empty(),
         // The pure prompt lives in the routine directory's `prompts/` subfolder.
         "prompt.pure.md" => middle.len() >= 2 && middle.last() == Some(&"prompts"),
         _ => false,

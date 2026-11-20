@@ -85,6 +85,16 @@ fn format_empty_list_is_empty_string() {
 }
 
 #[test]
+fn format_trims_tags_and_drops_blank_ones() {
+    assert_eq!(format_routine_tags(&strings(&[" a ", " "])), "a\n");
+}
+
+#[test]
+fn format_blank_only_list_is_empty_string() {
+    assert_eq!(format_routine_tags(&strings(&["  ", ""])), "");
+}
+
+#[test]
 fn seed_writes_missing_sidecar_from_legacy_tags() {
     let dir = scratch_dir("seed");
     std::fs::write(

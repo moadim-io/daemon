@@ -47,16 +47,21 @@ pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
 }
 
 /// Format `tags` as the `tags.csv` content: one CSV record holding every tag in order, ending with
-/// `\n`. Tags containing a comma or quote are quoted so they round-trip. No tags yields an empty
-/// string.
+/// `\n`. Each tag is trimmed and blank tags are dropped, matching [`read_routine_tags`]. Tags
+/// containing a comma or quote are quoted so they round-trip. No tags yields an empty string.
 pub(crate) fn format_routine_tags(tags: &[String]) -> String {
-    if tags.is_empty() {
+    let kept: Vec<&str> = tags
+        .iter()
+        .map(|tag| tag.trim())
+        .filter(|tag| !tag.is_empty())
+        .collect();
+    if kept.is_empty() {
         return String::new();
     }
     let mut writer = csv::WriterBuilder::new()
         .terminator(csv::Terminator::Any(b'\n'))
         .from_writer(Vec::new());
-    writer.write_record(tags).ok();
+    writer.write_record(kept).ok();
     writer
         .into_inner()
         .ok()

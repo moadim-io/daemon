@@ -23,7 +23,7 @@ fn app() -> Router {
         .route("/", post(|| async { "ok" }))
         .layer(middleware::from_fn(host_validation(
             vec!["localhost".to_string()],
-            || vec!["trycloudflare.com".to_string()],
+            || async { vec!["trycloudflare.com".to_string()] },
         )))
 }
 
@@ -34,7 +34,7 @@ fn app_without_tunnel_suffix() -> Router {
         .route("/", post(|| async { "ok" }))
         .layer(middleware::from_fn(host_validation(
             vec!["localhost".to_string()],
-            Vec::new,
+            || async { Vec::new() },
         )))
 }
 

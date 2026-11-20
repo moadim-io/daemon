@@ -141,9 +141,13 @@ fn hostname() -> String {
 /// Read the full parsed contents of `machine.local.toml`, or the all-`None` default when the file
 /// is absent or unparsable.
 fn read_machine_toml() -> MachineToml {
-    std::fs::read_to_string(machine_config_path())
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
+    parse_machine_toml(std::fs::read_to_string(machine_config_path()).ok())
+}
+
+/// Parse the text of `machine.local.toml`, or the all-`None` default when the text is absent or
+/// unparsable. Shared by the blocking [`read_machine_toml`] and the async [`tunnel_host_suffixes`].
+fn parse_machine_toml(text: Option<String>) -> MachineToml {
+    text.and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default()
 }
 
@@ -154,9 +158,12 @@ fn read_machine_file() -> Option<String> {
 }
 
 /// Public dev-tunnel domain suffixes from `machine.local.toml` (`tunnel_host_suffixes`), or empty
-/// when unset. Read from disk on each call, so an edit applies to the next request.
-pub fn tunnel_host_suffixes() -> Vec<String> {
-    read_machine_toml().tunnel_host_suffixes
+/// when the file is absent, unparsable, or the key has the wrong type. Read from disk on each call
+/// with a non-blocking read, so an edit applies to the next request and the async middleware never
+/// blocks its executor thread.
+pub async fn tunnel_host_suffixes() -> Vec<String> {
+    let text = tokio::fs::read_to_string(machine_config_path()).await.ok();
+    parse_machine_toml(text).tunnel_host_suffixes
 }
 
 /// Process-wide lock serializing the `machine.local.toml` read-modify-write sequence.

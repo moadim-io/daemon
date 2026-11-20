@@ -44,31 +44,34 @@ fn temp_home(tag: &str) -> std::path::PathBuf {
     dir
 }
 
-#[test]
-fn tunnel_host_suffixes_absent_is_empty() {
+#[tokio::test]
+async fn tunnel_host_suffixes_absent_is_empty() {
     let home = temp_home("absent");
     let _home = HomeGuard::set(&home);
-    assert!(tunnel_host_suffixes().is_empty());
+    assert!(tunnel_host_suffixes().await.is_empty());
 }
 
-#[test]
-fn tunnel_host_suffixes_read_from_file_each_call() {
+#[tokio::test]
+async fn tunnel_host_suffixes_read_from_file_each_call() {
     let home = temp_home("read");
     let _home = HomeGuard::set(&home);
     let config = machine_config_path();
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     std::fs::write(&config, "tunnel_host_suffixes = [\"trycloudflare.com\"]\n").unwrap();
     assert_eq!(
-        tunnel_host_suffixes(),
+        tunnel_host_suffixes().await,
         vec!["trycloudflare.com".to_string()]
     );
 
     std::fs::write(&config, "tunnel_host_suffixes = [\"example.dev\"]\n").unwrap();
-    assert_eq!(tunnel_host_suffixes(), vec!["example.dev".to_string()]);
+    assert_eq!(
+        tunnel_host_suffixes().await,
+        vec!["example.dev".to_string()]
+    );
 }
 
-#[test]
-fn set_machine_preserves_tunnel_host_suffixes() {
+#[tokio::test]
+async fn set_machine_preserves_tunnel_host_suffixes() {
     let home = temp_home("preserve");
     let _home = HomeGuard::set(&home);
     let config = machine_config_path();
@@ -76,7 +79,7 @@ fn set_machine_preserves_tunnel_host_suffixes() {
     std::fs::write(&config, "tunnel_host_suffixes = [\"trycloudflare.com\"]\n").unwrap();
     set_machine("box-1").unwrap();
     assert_eq!(
-        tunnel_host_suffixes(),
+        tunnel_host_suffixes().await,
         vec!["trycloudflare.com".to_string()]
     );
     assert_eq!(read_machine_file().as_deref(), Some("box-1"));

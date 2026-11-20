@@ -20,7 +20,7 @@ fn app() -> Router {
         .route("/", post(|| async { "ok" }))
         .layer(middleware::from_fn(host_validation(
             vec!["example.com".to_string(), "example.com:5784".to_string()],
-            Vec::new,
+            || async { Vec::new() },
         )))
 }
 

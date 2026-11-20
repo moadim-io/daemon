@@ -78,18 +78,20 @@ type ValidationFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
 /// legitimate client ever sends in these headers, so a present-but-unparseable value is treated
 /// as suspicious rather than being conflated with the benign "no header at all" case above.
 ///
-/// `tunnel_suffixes` is called per request (only when a `Host` misses the exact list), so a change
-/// to the operator's `tunnel_host_suffixes` takes effect without a restart. A `Host` is trusted
-/// when it is an exact `allowed` entry or a strict subdomain of a configured tunnel suffix. An
-/// `Origin` on a state-changing request is trusted when it is an exact `allowed` entry or equals
-/// the `Host` that already passed above. That rule lets a dashboard on a tunnel host send its own
-/// mutations, while another tunnel subdomain's `Origin` still fails.
-pub(crate) fn host_validation<S>(
+/// `tunnel_suffixes` is awaited per request, and only when a `Host` misses the exact list, so a
+/// change to the operator's `tunnel_host_suffixes` takes effect without a restart and the read
+/// never blocks the executor. A `Host` is trusted when it is an exact `allowed` entry or a strict
+/// subdomain of a configured tunnel suffix. An `Origin` on a state-changing request is trusted when
+/// it is an exact `allowed` entry or equals the `Host` that already passed above. That rule lets a
+/// dashboard on a tunnel host send its own mutations, while another tunnel subdomain's `Origin`
+/// still fails.
+pub(crate) fn host_validation<S, F>(
     allowed: Vec<String>,
     tunnel_suffixes: S,
 ) -> impl Fn(Request, Next) -> ValidationFuture + Clone + Send + Sync + 'static
 where
-    S: Fn() -> Vec<String> + Clone + Send + Sync + 'static,
+    S: Fn() -> F + Clone + Send + Sync + 'static,
+    F: Future<Output = Vec<String>> + Send + 'static,
 {
     move |req: Request, next: Next| {
         let allowed = allowed.clone();
@@ -105,7 +107,7 @@ where
                     }
                     Ok(host) => {
                         let trusted = is_exact_match(host, &allowed)
-                            || is_tunnel_host(host, &tunnel_suffixes());
+                            || is_tunnel_host(host, &tunnel_suffixes().await);
                         if !trusted {
                             return AppError::Forbidden(format!("host '{host}' is not allowed"))
                                 .into_response();

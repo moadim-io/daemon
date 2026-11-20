@@ -782,20 +782,23 @@ the daemon behind a reverse proxy on another hostname, add it to the allowlist w
 MOADIM_ALLOWED_HOSTS=moadim.example.internal moadim
 ```
 
-For a public dev tunnel such as a Cloudflare Quick Tunnel (`*.trycloudflare.com`), whose hostname
-changes on every run, name the tunnel's domain suffix once in the gitignored
-`~/.config/moadim/machine.local.toml` instead of listing each hostname:
+For a public dev tunnel whose hostname changes on every run, name the tunnel's domain suffix once in
+the gitignored `~/.config/moadim/machine.local.toml` instead of listing each hostname:
 
 ```toml
-tunnel_host_suffixes = ["trycloudflare.com"]
+tunnel_host_suffixes = ["dev.example.com"]
 ```
 
-A `Host` that is a strict subdomain of a listed suffix is accepted, and the file is re-read on
-every request, so no daemon restart is needed. The bare suffix and look-alike such as
-`eviltrycloudflare.com` stay rejected. A state-changing request from a tunnel page is accepted only
-when its `Origin` equals that same tunnel host, so a page on another tunnel subdomain cannot drive
-mutations. List only a domain you control or fully trust: every subdomain of it passes the
-`Host` check.
+- Use a named tunnel on a domain you control. This is the recommended setup.
+- `trycloudflare.com` (Cloudflare Quick Tunnel) is shared by all Quick Tunnel users, so any Quick
+  Tunnel can reach the daemon's `Host` check. Use it only as a short-lived dev option.
+- A suffix needs two or more labels. A `*.` prefix, a trailing dot, or a single label such as `com`
+  is ignored.
+- A `Host` that is a strict subdomain of a listed suffix is accepted, and the file is re-read on
+  every request, so no daemon restart is needed. The bare suffix, look-alikes such as
+  `eviltrycloudflare.com`, and a `Host` with a trailing dot (`a.dev.example.com.`) stay rejected.
+- A state-changing request from a tunnel page is accepted only when its `Origin` equals that same
+  tunnel host, so a page on another tunnel subdomain cannot drive mutations.
 
 ### Log format
 

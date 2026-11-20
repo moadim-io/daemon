@@ -87,6 +87,16 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         .or(toml.last_manual_trigger_at);
     let last_scheduled_trigger_at = read_scheduled_state(base, dir_name);
     let prompt = read_pure_prompt(base, dir_name, toml.prompt);
+    // `tags.csv` wins when present. Warn when it disagrees with the legacy routine.toml tags.
+    let csv_tags = read_routine_tags(&base.join(dir_name).join("tags.csv"));
+    if let Some(csv) = &csv_tags {
+        if *csv != toml.tags {
+            log::warn!(
+                "routine {dir_name}: tags.csv {csv:?} differs from routine.toml tags {:?}; using tags.csv",
+                toml.tags
+            );
+        }
+    }
     Some(Routine {
         id,
         schedule,
@@ -115,7 +125,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         max_runtime_secs: toml.max_runtime_secs,
         failure_threshold: toml.failure_threshold,
         notifications: toml.notifications,
-        tags: read_routine_tags(&base.join(dir_name).join("tags.csv")).unwrap_or(toml.tags),
+        tags: csv_tags.unwrap_or(toml.tags),
         env: toml.env,
         timezone: toml.timezone,
     })

@@ -6,13 +6,13 @@ use super::*;
 static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Point `MOADIM_HOME_OVERRIDE` at a temp home for one test, restoring the prior value on drop.
-struct HomeGuard {
+pub(crate) struct HomeGuard {
     previous: Option<std::ffi::OsString>,
     _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 impl HomeGuard {
-    fn set(home: &std::path::Path) -> Self {
+    pub(crate) fn set(home: &std::path::Path) -> Self {
         let lock = HOME_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -38,7 +38,7 @@ impl Drop for HomeGuard {
     }
 }
 
-fn temp_home(tag: &str) -> std::path::PathBuf {
+pub(crate) fn temp_home(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("moadim-tunnel-{tag}-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("create temp home");
     dir
@@ -83,4 +83,35 @@ async fn set_machine_preserves_tunnel_host_suffixes() {
         vec!["trycloudflare.com".to_string()]
     );
     assert_eq!(read_machine_file().as_deref(), Some("box-1"));
+}
+
+#[tokio::test]
+async fn unsafe_suffixes_are_dropped_at_load() {
+    let home = temp_home("unsafe");
+    let _home = HomeGuard::set(&home);
+    let config = machine_config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        &config,
+        "tunnel_host_suffixes = [\"com\", \"local\", \"\", \"  \", \"*.trycloudflare.com\", \"trycloudflare.com.\", \" trycloudflare.com\", \"a..b\"]\n",
+    )
+    .unwrap();
+    assert!(tunnel_host_suffixes().await.is_empty());
+}
+
+#[tokio::test]
+async fn valid_suffixes_are_kept_next_to_unsafe_ones() {
+    let home = temp_home("mixed");
+    let _home = HomeGuard::set(&home);
+    let config = machine_config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        &config,
+        "tunnel_host_suffixes = [\"com\", \"trycloudflare.com\", \"*.bad.dev\", \".example.dev\"]\n",
+    )
+    .unwrap();
+    assert_eq!(
+        tunnel_host_suffixes().await,
+        vec!["trycloudflare.com".to_string(), ".example.dev".to_string()]
+    );
 }

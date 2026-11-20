@@ -120,3 +120,25 @@ async fn mutation_from_tunnel_origin_is_403_without_suffix_configured() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+/// App wired to the real `machine.local.toml` loader, as the daemon's `build_app` is.
+fn app_with_file_suffixes() -> Router {
+    Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(host_validation(
+            vec!["localhost".to_string()],
+            crate::machine::tunnel_host_suffixes,
+        )))
+}
+
+#[tokio::test]
+async fn one_label_suffix_in_config_trusts_nothing() {
+    use crate::machine::tunnel_host_suffixes_tests::{temp_home, HomeGuard};
+    let home = temp_home("one-label");
+    let _home = HomeGuard::set(&home);
+    let config = crate::paths::machine_config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "tunnel_host_suffixes = [\"com\"]\n").unwrap();
+    let status = send(app_with_file_suffixes(), "GET", "foo.com", None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

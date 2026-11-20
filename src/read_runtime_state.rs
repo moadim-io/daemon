@@ -137,6 +137,10 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
         env: routine.env.clone(),
         timezone: routine.timezone.clone(),
     };
+    atomic_write(
+        &crate::paths::routine_tags_path(rel_dir),
+        crate::routine_tags_csv::format_routine_tags(&routine.tags).as_bytes(),
+    )?;
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:
@@ -146,10 +150,6 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
     atomic_write(
         &routine_cron_path(rel_dir),
         format!("{}\n", routine.effective_schedules().join("\n")).as_bytes(),
-    )?;
-    atomic_write(
-        &crate::paths::routine_tags_path(rel_dir),
-        crate::routine_tags_csv::format_routine_tags(&routine.tags).as_bytes(),
     )?;
     atomic_write(
         &routine_pure_prompt_path(rel_dir),

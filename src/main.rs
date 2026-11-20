@@ -36,6 +36,11 @@ mod routes;
 mod routine_scheduler;
 /// TOML-backed routine persistence.
 mod routine_storage;
+/// Tracked `tags.csv` sidecar: routine tags as one CSV record, and their legacy seed.
+mod routine_tags_csv;
+#[cfg(test)]
+#[path = "routine_tags_csv_tests.rs"]
+mod routine_tags_csv_tests;
 /// Routine (agent-driven job) data model, service layer, and handlers.
 mod routines;
 /// `moadim install` / `uninstall`: register the daemon as an OS service.

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::paths::routines_dir;
+use crate::routine_tags_csv::read_routine_tags;
 use crate::routines::{Routine, RoutineStore};
 use crate::utils::lock::LockRecover;
 
@@ -114,7 +115,7 @@ fn load_routine_from_base(base: &std::path::Path, dir_name: &str) -> Option<Rout
         max_runtime_secs: toml.max_runtime_secs,
         failure_threshold: toml.failure_threshold,
         notifications: toml.notifications,
-        tags: toml.tags,
+        tags: read_routine_tags(&base.join(dir_name).join("tags.csv")).unwrap_or(toml.tags),
         env: toml.env,
         timezone: toml.timezone,
     })

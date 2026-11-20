@@ -142,3 +142,10 @@ async fn one_label_suffix_in_config_trusts_nothing() {
     let status = send(app_with_file_suffixes(), "GET", "foo.com", None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn trailing_dot_tunnel_host_is_403() {
+    let host = format!("{TUNNEL_HOST}.");
+    let status = send(app(), "GET", &host, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

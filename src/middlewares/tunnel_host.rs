@@ -12,6 +12,10 @@ pub(crate) fn is_tunnel_host(host: &str, suffixes: &[String]) -> bool {
         .split_once(':')
         .map_or(host, |(name, _)| name)
         .to_ascii_lowercase();
+    // A fully qualified Host (`a.trycloudflare.com.`) is not normalized: it fails closed.
+    if name.ends_with('.') {
+        return false;
+    }
     suffixes.iter().any(|suffix| {
         let suffix = suffix.trim().trim_start_matches('.').to_ascii_lowercase();
         if suffix.is_empty() {

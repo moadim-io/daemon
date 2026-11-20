@@ -46,6 +46,26 @@ pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
     Some(tags)
 }
 
+/// Pick a routine's tags: `tags.csv` wins when present, and the legacy `routine.toml` tags are the
+/// fallback. Warn when both are set and disagree, so a stale file is visible in the logs.
+pub(crate) fn resolve_tags(
+    dir_name: &str,
+    csv: Option<Vec<String>>,
+    legacy: Vec<String>,
+) -> Vec<String> {
+    match csv {
+        Some(csv) => {
+            if !legacy.is_empty() && csv != legacy {
+                log::warn!(
+                    "routine {dir_name}: tags.csv {csv:?} differs from routine.toml tags {legacy:?}; using tags.csv"
+                );
+            }
+            csv
+        }
+        None => legacy,
+    }
+}
+
 /// Format `tags` as the `tags.csv` content: one CSV record holding every tag in order, ending with
 /// `\n`. Each tag is trimmed and blank tags are dropped, matching [`read_routine_tags`]. Tags
 /// containing a comma or quote are quoted so they round-trip. No tags yields an empty string.

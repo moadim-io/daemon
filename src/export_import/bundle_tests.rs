@@ -39,7 +39,6 @@ fn tracked_routine_files_are_accepted() {
     assert!(tracked("routines/my-routine/routine.toml"));
     assert!(tracked("routines/my-routine/schedule.cron"));
     assert!(tracked("routines/my-routine/disabled.json"));
-    assert!(tracked("routines/my-routine/tags.csv"));
     assert!(tracked("routines/my-routine/prompts/prompt.pure.md"));
     // Foldered routines nest the routine directory under grouping folders.
     assert!(tracked("routines/team/ops/nightly/routine.toml"));

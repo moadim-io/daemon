@@ -4,7 +4,7 @@
 )]
 
 use crate::routine_tags_csv::{
-    format_routine_tags, read_routine_tags, seed_tags_csv_from_legacy_toml,
+    format_routine_tags, read_routine_tags, resolve_tags, seed_tags_csv_from_legacy_toml,
 };
 
 fn scratch_dir(tag: &str) -> std::path::PathBuf {
@@ -178,5 +178,22 @@ fn seed_logs_write_failure_and_writes_nothing() {
 
     std::fs::set_permissions(&dir, original_perms).unwrap();
     assert!(!dir.join("tags.csv").exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn resolve_prefers_tags_csv_over_legacy_on_mismatch() {
+    assert_eq!(
+        resolve_tags("r", Some(strings(&["b"])), strings(&["a"])),
+        strings(&["b"])
+    );
+}
+
+#[test]
+fn resolve_uses_tags_csv_when_legacy_key_is_absent() {
+    let dir = scratch_dir("resolve-no-legacy");
+    std::fs::write(dir.join("tags.csv"), "a\n").unwrap();
+    let csv = read_routine_tags(&dir.join("tags.csv"));
+    assert_eq!(resolve_tags("r", csv, Vec::new()), strings(&["a"]));
     let _ = std::fs::remove_dir_all(dir);
 }

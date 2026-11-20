@@ -126,22 +126,4 @@ fn tags_round_trip_through_routine_toml() {
 
     remove_routine_dir(&slug).unwrap();
 }
-
-#[test]
-fn load_prefers_tags_csv_over_routine_toml_on_mismatch() {
-    // tags.csv keeps precedence when it disagrees with routine.toml (a warning is logged).
-    with_override_home(|_home| {
-        let title = "Rs Tags Precedence";
-        let slug = slugify(title);
-        let mut routine = make_routine("rs-tags-precedence-id", title);
-        routine.tags = vec!["a".to_string()];
-        write_routine(&routine).unwrap();
-        std::fs::write(crate::paths::routine_dir(&slug).join("tags.csv"), "b\n").unwrap();
-
-        let loaded = load_routine_from_dir(&slug).unwrap();
-        assert_eq!(loaded.tags, vec!["b".to_string()]);
-
-        remove_routine_dir(&slug).unwrap();
-    });
-}
 include!("load_routine_from_dir_applies_defaults_for_absent_optional_fields_tests.rs");

@@ -41,7 +41,11 @@ struct MachineToml {
     max_concurrent_runs: Option<usize>,
     /// Public dev-tunnel domain suffixes (e.g. `trycloudflare.com`) whose subdomains the API
     /// accepts as `Host`/`Origin`. Re-read on every request, so no daemon restart is needed.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "tunnel_suffixes::lenient_suffix_list"
+    )]
     tunnel_host_suffixes: Vec<String>,
 }
 

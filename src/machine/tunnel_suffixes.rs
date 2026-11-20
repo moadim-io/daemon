@@ -3,6 +3,25 @@
 
 use super::parse_machine_toml;
 use crate::paths::machine_config_path;
+use serde::Deserialize;
+
+/// Deserialize `tunnel_host_suffixes` leniently: a wrong-typed value gives an empty list instead of
+/// failing the whole file, so `name` and other keys in `machine.local.toml` survive.
+pub(super) fn lenient_suffix_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = toml::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default())
+}
 
 /// Public dev-tunnel domain suffixes from `machine.local.toml` (`tunnel_host_suffixes`), or empty
 /// when the file is absent, unparsable, or the key has the wrong type. Entries that fail

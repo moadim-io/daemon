@@ -135,3 +135,14 @@ async fn string_instead_of_array_yields_no_suffixes() {
     std::fs::write(&config, "tunnel_host_suffixes = \"trycloudflare.com\"\n").unwrap();
     assert!(tunnel_host_suffixes().await.is_empty());
 }
+
+#[test]
+fn wrong_typed_suffix_key_keeps_other_machine_keys() {
+    let home = temp_home("wrong-type-keeps-name");
+    let _home = HomeGuard::set(&home);
+    let config = machine_config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "name = \"keep-me\"\ntunnel_host_suffixes = 7\n").unwrap();
+    assert_eq!(read_machine_file().as_deref(), Some("keep-me"));
+    assert!(read_machine_toml().tunnel_host_suffixes.is_empty());
+}

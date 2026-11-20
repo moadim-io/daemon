@@ -1,4 +1,3 @@
-
 #[path = "routine_storage_load.rs"]
 mod routine_storage_load;
 use routine_storage_load::load_routine_from_dir;
@@ -16,8 +15,8 @@ pub(crate) use routine_storage_location::{
 #[path = "routine_storage_migrations.rs"]
 mod routine_storage_migrations;
 pub(crate) use routine_storage_migrations::{
-    migrate_compiled_prompt_filename, migrate_prompt_files, migrate_prompts_to_subfolder,
-    migrate_phantom_flags, migrate_routine_dirs, migrate_trigger_logs,
+    migrate_compiled_prompt_filename, migrate_phantom_flags, migrate_prompt_files,
+    migrate_prompts_to_subfolder, migrate_routine_dirs, migrate_trigger_logs,
 };
 #[cfg(test)]
 pub(crate) use routine_storage_migrations::{
@@ -97,3 +96,7 @@ mod routine_storage_disabled_json_tests;
 #[cfg(test)]
 #[path = "persist_existing_routine_tests.rs"]
 mod persist_existing_routine_tests;
+
+#[cfg(test)]
+#[path = "routine_tags_storage_tests.rs"]
+mod routine_tags_storage_tests;

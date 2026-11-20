@@ -107,16 +107,16 @@ fn write_then_load_round_trips() {
 }
 
 #[test]
-fn tags_round_trip_through_routine_toml() {
-    // Tags are persisted to the tracked `routine.toml` and read back on load.
+fn tags_round_trip_through_tags_csv() {
+    // Tags are persisted to the tracked `tags.csv` sidecar and read back on load.
     let title = "Rs Tags Routine";
     let slug = slugify(title);
     let mut routine = make_routine("rs-tags-id", title);
     routine.tags = vec!["triage".to_string(), "nightly".to_string()];
     write_routine(&routine).unwrap();
 
-    let toml_text = std::fs::read_to_string(crate::paths::routine_toml_path(&slug)).unwrap();
-    assert!(toml_text.contains("tags"), "routine.toml should carry tags");
+    let csv_text = std::fs::read_to_string(crate::paths::routine_tags_path(&slug)).unwrap();
+    assert_eq!(csv_text, "triage,nightly\n");
 
     let loaded = load_routine_from_dir(&slug).unwrap();
     assert_eq!(

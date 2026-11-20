@@ -151,6 +151,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │   └── nightly-triage/
 │       ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
 │       ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
+│       ├── tags.csv           # tracked — routine tags, one CSV record
 │       ├── overlap.json       # tracked — explicit overlap policy, default disabled
 │       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
 │       └── prompts/
@@ -211,6 +212,7 @@ git-trackable:
 └── nightly-triage/
     ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
     ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
+    ├── tags.csv           # tracked — routine tags, one CSV record
     ├── overlap.json       # tracked — explicit overlap policy, default disabled
     ├── routine.local.toml # gitignored, optional — secret/local env var overrides
     └── prompts/
@@ -261,7 +263,7 @@ deduplication, and the fleet-wide concurrency cap remain in force.
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `notifications` | table | no       | Optional per-routine failure hooks. When empty, the daemon falls back to `~/.config/moadim/notifications.toml`. |
-| `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
+| `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Stored in the tracked `tags.csv` sidecar as one CSV record (e.g. `nightly,ops`), not in `routine.toml`. Defaults to empty; each entry is trimmed and must be non-blank. |
 | `env`          | map    | no       | Environment variables injected into the agent's shell session at launch (see [Environment variables](#environment-variables) below). Defaults to empty. |
 
 ### Power saving
@@ -659,7 +661,7 @@ moadim machine list           # list distinct machine names referenced by any ro
 ```
 
 `moadim export` captures the tracked config only — per-routine `routine.toml`, `schedule.cron`,
-`disabled.json`, and `prompts/prompt.pure.md`, the agent registry's `agents/*.toml`, plus
+`tags.csv`, `disabled.json`, and `prompts/prompt.pure.md`, the agent registry's `agents/*.toml`, plus
 `notifications.toml` and `user_prompt.md`. Gitignored runtime files (`*.local.*` sidecars —
 including secret env overrides — `*.pid`, `*.log`, compiled cron/prompt outputs) are never
 exported. `moadim import` validates the bundle (paths and `routine.toml` syntax) before writing

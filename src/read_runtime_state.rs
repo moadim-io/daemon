@@ -132,7 +132,8 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
         max_runtime_secs: routine.max_runtime_secs,
         failure_threshold: routine.failure_threshold,
         notifications: routine.notifications.clone(),
-        tags: routine.tags.clone(),
+        // Never written; the tags now live in the `tags.csv` sidecar below.
+        tags: Vec::new(),
         env: routine.env.clone(),
         timezone: routine.timezone.clone(),
     };
@@ -145,6 +146,10 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
     atomic_write(
         &routine_cron_path(rel_dir),
         format!("{}\n", routine.effective_schedules().join("\n")).as_bytes(),
+    )?;
+    atomic_write(
+        &crate::paths::routine_tags_path(rel_dir),
+        crate::routine_tags_csv::format_routine_tags(&routine.tags).as_bytes(),
     )?;
     atomic_write(
         &routine_pure_prompt_path(rel_dir),

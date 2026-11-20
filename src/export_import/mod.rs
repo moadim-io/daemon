@@ -1,7 +1,7 @@
 //! Offline `moadim export` / `moadim import`: back up and restore the tracked moadim config.
 //!
 //! `moadim export` snapshots every *tracked* config file — per-routine `routine.toml`,
-//! `schedule.cron`, `disabled.json`, and `prompts/prompt.pure.md`, the agent registry's
+//! `schedule.cron`, `tags.csv`, `disabled.json`, and `prompts/prompt.pure.md`, the agent registry's
 //! `agents/*.toml`, plus the global `notifications.toml` and `user_prompt.md` — into a single
 //! portable JSON bundle (`bundle::Bundle`). Gitignored runtime sidecars (`*.local.*`, `*.pid`,
 //! `*.log`, compiled cron/prompt outputs) are excluded, mirroring the tracked-vs-local split the

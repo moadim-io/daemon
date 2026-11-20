@@ -795,7 +795,7 @@ tunnel_host_suffixes = ["dev.example.com"]
 - A suffix needs two or more labels. A `*.` prefix, a trailing dot, or a single label such as `com`
   is ignored.
 - A `Host` that is a strict subdomain of a listed suffix is accepted, and the file is re-read on
-  every request, so no daemon restart is needed. The bare suffix, look-alikes such as
+  every request, so no daemon restart is needed. The bare suffix, lookalike hosts such as
   `eviltrycloudflare.com`, and a `Host` with a trailing dot (`a.dev.example.com.`) stay rejected.
 - A state-changing request from a tunnel page is accepted only when its `Origin` equals that same
   tunnel host, so a page on another tunnel subdomain cannot drive mutations.

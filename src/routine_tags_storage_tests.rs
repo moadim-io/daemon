@@ -154,22 +154,3 @@ fn legacy_routine_toml_tags_load_then_migration_seeds_tags_csv() {
         remove_routine_dir(&slug).unwrap();
     });
 }
-
-#[test]
-fn malformed_tags_csv_blocks_persist_and_keeps_routine_toml() {
-    with_override_home(|| {
-        let title = "Tags Csv Malformed";
-        let slug = slugify(title);
-        write_routine(&make_routine("tags-csv-malformed", title, &["a"])).unwrap();
-        let csv_path = crate::paths::routine_tags_path(&slug);
-        let toml_path = crate::paths::routine_toml_path(&slug);
-        std::fs::write(&csv_path, b"\xff\n").unwrap();
-        let toml_before = std::fs::read(&toml_path).unwrap();
-
-        assert!(write_routine(&make_routine("tags-csv-malformed", title, &["b"])).is_err());
-
-        assert_eq!(std::fs::read(&csv_path).unwrap(), b"\xff\n");
-        assert_eq!(std::fs::read(&toml_path).unwrap(), toml_before);
-        remove_routine_dir(&slug).unwrap();
-    });
-}

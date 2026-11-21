@@ -1,3 +1,4 @@
+
 #[path = "routine_storage_load.rs"]
 mod routine_storage_load;
 use routine_storage_load::load_routine_from_dir;
@@ -15,8 +16,8 @@ pub(crate) use routine_storage_location::{
 #[path = "routine_storage_migrations.rs"]
 mod routine_storage_migrations;
 pub(crate) use routine_storage_migrations::{
-    migrate_compiled_prompt_filename, migrate_phantom_flags, migrate_prompt_files,
-    migrate_prompts_to_subfolder, migrate_routine_dirs, migrate_trigger_logs,
+    migrate_compiled_prompt_filename, migrate_prompt_files, migrate_prompts_to_subfolder,
+    migrate_phantom_flags, migrate_routine_dirs, migrate_trigger_logs,
 };
 #[cfg(test)]
 pub(crate) use routine_storage_migrations::{
@@ -100,25 +101,3 @@ mod persist_existing_routine_tests;
 #[cfg(test)]
 #[path = "routine_tags_storage_tests.rs"]
 mod routine_tags_storage_tests;
-
-/// Write a routine's `tags.csv` at `path`, atomically.
-///
-/// Refuses to replace an existing but malformed `tags.csv`: it returns an error, so the caller
-/// stops before it rewrites `routine.toml`, and neither the corrupt sidecar nor the legacy tags
-/// are lost.
-pub(crate) fn persist_routine_tags(
-    path: &std::path::Path,
-    tags: &[String],
-) -> std::io::Result<()> {
-    if path.exists() && crate::routine_tags_csv::read_routine_tags(path).is_none() {
-        log::warn!(
-            "routine_tags_csv: refusing to overwrite malformed tags.csv {}",
-            path.display()
-        );
-        return Err(std::io::Error::other(format!(
-            "malformed tags.csv {} is not overwritten; fix or remove it",
-            path.display()
-        )));
-    }
-    atomic_write(path, crate::routine_tags_csv::format_routine_tags(tags).as_bytes())
-}

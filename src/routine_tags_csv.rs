@@ -15,9 +15,10 @@ struct LegacyRoutineTags {
 
 /// Read the tags stored in a `tags.csv` sidecar.
 ///
-/// Returns `None` when the file is absent or cannot be parsed, so the caller can fall back to the
-/// legacy `routine.toml` key. An empty file yields `Some(vec![])`. Every field is trimmed and blank
-/// fields are dropped.
+/// Returns `None` only when the file is absent or cannot be read, so the caller can fall back to
+/// the legacy `routine.toml` key. Content never fails the read: bytes that are not valid UTF-8 are
+/// converted lossily, so a stray byte never drops a routine's tags. An empty file yields
+/// `Some(vec![])`. Every field is trimmed and blank fields are dropped.
 pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
     let bytes = std::fs::read(path).ok()?;
     let mut reader = csv::ReaderBuilder::new()
@@ -25,19 +26,10 @@ pub(crate) fn read_routine_tags(path: &Path) -> Option<Vec<String>> {
         .flexible(true)
         .from_reader(bytes.as_slice());
     let mut tags = Vec::new();
-    for record in reader.records() {
-        let record = match record {
-            Ok(record) => record,
-            Err(err) => {
-                log::warn!(
-                    "routine_tags_csv: ignoring malformed tags.csv {}: {err}",
-                    path.display()
-                );
-                return None;
-            }
-        };
+    for record in reader.byte_records().map_while(Result::ok) {
         for field in &record {
-            let tag = field.trim();
+            let text = String::from_utf8_lossy(field);
+            let tag = text.trim();
             if !tag.is_empty() {
                 tags.push(tag.to_string());
             }
@@ -111,7 +103,9 @@ pub(crate) fn seed_tags_csv_from_legacy_toml(routine_dir: &Path) {
     else {
         return;
     };
-    if let Err(err) = std::fs::write(&csv_path, format_routine_tags(&tags)) {
+    if let Err(err) =
+        crate::utils::atomic::atomic_write(&csv_path, format_routine_tags(&tags).as_bytes())
+    {
         log::warn!(
             "migrate_routine_dirs: failed to seed {} from legacy routine.toml tags: {err}",
             csv_path.display()

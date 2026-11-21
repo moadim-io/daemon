@@ -45,13 +45,13 @@ fn read_trims_fields_and_drops_blank_ones() {
 }
 
 #[test]
-fn read_returns_none_for_malformed_record() {
-    let dir = scratch_dir("malformed");
-    std::fs::write(dir.join("tags.csv"), b"\xff\n").unwrap();
-    assert_eq!(read_routine_tags(&dir.join("tags.csv")), None);
+fn read_keeps_tags_around_invalid_utf8_bytes() {
+    let dir = scratch_dir("invalid-utf8");
+    std::fs::write(dir.join("tags.csv"), b"nightly\n\xff\n").unwrap();
+    let tags = read_routine_tags(&dir.join("tags.csv"));
+    assert_eq!(tags, Some(strings(&["nightly", "\u{fffd}"])));
     let _ = std::fs::remove_dir_all(dir);
 }
-
 #[test]
 fn read_keeps_quoted_comma_inside_one_tag() {
     let dir = scratch_dir("quoted");

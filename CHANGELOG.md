@@ -11,6 +11,20 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.19.0] - 2026-11-21
+
+Bump the npm dependency group across `client/` (9 updates): `cron-parser`, `cronstrue`, `react-hook-form`, `@playwright/test`, `@vitejs/plugin-react`, `eslint`, `jsdom`, `typescript-eslint` and `vite`. No behavior change.
+
+Show a run the max-runtime watchdog killed as `killed`, not `unknown`. The runs API, the Runs page, and `moadim_runs_total` report it, and each run carries a `kill_reason` (`max_runtime`). Existing `unknown` and `failed` values keep their meaning. Runs killed before this change still show `unknown`, because their `exit_code` file holds only the `killed` marker. Rolling back to an older binary hides runs recorded as `killed` in `runs.log`: that binary skips lines whose status it does not know.
+
+feat(routines): read and write routine tags via a tags.csv sidecar
+
+feat(routines): stop writing tags to routine.toml; tags.csv is the single source and export/import carries it
+
+fix(routines): read tags.csv lossily so a non-UTF-8 byte never drops a routine's tags
+
+Accept public dev-tunnel hostnames without a daemon restart. Name a tunnel domain you control once with `tunnel_host_suffixes` in `machine.local.toml`. A suffix needs two or more labels, and entries with a `*.` prefix or a trailing dot are dropped. The `Host` and mutation `Origin` checks still reject any other host. Avoid `trycloudflare.com` for anything but short-lived dev use, since every Quick Tunnel shares it.
+
 ## [3.18.0] - 2026-11-17
 
 feat(client): Routine Detail page at `/routines/:id` — one deep-linkable home per routine with health, KPI tiles (last run, success rate, streak, p50/p95 with slowdown marker, next run, open flags), a duration timeline that opens each run, configuration, upcoming fires, recent runs and Run-now / pin quick actions. Every routine-title link in the dashboard now opens it.
@@ -5215,7 +5229,8 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.18.0...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.19.0...HEAD
+[3.19.0]: https://github.com/moadim-io/daemon/compare/v3.18.0...v3.19.0
 [3.18.0]: https://github.com/moadim-io/daemon/compare/v3.17.0...v3.18.0
 [3.17.0]: https://github.com/moadim-io/daemon/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/moadim-io/daemon/compare/v3.15.0...v3.16.0

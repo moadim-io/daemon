@@ -7,9 +7,7 @@ no-default-features = false
 
 [advisories]
 ignore = [
-    { id = "RUSTSEC-2026-0367", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once a utoipa-swagger-ui release ships juhaku/utoipa#1645 (zip 9, merged 2026-10-17)" },
     { id = "RUSTSEC-2026-0368", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once a utoipa-swagger-ui release ships juhaku/utoipa#1645 (zip 9, merged 2026-10-17)" },
-    { id = "RUSTSEC-2026-0369", reason = "build-time only: utoipa-swagger-ui build.rs never calls ZipArchive::extract and only unpacks the pinned swagger-ui GitHub release; drop once a utoipa-swagger-ui release ships juhaku/utoipa#1645 (zip 9, merged 2026-10-17)" },
     { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained (no CVE); no safe upgrade exists; drop once the codebase migrates off chrono (e.g. to jiff)" },
     { id = "RUSTSEC-2026-0555", reason = "chrono-tz is unmaintained (no CVE); no safe upgrade exists; drop once the codebase migrates off chrono-tz (e.g. to jiff)" },
 ]

@@ -2,7 +2,7 @@ import { abstime } from "../../lib/cronUtils";
 import type { HistogramBucket, RunsHistogram as Histogram } from "./histogramMath";
 
 /** Bottom-to-top stacking order: failures sit on the baseline so they read first. */
-const STACK = ["failed", "success", "running", "unknown"] as const;
+const STACK = ["failed", "killed", "success", "running", "unknown"] as const;
 
 export interface RunsHistogramProps {
   histogram: Histogram;

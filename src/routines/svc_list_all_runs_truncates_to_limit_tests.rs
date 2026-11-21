@@ -49,6 +49,7 @@ fn svc_list_runs_merges_persisted_history_with_live_workbenches() {
             finished_at: 1005,
             status: RunStatus::Success,
             exit_code: Some(0),
+            kill_reason: None,
         },
     );
 

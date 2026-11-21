@@ -172,7 +172,7 @@ function routinePath(location: RoutineSeed["location"]) {
 type RunSeed = {
   routineId: string;
   title: string;
-  status: "running" | "success" | "failed" | "unknown";
+  status: "running" | "success" | "failed" | "killed" | "unknown";
   startedAgo: number;
   duration?: number;
   exitCode?: number;

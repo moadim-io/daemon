@@ -11,7 +11,7 @@ use tower::ServiceExt;
 
 use super::{render, MetricsSnapshot, PROMETHEUS_CONTENT_TYPE};
 use crate::routes::http::build_app;
-use crate::routines::{FleetRunSummary, RunStatus};
+use crate::routines::{FleetRunSummary, KillReason, RunStatus};
 
 /// A minimal [`FleetRunSummary`] fixture; `started_at`/`finished_at`/`status` are the only
 /// fields [`render`] reads, but every field is required to construct one.
@@ -28,8 +28,9 @@ fn run(started_at: u64, finished_at: Option<u64>, status: RunStatus) -> FleetRun
         exit_code: match status {
             RunStatus::Success => Some(0),
             RunStatus::Failed => Some(1),
-            RunStatus::Running | RunStatus::Unknown => None,
+            RunStatus::Running | RunStatus::Killed | RunStatus::Unknown => None,
         },
+        kill_reason: (status == RunStatus::Killed).then_some(KillReason::MaxRuntime),
     }
 }
 
@@ -106,11 +107,13 @@ fn render_runs_total_counts_each_status_independently() {
         run(300, Some(310), RunStatus::Failed),
         run(400, None, RunStatus::Running),
         run(500, Some(510), RunStatus::Unknown),
+        run(600, Some(660), RunStatus::Killed),
     ];
     let text = render(&empty_snapshot(&runs));
     assert!(text.contains(r#"moadim_runs_total{status="success"} 2"#));
     assert!(text.contains(r#"moadim_runs_total{status="failed"} 1"#));
     assert!(text.contains(r#"moadim_runs_total{status="running"} 1"#));
+    assert!(text.contains(r#"moadim_runs_total{status="killed"} 1"#));
     assert!(text.contains(r#"moadim_runs_total{status="unknown"} 1"#));
 }
 

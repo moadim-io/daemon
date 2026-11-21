@@ -1964,6 +1964,11 @@ textarea {
   background: var(--warn);
 }
 
+.duration-bar.killed {
+  background: var(--err);
+  opacity: 0.55;
+}
+
 .duration-bar.unknown {
   background: var(--text-faint);
 }
@@ -3600,6 +3605,7 @@ tr:last-child td {
 
 .runs-hist-seg.success { background: var(--ok); }
 .runs-hist-seg.failed { background: var(--err); }
+.runs-hist-seg.killed { background: var(--err); opacity: 0.55; }
 .runs-hist-seg.running { background: var(--warn); }
 .runs-hist-seg.unknown { background: var(--text-faint); }
 

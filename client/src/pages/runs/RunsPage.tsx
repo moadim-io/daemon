@@ -254,7 +254,7 @@ export function RunsPage() {
                     </span>
                   </td>
                   <td>
-                    <span className={runStatusClass(run.status)} title={killReasonLabel(run.kill_reason) ?? undefined}>
+                    <span className={runStatusClass(run.status)} title={run.status === "killed" ? (killReasonLabel(run.kill_reason) ?? undefined) : undefined}>
                       {runStatusLabel(run.status)}
                     </span>
                   </td>

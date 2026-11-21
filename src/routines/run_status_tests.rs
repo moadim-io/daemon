@@ -23,10 +23,14 @@ fn derive_run_status_killed_when_kill_recorded_with_no_exit_code() {
         status(None, Some(KillReason::MaxRuntime), false),
         RunStatus::Killed
     );
-    // The watchdog kills the session before recording, so liveness must not override the kill.
+}
+
+#[test]
+fn derive_run_status_running_while_killed_session_still_alive() {
+    // The tmux kill is best effort. A session that survives the kill attempt is still running.
     assert_eq!(
         status(None, Some(KillReason::MaxRuntime), true),
-        RunStatus::Killed
+        RunStatus::Running
     );
 }
 

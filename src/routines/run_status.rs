@@ -21,10 +21,10 @@ pub(crate) fn read_kill_reason(workbench_path: &Path) -> Option<KillReason> {
 /// Derive a run's status from its recorded exit code, its kill record, and tmux liveness.
 ///
 /// A recorded exit code wins: `0` is [`RunStatus::Success`], anything else [`RunStatus::Failed`].
-/// A kill record without an exit code is [`RunStatus::Killed`], whether or not the session is still
-/// alive (the watchdog treats it as finished either way). With neither, a live session is
-/// [`RunStatus::Running`] and a gone one is [`RunStatus::Unknown`]. `session_alive` is only
-/// evaluated when it is needed.
+/// A kill record without an exit code is [`RunStatus::Killed`] once the session is gone. While the
+/// session is still alive after a kill attempt (the tmux kill is best effort), the run stays
+/// [`RunStatus::Running`]. With no kill record, a live session is [`RunStatus::Running`] and a gone
+/// one is [`RunStatus::Unknown`]. `session_alive` is only evaluated when it is needed.
 pub(crate) fn derive_run_status(
     exit_code: Option<i32>,
     kill_reason: Option<KillReason>,
@@ -33,8 +33,8 @@ pub(crate) fn derive_run_status(
     match (exit_code, kill_reason) {
         (Some(0), _) => RunStatus::Success,
         (Some(_), _) => RunStatus::Failed,
+        (None, _) if session_alive() => RunStatus::Running,
         (None, Some(_)) => RunStatus::Killed,
-        (None, None) if session_alive() => RunStatus::Running,
         (None, None) => RunStatus::Unknown,
     }
 }

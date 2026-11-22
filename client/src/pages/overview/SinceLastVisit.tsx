@@ -55,7 +55,7 @@ export function SinceLastVisit({ digest, sinceSecs, onMarkSeen }: SinceLastVisit
               {digest.routines.map((r) => (
                 <tr key={r.routineId}>
                   <td>
-                    <Link className="ov-name-link" to={`/routines?history=${encodeURIComponent(r.routineId)}`}>
+                    <Link className="ov-name-link" to={`/routines/${encodeURIComponent(r.routineId)}`}>
                       {r.routineTitle}
                     </Link>
                   </td>

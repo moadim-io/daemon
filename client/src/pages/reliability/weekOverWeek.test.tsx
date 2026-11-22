@@ -134,7 +134,7 @@ describe("WeekOverWeek", () => {
     expect(screen.getByText(/fleet 100% → 50% \(-50pp\) · 1 worse or quiet/)).toBeInTheDocument();
     expect(screen.getByText("4 → 4 · 2 failed")).toBeInTheDocument();
     expect(screen.getByText(/\(\+100%\)/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "A" })).toHaveAttribute("href", "/routines?history=a");
+    expect(screen.getByRole("link", { name: "A" })).toHaveAttribute("href", "/routines/a");
   });
 
   it("stays collapsed when steady, shows no-change deltas and the partial note", () => {

@@ -100,6 +100,7 @@ Each subdirectory here is one routine (a prompt + schedule + agent, run on a cro
 
 - `<id>/routine.toml` — the agent, repositories, machine targeting, and metadata.
 - `<id>/schedule.cron` — the human-authored cron schedule(s).
+- `<id>/tags.csv` — the routine's tags, one CSV record (e.g. `nightly,ops`).
 - `<id>/schedule.compailed.cron` — gitignored cron-union output used for OS crontab sync.
 - `<id>/prompts/prompt.pure.md` — the prompt you wrote.
 - `<id>/prompts/prompt.compiled.local.md` — the composed prompt (repositories preamble +

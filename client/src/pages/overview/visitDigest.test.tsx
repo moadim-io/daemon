@@ -102,7 +102,7 @@ describe("SinceLastVisit", () => {
     expect(screen.getByText(/older runs not loaded/)).toBeTruthy();
     expect(screen.getByText("FAILING")).toBeTruthy();
     expect(screen.getByText("RECOVERED")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "BAD" }).getAttribute("href")).toBe("/routines?history=bad");
+    expect(screen.getByRole("link", { name: "BAD" }).getAttribute("href")).toBe("/routines/bad");
     const runLinks = screen.getAllByRole("link").filter((l) => l.getAttribute("href")?.startsWith("/runs/"));
     expect(runLinks.map((l) => l.getAttribute("href"))).toEqual(["/runs/bad/wb-bad-2500", "/runs/ok/wb-ok-2000"]);
     fireEvent.click(screen.getByRole("button", { name: "Mark as seen" }));

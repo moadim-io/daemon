@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAllRuns, useMaxConcurrentRuns, type FleetRunSummary } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
-import { fmtRunDuration, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
+import { fmtRunDuration, killReasonLabel, runStatusClass, runStatusLabel } from "../../lib/runDisplay";
 import { useNow } from "../../lib/useNow";
 import { RefreshFreshness, refreshMs, useRefreshToken } from "../../components/RefreshControl";
 import {
@@ -54,6 +54,7 @@ const STATUS_OPTIONS: [RunStatusFacet, string][] = [
   ["success", "Success"],
   ["failed", "Failed"],
   ["running", "Running"],
+  ["killed", "Killed"],
   ["unknown", "Unknown"],
 ];
 
@@ -240,7 +241,7 @@ export function RunsPage() {
               {sorted.map((run) => (
                 <tr key={run.workbench}>
                   <td>
-                    <Link to={`/routines?history=${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
+                    <Link to={`/routines/${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
                   </td>
                   <td>
                     <div className="cell-time" title={abstime(run.started_at)}>
@@ -253,7 +254,9 @@ export function RunsPage() {
                     </span>
                   </td>
                   <td>
-                    <span className={runStatusClass(run.status)}>{runStatusLabel(run.status)}</span>
+                    <span className={runStatusClass(run.status)} title={run.status === "killed" ? (killReasonLabel(run.kill_reason) ?? undefined) : undefined}>
+                      {runStatusLabel(run.status)}
+                    </span>
                   </td>
                   <td>{run.exit_code == null ? "—" : run.exit_code}</td>
                   <td>

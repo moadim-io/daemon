@@ -109,8 +109,8 @@ struct RoutineToml {
     /// Failure notification hook config.
     #[serde(default, skip_serializing_if = "FailureNotificationConfig::is_empty")]
     notifications: FailureNotificationConfig,
-    /// Free-form labels for the routine; absent means no tags.
-    #[serde(default)]
+    /// Legacy labels. Now read from `tags.csv` and never written here; absent means no tags.
+    #[serde(default, skip_serializing)]
     tags: Vec<String>,
     /// Non-secret environment variables injected at launch (see [`crate::routines::Routine::env`]).
     /// Absent/empty means none. Tracked and git-committed — never put a secret here; use the

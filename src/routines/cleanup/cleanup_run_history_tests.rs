@@ -9,7 +9,7 @@
 
 use super::*;
 
-fn make_routine(id: &str, title: &str) -> super::super::model::Routine {
+pub(super) fn make_routine(id: &str, title: &str) -> super::super::model::Routine {
     super::super::model::Routine {
         model: None,
         id: id.to_string(),

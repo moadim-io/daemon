@@ -91,7 +91,7 @@ describe("FailureCauses", () => {
     expect(screen.getByText("?")).toBeInTheDocument();
     expect(screen.getByText("×2")).toBeInTheDocument();
     expect(screen.getByText("+1 more")).toBeInTheDocument();
-    expect(screen.getByText("A").closest("a")).toHaveAttribute("href", "/routines?history=a");
+    expect(screen.getByText("A").closest("a")).toHaveAttribute("href", "/routines/a");
     const last = screen.getAllByTitle("Open the newest failed run with this exit code");
     expect(last[0]).toHaveAttribute("href", "/runs/d/wb-5");
   });

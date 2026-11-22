@@ -4,6 +4,7 @@ fn svc_set_power_saving_sets_and_clears_without_touching_enabled() {
     let _home = TempHome::set();
     let store = new_store();
     let routine = make_routine("power-saving-set-id", "Power Saving Set Test ZZZ", 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
     store
         .lock()
         .unwrap()

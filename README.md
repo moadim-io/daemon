@@ -71,19 +71,26 @@ release (from the crate's `Cargo.lock`) instead of re-resolving every dependency
 to the newest semver-compatible version at install time — so a bad or breaking
 transitive bump can't fail an otherwise-unchanged install.
 
-Prefer a prebuilt binary over compiling from source? Each release publishes
-binary archives (with a SHA256 checksum) for macOS (Apple Silicon and Intel)
-and Linux x86_64. Install one with [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall)
-(no Rust toolchain compile required):
+Prefer a prebuilt binary over compiling from source? Releases are meant to
+publish binary archives (with a SHA256 checksum) for macOS (Apple Silicon and
+Intel) and Linux x86_64, for [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall).
+
+> **Status:** current releases have no binary archives yet (the release workflow
+> skipped that job; the fix is in [#1664](https://github.com/moadim-io/daemon/pull/1664)),
+> so `cargo binstall` falls back to a source compile. Use `cargo install --locked moadim`
+> above until a release lists the archives.
 
 ```sh
 cargo binstall moadim
 ```
 
-Node/npm users can install the same prebuilt binaries through npm. The npm
-package is a thin wrapper over per-platform optional binary packages; it does
-not run `cargo install` during installation, and every npm package version is
-kept in lockstep with the Rust crate version:
+Node/npm users will be able to install the same prebuilt binaries through npm.
+The npm package is a thin wrapper over per-platform optional binary packages; it
+does not run `cargo install` during installation, and every npm package version
+is kept in lockstep with the Rust crate version.
+
+> **Status:** `moadim` is not on npm yet (`npm install -g moadim` returns 404).
+> Use `cargo install --locked moadim` until it is published.
 
 ```sh
 npm install -g moadim
@@ -144,6 +151,7 @@ install -Dm644 docs/moadim.1 "$HOME/.local/share/man/man1/moadim.1"
 │   └── nightly-triage/
 │       ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
 │       ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
+│       ├── tags.csv           # tracked — routine tags, one CSV record
 │       ├── overlap.json       # tracked — explicit overlap policy, default disabled
 │       ├── routine.local.toml # gitignored, optional — secret/local env var overrides
 │       └── prompts/
@@ -204,6 +212,7 @@ git-trackable:
 └── nightly-triage/
     ├── routine.toml       # tracked — schedule, agent, repositories, [env], …
     ├── schedule.cron      # tracked — cron-entry mirror, not functional yet
+    ├── tags.csv           # tracked — routine tags, one CSV record
     ├── overlap.json       # tracked — explicit overlap policy, default disabled
     ├── routine.local.toml # gitignored, optional — secret/local env var overrides
     └── prompts/
@@ -254,7 +263,7 @@ deduplication, and the fleet-wide concurrency cap remain in force.
 | `ttl_secs`     | int    | no       | How long a finished run's workbench is retained before auto-cleanup. Caps the cron-derived retention lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `max_runtime_secs` | int | no       | Max wall-clock seconds a single run may execute before the cleanup watchdog force-kills its (hung) tmux session; the workbench is then reaped under the normal TTL rules. Caps the cron-derived runtime (`min(MAX_RUNTIME_SECS, cron interval)`) lower — it can only shorten, never extend it. `None` uses the cron-derived value. |
 | `notifications` | table | no       | Optional per-routine failure hooks. When empty, the daemon falls back to `~/.config/moadim/notifications.toml`. |
-| `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Defaults to empty; each entry is trimmed and must be non-blank. |
+| `tags`         | list   | no       | Free-form labels for grouping/filtering routines (e.g. `"nightly"`). Stored in the tracked `tags.csv` sidecar as one CSV record (e.g. `nightly,ops`), not in `routine.toml`. When `tags.csv` exists, it wins, even when empty; bytes that are not valid UTF-8 load as U+FFFD. Legacy `routine.toml` `tags` are only a fallback when `tags.csv` is missing or unreadable. Defaults to empty; each entry is trimmed and must be non-blank. |
 | `env`          | map    | no       | Environment variables injected into the agent's shell session at launch (see [Environment variables](#environment-variables) below). Defaults to empty. |
 
 ### Power saving
@@ -449,7 +458,7 @@ built-in `claude` agent.
 Each agent is a single TOML file at `~/.config/moadim/agents/<name>.toml`, where
 `<name>` is the registry key a routine's `agent` field references (the filename
 stem, e.g. `claude.toml` → `claude`). On startup the daemon seeds the built-in
-defaults (`claude`, `codex`, `hermes`, `nanoclaw`, `pi`) into this directory **only if the file is
+defaults (`claude`, `codex`, `dsh`, `hermes`, `nanoclaw`, `pi`) into this directory **only if the file is
 absent** — your edits are never overwritten — so you can both tweak a default and
 register a brand-new agent by dropping in another `<name>.toml`.
 
@@ -475,7 +484,7 @@ scope, so it can prepare per-run state before the agent starts:
 - `$WB` — absolute workbench path.
 - `$SESS` — the tmux session name for the run.
 
-Examples — the headless `codex`/`hermes`/`pi` form, and the interactive `claude` form
+Examples — the headless `codex`/`dsh`/`hermes`/`pi` form, and the interactive `claude` form
 (the real default's `setup` step also pre-seeds `~/.claude.json`; see the
 prerequisites above):
 
@@ -496,6 +505,14 @@ args = ["--permission-mode", "auto", "{prompt}"]
 # ~/.config/moadim/agents/pi.toml
 command = "pi"
 args = ["--approve", "-p", "@{prompt_file}"]
+```
+
+```toml
+# ~/.config/moadim/agents/dsh.toml
+# One-shot run of the DeepSeek Harness headless profile; dsh reads AGENTS.md.
+command = "dsh"
+args = ["--profile", "headless", "{prompt}"]
+instructions_file = "AGENTS.md"
 ```
 
 ```toml
@@ -644,7 +661,7 @@ moadim machine list           # list distinct machine names referenced by any ro
 ```
 
 `moadim export` captures the tracked config only — per-routine `routine.toml`, `schedule.cron`,
-`disabled.json`, and `prompts/prompt.pure.md`, the agent registry's `agents/*.toml`, plus
+`tags.csv`, `disabled.json`, and `prompts/prompt.pure.md`, the agent registry's `agents/*.toml`, plus
 `notifications.toml` and `user_prompt.md`. Gitignored runtime files (`*.local.*` sidecars —
 including secret env overrides — `*.pid`, `*.log`, compiled cron/prompt outputs) are never
 exported. `moadim import` validates the bundle (paths and `routine.toml` syntax) before writing
@@ -766,6 +783,24 @@ the daemon behind a reverse proxy on another hostname, add it to the allowlist w
 ```sh
 MOADIM_ALLOWED_HOSTS=moadim.example.internal moadim
 ```
+
+For a public dev tunnel whose hostname changes on every run, name the tunnel's domain suffix once in
+the gitignored `~/.config/moadim/machine.local.toml` instead of listing each hostname:
+
+```toml
+tunnel_host_suffixes = ["dev.example.com"]
+```
+
+- Use a named tunnel on a domain you control. This is the recommended setup.
+- `trycloudflare.com` (Cloudflare Quick Tunnel) is shared by all Quick Tunnel users, so any Quick
+  Tunnel can reach the daemon's `Host` check. Use it only as a short-lived dev option.
+- A suffix needs two or more labels. An entry with a `*.` prefix, a trailing dot, or a single label
+  such as `com` is dropped.
+- A `Host` that is a strict subdomain of a listed suffix is accepted, and the file is re-read on
+  every request, so no daemon restart is needed. The bare suffix, lookalike hosts such as
+  `eviltrycloudflare.com`, and a `Host` with a trailing dot (`a.dev.example.com.`) stay rejected.
+- A state-changing request from a tunnel page is accepted only when its `Origin` equals that same
+  tunnel host, so a page on another tunnel subdomain cannot drive mutations.
 
 ### Log format
 

@@ -67,6 +67,33 @@ fn with_home_restores_a_pre_existing_home_override() {
     });
 }
 
+/// Write a minimal loadable routine dir (`routine.toml` plus `schedule.cron`) at `rel`.
+fn write_dup_dir(rel: &str, id: &str, title: &str) {
+    let dir = crate::paths::routine_dir(rel);
+    std::fs::create_dir_all(&dir).unwrap();
+    let toml = format!("id = \"{id}\"\ntitle = \"{title}\"\nagent = \"claude\"\n");
+    std::fs::write(dir.join("routine.toml"), toml).unwrap();
+    std::fs::write(dir.join("schedule.cron"), "@daily\n").unwrap();
+}
+
+#[test]
+fn walk_routines_keeps_first_sorted_dir_for_duplicate_id() {
+    with_home(&|| {
+        // Create the later dir first, so the result cannot depend on creation order.
+        write_dup_dir("zeta-copy", "dup-walk-id", "Zeta copy");
+        write_dup_dir("alpha-copy", "dup-walk-id", "Alpha copy");
+        let mut routines = HashMap::new();
+        walk_routines(
+            &crate::paths::routines_dir(),
+            &crate::paths::routines_dir(),
+            &mut routines,
+            &|base, rel| super::super::load_routine_from_base(base, rel),
+        );
+        assert_eq!(routines.len(), 1);
+        assert_eq!(routines["dup-walk-id"].title, "Alpha copy");
+    });
+}
+
 #[test]
 fn walk_routines_skips_plain_dirs_without_routine_toml() {
     with_home(&|| {

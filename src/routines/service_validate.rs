@@ -17,10 +17,10 @@ pub(crate) use validate_machines::*;
 /// on-disk slug-collision guard (#188, `ErrorKind::AlreadyExists`) into a 409 the caller can act
 /// on instead of a generic 500.
 pub(super) fn map_write_routine_err(err: &std::io::Error) -> AppError {
-    if err.kind() == std::io::ErrorKind::AlreadyExists {
-        AppError::Conflict(err.to_string())
-    } else {
-        AppError::Internal
+    match err.kind() {
+        std::io::ErrorKind::AlreadyExists => AppError::Conflict(err.to_string()),
+        std::io::ErrorKind::NotFound => AppError::NotFound,
+        _ => AppError::Internal,
     }
 }
 

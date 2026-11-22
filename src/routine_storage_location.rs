@@ -33,9 +33,13 @@ fn read_id(path: &std::path::Path) -> Option<String> {
 }
 
 /// Recursively find the directory whose `routine.toml` contains `id`.
+///
+/// Entries are visited in sorted order, the same order the loader uses, so the first match is the
+/// copy the loader keeps when several routine dirs share an id.
 fn find_rel_dir_by_id(base: &std::path::Path, dir: &std::path::Path, id: &str) -> Option<String> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
+    let mut entries: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().collect();
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
         }

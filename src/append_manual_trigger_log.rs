@@ -87,7 +87,7 @@ pub fn remove_routine_dir(slug: &str) -> std::io::Result<()> {
 pub fn repersist_routines(store: &RoutineStore) {
     let routines: Vec<Routine> = store.lock_recover().values().cloned().collect();
     for routine in &routines {
-        if let Err(err) = write_routine(routine) {
+        if let Err(err) = persist_existing_routine(routine) {
             log::warn!(
                 "repersist_routines: failed to write routine {:?}: {err}",
                 routine.id

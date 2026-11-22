@@ -4,7 +4,9 @@ use crate::utils::lock::LockRecover;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::routine_storage::{remove_routine_dir, routine_rel_dir, routine_slug, write_routine};
+use crate::routine_storage::{
+    persist_existing_routine, remove_routine_dir, routine_rel_dir, routine_slug, write_routine,
+};
 use crate::utils::cron::{normalize_schedule, validate_cron};
 use crate::utils::time::now_secs;
 

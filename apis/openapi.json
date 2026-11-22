@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "3.5.0"
+    "version": "3.19.0"
   },
   "servers": [
     {
@@ -1494,6 +1494,17 @@
             ],
             "description": "`finished_at` as a human-readable local timestamp, when finished."
           },
+          "kill_reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KillReason",
+                "description": "Why the watchdog killed the run, when `status` is [`RunStatus::Killed`]."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "routine_id": {
             "type": "string",
             "description": "The routine this run belongs to."
@@ -1514,7 +1525,7 @@
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
-            "description": "Success/failure/running/unknown from exit code and tmux liveness."
+            "description": "Success/failure/running/killed/unknown from exit code, kill record and tmux liveness."
           },
           "workbench": {
             "type": "string",
@@ -1595,6 +1606,13 @@
             "description": "Daemon version (from `CARGO_PKG_VERSION`)."
           }
         }
+      },
+      "KillReason": {
+        "type": "string",
+        "description": "Why the watchdog ended a run, when it did (`status` is `killed`).",
+        "enum": [
+          "max_runtime"
+        ]
       },
       "LockRequest": {
         "type": "object",
@@ -2077,6 +2095,7 @@
           "running",
           "success",
           "failed",
+          "killed",
           "unknown"
         ]
       },
@@ -2114,6 +2133,17 @@
             ],
             "description": "`finished_at` as a human-readable local timestamp, when finished."
           },
+          "kill_reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KillReason",
+                "description": "Why the watchdog killed the run, when `status` is [`RunStatus::Killed`]."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "retention_expires_at": {
             "type": [
               "integer",
@@ -2135,7 +2165,7 @@
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus",
-            "description": "Success/failure/running/unknown from exit code and tmux liveness."
+            "description": "Success/failure/running/killed/unknown from exit code, kill record and tmux liveness."
           },
           "workbench": {
             "type": "string",

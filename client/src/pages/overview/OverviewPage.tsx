@@ -13,15 +13,22 @@ import {
   type RunStatusSnapshot,
 } from "../../lib/failureNotify";
 import { useToasts } from "../../shell/toasts";
+import { groupRecentRuns } from "../routines/sparkline";
 import { AttentionTable } from "./AttentionTable";
 import { NotifyToggle } from "./NotifyToggle";
 import { attentionItems, computeKpis, nextRunSummary, sourcesOf, upcomingRuns } from "./overviewLogic";
 import { OverviewStats } from "./OverviewStats";
+import { PinnedPanel } from "./PinnedPanel";
 import { RecentRunsTable } from "./RecentRunsTable";
+import { SinceLastVisit } from "./SinceLastVisit";
+import { computeDigest, loadOrSeedLastSeen, saveLastSeen } from "./visitDigest";
 import { UpcomingTable } from "./UpcomingTable";
 
 /** How many of the most recent runs across the fleet the overview panel shows. */
 const RECENT_RUNS_LIMIT = 8;
+
+/** Fleet runs fetched for the SINCE YOUR LAST VISIT digest — the same cap the Reliability page uses. */
+const DIGEST_RUNS_LIMIT = 300;
 
 /** How often the live "now" advances so countdowns re-render between fetches. */
 const TICK_MS = 10_000;
@@ -40,6 +47,8 @@ export function OverviewPage() {
 
   const routinesQuery = useRoutines();
   const runsQuery = useAllRuns(RECENT_RUNS_LIMIT);
+  const digestRunsQuery = useAllRuns(DIGEST_RUNS_LIMIT);
+  const [lastSeen, setLastSeen] = useState(() => loadOrSeedLastSeen(Math.floor(Date.now() / 1000)));
   const lockQuery = useLockStatus();
   const unlock = useUnlock();
   const trigger = useTriggerRoutine();
@@ -122,6 +131,12 @@ export function OverviewPage() {
     [trigger, addToast],
   );
 
+  const handleMarkSeen = useCallback(() => {
+    const nowSecs = Math.floor(Date.now() / 1000);
+    saveLastSeen(nowSecs);
+    setLastSeen(nowSecs);
+  }, []);
+
   const handleUnlock = useCallback(() => {
     unlock.mutate("all");
   }, [unlock]);
@@ -139,6 +154,13 @@ export function OverviewPage() {
       <h1 className="page-title">Overview</h1>
       <GlobalLockBanner status={lockQuery.data} onUnlock={handleUnlock} />
       <OverviewStats kpis={kpis} nextRun={nextRun} />
+      {digestRunsQuery.data && (
+        <SinceLastVisit
+          digest={computeDigest(digestRunsQuery.data, lastSeen, DIGEST_RUNS_LIMIT)}
+          sinceSecs={lastSeen}
+          onMarkSeen={handleMarkSeen}
+        />
+      )}
       {attention.length > 0 && (
         <>
           <div className="section-hd">
@@ -146,6 +168,14 @@ export function OverviewPage() {
           </div>
           <AttentionTable items={attention} />
         </>
+      )}
+      {!routinesQuery.isLoading && loadError === undefined && (
+        <PinnedPanel
+          routines={routinesQuery.data ?? []}
+          runHistory={groupRecentRuns(digestRunsQuery.data ?? [])}
+          now={now}
+          onTrigger={handleTrigger}
+        />
       )}
       <div className="section-hd">
         <span className="section-label">UPCOMING RUNS</span>

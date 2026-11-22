@@ -48,7 +48,7 @@ export function ScheduleAdherence({ adherence }: { adherence: Adherence }) {
           {rows.map((row) => (
             <tr key={row.routineId}>
               <td>
-                <Link to={`/routines?history=${encodeURIComponent(row.routineId)}`}>{row.title}</Link>
+                <Link to={`/routines/${encodeURIComponent(row.routineId)}`}>{row.title}</Link>
               </td>
               <td className="cell-meta">{row.expected}</td>
               <td className="cell-meta">{row.ran}</td>

@@ -11,6 +11,74 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+## [3.19.0] - 2026-11-21
+
+Bump the npm dependency group across `client/` (9 updates): `cron-parser`, `cronstrue`, `react-hook-form`, `@playwright/test`, `@vitejs/plugin-react`, `eslint`, `jsdom`, `typescript-eslint` and `vite`. No behavior change.
+
+Show a run the max-runtime watchdog killed as `killed`, not `unknown`. The runs API, the Runs page, and `moadim_runs_total` report it, and each run carries a `kill_reason` (`max_runtime`). Existing `unknown` and `failed` values keep their meaning. Runs killed before this change still show `unknown`, because their `exit_code` file holds only the `killed` marker. Rolling back to an older binary hides runs recorded as `killed` in `runs.log`: that binary skips lines whose status it does not know.
+
+feat(routines): read and write routine tags via a tags.csv sidecar
+
+feat(routines): stop writing tags to routine.toml; tags.csv is the single source and export/import carries it
+
+fix(routines): read tags.csv lossily so a non-UTF-8 byte never drops a routine's tags
+
+Accept public dev-tunnel hostnames without a daemon restart. Name a tunnel domain you control once with `tunnel_host_suffixes` in `machine.local.toml`. A suffix needs two or more labels, and entries with a `*.` prefix or a trailing dot are dropped. The `Host` and mutation `Origin` checks still reject any other host. Avoid `trycloudflare.com` for anything but short-lived dev use, since every Quick Tunnel shares it.
+
+## [3.18.0] - 2026-11-17
+
+feat(client): Routine Detail page at `/routines/:id` — one deep-linkable home per routine with health, KPI tiles (last run, success rate, streak, p50/p95 with slowdown marker, next run, open flags), a duration timeline that opens each run, configuration, upcoming fires, recent runs and Run-now / pin quick actions. Every routine-title link in the dashboard now opens it.
+
+## [3.17.0] - 2026-11-16
+
+Add an Uptime page to the web client: Statuspage-style daily status bars per routine over 7, 30 or 90 days, with uptime %, fleet KPIs, and one-click links from each day into that day's runs.
+
+## [3.16.0] - 2026-11-15
+
+Add a Repositories page (`/repos`) to the dashboard: one row per repository the fleet's routines work on, with routine/enabled/running counts, branches, agents, `auto_pull`-off count, failing routines, recent success rate, p50 duration and last activity. Includes search, sortable columns, a link to the filtered Routines view and a `g p` go-to shortcut.
+
+
+
+## [3.15.0] - 2026-11-11
+
+Pin routines with ☆ on the Routines page and watch them in a new PINNED section on the Overview page — health, next run, recent-run sparkline and a one-click RUN, saved per browser.
+
+## [3.14.0] - 2026-11-11
+
+Log viewer severity triage: error and warning lines are color-coded and counted, a "Problems only" toggle filters to them, and Prev / Next buttons jump between them — on the Run Detail page and routine Logs.
+
+## [3.13.0] - 2026-11-05
+
+Add a kiosk / TV-mode Wallboard (`/wall`, nav **Wall**, `g w`): one big colour-coded tile per routine sorted worst-first, per-state counts, a live clock, a recent-run strip per tile, and self-refreshing data. `Esc` exits.
+
+## [3.12.0] - 2026-11-04
+
+Add a fleet-wide Flags inbox page (`/flags`) to the dashboard: every open flag across all routines in one table, oldest first, with stat cards, search, a type filter, sortable columns and an inline RESOLVE.
+
+## [3.11.0] - 2026-11-04
+
+New built-in `dsh` agent: routines can run DeepSeek Harness (`dsh --profile headless "<prompt>"`), with the moadim system prompt written to `AGENTS.md`.
+
+## [3.10.0] - 2026-11-01
+
+Runs page: filters and the selected histogram range now live in the URL (`?q=&status=&when=&from=&to=`), so a view survives reloads and can be bookmarked or shared. New "Export CSV" button downloads the shown runs.
+
+## [3.9.0] - 2026-10-27
+
+The Overview page gains a SINCE YOUR LAST VISIT digest: how many runs failed and succeeded while you were away, and one row per routine that failed — badged RECOVERED once its newest run succeeds — linking to the failed run. "Mark as seen" moves the remembered baseline to now.
+
+## [3.8.0] - 2026-10-27
+
+Add an Agents page to the web client: a per-agent breakdown with registry/CLI/setup health, routine and model rollups, recent success rate, p50 duration and last activity — reachable from the nav, `g a`, and the command palette.
+
+Show an overspent SLO error budget as 0% left instead of a negative share; the EXHAUSTED status and burn rates already carry the overspend.
+
+Add an SLO error-budget panel to the Reliability page of the web client: pick a success-rate target (saved per browser) and see each routine's 7-day budget left, failures against the allowance, and 24h/7d burn rates, with exhausted and fast-burning routines first and a BUDGET EXHAUSTED stat card.
+
+## [3.7.0] - 2026-10-22
+
+Add a week-over-week panel to the Reliability page: compares each routine's last 7 days of finished runs against the 7 days before — runs, failures, success-rate change in percentage points and p50 duration change — with a WORSE / QUIET / NEW / BETTER / STEADY verdict, worst first, and flags when the fetched sample does not reach back 14 days.
+
 ## [3.6.2] - 2026-10-20
 
 When two routine directories share one routine id, the daemon now loads the first in path order, skips the other with a warning naming it, and writes back to that same directory. Before, it silently loaded one copy and could write it into the other copy's directory, overwriting it.
@@ -5161,7 +5229,20 @@ Enable `clippy::match_same_arms` and merge the two duplicate-body arms it flagge
 - Ship the prebuilt UI in the published crate.
 - Rename the binary to `moadim` and add install docs.
 
-[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.6.2...HEAD
+[Unreleased]: https://github.com/moadim-io/daemon/compare/v3.19.0...HEAD
+[3.19.0]: https://github.com/moadim-io/daemon/compare/v3.18.0...v3.19.0
+[3.18.0]: https://github.com/moadim-io/daemon/compare/v3.17.0...v3.18.0
+[3.17.0]: https://github.com/moadim-io/daemon/compare/v3.16.0...v3.17.0
+[3.16.0]: https://github.com/moadim-io/daemon/compare/v3.15.0...v3.16.0
+[3.15.0]: https://github.com/moadim-io/daemon/compare/v3.14.0...v3.15.0
+[3.14.0]: https://github.com/moadim-io/daemon/compare/v3.13.0...v3.14.0
+[3.13.0]: https://github.com/moadim-io/daemon/compare/v3.12.0...v3.13.0
+[3.12.0]: https://github.com/moadim-io/daemon/compare/v3.11.0...v3.12.0
+[3.11.0]: https://github.com/moadim-io/daemon/compare/v3.10.0...v3.11.0
+[3.10.0]: https://github.com/moadim-io/daemon/compare/v3.9.0...v3.10.0
+[3.9.0]: https://github.com/moadim-io/daemon/compare/v3.8.0...v3.9.0
+[3.8.0]: https://github.com/moadim-io/daemon/compare/v3.7.0...v3.8.0
+[3.7.0]: https://github.com/moadim-io/daemon/compare/v3.6.2...v3.7.0
 [3.6.2]: https://github.com/moadim-io/daemon/compare/v3.6.1...v3.6.2
 [3.6.1]: https://github.com/moadim-io/daemon/compare/v3.6.0...v3.6.1
 [3.6.0]: https://github.com/moadim-io/daemon/compare/v3.5.0...v3.6.0

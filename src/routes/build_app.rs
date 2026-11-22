@@ -39,3 +39,7 @@ mod http_routing_tests;
 #[cfg(test)]
 #[path = "http_listener_tests.rs"]
 mod http_listener_tests;
+
+#[cfg(test)]
+#[path = "tunnel_host_wiring_tests.rs"]
+mod tunnel_host_wiring_tests;

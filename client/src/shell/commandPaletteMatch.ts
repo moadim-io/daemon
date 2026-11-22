@@ -9,13 +9,14 @@ export type CmdKind =
   | "nav-heatmap"
   | "nav-reliability"
   | "nav-machines"
+  | "nav-agents"
   | "nav-settings"
   | "routine"
   | "action-refresh"
   | "action-stop"
   | "action-shortcuts";
 
-export type RouteKind = "home" | "routines" | "runs" | "heatmap" | "reliability" | "machines" | "settings";
+export type RouteKind = "home" | "routines" | "runs" | "heatmap" | "reliability" | "machines" | "agents" | "settings";
 
 export interface Command {
   kind: CmdKind;
@@ -43,6 +44,8 @@ export function routeFor(kind: CmdKind): RouteKind | undefined {
       return "reliability";
     case "nav-machines":
       return "machines";
+    case "nav-agents":
+      return "agents";
     case "nav-settings":
       return "settings";
     default:
@@ -59,6 +62,7 @@ export function badgeFor(kind: CmdKind): string {
     case "nav-heatmap":
     case "nav-reliability":
     case "nav-machines":
+    case "nav-agents":
     case "nav-settings":
       return "GO";
     case "routine":
@@ -187,6 +191,12 @@ export function buildCommands(routines: RoutineResponse[]): Command[] {
       title: "Machines",
       subtitle: "Per-host fleet inventory",
       keywords: "fleet hosts inventory nodes servers",
+    },
+    {
+      kind: "nav-agents",
+      title: "Agents",
+      subtitle: "Per-agent health, success rate & models",
+      keywords: "claude codex opencode cli registry models executors",
     },
     {
       kind: "nav-settings",

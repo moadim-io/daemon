@@ -15,9 +15,21 @@ pub enum RunStatus {
     Success,
     /// The agent process exited non-zero.
     Failed,
-    /// The session is gone but no exit code was recorded (killed, crashed before writing it, or from
-    /// a build predating exit-code capture).
+    /// The watchdog force-killed the session; see the run's [`KillReason`].
+    Killed,
+    /// The session is gone but no exit code was recorded (crashed before writing it, or from a
+    /// build predating exit-code capture).
     Unknown,
+}
+
+/// Why the watchdog ended a run, when it did (`status` is `killed`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum KillReason {
+    /// The run exceeded its routine's `max_runtime_secs` and was force-killed.
+    MaxRuntime,
 }
 
 /// One past (or in-progress) run of a routine, listed newest-first.
@@ -33,10 +45,12 @@ pub struct RunSummary {
     pub finished_at: Option<u64>,
     /// `finished_at` as a human-readable local timestamp, when finished.
     pub finished_at_local: Option<String>,
-    /// Success/failure/running/unknown from exit code and tmux liveness.
+    /// Success/failure/running/killed/unknown from exit code, kill record and tmux liveness.
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
+    /// Why the watchdog killed the run, when `status` is [`RunStatus::Killed`].
+    pub kill_reason: Option<KillReason>,
     /// Unix seconds this run's workbench is due to be reaped.
     pub retention_expires_at: Option<u64>,
 }
@@ -59,8 +73,10 @@ pub struct FleetRunSummary {
     pub finished_at: Option<u64>,
     /// `finished_at` as a human-readable local timestamp, when finished.
     pub finished_at_local: Option<String>,
-    /// Success/failure/running/unknown from exit code and tmux liveness.
+    /// Success/failure/running/killed/unknown from exit code, kill record and tmux liveness.
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
+    /// Why the watchdog killed the run, when `status` is [`RunStatus::Killed`].
+    pub kill_reason: Option<KillReason>,
 }

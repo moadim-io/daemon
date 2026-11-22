@@ -24,8 +24,9 @@ use crate::paths::workbenches_dir;
 use crate::utils::claude_json::prune_project;
 use crate::utils::time::now_secs;
 
-use super::model::{RoutineStore, RunStatus};
+use super::model::RoutineStore;
 use super::run_history::{append_persisted_run, has_persisted_run, read_exit_code, PersistedRun};
+use super::run_status::{derive_run_status, read_kill_reason};
 
 mod circuit_breaker;
 mod counters;

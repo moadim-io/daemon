@@ -22,7 +22,7 @@ pub fn svc_snooze(
     routine.skip_runs = skip_runs;
     let routine = routine.clone();
     drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
     Ok(routine)
 }
 
@@ -42,6 +42,6 @@ pub fn svc_set_power_saving(
     routine.power_saving = active;
     let routine = routine.clone();
     drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
     Ok(routine)
 }

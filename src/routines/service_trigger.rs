@@ -3,7 +3,8 @@
 use crate::error::AppError;
 use crate::paths::workbenches_dir;
 use crate::routine_storage::{
-    append_manual_trigger_log, append_scheduled_trigger_log, append_skip_log, write_routine,
+    append_manual_trigger_log, append_scheduled_trigger_log, append_skip_log,
+    persist_existing_routine,
 };
 use crate::utils::lock::LockRecover;
 use crate::utils::time::now_secs;
@@ -70,7 +71,7 @@ pub fn svc_trigger_with_system_power_saving_override(
     routine.last_manual_trigger_at = Some(ts);
     let routine = routine.clone();
     drop(lock);
-    write_routine(&routine).map_err(|_| AppError::Internal)?;
+    persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
     append_manual_trigger_log(&crate::routine_storage::routine_rel_dir(&routine), ts);
     spawn_routine_command(&routine, TriggerSource::Manual);
     Ok(routine)
@@ -124,7 +125,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
         routine.snoozed_until = None;
         let routine = routine.clone();
         drop(lock);
-        write_routine(&routine).map_err(|_| AppError::Internal)?;
+        persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
         append_scheduled_trigger_log(
             &crate::routine_storage::routine_rel_dir(&routine),
             now_secs(),
@@ -137,7 +138,7 @@ pub fn svc_trigger_scheduled(store: &RoutineStore, id: &str) -> Result<Routine, 
             routine.skip_runs = (runs > 1).then_some(runs - 1);
             let routine = routine.clone();
             drop(lock);
-            write_routine(&routine).map_err(|_| AppError::Internal)?;
+            persist_existing_routine(&routine).map_err(|_| AppError::Internal)?;
             return Err(AppError::Locked(format!(
                 "routine snoozed, skipping this scheduled run ({} more to skip)",
                 routine.skip_runs.unwrap_or(0)

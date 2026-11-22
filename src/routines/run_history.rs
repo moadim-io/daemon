@@ -13,7 +13,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::paths::routine_run_history_path;
-use crate::routines::model::RunStatus;
+use crate::routines::model::{KillReason, RunStatus};
 
 /// One durable run record, appended to a routine's `runs.log` right before its workbench is
 /// reaped. Unlike [`super::model::RunSummary`], `status` here is never [`RunStatus::Running`] — a
@@ -26,10 +26,14 @@ pub(crate) struct PersistedRun {
     pub started_at: u64,
     /// Unix seconds the run finished.
     pub finished_at: u64,
-    /// Success/failure/unknown; never `Running` (see the type-level doc).
+    /// Success/failure/killed/unknown; never `Running` (see the type-level doc).
     pub status: RunStatus,
     /// Process exit code, when recorded.
     pub exit_code: Option<i32>,
+    /// Why the watchdog killed the run, when `status` is `Killed`. Absent in records written
+    /// before kill tracking existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kill_reason: Option<KillReason>,
 }
 
 /// Parse the `exit_code` file under `workbench_path` (written by the launch command; see

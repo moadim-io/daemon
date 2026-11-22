@@ -111,6 +111,66 @@ fn svc_update_not_found_when_no_schedule_and_id_missing() {
 }
 
 #[test]
+fn svc_update_not_found_when_routine_toml_was_deleted_from_disk() {
+    let _home = TempHome::set();
+    // A routine known to the store whose routine.toml vanished (e.g. a git pull moved it) must
+    // map the storage NotFound to AppError::NotFound and must not be recreated on disk.
+    let store = new_store();
+    let routine = Routine {
+        model: None,
+        id: "update-deleted-id".to_string(),
+        schedule: "@daily".to_string(),
+        schedules: vec![],
+        title: "Update Deleted ZZZ".to_string(),
+        agent: "claude".to_string(),
+        prompt: "do the thing".to_string(),
+        goal: None,
+        repositories: vec![],
+        machines: vec![],
+        enabled: true,
+        disabled_reason: None,
+        source: "managed".to_string(),
+        created_at: 1,
+        updated_at: 1,
+        last_manual_trigger_at: None,
+        last_scheduled_trigger_at: None,
+        snoozed_until: None,
+        skip_runs: None,
+        power_saving: false,
+        power_saving_exempt: false,
+        tags: vec![],
+        ttl_secs: None,
+        max_runtime_secs: None,
+        env: std::collections::HashMap::new(),
+        auto_disabled_reason: None,
+        consecutive_failures: 0,
+        failure_threshold: None,
+        notifications: Default::default(),
+        timezone: None,
+    };
+    crate::routine_storage::write_routine(&routine).unwrap();
+    let rel_dir = crate::routine_storage::routine_rel_dir(&routine);
+    let toml = crate::paths::routine_toml_path(&rel_dir);
+    std::fs::remove_file(&toml).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("update-deleted-id".into(), routine);
+    with_empty_path(|| {
+        let result = svc_update(
+            &store,
+            "update-deleted-id",
+            UpdateRoutineRequest {
+                timezone: Some("Asia/Jerusalem".to_string()),
+                ..empty_update_request()
+            },
+        );
+        assert!(matches!(result, Err(AppError::NotFound)), "{result:?}");
+    });
+    assert!(!toml.exists(), "routine.toml must not be recreated");
+}
+
+#[test]
 fn svc_update_not_found_when_schedule_provided_and_id_missing() {
     let _home = TempHome::set();
     // Covers L371 error arm: `lock.get_mut(id).ok_or(AppError::NotFound)?` fires when

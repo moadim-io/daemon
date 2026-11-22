@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::routine_storage::write_routine;
 use crate::routines::model::new_store;
 
 struct TempHome(std::path::PathBuf);
@@ -76,10 +77,9 @@ fn make_routine(
 fn record_run_outcome_increments_on_failure() {
     let _home = TempHome::set();
     let store = new_store();
-    store
-        .lock()
-        .unwrap()
-        .insert("r1".into(), make_routine("r1", "Breaker Fail", Some(5)));
+    let routine = make_routine("r1", "Breaker Fail", Some(5));
+    write_routine(&routine).unwrap();
+    store.lock().unwrap().insert("r1".into(), routine);
 
     record_run_outcome(&store, "r1", crate::routines::model::RunStatus::Failed);
 
@@ -88,6 +88,30 @@ fn record_run_outcome_increments_on_failure() {
     assert_eq!(routine.consecutive_failures, 1);
     assert!(routine.enabled);
     assert!(routine.auto_disabled_reason.is_none());
+}
+
+#[test]
+fn record_run_outcome_does_not_recreate_deleted_routine_toml() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let routine = make_routine("r-gone", "Breaker Gone", Some(5));
+    write_routine(&routine).unwrap();
+    let toml = crate::paths::routine_toml_path(&crate::routine_storage::routine_rel_dir(&routine));
+    std::fs::remove_file(&toml).unwrap();
+    store.lock().unwrap().insert("r-gone".into(), routine);
+
+    record_run_outcome(&store, "r-gone", crate::routines::model::RunStatus::Failed);
+
+    assert!(!toml.exists(), "routine.toml must not be recreated");
+    assert_eq!(
+        store
+            .lock()
+            .unwrap()
+            .get("r-gone")
+            .unwrap()
+            .consecutive_failures,
+        1
+    );
 }
 
 #[test]

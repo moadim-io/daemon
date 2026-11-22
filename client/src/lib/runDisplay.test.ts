@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtRetention, fmtRunDuration, runStatusClass, runStatusLabel } from "./runDisplay";
+import { fmtRetention, fmtRunDuration, killReasonLabel, runStatusClass, runStatusLabel } from "./runDisplay";
 
 describe("runStatusClass", () => {
   it("covers every variant", () => {
@@ -15,7 +15,15 @@ describe("runStatusLabel", () => {
     expect(runStatusLabel("running")).toBe("RUNNING");
     expect(runStatusLabel("success")).toBe("SUCCESS");
     expect(runStatusLabel("failed")).toBe("FAILED");
+    expect(runStatusLabel("killed")).toBe("KILLED");
     expect(runStatusLabel("unknown")).toBe("UNKNOWN");
+  });
+});
+
+describe("killReasonLabel", () => {
+  it("describes a max-runtime kill and is null without a reason", () => {
+    expect(killReasonLabel("max_runtime")).toBe("exceeded max runtime");
+    expect(killReasonLabel(null)).toBeNull();
   });
 });
 

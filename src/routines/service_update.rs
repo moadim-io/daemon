@@ -2,10 +2,10 @@
 
 use super::{
     map_write_routine_err, max_runtime_ceiling_secs, min_schedule_ceiling, normalize_model,
-    now_secs, reject_blank, reject_over_ceiling, reject_zero_secs, slugify, ttl_ceiling_secs,
-    validate_agent, validate_and_normalize_schedules, validate_env, validate_goal,
-    validate_machines, validate_prompt, validate_repositories, validate_tags, validate_timezone,
-    validate_title, write_routine, AppError, LockRecover, RoutineResponse, RoutineStore,
+    now_secs, persist_existing_routine, reject_blank, reject_over_ceiling, reject_zero_secs,
+    slugify, ttl_ceiling_secs, validate_agent, validate_and_normalize_schedules, validate_env,
+    validate_goal, validate_machines, validate_prompt, validate_repositories, validate_tags,
+    validate_timezone, validate_title, AppError, LockRecover, RoutineResponse, RoutineStore,
     UpdateRoutineRequest,
 };
 
@@ -189,7 +189,7 @@ pub fn svc_update(
     routine.updated_at = now_secs();
     let routine = routine.clone();
     drop(lock);
-    write_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
+    persist_existing_routine(&routine).map_err(|err| map_write_routine_err(&err))?;
     if let Err(err) = crate::sync::routines::sync_routines_to_crontab(store) {
         log::warn!("crontab sync after routine update failed: {err}");
     }

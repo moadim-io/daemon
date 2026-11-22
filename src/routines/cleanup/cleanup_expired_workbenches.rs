@@ -25,11 +25,9 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
                 return;
             }
             let exit_code = read_exit_code(workbench_path);
-            let status = match exit_code {
-                Some(0) => RunStatus::Success,
-                Some(_) => RunStatus::Failed,
-                None => RunStatus::Unknown,
-            };
+            let kill_reason = read_kill_reason(workbench_path);
+            // The reaper only persists workbenches whose session is already gone.
+            let status = derive_run_status(exit_code, kill_reason, || false);
             let routine_for_notify = store.lock().ok().and_then(|lock| lock.get(routine_id).cloned());
             append_persisted_run(
                 routine_id,
@@ -39,6 +37,7 @@ pub fn cleanup_expired_workbenches(store: &RoutineStore) -> ReapStats {
                     finished_at,
                     status,
                     exit_code,
+                    kill_reason,
                 },
             );
             // Feed the same, already-deduplicated outcome into the failure circuit-breaker (#521);

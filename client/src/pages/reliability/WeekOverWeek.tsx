@@ -80,7 +80,7 @@ function ChangeRow({ change: c }: { change: RoutineChange }) {
   return (
     <tr>
       <td>
-        <Link to={`/routines?history=${encodeURIComponent(c.routineId)}`}>{c.routineTitle}</Link>
+        <Link to={`/routines/${encodeURIComponent(c.routineId)}`}>{c.routineTitle}</Link>
       </td>
       <td>
         <span className={VERDICT_CLASS[c.verdict]}>{c.verdict.toUpperCase()}</span>

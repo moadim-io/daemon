@@ -135,9 +135,11 @@ pub(crate) fn dispatch_routine(cmd: RoutineCmd) -> i32 {
         },
         RoutineCmd::Delete { id } => request("DELETE", &routine_path(&id), None),
         RoutineCmd::Move { id, folder, slug } => move_routine(&id, folder, slug),
-        RoutineCmd::Trigger { id } => {
-            request("POST", &format!("{}/trigger", routine_path(&id)), None)
-        }
+        RoutineCmd::Trigger { id } => request(
+            "POST",
+            &format!("{}/trigger", routine_path(&id)),
+            Some("{}"),
+        ),
         RoutineCmd::Logs { id } => request("GET", &format!("{}/logs", routine_path(&id)), None),
         RoutineCmd::Ical => request("GET", "/api/v1/routines.ics", None),
     }

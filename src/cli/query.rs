@@ -3,9 +3,8 @@
 //! lifecycle (start/stop/restart), which remain in `cli/mod.rs`.
 
 use super::{
-    bind_addr, http_request, http_request_json, http_request_with_body, is_running,
-    liveness_exit_code, parse_freed_bytes, parse_removed_count, read_pid_file, wait_until,
-    Duration,
+    bind_addr, http_request_json, http_request_with_body, is_running, liveness_exit_code,
+    parse_freed_bytes, parse_removed_count, read_pid_file, wait_until, Duration,
 };
 
 /// Ask a running server to reap finished, expired routine run workbenches now, and print the count.
@@ -80,7 +79,13 @@ pub(super) fn humanize_bytes(bytes: u64) -> String {
 /// surface, mirroring the `status`/`cleanup` contract: `0` when the routine was triggered, and
 /// [`crate::cli::EXIT_NOT_RUNNING`] when no server is running, so scripts can branch on `$?`.
 pub fn trigger(id: &str) -> anyhow::Result<i32> {
-    match http_request("POST", &format!("/api/v1/routines/{id}/trigger")) {
+    match http_request_json(
+        "POST",
+        &format!("/api/v1/routines/{id}/trigger"),
+        Some("{}"),
+    )
+    .map(|(status, _)| status)
+    {
         Ok(200) => {
             println!("triggered routine {id}");
             Ok(liveness_exit_code(true))

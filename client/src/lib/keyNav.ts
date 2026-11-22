@@ -19,8 +19,10 @@ export const NAV_CHORDS: NavChord[] = [
   { key: "u", route: "/runs", label: "Runs" },
   { key: "h", route: "/heatmap", label: "Heatmap" },
   { key: "l", route: "/reliability", label: "Reliability" },
+  { key: "t", route: "/uptime", label: "Uptime" },
   { key: "m", route: "/machines", label: "Machines" },
   { key: "a", route: "/agents", label: "Agents" },
+  { key: "p", route: "/repos", label: "Repositories" },
   { key: "s", route: "/settings", label: "Settings" },
   { key: "w", route: "/wall", label: "Wallboard" },
 ];

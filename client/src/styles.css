@@ -1964,6 +1964,11 @@ textarea {
   background: var(--warn);
 }
 
+.duration-bar.killed {
+  background: var(--err);
+  opacity: 0.55;
+}
+
 .duration-bar.unknown {
   background: var(--text-faint);
 }
@@ -2502,6 +2507,69 @@ textarea {
 .log-lc {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.log-triage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 47px;
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.log-sev-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.log-sev-chip-error {
+  background: var(--err-bg);
+  color: var(--err);
+}
+
+.log-sev-chip-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.log-sev-chip.is-zero {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.log-triage-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.log-line {
+  border-left: 3px solid transparent;
+}
+
+.log-sev-error {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err-bg) 60%, transparent);
+}
+
+.log-sev-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn-bg) 60%, transparent);
+}
+
+.log-line-current {
+  outline: 2px solid var(--accent, var(--warn));
+  outline-offset: -2px;
 }
 
 .run-compare {
@@ -3537,6 +3605,7 @@ tr:last-child td {
 
 .runs-hist-seg.success { background: var(--ok); }
 .runs-hist-seg.failed { background: var(--err); }
+.runs-hist-seg.killed { background: var(--err); opacity: 0.55; }
 .runs-hist-seg.running { background: var(--warn); }
 .runs-hist-seg.unknown { background: var(--text-faint); }
 
@@ -3846,4 +3915,165 @@ a.wall-tile:focus-visible {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--text-faint);
+}
+
+/* Pin toggle (Routines title cell, Overview PINNED panel). */
+.pin-btn {
+  float: right;
+  margin-left: 6px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pin-btn:hover,
+.pin-btn:focus-visible {
+  color: var(--text);
+}
+.pin-btn.pinned {
+  color: var(--warn);
+}
+.cell-act .pin-btn {
+  float: none;
+}
+
+/* ─── Uptime: daily status bars ──────────────────────────────────────── */
+
+.uptime-range {
+  display: flex;
+  gap: 4px;
+}
+
+.uptime-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.uptime-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.uptime-legend .uptime-cell {
+  width: 8px;
+  height: 14px;
+  flex: none;
+}
+
+.uptime-note {
+  margin-bottom: 8px;
+}
+
+.uptime-table td:nth-child(2) {
+  width: 100%;
+}
+
+.uptime-strip {
+  display: flex;
+  gap: 2px;
+  height: 24px;
+  min-width: 180px;
+}
+
+.uptime-cell {
+  display: block;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 12px;
+  background: var(--grid-line);
+}
+
+.uptime-cell.ok {
+  background: var(--ok);
+}
+
+.uptime-cell.partial {
+  background: var(--warn);
+}
+
+.uptime-cell.down {
+  background: var(--err);
+}
+
+.uptime-cell.live {
+  box-shadow: inset 0 -4px 0 var(--accent);
+}
+
+a.uptime-cell:hover,
+a.uptime-cell:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.uptime-fleet td {
+  border-bottom: 2px solid var(--border);
+}
+
+
+/* ─── Routine detail page ────────────────────────────────────────────── */
+
+.rd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rd-goal {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  margin: 0 0 16px;
+}
+
+.rd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.rd-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.rd-h {
+  display: block;
+  margin: 0 0 10px;
+}
+
+.rd-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.rd-fields dt {
+  color: var(--text-faint);
+}
+
+.rd-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rd-upcoming {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
 }

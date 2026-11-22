@@ -97,7 +97,7 @@ describe("FlagsPage", () => {
 
     const descs = () => [...document.querySelectorAll("tbody .flag-desc")].map((e) => e.textContent);
     expect(descs()).toEqual(["which repo?", "no docs", "crash on start"]);
-    expect(screen.getByRole("link", { name: "Title r2" })).toHaveAttribute("href", "/routines?history=r2");
+    expect(screen.getByRole("link", { name: "Title r2" })).toHaveAttribute("href", "/routines/r2");
     expect(screen.getByText("local")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "AGE" }));

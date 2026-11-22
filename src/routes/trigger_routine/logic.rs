@@ -7,7 +7,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 /// An explicit operator confirmation to run despite host-level power saving.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Default, Deserialize, ToSchema)]
 pub struct TriggerRoutineRequest {
     /// Bypass only host-level power saving for this manual run. It does not bypass a routine's
     /// explicit power-saving state, disabled state, or the global lock.

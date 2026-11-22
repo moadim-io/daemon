@@ -42,3 +42,37 @@ async fn trigger_routine_with_json_body_not_found_returns_404() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn trigger_routine_accepts_empty_body_with_json_content_type() {
+    // The CLI sends `Content-Type: application/json` with no body; that used to 400 (EOF while
+    // parsing). It must reach the handler and 404 for the unknown id instead.
+    let resp = build_app(crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/routines/no-such/trigger")
+                .header("content-type", "application/json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn trigger_routine_rejects_malformed_json_body_with_400() {
+    let resp = build_app(crate::routines::new_store())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/routines/no-such/trigger")
+                .header("content-type", "application/json")
+                .body(Body::from("{not json"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}

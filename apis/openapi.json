@@ -1125,11 +1125,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TriggerRoutineRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TriggerRoutineRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {

@@ -11,6 +11,8 @@ Versions map to the `v*` git tags that drive the crates.io publish workflow.
 
 ## [Unreleased]
 
+Fix `moadim trigger <id>` and `moadim routines trigger <id>` failing with `HTTP 400 ... EOF while parsing a value`. `POST /routines/{id}/trigger` now treats an empty body as default options even when the request sets `Content-Type: application/json`, and the CLI sends `{}`. Scheduled (crontab) runs use a different route and were not affected.
+
 ## [3.19.0] - 2026-11-21
 
 Bump the npm dependency group across `client/` (9 updates): `cron-parser`, `cronstrue`, `react-hook-form`, `@playwright/test`, `@vitejs/plugin-react`, `eslint`, `jsdom`, `typescript-eslint` and `vite`. No behavior change.

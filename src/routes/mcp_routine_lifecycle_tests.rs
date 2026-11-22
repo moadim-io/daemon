@@ -8,6 +8,7 @@
 //! `make_handler`/`test_shutdown`/`TempHome`/`make_create_routine_req` fixtures via `use super::*;`.
 
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn snooze_routine_tool_not_found_is_error() {
@@ -58,7 +59,7 @@ fn snooze_routine_tool_sets_and_clears_snooze() {
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
     let handler = MoadimMcp::new(
-        routines.clone(),
+        Arc::clone(&routines),
         crate::paths::routines_dir(),
         0,
         test_shutdown(),
@@ -121,7 +122,7 @@ fn set_power_saving_tool_blocks_trigger_without_touching_enabled() {
     let _home = TempHome::set();
     let routines = crate::routines::new_store();
     let handler = MoadimMcp::new(
-        routines.clone(),
+        Arc::clone(&routines),
         crate::paths::routines_dir(),
         0,
         test_shutdown(),

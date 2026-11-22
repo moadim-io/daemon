@@ -83,7 +83,7 @@ pub struct AppState {
 
 impl axum::extract::FromRef<AppState> for RoutineStore {
     fn from_ref(state: &AppState) -> Self {
-        state.routines.clone()
+        Self::clone(&state.routines)
     }
 }
 

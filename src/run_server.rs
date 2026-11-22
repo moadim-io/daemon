@@ -69,7 +69,7 @@ async fn run_server() -> anyhow::Result<()> {
     // is not running" on every boot. Routine mutations request the same library scheduler to
     // rebuild its jobs, so no platform relies on OS crontab.
     #[cfg(not(test))]
-    let _routine_scheduler = routine_scheduler::spawn(routines.clone());
+    let _routine_scheduler = routine_scheduler::spawn(std::sync::Arc::clone(&routines));
     if let Err(err) = sync::routines::sync_routines_to_crontab(&routines) {
         log::warn!("startup routine scheduler sync failed: {err}");
     }

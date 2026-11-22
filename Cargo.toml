@@ -578,3 +578,9 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Require `Arc::clone(&x)` / `Rc::clone(&x)` instead of `x.clone()` on reference-counted
+# pointers. The explicit form tells the reader at a glance that only a refcount is bumped (a
+# cheap pointer copy), not a deep clone of the inner value, and it keeps working if the
+# variable's type later changes from `Arc<T>` to `T`, where `.clone()` would silently become
+# an expensive deep copy.
+clone_on_ref_ptr = "deny"

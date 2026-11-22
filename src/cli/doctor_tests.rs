@@ -187,3 +187,4 @@ fn unreadable_agent_config_fails() {
 }
 
 include!("doctor_lock_tests.rs");
+include!("doctor_setup_tests.rs");

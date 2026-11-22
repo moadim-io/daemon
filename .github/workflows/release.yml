@@ -118,6 +118,10 @@ jobs:
   build-binaries:
     name: Build binary (${{ matrix.target }})
     needs: release
+    # `release` itself runs under `always()` because its lint/test needs are skipped on the
+    # auto-release path; without this, the default `success()` sees those skipped ancestors and
+    # skips this job on every release, leaving releases with no binaries for `cargo binstall`.
+    if: always() && needs.release.result == 'success'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

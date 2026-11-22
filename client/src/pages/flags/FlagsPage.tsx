@@ -137,7 +137,7 @@ export function FlagsPage() {
                         {reltime(r.flag.created_at)}
                       </td>
                       <td>
-                        <Link to={`/routines?history=${encodeURIComponent(r.routineId)}`}>{r.routineTitle}</Link>
+                        <Link to={`/routines/${encodeURIComponent(r.routineId)}`}>{r.routineTitle}</Link>
                       </td>
                       <td>
                         <span className="flag-type">{r.flag.type}</span>

@@ -27,6 +27,7 @@ fn svc_list_all_runs_merges_persisted_history_across_routines() {
             finished_at: 1005,
             status: RunStatus::Failed,
             exit_code: Some(1),
+            kill_reason: None,
         },
     );
     // A persisted run whose routine has since been deleted must not appear.
@@ -38,6 +39,7 @@ fn svc_list_all_runs_merges_persisted_history_across_routines() {
             finished_at: 2005,
             status: RunStatus::Success,
             exit_code: Some(0),
+            kill_reason: None,
         },
     );
 

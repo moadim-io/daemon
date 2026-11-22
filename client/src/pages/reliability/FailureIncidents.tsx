@@ -45,7 +45,7 @@ export function FailureIncidents({ report }: { report: IncidentReport }) {
             return (
               <tr key={`${inc.routineId}-${inc.openedAt}`}>
                 <td>
-                  <Link to={`/routines?history=${encodeURIComponent(inc.routineId)}`}>{inc.routineTitle}</Link>
+                  <Link to={`/routines/${encodeURIComponent(inc.routineId)}`}>{inc.routineTitle}</Link>
                 </td>
                 <td>
                   {inc.resolvedAt === null ? (

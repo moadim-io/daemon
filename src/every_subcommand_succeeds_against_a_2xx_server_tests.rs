@@ -70,6 +70,8 @@ fn every_subcommand_succeeds_against_a_2xx_server() {
             "--tag",
             "ops",
         ],
+        // `--enabled true` skips the `disabled_reason` branch.
+        &["routines", "update", "rid", "--enabled", "true"],
         &[
             "routines",
             "replace",

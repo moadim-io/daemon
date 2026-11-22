@@ -129,7 +129,7 @@ describe("ScheduleAdherence", () => {
     expect(screen.getByText("SCHEDULE ADHERENCE · LAST 24H")).toBeInTheDocument();
     expect(screen.getByText(/1\/4 fires ran — 3 missed/)).toBeInTheDocument();
     expect(screen.getAllByText("25%")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "Alpha" })).toHaveAttribute("href", "/routines?history=a");
+    expect(screen.getByRole("link", { name: "Alpha" })).toHaveAttribute("href", "/routines/a");
     expect(screen.queryByText(/oldest run in the fetched sample/)).not.toBeInTheDocument();
   });
 

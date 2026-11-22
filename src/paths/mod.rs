@@ -111,6 +111,12 @@ pub fn routine_cron_path(id: &str) -> PathBuf {
     routine_dir(id).join("schedule.cron")
 }
 
+/// Returns the path to `{routines_dir}/{id}/tags.csv`, the routine's tracked tag list.
+#[must_use]
+pub fn routine_tags_path(id: &str) -> PathBuf {
+    routine_dir(id).join("tags.csv")
+}
+
 /// Returns the path to `{routines_dir}/{id}/disabled.json`, the tracked marker whose presence
 /// disables the routine while carrying basic audit metadata.
 #[must_use]

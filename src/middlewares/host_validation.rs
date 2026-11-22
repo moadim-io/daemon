@@ -1,3 +1,4 @@
+use super::tunnel_host::is_tunnel_host;
 use crate::error::AppError;
 use axum::{
     extract::Request,
@@ -47,6 +48,11 @@ fn origin_host(origin: &str) -> &str {
     origin.split_once("://").map_or(origin, |(_, rest)| rest)
 }
 
+/// `true` when `host` matches an exact `allowed` entry (case-insensitive).
+fn is_exact_match(host: &str, allowed: &[String]) -> bool {
+    allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host))
+}
+
 /// Future returned by the middleware closure built by [`host_validation`].
 type ValidationFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
 
@@ -71,12 +77,27 @@ type ValidationFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
 /// `403`, not silently let through: `HeaderValue::to_str` only rejects non-ASCII bytes, which no
 /// legitimate client ever sends in these headers, so a present-but-unparseable value is treated
 /// as suspicious rather than being conflated with the benign "no header at all" case above.
-pub(crate) fn host_validation(
+///
+/// `tunnel_suffixes` is awaited per request, and only when a `Host` misses the exact list, so a
+/// change to the operator's `tunnel_host_suffixes` takes effect without a restart and the read
+/// never blocks the executor. A `Host` is trusted when it is an exact `allowed` entry or a strict
+/// subdomain of a configured tunnel suffix. An `Origin` on a state-changing request is trusted when
+/// it is an exact `allowed` entry or equals the `Host` that already passed above. That rule lets a
+/// dashboard on a tunnel host send its own mutations, while another tunnel subdomain's `Origin`
+/// still fails.
+pub(crate) fn host_validation<S, F>(
     allowed: Vec<String>,
-) -> impl Fn(Request, Next) -> ValidationFuture + Clone + Send + Sync + 'static {
+    tunnel_suffixes: S,
+) -> impl Fn(Request, Next) -> ValidationFuture + Clone + Send + Sync + 'static
+where
+    S: Fn() -> F + Clone + Send + Sync + 'static,
+    F: Future<Output = Vec<String>> + Send + 'static,
+{
     move |req: Request, next: Next| {
         let allowed = allowed.clone();
+        let tunnel_suffixes = tunnel_suffixes.clone();
         Box::pin(async move {
+            let mut host_header = None;
             match req.headers().get(header::HOST) {
                 None => {}
                 Some(value) => match value.to_str() {
@@ -85,10 +106,13 @@ pub(crate) fn host_validation(
                             .into_response();
                     }
                     Ok(host) => {
-                        if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host)) {
+                        let trusted = is_exact_match(host, &allowed)
+                            || is_tunnel_host(host, &tunnel_suffixes().await);
+                        if !trusted {
                             return AppError::Forbidden(format!("host '{host}' is not allowed"))
                                 .into_response();
                         }
+                        host_header = Some(host);
                     }
                 },
             }
@@ -108,7 +132,9 @@ pub(crate) fn host_validation(
                         }
                         Ok(origin) => {
                             let host = origin_host(origin);
-                            if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(host)) {
+                            let same_as_validated_host = host_header
+                                .is_some_and(|validated| validated.eq_ignore_ascii_case(host));
+                            if !same_as_validated_host && !is_exact_match(host, &allowed) {
                                 return AppError::Forbidden(format!(
                                     "origin '{origin}' is not allowed"
                                 ))
@@ -126,3 +152,11 @@ pub(crate) fn host_validation(
 #[cfg(test)]
 #[path = "host_validation_tests.rs"]
 mod host_validation_tests;
+
+#[cfg(test)]
+#[path = "tunnel_host_validation_tests.rs"]
+mod tunnel_host_validation_tests;
+
+#[cfg(test)]
+#[path = "tunnel_host_reload_tests.rs"]
+mod tunnel_host_reload_tests;

@@ -141,7 +141,7 @@ function MachineRow({ m }: { m: MachineStats }) {
             <ul>
               {m.routines.map((r) => (
                 <li key={r.id}>
-                  <Link to={`/routines?history=${encodeURIComponent(r.id)}`}>{r.title}</Link>
+                  <Link to={`/routines/${encodeURIComponent(r.id)}`}>{r.title}</Link>
                 </li>
               ))}
             </ul>

@@ -34,6 +34,7 @@ fn run_history_lists_each_live_manual_or_scheduled_workbench_once() {
             finished_at: 2001,
             status: RunStatus::Success,
             exit_code: Some(0),
+            kill_reason: None,
         },
     );
 

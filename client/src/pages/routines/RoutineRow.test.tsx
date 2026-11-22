@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RoutineResponse } from "../../api/hooks";
+import { loadPins } from "../../lib/pins";
 import { RoutineRow } from "./RoutineRow";
 
 function routine(overrides: Partial<RoutineResponse> = {}): RoutineResponse {
@@ -110,5 +111,18 @@ describe("RoutineRow — failure circuit-breaker (issue #521)", () => {
 
     expect(handlers.onLogs).toHaveBeenCalledWith("r1");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+});
+
+describe("RoutineRow pin toggle", () => {
+  it("pins and unpins the routine from its title cell", () => {
+    localStorage.clear();
+    renderRow(routine());
+    fireEvent.click(screen.getByRole("button", { name: "Pin Nightly backup" }));
+    expect(loadPins()).toEqual(["r1"]);
+    const btn = screen.getByRole("button", { name: "Unpin Nightly backup" });
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(btn);
+    expect(loadPins()).toEqual([]);
   });
 });

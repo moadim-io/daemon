@@ -106,7 +106,7 @@ describe("FailureIncidents", () => {
     expect(screen.getByText(/2 total · MTTR 17m · longest 17m/)).toBeInTheDocument();
     expect(screen.getByText("ONGOING")).toBeInTheDocument();
     expect(screen.getByText("RESOLVED", { selector: "span" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "A" })).toHaveAttribute("href", "/routines?history=a");
+    expect(screen.getByRole("link", { name: "A" })).toHaveAttribute("href", "/routines/a");
     const links = screen.getAllByTitle("Open the first failed run");
     expect(links[0]).toHaveAttribute("href", "/runs/b/wb-9000");
     expect(links[0]).toHaveTextContent(/^≥ /);

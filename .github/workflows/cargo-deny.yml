@@ -34,6 +34,7 @@ jobs:
   cargo-deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         checks:

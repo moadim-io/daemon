@@ -99,8 +99,10 @@ struct RunStatusCounts {
     failed: u64,
     /// Runs whose tmux session is still alive.
     running: u64,
-    /// Runs whose session ended with no exit code recorded (killed, crashed, or from a build
-    /// predating exit-code capture).
+    /// Runs the max-runtime watchdog force-killed.
+    killed: u64,
+    /// Runs whose session ended with no exit code recorded (crashed, or from a build predating
+    /// exit-code capture).
     unknown: u64,
 }
 

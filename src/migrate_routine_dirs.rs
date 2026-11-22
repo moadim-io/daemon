@@ -30,6 +30,7 @@ pub(crate) fn migrate_routine_dirs_from_dir(dir: &std::path::Path) {
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
         seed_schedule_cron_from_legacy_toml(&entry.path());
+        crate::routine_tags_csv::seed_tags_csv_from_legacy_toml(&entry.path());
         let Some(routine) = load_routine_from_dir(&dir_name) else {
             // A dir without a parsable routine.toml (e.g. a sync-created dir holding only run.sh)
             // carries no routine to migrate; the routine it shadows is healed from its own dir.

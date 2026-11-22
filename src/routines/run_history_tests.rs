@@ -36,6 +36,7 @@ fn sample_run(workbench: &str, started_at: u64) -> PersistedRun {
         finished_at: started_at + 5,
         status: RunStatus::Success,
         exit_code: Some(0),
+        kill_reason: None,
     }
 }
 

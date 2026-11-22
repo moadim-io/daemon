@@ -73,3 +73,7 @@ mod cleanup_freed_bytes_tests;
 #[cfg(test)]
 #[path = "cleanup_run_history_tests.rs"]
 mod cleanup_run_history_tests;
+
+#[cfg(test)]
+#[path = "cleanup_killed_history_tests.rs"]
+mod cleanup_killed_history_tests;

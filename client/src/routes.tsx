@@ -2,11 +2,14 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Shell } from "./shell/Shell";
 import { OverviewPage } from "./pages/overview/OverviewPage";
 import { RoutinesPage } from "./pages/routines/RoutinesPage";
+import { RoutineDetailPage } from "./pages/routines/RoutineDetailPage";
 import { RunsPage } from "./pages/runs/RunsPage";
 import { RunDetailPage } from "./pages/runs/RunDetailPage";
 import { HeatmapPage } from "./pages/heatmap/HeatmapPage";
 import { ReliabilityPage } from "./pages/reliability/ReliabilityPage";
+import { UptimePage } from "./pages/uptime/UptimePage";
 import { AgentsPage } from "./pages/agents/AgentsPage";
+import { ReposPage } from "./pages/repos/ReposPage";
 import { FlagsPage } from "./pages/flags/FlagsPage";
 import { MachinesPage } from "./pages/machines/MachinesPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
@@ -14,7 +17,7 @@ import { WallboardPage } from "./pages/wall/WallboardPage";
 
 /**
  * Route paths are resolved from the server root — the daemon serves this SPA at `GET /`:
- * `/`, `/routines`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/machines`, `/agents`, `/flags`,
+ * `/`, `/routines`, `/routines/:id`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/uptime`, `/machines`, `/agents`, `/repos`, `/flags`,
  * `/settings` — an unknown path redirects home. `/wall` (kiosk wallboard) renders outside the shell.
  */
 export function AppRoutes() {
@@ -24,12 +27,15 @@ export function AppRoutes() {
       <Route element={<Shell />}>
         <Route index element={<OverviewPage />} />
         <Route path="routines" element={<RoutinesPage />} />
+        <Route path="routines/:id" element={<RoutineDetailPage />} />
         <Route path="runs" element={<RunsPage />} />
         <Route path="runs/:routineId/:workbench" element={<RunDetailPage />} />
         <Route path="heatmap" element={<HeatmapPage />} />
         <Route path="reliability" element={<ReliabilityPage />} />
+        <Route path="uptime" element={<UptimePage />} />
         <Route path="machines" element={<MachinesPage />} />
         <Route path="agents" element={<AgentsPage />} />
+        <Route path="repos" element={<ReposPage />} />
         <Route path="flags" element={<FlagsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

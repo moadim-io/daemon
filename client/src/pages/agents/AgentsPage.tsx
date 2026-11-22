@@ -125,7 +125,7 @@ function AgentRow({ a }: { a: AgentStats }) {
             <ul>
               {a.routines.map((r) => (
                 <li key={r.id}>
-                  <Link to={`/routines?history=${encodeURIComponent(r.id)}`}>{r.title}</Link>
+                  <Link to={`/routines/${encodeURIComponent(r.id)}`}>{r.title}</Link>
                 </li>
               ))}
             </ul>

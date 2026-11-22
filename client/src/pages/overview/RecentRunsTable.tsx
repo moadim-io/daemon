@@ -46,7 +46,7 @@ export function RecentRunsTable({ runs, loading }: { runs: FleetRunSummary[]; lo
           {runs.map((run) => (
             <tr key={run.workbench}>
               <td>
-                <Link to={`/routines?history=${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
+                <Link to={`/routines/${encodeURIComponent(run.routine_id)}`}>{run.routine_title}</Link>
               </td>
               <td>
                 <div className="cell-time" title={abstime(run.started_at)}>

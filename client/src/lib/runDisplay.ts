@@ -16,8 +16,20 @@ export function runStatusLabel(status: RunStatus): string {
       return "SUCCESS";
     case "failed":
       return "FAILED";
+    case "killed":
+      return "KILLED";
     default:
       return "UNKNOWN";
+  }
+}
+
+/** Human-readable reason a run was killed, for a status tooltip; `null` when none was recorded. */
+export function killReasonLabel(reason: RunSummary["kill_reason"]): string | null {
+  switch (reason) {
+    case "max_runtime":
+      return "exceeded max runtime";
+    default:
+      return null;
   }
 }
 

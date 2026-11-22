@@ -50,7 +50,7 @@ export function FailureCauses({ report }: { report: FailureCauseReport }) {
                   {c.routines.slice(0, MAX_ROUTINES).map((r, i) => (
                     <span key={r.id}>
                       {i > 0 ? ", " : null}
-                      <Link to={`/routines?history=${encodeURIComponent(r.id)}`}>{r.title}</Link>
+                      <Link to={`/routines/${encodeURIComponent(r.id)}`}>{r.title}</Link>
                       {r.count > 1 ? <span className="cell-meta"> ×{r.count}</span> : null}
                     </span>
                   ))}

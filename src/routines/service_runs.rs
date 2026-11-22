@@ -12,6 +12,7 @@ use crate::routines::cleanup::{parse_workbench_name, run_session_alive};
 use crate::routines::command::slugify;
 use crate::routines::model::{FleetRunSummary, RoutineStore, RunStatus, RunSummary};
 use crate::routines::run_history::{read_exit_code, read_persisted_runs};
+use crate::routines::run_status::{derive_run_status, read_kill_reason};
 
 /// List every run for routine `id`, newest first: live (not-yet-reaped) workbenches, whose status
 /// derives from the tmux session's liveness and the `exit_code` file the launch command writes on
@@ -53,6 +54,7 @@ pub fn svc_list_runs(store: &RoutineStore, id: &str) -> Result<Vec<RunSummary>, 
             finished_at_local: Some(format_local(persisted.finished_at)),
             status: persisted.status,
             exit_code: persisted.exit_code,
+            kill_reason: persisted.kill_reason,
             // The workbench is already gone (that's why this run came from `runs.log` instead of
             // a live directory scan), so there is nothing left to count down to.
             retention_expires_at: None,
@@ -108,6 +110,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
                 finished_at_local: run.finished_at_local,
                 status: run.status,
                 exit_code: run.exit_code,
+                kill_reason: run.kill_reason,
             });
         }
     }
@@ -126,6 +129,7 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
                 finished_at_local: Some(format_local(persisted.finished_at)),
                 status: persisted.status,
                 exit_code: persisted.exit_code,
+                kill_reason: persisted.kill_reason,
             });
         }
     }
@@ -142,18 +146,17 @@ pub fn svc_list_all_runs(store: &RoutineStore, limit: Option<usize>) -> Vec<Flee
 fn run_summary(dir: &str, started_at: u64, effective_ttl_secs: Option<u64>) -> RunSummary {
     let path = workbenches_dir().join(dir);
     let exit_code = read_exit_code(&path);
+    let kill_record = read_kill_reason(&path);
     let finished_at = std::fs::metadata(path.join("exit_code"))
         .and_then(|meta| meta.modified())
         .ok()
         .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|elapsed| elapsed.as_secs());
     let session = format!("moadim-{dir}");
-    let status = match exit_code {
-        Some(0) => RunStatus::Success,
-        Some(_) => RunStatus::Failed,
-        None if run_session_alive(&session) => RunStatus::Running,
-        None => RunStatus::Unknown,
-    };
+    let status = derive_run_status(exit_code, kill_record, || run_session_alive(&session));
+    // A kill reason is only meaningful for a run that derived as killed. A killed session that
+    // still lives reads as running, so it carries no reason.
+    let kill_reason = kill_record.filter(|_| status == RunStatus::Killed);
     let retention_expires_at =
         finished_at.and_then(|finish| effective_ttl_secs.map(|ttl| finish + ttl));
     RunSummary {
@@ -164,6 +167,7 @@ fn run_summary(dir: &str, started_at: u64, effective_ttl_secs: Option<u64>) -> R
         finished_at_local: finished_at.map(format_local),
         status,
         exit_code,
+        kill_reason,
         retention_expires_at,
     }
 }

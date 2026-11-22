@@ -10,6 +10,7 @@ const FILL: Record<FleetRunSummary["status"], string> = {
   running: "var(--warn)",
   success: "var(--ok)",
   failed: "var(--err)",
+  killed: "var(--err)",
   unknown: "var(--text-faint)",
 };
 

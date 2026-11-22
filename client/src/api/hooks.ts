@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
 import { ApiError, api, unwrap, unwrapVoid } from "./client";
 import type { components } from "./schema.gen";
 
@@ -356,6 +356,21 @@ export function useFlags(id: string, enabled = true) {
     queryKey: ["routines", id, "flags"],
     queryFn: async () => unwrap(await api.GET("/routines/{id}/flags", { params: { path: { id } } })),
     enabled: enabled && id.length > 0,
+  });
+}
+
+/**
+ * Open flags for many routines at once — one `GET /routines/{id}/flags` per id, sharing
+ * `useFlags`' cache key so a RESOLVE anywhere refreshes the fleet view too.
+ * ponytail: N calls; a fleet-wide `GET /flags` endpoint would collapse them.
+ */
+export function useFleetFlags(ids: readonly string[], refetchInterval?: number | false) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: ["routines", id, "flags"],
+      queryFn: async () => unwrap(await api.GET("/routines/{id}/flags", { params: { path: { id } } })),
+      refetchInterval,
+    })),
   });
 }
 

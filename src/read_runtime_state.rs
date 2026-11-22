@@ -64,6 +64,23 @@ pub fn write_routine(routine: &Routine) -> std::io::Result<()> {
     write_routine_to_rel_dir(routine, &rel_dir)
 }
 
+/// Write an already-persisted `routine` back to its existing `routine.toml` directory.
+///
+/// Update-path counterpart of [`write_routine`]: it never falls back to the title slug. A routine
+/// whose `routine.toml` was deleted from disk while the daemon runs (for example by a git pull
+/// after it moved to another folder) yields `NotFound` instead of being recreated at its old path.
+pub fn persist_existing_routine(routine: &Routine) -> std::io::Result<()> {
+    let Some(rel_dir) = routine_storage_location::routine_rel_dir_by_id(&routine.id) else {
+        let msg = format!(
+            "routine {} has no routine.toml on disk any more; not recreating it",
+            routine.id
+        );
+        log::warn!("{msg}");
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg));
+    };
+    write_routine_to_rel_dir(routine, &rel_dir)
+}
+
 /// Write `routine` to an explicit directory relative to `routines/`.
 ///
 /// Used only by migrations that deliberately move legacy on-disk layouts; normal updates should use
@@ -115,10 +132,15 @@ pub(crate) fn write_routine_to_rel_dir(routine: &Routine, rel_dir: &str) -> std:
         max_runtime_secs: routine.max_runtime_secs,
         failure_threshold: routine.failure_threshold,
         notifications: routine.notifications.clone(),
-        tags: routine.tags.clone(),
+        // Never written; the tags now live in the `tags.csv` sidecar below.
+        tags: Vec::new(),
         env: routine.env.clone(),
         timezone: routine.timezone.clone(),
     };
+    atomic_write(
+        &crate::paths::routine_tags_path(rel_dir),
+        crate::routine_tags_csv::format_routine_tags(&routine.tags).as_bytes(),
+    )?;
     let text = toml::to_string_pretty(&toml_routine).map_err(std::io::Error::other)?;
     // Atomic write (temp + rename) so any concurrent reader never observes a torn routine.toml —
     // a torn file parses to `None` and would silently drop the routine from the store. (Note:

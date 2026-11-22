@@ -154,4 +154,23 @@ fn svc_trigger_scheduled_clears_snoozed_until_once_elapsed_and_spawns() {
         None
     );
 }
+#[test]
+fn svc_snooze_does_not_recreate_routine_toml_deleted_from_disk() {
+    let _home = TempHome::set();
+    let store = new_store();
+    let routine = make_routine("snooze-deleted-id", "Snooze Deleted ZZZ", 1, 1);
+    crate::routine_storage::write_routine(&routine).unwrap();
+    let rel_dir = crate::routine_storage::routine_rel_dir(&routine);
+    let toml = crate::paths::routine_toml_path(&rel_dir);
+    std::fs::remove_file(&toml).unwrap();
+    store
+        .lock()
+        .unwrap()
+        .insert("snooze-deleted-id".into(), routine);
+
+    let result = svc_snooze(&store, "snooze-deleted-id", Some(now_secs() + 60), None);
+    assert!(result.is_err(), "expected an error, got {result:?}");
+    assert!(!toml.exists(), "routine.toml must not be recreated");
+}
+
 include!("svc_trigger_scheduled_returns_internal_on_write_failure_when_snooze_el_tests.rs");

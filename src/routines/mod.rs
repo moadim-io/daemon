@@ -26,6 +26,7 @@ mod handlers;
 mod ical;
 mod model;
 mod run_history;
+mod run_status;
 mod service;
 
 pub(crate) use agents::*;

@@ -25,6 +25,8 @@ use crate::paths::{agent_toml_path, agents_dir};
 mod claude_code;
 #[path = "codex/setup.rs"]
 mod codex;
+#[path = "dsh/setup.rs"]
+mod dsh;
 #[path = "hermes/setup.rs"]
 mod hermes;
 #[path = "nanoclaw/setup.rs"]
@@ -112,6 +114,7 @@ pub fn load_agent_command(name: &str) -> Result<AgentCommand, AgentLoadError> {
 const DEFAULT_AGENT_CONFIGS: &[(&str, &str)] = &[
     (claude_code::NAME, claude_code::CONFIG),
     (codex::NAME, codex::CONFIG),
+    (dsh::NAME, dsh::CONFIG),
     (hermes::NAME, hermes::CONFIG),
     (nanoclaw::NAME, nanoclaw::CONFIG),
     (pi::NAME, pi::CONFIG),

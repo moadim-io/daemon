@@ -1964,6 +1964,11 @@ textarea {
   background: var(--warn);
 }
 
+.duration-bar.killed {
+  background: var(--err);
+  opacity: 0.55;
+}
+
 .duration-bar.unknown {
   background: var(--text-faint);
 }
@@ -2502,6 +2507,69 @@ textarea {
 .log-lc {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.log-triage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 47px;
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.log-sev-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.log-sev-chip-error {
+  background: var(--err-bg);
+  color: var(--err);
+}
+
+.log-sev-chip-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.log-sev-chip.is-zero {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.log-triage-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.log-line {
+  border-left: 3px solid transparent;
+}
+
+.log-sev-error {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err-bg) 60%, transparent);
+}
+
+.log-sev-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn-bg) 60%, transparent);
+}
+
+.log-line-current {
+  outline: 2px solid var(--accent, var(--warn));
+  outline-offset: -2px;
 }
 
 .run-compare {
@@ -3537,6 +3605,7 @@ tr:last-child td {
 
 .runs-hist-seg.success { background: var(--ok); }
 .runs-hist-seg.failed { background: var(--err); }
+.runs-hist-seg.killed { background: var(--err); opacity: 0.55; }
 .runs-hist-seg.running { background: var(--warn); }
 .runs-hist-seg.unknown { background: var(--text-faint); }
 
@@ -3683,4 +3752,328 @@ tr:last-child td {
   margin: 0 12px 8px;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* ─── Wallboard (kiosk / TV mode, `/wall`) ─────────────────────────────── */
+.wall {
+  min-height: 100vh;
+  padding: 16px clamp(16px, 2vw, 32px);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+.wall-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  border-bottom: 3px solid var(--border);
+  padding-bottom: 12px;
+}
+.wall-brand {
+  font-family: var(--mono);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.wall-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  flex: 1;
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.1vw, 18px);
+}
+.wall-count b {
+  font-size: clamp(22px, 2.4vw, 40px);
+}
+.wall-count.zero {
+  opacity: 0.4;
+}
+.wall-count.failing b {
+  color: var(--err);
+}
+.wall-count.attention b,
+.wall-count.running b {
+  color: var(--warn);
+}
+.wall-count.ok b {
+  color: var(--ok);
+}
+.wall-clock {
+  font-family: var(--mono);
+  font-size: clamp(20px, 2vw, 34px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.wall-acts {
+  display: flex;
+  gap: 8px;
+}
+.wall-meta {
+  margin: 8px 0 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.wall-error {
+  color: var(--err);
+}
+.wall-empty {
+  font-size: 24px;
+  color: var(--text-dim);
+}
+.wall-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+}
+.wall-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 3px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  min-width: 0;
+}
+a.wall-tile:hover,
+a.wall-tile:focus-visible {
+  box-shadow: var(--shadow-hover);
+}
+.wall-tile.failing {
+  background: var(--err-bg);
+  border-color: var(--err);
+}
+.wall-tile.attention {
+  background: var(--warn-bg);
+  border-color: var(--warn);
+}
+.wall-tile.running {
+  background: var(--surface-2);
+  border-style: dashed;
+}
+.wall-tile.ok {
+  background: var(--ok-bg);
+}
+.wall-tile.idle,
+.wall-tile.snoozed {
+  opacity: 0.65;
+}
+.wall-tile-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.wall-tile.failing .wall-tile-state {
+  color: var(--err);
+}
+.wall-tile.ok .wall-tile-state {
+  color: var(--ok);
+}
+.wall-tile.attention .wall-tile-state,
+.wall-tile.running .wall-tile-state {
+  color: var(--warn);
+}
+.wall-tile-history {
+  display: flex;
+  gap: 3px;
+}
+.wall-dot {
+  width: 9px;
+  height: 9px;
+  background: var(--text-faint);
+}
+.wall-dot.success {
+  background: var(--ok);
+}
+.wall-dot.failed {
+  background: var(--err);
+}
+.wall-dot.running {
+  background: var(--warn);
+}
+.wall-tile-title {
+  font-size: clamp(16px, 1.4vw, 24px);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.wall-tile-reason {
+  color: var(--text-dim);
+}
+.wall-tile-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Pin toggle (Routines title cell, Overview PINNED panel). */
+.pin-btn {
+  float: right;
+  margin-left: 6px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pin-btn:hover,
+.pin-btn:focus-visible {
+  color: var(--text);
+}
+.pin-btn.pinned {
+  color: var(--warn);
+}
+.cell-act .pin-btn {
+  float: none;
+}
+
+/* ─── Uptime: daily status bars ──────────────────────────────────────── */
+
+.uptime-range {
+  display: flex;
+  gap: 4px;
+}
+
+.uptime-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.uptime-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.uptime-legend .uptime-cell {
+  width: 8px;
+  height: 14px;
+  flex: none;
+}
+
+.uptime-note {
+  margin-bottom: 8px;
+}
+
+.uptime-table td:nth-child(2) {
+  width: 100%;
+}
+
+.uptime-strip {
+  display: flex;
+  gap: 2px;
+  height: 24px;
+  min-width: 180px;
+}
+
+.uptime-cell {
+  display: block;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 12px;
+  background: var(--grid-line);
+}
+
+.uptime-cell.ok {
+  background: var(--ok);
+}
+
+.uptime-cell.partial {
+  background: var(--warn);
+}
+
+.uptime-cell.down {
+  background: var(--err);
+}
+
+.uptime-cell.live {
+  box-shadow: inset 0 -4px 0 var(--accent);
+}
+
+a.uptime-cell:hover,
+a.uptime-cell:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.uptime-fleet td {
+  border-bottom: 2px solid var(--border);
+}
+
+
+/* ─── Routine detail page ────────────────────────────────────────────── */
+
+.rd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rd-goal {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  margin: 0 0 16px;
+}
+
+.rd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.rd-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.rd-h {
+  display: block;
+  margin: 0 0 10px;
+}
+
+.rd-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.rd-fields dt {
+  color: var(--text-faint);
+}
+
+.rd-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.rd-upcoming {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
 }

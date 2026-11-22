@@ -28,6 +28,9 @@ use crate::utils::lock::LockRecover;
 mod glob_match;
 pub(crate) use glob_match::*;
 
+mod tunnel_suffixes;
+pub use tunnel_suffixes::tunnel_host_suffixes;
+
 /// On-disk shape of `machine.local.toml`.
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct MachineToml {
@@ -36,6 +39,14 @@ struct MachineToml {
     /// UI/REST-configured override for the global routine concurrency cap (issue #1155).
     /// `MAX_CONCURRENT_RUNS_ENV` takes precedence over this when set; `None` means no override.
     max_concurrent_runs: Option<usize>,
+    /// Public dev-tunnel domain suffixes (e.g. `trycloudflare.com`) whose subdomains the API
+    /// accepts as `Host`/`Origin`. Re-read on every request, so no daemon restart is needed.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "tunnel_suffixes::lenient_suffix_list"
+    )]
+    tunnel_host_suffixes: Vec<String>,
 }
 
 /// Where a resolved machine identity came from, for `moadim machine show` to report.
@@ -137,9 +148,13 @@ fn hostname() -> String {
 /// Read the full parsed contents of `machine.local.toml`, or the all-`None` default when the file
 /// is absent or unparsable.
 fn read_machine_toml() -> MachineToml {
-    std::fs::read_to_string(machine_config_path())
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
+    parse_machine_toml(std::fs::read_to_string(machine_config_path()).ok())
+}
+
+/// Parse the text of `machine.local.toml`, or the all-`None` default when the text is absent or
+/// unparsable. Shared by the blocking [`read_machine_toml`] and the async [`tunnel_host_suffixes`].
+fn parse_machine_toml(text: Option<String>) -> MachineToml {
+    text.and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default()
 }
 
@@ -163,3 +178,7 @@ fn machine_toml_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 include!("write_machine_toml.rs");
+
+#[cfg(test)]
+#[path = "tunnel_host_suffixes_tests.rs"]
+pub(crate) mod tunnel_host_suffixes_tests;

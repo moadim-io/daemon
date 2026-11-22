@@ -30,6 +30,24 @@ fn with_override_home(body: impl FnOnce()) {
 }
 
 #[test]
+fn routine_rel_dir_by_id_returns_first_sorted_dir_for_duplicate_id() {
+    with_override_home(|| {
+        // Create the later dir first, so the result cannot depend on creation order.
+        for (rel, title) in [("zeta-copy", "Zeta copy"), ("alpha-copy", "Alpha copy")] {
+            let dir = crate::paths::routine_dir(rel);
+            std::fs::create_dir_all(&dir).unwrap();
+            let toml = format!("id = \"dup-location-id\"\ntitle = \"{title}\"\nagent = \"claude\"\n");
+            std::fs::write(dir.join("routine.toml"), toml).unwrap();
+            std::fs::write(dir.join("schedule.cron"), "@daily\n").unwrap();
+        }
+        assert_eq!(
+            super::routine_storage_location::routine_rel_dir_by_id("dup-location-id").as_deref(),
+            Some("alpha-copy")
+        );
+    });
+}
+
+#[test]
 fn write_routine_preserves_existing_filesystem_location_after_title_change() {
     with_override_home(|| {
         let id = "location-preserve-id";

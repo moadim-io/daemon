@@ -188,10 +188,11 @@ bumps `package.json`, syncs that version into `Cargo.toml`/`Cargo.lock` and
 the source manifest for generated platform-package metadata
 ([`scripts/release/version-and-sync.mjs`](scripts/release/version-and-sync.mjs)),
 rolls the pending changesets into a new dated `CHANGELOG.md` section, verifies
-the result through the same lint/test gates a PR would get, and pushes it
-straight to `main` — no PR. (There used to be a bot-maintained "Version
-Packages" PR instead; it required GitHub Actions to be allowed to open PRs,
-which this org disables, so it never actually worked. See #849.)
+the result through the same lint/test gates a PR would get, and leaves it on
+a `ci/version-bump-<run_id>` branch. The run's job summary links a one-click
+"open PR" page for that branch: open the PR and merge it. The workflow cannot
+open the PR itself (this org stops GitHub Actions from creating PRs, see #849),
+and it cannot push to `main` (the `main` ruleset requires a pull request).
 
 To cut one manually instead (e.g. a hotfix, or the workflow is unavailable):
 

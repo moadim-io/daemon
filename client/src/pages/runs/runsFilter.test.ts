@@ -65,11 +65,16 @@ describe("filterRuns", () => {
 describe("statusCounts", () => {
   it("tallies runs by status", () => {
     const runs = [run({ status: "success" }), run({ status: "success" }), run({ status: "failed" }), run({ status: "running" })];
-    expect(statusCounts(runs)).toEqual({ running: 1, success: 2, failed: 1, unknown: 0 });
+    expect(statusCounts(runs)).toEqual({ running: 1, success: 2, failed: 1, killed: 0, unknown: 0 });
+  });
+
+  it("counts killed runs separately from failed and unknown", () => {
+    const runs = [run({ status: "killed" }), run({ status: "killed" }), run({ status: "unknown" })];
+    expect(statusCounts(runs)).toEqual({ running: 0, success: 0, failed: 0, killed: 2, unknown: 1 });
   });
 
   it("returns all-zero counts for an empty list", () => {
-    expect(statusCounts([])).toEqual({ running: 0, success: 0, failed: 0, unknown: 0 });
+    expect(statusCounts([])).toEqual({ running: 0, success: 0, failed: 0, killed: 0, unknown: 0 });
   });
 });
 

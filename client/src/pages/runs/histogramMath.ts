@@ -44,7 +44,7 @@ export function buildHistogram(runs: FleetRunSummary[], nowSecs: number, from?: 
   const buckets: HistogramBucket[] = Array.from({ length: count }, (_, i) => ({
     from: first + i * step,
     to: first + (i + 1) * step,
-    counts: { running: 0, success: 0, failed: 0, unknown: 0 },
+    counts: { running: 0, success: 0, failed: 0, killed: 0, unknown: 0 },
     total: 0,
   }));
   for (const run of runs) {

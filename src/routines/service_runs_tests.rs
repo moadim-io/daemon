@@ -5,7 +5,7 @@
 
 use super::*;
 
-use crate::routines::model::RunStatus;
+use crate::routines::model::{KillReason, RunStatus};
 use crate::routines::new_store;
 
 struct TempHome(std::path::PathBuf);
@@ -172,3 +172,26 @@ include!("svc_list_runs_reports_running_when_session_alive_and_no_exit_code_test
 
 #[path = "svc_list_runs_deduplicates_live_persisted_workbenches_tests.rs"]
 mod svc_list_runs_deduplicates_live_persisted_workbenches_tests;
+
+#[test]
+fn svc_list_runs_reports_killed_with_reason_for_watchdog_kill() {
+    let _home = TempHome::set();
+    let title = "Runs Killed ZZQ";
+    let slug = slugify(title);
+    let store = new_store();
+    store
+        .lock()
+        .unwrap()
+        .insert("id".into(), make_routine("id", title));
+
+    let killed = crate::paths::workbenches_dir().join(format!("{slug}-1000"));
+    std::fs::create_dir_all(&killed).unwrap();
+    std::fs::write(killed.join("exit_code"), "killed\n").unwrap();
+
+    let runs = svc_list_runs(&store, "id").unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].status, RunStatus::Killed);
+    assert_eq!(runs[0].kill_reason, Some(KillReason::MaxRuntime));
+    assert_eq!(runs[0].exit_code, None);
+    assert!(runs[0].finished_at.is_some());
+}

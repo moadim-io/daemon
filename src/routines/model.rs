@@ -183,7 +183,7 @@ pub struct RoutineResponse {
 
 #[path = "model_runs.rs"]
 mod model_runs;
-pub use model_runs::{FleetRunSummary, RunStatus, RunSummary};
+pub use model_runs::{FleetRunSummary, KillReason, RunStatus, RunSummary};
 
 #[path = "model_requests.rs"]
 mod model_requests;

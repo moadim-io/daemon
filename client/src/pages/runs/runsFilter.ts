@@ -1,6 +1,6 @@
 import type { FleetRunSummary } from "../../api/hooks";
 
-export type RunStatusFacet = "all" | "success" | "failed" | "running" | "unknown";
+export type RunStatusFacet = "all" | "success" | "failed" | "running" | "killed" | "unknown";
 export type RunTimeFacet = "all" | "1h" | "24h" | "7d";
 
 export interface RunsFilter {
@@ -31,12 +31,12 @@ export function filterRuns(runs: FleetRunSummary[], filter: RunsFilter, nowSecs:
 
 /** Count of runs per status, for the page's at-a-glance summary chips. */
 export function statusCounts(runs: FleetRunSummary[]): Record<FleetRunSummary["status"], number> {
-  const counts: Record<FleetRunSummary["status"], number> = { running: 0, success: 0, failed: 0, unknown: 0 };
+  const counts: Record<FleetRunSummary["status"], number> = { running: 0, success: 0, failed: 0, killed: 0, unknown: 0 };
   for (const run of runs) counts[run.status] += 1;
   return counts;
 }
 
-const STATUS_FACETS: readonly string[] = ["all", "success", "failed", "running", "unknown"];
+const STATUS_FACETS: readonly string[] = ["all", "success", "failed", "running", "killed", "unknown"];
 const TIME_FACETS: readonly string[] = ["all", "1h", "24h", "7d"];
 
 /** Histogram bucket the user clicked, as epoch seconds. */

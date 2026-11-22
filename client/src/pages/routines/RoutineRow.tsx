@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { FleetRunSummary, RoutineResponse } from "../../api/hooks";
 import { abstime, reltime } from "../../lib/cronUtils";
+import { usePins } from "../../lib/pins";
 import { fmtUntil, fmtWhen, nextFireAfterAny, nextFiresAny, scheduleList } from "../../lib/schedule";
 import {
   DUE_SOON_WINDOW_MS,
@@ -99,6 +100,8 @@ export function RoutineRow({
 
   const health = routineHealth(r, now);
   const risk = failureRisk(r);
+  const { isPinned, toggle: togglePin } = usePins();
+  const pinned = isPinned(r.id);
 
   useEffect(() => {
     if (!actionsOpen) return;
@@ -242,6 +245,16 @@ export function RoutineRow({
         />
       </td>
       <td className="routine-title-cell" data-label="Title">
+        <button
+          type="button"
+          className={pinned ? "pin-btn pinned" : "pin-btn"}
+          aria-pressed={pinned}
+          aria-label={pinned ? `Unpin ${r.title}` : `Pin ${r.title}`}
+          title={pinned ? "Unpin from Overview" : "Pin to Overview"}
+          onClick={() => togglePin(r.id)}
+        >
+          {pinned ? "★" : "☆"}
+        </button>
         <div className="cell-schedule" title={r.title}>
           <RoutineTitle title={r.title} />
         </div>

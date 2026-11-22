@@ -68,7 +68,7 @@ describe("RunDetailPage", () => {
     renderPage({ runs: [run()], routineData: routine({ title: "Nightly Audit" }) });
     expect(screen.getByRole("link", { name: "← Nightly Audit" })).toHaveAttribute(
       "href",
-      "/routines?history=r1",
+      "/routines/r1",
     );
   });
 

@@ -168,6 +168,7 @@ pub(crate) fn build_app_with_shutdown(
         .layer(middleware::from_fn(
             middlewares::host_validation::host_validation(
                 middlewares::host_validation::allowed_hosts(),
+                crate::machine::tunnel_host_suffixes,
             ),
         ))
         .layer(middleware::from_fn(

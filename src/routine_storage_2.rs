@@ -97,3 +97,7 @@ mod routine_storage_disabled_json_tests;
 #[cfg(test)]
 #[path = "persist_existing_routine_tests.rs"]
 mod persist_existing_routine_tests;
+
+#[cfg(test)]
+#[path = "routine_tags_storage_tests.rs"]
+mod routine_tags_storage_tests;

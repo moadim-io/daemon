@@ -175,7 +175,7 @@ function RepoRow({ r }: { r: RepoStats }) {
           <ul>
             {r.routines.map((rt) => (
               <li key={rt.id}>
-                <Link to={`/routines?history=${encodeURIComponent(rt.id)}`}>{rt.title}</Link>
+                <Link to={`/routines/${encodeURIComponent(rt.id)}`}>{rt.title}</Link>
               </li>
             ))}
           </ul>

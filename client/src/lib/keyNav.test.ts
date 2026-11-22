@@ -8,6 +8,7 @@ describe("routeForChordKey", () => {
     expect(routeForChordKey("u")).toBe("/runs");
     expect(routeForChordKey("h")).toBe("/heatmap");
     expect(routeForChordKey("l")).toBe("/reliability");
+    expect(routeForChordKey("t")).toBe("/uptime");
     expect(routeForChordKey("m")).toBe("/machines");
     expect(routeForChordKey("s")).toBe("/settings");
   });

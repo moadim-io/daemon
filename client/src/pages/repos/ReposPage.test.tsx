@@ -126,7 +126,7 @@ describe("ReposPage", () => {
     expect(api).toHaveAttribute("title", API);
     expect(screen.getByText("AUTO-PULL OFF ×1")).toBeInTheDocument();
     expect(screen.getByText("2 routines")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "lint" })[0]).toHaveAttribute("href", "/routines?history=lint");
+    expect(screen.getAllByRole("link", { name: "lint" })[0]).toHaveAttribute("href", "/routines/lint");
     expect(screen.getByText("default, main")).toBeInTheDocument();
     expect(screen.getByText("claude, codex")).toBeInTheDocument();
     expect(screen.getByText("50%")).toBeInTheDocument();

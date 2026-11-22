@@ -185,7 +185,7 @@ function UptimeTr({ row, fleet = false }: { row: UptimeRow; fleet?: boolean }) {
         {fleet ? (
           <strong>All routines</strong>
         ) : (
-          <Link to={`/routines?history=${encodeURIComponent(row.routineId)}`}>{row.title}</Link>
+          <Link to={`/routines/${encodeURIComponent(row.routineId)}`}>{row.title}</Link>
         )}
       </td>
       <td>

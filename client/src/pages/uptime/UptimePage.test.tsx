@@ -92,7 +92,7 @@ describe("UptimePage", () => {
 
     expect(screen.getByText("All routines")).toBeInTheDocument();
     expect(rowNames()).toEqual(["alpha", "beta", "idle", "live"]);
-    expect(screen.getByRole("link", { name: "alpha" })).toHaveAttribute("href", "/routines?history=alpha");
+    expect(screen.getByRole("link", { name: "alpha" })).toHaveAttribute("href", "/routines/alpha");
     expect(screen.getByText("50.0%")).toBeInTheDocument();
     expect(strips()).toHaveLength(5);
     for (const strip of strips()) expect(strip.children).toHaveLength(30);

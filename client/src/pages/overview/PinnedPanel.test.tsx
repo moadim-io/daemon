@@ -79,7 +79,7 @@ describe("PinnedPanel", () => {
     renderPanel([routine("a", "Alpha"), routine("b", "Beta"), routine("c", "Gamma")]);
     const links = screen.getAllByRole("link").map((l) => l.textContent);
     expect(links).toEqual(["Beta", "Alpha"]);
-    expect(screen.getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe("/routines?history=a");
+    expect(screen.getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe("/routines/a");
     expect(screen.getByRole("img", { name: "Last 1 runs" })).toBeTruthy();
     expect(screen.queryByText("Gamma")).toBeNull();
   });

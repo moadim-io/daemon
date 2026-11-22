@@ -8,3 +8,5 @@ pub mod logger;
 pub mod security_headers;
 /// Middleware that bounds REST API handler time with a per-request deadline.
 pub mod timeout;
+/// Trust rule for public dev-tunnel hostnames (`tunnel_host_suffixes` in `machine.local.toml`).
+pub(crate) mod tunnel_host;

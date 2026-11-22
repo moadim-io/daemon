@@ -81,6 +81,7 @@ fn render_runs_total(out: &mut String, runs: &[FleetRunSummary]) {
             RunStatus::Success => counts.success += 1,
             RunStatus::Failed => counts.failed += 1,
             RunStatus::Running => counts.running += 1,
+            RunStatus::Killed => counts.killed += 1,
             RunStatus::Unknown => counts.unknown += 1,
         }
     }
@@ -103,6 +104,11 @@ fn render_runs_total(out: &mut String, runs: &[FleetRunSummary]) {
         out,
         r#"moadim_runs_total{{status="running"}} {}"#,
         counts.running
+    );
+    let _ = writeln!(
+        out,
+        r#"moadim_runs_total{{status="killed"}} {}"#,
+        counts.killed
     );
     let _ = writeln!(
         out,

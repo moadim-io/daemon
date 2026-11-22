@@ -57,7 +57,7 @@ describe("RunsPage", () => {
     expect(screen.getByRole("heading", { name: "Runs" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Nightly Audit" })).toHaveAttribute(
       "href",
-      "/routines?history=r1",
+      "/routines/r1",
     );
     expect(screen.getByText("Weekly Digest")).toBeInTheDocument();
     expect(screen.getByText("Showing 2 of 2 fetched")).toBeInTheDocument();

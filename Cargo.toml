@@ -578,3 +578,11 @@ iter_over_hash_type = "deny"
 # `suspicious_operation_groupings` above, this is a correctness lint (it catches silently dropped
 # results), not a style preference. The codebase is already clean, so `deny` locks that in.
 collection_is_never_read = "deny"
+# Reject `iter.for_each(|x| { ... })` used as a statement in favour of a plain `for x in iter { ... }`
+# loop. The `for` form states "run this per element" directly instead of hiding the loop behind a
+# closure, and — unlike a closure body — supports `break`/`continue`/`?`/`return` with their usual
+# meaning, so a later edit that adds early-exit logic can't silently misbehave (a `return` inside
+# `for_each` only skips to the next element). Matches the loop style `explicit_iter_loop`/
+# `explicit_into_iter_loop` above already enforce. The codebase is already clean, so `deny` locks
+# that in.
+needless_for_each = "deny"

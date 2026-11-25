@@ -4017,6 +4017,59 @@ a.uptime-cell:focus-visible {
   border-bottom: 2px solid var(--border);
 }
 
+/* ─── Usage: daily agent-time bars ───────────────────────────────────── */
+
+.usage-chart {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 120px;
+  margin-bottom: 16px;
+  padding: 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+}
+
+.usage-day {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 2px;
+  background: var(--grid-line);
+}
+
+.usage-seg {
+  display: block;
+  flex: none;
+}
+
+.usage-seg.success {
+  background: var(--ok);
+}
+
+.usage-seg.failed {
+  background: var(--err);
+}
+
+.usage-seg.other {
+  background: var(--warn);
+}
+
+.usage-share {
+  display: inline-block;
+  width: 80px;
+  height: 8px;
+  vertical-align: middle;
+  background: var(--grid-line);
+}
+
+.usage-share-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 
 /* ─── Routine detail page ────────────────────────────────────────────── */
 

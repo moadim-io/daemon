@@ -8,6 +8,7 @@ import { RunDetailPage } from "./pages/runs/RunDetailPage";
 import { HeatmapPage } from "./pages/heatmap/HeatmapPage";
 import { ReliabilityPage } from "./pages/reliability/ReliabilityPage";
 import { UptimePage } from "./pages/uptime/UptimePage";
+import { UsagePage } from "./pages/usage/UsagePage";
 import { AgentsPage } from "./pages/agents/AgentsPage";
 import { ReposPage } from "./pages/repos/ReposPage";
 import { FlagsPage } from "./pages/flags/FlagsPage";
@@ -17,7 +18,7 @@ import { WallboardPage } from "./pages/wall/WallboardPage";
 
 /**
  * Route paths are resolved from the server root — the daemon serves this SPA at `GET /`:
- * `/`, `/routines`, `/routines/:id`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/uptime`, `/machines`, `/agents`, `/repos`, `/flags`,
+ * `/`, `/routines`, `/routines/:id`, `/runs`, `/runs/:routineId/:workbench`, `/heatmap`, `/reliability`, `/uptime`, `/usage`, `/machines`, `/agents`, `/repos`, `/flags`,
  * `/settings` — an unknown path redirects home. `/wall` (kiosk wallboard) renders outside the shell.
  */
 export function AppRoutes() {
@@ -33,6 +34,7 @@ export function AppRoutes() {
         <Route path="heatmap" element={<HeatmapPage />} />
         <Route path="reliability" element={<ReliabilityPage />} />
         <Route path="uptime" element={<UptimePage />} />
+        <Route path="usage" element={<UsagePage />} />
         <Route path="machines" element={<MachinesPage />} />
         <Route path="agents" element={<AgentsPage />} />
         <Route path="repos" element={<ReposPage />} />

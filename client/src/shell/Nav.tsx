@@ -7,6 +7,7 @@ const TABS = [
   { to: "/heatmap", label: "Heatmap", end: false },
   { to: "/reliability", label: "Reliability", end: false },
   { to: "/uptime", label: "Uptime", end: false },
+  { to: "/usage", label: "Usage", end: false },
   { to: "/machines", label: "Machines", end: false },
   { to: "/agents", label: "Agents", end: false },
   { to: "/repos", label: "Repos", end: false },
